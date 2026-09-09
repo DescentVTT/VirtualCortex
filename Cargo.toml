@@ -5,7 +5,11 @@ members = [
     "crates/cortex-connectome",
     "crates/cortex-sensory",
     "crates/cortex-embodiment",
+    "crates/cortex-basal-ganglia",
+    "crates/cortex-cerebellum",
     "crates/cortex-neuromod",
     "crates/cortex-hippocampus",
+    "crates/cortex-homeostasis",
+    "crates/cortex-fabric",
     "crates/cortex-telemetry",
 ]

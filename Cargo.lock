@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "cortex-basal-ganglia"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-cerebellum"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-connectome"
 version = "0.1.0"
 
@@ -15,7 +23,15 @@ name = "cortex-embodiment"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-fabric"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-hippocampus"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-homeostasis"
 version = "0.1.0"
 
 [[package]]
