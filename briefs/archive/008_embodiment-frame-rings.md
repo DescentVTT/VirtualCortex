@@ -1,7 +1,13 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #12.** Narrows finding F-17 to the torque decoder, the
+> mapping and the loop; writes [ADR-0015](../../docs/adr/0015-embodiment-frame-abi.md). The report
+> is in the pull request and in `CHANGELOG.md`. The body below describes the tree before execution
+> and is not maintained, apart from relative links, which gained one `../` so that they still
+> resolve from `archive/`.
 
 # Brief 008 — Embodiment payload rings: the frame ABI and the single-producer single-consumer protocol
 
@@ -21,7 +27,7 @@ narrowed from "payload rings and torque decoder do not exist" to "torque decoder
 - **Verify before asserting.** Read the file; run the command.
 - **Label every claim** Implemented, Specified, Target or Hypothesis.
 - **Latest ≠ Newest.** Stable Rust only; no dependencies
-  ([ADR-0005](../docs/adr/0005-crate-per-subsystem.md)); **no `unsafe`** (whitepaper TC-9): the
+  ([ADR-0005](../../docs/adr/0005-crate-per-subsystem.md)); **no `unsafe`** (whitepaper TC-9): the
   mapping of shared memory is the runtime's job, this crate defines the protocol over storage the
   caller provides.
 - **Say what you did not do** in the closing report.
@@ -36,13 +42,13 @@ Re-derived against `main` on 2026-09-10.
   `write_cursor`, `read_cursor`, `epoch_id`, `heartbeat_ms` (all `AtomicU64`) and
   `reserved: [u8; 32]`; `const fn new()`, `Default`, `Debug`. Nothing else exists: no frame type,
   no push or pop, no capacity, no test.
-- Whitepaper [§5.2.4](../docs/WHITEPAPER.md#524-cortex-embodiment--sensorimotor-loop): "the payload
+- Whitepaper [§5.2.4](../../docs/WHITEPAPER.md#524-cortex-embodiment--sensorimotor-loop): "the payload
   rings (torque frames out, joint state in) follow it in the shared mapping";
-  [§6.4](../docs/WHITEPAPER.md#64-scenario-r-4-embodiment-period-specified) (R-4): write frame,
+  [§6.4](../../docs/WHITEPAPER.md#64-scenario-r-4-embodiment-period-specified) (R-4): write frame,
   release-store `write_cursor`, bump `heartbeat_ms`, acquire-load joint state,
-  `clock_nanosleep` to the next 1 ms boundary; [§8.5](../docs/WHITEPAPER.md#85-concurrency-and-ownership):
+  `clock_nanosleep` to the next 1 ms boundary; [§8.5](../../docs/WHITEPAPER.md#85-concurrency-and-ownership):
   "shared-memory rings use acquire/release on their cursors and nothing else";
-  [§8.9](../docs/WHITEPAPER.md#89-error-handling-and-fail-safe): an external watchdog engages
+  [§8.9](../../docs/WHITEPAPER.md#89-error-handling-and-fail-safe): an external watchdog engages
   braking after 5 missed periods of `heartbeat_ms`.
 - Targets T-4 (1.000 ms period) and T-5 (jitter) in §10.2 are about the loop, not this round; the
   loop needs `clock_nanosleep` and a mapping and is runtime work (milestone M6).
@@ -59,29 +65,34 @@ Re-derived against `main` on 2026-09-10.
 
 ## Deliverables
 
-- [ ] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR, fixing the
+- [x] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR, fixing the
       frame ABI: `TorqueFrame` (64 B: epoch, twelve Q16.16 torques, reserved) and `JointStateFrame`
       (64 B: epoch, twelve Q16.16 joint positions or six positions and six velocities, decided and
       justified, reserved); the ring capacity (a power of two, and why that size at 1 ms per frame);
       the cursor protocol (monotonic 64-bit counters, index = cursor & (capacity − 1), full when
       `write − read == capacity`, empty when equal); the heartbeat unit and update rule; a
       `FRAME_ABI_VERSION` and where it lives; and endianness (native; both sides are the same host).
-- [ ] The two frame records with `#[repr(C, align(64))]`, `const _` size/alignment assertions and
+      ADR-0015: twelve positions, velocities derived; capacity 16; version and capacity in the
+      control block's former reserved bytes. Committed `accepted` per `docs/adr/README.md`.
+- [x] The two frame records with `#[repr(C, align(64))]`, `const _` size/alignment assertions and
       the five derives; `EmbodimentRingBuffer` gains capacity and version in its reserved bytes if
       the ADR puts them there, keeping 64 bytes.
-- [ ] The protocol as index-only methods on the control block, generic over storage the caller
+- [x] The protocol as index-only methods on the control block, generic over storage the caller
       provides (`&[T]`-shaped, no `unsafe`): `producer_claim() -> Option<usize>`,
       `producer_publish(index, epoch)` (release-store, heartbeat bump), `consumer_peek() -> Option<usize>`
       (acquire-load), `consumer_release(index)`. State the ordering argument in doc comments.
-- [ ] Tests, in `#[cfg(test)]` with the standard test harness: two `std` threads exchange 10⁵
+      The index parameters were dropped: the cursors already know which slot is claimed or peeked,
+      so passing the index back would only invite a mismatch. `producer_publish(epoch, now_ms)`
+      takes the producer's clock because the crate reads none.
+- [x] Tests, in `#[cfg(test)]` with the standard test harness: two `std` threads exchange 10⁵
       frames through the protocol with no loss and in order; a full ring returns `None` to the
       producer; an empty ring returns `None` to the consumer; wrap-around at the capacity
       boundary; epoch and heartbeat are monotonic; the frame layout assertions.
-- [ ] Whitepaper §5.2.4 (new layout tables, public API, status), §3.2 interfaces row, §6.4
+- [x] Whitepaper §5.2.4 (new layout tables, public API, status), §3.2 interfaces row, §6.4
       (which steps are now Implemented), §8.9 (heartbeat semantics), §11 F-17 narrowed, Appendix C
       M6 status.
-- [ ] `CHANGELOG.md` entry under Unreleased.
-- [ ] Archive this brief.
+- [x] `CHANGELOG.md` entry under Unreleased.
+- [x] Archive this brief.
 
 ## Not empowered
 
