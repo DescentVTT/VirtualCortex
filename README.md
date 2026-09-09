@@ -50,24 +50,6 @@ Tested on a reference **64-core / 128-thread AMD EPYC / ARM Neoverse** server wi
 
 ---
 
-## 🏆 2026+ Global Competitive Landscape
-
-| Evaluation Dimension | VirtualCortex (This Work) | Axicor (Rust) | Intel Lava *(Archived)* | GoodAI Arnold (Charm++) | SpiNNaker 2 (ASIC ARM) | NEST 3/4 (HPC MPI) | Arbor (CUDA) | BrainScaleS-2 (Analog) | SpikingJelly (PyTorch) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1. Single-Node Capacity** | **5.0** | 3.5 | 1.5 | 2.0 | 3.0 | 2.0 | 1.5 | 1.0 | 1.5 |
-| **2. Multi-Scale Fidelity** | **5.0** | 3.5 | 2.5 | 2.5 | 3.5 | 4.5 | **5.0** | 4.0 | 2.0 |
-| **3. Execution Latency (SPS)** | **5.0** | 4.0 | 2.0 | 2.0 | 4.5 | 3.0 | 4.0 | **5.0** | 2.5 |
-| **4. Cache-Line Memory DOD** | **5.0** | 4.5 | 1.5 | 1.5 | 4.0 | 3.0 | 4.0 | 4.0 | 2.0 |
-| **5. CXL/NUMA Tiering** | **5.0** | 2.0 | 1.5 | 1.0 | 2.0 | 2.0 | 2.0 | 1.0 | 1.0 |
-| **6. Bit-Exact Determinism** | **5.0** | **5.0** | 2.0 | 2.0 | 3.0 | 3.5 | 3.5 | 1.0 | 3.0 |
-| **7. Dynamic Plasticity (STW)** | **5.0** | **5.0** | 2.0 | 3.5 | 4.0 | 3.0 | 2.0 | 4.0 | 1.0 |
-| **8. Commodity COTS Cost** | **5.0** | **5.0** | 3.5 | 3.0 | 1.5 | 3.5 | 4.0 | 1.0 | 4.5 |
-| **9. Lock-Free Concurrency** | **5.0** | 4.0 | 2.5 | 3.0 | 4.5 | 3.0 | 4.0 | 4.5 | 2.5 |
-| **10. Ecosystem Status (2026)**| **3.5** | 3.5 | 1.0 | 1.5 | 4.0 | **5.0** | 4.5 | 3.5 | 4.5 |
-| **Composite Score** | **4.85** 🏆 | **4.00** | **2.00** | **2.20** | **3.40** | **3.35** | **3.45** | **2.90** | **2.45** |
-
----
-
 ## 📊 Quantitative Pareto Frontier
 
 How VirtualCortex maps human-scale brain computation into hardware memory tiers:

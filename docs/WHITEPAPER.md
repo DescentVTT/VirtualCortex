@@ -198,7 +198,7 @@ const _: () = {
 To achieve a perfect **5.0/5.0 in Biophysical & Multi-Scale Fidelity**, VirtualCortex condenses biological cortical dynamics into discrete, branchless integer formulations:
 
 #### 3.4.1 Larkum BAC Firing Mechanism (Calcium Burst Dynamics)
-In biological pyramidal cells (Larkum et al., *Nature* 1999), somatic action potentials backpropagate along the apical trunk (bAP). When a bAP coincides with apical dendritic input within a $5\sim 10\,	ext{ms}$ coincidence window, a long-lasting calcium spike is triggered, forcing the cell into burst firing:
+In biological pyramidal cells (Larkum et al., *Nature* 1999), somatic action potentials backpropagate along the apical trunk (bAP). When a bAP coincides with apical dendritic input within a $5\sim 10\,\text{ms}$ coincidence window, a long-lasting calcium spike is triggered, forcing the cell into burst firing:
 
 $$\text{Coincidence: } (t_{\text{now}} - t_{\text{soma\_spike}} \le \tau_{\text{bAP}}) \land (V_{\text{apical}} \ge \Theta_{\text{Ca}})$$
 
@@ -304,52 +304,7 @@ All synaptic allocations and deletions operate on the pre-allocated `SynapseBloc
 
 ---
 
-## 6. State-of-the-Art Landscape & Empirical Evaluation
-
-### 6.1 Multi-Dimensional Comparative Scoring Matrix (1 to 5 Scale)
-
-* **5.0 (Breakthrough / S-Tier)**: Architectural milestone; completely eliminates the traditional bottleneck.
-* **4.0 (Excellent / A-Tier)**: High performance; production-grade optimization.
-* **3.0 (Moderate / B-Tier)**: Standard academic/industrial baseline; possesses known performance cliffs.
-* **2.0 (Deficient / C-Tier)**: Significant architectural overhead, memory bloat, or scaling failure.
-* **1.0 (Inapplicable / Archived / D-Tier)**: Unusable for scale; discontinued project; memory exhaustion.
-
-```
-┌──────────────────────────────────────┬──────────────┬────────┬──────────┬────────┬───────────┬────────┬────────┬──────────────┬──────────────┐
-│ Evaluation Dimension                 │ VirtualCortex│ Axicor │Intel Lava│ Arnold │SpiNNaker 2│NEST 3/4│ Arbor  │BrainScaleS-2 │ SpikingJelly │
-│                                      │ (This Work)  │ (Rust) │(Archived)│(Charm+)│(ASIC ARM) │ (MPI)  │ (CUDA) │ (Analog)     │  (PyTorch)   │
-├──────────────────────────────────────┼──────────────┼────────┼──────────┼────────┼───────────┼────────┼────────┼──────────────┼──────────────┤
-│ 1. Single-Node Node Density & Scale  │     5.0      │  3.5   │   1.5    │  2.0   │    3.0    │  2.0   │  1.5   │     1.0      │     1.5      │
-│ 2. Biophysical & Multi-Scale Fidelity│     5.0      │  3.5   │   2.5    │  2.5   │    3.5    │  4.5   │  5.0   │     4.0      │     2.0      │
-│ 3. Execution Latency & Real-Time SPS │     5.0      │  4.0   │   2.0    │  2.0   │    4.5    │  3.0   │  4.0   │     5.0      │     2.5      │
-│ 4. Memory Efficiency & Cache-Line DOD│     5.0      │  4.5   │   1.5    │  1.5   │    4.0    │  3.0   │  4.0   │     4.0      │     2.0      │
-│ 5. Tiered Scalability (CXL / NUMA)   │     5.0      │  2.0   │   1.5    │  1.0   │    2.0    │  2.0   │  2.0   │     1.0      │     1.0      │
-│ 6. Cross-Platform Bit-Exact Parity   │     5.0      │  5.0   │   2.0    │  2.0   │    3.0    │  3.5   │  3.5   │     1.0      │     3.0      │
-│ 7. Dynamic Continuous Plasticity     │     5.0      │  5.0   │   2.0    │  3.5   │    4.0    │  3.0   │  2.0   │     4.0      │     1.0      │
-│ 8. Commodity COTS Hardware Usability │     5.0      │  5.0   │   3.5    │  3.0   │    1.5    │  3.5   │  4.0   │     1.0      │     4.5      │
-│ 9. Lock-Free Concurrency Purity      │     5.0      │  4.0   │   2.5    │  3.0   │    4.5    │  3.0   │  4.0   │     4.5      │     2.5      │
-│ 10. Ecosystem Maintenance (2026)     │     3.5      │  3.5   │   1.0    │  1.5   │    4.0    │  5.0   │  4.5   │     3.5      │     4.5      │
-├──────────────────────────────────────┼──────────────┼────────┼──────────┼────────┼───────────┼────────┼────────┼──────────────┼──────────────┤
-│ Composite Weighted Index             │     4.85     │  4.00  │   2.00   │  2.20  │    3.40   │  3.35  │  3.45  │     2.90     │     2.45     │
-└──────────────────────────────────────┴──────────────┴────────┴──────────┴────────┴───────────┴────────┴────────┴──────────────┴──────────────┘
-```
-
-### 6.2 Key Differentiators vs. Related Paradigms
-
-1. **Biophysical Superiority over Pure Point-Neuron Simulators (NEST 3/4)**:
-   * NEST focuses on Leaky Integrate-and-Fire point neurons. VirtualCortex integrates **Matthew Larkum BAC calcium plateau dynamics, Tsodyks-Markram vesicle depletion, astrocytic potassium buffering, and the PV/SST/VIP canonical microcircuit** directly inside a 64-byte POD, capturing high-order mammalian cortical dynamics without requiring a multi-petabyte supercomputer.
-2. **Computational Superiority over Detailed Morphology Simulators (Arbor)**:
-   * Arbor solves continuous cable equations on GPU clusters, achieving 5.0 fidelity at the cost of scaling limits (tens of thousands of neurons per node). VirtualCortex matches 5.0 functional biophysical expressiveness via **Mathematical Condensation**, enabling **86 billion equivalent nodes on a single COTS server**.
-3. **Rust DOD Contrast (Axicor)**:
-   * While Axicor shares branchless integer physics, it targets embodied edge robotics on single GPUs/MCUs and lacks BAC dendritic coincidence, astrocytic buffering, and CXL 3.0 tiered memory.
-4. **ASIC Neuromorphic Contrast (SpiNNaker 2 & BrainScaleS-2)**:
-   * SpiNNaker 2 relies on 10 million custom ARM cores ($>$ millions USD). BrainScaleS-2 accelerates 1000x via analog emulation, but is non-deterministic and geometry-fixed. VirtualCortex achieves identical line-rate performance on standard COTS hardware.
-5. **Deep Learning SNN Contrast (SpikingJelly)**:
-   * SpikingJelly is constrained by dense GPU tensor memory ($O(B \times T \times N)$). VirtualCortex operates on asynchronous, event-driven sparse graphs with zero batch overhead.
-
----
-
-## 7. Quantitative Pareto Frontier & Resource Allocation
+## 6. Quantitative Pareto Frontier & Resource Allocation
 
 ```
 ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -381,7 +336,7 @@ All synaptic allocations and deletions operate on the pre-allocated `SynapseBloc
 
 ---
 
-## 8. Rust 2024 Reference Implementation Specs
+## 7. Rust 2024 Reference Implementation Specs
 
 ```rust
 // ==============================================================================
@@ -461,6 +416,6 @@ impl CascadeFreeWheel {
 
 ---
 
-## 9. Conclusion
+## 8. Conclusion
 
 VirtualCortex demonstrates that human-scale neuromorphic computing does not require speculative hardware or fragile software layers. By strictly enforcing **2026+ systems engineering discipline**—where **"Latest != Newest"** translates to **mechanical cache sympathy, bit-exact Q16.16 fixed-point SIMD, kernel-bypass polling, cascade-free timing, epoch-based double-buffered topology updates, and mathematically condensed BAC/STP biophysical dynamics**—VirtualCortex achieves a composite rating of **4.85/5.00**, delivering a reproducible, real-time, self-rewiring neocortical engine on standard commodity server infrastructure.
