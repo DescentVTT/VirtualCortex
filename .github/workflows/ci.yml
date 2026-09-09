@@ -1,10 +1,8 @@
 # CI for VirtualCortex.
 #
 # Two jobs, three questions:
-#   rust  - does the workspace compile and do its layout assertions and tests hold?
-#           (blocking). Formatting and clippy run in the same job but are advisory
-#           until whitepaper finding F-10 is closed; remove `continue-on-error`
-#           when it is.
+#   rust  - does the workspace compile, do its layout assertions and tests hold,
+#           and is it formatted and lint-clean? All four steps are blocking.
 #   specs - does the source tree still contain what the documents say it contains
 #           (spec-guard), and are the documents consistent with one another
 #           (spec-graph)? Both blocking. Whitepaper Appendix B describes the levels.
@@ -42,13 +40,11 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
-      - name: Format (advisory until F-10 is closed)
+      - name: Format
         run: cargo fmt --all -- --check
-        continue-on-error: true
 
-      - name: Clippy (advisory until F-10 is closed)
+      - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-        continue-on-error: true
 
   specs:
     name: Documentation (spec-guard, spec-graph)

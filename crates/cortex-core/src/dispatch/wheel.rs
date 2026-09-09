@@ -2,8 +2,8 @@
 
 pub struct FlatTimingWheel {
     pub cursor: usize,
-    pub fine_ring: [u64; 200],   // 10us slots
-    pub coarse_ring: [u64; 80],  // 100us slots
+    pub fine_ring: [u64; 200],  // 10us slots
+    pub coarse_ring: [u64; 80], // 100us slots
 }
 
 impl FlatTimingWheel {
@@ -19,5 +19,11 @@ impl FlatTimingWheel {
     pub fn schedule_fine(&mut self, delay_ticks: usize, event_mask: u64) {
         let slot = (self.cursor + delay_ticks) % 200;
         self.fine_ring[slot] |= event_mask;
+    }
+}
+
+impl Default for FlatTimingWheel {
+    fn default() -> Self {
+        Self::new()
     }
 }

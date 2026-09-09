@@ -1,5 +1,5 @@
 //! VirtualCortex Core Neural Biophysical Engine
-pub mod dynamics;
 pub mod dispatch;
+pub mod dynamics;
 
 pub use dynamics::{DendriticSuperNeuron, SynapseBlock};

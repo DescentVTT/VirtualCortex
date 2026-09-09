@@ -22,6 +22,12 @@ impl EmbodimentRingBuffer {
     }
 }
 
+impl Default for EmbodimentRingBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 const _: () = {
     assert!(core::mem::size_of::<EmbodimentRingBuffer>() == 64);
     assert!(core::mem::align_of::<EmbodimentRingBuffer>() == 64);

@@ -369,7 +369,7 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | :--- | :--- |
 | Responsibility | The two arena record types every other subsystem indexes into, and the timing wheel that orders delayed delivery. |
 | Source | `crates/cortex-core/src/dynamics/neuron.rs`, `crates/cortex-core/src/dispatch/wheel.rs` |
-| Public API | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel::{new, schedule_fine}` |
+| Public API | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel::{new, schedule_fine}` and `Default` (delegates to `new`) |
 | Status | Layout: Implemented · Membrane dynamics: Specified (§8.8) · Dispatch: Specified (§6.2) |
 
 **`DendriticSuperNeuron`** — 64 B, align 64. A two-compartment pyramidal model (basal and apical dendrites plus soma) with short-term-plasticity state and the virtual-actor control fields.
@@ -468,7 +468,7 @@ Drivers fill a caller-provided slice through `poll_batch(&mut self, &mut [Sensor
 | :--- | :--- |
 | Responsibility | The control block of the shared-memory ring that couples layer-5 motor output to a physics engine or robot at a fixed 1 ms period. |
 | Source | `crates/cortex-embodiment/src/lib.rs` |
-| Public API | `EmbodimentRingBuffer::new()` (`const fn`) |
+| Public API | `EmbodimentRingBuffer::new()` (`const fn`) and `Default` (delegates to `new`; all cursors zero) |
 | Status | Control block: Implemented · Payload rings, torque decoder, watchdog: Specified (§6.4, §8.9) |
 
 **`EmbodimentRingBuffer`** — 64 B, align 64. Four atomic cursors and a reserved area; the payload rings (torque frames out, joint state in) follow it in the shared mapping.
@@ -1136,7 +1136,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-7 | Only 4 of 18 crates derive `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | Open. Control records (`DendriticSuperNeuron`, `EmbodimentRingBuffer`) are exempt. |
 | F-8 | `CerebellarMicrozone::step_forward_model` computes its error from the sample it predicted from, so the error is constant. | `cortex-cerebellum` | Open. Placeholder; real forward model needs a delay line. |
 | F-9 | Crate metadata (`authors`, `description`, `license`) is present on 4 crates and absent on 14; `cargo publish` would fail for those. | 14 crates | Open. Use `[workspace.package]` inheritance. |
-| F-10 | `cargo fmt --check` reports diffs in several crates; `cargo clippy` reports three warnings (`new_without_default` ×2, byte-string literal). | workspace | Open. CI runs both as advisory until cleared (Appendix B). |
+| F-10 | `cargo fmt --check` reported diffs in twelve files; `cargo clippy` reported three warnings (`new_without_default` ×2, byte-string literal). | workspace | **Resolved**: formatted; `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer` (both delegate to `new`); `FabricPacketHeader::MAGIC` written as `*b"VCFB"`. Formatting and clippy are blocking in CI (Appendix B). |
 | F-11 | `FlatTimingWheel` slots are 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 is not a power of two. | `cortex-core` | Open. Design question in §11.1. |
 | F-12 | `AgentPerspectiveState::intention_vector_ptr` is an index but named as a pointer (L-3). | `cortex-agency` | Open. Rename with image version bump. |
 | F-13 | No benchmark exists; every performance figure is a Target (§10). | workspace | Open. First benchmark: T-3. |
@@ -1229,7 +1229,7 @@ Three independent checks, each answering a different question.
 | V-1 Layout | Do the records have the size and alignment the ABI requires? | `const _` assertions compiled by `cargo check`; layout unit tests by `cargo test` | CI, blocking |
 | V-2 Vertical | Does the source tree still contain what this document says it contains? | [`@descent-vtt/spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard) executing the `@assert-*` directives in this file and the README | CI, blocking |
 | V-3 Horizontal | Are the documents consistent with each other: do links resolve, are ADR statuses coherent, is any open question delegated to a retired decision? | [`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) over `docs/**/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md` | CI, blocking |
-| Hygiene | Formatting and lints | `cargo fmt --check`, `cargo clippy -D warnings` | CI, advisory until F-10 is closed |
+| Hygiene | Formatting and lints | `cargo fmt --check`, `cargo clippy -D warnings` | CI, blocking |
 
 Both spec tools are pinned to exact versions in `package.json` (0.4.0 and 0.2.1) and have no runtime dependencies; they require Node 22 or newer. To run everything locally:
 

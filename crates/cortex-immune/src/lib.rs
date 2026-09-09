@@ -10,12 +10,12 @@
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImmuneScrubNode {
-    pub ecc_checksum_hash: u64,       // 8 bytes (offset 0..8)
-    pub arena_segment_id: u32,        // 4 bytes (offset 8..12)
-    pub page_health_score: i32,       // 4 bytes (offset 12..16)
-    pub degenerate_synapse_count: u32,// 4 bytes (offset 16..20)
-    pub reclamation_active: u8,       // 1 byte (offset 20..21)
-    pub padding: [u8; 43],            // 43 bytes (offset 21..64)
+    pub ecc_checksum_hash: u64,        // 8 bytes (offset 0..8)
+    pub arena_segment_id: u32,         // 4 bytes (offset 8..12)
+    pub page_health_score: i32,        // 4 bytes (offset 12..16)
+    pub degenerate_synapse_count: u32, // 4 bytes (offset 16..20)
+    pub reclamation_active: u8,        // 1 byte (offset 20..21)
+    pub padding: [u8; 43],             // 43 bytes (offset 21..64)
 }
 
 const _: () = {

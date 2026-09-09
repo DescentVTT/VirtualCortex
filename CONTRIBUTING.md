@@ -41,7 +41,7 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 | Trailing padding is an explicit `_reserved` or `padding` byte array. | Review. |
 | Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version` and gets a changelog entry. | Review. |
 
-Formatting (`cargo fmt`) and lints (`cargo clippy -D warnings`) run in CI. They are advisory until finding F-10 is closed, after which they become blocking. Please do not add new warnings.
+Formatting (`cargo fmt`) and lints (`cargo clippy -D warnings`) run in CI as blocking checks. Run them before pushing.
 
 ## Documentation rules
 
@@ -66,8 +66,8 @@ All of these must pass before a change is called done.
 ```bash
 cargo check --workspace --all-targets
 cargo test --workspace
-cargo fmt --all -- --check          # advisory until F-10 is closed
-cargo clippy --workspace --all-targets -- -D warnings   # advisory until F-10 is closed
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
 npm ci
 npm run spec                        # spec-guard + spec-graph
 ```
