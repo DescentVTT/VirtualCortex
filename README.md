@@ -77,7 +77,7 @@ npm ci
 npm run spec
 ```
 
-`npm run spec` runs [`spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard), which executes the `<!-- @assert-* -->` directives embedded in the documents against `crates/`, and [`spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph), which checks that the documents are consistent with one another (links, ADR lifecycle, open questions). Both are pinned to exact versions and run as blocking checks in [CI](.github/workflows/ci.yml). Formatting and clippy also run in CI, advisory until the findings they report are closed.
+`npm run spec` runs [`spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard), which executes the `<!-- @assert-* -->` directives embedded in the documents against `crates/`, and [`spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph), which checks that the documents are consistent with one another (links, ADR lifecycle, open questions). Both are pinned to exact versions and run as blocking checks in [CI](.github/workflows/ci.yml), alongside `cargo fmt --check` and `cargo clippy -D warnings`.
 
 ## Contributing
 

@@ -8,6 +8,8 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Changed
 
+- **Finding F-10 closed.** All crates formatted with `rustfmt` (whitespace and comment alignment only). `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer`, delegating to their `const fn new()`; `FabricPacketHeader::MAGIC` written as a byte-string literal. `cargo fmt --check` and `cargo clippy -D warnings` are now blocking in CI; the two advisory steps and their `continue-on-error` are gone.
+
 - **Whitepaper 3.0.0.** Rewritten on the arc42 template with C4 views. Every claim now carries a status label (Implemented, Specified, Target, Hypothesis). Record layouts are transcribed from source with byte offsets. All performance figures are Targets with measurement protocols; the figures previously stated as results ("P99.99 < 35 ns", "> 120 M spikes/s", "< 100 ms cold boot") are withdrawn. The founding five axioms (virtual existence, state/compute decoupling, turn invariant, discrete delay, metabolic tiering) are restored as the solution strategy. Findings F-1 to F-17 record every disagreement between the previous specification and the tree.
 - **README** rewritten to describe the repository as it is: a state-model-stage workspace, with a status table and a crate table.
 - **Traditional Chinese document** replaced by a reader's guide (`docs/zh-TW/README.md`) that carries no layouts or figures, per ADR-0008. The former full translation (`docs/zh-TW/architecture-report.md`) is removed.

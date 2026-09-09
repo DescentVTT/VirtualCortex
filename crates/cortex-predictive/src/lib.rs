@@ -10,12 +10,12 @@
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PredictiveErrorState {
-    pub prior_prediction_hash: u64,  // 8 bytes (offset 0..8)
-    pub prediction_error: i32,       // 4 bytes (offset 8..12)
-    pub precision_weight: i32,       // 4 bytes (offset 12..16)
-    pub ascending_layer_id: u16,     // 2 bytes (offset 16..18)
-    pub convergence_flag: u8,        // 1 byte (offset 18..19)
-    pub padding: [u8; 45],           // 45 bytes (offset 19..64)
+    pub prior_prediction_hash: u64, // 8 bytes (offset 0..8)
+    pub prediction_error: i32,      // 4 bytes (offset 8..12)
+    pub precision_weight: i32,      // 4 bytes (offset 12..16)
+    pub ascending_layer_id: u16,    // 2 bytes (offset 16..18)
+    pub convergence_flag: u8,       // 1 byte (offset 18..19)
+    pub padding: [u8; 45],          // 45 bytes (offset 19..64)
 }
 
 const _: () = {
