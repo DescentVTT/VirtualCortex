@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **Briefs 004–008** for the remaining open findings: 004 cerebellar delay line (F-8), 005 timing-wheel geometry and drain (F-11), 006 the first benchmark harness and protocol (F-13), 007 a test for every public function (F-14), 008 embodiment frame rings (F-17). Each carries a spec-guard precondition directive, so a brief whose defect is fixed without archiving it fails CI. F-5 is not a brief: it is ADR-0009's decision.
 - **`CLAUDE.md`**: the switchboard for coding agents — eight principles, the code invariants, a reading map and the exact command set CI runs.
 - **`briefs/`**: numbered, self-contained prompts for rounds of work, with a README defining the mandatory sections and the archive procedure; three seed briefs (001 saturating arithmetic, 002 `no_std` and derives, 003 synaptic weight Q-format); `scripts/check-briefs.mjs` enforces the sections and runs as `npm run spec:briefs` locally and in CI. Live briefs are also read by `spec-guard` (precondition directives) and `spec-graph` (deliverables as obligations).
 
