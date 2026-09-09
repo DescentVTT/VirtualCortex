@@ -1,5 +1,8 @@
 //! Neuromodulatory Dynamics & Three-Factor Plasticity
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(16))]
 pub struct NeuromodulatorState {
     pub dopamine_rpe: i32,   // DA (TD-RPE, Q16.16)

@@ -1,5 +1,8 @@
 //! Basal Ganglia Action Selection, Striatal Dual-Pathway & STN Gating
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct BasalGangliaChannelState {
     pub channel_id: u32,            // [0..4] Action channel index (0..63)

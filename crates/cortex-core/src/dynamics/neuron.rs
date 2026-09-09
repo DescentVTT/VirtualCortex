@@ -1,6 +1,8 @@
 use core::sync::atomic::{AtomicU64, AtomicU8};
 
 /// 64-Byte POD Cache-Line Aligned Matthew Larkum BAC Dendritic Super-Neuron
+// Control record (whitepaper §8.2, rule L-5): holds atomics, so it is Sync but not Copy.
+#[derive(Debug)]
 #[repr(C, align(64))]
 pub struct DendriticSuperNeuron {
     pub id: u64,                     // [0..8] Global neuron ID
@@ -24,6 +26,7 @@ pub struct DendriticSuperNeuron {
 }
 
 /// Strict 64-byte synaptic connection block
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct SynapseBlock {
     pub target_neuron_ids: [u32; 4], // [0..16] 4 target neuron indices

@@ -31,7 +31,7 @@ Option 3. State crates carry no heap-owning types (`Box`, `Vec`, `String`) and S
 - Good: latency is a function of cache behaviour alone.
 - Good: `no_std` state crates are trivially portable and auditable.
 - Bad: capacities are fixed at start-up; growing an arena is a restart or a planned re-hydration.
-- Bad: only 4 of 18 crates are `#![no_std]` today (finding F-6).
+- Bad: the first fourteen crates were written without `#![no_std]` (finding F-6, closed by brief 002); the whitepaper now holds the count at eighteen with an executable assertion.
 
 ## Confirmation
 

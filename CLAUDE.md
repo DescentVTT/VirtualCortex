@@ -59,8 +59,10 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
   and alignment are asserted in a `const _: () = { ... }` block in the defining crate.
 - No `f32` or `f64` anywhere under `crates/`. Q16.16 in `i32`/`u32`; widen to `i64` to multiply;
   saturating arithmetic on state fields (whitepaper §8.1).
-- No `Box`, `Vec`, `String`, thread spawning or heap allocation in state crates; no syscalls on
-  the hot path once a hot path exists.
+- Every crate is `#![no_std]`. No `Box`, `Vec`, `String`, thread spawning or heap allocation in
+  state crates; no syscalls on the hot path once a hot path exists.
+- A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a record with atomics is a
+  control record and derives `Debug` only (whitepaper §8.2, L-5).
 - No `unsafe` without an ADR naming the invariant and the test.
 - State crates declare no dependencies. A future runtime crate composes them.
 - Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version`,

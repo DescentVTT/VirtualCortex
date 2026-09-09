@@ -69,7 +69,7 @@ VirtualCortex is a Rust workspace for building a **spiking neural network (SNN) 
 
 The engine therefore rests on five axioms (§4): neural units exist virtually and are materialised on demand; state and compute are decoupled, so that a fixed pool of worker threads services tens of millions of passive records; each record is owned by at most one worker per tick, enforced by an atomic gate; axonal conduction delay is a constant-time index into a timing wheel, never an operating-system timer; and inactive tissue is evicted to local storage by a metabolic sweep. Around this core, the workspace defines subsystems that mirror the functional anatomy of the mammalian brain: sensory ingestion, embodiment, basal-ganglia action selection, cerebellar forward models, amygdalar salience, a global workspace, a vector-symbolic bridge, prefrontal planning, predictive coding, agency attribution, neuromodulation, hippocampal memory, homeostasis, an immune scrubber, a scale-out fabric and telemetry.
 
-**What exists today (Implemented).** Eighteen crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: sixteen 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them. Four crates are `#![no_std]` and carry unit tests. Five crates carry small, deterministic, integer-only update functions. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
+**What exists today (Implemented).** Eighteen `#![no_std]` crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: sixteen 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Five crates carry small, deterministic, integer-only update functions with boundary tests; four more carry layout tests. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
 
 **What is designed but not built (Specified).** The worker executor, mailboxes, the timing-wheel dispatch path, the `.cortex` memory-mapped image loader, the embodiment shared-memory ring, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the placeholder functions noted in §5.
 
@@ -150,24 +150,24 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 
 | Crate | Primary public type(s) | Size | `no_std` | Layout | Test | Logic |
 | :--- | :--- | ---: | :---: | :---: | :---: | :---: |
-| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` | 64 B, 64 B, 2 248 B | no | yes | no | wheel insert |
-| `cortex-connectome` | `CortexFileHeader` | 64 B | no | yes | no | — |
-| `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | no | yes | no | — |
-| `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | no | yes | no | — |
-| `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | no | yes | yes | `compute_gating` |
-| `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | no | yes | yes | `step_forward_model` |
-| `cortex-salience` | `SalienceNodeState` | 64 B | no | yes | yes | `evaluate_threat` |
-| `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | no | yes | yes | `step_ignition` |
-| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | no | yes | no | `bind` |
+| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` | 64 B, 64 B, 2 248 B | yes | yes | no | wheel insert |
+| `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | no | — |
+| `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | no | — |
+| `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | yes | yes | no | — |
+| `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | yes | yes | yes | `compute_gating` |
+| `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | yes | yes | yes | `step_forward_model` |
+| `cortex-salience` | `SalienceNodeState` | 64 B | yes | yes | yes | `evaluate_threat` |
+| `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | yes | yes | yes | `step_ignition` |
+| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | no | `bind` |
 | `cortex-executive` | `ExecutivePlanNode` | 64 B | yes | yes | yes | — |
 | `cortex-predictive` | `PredictiveErrorState` | 64 B | yes | yes | yes | — |
 | `cortex-agency` | `AgentPerspectiveState` | 64 B | yes | yes | yes | — |
 | `cortex-immune` | `ImmuneScrubNode` | 64 B | yes | yes | yes | — |
-| `cortex-neuromod` | `NeuromodulatorState` | 16 B | no | yes | no | — |
-| `cortex-hippocampus` | `HippocampalAttractorState` | 64 B | no | yes | no | — |
-| `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | no | yes | yes | `update_circadian_tick` |
-| `cortex-fabric` | `FabricPacketHeader` | 64 B | no | yes | no | — |
-| `cortex-telemetry` | `LfpSamplePacket` | 64 B | no | yes | no | — |
+| `cortex-neuromod` | `NeuromodulatorState` | 16 B | yes | yes | no | — |
+| `cortex-hippocampus` | `HippocampalAttractorState` | 64 B | yes | yes | no | — |
+| `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | yes | yes | yes | `update_circadian_tick` |
+| `cortex-fabric` | `FabricPacketHeader` | 64 B | yes | yes | no | — |
+| `cortex-telemetry` | `LfpSamplePacket` | 64 B | yes | yes | no | — |
 
 The workspace manifest lists exactly eighteen members; every crate declares an empty dependency list, inherits its version, authors, license and repository from `[workspace.package]`, and carries a compile-time layout assertion block.
 
@@ -212,7 +212,7 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 | TC-3 | Every primary state record MUST be `#[repr(C)]`, and its size and alignment MUST be asserted at compile time. | Implemented (§5.2) |
 | TC-4 | `f32` and `f64` MUST NOT appear in any crate under `crates/`. Dynamics use Q16.16 (§8.1). | Implemented |
 | TC-5 | The simulation hot path MUST NOT allocate, MUST NOT block, and MUST NOT make system calls after initialisation. | Specified (no hot path exists yet; §8.6) |
-| TC-6 | State crates SHOULD be `#![no_std]`. | Partial: 4 of 18 (finding F-6) |
+| TC-6 | State crates MUST be `#![no_std]`. | Implemented (18 of 18; brief 002) |
 | TC-7 | The runtime target is Linux on x86-64-v4 or ARMv9-A; state crates MUST remain portable to any target with 64-bit atomics. | Specified |
 | TC-8 | Crates SHOULD declare `edition = "2024"` and a `rust-version` (MSRV). | Proposed ([ADR-0009](adr/0009-rust-edition-and-msrv.md)); currently edition 2021 (finding F-5) |
 | TC-9 | `unsafe` MUST NOT be introduced without an ADR that names the invariant it upholds and the test that checks it. | Implemented (zero `unsafe` today) |
@@ -220,6 +220,7 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 <!-- @assert-absence target="crates" symbol="f32" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
 <!-- @assert-absence target="crates" symbol="f64" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
 <!-- @assert-absence target="crates" symbol="std::thread" glob="*.rs" reason="TC-5: state crates do not spawn threads; the executor is a separate runtime concern" -->
+<!-- @assert-count target="crates" symbol="#![no_std]" glob="*.rs" expected="18" reason="TC-6: every crate is no_std (F-6 closed by brief 002)" -->
 <!-- @assert-absence target="crates" symbol="Box<" glob="*.rs" reason="TC-5: no heap-owning types in state crates" -->
 <!-- @assert-absence target="crates" symbol="Vec<" glob="*.rs" reason="TC-5: no heap-owning types in state crates" -->
 
@@ -362,7 +363,7 @@ Dotted edges are the *intended* dependency direction for a future runtime; today
 
 ### 5.2 Level 2: crates
 
-Each entry gives the crate's responsibility, its public API as it exists in the tree, the exact record layout, the status of the layout and of the dynamics, and the executable assertion that keeps this section honest. Layout tables are transcribed from `crates/*/src/*.rs`; the reserved padding fields are part of the ABI and MUST NOT be repurposed without bumping the image format version (§8.7).
+Each entry gives the crate's responsibility, its public API as it exists in the tree, the exact record layout, the status of the layout and of the dynamics, and the executable assertion that keeps this section honest. Layout tables are transcribed from `crates/*/src/*.rs`; the reserved padding fields are part of the ABI and MUST NOT be repurposed without bumping the image format version (§8.7). Every record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; the two control records (`DendriticSuperNeuron`, `EmbodimentRingBuffer`) and the per-worker `FlatTimingWheel` derive `Debug` only (rule L-5, §8.2).
 
 #### 5.2.1 `cortex-core` — neural state and dispatch
 
@@ -396,7 +397,7 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | `[59..60)` | `stp_u_rel` | `u8` | Q0.8 | Tsodyks–Markram utilisation $u$. |
 | `[60..64)` | `_reserved` | `[u8; 4]` | — | Reserved; MUST be zero. |
 
-Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it is a *control record* under the rules of §8.2.
+Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it is a *control record* under the rules of §8.2 and derives `Debug` only.
 
 **`SynapseBlock`** — 64 B, align 64. Four outgoing synapses per block; blocks chain by index.
 
@@ -449,7 +450,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Public API | `SensoryEvent`, `trait SensoryPeripheral: Send + Sync { poll_batch, peripheral_name, channel_count }` |
 | Status | Types: Implemented · Thalamic gate and hot-plug slot swap: Specified (§6.3) |
 
-**`SensoryEvent`** — 8 B, align 8, `Copy + Default`. An address-event representation (AER) sample.
+**`SensoryEvent`** — 8 B, align 8, `Clone + Copy + Debug + Default + PartialEq + Eq`. An address-event representation (AER) sample.
 
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
@@ -809,7 +810,7 @@ Implemented rule: `circadian_phase` advances by `dt_ticks` modulo $2^{16}$; slee
 | :--- | :--- |
 | Responsibility | Non-invasive introspection: a 64-byte local-field-potential sample written to a single-producer single-consumer ring by the worker and consumed on a separate core. |
 | Source | `crates/cortex-telemetry/src/lib.rs` |
-| Public API | `LfpSamplePacket` (`Copy`) |
+| Public API | `LfpSamplePacket` (`Copy + Eq`) |
 | Status | Layout: Implemented · Ring, band synthesis, eBPF taps and streaming: Specified |
 
 **`LfpSamplePacket`** — 64 B, align 64.
@@ -952,7 +953,7 @@ Why not floating point: IEEE-754 addition is not associative, and the order in w
 | L-2 | Size and alignment MUST be asserted in a `const _: () = { assert!(...) }` block in the defining crate, so that a violation is a compile error, not a test failure. |
 | L-3 | Records MUST NOT contain references, raw pointers or heap-owning types. Cross-record links are 32-bit or 64-bit indices into an arena. A field whose name says `ptr` but whose type is an index is a naming finding (F-12). |
 | L-4 | Trailing padding MUST be an explicit `_reserved` / `padding` byte array so that the ABI is stable and the bytes are defined (zero). |
-| L-5 | A record that contains atomics is a *control record*: it is `Sync`, not `Copy`, and is excluded from the plain-old-data (`Pod`) contract. A record without atomics SHOULD derive `Clone, Copy, Debug, PartialEq, Eq` (four do today; the rest are finding F-7). |
+| L-5 | A record that contains atomics is a *control record*: it is `Sync`, not `Copy`, derives `Debug` only, and is excluded from the plain-old-data (`Pod`) contract. A record without atomics MUST derive `Clone, Copy, Debug, PartialEq, Eq` (all do; brief 002). |
 | L-6 | Changing any field of any record in §5.2, including reserved bytes, MUST bump `CortexFileHeader::version` and be recorded in the changelog. |
 
 ### 8.3 Determinism model
@@ -1133,8 +1134,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-3 | `SynapseBlock::weights_q16` is `[i16; 4]` but commented as Q16.16, which needs 32 bits. | `cortex-core` | Open. Decide Q8.8 or Q1.15, rename, and bump the image version. |
 | F-4 | `compute_gating`, `step_forward_model`, `step_ignition` and `update_circadian_tick` used plain `+`/`-` on Q16.16 fields; `evaluate_threat` performs no arithmetic. | five crates | **Resolved** (brief 001): saturating operations in the first three, `wrapping_add` for the circadian phase counter, each with a boundary test that fails under plain arithmetic in a debug build. |
 | F-5 | All crates declare `edition = "2021"` and no `rust-version`; the README badge claims "Rust 2024/2026". There is no 2026 edition. | workspace | Open. [ADR-0009](adr/0009-rust-edition-and-msrv.md) proposes edition 2024 and an MSRV. |
-| F-6 | Only 4 of 18 crates are `#![no_std]` (TC-6). | 14 crates | Open. Mechanical change; no `std` items are used. |
-| F-7 | Only 4 of 18 crates derive `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | Open. Control records (`DendriticSuperNeuron`, `EmbodimentRingBuffer`) are exempt. |
+| F-6 | Only 4 of 18 crates were `#![no_std]` (TC-6). | 14 crates | **Resolved** (brief 002): all eighteen are `#![no_std]`; an executable assertion in §2.2 holds the count at 18. |
+| F-7 | Only 4 of 18 crates derived `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | **Resolved** (brief 002): every record without atomics derives the five; the two control records and `FlatTimingWheel` derive `Debug` only, with a comment citing L-5. |
 | F-8 | `CerebellarMicrozone::step_forward_model` computes its error from the sample it predicted from, so the error is constant. | `cortex-cerebellum` | Open. Placeholder; real forward model needs a delay line. |
 | F-9 | Crate metadata (`authors`, `description`, `license`) was present on 4 crates and absent on 14. | 14 crates | **Resolved**: `version`, `edition`, `authors`, `license` and `repository` are inherited from `[workspace.package]`; each crate keeps only its `name` and `description`. |
 | F-10 | `cargo fmt --check` reported diffs in twelve files; `cargo clippy` reported three warnings (`new_without_default` ×2, byte-string literal). | workspace | **Resolved**: formatted; `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer` (both delegate to `new`); `FabricPacketHeader::MAGIC` written as `*b"VCFB"`. Formatting and clippy are blocking in CI (Appendix B). |

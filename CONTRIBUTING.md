@@ -35,7 +35,8 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 | State crates declare no dependencies. | `Cargo.toml` review; `cargo tree`. |
 | Every primary record is `#[repr(C)]`; arena records are `align(64)` and exactly 64 bytes; size and alignment are asserted in a `const _: () = { ... }` block. | `cargo check` fails otherwise. |
 | No `f32` or `f64` anywhere under `crates/`. Use Q16.16 (whitepaper §8.1). | `spec-guard` directive in the whitepaper. |
-| No `Box`, `Vec`, `String` or thread spawning in state crates. | `spec-guard` directives. |
+| Every crate is `#![no_std]`; no `Box`, `Vec`, `String` or thread spawning in state crates. | `spec-guard` directives (the `no_std` count is asserted at 18). |
+| A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a control record derives `Debug` only. | Review; whitepaper §8.2 rule L-5. |
 | No `unsafe` without an ADR naming the invariant and the test. | `spec-guard` directive; review. |
 | Arithmetic on Q16.16 state fields is saturating, or explicitly wrapping for phase counters. | Review, until a lint exists (finding F-4). |
 | Trailing padding is an explicit `_reserved` or `padding` byte array. | Review. |

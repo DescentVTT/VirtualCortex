@@ -1,5 +1,7 @@
 //! Two-Tier Flat Timing Ring Implementation (Zero Allocation)
 
+// Not a record and deliberately not Copy: a 2 248-byte value per worker.
+#[derive(Debug)]
 pub struct FlatTimingWheel {
     pub cursor: usize,
     pub fine_ring: [u64; 200],  // 10us slots

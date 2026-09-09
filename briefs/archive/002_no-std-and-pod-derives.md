@@ -1,7 +1,14 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #5.** Closes findings F-6 and F-7; TC-6 becomes
+> Implemented and, with L-5, is now a MUST held by an executable assertion. No ADR was written: the
+> `Pod` marker (`bytemuck` versus `zerocopy`) is deferred until the image loader needs it. The
+> report is in the pull request and in `CHANGELOG.md`. The body below describes the tree before
+> execution and is not maintained, apart from relative links, which gained one `../` so that they
+> still resolve from `archive/`.
 
 # Brief 002 — `#![no_std]` for every state crate and derives on every plain record
 
@@ -19,7 +26,7 @@ Implemented and findings **F-6** and **F-7** are Resolved.
 - **Verify before asserting.** Read the file; run the command.
 - **Label every claim** Implemented, Specified, Target or Hypothesis.
 - **Latest ≠ Newest.** Stable Rust only; no new dependencies
-  ([ADR-0005](../docs/adr/0005-crate-per-subsystem.md)). In particular, do not add `bytemuck` in
+  ([ADR-0005](../../docs/adr/0005-crate-per-subsystem.md)). In particular, do not add `bytemuck` in
   this round; the `Pod` derive is a future decision.
 - **Say what you did not do** in the closing report.
 - Branch and pull request; Conventional Commits with a real body; run every command in
@@ -33,7 +40,7 @@ Re-derived against `main` on 2026-09-10.
   `cortex-immune`, `cortex-predictive`. The other fourteen are neither, and none of them uses a
   `std` item: the only imports are `core::sync::atomic::*` in `cortex-core` and
   `cortex-embodiment`.
-- Whitepaper [§8.2](../docs/WHITEPAPER.md#82-record-layout-and-abi) rule L-5: a record with
+- Whitepaper [§8.2](../../docs/WHITEPAPER.md#82-record-layout-and-abi) rule L-5: a record with
   atomics is a control record, `Sync` but not `Copy`; a record without atomics SHOULD derive the
   five traits.
 - `SensoryEvent` already derives `Copy, Clone, Debug, Default`; `LfpSamplePacket` derives
@@ -49,17 +56,18 @@ Re-derived against `main` on 2026-09-10.
 
 ## Deliverables
 
-- [ ] `#![no_std]` at the top of every `src/lib.rs` that lacks it (fourteen files).
-- [ ] Derives per L-5 on: `SynapseBlock`, `CortexFileHeader`, `BasalGangliaChannelState`,
+- [x] `#![no_std]` at the top of every `src/lib.rs` that lacks it (fourteen files).
+- [x] Derives per L-5 on: `SynapseBlock`, `CortexFileHeader`, `BasalGangliaChannelState`,
       `CerebellarMicrozone`, `SalienceNodeState`, `GlobalWorkspaceSlot`, `SymbolicHypervectorHeader`,
       `NeuromodulatorState`, `HippocampalAttractorState`, `HomeostaticDrivePool`,
       `FabricPacketHeader`, `LfpSamplePacket`, `SensoryEvent`.
-- [ ] `#[derive(Debug)]` on `DendriticSuperNeuron`, `EmbodimentRingBuffer` and `FlatTimingWheel`,
+- [x] `#[derive(Debug)]` on `DendriticSuperNeuron`, `EmbodimentRingBuffer` and `FlatTimingWheel`,
       with a one-line comment on the two control records citing L-5.
-- [ ] Whitepaper: TC-6 to Implemented; F-6 and F-7 Resolved; §1.6 table `no_std` column all "yes";
+- [x] Whitepaper: TC-6 to Implemented; F-6 and F-7 Resolved; §1.6 table `no_std` column all "yes";
       §5.2 public-API rows that mention derives updated.
-- [ ] `CHANGELOG.md` entry under Unreleased.
-- [ ] Archive this brief.
+      TC-6 and L-5 were also raised from SHOULD to MUST, with an executable assertion on the count.
+- [x] `CHANGELOG.md` entry under Unreleased.
+- [x] Archive this brief.
 
 ## Not empowered
 

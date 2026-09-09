@@ -1,5 +1,8 @@
 //! Global Neuronal Workspace (GNWT), Non-Linear Ignition & Metacognition
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct GlobalWorkspaceSlot {
     pub slot_id: u32,                // [0..4] Active workspace slot index (0..7)

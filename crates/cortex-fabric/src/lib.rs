@@ -1,5 +1,8 @@
 //! Distributed Scale-Out Cluster Mesh, Kernel-Bypass RDMA & CXL Fabric
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct FabricPacketHeader {
     pub magic: [u8; 4],        // [0..4] "VCFB" (0x56434642)

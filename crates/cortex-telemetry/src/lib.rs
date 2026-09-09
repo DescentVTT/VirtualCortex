@@ -1,7 +1,9 @@
 //! Zero-Overhead Kernel-Bypass Observability & LFP/EEG Synthesizer
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
-#[derive(Copy, Clone, Debug)]
 pub struct LfpSamplePacket {
     pub timestamp_us: u64,
     pub column_id: u32,

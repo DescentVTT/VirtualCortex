@@ -1,5 +1,8 @@
 //! Vector Symbolic Architecture (VSA / HDC) & Broca/Wernicke Language Bridge
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct SymbolicHypervectorHeader {
     pub vector_id: u32,              // [0..4] Symbolic concept index
