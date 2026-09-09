@@ -1,7 +1,14 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #8.** Closes finding F-8; bumps the image format to
+> version 3. No ADR was written: the seven-slot in-record delay line covers plant delays up to
+> 7 ms at the embodiment epoch, and a longer horizon is recorded as an open question in whitepaper
+> §11.1 rather than decided now. The report is in the pull request and in `CHANGELOG.md`. The body
+> below describes the tree before execution and is not maintained, apart from relative links, which
+> gained one `../` so that they still resolve from `archive/`.
 
 # Brief 004 — A real cerebellar forward model: compare the prediction made at t with the observation at t + d
 
@@ -20,8 +27,8 @@ finding **F-8** is Resolved and §5.2.6's status line no longer says "placeholde
 - **Verify before asserting.** Read the file; run the command.
 - **Label every claim** Implemented, Specified, Target or Hypothesis.
 - **Latest ≠ Newest.** Stable Rust only; no new dependencies
-  ([ADR-0005](../docs/adr/0005-crate-per-subsystem.md)). Q16.16, saturating, no floats
-  ([ADR-0002](../docs/adr/0002-q16-16-fixed-point.md)).
+  ([ADR-0005](../../docs/adr/0005-crate-per-subsystem.md)). Q16.16, saturating, no floats
+  ([ADR-0002](../../docs/adr/0002-q16-16-fixed-point.md)).
 - **Say what you did not do** in the closing report.
 - Branch and pull request; Conventional Commits with a real body; run every command in
   `CLAUDE.md` before pushing.
@@ -35,7 +42,7 @@ Re-derived against `main` on 2026-09-10.
   `climbing_fiber_error = current_sensory - forward_model_pred` **from the same sample**, so the
   error is identically `-(motor_command >> 2)` and carries no information about the plant. The
   function returns `purkinje_output_rate`, which nothing ever writes. Whitepaper
-  [§5.2.6](../docs/WHITEPAPER.md#526-cortex-cerebellum--forward-models) and F-8 say exactly this.
+  [§5.2.6](../../docs/WHITEPAPER.md#526-cortex-cerebellum--forward-models) and F-8 say exactly this.
 - Brief 001 made the arithmetic saturating and added four tests; one of them,
   `error_is_the_negated_command_quarter_and_drives_ltd`, **pins the placeholder** and must be
   replaced by this round, not kept.
@@ -43,40 +50,46 @@ Re-derived against `main` on 2026-09-10.
   `granule_expansion_code` (u32), `climbing_fiber_error`, `ltd_synaptic_weight`,
   `forward_model_pred`, `lead_compensation_q16`, `_reserved: [u8; 32]`. The 32 reserved bytes are
   the only room for a delay line; repurposing them changes the record and therefore bumps
-  `CortexFileHeader::FORMAT_VERSION` (rule L-6, [ADR-0007](../docs/adr/0007-cortex-image-format.md))
+  `CortexFileHeader::FORMAT_VERSION` (rule L-6, [ADR-0007](../../docs/adr/0007-cortex-image-format.md))
   and the §5.2.6 table.
-- Intended dynamics, whitepaper [§8.8](../docs/WHITEPAPER.md#88-biological-model-mapping): granule
+- Intended dynamics, whitepaper [§8.8](../../docs/WHITEPAPER.md#88-biological-model-mapping): granule
   expansion, Purkinje readout, climbing-fibre LTD, "prediction compared with delayed observation".
   Reference equation: $\Delta W_{\text{PF-PC}} = -\eta_{\text{LTD}} \cdot \text{PF}(t) \cdot \text{CF}(t) + \eta_{\text{LTP}} \cdot \text{PF}(t) \cdot [1 - \text{CF}(t)]$.
-- Time model, [§8.4](../docs/WHITEPAPER.md#84-time-model): fine tick 10 µs; a plant delay `d` of a
+- Time model, [§8.4](../../docs/WHITEPAPER.md#84-time-model): fine tick 10 µs; a plant delay `d` of a
   few ticks to a few hundred ticks is realistic.
 
 <!-- @assert-count target="crates/cortex-cerebellum" symbol="error_is_the_negated_command_quarter_and_drives_ltd" min="1" reason="precondition: F-8 is open and the placeholder-pinning test still exists; archive this brief when it is replaced" -->
 
 ## Deliverables
 
-- [ ] A delay line of `D` past predictions inside the record (a ring in the reserved bytes, `D`
+- [x] A delay line of `D` past predictions inside the record (a ring in the reserved bytes, `D`
       chosen and justified: eight `i32` slots fit; state what horizon that gives at 10 µs ticks
       and how a longer plant delay would be handled). The record stays exactly 64 bytes and every
       `const _` assertion still holds.
-- [ ] `step_forward_model` rewritten so that at tick `t` it (a) forms the prediction for `t + d`
+      `D = 7`: seven `i32` slots plus a packed `u32` control word (head, `d`, filled count, and a
+      sign bitmap for the commands, which the update rule needs). The step is the caller's
+      period; at the 1 ms embodiment epoch the horizon is 7 ms, at 10 µs ticks 70 µs. Longer
+      delays: §11.1 open question (a per-microzone delay arena, by ADR when needed).
+- [x] `step_forward_model` rewritten so that at tick `t` it (a) forms the prediction for `t + d`
       from `current_sensory` and `motor_command` through a learned gain in `ltd_synaptic_weight`,
       (b) pushes it into the delay line, (c) computes `climbing_fiber_error` as the difference
       between the observation now and the prediction made `d` ticks ago, (d) applies the LTD/LTP
       rule to the gain with saturating Q16.16 arithmetic, and (e) writes and returns
       `purkinje_output_rate` as the compensation signal. `lead_compensation_q16` carries `d` or
       the lead; say which.
-- [ ] Tests: the placeholder test replaced; a convergence test against a linear plant
+      `d` lives in `delay_ctl`; `lead_compensation_q16` is untouched and remains Specified for the
+      Smith-predictor lead.
+- [x] Tests: the placeholder test replaced; a convergence test against a linear plant
       (`sensory(t + d) = sensory(t) + k · command(t)`) showing the error magnitude falls below a
       stated bound within a stated number of ticks for at least two values of `k` and of `d`;
       a test that the first `d` ticks produce no error (nothing to compare yet); saturation tests
       at the extremes as in brief 001.
-- [ ] `CortexFileHeader::FORMAT_VERSION` bumped to 3 with its doc comment extended; whitepaper
+- [x] `CortexFileHeader::FORMAT_VERSION` bumped to 3 with its doc comment extended; whitepaper
       §5.2.2 and §8.7 updated to match.
-- [ ] Whitepaper §5.2.6: layout table, function description, status line; §8.8 cerebellum row to
+- [x] Whitepaper §5.2.6: layout table, function description, status line; §8.8 cerebellum row to
       Implemented (forward model and LTD) · Specified (granule expansion); §11 F-8 Resolved.
-- [ ] `CHANGELOG.md` entry under Unreleased.
-- [ ] Archive this brief.
+- [x] `CHANGELOG.md` entry under Unreleased.
+- [x] Archive this brief.
 
 ## Not empowered
 
