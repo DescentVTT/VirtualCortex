@@ -27,7 +27,7 @@ Eighteen crates, one per subsystem, with no dependencies between them ([ADR-0005
 
 | Layer | Crate | Primary record | Size |
 | :--- | :--- | :--- | ---: |
-| Foundation | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` | 64 B, 64 B, 2 248 B |
+| Foundation | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` (`WorkerWheel`) | 64 B, 64 B, 4.2 MB |
 | Structure | `cortex-connectome` | `CortexFileHeader` | 64 B |
 | Periphery | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B |
 | Periphery | `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B |
