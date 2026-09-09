@@ -150,8 +150,8 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 
 | Crate | Primary public type(s) | Size | `no_std` | Layout | Test | Logic |
 | :--- | :--- | ---: | :---: | :---: | :---: | :---: |
-| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` | 64 B, 64 B, 2 248 B | yes | yes | no | wheel insert |
-| `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | no | — |
+| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel`, `synaptic_efficacy_q16` | 64 B, 64 B, 2 248 B | yes | yes | yes | wheel insert, efficacy |
+| `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | yes | — |
 | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | no | — |
 | `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | yes | yes | no | — |
 | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | yes | yes | yes | `compute_gating` |
@@ -227,7 +227,7 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 ### 2.3 Conventions
 
 - **Field offsets** are written as half-open byte ranges `[a..b)` from the start of the record.
-- **Q16.16** values are `i32` (or `u32` for non-negative quantities) with 16 fractional bits; `0x0001_0000` is 1.0 (§8.1). A field whose comment says "Q16.16" but whose width is not 32 bits is a finding (F-3).
+- **Q16.16** values are `i32` (or `u32` for non-negative quantities) with 16 fractional bits; `0x0001_0000` is 1.0 (§8.1). Sixteen-bit synaptic weights are **Q1.15** and eight-bit plasticity factors are **Q0.8**; a field whose comment names a format its width cannot hold is a finding (F-3 was one).
 - **Ticks** are the engine's discrete time unit. The tick duration is a configuration parameter; current code assumes 10 µs fine ticks and 100 µs coarse ticks in the timing wheel (§8.4).
 - **Identifiers**: crates are `cortex-<subsystem>`; primary records are `PascalCase` nouns; Q-format suffixes (`_q16`) are used where the field name would otherwise be ambiguous.
 - **Naming of biological analogues** is descriptive, not a claim of equivalence. `cortex-workspace` implements a competitive broadcast slot; it does not implement consciousness, and this document does not use that word for it.
@@ -371,7 +371,7 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | :--- | :--- |
 | Responsibility | The two arena record types every other subsystem indexes into, and the timing wheel that orders delayed delivery. |
 | Source | `crates/cortex-core/src/dynamics/neuron.rs`, `crates/cortex-core/src/dispatch/wheel.rs` |
-| Public API | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel::{new, schedule_fine}` and `Default` (delegates to `new`) |
+| Public API | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel::{new, schedule_fine}` and `Default` (delegates to `new`), `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8) -> i32` (`const fn`, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)) |
 | Status | Layout: Implemented · Membrane dynamics: Specified (§8.8) · Dispatch: Specified (§6.2) |
 
 **`DendriticSuperNeuron`** — 64 B, align 64. A two-compartment pyramidal model (basal and apical dendrites plus soma) with short-term-plasticity state and the virtual-actor control fields.
@@ -404,7 +404,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Format | Meaning |
 | :--- | :--- | :--- | :--- | :--- |
 | `[0..16)` | `target_neuron_ids` | `[u32; 4]` | index | Post-synaptic unit indices. |
-| `[16..24)` | `weights_q16` | `[i16; 4]` | see F-3 | Static weights. A 16-bit field cannot hold Q16.16; the Q-format is an open finding. |
+| `[16..24)` | `weights_q1_15` | `[i16; 4]` | Q1.15 | Base weight as a signed fraction of the firing threshold, in $[-1, 1)$ ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)). Combined with the Q0.8 STP factors by `synaptic_efficacy_q16`. |
 | `[24..32)` | `delays_ticks` | `[u16; 4]` | ticks | Axonal conduction delay per synapse. |
 | `[32..36)` | `next_block_idx` | `u32` | index | Next block in the chain; sentinel for end. |
 | `[36..40)` | `last_spike_tick` | `u32` | tick | Pre-synaptic spike time for STDP. |
@@ -415,6 +415,8 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 <!-- @assert-count target="crates/cortex-core" symbol="DendriticSuperNeuron" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-core" symbol="SynapseBlock" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-core" symbol="FlatTimingWheel" min="1" word="true" -->
+<!-- @assert-count target="crates/cortex-core" symbol="weights_q1_15" min="1" word="true" reason="ADR-0012: the weight field names its format" -->
+<!-- @assert-count target="crates/cortex-core" symbol="synaptic_efficacy_q16" min="1" word="true" reason="ADR-0012: the widening arithmetic is implemented and tested" -->
 
 #### 5.2.2 `cortex-connectome` — image format and anatomical priors
 
@@ -422,7 +424,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader` |
+| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (2) |
 | Status | Header layout: Implemented · Sections, CRC, loader: Specified (§8.7) · Atlas-derived priors: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -430,7 +432,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
 | `[0..8)` | `magic` | `[u8; 8]` | ASCII `VCORTEX1` (big-endian `0x5643_4F52_5445_5831`). |
-| `[8..12)` | `version` | `u32` | Format version; bumped on any layout change of any record. |
+| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 2: version 1 is the whitepaper 3.0.0 layout before [ADR-0012](adr/0012-synaptic-weight-q1-15.md). |
 | `[12..16)` | `reserved_flags` | `u32` | Feature flags; MUST be zero in version 1. |
 | `[16..24)` | `num_columns` | `u64` | Cortical hyper-column count. |
 | `[24..32)` | `num_neurons` | `u64` | `DendriticSuperNeuron` record count. |
@@ -440,6 +442,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | `[56..64)` | `_padding` | `[u8; 8]` | Reserved; MUST be zero. |
 
 <!-- @assert-count target="crates/cortex-connectome" symbol="CortexFileHeader" min="1" word="true" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 2" min="1" reason="§5.2.2 states the current image format version; update both together" -->
 
 #### 5.2.3 `cortex-sensory` — peripheral ingestion
 
@@ -679,7 +682,7 @@ Implemented rule: evidence accumulates; at or above 1.5 the slot ignites and is 
 | Offset | Field | Type | Format | Meaning |
 | :--- | :--- | :--- | :--- | :--- |
 | `[0..8)` | `perspective_frame_hash` | `u64` | hash | Spatial frame transform. |
-| `[8..16)` | `intention_vector_ptr` | `u64` | index | Intention hypervector (an index, not a pointer, despite the name; finding F-12). |
+| `[8..16)` | `intention_vector_idx` | `u64` | index | Arena index of the intention hypervector. |
 | `[16..20)` | `agent_id` | `u32` | id | 0 self; otherwise an external agent. |
 | `[20..24)` | `trust_score` | `i32` | Q16.16 | Trust. |
 | `[24..25)` | `efference_copy_flag` | `u8` | 0 / 1 | Self-generated. |
@@ -941,7 +944,7 @@ All dynamics use signed 32-bit fixed point with 16 fractional bits unless a fiel
 - Multiplication of two Q16.16 values MUST widen to `i64` and shift right by 16; division MUST widen and shift left by 16 before dividing.
 - Arithmetic on state fields MUST be saturating (`saturating_add`, `saturating_sub`, `saturating_mul`) or explicitly wrapping where wrap is the intended semantics (phase counters). Plain operators, which panic in debug and wrap in release, are not permitted on the hot path. The five update functions comply, each with a boundary test (brief 001; F-4 closed).
 - Right shifts of negative values are arithmetic in Rust (`>>` on `i32`), which is the intended rounding-toward-negative-infinity behaviour.
-- Narrower fields: `u8` short-term-plasticity variables are Q0.8 (0..255 maps to 0..0.996); the Q-format of `[i16; 4]` weights is unresolved (F-3).
+- Narrower fields: `u8` short-term-plasticity variables are Q0.8 (0..255 maps to 0..0.996); `[i16; 4]` synaptic base weights are Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)). Their product is formed exactly in `i64` and shifted once by 15 to Q16.16 by `synaptic_efficacy_q16`; the STP factors, not the weight, are the resolution floor of that path.
 
 Why not floating point: IEEE-754 addition is not associative, and the order in which a SIMD reduction sums its lanes differs between AVX-512 and SVE2 code paths and between compiler versions. Integer arithmetic is associative and its wrap and saturation semantics are defined bit-for-bit ([ADR-0002](adr/0002-q16-16-fixed-point.md)).
 
@@ -951,7 +954,7 @@ Why not floating point: IEEE-754 addition is not associative, and the order in w
 | :--- | :--- |
 | L-1 | Every primary state record MUST be `#[repr(C)]`. Arena records MUST also be `align(64)` and exactly 64 bytes. |
 | L-2 | Size and alignment MUST be asserted in a `const _: () = { assert!(...) }` block in the defining crate, so that a violation is a compile error, not a test failure. |
-| L-3 | Records MUST NOT contain references, raw pointers or heap-owning types. Cross-record links are 32-bit or 64-bit indices into an arena. A field whose name says `ptr` but whose type is an index is a naming finding (F-12). |
+| L-3 | Records MUST NOT contain references, raw pointers or heap-owning types. Cross-record links are 32-bit or 64-bit indices into an arena and are named `_idx`; `_ptr` is reserved for the two mailbox atomics (F-12 was the one violation, closed). |
 | L-4 | Trailing padding MUST be an explicit `_reserved` / `padding` byte array so that the ABI is stable and the bytes are defined (zero). |
 | L-5 | A record that contains atomics is a *control record*: it is `Sync`, not `Copy`, derives `Debug` only, and is excluded from the plain-old-data (`Pod`) contract. A record without atomics MUST derive `Clone, Copy, Debug, PartialEq, Eq` (all do; brief 002). |
 | L-6 | Changing any field of any record in §5.2, including reserved bytes, MUST bump `CortexFileHeader::version` and be recorded in the changelog. |
@@ -986,7 +989,7 @@ No heap allocation occurs after initialisation (TC-5). Arenas are allocated once
 
 ### 8.7 Persistence and serialisation
 
-The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. Version 1 layout (Specified except the header):
+The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 2 (version 1 differs only in the semantics of the synaptic weight bytes, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)). Layout (Specified except the header):
 
 ```text
 [0..64)         CortexFileHeader
@@ -1086,6 +1089,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0009](adr/0009-rust-edition-and-msrv.md) | Rust edition 2024 and a pinned MSRV |
 | [ADR-0010](adr/0010-measured-or-target.md) | Every performance figure is Measured or Target, never asserted |
 | [ADR-0011](adr/0011-epoch-based-reclamation.md) | Epoch-based reclamation for structural plasticity |
+| [ADR-0012](adr/0012-synaptic-weight-q1-15.md) | Sixteen-bit synaptic base weights are Q1.15 |
 
 ---
 
@@ -1131,7 +1135,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | :--- | :--- | :--- | :--- |
 | F-1 | Specification 2.8.0 reproduced struct definitions for 15 of 19 types that did not match the source (field names, widths, and in one case a 72-byte record described as 64 bytes). | this document | **Resolved** in 3.0.0: layouts transcribed from source; executable assertions added. |
 | F-2 | Every LaTeX expression in 2.8.0 (both languages) contained control characters where `\t`, `\f`, `\r`, `\a`, `\b`, `\v` and `\n` escapes had been interpreted, so no equation rendered. | this document | **Resolved** in 3.0.0. |
-| F-3 | `SynapseBlock::weights_q16` is `[i16; 4]` but commented as Q16.16, which needs 32 bits. | `cortex-core` | Open. Decide Q8.8 or Q1.15, rename, and bump the image version. |
+| F-3 | `SynapseBlock::weights_q16` was `[i16; 4]` but commented as Q16.16, which needs 32 bits. | `cortex-core` | **Resolved** (brief 003, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)): Q1.15, renamed `weights_q1_15`; the widening arithmetic is `synaptic_efficacy_q16` with seven tests; image format version 2. |
 | F-4 | `compute_gating`, `step_forward_model`, `step_ignition` and `update_circadian_tick` used plain `+`/`-` on Q16.16 fields; `evaluate_threat` performs no arithmetic. | five crates | **Resolved** (brief 001): saturating operations in the first three, `wrapping_add` for the circadian phase counter, each with a boundary test that fails under plain arithmetic in a debug build. |
 | F-5 | All crates declare `edition = "2021"` and no `rust-version`; the README badge claims "Rust 2024/2026". There is no 2026 edition. | workspace | Open. [ADR-0009](adr/0009-rust-edition-and-msrv.md) proposes edition 2024 and an MSRV. |
 | F-6 | Only 4 of 18 crates were `#![no_std]` (TC-6). | 14 crates | **Resolved** (brief 002): all eighteen are `#![no_std]`; an executable assertion in §2.2 holds the count at 18. |
@@ -1140,7 +1144,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-9 | Crate metadata (`authors`, `description`, `license`) was present on 4 crates and absent on 14. | 14 crates | **Resolved**: `version`, `edition`, `authors`, `license` and `repository` are inherited from `[workspace.package]`; each crate keeps only its `name` and `description`. |
 | F-10 | `cargo fmt --check` reported diffs in twelve files; `cargo clippy` reported three warnings (`new_without_default` ×2, byte-string literal). | workspace | **Resolved**: formatted; `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer` (both delegate to `new`); `FabricPacketHeader::MAGIC` written as `*b"VCFB"`. Formatting and clippy are blocking in CI (Appendix B). |
 | F-11 | `FlatTimingWheel` slots are 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 is not a power of two. | `cortex-core` | Open. Design question in §11.1. |
-| F-12 | `AgentPerspectiveState::intention_vector_ptr` is an index but named as a pointer (L-3). | `cortex-agency` | Open. Rename with image version bump. |
+| F-12 | `AgentPerspectiveState::intention_vector_ptr` was an index but named as a pointer (L-3). | `cortex-agency` | **Resolved** (brief 003): renamed `intention_vector_idx`; image format version 2. |
 | F-13 | No benchmark exists; every performance figure is a Target (§10). | workspace | Open. First benchmark: T-3. |
 | F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Narrowed** (brief 001): the five update functions have boundary tests. `FlatTimingWheel::schedule_fine` and `SymbolicHypervectorHeader::bind` remain untested. |
 | F-15 | 2.8.0 cited a `spec-guard` binary at an absolute path on one developer's machine. | README | **Resolved**: pinned as a dev dependency in `package.json`; run via `npx`. |
@@ -1154,7 +1158,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 - [ ] **H-2 (predictive-coding traffic reduction).** The claim that top-down cancellation removes more than 85 % of ascending spike traffic is plausible from the literature but unmeasured in this engine.
 - [ ] Should `FlatTimingWheel` rings be power-of-two length (256 / 64) so that slot selection is a mask? The cost is a 2.56 ms / 6.4 ms horizon instead of 2 ms / 8 ms.
 - [ ] Should tick sizes be recorded in `CortexFileHeader` so that an image is self-describing (§8.4)?
-- [ ] Which Q-format for `[i16; 4]` synaptic weights (F-3): Q8.8 for range or Q1.15 for resolution?
+- [x] Which Q-format for `[i16; 4]` synaptic weights (F-3): Q8.8 for range or Q1.15 for resolution?
+      **Resolved (2026-09-10):** Q1.15, because in-place STDP needs the resolution and summation supplies the range; [ADR-0012](adr/0012-synaptic-weight-q1-15.md).
 - [ ] Should `NeuromodulatorState` be widened to 64 bytes so that one record per column shares the arena discipline, or kept at 16 bytes for density?
 
 ---
@@ -1175,7 +1180,9 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Mailbox | A lock-free MPSC list of pending inputs to one unit. |
 | MADR | Markdown Architectural Decision Records; the ADR template used in `docs/adr/`. |
 | POD | Plain old data: a record with no pointers, destructors or invariants beyond its bytes. |
-| Q16.16 | Signed 32-bit fixed point with 16 fractional bits. |
+| Q0.8 | Unsigned 8-bit fixed point with 8 fractional bits, $[0, 1)$; the short-term-plasticity factors. |
+| Q1.15 | Signed 16-bit fixed point with 15 fractional bits, $[-1, 1)$; the synaptic base weight ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)). |
+| Q16.16 | Signed 32-bit fixed point with 16 fractional bits; membrane potentials, drives and every other state quantity. |
 | Record | One of the `#[repr(C)]` structures of §5.2. |
 | Timing wheel | A ring of slots indexed by (current + delay) mod length; $O(1)$ timer insert and expiry. |
 | Turn invariant | At most one worker touches a record per tick (A3). |

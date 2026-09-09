@@ -16,7 +16,36 @@ pub struct CortexFileHeader {
     pub _padding: [u8; 8],   // Strict 64-byte alignment
 }
 
+impl CortexFileHeader {
+    /// ASCII `VCORTEX1`, the first eight bytes of every `.cortex` image.
+    pub const MAGIC: [u8; 8] = *b"VCORTEX1";
+
+    /// Current image format version. Bumped on any change to any record in the workspace,
+    /// including reserved bytes and field semantics (whitepaper rule L-6, ADR-0007).
+    ///
+    /// - 1: the layout documented by whitepaper 3.0.0 (synaptic weights labelled Q16.16 in a
+    ///   16-bit field; `intention_vector_ptr`).
+    /// - 2: synaptic weights are Q1.15 (ADR-0012); `intention_vector_idx`. Byte layout
+    ///   unchanged; the meaning of the weight bytes changed.
+    pub const FORMAT_VERSION: u32 = 2;
+}
+
 const _: () = {
     assert!(core::mem::size_of::<CortexFileHeader>() == 64);
     assert!(core::mem::align_of::<CortexFileHeader>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn magic_and_version_are_the_documented_constants() {
+        assert_eq!(&CortexFileHeader::MAGIC, b"VCORTEX1");
+        assert_eq!(
+            u64::from_be_bytes(CortexFileHeader::MAGIC),
+            0x5643_4F52_5445_5831
+        );
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 2);
+    }
+}
