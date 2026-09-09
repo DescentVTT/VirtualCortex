@@ -32,3 +32,73 @@ const _: () = {
     assert!(core::mem::size_of::<SymbolicHypervectorHeader>() == 64);
     assert!(core::mem::align_of::<SymbolicHypervectorHeader>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header() -> SymbolicHypervectorHeader {
+        SymbolicHypervectorHeader {
+            vector_id: 9,
+            dimensionality: SymbolicHypervectorHeader::DIMENSIONS as u32,
+            binding_role_id: 0,
+            filler_concept_id: 0,
+            token_vocab_id: 5,
+            hamming_distance_cache: 77,
+            permutation_shift: 3,
+            flags: 0,
+            confidence_score: 0x8000,
+            _reserved: [0; 32],
+        }
+    }
+
+    #[test]
+    fn header_is_one_cache_line() {
+        assert_eq!(core::mem::size_of::<SymbolicHypervectorHeader>(), 64);
+        assert_eq!(core::mem::align_of::<SymbolicHypervectorHeader>(), 64);
+    }
+
+    #[test]
+    fn dimensions_are_ten_thousand() {
+        assert_eq!(SymbolicHypervectorHeader::DIMENSIONS, 10_000);
+    }
+
+    #[test]
+    fn bind_stores_the_pair_and_sets_the_bound_bit() {
+        let mut h = header();
+        h.bind(7, 42);
+        assert_eq!(h.binding_role_id, 7);
+        assert_eq!(h.filler_concept_id, 42);
+        assert_eq!(h.flags & 0x01, 0x01);
+    }
+
+    #[test]
+    fn bind_preserves_the_other_flag_bits() {
+        let mut h = header();
+        h.flags = 0xFFFE;
+        h.bind(1, 2);
+        assert_eq!(h.flags, 0xFFFF);
+    }
+
+    #[test]
+    fn bind_is_idempotent_and_rebinds() {
+        let mut h = header();
+        h.bind(1, 2);
+        let once = h;
+        h.bind(1, 2);
+        assert_eq!(h, once);
+        h.bind(3, 4);
+        assert_eq!((h.binding_role_id, h.filler_concept_id, h.flags), (3, 4, 1));
+    }
+
+    #[test]
+    fn bind_touches_nothing_else() {
+        let before = header();
+        let mut h = before;
+        h.bind(1, 2);
+        h.binding_role_id = before.binding_role_id;
+        h.filler_concept_id = before.filler_concept_id;
+        h.flags = before.flags;
+        assert_eq!(h, before);
+    }
+}

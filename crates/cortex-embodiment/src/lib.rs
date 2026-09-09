@@ -36,3 +36,36 @@ const _: () = {
     assert!(core::mem::size_of::<EmbodimentRingBuffer>() == 64);
     assert!(core::mem::align_of::<EmbodimentRingBuffer>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::sync::atomic::Ordering;
+
+    #[test]
+    fn control_block_is_one_cache_line() {
+        assert_eq!(core::mem::size_of::<EmbodimentRingBuffer>(), 64);
+        assert_eq!(core::mem::align_of::<EmbodimentRingBuffer>(), 64);
+    }
+
+    #[test]
+    fn new_and_default_are_all_zero() {
+        for b in [EmbodimentRingBuffer::new(), EmbodimentRingBuffer::default()] {
+            assert_eq!(b.write_cursor.load(Ordering::Relaxed), 0);
+            assert_eq!(b.read_cursor.load(Ordering::Relaxed), 0);
+            assert_eq!(b.epoch_id.load(Ordering::Relaxed), 0);
+            assert_eq!(b.heartbeat_ms.load(Ordering::Relaxed), 0);
+            assert_eq!(b.reserved, [0; 32]);
+        }
+    }
+
+    #[test]
+    fn cursors_are_independent_atomics_with_release_acquire() {
+        let b = EmbodimentRingBuffer::new();
+        b.write_cursor.store(5, Ordering::Release);
+        b.heartbeat_ms.fetch_add(1, Ordering::AcqRel);
+        assert_eq!(b.write_cursor.load(Ordering::Acquire), 5);
+        assert_eq!(b.read_cursor.load(Ordering::Acquire), 0);
+        assert_eq!(b.heartbeat_ms.load(Ordering::Acquire), 1);
+    }
+}

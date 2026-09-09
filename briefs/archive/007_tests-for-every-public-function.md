@@ -1,7 +1,13 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #11.** Closes finding F-14. No ADR was written: a
+> coverage tool was considered and not proposed; the per-item rule is a review rule with the
+> per-crate test module held by `spec-guard`. The report is in the pull request and in
+> `CHANGELOG.md`. The body below describes the tree before execution and is not maintained, apart
+> from relative links, which gained one `../` so that they still resolve from `archive/`.
 
 # Brief 007 — A test for every public function, and a rule that keeps it that way
 
@@ -52,20 +58,24 @@ Re-derived against `main` on 2026-09-10.
 
 ## Deliverables
 
-- [ ] `cortex-symbolic`: tests for `bind` (ids stored; bit 0 set; bits 1–15 preserved; calling
+- [x] `cortex-symbolic`: tests for `bind` (ids stored; bit 0 set; bits 1–15 preserved; calling
       twice is idempotent) and `DIMENSIONS == 10_000`.
-- [ ] `cortex-core`: tests for the wheel API as it stands after brief 005 (or `schedule_fine` if
+- [x] `cortex-core`: tests for the wheel API as it stands after brief 005 (or `schedule_fine` if
       005 has not landed).
-- [ ] `cortex-embodiment`: `new()` and `Default` give all-zero cursors and reserved bytes;
+      Brief 005 had landed and left eight wheel tests; nothing further was needed.
+- [x] `cortex-embodiment`: `new()` and `Default` give all-zero cursors and reserved bytes;
       `cortex-fabric`: `MAGIC == *b"VCFB"`.
-- [ ] Layout tests (`size_of`, `align_of`) for the seven crates that have none, in the style of
+- [x] Layout tests (`size_of`, `align_of`) for the seven crates that have none, in the style of
       `cortex-agency`, so every crate has a `#[cfg(test)]` module.
-- [ ] `CONTRIBUTING.md` code rules: "Every public function and associated constant has at least
+      `cortex-sensory` also gained a stub driver test through `dyn SensoryPeripheral`.
+- [x] `CONTRIBUTING.md` code rules: "Every public function and associated constant has at least
       one unit test", with the enforcement point named. If a tool can check it, name the tool; if
       only review can, write it as a review rule and say so (CLAUDE.md principle 5).
-- [ ] Whitepaper §1.6 "Test" column all `yes`; §11 F-14 Resolved.
-- [ ] `CHANGELOG.md` entry under Unreleased.
-- [ ] Archive this brief.
+      The per-crate module is held by eighteen `spec-guard` directives; the per-item rule is a
+      review rule, stated as such.
+- [x] Whitepaper §1.6 "Test" column all `yes`; §11 F-14 Resolved.
+- [x] `CHANGELOG.md` entry under Unreleased.
+- [x] Archive this brief.
 
 ## Not empowered
 

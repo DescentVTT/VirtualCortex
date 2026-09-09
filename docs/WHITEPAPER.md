@@ -152,28 +152,46 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | :--- | :--- | ---: | :---: | :---: | :---: | :---: |
 | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 4.2 MB | yes | yes | yes | wheel schedule and drain, efficacy |
 | `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | yes | — |
-| `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | no | — |
-| `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | yes | yes | no | — |
+| `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | yes | — |
+| `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | yes | yes | yes | — |
 | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | yes | yes | yes | `compute_gating` |
 | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | yes | yes | yes | `step_forward_model` |
 | `cortex-salience` | `SalienceNodeState` | 64 B | yes | yes | yes | `evaluate_threat` |
 | `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | yes | yes | yes | `step_ignition` |
-| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | no | `bind` |
+| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | yes | `bind` |
 | `cortex-executive` | `ExecutivePlanNode` | 64 B | yes | yes | yes | — |
 | `cortex-predictive` | `PredictiveErrorState` | 64 B | yes | yes | yes | — |
 | `cortex-agency` | `AgentPerspectiveState` | 64 B | yes | yes | yes | — |
 | `cortex-immune` | `ImmuneScrubNode` | 64 B | yes | yes | yes | — |
-| `cortex-neuromod` | `NeuromodulatorState` | 16 B | yes | yes | no | — |
-| `cortex-hippocampus` | `HippocampalAttractorState` | 64 B | yes | yes | no | — |
+| `cortex-neuromod` | `NeuromodulatorState` | 16 B | yes | yes | yes | — |
+| `cortex-hippocampus` | `HippocampalAttractorState` | 64 B | yes | yes | yes | — |
 | `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | yes | yes | yes | `update_circadian_tick` |
-| `cortex-fabric` | `FabricPacketHeader` | 64 B | yes | yes | no | — |
-| `cortex-telemetry` | `LfpSamplePacket` | 64 B | yes | yes | no | — |
+| `cortex-fabric` | `FabricPacketHeader` | 64 B | yes | yes | yes | — |
+| `cortex-telemetry` | `LfpSamplePacket` | 64 B | yes | yes | yes | — |
 
-The workspace manifest lists exactly eighteen state crates under `crates/`, plus the benchmark crate `benches/cortex-bench` ([ADR-0014](adr/0014-benchmark-harness.md)), which is not a state crate and is never published. Every state crate declares an empty dependency list, inherits its version, authors, license and repository from `[workspace.package]`, and carries a compile-time layout assertion block.
+The workspace manifest lists exactly eighteen state crates under `crates/`, plus the benchmark crate `benches/cortex-bench` ([ADR-0014](adr/0014-benchmark-harness.md)), which is not a state crate and is never published. Every state crate declares an empty dependency list, inherits its version, authors, license and repository from `[workspace.package]`, carries a compile-time layout assertion block, and carries a unit-test module; every public function and associated constant has at least one test (brief 007).
 
 <!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="18" reason="the workspace has eighteen member crates; update §1.6 and §5 if this changes" -->
 <!-- @assert-count target="crates" symbol="const _: () = {" min="18" glob="*.rs" reason="every crate carries a compile-time layout assertion block (F-18 closed)" -->
 <!-- @assert-count target="crates" symbol="license.workspace = true" expected="18" glob="Cargo.toml" reason="every crate inherits its metadata from [workspace.package] (F-9 closed)" -->
+<!-- @assert-count target="crates/cortex-core" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-sensory" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-embodiment" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-basal-ganglia" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-cerebellum" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-salience" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-workspace" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-symbolic" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-executive" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-predictive" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-agency" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-immune" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-neuromod" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-hippocampus" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-homeostasis" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-fabric" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-telemetry" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
 <!-- @assert-absence target="crates" symbol="unsafe" word="true" glob="*.rs" reason="no unsafe code exists yet; introducing it requires an ADR (§8.10)" -->
 
 ---
@@ -1155,7 +1173,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-11 | `FlatTimingWheel` slots were 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 was not a power of two; nothing drained the wheel. | `cortex-core` | **Resolved** (brief 005, [ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 × 256 slots of fixed-capacity 28-bit tokens, `schedule` with explicit rejections, `advance` with the coarse-to-fine cascade, eight tests. |
 | F-12 | `AgentPerspectiveState::intention_vector_ptr` was an index but named as a pointer (L-3). | `cortex-agency` | **Resolved** (brief 003): renamed `intention_vector_idx`; image format version 2. |
 | F-13 | No benchmark existed; every performance figure is a Target (§10). | workspace | **Narrowed** (brief 006, [ADR-0014](adr/0014-benchmark-harness.md)): `benches/cortex-bench` measures the existing components of T-3 and a protocol defines an admissible run; no run on the reference platform exists, so every figure remains a Target. |
-| F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Narrowed** (briefs 001 and 005): the five update functions and the timing wheel have tests. `SymbolicHypervectorHeader::bind` and `DIMENSIONS`, `EmbodimentRingBuffer::new`/`Default` and `FabricPacketHeader::MAGIC` remain untested (brief 007). |
+| F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Resolved** (briefs 001, 005 and 007): every public function and associated constant has at least one unit test and every state crate carries a test module, held by eighteen executable assertions in §1.6; the per-item rule is a review rule in `CONTRIBUTING.md`. |
 | F-15 | 2.8.0 cited a `spec-guard` binary at an absolute path on one developer's machine. | README | **Resolved**: pinned as a dev dependency in `package.json`; run via `npx`. |
 | F-16 | `GlobalWorkspaceSlot` code comments say slots `0..7`; 2.8.0 said four slots. | `cortex-workspace` | **Resolved**: slot count declared a configuration parameter (§5.2.8). |
 | F-17 | `EmbodimentRingBuffer` is a control block; the payload rings and the torque decoder do not exist. | `cortex-embodiment` | Open (Specified in §6.4). |

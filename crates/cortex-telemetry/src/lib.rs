@@ -21,3 +21,14 @@ const _: () = {
     assert!(core::mem::size_of::<LfpSamplePacket>() == 64);
     assert!(core::mem::align_of::<LfpSamplePacket>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packet_is_one_cache_line() {
+        assert_eq!(core::mem::size_of::<LfpSamplePacket>(), 64);
+        assert_eq!(core::mem::align_of::<LfpSamplePacket>(), 64);
+    }
+}

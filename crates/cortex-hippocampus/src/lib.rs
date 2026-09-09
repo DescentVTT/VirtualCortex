@@ -18,3 +18,14 @@ const _: () = {
     assert!(core::mem::size_of::<HippocampalAttractorState>() == 64);
     assert!(core::mem::align_of::<HippocampalAttractorState>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_is_one_cache_line() {
+        assert_eq!(core::mem::size_of::<HippocampalAttractorState>(), 64);
+        assert_eq!(core::mem::align_of::<HippocampalAttractorState>(), 64);
+    }
+}
