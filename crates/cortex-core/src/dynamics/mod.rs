@@ -1,2 +1,2 @@
 pub mod neuron;
-pub use neuron::{DendriticSuperNeuron, SynapseBlock};
+pub use neuron::{synaptic_efficacy_q16, DendriticSuperNeuron, SynapseBlock};

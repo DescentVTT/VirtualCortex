@@ -58,7 +58,8 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 - Every primary record is `#[repr(C)]`; arena records are `align(64)` and exactly 64 bytes; size
   and alignment are asserted in a `const _: () = { ... }` block in the defining crate.
 - No `f32` or `f64` anywhere under `crates/`. Q16.16 in `i32`/`u32`; widen to `i64` to multiply;
-  saturating arithmetic on state fields (whitepaper §8.1).
+  saturating arithmetic on state fields (whitepaper §8.1). Sixteen-bit synaptic weights are Q1.15
+  and eight-bit plasticity factors are Q0.8 ([ADR-0012](docs/adr/0012-synaptic-weight-q1-15.md)).
 - Every crate is `#![no_std]`. No `Box`, `Vec`, `String`, thread spawning or heap allocation in
   state crates; no syscalls on the hot path once a hot path exists.
 - A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a record with atomics is a

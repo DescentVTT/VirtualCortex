@@ -10,11 +10,11 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgentPerspectiveState {
     pub perspective_frame_hash: u64, // 8 bytes (offset 0..8)
-    pub intention_vector_ptr: u64,   // 8 bytes (offset 8..16)
-    pub agent_id: u32,               // 4 bytes (offset 16..20)
-    pub trust_score: i32,            // 4 bytes (offset 20..24)
-    pub efference_copy_flag: u8,     // 1 byte (offset 24..25)
-    pub padding: [u8; 39],           // 39 bytes (offset 25..64)
+    pub intention_vector_idx: u64, // 8 bytes (offset 8..16): arena index of the intention hypervector, never a pointer (rule L-3)
+    pub agent_id: u32,             // 4 bytes (offset 16..20)
+    pub trust_score: i32,          // 4 bytes (offset 20..24)
+    pub efference_copy_flag: u8,   // 1 byte (offset 24..25)
+    pub padding: [u8; 39],         // 39 bytes (offset 25..64)
 }
 
 const _: () = {

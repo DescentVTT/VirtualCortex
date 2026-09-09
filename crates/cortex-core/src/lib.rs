@@ -4,4 +4,4 @@
 pub mod dispatch;
 pub mod dynamics;
 
-pub use dynamics::{DendriticSuperNeuron, SynapseBlock};
+pub use dynamics::{synaptic_efficacy_q16, DendriticSuperNeuron, SynapseBlock};

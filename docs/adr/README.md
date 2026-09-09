@@ -17,3 +17,4 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0009](0009-rust-edition-and-msrv.md) | Rust edition 2024 and a pinned MSRV | proposed |
 | [ADR-0010](0010-measured-or-target.md) | Every performance figure is Measured or Target, never asserted | accepted |
 | [ADR-0011](0011-epoch-based-reclamation.md) | Epoch-based reclamation for structural plasticity | accepted |
+| [ADR-0012](0012-synaptic-weight-q1-15.md) | Sixteen-bit synaptic base weights are Q1.15 | accepted |

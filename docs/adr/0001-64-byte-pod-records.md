@@ -32,7 +32,7 @@ Option 3. Every primary state record is `#[repr(C)]`; arena records are `align(6
 - Good: one line per record, prefetch-friendly, no pointer chasing, identical layout in memory and in the `.cortex` image.
 - Good: layout drift is a compile error, not a runtime surprise.
 - Bad: records containing atomics (`DendriticSuperNeuron`, `EmbodimentRingBuffer`) cannot be `Copy` and are handled as control records (whitepaper §8.2, rule L-5).
-- Bad: some fields are wider or narrower than ideal to hit 64 bytes; the 16-bit synaptic weight is an open finding (F-3).
+- Bad: some fields are wider or narrower than ideal to hit 64 bytes; the 16-bit synaptic weight needed its own decision ([ADR-0012](0012-synaptic-weight-q1-15.md), Q1.15).
 - Struct-of-arrays remains available inside a subsystem where SIMD gathers need it; the 64-byte record is the interchange unit, not a ban on SoA scratch buffers.
 
 ## Confirmation
