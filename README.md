@@ -46,7 +46,7 @@ Eighteen crates, one per subsystem, with no dependencies between them ([ADR-0005
 | Systems | `cortex-fabric` | `FabricPacketHeader` | 64 B |
 | Systems | `cortex-telemetry` | `LfpSamplePacket` | 64 B |
 
-Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8.
+Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8. A nineteenth workspace member, `benches/cortex-bench`, holds the benchmarks and the workspace's only third-party dependency (the harness, as a dev-dependency; [ADR-0014](docs/adr/0014-benchmark-harness.md)); see [docs/benchmarks/README.md](docs/benchmarks/README.md) for what makes a run admissible.
 
 <!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="18" reason="the table above lists eighteen crates" -->
 

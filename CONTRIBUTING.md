@@ -32,7 +32,8 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 | Rule | How it is checked |
 | :--- | :--- |
 | Stable Rust only; no nightly features. | CI builds on `stable`. |
-| State crates declare no dependencies. | `Cargo.toml` review; `cargo tree`. |
+| State crates declare no dependencies. The benchmark crate may carry the harness as a dev-dependency and nothing else ([ADR-0014](docs/adr/0014-benchmark-harness.md)). | `Cargo.toml` review; `cargo tree -e normal -p <crate>`; CI builds `--locked`. |
+| Performance figures are Measured only from an admissible run recorded under `docs/benchmarks/results/` ([ADR-0010](docs/adr/0010-measured-or-target.md)). | Review; the results file's `admissible:` line. |
 | Every primary record is `#[repr(C)]`; arena records are `align(64)` and exactly 64 bytes; size and alignment are asserted in a `const _: () = { ... }` block. | `cargo check` fails otherwise. |
 | No `f32` or `f64` anywhere under `crates/`. Use Q16.16 (whitepaper §8.1). | `spec-guard` directive in the whitepaper. |
 | Every crate is `#![no_std]`; no `Box`, `Vec`, `String` or thread spawning in state crates. | `spec-guard` directives (the `no_std` count is asserted at 18). |
@@ -73,6 +74,7 @@ cargo check --workspace --all-targets
 cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo bench -p cortex-bench --bench hot_path -- --test   # benchmarks execute; no timing asserted
 npm ci
 npm run spec                        # spec-guard + spec-graph + check-briefs
 ```
