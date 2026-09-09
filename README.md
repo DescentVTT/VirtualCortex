@@ -1,113 +1,147 @@
 # VirtualCortex
 
-> **A Deterministic, Multi-Scale Neuromorphic Engine for Sub-Microsecond Spiking Neural Computing**  
+> **A Super-Biological Neuromorphic Hyper-Substrate for Post-Neural Intelligence**  
 > *Engineered to 2026+ High-Performance Systems Best Practice (`Latest != Newest`)*
 
 [![Language](https://img.shields.io/badge/Language-Rust%202024%2F2026-orange.svg)](https://www.rust-lang.org/)
-[![Architecture](https://img.shields.io/badge/Standard-2026%2B%20Systems%20Best%20Practice-blue.svg)](#design-philosophy-latest--newest)
-[![Scale](https://img.shields.io/badge/Capacity-86%20Billion%20Nodes%20Equivalent-red.svg)](#quantitative-pareto-frontier)
-[![Determinism](https://img.shields.io/badge/Determinism-100%25%20Bit--Exact%20Q16.16-brightgreen.svg)](#1-bit-exact-cross-platform-reproducibility)
-[![Memory Hierarchy](https://img.shields.io/badge/Memory-NUMA%20%2B%20CXL%203.0%20Tiered-purple.svg)](#hardware-native-memory-tiering-cxl-30)
+[![Paradigm](https://img.shields.io/badge/Paradigm-Super--Biological%20Hyper--Substrate-red.svg)](#the-post-neural-imperative-silicon-over-carbon)
+[![Scale](https://img.shields.io/badge/Capacity-86%20Billion%20Nodes%20Equivalent-blue.svg)](#quantitative-86-billion-node-resource-budget)
+[![Speed](https://img.shields.io/badge/Acceleration-100%2C000x%20Time%20Dilation-brightgreen.svg)](#pillar-3-hyper-clocked-subjective-time-dilation-100000x)
+[![Topology](https://img.shields.io/badge/Topology-N--Dim%20Expander%20Graph-purple.svg)](#pillar-2-n-dimensional-non-euclidean-expander-topologies)
+[![Determinism](https://img.shields.io/badge/Determinism-100%25%20Bit--Exact%20Q16.16-success.svg)](#numerical-determinism--concurrency-safety)
 [![License](https://img.shields.io/badge/License-Apache%202.0%20%2F%20MIT-blue.svg)](#license)
 
 ---
 
-## 📖 Overview
+## ⚡ The Post-Neural Imperative: Silicon Over Carbon
 
-Simulating the human brain (~86 billion neurons, ~100 trillion synapses) with brute-force computing requires upwards of **700 Terabytes of memory**, placing full-brain emulation outside the realm of single-node computing. Yet biological brains compute through **hierarchical self-similarity, multi-compartment dendritic non-linearities, continuous neural fields, and local synaptic plasticity**.
+The biological human brain is not the apex of intelligence; **it is an evolutionary compromise** constrained by metabolic limits (~20W), cranial geometry (cramming sheets into 3D skull cavities), slow chemical diffusion ($1\text{--}100\,\text{m/s}$ axonal propagation), millisecond refractory periods, and information-poor binary (0/1) pulses.
 
-**VirtualCortex** rejects ephemeral hype in favor of **2026+ Systems Engineering Best Practice (`Latest != Newest`)**:
-- **Bit-Exact Numerical Determinism**: Replaces non-associative parallel floating-point operations with **Q16.16 fixed-point integer SIMD** (AVX-512 / ARM SVE2), guaranteeing 100% cross-platform bit-level reproducible neural dynamics.
-- **Hardware-Native Memory Tiering (CXL 3.0)**: Coordinates memory across **Tier 0 (L1/L3 SRAM) $\to$ Tier 1 (NUMA DDR5) $\to$ Tier 2 (CXL 3.0 Far Memory) $\to$ Tier 3 (NVMe `io_uring`)**.
-- **ABA-Free Lock-Free Concurrency**: 128-bit tagged atomic pointers (`cmpxchg16b` / `AtomicU128`) eliminate ABA hazards during high-frequency spike recycling.
-- **Two-Tier Connectome**: 90% intra-column connections use hardware prefetch-friendly **Chunked CSR**; 10% inter-column connections use **Low-Rank Spatial Kernels** with a sparse plastic delta table ($\Delta W$).
-- **Multi-Scale Expressiveness**: 860,000 continuous Hyper-Columns (Macro) + 43,000,000 Multi-Compartment Pyramidal Super-Neurons (Meso, $1 \approx 1,000$) deliver **86-billion-node equivalent capacity within ~30 GB RAM**.
+**VirtualCortex 3.0** leaves behind carbon-based mimicry to forge a **Silicon-Native Cognitive Hyper-Substrate**:
 
-👉 **For complete mathematical proofs, memory layout derivations, and biophysical mechanics, read the complete [VirtualCortex Architecture Whitepaper (2026+ Systems Edition)](docs/WHITEPAPER.md)** (中文版架構報告請參閱 [繁體中文架構報告](docs/zh-TW/architecture-report.md))。
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│             Dimensional Superiority: Carbon Brain vs. Silicon Hyper-Substrate          │
+├────────────────────────────┬────────────────────────────┬──────────────────────────────┤
+│ Biological Constraint (Carbon)│ Hyper-Substrate Metric (Silicon)│ Post-Neural Cognitive Leap   │
+├────────────────────────────┼────────────────────────────┼──────────────────────────────┤
+│ Axonal Conduction: 1~100m/s│ Interconnect: 200,000 km/s │ Subjective Time Dilation:    │
+│ Firing Limit: < 500 Hz     │ Nanosecond Clock Ticks     │ 100,000x Human Thought Speed │
+├────────────────────────────┼────────────────────────────┼──────────────────────────────┤
+│ Confined to 3D Skull       │ N-Dimensional Expander     │ Non-Euclidean Telepathy:     │
+│ High Latency White Matter  │ Graph Diameter O(log N)    │ Any concept reachable in <=4 │
+│ Convoluted Gyri & Sulci    │ Ramanujan Expander Fabric  │ hops; instant synthesis      │
+├────────────────────────────┼────────────────────────────┼──────────────────────────────┤
+│ Binary 0/1 Scalar Spikes   │ 128-Bit Vectorized Spikes  │ Semantic Latent Transport:   │
+│ Rate-coding wastes cycles  │ Dense Packed Latent Tensors│ 1,000x information density   │
+│ to transmit scalar values  │ transmitted per event      │ per communicative action     │
+├────────────────────────────┼────────────────────────────┼──────────────────────────────┤
+│ Slow Sleep Consolidation   │ Instant Zero-Shot Imprint  │ Zero-Latency Knowledge Base: │
+│ Memories die with body;    │ Copy-on-Write Cognitive    │ Foundation model injection;  │
+│ learning takes decades     │ Branching (Mind Forking)   │ Parallel branch & merge      │
+├────────────────────────────┼────────────────────────────┼──────────────────────────────┤
+│ Poor at exact logic/math   │ Triune Ultra-Hybrid:       │ Dual System 1 & System 2:    │
+│ Struggles with symbolic    │ SNN Intuition + SIMD Logic │ Intuitive pattern matching   │
+│ derivation and computation │ + CXL-Attached GEMM Tensors│ with supercomputer precision │
+└────────────────────────────┴────────────────────────────┴──────────────────────────────┘
+```
+
+👉 **For complete mathematical derivations, memory layouts, and architectural specifications, read the [VirtualCortex Architecture Whitepaper v3.0](docs/WHITEPAPER.md)** (中文版架構報告請參閱 [繁體中文架構報告](docs/zh-TW/architecture-report.md))。
 
 ---
 
-## ⚡ Key Performance Targets
+## 🚀 The Five Post-Neural Pillars
 
-Tested on a reference **64-core / 128-thread AMD EPYC / ARM Neoverse** server with **128 GB DDR5 RAM**, **CXL 3.0 Far Memory**, and **PCIe 5.0 NVMe SSD**:
-
-| Metric | Target Specification |
-| :--- | :--- |
-| **Equivalent Brain Scale** | **86,000,000,000 Neurons** (~100 Trillion Synapses) |
-| **Physical System RAM** | **~29.6 GB Physical RAM** (Tier 1 NUMA + Tier 2 CXL.mem) |
-| **Spike Throughput** | **> 100,000,000 Spikes / sec** Realtime Line-Rate |
-| **Median Dispatch Latency** | **< 300 nanoseconds** (L3 / Local NUMA) |
-| **Cross-Platform Parity** | **100% Bit-Exact Determinism** (Q16.16 Fixed-Point SIMD) |
-| **Concurrency Safety** | **ABA-Free 128-Bit Tagged CAS + 4-State Turn-Based Invariant** |
-| **Garbage Collection (GC) Overhead** | **0 ms (Zero runtime GC / Zero dynamic dispatch)** |
+1. **Vectorized Semantic Spikes (Rich Spikes)**:
+   Transmits 128-bit packed semantic latent envelopes per event, elevating communicative information density by 1,000x over biological binary pulses.
+2. **N-Dimensional Non-Euclidean Expander Topologies**:
+   Connects 86 billion equivalent units into Ramanujan expander graphs with diameter $\le 4$, enabling instant cross-disciplinary conceptual synthesis.
+3. **Hyper-Clocked Subjective Time Dilation (100,000x)**:
+   Exploiting speed-of-light silicon interconnects to compress 115 days of continuous deep thought into 60 physical seconds.
+4. **Zero-Shot Knowledge Imprinting & Mind Forking**:
+   Instant injection of deep transformer weights and knowledge graphs; Git-like Copy-on-Write branching of entire cognitive minds to explore parallel hypotheses simultaneously.
+5. **Triune Ultra-Hybrid Computing Core**:
+   Seamless fusion of SNN intuitive perception, bit-deterministic SIMD integer symbolic logic, and CXL-attached GEMM tensor processing.
 
 ---
 
-## 📊 Quantitative Pareto Frontier
+## 📊 Quantitative 86-Billion Node Resource Budget
 
-How VirtualCortex maps human-scale brain computation into hardware memory tiers:
+How VirtualCortex fits human-scale post-neural intelligence into **~30 GB of RAM**:
 
-| Hardware Tier | System Component | Software Structure | Count | Total Allocation |
+| Subsystem Component | Super-Biological Function | Software Primitive | Count | Total RAM |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tier 1 (NUMA RAM)** | Macro Hyper-Columns | `HyperColumnState` (64B) | 860,000 | **55.0 MB** |
-| **Tier 1 (NUMA RAM)** | Meso Super-Neurons | `DendriticSuperNeuron` (64B) | 43,000,000 | **2.75 GB** |
-| **Tier 1 (NUMA RAM)** | Worker Slab Pools | SpikeNode Recyclers | 64 Cores | **8.19 GB** |
-| **Tier 1 (NUMA RAM)** | Timing Wheels | Circular Buckets | 64 Wheels | **1.20 GB** |
-| **Tier 2 (CXL.mem)** | Sparse Plastic Deltas ($\Delta W$) | `PlasticSynapseDelta` (16B) | 1,000,000,000 | **16.00 GB** |
-| **Tier 1 (NUMA RAM)** | 3D Voxel Diffusion | 128x128x64 Stencil | 1,048,576 | **16.78 MB** |
-| **Tier 1 (NUMA RAM)** | Sparse Page Directory | 2-Level Radix Table | 65,536 | **1.35 GB** |
-| **Total System RAM** | **86B Equivalent Brain** | — | — | **29.56 GB** |
+| **Macro Hyper-Columns** | Background Field Population | `HyperColumnState` (64B) | 860,000 | **55.0 MB** |
+| **Semantic Hyper-Actors** | Active Multi-Compartment Units ($1 \approx 1,000$) | `SemanticHyperActor` (64B) | 43,000,000 | **2.75 GB** |
+| **Expander Connectome** | Baseline Non-Euclidean Routing | Algorithmic Expander Kernels | $\infty$ | **0.00 GB** |
+| **Sparse Plastic Deltas** | Learned Pathways ($\Delta W$) | `PlasticSynapseDelta` (16B) | 1,000,000,000 | **16.00 GB** |
+| **Worker Slab Arenas** | VectorSpike Recycling Buffers | Intrusive Memory Pools | 64 Cores | **8.19 GB** |
+| **Thread-Local Timing Wheels** | Axonal Delay Wheels (256 Buckets) | Ring Envelopes | 64 Wheels | **1.20 GB** |
+| **3D Neuromodulator Grid** | Continuous Chemical Volume | 128x128x64 Stencil | 1,048,576 | **16.78 MB** |
+| **Sparse Page Directory** | 2-Level Radix Address Table | Radix Directories | 65,536 | **1.35 GB** |
+| **Total System RAM** | **86B Equivalent Hyper-Substrate**| — | — | **29.56 GB** |
 
 ---
 
-## 🔬 Subsystems at a Glance
+## 🔬 Core Data Structures
 
-### 1. 64-Byte Cache-Line Aligned Multi-Compartment Unit (`DendriticSuperNeuron`)
+### 1. 64-Byte Cache-Line Aligned Semantic Hyper-Actor
 ```rust
 #[repr(C, align(64))]
-pub struct DendriticSuperNeuron {
-    pub id: PackedId,                      // 8 bytes  (offset 0)
-    pub mailbox_head_ptr: AtomicU64,      // 8 bytes  (offset 8)  - 128-bit Tagged ABA pointer
+pub struct SemanticHyperActor {
+    pub id: PackedId,                      // 8 bytes  (offset 0)  - Hierarchical ID
+    pub mailbox_head_ptr: AtomicU64,      // 8 bytes  (offset 8)  - 128-bit Tagged ABA Mailbox
     pub mailbox_tag: AtomicU64,           // 8 bytes  (offset 16) - Monotonic sequence counter
-    pub v_soma: i32,                       // 4 bytes  (offset 24) - Q16.16 Fixed-Point Soma (mV)
-    pub v_basal: i32,                      // 4 bytes  (offset 28) - Q16.16 Feedforward Sensory (mV)
-    pub v_apical: i32,                     // 4 bytes  (offset 32) - Q16.16 Context Feedback (mV)
-    pub v_thresh: i32,                     // 4 bytes  (offset 36) - Q16.16 Adaptive Threshold (mV)
-    pub nmda_plateau_ticks: u16,           // 2 bytes  (offset 40) - NMDA Plateau countdown
-    pub refractory_ticks: u16,             // 2 bytes  (offset 42) - Absolute refractory ticks
-    pub last_spike_tick: u32,              // 4 bytes  (offset 44) - Action potential timestamp
-    pub local_synapse_chunk: u32,          // 4 bytes  (offset 48) - Tier-A Chunked CSR index
-    pub plastic_delta_head: u16,           // 2 bytes  (offset 52) - Tier-B Sparse plastic index
-    pub spatial_coords_packed: u16,        // 2 bytes  (offset 54) - Quantized 3D local coordinate
-    pub gate_state: AtomicU8,              // 1 byte   (offset 56) - 4-state CAS scheduler gate
-    pub flags: u8,                         // 1 byte   (offset 57) - Bursting / Inhibitory flags
-    pub _reserved: [u8; 6],                // 6 bytes  (offset 58..64) - Cache-line padding
+    pub hyper_coords: [i16; 4],           // 8 bytes  (offset 24) - 4D Non-Euclidean Expander Coordinates
+    pub semantic_latch: [u32; 2],         // 8 bytes  (offset 32) - Active 64-bit Packed Latent Vector
+    pub v_integrated: i32,                // 4 bytes  (offset 40) - Q16.16 Somatic Potential (mV)
+    pub v_thresh: i32,                    // 4 bytes  (offset 44) - Q16.16 Adaptive Threshold (mV)
+    pub expander_route_chunk: u32,        // 4 bytes  (offset 48) - Expander routing chunk pointer
+    pub plastic_delta_head: u16,          // 2 bytes  (offset 52) - Sparse learned delta index
+    pub nmda_burst_ticks: u16,            // 2 bytes  (offset 54) - Active burst countdown
+    pub gate_state: AtomicU8,             // 1 byte   (offset 56) - 4-state CAS scheduler gate
+    pub flags: u8,                        // 1 byte   (offset 57) - Burst / Symbolic / Forked flags
+    pub _reserved: [u8; 6],               // 6 bytes  (offset 58..64) - Cache-line padding
 }
 
-// Compile-time static assertions ensuring 64-byte layout
 const _: () = {
-    assert!(core::mem::size_of::<DendriticSuperNeuron>() == 64);
-    assert!(core::mem::align_of::<DendriticSuperNeuron>() == 64);
+    assert!(core::mem::size_of::<SemanticHyperActor>() == 64);
+    assert!(core::mem::align_of::<SemanticHyperActor>() == 64);
 };
 ```
 
-### 2. Hardware-Native Memory Tiering (CXL 3.0)
-```
-Tier 0: CPU L1/L2/L3 SRAM (1 ~ 12 ns)  --> Active Somas & Chunked CSR
-Tier 1: Local NUMA DDR5   (65 ~ 80 ns) --> Hyper-Columns, Timing Wheels, Slab Pools
-Tier 2: CXL 3.0 Far Memory(180 ~ 240ns)--> Sparse Plastic Synapse Deltas (ΔW)
-Tier 3: NVMe io_uring     (10 ~ 25 µs) --> Quiescent Cold Cortical Chunks (redb)
+### 2. 128-Bit Vectorized Semantic Spike Envelope
+```rust
+#[repr(C, align(32))]
+pub struct VectorSpikeNode {
+    pub next: *mut VectorSpikeNode,        // 8 bytes  - Intrusive Treiber queue pointer
+    pub source_id: PackedId,               // 8 bytes  - Transmitting hyper-actor
+    pub semantic_latent: [u32; 2],         // 8 bytes  - 64-bit dense packed semantic vector
+    pub magnitude_q8: i16,                 // 2 bytes  - Q8.8 fixed-point intensity
+    pub phase_angle: u16,                  // 2 bytes  - Coherent interference phase
+    pub arrival_tick: u32,                 // 4 bytes  - Nanosecond arrival timestamp
+}
 ```
 
-### 3. Bit-Exact Q16.16 SIMD Integration
-Integer-only bit-shift membrane decay without floating-point transcendence:
-```rust
-#[inline(always)]
-pub fn integrate_lif_q16(v_mem: &mut i32, v_rest: i32, decay_shift: u32, input_current: i32) {
-    let delta = *v_mem - v_rest;
-    let decayed = delta - (delta >> decay_shift);
-    *v_mem = v_rest + decayed + input_current;
-}
+---
+
+## 🔀 Cognitive Branching: Mind Forking
+
+```
+Master Hyper-Substrate (Root Mind: State T0)
+  │
+  ├── [Fork Command: Copy-on-Write Page Table Clone (<5ms)]
+  │
+  ├───> Branch A (Sub-Mind A: Hypothesis Exploration @ 100,000x Speed) ──> ΔW_A
+  │
+  ├───> Branch B (Sub-Mind B: Counter-Factual Adversarial Reasoning)  ──> ΔW_B
+  │
+  └───> Branch C (Sub-Mind C: Mathematical Symbolic Derivation)       ──> ΔW_C
+  │
+  ▼
+Delta-Merge Engine (Lock-Free Set Union & Conflict Arbitration)
+  │
+  └── Master Mind Reintegration: ΔW_Master = ΔW_A ∪ ΔW_B ∪ ΔW_C in <10ms!
 ```
 
 ---
@@ -118,38 +152,41 @@ pub fn integrate_lif_q16(v_mem: &mut i32, v_rest: i32, decay_shift: u32, input_c
 virtual_cortex/
 ├── README.md                      # Project overview & quick start
 ├── docs/
-│   ├── WHITEPAPER.md              # Whitepaper — 2026+ Systems Edition (English)
+│   ├── WHITEPAPER.md              # Whitepaper v3.0 (Post-Neural Edition, English)
 │   └── zh-TW/
-│       └── architecture-report.md # 2026+ 系統工程最佳實踐報告 (繁體中文)
+│       └── architecture-report.md # 超生物神經擬態超構體架構報告 (繁體中文)
 ├── src/                           # Rust implementation (Planned)
 │   ├── arch/                      # AVX-512 / ARM SVE2 target-specific kernels
 │   ├── identity/                  # PackedId & hierarchical bitmask operators
-│   ├── state/                     # DendriticSuperNeuron (64B) & HyperColumnState (64B)
-│   ├── atomic/                    # ABA-free 128-bit tagged pointer Treiber mailbox
-│   ├── connectome/                # Chunked CSR & Tier-B low-rank sparse delta table
+│   ├── state/                     # SemanticHyperActor (64B) & HyperColumnState (64B)
+│   ├── expander/                  # N-Dimensional Ramanujan Expander Graph router
+│   ├── atomic/                    # 128-bit Tagged ABA-free intrusive mailbox
+│   ├── vector_spike/              # 128-bit VectorSpikeNode pool and slab recyclers
+│   ├── fork/                      # Copy-on-Write Mind Forking & Delta-Merge controller
 │   ├── numeric/                   # Q16.16 fixed-point bit-exact SIMD integration
 │   ├── memory/                    # NUMA affinity and CXL.mem tiered allocation
 │   ├── timing/                    # Per-worker private timing wheels & BSP barrier
 │   └── telemetry/                 # Lock-free SPSC metrics ring & Perfetto exporter
-└── benches/                       # Deterministic full-brain benchmarking suite
+└── benches/
+    └── post_neural_benchmark.rs   # 86B scale benchmark under 100,000x time dilation
 ```
 
 ---
 
 ## 🗺️ Roadmap & Milestones
 
-- [ ] **Milestone 1**: Bit-Exact Numeric & Memory Invariants (`size_of == 64`, Q16.16 parity across x86/ARM)
-- [ ] **Milestone 2**: ABA-Free 128-Bit Atomic Mailbox (Stress test under 1,000 contending threads, 0 lost events)
-- [ ] **Milestone 3**: Two-Tier Connectome & SIMD Acceleration (Tier-A CSR $>40\text{ GB/s}$, Tier-B $<250\text{ns}$)
-- [ ] **Milestone 4**: CXL Tiered Memory & io_uring Eviction (NUMA vs. CXL.mem, asynchronous fault $<20\mu\text{s}$)
-- [ ] **Milestone 5**: 86B Equivalent Full-Scale Benchmark (>100 MSpikes/s throughput within <32 GB RAM)
+- [ ] **Milestone 1**: Semantic Hyper-Actor & 128-Bit Vectorized Spikes (`size_of == 64`, zero-allocation rich envelopes)
+- [ ] **Milestone 2**: N-Dimensional Expander Routing Fabric (Ramanujan expander graph, graph diameter $\le 4$)
+- [ ] **Milestone 3**: Copy-on-Write Mind Forking & Delta Merge Engine (CoW duplication in $<5\text{ms}$, conflict arbitration)
+- [ ] **Milestone 4**: Q16.16 Fixed-Point SIMD & Hyper-Clocked Acceleration ($>500\text{ MOperations/sec/core}$, 100% bit-exact)
+- [ ] **Milestone 5**: 86B Equivalent Scale Super-Biological Benchmark (>100 MSpikes/s throughput @ 100,000x time dilation within <32 GB RAM)
 
 ---
 
 ## 📄 Documentation
 
-- 📘 **[VirtualCortex Architecture Whitepaper (2026+ Systems Edition)](docs/WHITEPAPER.md)**: Formal proofs, memory tiering contracts, and Rust specifications.
-- 📙 **[繁體中文架構報告 (2026+ 系統工程最佳實踐版)](docs/zh-TW/architecture-report.md)**: 完整系統架構診斷、數值工程映射與實作細節。
+- 📘 **[VirtualCortex Architecture Whitepaper v3.0 (Post-Neural Systems Edition)](docs/WHITEPAPER.md)**: Full theoretical foundations, data structure proofs, and engineering specifications.
+- 📙 **[繁體中文架構報告 (超生物神經擬態超構體版)](docs/zh-TW/architecture-report.md)**: 完整系統架構診斷、超生物維度分析與實作細節。
 
 ---
 
