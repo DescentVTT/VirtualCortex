@@ -92,9 +92,14 @@ cargo check --workspace --all-targets
 cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo bench -p cortex-bench --bench hot_path -- --test
 npm ci
 npm run spec
 ```
+
+The `cargo bench ... -- --test` line executes each benchmark once and asserts no timing. A number
+becomes Measured only through the protocol in `docs/benchmarks/README.md`; a developer-machine
+figure is recorded there as not admissible and is never written into the whitepaper's tables.
 
 `npm run spec` is `spec:guard` (executable assertions in the documents against `crates/`),
 `spec:graph` (cross-document consistency: links, ADR lifecycle, open obligations) and

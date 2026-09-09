@@ -1,0 +1,29 @@
+[package]
+name = "cortex-bench"
+description = "Benchmarks for the VirtualCortex state crates (ADR-0014). Not a state crate; never published."
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+# The crates under measurement. Normal dependencies flow from this crate to the state crates,
+# never the other way (ADR-0005).
+[dependencies]
+cortex-core = { path = "../../crates/cortex-core" }
+cortex-basal-ganglia = { path = "../../crates/cortex-basal-ganglia" }
+cortex-workspace = { path = "../../crates/cortex-workspace" }
+
+# The harness. Exact pin; the only third-party dependency in the workspace, confined to this
+# crate's dev-dependencies. Default features (plotters, rayon, HTML reports) are off: the
+# statistical core and `cargo bench` argument parsing are all that is needed.
+[dev-dependencies]
+criterion = { version = "=0.7.0", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "hot_path"
+harness = false

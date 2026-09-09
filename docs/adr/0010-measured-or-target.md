@@ -34,4 +34,4 @@ Option 3. Whitepaper §10.2 is the single table of figures; every row carries a 
 
 ## Confirmation
 
-Reviewers reject any pull request that adds a number to §10.2's Measured column without a linked benchmark and command. A future `spec-guard` directive will assert the presence of `benches/` once the first benchmark lands.
+Reviewers reject any pull request that adds a number to §10.2's Measured column without a linked benchmark and command. A `spec-guard` directive in whitepaper §10.2 asserts that `benches/cortex-bench/Cargo.toml` and `docs/benchmarks/README.md` are present ([ADR-0014](0014-benchmark-harness.md)), and the results convention there carries the `admissible:` line this record requires.

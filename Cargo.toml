@@ -18,6 +18,8 @@ members = [
     "crates/cortex-homeostasis",
     "crates/cortex-fabric",
     "crates/cortex-telemetry",
+    # Not a state crate: benchmarks only, never published (ADR-0014).
+    "benches/cortex-bench",
 ]
 resolver = "2"
 

@@ -2,7 +2,9 @@
 #
 # Two jobs, three questions:
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
-#           and is it formatted and lint-clean? All four steps are blocking.
+#           is it formatted and lint-clean, and do the benchmarks still execute?
+#           All five steps are blocking; the benchmark step asserts no timing
+#           (ADR-0014): a shared runner cannot hold a latency threshold.
 #   specs - does the source tree still contain what the documents say it contains
 #           (spec-guard), are the documents consistent with one another
 #           (spec-graph), and does every live brief carry its mandatory sections
@@ -47,6 +49,9 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Benchmarks execute (one iteration each, no timing asserted)
+        run: cargo bench -p cortex-bench --bench hot_path --locked -- --test
 
   specs:
     name: Documentation (spec-guard, spec-graph)
