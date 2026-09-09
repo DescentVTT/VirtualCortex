@@ -13,6 +13,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Changed
 
+- **Finding F-4 closed; F-14 narrowed (brief 001 executed).** `compute_gating`, `step_forward_model` and `step_ignition` use saturating arithmetic; `update_circadian_tick` uses `wrapping_add` before its 16-bit mask, wrap being the intended semantics of a phase counter; `evaluate_threat` performs no arithmetic and was left as is. Each of the five functions gained boundary tests (twenty-two in total) that fail under plain arithmetic in a debug build. `FlatTimingWheel::schedule_fine` and `SymbolicHypervectorHeader::bind` remain untested. No Q16.16 newtype was proposed: five call sites do not justify one yet. Brief 001 is archived in `briefs/archive/`.
 - **Findings F-9 and F-18 closed.** Crate metadata (`version`, `edition`, `authors`, `license`, `repository`) is inherited from `[workspace.package]`; each manifest keeps only `name` and `description`, and all eighteen now carry one. `cortex-sensory` gained the compile-time assertion that `SensoryEvent` is 8 bytes, 8-aligned; the whitepaper's assertion-block directive now requires 18.
 
 - **Finding F-10 closed.** All crates formatted with `rustfmt` (whitespace and comment alignment only). `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer`, delegating to their `const fn new()`; `FabricPacketHeader::MAGIC` written as a byte-string literal. `cargo fmt --check` and `cargo clippy -D warnings` are now blocking in CI; the two advisory steps and their `continue-on-error` are gone.

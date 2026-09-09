@@ -154,10 +154,10 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-connectome` | `CortexFileHeader` | 64 B | no | yes | no | — |
 | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | no | yes | no | — |
 | `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | no | yes | no | — |
-| `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | no | yes | no | `compute_gating` |
-| `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | no | yes | no | `step_forward_model` |
-| `cortex-salience` | `SalienceNodeState` | 64 B | no | yes | no | `evaluate_threat` |
-| `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | no | yes | no | `step_ignition` |
+| `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | no | yes | yes | `compute_gating` |
+| `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | no | yes | yes | `step_forward_model` |
+| `cortex-salience` | `SalienceNodeState` | 64 B | no | yes | yes | `evaluate_threat` |
+| `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | no | yes | yes | `step_ignition` |
 | `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | no | yes | no | `bind` |
 | `cortex-executive` | `ExecutivePlanNode` | 64 B | yes | yes | yes | — |
 | `cortex-predictive` | `PredictiveErrorState` | 64 B | yes | yes | yes | — |
@@ -165,7 +165,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-immune` | `ImmuneScrubNode` | 64 B | yes | yes | yes | — |
 | `cortex-neuromod` | `NeuromodulatorState` | 16 B | no | yes | no | — |
 | `cortex-hippocampus` | `HippocampalAttractorState` | 64 B | no | yes | no | — |
-| `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | no | yes | no | `update_circadian_tick` |
+| `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | no | yes | yes | `update_circadian_tick` |
 | `cortex-fabric` | `FabricPacketHeader` | 64 B | no | yes | no | — |
 | `cortex-telemetry` | `LfpSamplePacket` | 64 B | no | yes | no | — |
 
@@ -507,7 +507,7 @@ Drivers fill a caller-provided slice through `poll_batch(&mut self, &mut [Sensor
 | `[28..32)` | `selected_flag` | `u32` | 0 / 1 | Set when the channel is released. |
 | `[32..64)` | `_reserved` | `[u8; 32]` | — | Reserved; MUST be zero. |
 
-The implemented rule is $g = d_2 + s - d_1$, stored in `gpi_snr_inhibition`; the channel is selected when $g < 0$ (thalamic disinhibition). It uses plain `i32` arithmetic and therefore panics on overflow in debug builds and wraps in release; saturating arithmetic is required by §8.1 and tracked as finding F-4.
+The implemented rule is $g = d_2 + s - d_1$, stored in `gpi_snr_inhibition`; the channel is selected when $g < 0$ (thalamic disinhibition). The arithmetic is saturating, so an extreme drive clamps rather than wraps and the sign of $g$, hence the selection, is preserved; a unit test pins this at both extremes.
 
 <!-- @assert-count target="crates/cortex-basal-ganglia" symbol="BasalGangliaChannelState" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-basal-ganglia" symbol="compute_gating" min="1" word="true" -->
@@ -938,7 +938,7 @@ All dynamics use signed 32-bit fixed point with 16 fractional bits unless a fiel
 - Representation: value $= \text{raw} / 2^{16}$; range $[-32768, 32767.99998]$; resolution $2^{-16} \approx 1.5 \times 10^{-5}$.
 - Constants used in code: `0x0001_0000` = 1.0, `0x0001_8000` = 1.5, `0x0002_0000` = 2.0.
 - Multiplication of two Q16.16 values MUST widen to `i64` and shift right by 16; division MUST widen and shift left by 16 before dividing.
-- Arithmetic on state fields MUST be saturating (`saturating_add`, `saturating_sub`, `saturating_mul`) or explicitly wrapping where wrap is the intended semantics (phase counters). Plain operators, which panic in debug and wrap in release, are not permitted on the hot path. Current code uses plain operators in five functions: finding F-4.
+- Arithmetic on state fields MUST be saturating (`saturating_add`, `saturating_sub`, `saturating_mul`) or explicitly wrapping where wrap is the intended semantics (phase counters). Plain operators, which panic in debug and wrap in release, are not permitted on the hot path. The five update functions comply, each with a boundary test (brief 001; F-4 closed).
 - Right shifts of negative values are arithmetic in Rust (`>>` on `i32`), which is the intended rounding-toward-negative-infinity behaviour.
 - Narrower fields: `u8` short-term-plasticity variables are Q0.8 (0..255 maps to 0..0.996); the Q-format of `[i16; 4]` weights is unresolved (F-3).
 
@@ -1131,7 +1131,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-1 | Specification 2.8.0 reproduced struct definitions for 15 of 19 types that did not match the source (field names, widths, and in one case a 72-byte record described as 64 bytes). | this document | **Resolved** in 3.0.0: layouts transcribed from source; executable assertions added. |
 | F-2 | Every LaTeX expression in 2.8.0 (both languages) contained control characters where `\t`, `\f`, `\r`, `\a`, `\b`, `\v` and `\n` escapes had been interpreted, so no equation rendered. | this document | **Resolved** in 3.0.0. |
 | F-3 | `SynapseBlock::weights_q16` is `[i16; 4]` but commented as Q16.16, which needs 32 bits. | `cortex-core` | Open. Decide Q8.8 or Q1.15, rename, and bump the image version. |
-| F-4 | `compute_gating`, `step_forward_model`, `evaluate_threat`, `step_ignition` and `update_circadian_tick` use plain `+`/`-` on Q16.16 fields. | five crates | Open. Replace with saturating operations per §8.1. |
+| F-4 | `compute_gating`, `step_forward_model`, `step_ignition` and `update_circadian_tick` used plain `+`/`-` on Q16.16 fields; `evaluate_threat` performs no arithmetic. | five crates | **Resolved** (brief 001): saturating operations in the first three, `wrapping_add` for the circadian phase counter, each with a boundary test that fails under plain arithmetic in a debug build. |
 | F-5 | All crates declare `edition = "2021"` and no `rust-version`; the README badge claims "Rust 2024/2026". There is no 2026 edition. | workspace | Open. [ADR-0009](adr/0009-rust-edition-and-msrv.md) proposes edition 2024 and an MSRV. |
 | F-6 | Only 4 of 18 crates are `#![no_std]` (TC-6). | 14 crates | Open. Mechanical change; no `std` items are used. |
 | F-7 | Only 4 of 18 crates derive `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | Open. Control records (`DendriticSuperNeuron`, `EmbodimentRingBuffer`) are exempt. |
@@ -1141,7 +1141,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-11 | `FlatTimingWheel` slots are 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 is not a power of two. | `cortex-core` | Open. Design question in §11.1. |
 | F-12 | `AgentPerspectiveState::intention_vector_ptr` is an index but named as a pointer (L-3). | `cortex-agency` | Open. Rename with image version bump. |
 | F-13 | No benchmark exists; every performance figure is a Target (§10). | workspace | Open. First benchmark: T-3. |
-| F-14 | No unit test exercises any update function; only four layout tests exist. | five crates | Open. |
+| F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Narrowed** (brief 001): the five update functions have boundary tests. `FlatTimingWheel::schedule_fine` and `SymbolicHypervectorHeader::bind` remain untested. |
 | F-15 | 2.8.0 cited a `spec-guard` binary at an absolute path on one developer's machine. | README | **Resolved**: pinned as a dev dependency in `package.json`; run via `npx`. |
 | F-16 | `GlobalWorkspaceSlot` code comments say slots `0..7`; 2.8.0 said four slots. | `cortex-workspace` | **Resolved**: slot count declared a configuration parameter (§5.2.8). |
 | F-17 | `EmbodimentRingBuffer` is a control block; the payload rings and the torque decoder do not exist. | `cortex-embodiment` | Open (Specified in §6.4). |

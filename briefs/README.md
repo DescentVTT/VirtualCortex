@@ -53,7 +53,10 @@ Numbers are three digits, allocated in order, never reused. Take the next free o
    archived brief with an open box as an orphaned obligation, and a delegation to a retired document
    as a ghost handover; both fail CI.
 4. Remove the precondition directives, or leave them: `spec-guard` does not run on `archive/`.
-5. Do not edit the body otherwise. A frozen snapshot claims nothing about now and cannot drift.
+5. Relative links gain one `../` so that they still resolve from `archive/`; `spec-graph` checks
+   links in archived briefs. This changes no word, claim or figure, and the banner says it was
+   done.
+6. Do not edit the body otherwise. A frozen snapshot claims nothing about now and cannot drift.
 
 ## Writing one
 

@@ -1,7 +1,14 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #4.** Closes finding F-4; narrows F-14 to
+> `FlatTimingWheel::schedule_fine` and `SymbolicHypervectorHeader::bind`. No ADR was written: a
+> Q16.16 newtype was considered and deferred until a runtime crate gives it more than five call
+> sites. The report is in the pull request and in `CHANGELOG.md`. The body below describes the
+> tree before execution and is not maintained, apart from relative links, which gained one `../`
+> so that they still resolve from `archive/`.
 
 # Brief 001 — Saturating Q16.16 arithmetic in the five update functions
 
@@ -18,9 +25,9 @@ exercises any update function) is narrowed to whatever functions this brief does
   whitepaper §11; do not fix it silently.
 - **Verify before asserting.** Read the file; run the command.
 - **Label every claim** Implemented, Specified, Target or Hypothesis. No number is Measured without
-  a committed benchmark ([ADR-0010](../docs/adr/0010-measured-or-target.md)).
+  a committed benchmark ([ADR-0010](../../docs/adr/0010-measured-or-target.md)).
 - **Latest ≠ Newest.** Stable Rust only; no new dependencies in state crates
-  ([ADR-0005](../docs/adr/0005-crate-per-subsystem.md)).
+  ([ADR-0005](../../docs/adr/0005-crate-per-subsystem.md)).
 - **Say what you did not do** in the closing report.
 - Branch and pull request; Conventional Commits with a real body; run every command in
   `CLAUDE.md` before pushing.
@@ -29,7 +36,7 @@ exercises any update function) is narrowed to whatever functions this brief does
 
 Re-derived against `main` on 2026-09-10.
 
-- Whitepaper [§8.1](../docs/WHITEPAPER.md#81-numeric-model-q1616) requires saturating arithmetic on
+- Whitepaper [§8.1](../../docs/WHITEPAPER.md#81-numeric-model-q1616) requires saturating arithmetic on
   state fields and names the five offenders: `compute_gating` (`crates/cortex-basal-ganglia/src/lib.rs`),
   `step_forward_model` (`crates/cortex-cerebellum/src/lib.rs`), `evaluate_threat`
   (`crates/cortex-salience/src/lib.rs`), `step_ignition` (`crates/cortex-workspace/src/lib.rs`) and
@@ -48,21 +55,23 @@ Re-derived against `main` on 2026-09-10.
 
 ## Deliverables
 
-- [ ] `compute_gating`: `saturating_add` / `saturating_sub`; test that `i32::MAX` drives do not panic
+- [x] `compute_gating`: `saturating_add` / `saturating_sub`; test that `i32::MAX` drives do not panic
       and that the selection sign is preserved at saturation.
-- [ ] `step_forward_model`: saturating operations only; keep the current (placeholder) formula,
+- [x] `step_forward_model`: saturating operations only; keep the current (placeholder) formula,
       because F-8 is out of scope; test the `i32::MIN` shift case (`>> 2` of a negative value is
       arithmetic and must stay so).
-- [ ] `evaluate_threat`: no arithmetic changes needed unless you find some; add the threshold test
+- [x] `evaluate_threat`: no arithmetic changes needed unless you find some; add the threshold test
       (2.0 exactly, 2.0 plus one LSB, conditioned weight at 1.0 exactly).
-- [ ] `step_ignition`: `saturating_add` on `ignition_potential`; test that repeated evidence cannot
+      None were needed; five tests added, including one that pins the sticky mode flag.
+- [x] `step_ignition`: `saturating_add` on `ignition_potential`; test that repeated evidence cannot
       overflow past `IGNITION_THRESHOLD` into a negative value.
-- [ ] `update_circadian_tick`: `wrapping_add` then mask; test the wrap at `0xFFFF` and the sleep
+- [x] `update_circadian_tick`: `wrapping_add` then mask; test the wrap at `0xFFFF` and the sleep
       gate at `0xC000` and at `sensory_fatigue == 0x8000_0000`.
-- [ ] Whitepaper §11: F-4 Resolved with a one-line description; F-14 narrowed to name any function
+- [x] Whitepaper §11: F-4 Resolved with a one-line description; F-14 narrowed to name any function
       left untested. §5.2 rows for the five crates: update the "Logic" wording if it changed.
-- [ ] `CHANGELOG.md` entry under Unreleased.
-- [ ] Archive this brief.
+      §1.6 "Test" column and §5.2.5 prose updated; §8.1 no longer names F-4 as open.
+- [x] `CHANGELOG.md` entry under Unreleased.
+- [x] Archive this brief.
 
 ## Not empowered
 

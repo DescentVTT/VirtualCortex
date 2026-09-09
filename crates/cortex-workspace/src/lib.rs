@@ -16,9 +16,12 @@ pub struct GlobalWorkspaceSlot {
 impl GlobalWorkspaceSlot {
     pub const IGNITION_THRESHOLD: i32 = 0x0001_8000; // 1.5 in Q16.16
 
+    /// Accumulates evidence and ignites at or above the threshold. The accumulator
+    /// saturates (whitepaper §8.1), so sustained evidence can never wrap to a negative
+    /// potential and silently un-ignite the slot. Decay and competition are Specified.
     #[inline(always)]
     pub fn step_ignition(&mut self, bottom_up_evidence: i32) -> bool {
-        self.ignition_potential += bottom_up_evidence;
+        self.ignition_potential = self.ignition_potential.saturating_add(bottom_up_evidence);
         if self.ignition_potential >= Self::IGNITION_THRESHOLD {
             self.is_ignited = 1;
             self.persistence_ticks = 300; // 300ms conscious persistence window
@@ -34,3 +37,59 @@ const _: () = {
     assert!(core::mem::size_of::<GlobalWorkspaceSlot>() == 64);
     assert!(core::mem::align_of::<GlobalWorkspaceSlot>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ONE: i32 = 0x0001_0000;
+    const HALF: i32 = 0x0000_8000;
+
+    fn slot(ignition_potential: i32) -> GlobalWorkspaceSlot {
+        GlobalWorkspaceSlot {
+            slot_id: 0,
+            binding_hash: 0,
+            ignition_potential,
+            persistence_ticks: 0,
+            confidence_q16: 0,
+            broadcast_channel_mask: 0,
+            p300_wave_phase: 0,
+            is_ignited: 0,
+            _reserved: [0; 32],
+        }
+    }
+
+    #[test]
+    fn ignites_at_exactly_the_threshold() {
+        let mut s = slot(0);
+        assert!(s.step_ignition(GlobalWorkspaceSlot::IGNITION_THRESHOLD));
+        assert_eq!(s.is_ignited, 1);
+        assert_eq!(s.persistence_ticks, 300);
+    }
+
+    #[test]
+    fn one_lsb_below_the_threshold_stays_subliminal() {
+        let mut s = slot(0);
+        assert!(!s.step_ignition(GlobalWorkspaceSlot::IGNITION_THRESHOLD - 1));
+        assert_eq!(s.is_ignited, 0);
+        assert_eq!(s.persistence_ticks, 0);
+    }
+
+    #[test]
+    fn evidence_accumulates_across_steps() {
+        let mut s = slot(0);
+        assert!(!s.step_ignition(ONE));
+        assert!(s.step_ignition(HALF));
+        assert_eq!(s.ignition_potential, ONE + HALF);
+    }
+
+    #[test]
+    fn sustained_evidence_saturates_instead_of_wrapping_negative() {
+        let mut s = slot(i32::MAX - 1);
+        assert!(s.step_ignition(ONE));
+        assert_eq!(s.ignition_potential, i32::MAX);
+        assert!(s.step_ignition(i32::MAX));
+        assert_eq!(s.ignition_potential, i32::MAX);
+        assert_eq!(s.is_ignited, 1);
+    }
+}

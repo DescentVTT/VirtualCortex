@@ -14,6 +14,9 @@ pub struct SalienceNodeState {
 }
 
 impl SalienceNodeState {
+    /// Threshold rule only: a shock strictly above 2.0, or a conditioned weight strictly
+    /// above 1.0, engages the freeze reflex. No arithmetic is performed, so there is nothing
+    /// to saturate (whitepaper §8.1).
     #[inline(always)]
     pub fn evaluate_threat(&mut self, sensory_shock: i32) -> bool {
         self.unconditioned_stimulus = sensory_shock;
@@ -34,3 +37,69 @@ const _: () = {
     assert!(core::mem::size_of::<SalienceNodeState>() == 64);
     assert!(core::mem::align_of::<SalienceNodeState>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ONE: i32 = 0x0001_0000;
+    const TWO: i32 = 0x0002_0000;
+
+    fn node(fear_conditioning_w: i32) -> SalienceNodeState {
+        SalienceNodeState {
+            node_id: 0,
+            threat_valence: 0,
+            low_road_ticks: 0,
+            fear_conditioning_w,
+            defense_mode_flags: 0,
+            emotional_tag_priority: 0,
+            unconditioned_stimulus: 0,
+            override_active: 0,
+            _reserved: [0; 32],
+        }
+    }
+
+    #[test]
+    fn shock_at_exactly_two_does_not_trigger() {
+        let mut n = node(0);
+        assert!(!n.evaluate_threat(TWO));
+        assert_eq!(n.unconditioned_stimulus, TWO);
+        assert_eq!(n.override_active, 0);
+        assert_eq!(n.defense_mode_flags, 0);
+    }
+
+    #[test]
+    fn shock_one_lsb_above_two_triggers_freeze() {
+        let mut n = node(0);
+        assert!(n.evaluate_threat(TWO + 1));
+        assert_eq!(n.threat_valence, ONE);
+        assert_eq!(n.defense_mode_flags, 1);
+        assert_eq!(n.override_active, 1);
+        assert_eq!(n.emotional_tag_priority, 255);
+    }
+
+    #[test]
+    fn conditioned_weight_at_exactly_one_does_not_trigger() {
+        let mut n = node(ONE);
+        assert!(!n.evaluate_threat(0));
+    }
+
+    #[test]
+    fn conditioned_weight_above_one_triggers_without_a_shock() {
+        let mut n = node(ONE + 1);
+        assert!(n.evaluate_threat(0));
+        assert_eq!(n.override_active, 1);
+    }
+
+    #[test]
+    fn override_is_released_when_the_threat_subsides() {
+        let mut n = node(0);
+        assert!(n.evaluate_threat(i32::MAX));
+        assert!(!n.evaluate_threat(0));
+        assert_eq!(n.override_active, 0);
+        // Only the override is released; the mode flag and valence persist until a later
+        // rule clears them. This pins the current behaviour rather than endorsing it.
+        assert_eq!(n.defense_mode_flags, 1);
+        assert_eq!(n.threat_valence, ONE);
+    }
+}
