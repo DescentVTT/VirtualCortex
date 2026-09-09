@@ -1,319 +1,95 @@
 # VirtualCortex
 
-> **A Production-Grade, Deterministic Neuromorphic Engine for Scalable Spiking Neural Computing**  
-> *Engineered to 2026+ High-Performance Systems Best Practice (`Latest != Newest`)*
+**A deterministic, single-node neuromorphic virtual-actor engine for spiking neural computation, written in Rust.**
 
-[![Language](https://img.shields.io/badge/Language-Rust%202024%2F2026-orange.svg)](https://www.rust-lang.org/)
-[![Architecture](https://img.shields.io/badge/Standard-2026%2B%20Systems%20Best%20Practice-blue.svg)](#1-foundational-doctrine-latest--newest)
-[![Scale](https://img.shields.io/badge/Capacity-86%20Billion%20Nodes%20Whole--Brain-red.svg)](#key-performance-targets)
-[![Fidelity](https://img.shields.io/badge/Fidelity-5.0%2F5.0%20(Larkum%20BAC%20%2B%20STP--8)-brightgreen.svg)](#key-performance-targets)
-[![Tail Latency](https://img.shields.io/badge/Tail%20Latency-P99.99%20%3C%2035ns-brightgreen.svg)](#key-performance-targets)
-[![Embodiment](https://img.shields.io/badge/Embodiment-Isaac%20Sim%20%2F%20MuJoCo%201ms-purple.svg)](#key-performance-targets)
-[![Action Selection](https://img.shields.io/badge/Basal%20Ganglia-Striatal%20D1%2FD2%20Gating-blue.svg)](#key-performance-targets)
-[![Cerebellum](https://img.shields.io/badge/Cerebellum-Microsecond%20Smith%20Predictor-brightgreen.svg)](#key-performance-targets)
-[![Executive](https://img.shields.io/badge/Executive-Counterfactual%20Rollouts-blue.svg)](#key-performance-targets)
-[![Predictive](https://img.shields.io/badge/Predictive-%3E85%25%20Sensory%20Cancellation-brightgreen.svg)](#key-performance-targets)
-[![Agency](https://img.shields.io/badge/Agency-Theory%20of%20Mind%20(ToM)-orange.svg)](#key-performance-targets)
-[![Immune](https://img.shields.io/badge/Immune-Glymphatic%20ECC%20Scrubbing-red.svg)](#key-performance-targets)
-[![Workspace](https://img.shields.io/badge/Workspace-Global%20Workspace%20Ignition-orange.svg)](#key-performance-targets)
-[![Symbolic](https://img.shields.io/badge/Symbolic-10%2C000--D%20VSA%20Grounding-blue.svg)](#key-performance-targets)
-[![Fabric](https://img.shields.io/badge/Fabric-RDMA%20%2F%20CXL%203.0%20Mesh-blue.svg)](#key-performance-targets)
-[![Determinism](https://img.shields.io/badge/Determinism-100%25%20Bit--Exact%20Q16.16-brightgreen.svg)](#the-eighteen-formal-architectural-invariants)
-[![License](https://img.shields.io/badge/License-Apache%202.0%20%2F%20MIT-blue.svg)](#license)
+[![CI](https://github.com/DescentVTT/VirtualCortex/actions/workflows/ci.yml/badge.svg)](https://github.com/DescentVTT/VirtualCortex/actions/workflows/ci.yml)
+[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
+[![Rust: stable](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 
----
+VirtualCortex builds a spiking neural network on the virtual-actor model and constrains it to one physical server. Neural units are passive 64-byte records that occupy memory only while active; a fixed pool of core-pinned workers services them; ownership per tick is decided by a single atomic gate; axonal delay is an index into a timing wheel; and inactive tissue is evicted to local storage. Every quantity is Q16.16 fixed point, so a run is bit-identical on x86-64 and AArch64. The founding rule is **"Latest ≠ Newest"**: only technologies with a stable specification, years of production use and known failure modes are admitted to the hot path.
 
-## 📖 Executive Overview
+## Status
 
-Simulating the mammalian brain (~86 billion neurons, ~100 trillion synapses) with naive brute-force point-neuron computing requires upwards of **700 Terabytes of memory**, relegating whole-brain emulation to multi-million-dollar supercomputer clusters plagued by non-deterministic floating-point divergence. Yet biological intelligence computes through **hierarchical self-similarity, multi-compartment dendritic non-linearities, basal ganglia action gating, cerebellar forward motor coordination, subcortical amygdala threat bypass, global conscious ignition, prefrontal counterfactual planning, hierarchical predictive coding, intersubjective agency, neuro-immune self-healing, and homeostatic drives**.
+This repository is at the **state-model stage**. Read the labels before reading anything else:
 
-**VirtualCortex** is a deterministic, multi-scale neuromorphic simulation engine and sovereign whole-brain autonomous cognitive organism engineered strictly to **2026+ Systems Best Practice (`Latest != Newest`)**. By condensing point-neuron redundancy into biophysically realistic multi-compartment super-neurons, macro-columns, subcortical reflex arcs, and distributed working memory, VirtualCortex runs an **86-billion-node complete cognitive organism on a single commodity 64-core server within ~35.20 GB of physical RAM**, delivering **>120,000,000 spikes/sec** at **P99.99 tail latency < 35 nanoseconds** with **100% bit-exact cross-platform reproducibility**.
-
-Structured as a unified **Eighteen-Crate Rust Cargo Workspace**:
-1. **`cortex-core` (CNS)**: The deterministic biophysical physics simulation engine (64B POD cache-lines, Q16.16 SIMD, Matthew Larkum BAC, Tsodyks-Markram STP-8).
-2. **`cortex-connectome` (Blueprint)**: Anatomical connectome priors from the Allen Brain Atlas compiled into canonical 6-layer microcolumns and zero-copy `.cortex` memory-mapped files.
-3. **`cortex-sensory` (PNS)**: Hot-pluggable event encoders (AER-64, DVS, cochlea, IMU, tactile e-skin) gated at the Thalamocortical boundary (HAL).
-4. **`cortex-embodiment` (Motor)**: Zero-latency POSIX shared-memory IPC (`/dev/shm`) linking Layer 5 motor burst outputs to NVIDIA Isaac Sim, MuJoCo, and physical robotics under a deterministic 1ms hard real-time barrier.
-5. **`cortex-basal-ganglia` (Action Selection)**: Striatal dual-pathway (D1 Go / D2 No-Go) competitive gating and Subthalamic Nucleus (STN) hyperdirect emergency braking.
-6. **`cortex-cerebellum` (Motor Coordination)**: Microsecond-scale cerebellar forward dynamic state predictors (Smith Predictor) and climbing-fiber supervised LTD, eliminating robotic ataxia.
-7. **`cortex-salience` (Subcortical Defense)**: 12ms subcortical amygdala threat bypass and freeze/flee reflex arc preempting cortical latency during physical danger.
-8. **`cortex-workspace` (Conscious Ignition)**: Global Workspace Theory (GWT) competitive broadcast, ignition thresholding, and multi-modal working memory synchronization.
-9. **`cortex-symbolic` (Symbolic Grounding)**: 10,000-dimensional Holographic Reduced Representations (HRR) and Vector Symbolic Architecture (VSA) zero-leakage cognitive grounding.
-10. **`cortex-executive` (Executive Planning)**: Frontopolar cortex (BA 10) and dlPFC multi-step lookahead rollouts, counterfactual mental sandboxing, and hierarchical goal tree search.
-11. **`cortex-predictive` (Predictive Inference)**: Hierarchical predictive coding (HPC) and Free Energy Principle (FEP) top-down suppression, cancelling >85% of redundant sensory event traffic.
-12. **`cortex-agency` (Theory of Mind)**: Intersubjective self/other motor consequence cancellation (efference copy) and multi-agent mental state modeling.
-13. **`cortex-immune` (Glymphatic Self-Healing)**: Sleep-phase memory compaction, microglial dead synapse phagocytosis, and 24/7 background ECC / SDC memory scrubbing.
-14. **`cortex-neuromod` (Value)**: Three-factor synaptic plasticity (Dopamine RPE, Norepinephrine arousal, Serotonin risk, Acetylcholine precision) driving autonomous reinforcement learning.
-15. **`cortex-hippocampus` (Memory)**: Fast 1-shot CA3 attractor memory, hexagonal grid-cell spatial navigation, and offline sleep replay (SWR) consolidation.
-16. **`cortex-homeostasis` (Autonomic Drive)**: Hypothalamic metabolic drive pools, circadian sleep-wake state machines, and Self-Organized Criticality (SOC) branching ratio stabilization.
-17. **`cortex-fabric` (Scale-Out Mesh)**: Kernel-bypass RDMA (RoCEv2 / InfiniBand) messaging, CXL 3.0 multi-host shared memory fabric, and microsecond distributed causal barrier synchronization.
-18. **`cortex-telemetry` (Observability)**: Non-invasive in-kernel eBPF probes, SPSC local field potential (LFP) synthesizer, and real-time spike raster streaming.
-
-👉 **Complete Technical Documents**:
-- 📄 **[English Architecture Whitepaper (28-Chapter OSDI/ASPLOS Specification)](docs/WHITEPAPER.md)**
-- 📄 **[繁體中文系統架構技術報告 (28 大標準章節、2026+ 系統工程最佳實踐)](docs/zh-TW/architecture-report.md)**
-
----
-
-## 🏛️ System Architecture
-
-```
-==================================================================================================
-                             THE GRAND 18-CRATE SYSTEM TOPOLOGY
-==================================================================================================
- [PNS: cortex-sensory]        [Blueprint: cortex-connectome]       [Motor: cortex-embodiment]
-  - Pluggable AER-64 Bus       - Allen Brain Atlas Prior            - POSIX Shared Memory (/dev/shm)
-  - DVS, Cochlea, IMU, E-Skin  - 6-Layer Microcolumns               - Isaac Sim / MuJoCo 1ms Sync
-  - Thalamic Relay Gate (HAL)  - Zero-Copy .cortex mmap             - L5 Motor Burst Torque Decoder
-        │                              │                                  │
-        ▼                              ▼                                  ▼
- ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
- │ Tier 0: L1/L2 SRAM Cache (< 1.5 ns latency, ~128 KB per core)                                │
- │ - AVX-512 / SVE2 Q16.16 Vector Pipeline: STP Decay, Modulator Scaling, Mask Filtering       │
- └──────────────────────────────────────────────────────────────────────────────────────────────┘
-                                        ▲                     ▲
-                                        │                     │
- Tier 1: Local NUMA Node DDR5 (< 80 ns latency, 64 GB)         │
-   ┌────────────────────────────────────┴────────┐   ┌────────┴─────────────────────────────────┐
-   │ 860,000 Macro Hyper-Columns (55.04 MB)      │   │ 43,000,000 DendriticSuperNeurons (2.75 GB)│
-   │ - Continuous Wilson-Cowan Neural Fields     │   │ - 64-Byte POD Cache-Line Aligned         │
-   │ - Dynamic Gain & Somatostatin (SST) Fields  │   │ - Matthew Larkum BAC Calcium Bursts      │
-   │ - Astrocyte [K+]o 3D Diffusion Grid         │   │ - Tsodyks-Markram Integer STP-8          │
-   ├─────────────────────────────────────────────┼───┴──────────────────────────────────────────┤
-   │ cortex-basal-ganglia Channels (64 MB)       │ cortex-cerebellum Microzones (512 MB)        │
-   │ - Striatal D1/D2 Gating + STN Emergency Stop│ - Smith Predictor + Granule Expansion Hash   │
-   ├─────────────────────────────────────────────┼──────────────────────────────────────────────┤
-   │ cortex-salience Threat Node State (32 MB)   │ cortex-workspace Global Broadcast (16 MB)    │
-   │ - 12ms Amygdala Threat Subcortical Bypass   │ - 4-Slot GWT Ignition & Multi-Modal Binding  │
-   ├─────────────────────────────────────────────┼──────────────────────────────────────────────┤
-   │ cortex-symbolic VSA Codebook (1.25 GB)      │ cortex-executive Plan Tree Nodes (32 MB)     │
-   │ - 10,000-D Holographic Reduced Vectors      │ - Counterfactual Rollout Search Sandbox      │
-   ├─────────────────────────────────────────────┼──────────────────────────────────────────────┤
-   │ cortex-predictive Errors (64 MB)            │ cortex-agency Perspectives (16 MB)           │
-   │ - >85% Top-Down Error Cancellation          │ - Efference Copy Motor Agency & ToM          │
-   ├─────────────────────────────────────────────┼──────────────────────────────────────────────┤
-   │ cortex-immune Scrubbing Nodes (64 MB)       │ cortex-hippocampus 1-Shot CA3 Buffer (64 MB) │
-   │ - Sleep Glymphatic Compaction & ECC SDC     │ - Sparse Hopfield Attractor + Grid Cells     │
-   ├─────────────────────────────────────────────┼──────────────────────────────────────────────┤
-   │ cortex-neuromod Value Field (13.76 MB)      │ cortex-homeostasis Drive Pool (32 MB)        │
-   │ - DA / NE / 5-HT / ACh Q16.16 Scalars       │ - Energy / Fatigue / Circadian SOC Balance   │
-   ├─────────────────────────────────────────────┼──────────────────────────────────────────────┤
-   │ cortex-fabric RDMA Queue Descriptors (128 MB) cortex-telemetry LFP Ring Taps (32 MB)        │
-   │ - Kernel-Bypass Causal Barrier Envelopes    │ - Lock-Free SPSC Probe Buffers               │
-   ├─────────────────────────────────────────────┴──────────────────────────────────────────────┤
-   │ 860,000 SIMD Broadcaster Bitmaps (440.3 MB) | 128,000,000 SynapseBlock Arenas (8.19 GB)    │
-   │ - Dense 64-bit Target Masks                 | - Fixed 64-Byte Slabs (Zero Heap Frag)       │
-   ├─────────────────────────────────────────────┴──────────────────────────────────────────────┤
-   │ 64 Two-Tier Cascade-Free Timing Wheels (512 MB) | 1,048,576 3D Guidance Voxels (16.78 MB)   │
-   │ - Flat 1024-Slot Ring Buffer (< 8 ns tick)        | - Morton Z-Curve Continuous Sprouting  │
-   ├────────────────────────────────────────────────────────────────────────────────────────────┤
-   │ 2,048 Sensory & Embodiment IPC Buffers (131 MB)                                            │
-   └────────────────────────────────────────────────────────────────────────────────────────────┘
-                                        ▲
-                                        │ Cache-Line Prefetch (32B chunk)
- Tier 2: CXL 3.0 Far Memory Pool (~180 ns latency)
-   ┌────────────────────────────────────────────────────────────────────────────────────────────┐
-   │ 1,000,000,000 Sparse Plastic Synapse Deltas (ΔW, 16.00 GB)                                  │
-   │ - Dynamically sprouted connections, homeostatic synaptic weights, asynchronous background  │
-   └────────────────────────────────────────────────────────────────────────────────────────────┘
-                                        ▲
-                                        │ Tier 3: Asynchronous Epoch Checkpoint
-   ┌────────────────────────────────────┴───────────────────────────────────────────────────────┐
-   │ NVMe PCIe 5.0 SSD (io_uring / raw block device) - Zero-Copy State Snapshots & redb WAL     │
-   └────────────────────────────────────────────────────────────────────────────────────────────┘
-==================================================================================================
-```
-
----
-
-## ⚡ Key Performance Targets
-
-Tested on a reference **64-core AMD EPYC / ARM Neoverse** server with **64 GB DDR5 RAM**, **CXL 3.0 Far Memory**, and **PCIe 5.0 NVMe SSD**:
-
-| Metric | Production Target | Architectural Mechanism |
+| Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Equivalent Brain Scale** | **86,000,000,000 Neurons** (~100T Synapses) | Macro Hyper-Columns + Meso Multi-Compartment Super-Neurons |
-| **Biophysical Fidelity** | **5.0 / 5.0 (Full Functional Fidelity)** | Larkum BAC Calcium Bursts + Tsodyks-Markram STP-8 + Astrocytes |
-| **Physical System RAM** | **~35.20 GB Physical RAM** | 64-Byte POD Layout + CXL 3.0 Tiering (Zero Pointer Bloat) |
-| **Spike Throughput** | **> 120,000,000 Spikes / sec** | SIMD Sparse-Bitmap Compression + Two-Tier Flat Wheel |
-| **Median Dispatch Latency**| **< 18 nanoseconds** | Direct Vector Register Stores (Zero Pointer Dereferencing) |
-| **P99.99 Tail Latency** | **< 35 nanoseconds** | Kernel-Bypass DPDK Polling + Dedicated Core Affinity (`isolcpus`) |
-| **Embodied Closed-Loop** | **1.000 ms Hard Real-Time Tick** | POSIX Shared-Memory IPC (`/dev/shm`) + `clock_nanosleep` |
-| **Action Gating Latency**| **< 12 nanoseconds** | Striatal D1/D2 Winner-Take-All SIMD + STN Emergency Brake |
-| **Cerebellar Lead Time** | **< 5 microseconds** | Internal Forward Model (Smith Predictor) Purkinje Compensation |
-| **Amygdala Salience Bypass**| **< 12 milliseconds reflex trigger** | Subcortical direct sensory bypass preempting cortical loop |
-| **Conscious Broadcast** | **< 20 microseconds ignition lock** | Global Workspace Theory 4-slot competitive broadcast |
-| **Symbolic Grounding** | **10,000-D VSA Zero-Leakage** | Exact circular convolution & clean-up codebook associative query |
-| **Executive Rollout** | **< 50 microseconds tree search** | Prefrontal counterfactual sandbox rollout without motor movement |
-| **Predictive Filtering**| **> 85% sensory traffic cancelled** | Hierarchical predictive coding (FEP) top-down error subtraction |
-| **Agency Discrimination**| **100% efference copy match** | Self vs Other motor consequence cancellation and Theory of Mind |
-| **Immune Self-Healing** | **Zero-downtime memory compaction**| Sleep-phase glymphatic compaction and continuous ECC scrubbing |
-| **Sensory Hot-Plug** | **0.00 ms STW Dynamic Attachment** | AER-64 Protocol + Thalamic Relay Gating HAL |
-| **Reinforcement Learning**| **Three-Factor Plasticity** | Dopamine RPE + Local Hebbian Eligibility Traces |
-| **Episodic Memory** | **1-Shot Auto-Associative Recall** | Hippocampal CA3 Attractor + Offline SWR Consolidation |
-| **Scale-Out Fabric** | **< 2.0 microseconds RDMA Round-Trip**| Kernel-Bypass `ibverbs` + CXL 3.0 Distributed Shared Memory |
-| **Cold Boot Hydration** | **< 100 milliseconds** | Zero-Copy `.cortex` Binary Memory Mapping (`mmap`) |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 18 crates, 19 `#[repr(C)]` records (18 of them with compile-time size and alignment assertions), 5 small deterministic update functions, zero dependencies, zero `unsafe`. |
+| **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, mailboxes, wheel dispatch, image loader, embodiment rings, reclamation, fabric transport, subsystem dynamics. |
+| **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. There is no benchmark in the tree yet. |
+| **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. |
 
----
+Where a document and the repository disagree, the repository wins and the disagreement is a numbered finding in the whitepaper's §11.
 
-## 1. Foundational Doctrine: "Latest != Newest"
+## Workspace
 
-In mission-critical systems engineering, **the newest technology is rarely the best technology**:
-1. **Physical Limits Over Software Hype**: Moore's Law scaling has stalled; modern computational bottlenecks are dominated by the **Memory Wall** ($80\,\text{ns}$ DRAM access vs. $0.3\,\text{ns}$ ALU cycle) and the **Interconnect Wall**. Brute-force pointer chasing over massive sparse graphs collapses CPU cache hierarchies.
-2. **Deterministic Mechanical Empathy**: Modern superscalar CPUs achieve peak efficiency only when code respects microarchitectural physical realities: **strict 64-byte cache-line alignment, hardware prefetcher streaming linearity, branch predictor predictability, and zero-allocation hot paths**.
-3. **Maturity-Tested Robustness**: High-performance systems rely on proven engineering foundations—Epoch-Based Reclamation, NUMA-aware memory pinning, DPDK-style userspace polling, and SIMD integer vectorization—rather than unvalidated ephemeral abstractions.
+Eighteen crates, one per subsystem, with no dependencies between them ([ADR-0005](docs/adr/0005-crate-per-subsystem.md)). Each exports one primary state record; sizes are asserted at compile time.
 
----
+| Layer | Crate | Primary record | Size |
+| :--- | :--- | :--- | ---: |
+| Foundation | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` | 64 B, 64 B, 2 248 B |
+| Structure | `cortex-connectome` | `CortexFileHeader` | 64 B |
+| Periphery | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B |
+| Periphery | `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B |
+| Subcortical | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B |
+| Subcortical | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B |
+| Subcortical | `cortex-salience` | `SalienceNodeState` | 64 B |
+| Subcortical | `cortex-neuromod` | `NeuromodulatorState` | 16 B |
+| Subcortical | `cortex-hippocampus` | `HippocampalAttractorState` | 64 B |
+| Subcortical | `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B |
+| Cognitive | `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B |
+| Cognitive | `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B |
+| Cognitive | `cortex-executive` | `ExecutivePlanNode` | 64 B |
+| Cognitive | `cortex-predictive` | `PredictiveErrorState` | 64 B |
+| Cognitive | `cortex-agency` | `AgentPerspectiveState` | 64 B |
+| Systems | `cortex-immune` | `ImmuneScrubNode` | 64 B |
+| Systems | `cortex-fabric` | `FabricPacketHeader` | 64 B |
+| Systems | `cortex-telemetry` | `LfpSamplePacket` | 64 B |
 
-## 2. The Eighteen Formal Architectural Invariants
+Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8.
 
-Every subsystem in VirtualCortex is bound by eighteen mathematically verifiable invariants:
+<!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="18" reason="the table above lists eighteen crates" -->
 
-1. **Exact 64-Byte POD Cache-Line Alignment**: Every core neuron and state struct matches CPU cache lines exactly (`#[repr(C, align(64))]`).
-2. **Zero-Allocation Execution Fast Path**: Hot execution paths make zero system calls (`malloc`, `free`, kernel traps).
-3. **Deterministic Q16.16 Fixed-Point Dynamics**: Eliminates IEEE 754 non-associativity across hardware architectures.
-4. **Lock-Free Epoch-Based Memory Reclamation (EBR)**: Dynamic connectome mutations execute lock-free with zero reader stalls.
-5. **Two-Tier Cascade-Free Event Timing**: Timing wheels execute in strict $O(1)$ flat circular ring buffers with $<8\,\text{ns}$ ticks.
-6. **Kernel-Bypass Core Isolation**: Execution threads are pinned to isolated hardware cores (`isolcpus`, `nohz_full`).
-7. **Hardware-Native Memory Tiering**: Memory spans Tier 0 (L1/L2 SRAM) to Tier 3 (NVMe `io_uring`) with zero OS paging thrash.
-8. **1 Millisecond Sensorimotor Closed-Loop Barrier**: Clock-locked real-time synchronization barrier for physical embodiment.
-9. **0ms STW Sensory Hot-Plugging**: Sensory encoders dynamically attach/detach without pausing ongoing simulation.
-10. **Conflict-Free Action Selection Gating**: Striatal D1/D2 winner-take-all with $<50\,\mu\text{s}$ STN hyperdirect emergency brake.
-11. **Microsecond Cerebellar Predictive Forward Correction**: Smith predictor internal forward model eliminating motor ataxia.
-12. **Subcortical Salience Bypassing Under 12ms**: Immediate threat detection routes directly to motor actuation, preempting cortical latency.
-13. **Global Workspace Nonlinear Ignition**: Broadcast slots undergo threshold-activated ignition, binding multi-modal state into unified conscious focus.
-14. **Hyperdimensional Vector Symbolic Grounding**: 10,000-dimensional hypervectors bind continuous neural spikes to discrete symbolic tokens without semantic drift.
-15. **Prefrontal Counterfactual Rollout Isolation**: Forward mental rollouts simulate alternatives in an isolated sandbox without activating physical motor actuators.
-16. **Hierarchical Predictive Error Sparsity**: Top-down predictive cancellation eliminates >85% of redundant sensory event traffic across memory buses.
-17. **Intersubjective Agency Invariance**: Bit-exact discrimination between self-caused and external agency via efference copy motor subtraction.
-18. **Glymphatic Self-Healing Non-Blocking Scrubbing**: Sleep-phase memory compaction and ECC verification eliminate fragmentation and memory corruption without service downtime.
+## Documentation
 
----
+| Document | What it is |
+| :--- | :--- |
+| [docs/WHITEPAPER.md](docs/WHITEPAPER.md) | The canonical architecture document: arc42 structure, C4 views, per-crate record layouts, runtime scenarios, quality targets, findings, capacity model. Its claims about the tree are executable. |
+| [docs/adr/](docs/adr/README.md) | Architecture decision records (MADR). |
+| [docs/zh-TW/README.md](docs/zh-TW/README.md) | 繁體中文導讀：how to read the whitepaper, with no layouts or figures of its own. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Workflow, commit conventions, documentation rules, definition of done. |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting. |
+| [CHANGELOG.md](CHANGELOG.md) | Notable changes. |
 
-## 3. The Eighteen Official Workspace Crates
+<!-- @assert-present file="docs/WHITEPAPER.md,docs/adr/README.md,docs/zh-TW/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md" -->
 
-```toml
-[workspace]
-members = [
-    "crates/cortex-core",
-    "crates/cortex-connectome",
-    "crates/cortex-sensory",
-    "crates/cortex-embodiment",
-    "crates/cortex-basal-ganglia",
-    "crates/cortex-cerebellum",
-    "crates/cortex-salience",
-    "crates/cortex-workspace",
-    "crates/cortex-symbolic",
-    "crates/cortex-executive",
-    "crates/cortex-predictive",
-    "crates/cortex-agency",
-    "crates/cortex-immune",
-    "crates/cortex-neuromod",
-    "crates/cortex-hippocampus",
-    "crates/cortex-homeostasis",
-    "crates/cortex-fabric",
-    "crates/cortex-telemetry",
-]
-resolver = "2"
-```
+## Build and verify
 
-| Crate | Role | Biological / Systems Mechanism |
-| :--- | :--- | :--- |
-| **`cortex-core`** | Central Nervous System (CNS) | 64B POD Layout, Matthew Larkum BAC Bursts, Tsodyks-Markram STP-8, Astrocytic Diffusion |
-| **`cortex-connectome`** | Anatomical Blueprint | Allen Brain Atlas Priors, 6-Layer Microcolumns, Zero-Copy `.cortex` Binary Memory Map |
-| **`cortex-sensory`** | Peripheral Nervous System (PNS) | Pluggable AER-64 Event Bus, DVS Vision, Cochlea Gammatone Filters, Thalamic HAL |
-| **`cortex-embodiment`** | Sensorimotor Closed-Loop | POSIX Shared-Memory IPC (`/dev/shm`), Layer 5 Motor Burst Torque Decoder, 1ms Real-Time Barrier |
-| **`cortex-basal-ganglia`**| Action Selection & Executive Gating| Striatal Dual-Pathway (D1 Go / D2 No-Go), STN Hyperdirect Emergency Brake, Habit Chunking |
-| **`cortex-cerebellum`** | Motor Coordination & Forward Model | Cerebellar Internal Forward Model (Smith Predictor), Purkinje Supervised LTD, Ataxia Elimination |
-| **`cortex-salience`** | Subcortical Defense & Threat | 12ms Subcortical Amygdala Threat Bypass, Freeze/Flee Direct Reflex, Salience Routing |
-| **`cortex-workspace`** | Conscious Ignition & Working Memory| Global Workspace Theory (GWT) 4-Slot Broadcast, Nonlinear Ignition, Multi-Modal Binding |
-| **`cortex-symbolic`** | Symbolic Grounding & Reasoning | 10,000-D Vector Symbolic Architecture (VSA / HRR), Circular Convolution Binding, Clean-up Memory |
-| **`cortex-executive`** | Executive Planning & Forward Search| Frontopolar Cortex (BA 10) & dlPFC Multi-Step Rollouts, Counterfactual Regret Tree Search |
-| **`cortex-predictive`** | Predictive Coding & Active Inference| Hierarchical Predictive Coding (FEP), Top-Down Predictive Suppression (>85% Traffic Cancelled) |
-| **`cortex-agency`** | Intersubjective Agency & ToM | Efference Copy Motor Subtraction, Self/Other Agency Discrimination, Theory of Mind Modeling |
-| **`cortex-immune`** | Glymphatic Compaction & Healing | Sleep Glymphatic Memory Compaction, Microglial Synapse Phagocytosis, SDC/ECC Scrubbing |
-| **`cortex-neuromod`** | Value & Motivation System | Three-Factor Plasticity ($\Delta W = \text{Pre} \times \text{Post} \times M$), Dopamine RPE, Norepinephrine Arousal |
-| **`cortex-hippocampus`**| Episodic Memory & Navigation | Complementary Learning Systems (CLS), 1-Shot CA3 Attractor, Grid Cells, SWR Offline Replay |
-| **`cortex-homeostasis`**| Autonomic Drive & Sleep Cycles | Hypothalamic Energy/Fatigue Drive Pools, Circadian Oscillator, Self-Organized Criticality Tuning |
-| **`cortex-fabric`** | Distributed Scale-Out Cluster Mesh | Kernel-Bypass RDMA (`ibverbs` RoCEv2/IB), CXL 3.0 Multi-Host Shared Synaptic Pool, Microsecond Barrier |
-| **`cortex-telemetry`** | Observability & Telemetry SDK | Non-Invasive Linux eBPF Kernel Probes, SPSC Local Field Potential (LFP) Synthesizer, WebGL Stream |
-
----
-
-## 4. Production Reference Specifications in Rust 2024 / 2026
-
-```rust
-const _: () = {
-    assert!(core::mem::size_of::<cortex_core::DendriticSuperNeuron>() == 64);
-    assert!(core::mem::align_of::<cortex_core::DendriticSuperNeuron>() == 64);
-    assert!(core::mem::size_of::<cortex_core::SynapseBlock>() == 64);
-    assert!(core::mem::align_of::<cortex_core::SynapseBlock>() == 64);
-    assert!(core::mem::size_of::<cortex_connectome::CortexFileHeader>() == 64);
-    assert!(core::mem::align_of::<cortex_connectome::CortexFileHeader>() == 64);
-    assert!(core::mem::size_of::<cortex_embodiment::EmbodimentRingBuffer>() == 64);
-    assert!(core::mem::align_of::<cortex_embodiment::EmbodimentRingBuffer>() == 64);
-    assert!(core::mem::size_of::<cortex_basal_ganglia::BasalGangliaChannelState>() == 64);
-    assert!(core::mem::align_of::<cortex_basal_ganglia::BasalGangliaChannelState>() == 64);
-    assert!(core::mem::size_of::<cortex_cerebellum::CerebellarMicrozone>() == 64);
-    assert!(core::mem::align_of::<cortex_cerebellum::CerebellarMicrozone>() == 64);
-    assert!(core::mem::size_of::<cortex_salience::SalienceNodeState>() == 64);
-    assert!(core::mem::align_of::<cortex_salience::SalienceNodeState>() == 64);
-    assert!(core::mem::size_of::<cortex_workspace::GlobalWorkspaceSlot>() == 64);
-    assert!(core::mem::align_of::<cortex_workspace::GlobalWorkspaceSlot>() == 64);
-    assert!(core::mem::size_of::<cortex_symbolic::SymbolicHypervectorHeader>() == 64);
-    assert!(core::mem::align_of::<cortex_symbolic::SymbolicHypervectorHeader>() == 64);
-    assert!(core::mem::size_of::<cortex_executive::ExecutivePlanNode>() == 64);
-    assert!(core::mem::align_of::<cortex_executive::ExecutivePlanNode>() == 64);
-    assert!(core::mem::size_of::<cortex_predictive::PredictiveErrorState>() == 64);
-    assert!(core::mem::align_of::<cortex_predictive::PredictiveErrorState>() == 64);
-    assert!(core::mem::size_of::<cortex_agency::AgentPerspectiveState>() == 64);
-    assert!(core::mem::align_of::<cortex_agency::AgentPerspectiveState>() == 64);
-    assert!(core::mem::size_of::<cortex_immune::ImmuneScrubNode>() == 64);
-    assert!(core::mem::align_of::<cortex_immune::ImmuneScrubNode>() == 64);
-    assert!(core::mem::size_of::<cortex_hippocampus::HippocampalAttractorState>() == 64);
-    assert!(core::mem::align_of::<cortex_hippocampus::HippocampalAttractorState>() == 64);
-    assert!(core::mem::size_of::<cortex_homeostasis::HomeostaticDrivePool>() == 64);
-    assert!(core::mem::align_of::<cortex_homeostasis::HomeostaticDrivePool>() == 64);
-    assert!(core::mem::size_of::<cortex_fabric::FabricPacketHeader>() == 64);
-    assert!(core::mem::align_of::<cortex_fabric::FabricPacketHeader>() == 64);
-    assert!(core::mem::size_of::<cortex_telemetry::LfpSamplePacket>() == 64);
-    assert!(core::mem::align_of::<cortex_telemetry::LfpSamplePacket>() == 64);
-    assert!(core::mem::size_of::<cortex_neuromod::NeuromodulatorState>() == 16);
-    assert!(core::mem::size_of::<cortex_sensory::SensoryEvent>() == 8);
-};
-```
-
----
-
-## 5. Documentation Map
-
-| Document | Purpose | Language |
-| :--- | :--- | :--- |
-| 📄 **[WHITEPAPER.md](docs/WHITEPAPER.md)** | Definitive Architecture Whitepaper (28 Chapters, OSDI/ASPLOS Standard) | English |
-| 📄 **[architecture-report.md](docs/zh-TW/architecture-report.md)** | 完整系統架構技術報告 (28 大標準章節、2026+ 系統工程最佳實踐) | 繁體中文 |
-
----
-
-## 🛠️ Building & Verification
-
-VirtualCortex requires a modern Rust toolchain (Rust 2024 / 2026 edition compatible):
+Requires stable Rust and, for the documentation checks, Node 22 or newer.
 
 ```bash
-# Verify compilation and static assertions across all 18 workspace crates
 cargo check --workspace --all-targets
-cargo test --workspace --release
-
-# Run executable architectural assertions
-node C:\Repos\spec-guard\bin\spec-guard.js "docs/**/*.md"
+cargo test --workspace
 ```
 
----
+```bash
+npm ci
+npm run spec
+```
 
-## 📜 License
+`npm run spec` runs [`spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard), which executes the `<!-- @assert-* -->` directives embedded in the documents against `crates/`, and [`spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph), which checks that the documents are consistent with one another (links, ADR lifecycle, open questions). Both are pinned to exact versions and run as blocking checks in [CI](.github/workflows/ci.yml). Formatting and clippy also run in CI, advisory until the findings they report are closed.
 
-VirtualCortex is licensed under either of:
+## Contributing
 
-* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-* MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+See [CONTRIBUTING.md](CONTRIBUTING.md). In short: one crate per subsystem, no floats, no allocation on the hot path, every record 64 bytes and asserted, every claim labelled, every decision an ADR.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT License ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

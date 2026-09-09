@@ -12,3 +12,7 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node (documentation tooling)
+node_modules/
+npm-debug.log*

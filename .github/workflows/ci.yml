@@ -1,0 +1,71 @@
+# CI for VirtualCortex.
+#
+# Two jobs, three questions:
+#   rust  - does the workspace compile and do its layout assertions and tests hold?
+#           (blocking). Formatting and clippy run in the same job but are advisory
+#           until whitepaper finding F-10 is closed; remove `continue-on-error`
+#           when it is.
+#   specs - does the source tree still contain what the documents say it contains
+#           (spec-guard), and are the documents consistent with one another
+#           (spec-graph)? Both blocking. Whitepaper Appendix B describes the levels.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (check, test, fmt, clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Format (advisory until F-10 is closed)
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+      - name: Clippy (advisory until F-10 is closed)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        continue-on-error: true
+
+  specs:
+    name: Documentation (spec-guard, spec-graph)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install pinned tools
+        run: npm ci
+
+      - name: Executable architecture assertions
+        run: npm run spec:guard
+
+      - name: Cross-document consistency
+        run: npm run spec:graph

@@ -1,0 +1,19 @@
+{
+  "name": "virtualcortex-specs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Documentation verification for VirtualCortex: executable architecture assertions (spec-guard) and cross-document consistency (spec-graph). The engine itself is a Rust workspace; see Cargo.toml.",
+  "license": "(Apache-2.0 OR MIT)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "spec": "npm run spec:guard && npm run spec:graph",
+    "spec:guard": "spec-guard \"docs/**/*.md\" README.md CONTRIBUTING.md --verbose",
+    "spec:graph": "spec-graph check"
+  },
+  "devDependencies": {
+    "@descent-vtt/spec-graph": "0.2.1",
+    "@descent-vtt/spec-guard": "0.4.0"
+  }
+}
