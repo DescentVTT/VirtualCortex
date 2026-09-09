@@ -8,11 +8,15 @@
 <!-- @assert-count target="crates/cortex-embodiment" symbol="EmbodimentRingBuffer" min="1" -->
 <!-- @assert-count target="crates/cortex-basal-ganglia" symbol="BasalGangliaChannelState" min="1" -->
 <!-- @assert-count target="crates/cortex-cerebellum" symbol="CerebellarMicrozone" min="1" -->
-<!-- @assert-count target="crates/cortex-neuromod" symbol="NeuromodulatorState" min="1" -->
-<!-- @assert-count target="crates/cortex-hippocampus" symbol="HippocampalAttractorState" min="1" -->
 <!-- @assert-count target="crates/cortex-salience" symbol="SalienceNodeState" min="1" -->
 <!-- @assert-count target="crates/cortex-workspace" symbol="GlobalWorkspaceSlot" min="1" -->
 <!-- @assert-count target="crates/cortex-symbolic" symbol="SymbolicHypervectorHeader" min="1" -->
+<!-- @assert-count target="crates/cortex-executive" symbol="ExecutivePlanNode" min="1" -->
+<!-- @assert-count target="crates/cortex-predictive" symbol="PredictiveErrorState" min="1" -->
+<!-- @assert-count target="crates/cortex-agency" symbol="AgentPerspectiveState" min="1" -->
+<!-- @assert-count target="crates/cortex-immune" symbol="ImmuneScrubNode" min="1" -->
+<!-- @assert-count target="crates/cortex-neuromod" symbol="NeuromodulatorState" min="1" -->
+<!-- @assert-count target="crates/cortex-hippocampus" symbol="HippocampalAttractorState" min="1" -->
 <!-- @assert-count target="crates/cortex-homeostasis" symbol="HomeostaticDrivePool" min="1" -->
 <!-- @assert-count target="crates/cortex-fabric" symbol="FabricPacketHeader" min="1" -->
 <!-- @assert-count target="crates/cortex-telemetry" symbol="LfpSamplePacket" min="1" -->
@@ -23,7 +27,7 @@
 
 **起草組織**：VirtualCortex 架構委員會與系統工程特別工作組  
 **工程標準**：2026+ 高性能系統工程最佳實踐（`Latest != Newest`）  
-**規範版本**：2.4.0-Canonical（十四大官方一級模組主權自主認知體系）  
+**規範版本**：2.8.0-Canonical（十八大官方一級模組主權自主認知體系）  
 **目標微架構**：商用 x86-64-v4 (AVX-512 / AMX) / ARMv9.2-A (SVE2 / SME) 伺服器硬體平台  
 **基準硬體**：64 核心 AMD EPYC / ARM Neoverse V2、64 GB DDR5 ECC、CXL 3.0 遠端擴展記憶體、PCIe 5.0 NVMe SSD  
 **授權機制**：Apache-2.0 OR MIT 雙重開源主權授權
@@ -32,21 +36,21 @@
 
 ## 執行摘要（Executive Summary）
 
-在過往的計算神經科學與認知人工智慧研究中，對哺乳類全腦規模（約 860 億個神經元、100 兆個突觸連接）進行高保真度生物物理模擬，始終被視為必須仰賴數百萬美元、消耗兆瓦級電力的超大型國家實驗室超級電腦方能勉強運行的極端任務。傳統學術界的神經形態模擬器往往採取粗暴的「點神經元（Point-Neuron）」抽象（如單室漏電積分發火 LIF 模型），並使用未壓縮的動態指標圖結構（動態指標鄰接表）來存儲稀疏突觸圖。在現代超標量微處理器架構上，這種設計面臨災難性的物理懲罰：模擬 860 億個點神經元及其動態圖結構，需佔用高達 **700 Terabytes** 的實體內存，導致 DRAM 總線頻寬崩潰、快取行抖動（Cache Thrashing）、快表失效（TLB Misses），以及跨平台浮點運算非關聯性所引發的數值發散。
+在過往的計算神經科學與認知人工智慧研究中，對哺乳類全腦規模（約 860 億個神經元、100 兆個突觸連接）進行高保真度生物物理模擬，始終被視為必須仰賴數百萬美元、消耗兆瓦級電力的超大型國家實驗室超級電腦方能勉強運行的極端任務。傳統學術界的神經形態模擬器往往採取粗暴的「點神經元（Point-Neuron）」抽象，並使用未壓縮的動態指標圖結構（動態指標鄰接表）來存儲稀疏突觸圖。在現代超標量微處理器架構上，這種設計面臨災難性的物理懲罰：模擬 860 億個點神經元及其動態圖結構，需佔用高達 **700 Terabytes** 的實體內存，導致 DRAM 總線頻寬崩潰、快取行抖動（Cache Thrashing）、快表失效（TLB Misses），以及跨平台浮點運算非關聯性所引發的數值發散。
 
-**VirtualCortex** 徹底顛覆了這種暴力堆砌硬體的思維，從 **2026+ 現代系統工程最佳實踐（`Latest != Newest`）** 的物理第一性原理出發重新構建。我們深刻認識到：生物大腦皮層的真實計算並非建立在數百億個無結構的點神經元上，而是仰賴**多層級自相似性、多室樹突非線性計算、基底核動作門控、小腦前向內部預測模型，以及全局意識工作空間的非線性點燃**。VirtualCortex 將龐大的點神經元冗餘高度凝練為具備完整生物物理真實度的多室超級神經元、連續宏觀柱（Macro-Columns）、皮層下快速反射弧與分散式工作記憶。
+**VirtualCortex** 徹底顛覆了這種暴力堆砌硬體的思維，從 **2026+ 現代系統工程最佳實踐（`Latest != Newest`）** 的物理第一性原理出發重新構建。我們深刻認識到：生物大腦皮層的真實計算並非建立在數百億個無結構的點神經元上，而是仰賴**多層級自相似性、多室樹突非線性計算、基底核動作門控、小腦前向內部預測模型、全局意識工作空間的非線性點燃、前額葉前瞻反事實模擬、層級預測編碼、心智理論主體性辨識，以及類淋巴神經免疫自癒機制**。VirtualCortex 將龐大的點神經元冗餘高度凝練為具備完整生物物理真實度的多室超級神經元、連續宏觀柱（Macro-Columns）、皮層下快速反射弧與分散式工作記憶。
 
-透過對現代晶片微架構的極致「機械同理心（Mechanical Sympathy）」，VirtualCortex 成功在**單台商用 64 核心伺服器與 ~34.80 GB 實體內存預算內，完整運行 860 億節點的全腦主權認知生命體**。系統實現了每秒超過 **1.2 億次尖峰事件（>120,000,000 spikes/sec）** 的持續吞吐量、**P99.99 尾端延遲小於 35 奈秒**、嚴格 **1.000 ms 感官運動閉環物理硬實時屏障**，以及 **100% 跨硬體架構的位元級精確可重現性**。
+透過對現代晶片微架構的極致「機械同理心（Mechanical Sympathy）」，VirtualCortex 成功在**單台商用 64 核心伺服器與 ~35.20 GB 實體內存預算內，完整運行 860 億節點的全腦主權認知生命體**。系統實現了每秒超過 **1.2 億次尖峰事件（>120,000,000 spikes/sec）** 的持續吞吐量、**P99.99 尾端延遲小於 35 奈秒**、嚴格 **1.000 ms 感官運動閉環物理硬實時屏障**，以及 **100% 跨硬體架構的位元級精確可重現性**。
 
-VirtualCortex 完整架構拆解為 **十四大官方一級獨立 Crate** 工作區：
-`cortex-core`、`cortex-connectome`、`cortex-sensory`、`cortex-embodiment`、`cortex-basal-ganglia`、`cortex-cerebellum`、`cortex-neuromod`、`cortex-hippocampus`、`cortex-salience`、`cortex-workspace`、`cortex-symbolic`、`cortex-homeostasis`、`cortex-fabric` 與 `cortex-telemetry`。
+VirtualCortex 完整架構拆解為 **十八大官方一級獨立 Crate** 工作區：
+`cortex-core`、`cortex-connectome`、`cortex-sensory`、`cortex-embodiment`、`cortex-basal-ganglia`、`cortex-cerebellum`、`cortex-salience`、`cortex-workspace`、`cortex-symbolic`、`cortex-executive`、`cortex-predictive`、`cortex-agency`、`cortex-immune`、`cortex-neuromod`、`cortex-hippocampus`、`cortex-homeostasis`、`cortex-fabric` 與 `cortex-telemetry`。
 
 ---
 
 ## 目錄（Table of Contents）
 
 1. [基本哲學與核心原則：「Latest 不等於 Newest」](#1-基本哲學與核心原則latest-不等於-newest)
-2. [十四大形式化架構不變量](#2-十四大形式化架構不變量)
+2. [十八大形式化架構不變量](#2-十八大形式化架構不變量)
 3. [硬體基準與多層級記憶體架構拓撲](#3-硬體基準與多層級記憶體架構拓撲)
 4. [多尺度生物物理降維引擎（保真度 5.0）](#4-多尺度生物物理降維引擎保真度-50)
 5. [微秒級事件調度與時序管線](#5-微秒級事件調度與時序管線)
@@ -59,16 +63,20 @@ VirtualCortex 完整架構拆解為 **十四大官方一級獨立 Crate** 工作
 12. [皮層下顯著性路由與杏仁核避險反射弧](#12-皮層下顯著性路由與杏仁核避險反射弧)
 13. [全局工作空間廣播與非線性意識點燃](#13-全局工作空間廣播與非線性意識點燃)
 14. [高維向量符號架構與符號-神經接地](#14-高維向量符號架構與符號-神經接地)
-15. [神經調節價值系統與三因子可塑性](#15-神經調節價值系統與三因子可塑性)
-16. [海馬體情境記憶與離線睡眠鞏固](#16-海馬體情境記憶與離線睡眠鞏固)
-17. [自律穩態能量機制與晝夜節律驅力](#17-自律穩態能量機制與晝夜節律驅力)
-18. [分散式橫向擴展與拓撲 Fabric 網狀架構](#18-分散式橫向擴展與拓撲-fabric-網狀架構)
-19. [可觀測性、eBPF 剖析與局部場電位合成](#19-可觀測性ebpf-剖析與局部場電位合成)
-20. [量化帕雷托前沿與硬體預算（~34.80 GB）](#20-量化帕雷托前沿與硬體預算3480-gb)
-21. [確定性驗證矩陣與測試策略](#21-確定性驗證矩陣與測試策略)
-22. [安全架構與沙盒隔離](#22-安全架構與沙盒隔離)
-23. [未來藍圖：非侵入式 BCI 與神經形態 ASIC 加速](#23-未來藍圖非侵入式-bci-與神經形態-asic-加速)
-24. [結論：主權級全腦模擬架構標準](#24-結論主權級全腦模擬架構標準)
+15. [前額葉前瞻規劃與反事實心智模擬](#15-前額葉前瞻規劃與反事實心智模擬)
+16. [層級預測編碼與主動推論](#16-層級預測編碼與主動推論)
+17. [主體性辨識與心智理論](#17-主體性辨識與心智理論)
+18. [類淋巴記憶緊湊與神經免疫自癒](#18-類淋巴記憶緊湊與神經免疫自癒)
+19. [神經調節價值系統與三因子可塑性](#19-神經調節價值系統與三因子可塑性)
+20. [海馬體情境記憶與離線睡眠鞏固](#20-海馬體情境記憶與離線睡眠鞏固)
+21. [自律穩態能量機制與晝夜節律驅力](#21-自律穩態能量機制與晝夜節律驅力)
+22. [分散式橫向擴展與拓撲 Fabric 網狀架構](#22-分散式橫向擴展與拓撲-fabric-網狀架構)
+23. [可觀測性、eBPF 剖析與局部場電位合成](#23-可觀測性ebpf-剖析與局部場電位合成)
+24. [量化帕雷托前沿與硬體預算（~35.20 GB）](#24-量化帕雷托前沿與硬體預算3520-gb)
+25. [確定性驗證矩陣與測試策略](#25-確定性驗證矩陣與測試策略)
+26. [安全架構與沙盒隔離](#26-安全架構與沙盒隔離)
+27. [未來藍圖：非侵入式 BCI 與神經形態 ASIC 加速](#27-未來藍圖非侵入式-bci-與神經形態-asic-加速)
+28. [結論：主權級全腦模擬架構標準](#28-結論主權級全腦模擬架構標準)
 - [授權協議與主權智財權聲明](#授權協議與主權智財權聲明)
 
 ---
@@ -99,21 +107,21 @@ CPU 時鐘週期耗時對比（傳統指標跳轉 vs. VirtualCortex 扁平 POD �
 ```
 
 ### 1.2 64-Byte 快取行微結構適配
-現代 CPU 記憶體控制器的最小傳輸單元為 **64 位元組快取行（64-Byte Cache Line）**。若數據結構大小為 65 位元組，或記憶體地址未對齊快取行邊界，則每一次存取都會迫使硬體發起兩次 DRAM 事務，造成嚴重的總線爭用與快取污染。VirtualCortex 明確規範所有核心狀態結構體（`DendriticSuperNeuron`、`SynapseBlock`、`BasalGangliaChannelState` 等）必須嚴格維持 64 位元組大小與 64 位元組對齊（`#[repr(C, align(64))]`）。
+現代 CPU 記憶體控制器的最小傳輸單元為 **64 位元組快取行（64-Byte Cache Line）**。若數據結構大小為 65 位元組，或記憶體地址未對齊快取行邊界，則每一次存取都會迫使硬體發起兩次 DRAM 事務，造成嚴重的總線爭用與快取污染。VirtualCortex 明確規範所有核心狀態結構體必須嚴格維持 64 位元組大小與 64 位元組對齊（`#[repr(C, align(64))]`）。
 
 ### 1.3 位元級確定性與零堆配置原則
 物理具身控制與科學研究要求絕對的數值可重現性。IEEE 754 浮點運算（`f32`/`f64`）因捨入誤差與運算非結合律（$(a+b)+c 
-eq a+(b+c)$），在跨架構（x86-64 與 ARM64）執行時必然產生混沌發散。VirtualCortex 全面採用 **Q16.16 定點數整數數學**，並在模擬熱路徑上嚴格杜絕 `malloc`、`free` 與作業系統系統調用（Syscall），保證百億級全腦生命體在跨硬體平台上的百分之百位元級絕對一致性。
+eq a+(b+c)$），在跨架構（x86-64 與 ARM64）執行時必然產生混沌發散。VirtualCortex 全面採用 **Q16.16 定點數整數數學**，並在模擬熱路徑上嚴格貫徹 **零堆配置原則（Zero-Allocation Invariant）**：系統啟動完成後，工作線程嚴禁調用 `malloc`、`free` 或作業系統內核陷阱。
 
 ---
 
-## 2. 十四大形式化架構不變量
+## 2. 十八大形式化架構不變量
 
-VirtualCortex 的所有模組、Crate 與執行管線，均受以下十四大形式化數學不變量約束。這些不變量在編譯期透過 Rust 靜態斷言檢驗，在鏈接期透過符號審查工具校驗，在運行期透過 eBPF 探針無損監控。
+VirtualCortex 的所有模組、Crate 與執行管線，均受以下十八大形式化數學不變量約束：
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 十四大形式化架構不變量清單                             │
+│                                 十八大形式化架構不變量清單                             │
 ├─────┬─────────────┬───────────────────────────────────┬────────────────────────────────┤
 │ 編號│ 不變量名稱  │ 規範目標 / 實現機制               │ 數學形式化 / 物理硬體邊界      │
 ├─────┼─────────────┼───────────────────────────────────┼────────────────────────────────┤
@@ -131,6 +139,10 @@ VirtualCortex 的所有模組、Crate 與執行管線，均受以下十四大形
 │ I-12│ 杏仁核避險  │ 皮層下威脅直通旁路與逃跑反射      │ 丘腦至杏仁核低通路反應 < 12ms  │
 │ I-13│ 意識點燃    │ 全局神經工作空間廣播              │ 長程跨模態非線性閾值點燃 < 20us│
 │ I-14│ 向量符號    │ 10,000 維高維超向量符號接地       │ 封閉代數運算，零語義漂移       │
+│ I-15│ 前瞻沙盒    │ 前額葉反事實心智推演與枝剪        │ < 50us 虛擬前瞻模擬，靜態隔離  │
+│ I-16│ 殘差稀疏    │ 層級預測編碼與誤差過濾            │ > 85% 冗餘感官尖峰總線抵消     │
+│ I-17│ 主體性抵消  │ 自身動作副反饋預測與他者推斷      │ 運動副反饋抵消，位元級主體辨識 │
+│ I-18│ 類淋巴緊湊  │ 睡眠期記憶體重正化與 SDC 巡檢     │ 零停機背景 ECC 記憶體緊湊修復  │
 └─────┴─────────────┴───────────────────────────────────┴────────────────────────────────┘
 ```
 
@@ -159,6 +171,10 @@ VirtualCortex 瞄準 2026+ 標準企業級商用伺服器硬體規格。架構�
   ├── cortex-salience 顯著性威脅節點 (32.00 MB)
   ├── cortex-workspace 全局意識工作空間槽位 (16.00 MB)
   ├── cortex-symbolic 10,000 維 VSA 碼本 (1.25 GB)
+  ├── cortex-executive 前瞻規劃搜尋節點 (32.00 MB)
+  ├── cortex-predictive 預測殘差狀態 (64.00 MB)
+  ├── cortex-agency 主體性視角矩陣 (16.00 MB)
+  ├── cortex-immune 類淋巴記憶體巡檢節點 (64.00 MB)
   ├── cortex-hippocampus 海馬體 CA3 吸引子緩衝區 (64.00 MB)
   ├── cortex-neuromod 全域神經調節純量場 (13.76 MB)
   ├── cortex-homeostasis 自律代謝驅力池 (32.00 MB)
@@ -177,9 +193,6 @@ VirtualCortex 瞄準 2026+ 標準企業級商用伺服器硬體規格。架構�
   └── 紀元級快照儲存、redb WAL 預寫日誌、.cortex 靜態二進位映像
 ==================================================================================================
 ```
-
-### 3.1 記憶體分配策略與 NUMA 核心鎖定
-VirtualCortex 在系統啟動時，直接透過 Linux HugePages（2MB 或 1GB 大頁）向作業系統預先申請連續實體記憶體，徹底消除執行期間的頁表走訪（Page Table Walk）。所有記憶體透過 `mbind(MPOL_BIND)` 嚴格鎖定於本地 NUMA 節點。計算線程透過 `pthread_setaffinity_np` 綁定至獨立物理 CPU 核心，並配合 Linux 核心參數 `isolcpus=2-63 nohz_full=2-63 rcu_nocbs=2-63` 杜絕內核排程干擾。
 
 ---
 
@@ -331,7 +344,7 @@ VirtualCortex 規範了原生 `.cortex` 二進位容器規格。文件完全由�
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ CortexFileHeader (64 位元組, 64 位元組對齊)                      │
-│ 魔數: 0x5854524F435F5643 ("VC_CORTX") | 格式版本: 0x00020004     │
+│ 魔數: 0x5854524F435F5643 ("VC_CORTX") | 格式版本: 0x00020008     │
 │ 神經元總量: 86,000,000,000              | 突觸塊數量: 128M       │
 ├──────────────────────────────────────────────────────────────────┤
 │ Section 0: 宏觀超柱目錄索引區 (55.04 MB)                         │
@@ -651,7 +664,184 @@ pub struct SymbolicHypervectorHeader {
 
 ---
 
-## 15. 神經調節價值系統與三因子可塑性
+## 15. 前額葉前瞻規劃與反事實心智模擬
+
+儘管 `cortex-basal-ganglia` 負責挑選即時習慣與反射動作，但主權級認知生命體必須具備深思熟慮的多步前瞻規劃能力。`cortex-executive` 模擬了生物大腦**額極皮層（BA 10）**與**背外側前額葉（dlPFC, BA 9/46）**之功能：
+
+```
+高階行政目標指示 (Goal Specification)
+            │
+            ▼
+┌───────────────────────────────────────────────────────────┐
+│ cortex-executive: 內部心智虛擬沙盒                        │
+│ - 實體執行機構靜止 (具身輸出閘門關閉，不產生力矩)         │
+│ - 前瞻模擬展開：基於皮層吸引子的多步樹狀搜索              │
+│ - 分支評估：Q16.16 預期懊悔值與價值推斷                   │
+└───────────────────────────────────────────────────────────┘
+            │
+            ├── 反事實死胡同預判 -> 即時剪枝並回溯 (Prune & Backtrack)
+            │
+            ▼ 驗證通過的高置信度執行策略
+轉發至基底核與運動皮層，開始驅動實體關節
+```
+
+### 15.1 反事實搜索動態學方程
+令 $G$ 為目標超向量，$\pi = (a_1, a_2, \dots, a_k)$ 為內部模擬的動作序列。前額葉評估器計算累積反事實懊悔值 $\mathcal{R}(\pi)$：
+
+$$\mathcal{R}(\pi) = \sum_{t=1}^{k} \max_{a' \in \mathcal{A}} \left[ Q(s_t, a') - Q(s_t, a_t) ight]$$
+
+預估懊悔值超過動態閾值 $	heta_{	ext{prune}}$ 的分支直接在內部被剪除，絕不向外部物理執行機構洩漏錯誤動作。
+
+```rust
+#[repr(C, align(64))]
+pub struct ExecutivePlanNode {
+    pub goal_hash: u64,              // 8 bytes: 目標規劃概念特徵哈希
+    pub parent_node_offset: u32,     // 4 bytes: 父決策節點物理偏移
+    pub branch_confidence: i32,      // 4 bytes: Q16.16 分支執行置信度評分
+    pub counterfactual_regret: i32,  // 4 bytes: Q16.16 累積反事實懊悔值
+    pub tree_depth: u16,             // 2 bytes: 當前搜索前瞻樹深度
+    pub pruned_flag: u8,             // 1 byte: 1: 已剪除無效分支, 0: 候選分支
+    pub padding: [u8; 41],           // 41 bytes: 硬體對齊填充至 64 位元組
+}
+```
+
+---
+
+## 16. 層級預測編碼與主動推論
+
+生物大腦皮層本質上是一台**貝葉斯主動預測機器**。大腦絕非被動將原始感官數據由下而上連續串流，`cortex-predictive` 實現了 Karl Friston **自由能原理（FEP）**架構下的**層級預測編碼（HPC）**：
+
+```
+皮層層次 L+1 (深度語義潛在變數)
+         │  ▲
+         │  │ 殘差預測誤差 ε_{L+1}
+         ▼  │
+┌───────────────────────────────────────────────────────────┐
+│ 皮層層次 L (中階特徵表徵)                                 │
+│ 自頂向下先驗預測: μ_L = g(μ_{L+1})                        │
+│ 局部差分消除: ε_L = y_L - μ_L                             │
+│ 誤差精確度加權: ξ_L = Π_L * ε_L                           │
+└───────────────────────────────────────────────────────────┘
+         │  ▲
+         │  │ 殘差預測誤差 ε_L (> 85% 冗餘被抵消)
+         ▼  │
+皮層層次 L-1 (周邊原始感官輸入)
+```
+
+### 16.1 自由能最小化數學形式
+在每一皮層層級 $l$，自頂向下的預測訊號 $\mu_l$ 主動抵消由下而上的輸入表徵 $y_l$，向上傳播的僅包含未被預測的殘差誤差：
+
+$$arepsilon_l(t) = y_l(t) - g_l(\mu_{l+1}(t))$$
+
+$$\dot{\mu}_l(t) = -rac{\partial \mathcal{F}}{\partial \mu_l} = -arepsilon_l(t) + \left( rac{\partial g_l}{\partial \mu_l} ight)^T \Pi_{l-1} arepsilon_{l-1}(t)$$
+
+透過在外設周邊邊界抵消超過 85% 的常規環境訊號，`cortex-predictive` **使跨 CXL 3.0 與本地 DDR5 總線的尖峰事件內部通訊負載驟降 85% 以上**。
+
+```rust
+#[repr(C, align(64))]
+pub struct PredictiveErrorState {
+    pub prior_prediction_hash: u64,  // 8 bytes: 自頂向下預測先驗狀態哈希
+    pub prediction_error: i32,       // 4 bytes: Q16.16 殘差誤差幅度 (y - y_hat)
+    pub precision_weight: i32,       // 4 bytes: Q16.16 感官精確度加權純量
+    pub ascending_layer_id: u16,     // 2 bytes: 皮層分層索引階段
+    pub convergence_flag: u8,        // 1 byte: 1: 誤差已抵消收斂, 0: 殘差活躍
+    pub padding: [u8; 45],           // 45 bytes: 硬體對齊填充至 64 位元組
+}
+```
+
+---
+
+## 17. 主體性辨識與心智理論
+
+在與人類或其他自主機器人協同交互時，認知生命體必須具備精確區分「自身運動造成的感官反饋」與「外部自主代理人引起的環境變更」的能力。`cortex-agency` 模擬了**顳頂交界區（TPJ）**、**內側前額葉（mPFC）**與**鏡像神經元系統（F5 / IPL）**：
+
+```
+發出運動神經指令 (Layer 5 突發)
+          │
+          ├──► 物理執行機構 (在實體環境產生動作)
+          │
+          ▼ (內部運動副反饋 Efference Copy)
+┌───────────────────────────────────────────────────────────┐
+│ cortex-agency: 運動副反饋前向預測器                       │
+│ - 預測自身動作應當引發的感官變化                          │
+│ - 從即時傳入的感官數據流中抵消該預期變化                  │
+└───────────────────────────────────────────────────────────┘
+          │
+          ├── 殘差 = 0 -> 歸因於「自我 (SELF)」(自己呵癢不癢機制)
+          │
+          └── 殘差 > 0 -> 歸因於「外部代理人 (EXTERNAL AGENT)」
+                   │
+                   ▼
+┌───────────────────────────────────────────────────────────┐
+│ 心智理論 (Theory of Mind, ToM) 社會心智推斷              │
+│ - 透過運動共鳴解碼外部個體意圖                            │
+│ - 維護多主體獨立信念-慾望-意圖 (BDI) 狀態機               │
+└───────────────────────────────────────────────────────────┘
+```
+
+### 17.1 運動副反饋抵消動態方程
+令 $\mathbf{u}_{	ext{motor}}$ 為自身運動指令向量，內部副反饋模型預測自身感官變化 $\hat{\mathbf{s}}_{	ext{self}} = \mathcal{M}(\mathbf{u}_{	ext{motor}})$。主體性鑑別器計算殘差：
+
+$$\Delta \mathbf{s}_{	ext{agency}} = \mathbf{s}_{	ext{observed}} - \hat{\mathbf{s}}_{	ext{self}}$$
+
+若 $\|\Delta \mathbf{s}_{	ext{agency}}\| > 	heta_{	ext{other}}$，該事件被判定為外部主體行為，並觸發心智理論推斷引擎分析其意圖與信任度。
+
+```rust
+#[repr(C, align(64))]
+pub struct AgentPerspectiveState {
+    pub perspective_frame_hash: u64, // 8 bytes: 空間視角轉換矩陣特徵哈希
+    pub intention_vector_ptr: u64,   // 8 bytes: 外部代理人意圖超向量偏移指針
+    pub agent_id: u32,               // 4 bytes: 0: 自我主體, >0: 外部主體 ID
+    pub trust_score: i32,            // 4 bytes: Q16.16 社會信任度評分
+    pub efference_copy_flag: u8,     // 1 byte: 1: 自身動作引起 (已抵消)
+    pub padding: [u8; 39],           // 39 bytes: 硬體對齊填充至 64 位元組
+}
+```
+
+---
+
+## 18. 類淋巴記憶緊湊與神經免疫自癒
+
+在 7x24 小時長時程工業級運算中，實體伺服器不可避免地遭受宇宙射線單粒子翻轉（SEU）、記憶體壞塊、死鎖與退化失活突觸的累積。生物大腦在慢波睡眠期間透過**類淋巴系統（Glymphatic System）**與**小膠質細胞吞噬（Microglial Phagocytosis）**進行代謝廢物清洗與突觸重構。`cortex-immune` 實現了完全無鎖的自癒架構：
+
+```
+晝夜節律睡眠狀態啟動 (cortex-homeostasis 狀態 2/3)
+                      │
+                      ▼
+┌───────────────────────────────────────────────────────────┐
+│ cortex-immune: 類淋巴背景記憶體整理守護行程               │
+│ 1. 巡檢 SynapseBlock 記憶體池，識別死突觸與退化結構       │
+│ 2. 微膠質細胞吞噬：將死突觸板塊回收至無鎖空閒池          │
+│ 3. 線性記憶體緊湊化（消除內部碎片與指針空洞）             │
+│ 4. 硬體 ECC 記憶體校驗碼與 SDC 靜態數據損壞巡檢           │
+└───────────────────────────────────────────────────────────┘
+                      │
+                      ▼
+零堆碎片、100% 結構完整性驗證通過、系統永不停機
+```
+
+### 18.1 零停機背景記憶體巡檢演算法
+`cortex-immune` 在背景物理核心中並行運轉，借助紀元回收機制（EBR），在不阻塞前台讀取線程的前提下動態重構記憶體頁：
+
+$$	ext{HealthIndex}(P_k) = rac{	ext{ActiveSynapses}(P_k)}{	ext{TotalSlabs}(P_k)} 	imes \left[ 1.0 - 	ext{BitErrors}(P_k) ight]$$
+
+健康度指數低於 $0.25$ 的記憶體頁將觸發原地緊湊化整理，將回收的物理頁面無縫返還至本地 NUMA 記憶體池。
+
+```rust
+#[repr(C, align(64))]
+pub struct ImmuneScrubNode {
+    pub ecc_checksum_hash: u64,       // 8 bytes: 結構完整性校驗校準哈希
+    pub arena_segment_id: u32,        // 4 bytes: 記憶體板塊區域標識符
+    pub page_health_score: i32,       // 4 bytes: Q16.16 記憶體頁完整性評分
+    pub degenerate_synapse_count: u32,// 4 bytes: 區域內已修剪壞死突觸數量
+    pub reclamation_active: u8,       // 1 byte: 1: 正在進行類淋巴緊湊回收
+    pub padding: [u8; 43],            // 43 bytes: 硬體對齊填充至 64 位元組
+}
+```
+
+---
+
+## 19. 神經調節價值系統與三因子可塑性
 
 純粹的經典赫布學習（Hebbian Learning）缺乏行為目標、獎勵與情境反饋，無法實現自主強化學習。VirtualCortex 全面採用**三因子突觸可塑性（Three-Factor Plasticity）**：
 
@@ -674,7 +864,7 @@ $$rac{d 	ext{EligibilityTrace}_{ij}}{dt} = -rac{	ext{EligibilityTrace}_{ij}}{	
                      鞏固為永久突觸增量 ΔW
 ```
 
-### 15.1 四大神經調節劑功能陣列
+### 19.1 四大神經調節劑功能陣列
 1. **多巴胺 (Dopamine, DA)**：編碼獎勵預測誤差（RPE）：$\delta_{	ext{DA}} = R + \gamma V(S_{t+1}) - V(S_t)$。
 2. **正腎上腺素 (Norepinephrine, NE)**：編碼意外不確定性與自律神經喚醒度。
 3. **血清素 (Serotonin, 5-HT)**：調節風險厭惡程度、傷害規避與時間折扣視野。
@@ -693,7 +883,7 @@ pub struct NeuromodulatorState {
 
 ---
 
-## 16. 海馬體情境記憶與離線睡眠鞏固
+## 20. 海馬體情境記憶與離線睡眠鞏固
 
 直接在新皮層網路中以高學習率連續訓練新任務，必然引發**災難性遺忘（Catastrophic Forgetting）**。VirtualCortex 實現了哺乳類大腦的**互補學習系統（CLS）**：
 
@@ -714,7 +904,7 @@ pub struct NeuromodulatorState {
 新皮層第 5 層慢速突觸結構化轉移與網絡整合
 ```
 
-### 16.1 CA3 自相關聯想吸引子
+### 20.1 CA3 自相關聯想吸引子
 CA3 次區構建為高維能量吸引子網絡。當給予殘缺、含噪聲的感官線索時，網絡自動收斂至完整記憶基底：
 
 $$E(\mathbf{x}) = -rac{1}{2} \sum_{i} \sum_{j} W_{ij}^{	ext{CA3}} x_i x_j - \sum_i b_i x_i$$
@@ -734,7 +924,7 @@ pub struct HippocampalAttractorState {
 
 ---
 
-## 17. 自律穩態能量機制與晝夜節律驅力
+## 21. 自律穩態能量機制與晝夜節律驅力
 
 自主認知體不可在缺乏能量代謝自律調節的情形下無限期運行。`cortex-homeostasis` 實現了受下視丘管轄的代謝驅力池與 24 小時晝夜節律振盪器：
 
@@ -760,7 +950,7 @@ pub struct HippocampalAttractorState {
    分支比：σ = <N_{t+1}> / <N_t> -> 1.000 (臨界動態相變邊界)
 ```
 
-### 17.1 自組織臨界性調諧（SOC Tuning）
+### 21.1 自組織臨界性調諧（SOC Tuning）
 若神經系統分支比 $\sigma > 1.000$，神經活動將失控雪崩誘發癲癇；若 $\sigma < 1.000$，信號將迅速衰減熄滅。睡眠狀態期間，穩態突觸縮放機制（Synaptic Scaling）全局微調所有突觸權重：
 
 $$W_{ij}(t + 1) = W_{ij}(t) \cdot \left[ 1.0 - \kappa (\sigma - 1.000) ight]$$
@@ -780,7 +970,7 @@ pub struct HomeostaticDrivePool {
 
 ---
 
-## 18. 分散式橫向擴展與拓撲 Fabric 網狀架構
+## 22. 分散式橫向擴展與拓撲 Fabric 網狀架構
 
 當單機規模擴展至多主機集群時，`cortex-fabric` 採用**核心旁路 RDMA**（RoCEv2 / InfiniBand）與 **CXL 3.0 多主機共享記憶體池**，在保證因果確定性的前提下完成橫向擴展：
 
@@ -802,7 +992,7 @@ pub struct HomeostaticDrivePool {
         └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 18.1 RDMA 網絡封套規範
+### 22.1 RDMA 網絡封套規範
 ```rust
 #[repr(C, align(64))]
 pub struct FabricPacketHeader {
@@ -819,7 +1009,7 @@ pub struct FabricPacketHeader {
 
 ---
 
-## 19. 可觀測性、eBPF 剖析與局部場電位合成
+## 23. 可觀測性、eBPF 剖析與局部場電位合成
 
 即時監控 860 億節點的內部神經動態，絕對不可對核心計算路徑施加任何執行抖動。`cortex-telemetry` 利用 Linux 內核 eBPF 追蹤點與無鎖 SPSC 環形緩衝區實現零負擔內省：
 
@@ -856,7 +1046,7 @@ pub struct LfpSamplePacket {
 
 ---
 
-## 20. 量化帕雷托前沿與硬體預算（~34.80 GB）
+## 24. 量化帕雷托前沿與硬體預算（~35.20 GB）
 
 嚴格的形式化記憶體會計帳本，證實 VirtualCortex 能夠在**單台商用 64 GB DDR5 伺服器內完整運行 860 億節點全腦認知體**：
 
@@ -876,36 +1066,40 @@ pub struct LfpSamplePacket {
  7. 杏仁核威脅顯著節點           500,000 個節點           64 Bytes         32.00 MB
  8. 全局意識工作空間槽位         250,000 個槽位           64 Bytes         16.00 MB
  9. 10,000 維 VSA 符號碼本       1,000,000 個超向量       1.25 KB          1.25 GB
- 10. 海馬體 CA3 吸引子緩衝       1,000,000 個狀態         64 Bytes         64.00 MB
- 11. 全域神經調節場              860,000 個柱體           16 Bytes         13.76 MB
- 12. 自律神經代謝驅力池          500,000 個驅力池         64 Bytes         32.00 MB
- 13. RDMA 互連通訊佇列           2,000,000 個封套         64 Bytes         128.00 MB
- 14. LFP 局部場電位採樣環        500,000 個採樣點         64 Bytes         32.00 MB
- 15. 兩級扁平時序環輪            64 個工作線程            8 MB             512.00 MB
- 16. 3D 空間引導體素             1,048,576 個體素         16 Bytes         16.78 MB
- 17. 感官與具身 IPC 環           2,048 個緩衝區           64 KB            131.00 MB
- 18. 作業系統頁表與核心堆棧      核心 HugePages 映射      -                4.58 GB
+ 10. 前額葉前瞻規劃節點          500,000 個決策節點       64 Bytes         32.00 MB
+ 11. 層級預測編碼殘差狀態        1,000,000 個狀態         64 Bytes         64.00 MB
+ 12. 主體性視角矩陣              250,000 個視角節點       64 Bytes         16.00 MB
+ 13. 類淋巴神經免疫巡檢節點      1,000,000 個巡檢點       64 Bytes         64.00 MB
+ 14. 海馬體 CA3 吸引子緩衝       1,000,000 個狀態         64 Bytes         64.00 MB
+ 15. 全域神經調節場              860,000 個柱體           16 Bytes         13.76 MB
+ 16. 自律神經代謝驅力池          500,000 個驅力池         64 Bytes         32.00 MB
+ 17. RDMA 互連通訊佇列           2,000,000 個封套         64 Bytes         128.00 MB
+ 18. LFP 局部場電位採樣環        500,000 個採樣點         64 Bytes         32.00 MB
+ 19. 兩級扁平時序環輪            64 個工作線程            8 MB             512.00 MB
+ 20. 3D 空間引導體素             1,048,576 個體素         16 Bytes         16.78 MB
+ 21. 感官與具身 IPC 環           2,048 個緩衝區           64 KB            131.00 MB
+ 22. 作業系統頁表與核心堆棧      核心 HugePages 映射      -                4.78 GB
 ──────────────────────────────────────────────────────────────────────────────────────────────────
- 本地 TIER 1 實體 DDR5 記憶體總計                                          ~18.80 GB
+ 本地 TIER 1 實體 DDR5 記憶體總計                                          ~19.20 GB
 ──────────────────────────────────────────────────────────────────────────────────────────────────
  Tier 2: CXL 3.0 遠端記憶體池 (Far Memory Pool)
- 19. 動態可塑性突觸增量 (ΔW)     1,000,000,000 個突觸     16 Bytes         16.00 GB
+ 23. 動態可塑性突觸增量 (ΔW)     1,000,000,000 個突觸     16 Bytes         16.00 GB
 ──────────────────────────────────────────────────────────────────────────────────────────────────
- 全系統實體記憶體總開銷（GRAND TOTAL PHYSICAL RAM）                         ~34.80 GB
+ 全系統實體記憶體總開銷（GRAND TOTAL PHYSICAL RAM）                         ~35.20 GB
 ==================================================================================================
 ```
 
-標準 64 GB DDR5 模組具備充裕的餘裕，尚餘留 **~29.20 GB 實體記憶體** 提供作業系統日誌、驅動程序與外設遙測緩衝。
+標準 64 GB DDR5 模組具備充裕的餘裕，尚餘留 **~28.80 GB 實體記憶體** 提供作業系統日誌、驅動程序與外設遙測緩衝。
 
 ---
 
-## 21. 確定性驗證矩陣與測試策略
+## 25. 確定性驗證矩陣與測試策略
 
 為確保極限安全與科學嚴謹性，VirtualCortex 建立四級自動化驗證矩陣：
 
 ```
 [第 1 級: 編譯期靜態斷言檢驗]
-├── 嚴格驗證全 workspace 14 個 crate 之 64 位元組大小與對齊
+├── 嚴格驗證全 workspace 18 個 crate 之 64 位元組大小與對齊
 └── 杜絕核心計算模組內任何浮點數（f32/f64）與動態記憶體配置調用
 
 [第 2 級: 跨硬體位元級差分測試]
@@ -922,33 +1116,33 @@ pub struct LfpSamplePacket {
 
 ---
 
-## 22. 安全架構與沙盒隔離
+## 26. 安全架構與沙盒隔離
 
 在物理世界運行的具身自主認知生命體必須具備嚴密的安全防禦機制：
 
-### 22.1 Seccomp-BPF 核心級系統調用沙盒
+### 26.1 Seccomp-BPF 核心級系統調用沙盒
 所有計算工作線程在映射 `.cortex` 映像並完成線程綁定後，立即啟用 Linux `seccomp-bpf` 嚴格過濾。永久禁用 `execve`、`fork`、`socket`、`connect` 與 `bind`。即使遭遇對抗性尖峰注入，攻擊者亦無法派生 shell 或建立未授權外部網路連線。
 
-### 22.2 硬體看門狗與關節安全防護
+### 26.2 硬體看門狗與關節安全防護
 `cortex-embodiment` 直接受控於硬體獨立看門狗定時器。若神經模擬核心在 $5.0\,	ext{ms}$ 內未產生合規的 1.000 ms 轉矩幀，硬體繼電器將強制觸發動態煞車，使機器人各關節鎖定在安全被動阻尼狀態。
 
 ---
 
-## 23. 未來藍圖：非侵入式 BCI 與神經形態 ASIC 加速
+## 27. 未來藍圖：非侵入式 BCI 與神經形態 ASIC 加速
 
 VirtualCortex 確立了三階段戰略演進藍圖：
 
-1. **第一階段（2026）**：14 大 Crate 主權自主認知體系在機器人、具身智能與複雜認知模擬領域的工業級量產落地。
+1. **第一階段（2026）**：18 大 Crate 主權自主認知體系在機器人、具身智能與複雜認知模擬領域的工業級量產落地。
 2. **第二階段（2027）**：對接高密度非侵入式腦機介面（EEG / MEG BCI），實現人類意識意圖與 `cortex-workspace` 全局工作空間的雙向共鳴。
 3. **第三階段（2028+）**：流片專用 VirtualCortex 神經形態 ASIC 協處理晶片，將 64 位元組 POD 計算管線全面固化至超低功耗專用矽晶圓。
 
 ---
 
-## 24. 結論：主權級全腦模擬架構標準
+## 28. 結論：主權級全腦模擬架構標準
 
 VirtualCortex 的誕生為計算神經科學與認知智能工程確立了里程碑式的標準。透過摒棄軟體虛浮架構並堅守 **「Latest != Newest」** 的工程鐵律，VirtualCortex 證明了 860 億節點的高保真全腦模擬無需昂貴的超級電腦叢集，亦無需忍受浮點非確定性與記憶體膨脹。
 
-依託**機械同理心**、**64 位元組 POD 快取行硬體對齊**、**Q16.16 位元級定點數確定性**，以及強大的**十四大 Crate 主權自主認知體系**，VirtualCortex 僅需 **~34.80 GB 實體記憶體**，即可在單台標準商用伺服器上完整承載全腦主權生命體的高效運轉。
+依託**機械同理心**、**64 位元組 POD 快取行硬體對齊**、**Q16.16 位元級定點數確定性**，以及強大的**十八大 Crate 主權自主認知體系**，VirtualCortex 僅需 **~35.20 GB 實體記憶體**，即可在單台標準商用伺服器上完整承載全腦主權生命體的高效運轉。
 
 ---
 

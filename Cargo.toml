@@ -1,5 +1,4 @@
 [workspace]
-resolver = "2"
 members = [
     "crates/cortex-core",
     "crates/cortex-connectome",
@@ -12,7 +11,12 @@ members = [
     "crates/cortex-salience",
     "crates/cortex-workspace",
     "crates/cortex-symbolic",
+    "crates/cortex-executive",
+    "crates/cortex-predictive",
+    "crates/cortex-agency",
+    "crates/cortex-immune",
     "crates/cortex-homeostasis",
     "crates/cortex-fabric",
     "crates/cortex-telemetry",
 ]
+resolver = "2"

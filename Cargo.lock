@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "cortex-agency"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-basal-ganglia"
 version = "0.1.0"
 
@@ -23,6 +27,10 @@ name = "cortex-embodiment"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-executive"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-fabric"
 version = "0.1.0"
 
@@ -35,7 +43,15 @@ name = "cortex-homeostasis"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-immune"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-neuromod"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-predictive"
 version = "0.1.0"
 
 [[package]]

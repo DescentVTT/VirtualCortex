@@ -1,0 +1,9 @@
+[package]
+name = "cortex-agency"
+version = "0.1.0"
+edition = "2021"
+authors = ["VirtualCortex Architectural Committee <arch@virtualcortex.org>"]
+description = "Intersubjective Agency, Self/Other Discrimination, and Theory of Mind (ToM) for VirtualCortex"
+license = "Apache-2.0 OR MIT"
+
+[dependencies]

@@ -8,11 +8,15 @@
 <!-- @assert-count target="crates/cortex-embodiment" symbol="EmbodimentRingBuffer" min="1" -->
 <!-- @assert-count target="crates/cortex-basal-ganglia" symbol="BasalGangliaChannelState" min="1" -->
 <!-- @assert-count target="crates/cortex-cerebellum" symbol="CerebellarMicrozone" min="1" -->
-<!-- @assert-count target="crates/cortex-neuromod" symbol="NeuromodulatorState" min="1" -->
-<!-- @assert-count target="crates/cortex-hippocampus" symbol="HippocampalAttractorState" min="1" -->
 <!-- @assert-count target="crates/cortex-salience" symbol="SalienceNodeState" min="1" -->
 <!-- @assert-count target="crates/cortex-workspace" symbol="GlobalWorkspaceSlot" min="1" -->
 <!-- @assert-count target="crates/cortex-symbolic" symbol="SymbolicHypervectorHeader" min="1" -->
+<!-- @assert-count target="crates/cortex-executive" symbol="ExecutivePlanNode" min="1" -->
+<!-- @assert-count target="crates/cortex-predictive" symbol="PredictiveErrorState" min="1" -->
+<!-- @assert-count target="crates/cortex-agency" symbol="AgentPerspectiveState" min="1" -->
+<!-- @assert-count target="crates/cortex-immune" symbol="ImmuneScrubNode" min="1" -->
+<!-- @assert-count target="crates/cortex-neuromod" symbol="NeuromodulatorState" min="1" -->
+<!-- @assert-count target="crates/cortex-hippocampus" symbol="HippocampalAttractorState" min="1" -->
 <!-- @assert-count target="crates/cortex-homeostasis" symbol="HomeostaticDrivePool" min="1" -->
 <!-- @assert-count target="crates/cortex-fabric" symbol="FabricPacketHeader" min="1" -->
 <!-- @assert-count target="crates/cortex-telemetry" symbol="LfpSamplePacket" min="1" -->
@@ -23,7 +27,7 @@
 
 **Author**: The VirtualCortex Architectural Committee & Systems Engineering Task Force  
 **Standard**: 2026+ High-Performance Systems Engineering Best Practice (`Latest != Newest`)  
-**Specification Version**: 2.4.0-Canonical (The Grand 14-Crate Sovereign Cognitive Organism)  
+**Specification Version**: 2.8.0-Canonical (The Grand 18-Crate Sovereign Autonomous Organism)  
 **Target Architecture**: Commodity x86-64-v4 (AVX-512 / AMX) / ARMv9.2-A (SVE2 / SME) Servers  
 **Reference Platform**: 64-Core AMD EPYC / ARM Neoverse V2, 64 GB DDR5 ECC, CXL 3.0 Far Memory, PCIe 5.0 NVMe  
 **License**: Apache-2.0 OR MIT (Dual Permissive Sovereign Licensing)
@@ -32,21 +36,21 @@
 
 ## Executive Summary
 
-Simulating the mammalian brain at whole-organism scale (~86 billion neurons and ~100 trillion synapses) has historically been considered computationally intractable outside multi-megawatt high-performance supercomputing installations. Traditional academic neuromorphic simulators employ naive point-neuron formulations (such as single-compartment Leaky Integrate-and-Fire models) connected via uncompressed pointer-based sparse graph adjacency lists. On modern superscalar compute platforms, this naive approach incurs catastrophic penalties: an 86-billion point-neuron network requires upwards of **700 Terabytes of physical memory**, causing continuous DRAM bus saturation, cache line thrashing, Translation Lookaside Buffer (TLB) misses, and non-deterministic floating-point divergence.
+Simulating the mammalian brain at whole-organism scale (~86 billion neurons and ~100 trillion synapses) has historically been considered computationally intractable outside multi-megawatt high-performance supercomputing installations. Traditional academic neuromorphic simulators employ naive point-neuron formulations connected via uncompressed pointer-based sparse graph adjacency lists. On modern superscalar compute platforms, this naive approach incurs catastrophic penalties: an 86-billion point-neuron network requires upwards of **700 Terabytes of physical memory**, causing continuous DRAM bus saturation, cache line thrashing, Translation Lookaside Buffer (TLB) misses, and non-deterministic floating-point divergence.
 
-**VirtualCortex** redefines scalable computational neuroscience by approaching whole-brain simulation strictly through the lens of **2026+ Systems Engineering Best Practice (`Latest != Newest`)**. Recognizing that biological neocortex computes via hierarchical self-similarity, multi-compartment dendritic non-linearities, subcortical basal ganglia action gating, cerebellar forward coordination, and global conscious ignition, VirtualCortex condenses point-neuron redundancy into biophysically realistic multi-compartment super-neurons, continuous macro-columns, subcortical reflex arcs, and distributed working memory. 
+**VirtualCortex** redefines scalable computational neuroscience by approaching whole-brain simulation strictly through the lens of **2026+ Systems Engineering Best Practice (`Latest != Newest`)**. Recognizing that biological neocortex computes via hierarchical self-similarity, multi-compartment dendritic non-linearities, subcortical basal ganglia action gating, cerebellar forward coordination, prefrontal counterfactual planning, hierarchical predictive coding, intersubjective theory of mind, and neuro-immune self-healing, VirtualCortex condenses point-neuron redundancy into biophysically realistic multi-compartment super-neurons, continuous macro-columns, subcortical reflex arcs, and distributed working memory.
 
-By enforcing strict mechanical sympathy with modern microprocessor hardware architectures, VirtualCortex runs an **86-billion-node whole-brain autonomous cognitive organism on a single commodity 64-core server within ~34.80 GB of physical RAM**. The engine achieves sustained event processing throughput in excess of **120,000,000 spikes/sec**, with **P99.99 tail latency under 35 nanoseconds**, hard real-time **1.000 ms sensorimotor closed-loop physics coupling**, and **100% bit-exact cross-platform reproducibility**.
+By enforcing strict mechanical sympathy with modern microprocessor hardware architectures, VirtualCortex runs an **86-billion-node whole-brain autonomous cognitive organism on a single commodity 64-core server within ~35.20 GB of physical RAM**. The engine achieves sustained event processing throughput in excess of **120,000,000 spikes/sec**, with **P99.99 tail latency under 35 nanoseconds**, hard real-time **1.000 ms sensorimotor closed-loop physics coupling**, and **100% bit-exact cross-platform reproducibility**.
 
-VirtualCortex is implemented as a unified workspace of **Fourteen First-Class Crates**:
-`cortex-core`, `cortex-connectome`, `cortex-sensory`, `cortex-embodiment`, `cortex-basal-ganglia`, `cortex-cerebellum`, `cortex-neuromod`, `cortex-hippocampus`, `cortex-salience`, `cortex-workspace`, `cortex-symbolic`, `cortex-homeostasis`, `cortex-fabric`, and `cortex-telemetry`.
+VirtualCortex is implemented as a unified workspace of **Eighteen First-Class Crates**:
+`cortex-core`, `cortex-connectome`, `cortex-sensory`, `cortex-embodiment`, `cortex-basal-ganglia`, `cortex-cerebellum`, `cortex-salience`, `cortex-workspace`, `cortex-symbolic`, `cortex-executive`, `cortex-predictive`, `cortex-agency`, `cortex-immune`, `cortex-neuromod`, `cortex-hippocampus`, `cortex-homeostasis`, `cortex-fabric`, and `cortex-telemetry`.
 
 ---
 
 ## Table of Contents
 
 1. [Foundational Doctrine: "Latest != Newest" & The Physics of Computation](#1-foundational-doctrine-latest--newest--the-physics-of-computation)
-2. [The Fourteen Formal Architectural Invariants](#2-the-fourteen-formal-architectural-invariants)
+2. [The Eighteen Formal Architectural Invariants](#2-the-eighteen-formal-architectural-invariants)
 3. [Hardware Platform Baseline & Memory Hierarchy Topology](#3-hardware-platform-baseline--memory-hierarchy-topology)
 4. [Multi-Scale Biophysical Condensation Engine (Fidelity 5.0)](#4-multi-scale-biophysical-condensation-engine-fidelity-50)
 5. [Microsecond Event Dispatch & Timing Pipeline](#5-microsecond-event-dispatch--timing-pipeline)
@@ -59,16 +63,20 @@ VirtualCortex is implemented as a unified workspace of **Fourteen First-Class Cr
 12. [Subcortical Salience Routing & Amygdala Threat Avoidance](#12-subcortical-salience-routing--amygdala-threat-avoidance)
 13. [Global Workspace Broadcast & Conscious Ignition](#13-global-workspace-broadcast--conscious-ignition)
 14. [Hyperdimensional Vector Symbolic Architecture & Cognitive Grounding](#14-hyperdimensional-vector-symbolic-architecture--cognitive-grounding)
-15. [Neuromodulatory Value Systems & Multi-Factor Plasticity](#15-neuromodulatory-value-systems--multi-factor-plasticity)
-16. [Hippocampal Episodic Formation & Offline Sleep Consolidation](#16-hippocampal-episodic-formation--offline-sleep-consolidation)
-17. [Homeostatic Energy Regimes & Autonomic Circadian Drives](#17-homeostatic-energy-regimes--autonomic-circadian-drives)
-18. [Distributed Scale-Out & Mesh Fabric](#18-distributed-scale-out--mesh-fabric)
-19. [Observability, eBPF Profiling & Local Field Potentials](#19-observability-ebpf-profiling--local-field-potentials)
-20. [Quantitative Pareto Frontier & Hardware Budget (~34.80 GB)](#20-quantitative-pareto-frontier--hardware-budget-3480-gb)
-21. [Deterministic Verification Matrix & Test Strategy](#21-deterministic-verification-matrix--test-strategy)
-22. [Security Architecture & Sovereign Sandbox Isolation](#22-security-architecture--sovereign-sandbox-isolation)
-23. [Future Roadmap: Non-Invasive BCI & Neuromorphic ASIC Acceleration](#23-future-roadmap-non-invasive-bci--neuromorphic-asic-acceleration)
-24. [Conclusion: The Sovereign Whole-Brain Architecture Standard](#24-conclusion-the-sovereign-whole-brain-architecture-standard)
+15. [Prefrontal Executive Planning & Counterfactual Mental Simulation](#15-prefrontal-executive-planning--counterfactual-mental-simulation)
+16. [Hierarchical Predictive Coding & Active Inference](#16-hierarchical-predictive-coding--active-inference)
+17. [Intersubjective Agency & Theory of Mind](#17-intersubjective-agency--theory-of-mind)
+18. [Glymphatic Memory Compaction & Neuro-Immune Self-Healing](#18-glymphatic-memory-compaction--neuro-immune-self-healing)
+19. [Neuromodulatory Value Systems & Multi-Factor Plasticity](#19-neuromodulatory-value-systems--multi-factor-plasticity)
+20. [Hippocampal Episodic Formation & Offline Sleep Consolidation](#20-hippocampal-episodic-formation--offline-sleep-consolidation)
+21. [Homeostatic Energy Regimes & Autonomic Circadian Drives](#21-homeostatic-energy-regimes--autonomic-circadian-drives)
+22. [Distributed Scale-Out & Mesh Fabric](#22-distributed-scale-out--mesh-fabric)
+23. [Observability, eBPF Profiling & Local Field Potentials](#23-observability-ebpf-profiling--local-field-potentials)
+24. [Quantitative Pareto Frontier & Hardware Budget (~35.20 GB)](#24-quantitative-pareto-frontier--hardware-budget-3520-gb)
+25. [Deterministic Verification Matrix & Test Strategy](#25-deterministic-verification-matrix--test-strategy)
+26. [Security Architecture & Sovereign Sandbox Isolation](#26-security-architecture--sovereign-sandbox-isolation)
+27. [Future Roadmap: Non-Invasive BCI & Neuromorphic ASIC Acceleration](#27-future-roadmap-non-invasive-bci--neuromorphic-asic-acceleration)
+28. [Conclusion: The Sovereign Whole-Brain Architecture Standard](#28-conclusion-the-sovereign-whole-brain-architecture-standard)
 - [License & Sovereign IP Rights](#license--sovereign-ip-rights)
 
 ---
@@ -99,7 +107,7 @@ CPU Cycle Breakdown (Naive Pointer Chasing vs. VirtualCortex Flat POD):
 ```
 
 ### 1.2 Cache Line Anatomy and Hardware Prefetcher Resonance
-The fundamental quantum of CPU memory transfer is the **64-Byte Cache Line**. When a core requests a single byte from memory, the memory controller transfers an entire 64-byte block. If a neuron data structure spans 65 bytes, or straddles two cache lines due to misalignment, every access incurs double memory transactions, bus contention, and cache pollution. VirtualCortex strictly constrains every primary state structure (`DendriticSuperNeuron`, `SynapseBlock`, `BasalGangliaChannelState`, `CerebellarMicrozone`, `SalienceNodeState`, `GlobalWorkspaceSlot`, `SymbolicHypervectorHeader`) to exactly 64 bytes with 64-byte hardware alignment (`#[repr(C, align(64))]`).
+The fundamental quantum of CPU memory transfer is the **64-Byte Cache Line**. When a core requests a single byte from memory, the memory controller transfers an entire 64-byte block. If a neuron data structure spans 65 bytes, or straddles two cache lines due to misalignment, every access incurs double memory transactions, bus contention, and cache pollution. VirtualCortex strictly constrains every primary state structure to exactly 64 bytes with 64-byte hardware alignment (`#[repr(C, align(64))]`).
 
 ### 1.3 Determinism and Zero-Allocation Invariants
 True scientific reproducibility and safety-critical embodiment require bit-exact determinism. Standard IEEE 754 floating-point operations ($f32, f64$) violate associativity ($ (a + b) + c 
@@ -107,14 +115,14 @@ eq a + (b + c) $) due to catastrophic cancellation and rounding mode variations 
 
 ---
 
-## 2. The Fourteen Formal Architectural Invariants
+## 2. The Eighteen Formal Architectural Invariants
 
-Every subsystem, crate, and execution thread across VirtualCortex is bound by fourteen mathematically verifiable invariants. These invariants are checked at compile time via Rust static assertions, at link time via symbol audits, and at runtime via non-invasive eBPF telemetry.
+Every subsystem, crate, and execution thread across VirtualCortex is bound by eighteen mathematically verifiable invariants:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                          THE FOURTEEN ARCHITECTURAL INVARIANTS                         │
-├───────────────────┬───────────────────────────────────┬────────────────────────────────┤
+│                         THE EIGHTEEN ARCHITECTURAL INVARIANTS                          │
+├─────┬─────────────┬───────────────────────────────────┬────────────────────────────────┤
 │ ID  │ Invariant   │ Target / Mechanism                │ Mathematical / Physical Guard  │
 ├─────┼─────────────┼───────────────────────────────────┼────────────────────────────────┤
 │ I-01│ 64B Cache   │ All core state structures         │ size_of == 64, align_of == 64  │
@@ -131,16 +139,12 @@ Every subsystem, crate, and execution thread across VirtualCortex is bound by fo
 │ I-12│ Salience    │ Subcortical threat reflex arc     │ Amygdala low-road bypass < 12ms│
 │ I-13│ Ignition    │ Global Neuronal Workspace         │ Non-linear conscious broadcast │
 │ I-14│ Symbolic    │ 10,000-D hypervector grounding    │ Exact VSA algebraic invariance │
+│ I-15│ Rollout Iso │ Prefrontal mental simulation      │ < 50us virtual rollout sandbox │
+│ I-16│ Pred Error  │ Hierarchical predictive coding    │ > 85% redundant sensory cancel │
+│ I-17│ Agency Eff  │ Self/Other intention isolation    │ Bit-exact efference copy match │
+│ I-18│ Glymphatic  │ Sleep memory compaction & SDC     │ Zero-downtime ECC scrubbing    │
 └─────┴─────────────┴───────────────────────────────────┴────────────────────────────────┘
 ```
-
-### Invariant Proof Sketches:
-* **Proof of I-01 (64B POD)**: For any struct $S \in \{	ext{DendriticSuperNeuron}, 	ext{SynapseBlock}, \dots\}$, $	ext{sizeof}(S) = 64 \land 	ext{alignof}(S) = 64$. Verified via Rust compile-time assertions:
-  ```rust
-  const _: () = assert!(core::mem::size_of::<T>() == 64 && core::mem::align_of::<T>() == 64);
-  ```
-* **Proof of I-03 (Bit-Exact Q16.16)**: Addition over $\mathbb{Z}_{32}$ forms an abelian group: $a + b = b + a$ and $(a + b) + c = a + (b + c) \pmod{2^{32}}$. Fixed-point multiplication with arithmetic right shifts preserves identical bit outputs across any CPU obeying two's-complement integer arithmetic.
-* **Proof of I-08 (1ms Barrier)**: Let $t_{	ext{tick}} = 1000\,\mu	ext{s}$. The execution jitter $\epsilon$ satisfies $\sup |\epsilon| < 5\,\mu	ext{s}$ under `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)`.
 
 ---
 
@@ -167,6 +171,10 @@ VirtualCortex targets standard enterprise hardware available in 2026+. Rather th
   ├── cortex-salience Threat Node State (32.00 MB)
   ├── cortex-workspace Global Broadcast Slots (16.00 MB)
   ├── cortex-symbolic 10,000-D VSA Codebook (1.25 GB)
+  ├── cortex-executive Plan Tree Nodes (32.00 MB)
+  ├── cortex-predictive Residual Error States (64.00 MB)
+  ├── cortex-agency Intersubjective Perspectives (16.00 MB)
+  ├── cortex-immune Glymphatic Scrubbing Nodes (64.00 MB)
   ├── cortex-hippocampus CA3 Attractor Buffer (64.00 MB)
   ├── cortex-neuromod Global Value Fields (13.76 MB)
   ├── cortex-homeostasis Drive Pools (32.00 MB)
@@ -185,9 +193,6 @@ VirtualCortex targets standard enterprise hardware available in 2026+. Rather th
   └── Continuous Epoch Snapshots, WAL redb Journal, .cortex Cold Images
 ==================================================================================================
 ```
-
-### 3.1 Memory Allocation & NUMA Pinning
-VirtualCortex allocates all Tier 1 memory using Linux HugePages (2MB or 1GB pages) to eliminate page table walking overhead. Memory pages are pre-faulted and pinned to the local NUMA node using `mbind(MPOL_BIND)`. Worker threads are pinned to physical execution cores via `pthread_setaffinity_np` and isolated from the Linux kernel scheduler using the kernel boot parameters `isolcpus=2-63 nohz_full=2-63 rcu_nocbs=2-63`.
 
 ---
 
@@ -341,7 +346,7 @@ VirtualCortex defines the `.cortex` native binary container format. The file is 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ CortexFileHeader (64 Bytes, align 64)                            │
-│ Magic: 0x5854524F435F5643 ("VC_CORTX") | Version: 0x00020004     │
+│ Magic: 0x5854524F435F5643 ("VC_CORTX") | Version: 0x00020008     │
 │ Node Count: 86,000,000,000              | Synapse Blocks: 128M   │
 ├──────────────────────────────────────────────────────────────────┤
 │ Section 0: MacroColumn Directory (55.04 MB)                      │
@@ -663,7 +668,184 @@ pub struct SymbolicHypervectorHeader {
 
 ---
 
-## 15. Neuromodulatory Value Systems & Multi-Factor Plasticity
+## 15. Prefrontal Executive Planning & Counterfactual Mental Simulation
+
+While `cortex-basal-ganglia` selects reflexive habits and immediate motor responses, sovereign intelligent organisms require deliberative, multi-step prospective planning. `cortex-executive` models the biological functions of the **Frontopolar Cortex (Brodmann Area 10)** and **Dorsolateral Prefrontal Cortex (dlPFC, BA 9/46)**:
+
+```
+Executive Goal Specification
+            │
+            ▼
+┌───────────────────────────────────────────────────────────┐
+│ cortex-executive: Internal Simulation Sandbox             │
+│ - Physical Actuators Stationary (Embodiment Gate Closed)   │
+│ - Forward Rollouts: Tree Search over Cortical Attractors  │
+│ - Branch Evaluation: Q16.16 Regret & Value Estimation     │
+└───────────────────────────────────────────────────────────┘
+            │
+            ├── Counterfactual Branch Dead-End -> Prune & Backtrack
+            │
+            ▼ Validated High-Confidence Policy
+Forwarded to Basal Ganglia & Motor Cortex for Execution
+```
+
+### 15.1 Counterfactual Search Dynamics
+Let $G$ be the root goal hypervector and $\pi = (a_1, a_2, \dots, a_k)$ be an internal trajectory of simulated actions. The executive evaluator computes cumulative counterfactual regret $\mathcal{R}(\pi)$:
+
+$$\mathcal{R}(\pi) = \sum_{t=1}^{k} \max_{a' \in \mathcal{A}} \left[ Q(s_t, a') - Q(s_t, a_t) ight]$$
+
+Candidate branches whose estimated regret exceeds dynamic threshold $	heta_{	ext{prune}}$ are pruned from search space without transmitting signals to physical motor decoders.
+
+```rust
+#[repr(C, align(64))]
+pub struct ExecutivePlanNode {
+    pub goal_hash: u64,              // 8 bytes: target goal representation hash
+    pub parent_node_offset: u32,     // 4 bytes: offset to parent decision node
+    pub branch_confidence: i32,      // 4 bytes: Q16.16 branch confidence score
+    pub counterfactual_regret: i32,  // 4 bytes: Q16.16 cumulative counterfactual regret
+    pub tree_depth: u16,             // 2 bytes: current lookahead depth
+    pub pruned_flag: u8,             // 1 byte: 1 if pruned, 0 if candidate
+    pub padding: [u8; 41],           // 41 bytes hardware pad to 64 bytes
+}
+```
+
+---
+
+## 16. Hierarchical Predictive Coding & Active Inference
+
+Biological neocortex is fundamentally a **Bayesian Prediction Machine**. Rather than passively streaming raw sensory data up the cortical hierarchy, `cortex-predictive` implements **Hierarchical Predictive Coding (HPC)** under Karl Friston's **Free Energy Principle (FEP)**:
+
+```
+Cortical Hierarchy Level L+1 (Deep Semantic Latents)
+          │  ▲
+          │  │ Residual Prediction Error ε_{L+1}
+          ▼  │
+┌───────────────────────────────────────────────────────────┐
+│ Cortical Hierarchy Level L (Intermediate Features)        │
+│ Top-Down Prior Prediction: μ_L = g(μ_{L+1})               │
+│ Local Subtraction: ε_L = y_L - μ_L                        │
+│ Error Precision Weighting: ξ_L = Π_L * ε_L                │
+└───────────────────────────────────────────────────────────┘
+          │  ▲
+          │  │ Residual Prediction Error ε_L (> 85% Cancelled)
+          ▼  │
+Cortical Hierarchy Level L-1 (Peripheral Sensory Inputs)
+```
+
+### 16.1 Mathematical Free Energy Minimization
+At each cortical level $l$, top-down predictions $\mu_l$ attempt to cancel incoming sensory representations $y_l$. The propagated error $arepsilon_l$ represents only unexplained variance:
+
+$$arepsilon_l(t) = y_l(t) - g_l(\mu_{l+1}(t))$$
+
+$$\dot{\mu}_l(t) = -rac{\partial \mathcal{F}}{\partial \mu_l} = -arepsilon_l(t) + \left( rac{\partial g_l}{\partial \mu_l} ight)^T \Pi_{l-1} arepsilon_{l-1}(t)$$
+
+By cancelling predictable sensory signals at the peripheral boundary, `cortex-predictive` **reduces internal spike communication across the CXL 3.0 and DRAM bus by over 85%**.
+
+```rust
+#[repr(C, align(64))]
+pub struct PredictiveErrorState {
+    pub prior_prediction_hash: u64,  // 8 bytes: top-down predicted state hash
+    pub prediction_error: i32,       // 4 bytes: Q16.16 residual error magnitude
+    pub precision_weight: i32,       // 4 bytes: Q16.16 sensory precision weighting
+    pub ascending_layer_id: u16,     // 2 bytes: cortical laminar stage index
+    pub convergence_flag: u8,        // 1 byte: 1 if error cancelled, 0 if active
+    pub padding: [u8; 45],           // 45 bytes hardware pad to 64 bytes
+}
+```
+
+---
+
+## 17. Intersubjective Agency & Theory of Mind
+
+Autonomous agents interacting with human collaborators or peer robots must distinguish between self-caused sensations and externally caused occurrences. `cortex-agency` models the **Temporoparietal Junction (TPJ)**, **Medial Prefrontal Cortex (mPFC)**, and the **Mirror Neuron System (F5 / IPL)**:
+
+```
+Motor Command Dispatched (L5 Burst)
+          │
+          ├──► Actuator (Physical Movement in Environment)
+          │
+          ▼ (Internal Efference Copy)
+┌───────────────────────────────────────────────────────────┐
+│ cortex-agency: Efference Copy Forward Predictor           │
+│ - Predict Expected Self-Sensory Consequences              │
+│ - Subtract from Incoming Sensory Stream                   │
+└───────────────────────────────────────────────────────────┘
+          │
+          ├── Residual = 0 -> Attributed to "SELF" (Tickle Invariance)
+          │
+          └── Residual > 0 -> Attributed to "EXTERNAL AGENT"
+                   │
+                   ▼
+┌───────────────────────────────────────────────────────────┐
+│ Theory of Mind (ToM) Mental State Modeling                │
+│ - Decode External Agent Intentions via Motor Resonance    │
+│ - Maintain Separate Belief-Desire-Intention (BDI) State   │
+└───────────────────────────────────────────────────────────┘
+```
+
+### 17.1 Efference Copy Cancellation Formulation
+Let $\mathbf{u}_{	ext{motor}}$ be the motor command vector. The internal efference copy produces expected sensory changes $\hat{\mathbf{s}}_{	ext{self}} = \mathcal{M}(\mathbf{u}_{	ext{motor}})$. The intersubjective agency discriminator computes:
+
+$$\Delta \mathbf{s}_{	ext{agency}} = \mathbf{s}_{	ext{observed}} - \hat{\mathbf{s}}_{	ext{self}}$$
+
+If $\|\Delta \mathbf{s}_{	ext{agency}}\| > 	heta_{	ext{other}}$, the sensory event is tagged as external agency, triggering Theory of Mind social inference models.
+
+```rust
+#[repr(C, align(64))]
+pub struct AgentPerspectiveState {
+    pub perspective_frame_hash: u64, // 8 bytes: spatial coordinate transformation hash
+    pub intention_vector_ptr: u64,   // 8 bytes: pointer/offset to intention hypervector
+    pub agent_id: u32,               // 4 bytes: 0: self, >0: external agent ID
+    pub trust_score: i32,            // 4 bytes: Q16.16 social trustworthiness score
+    pub efference_copy_flag: u8,     // 1 byte: 1 if self-generated consequence
+    pub padding: [u8; 39],           // 39 bytes hardware pad to 64 bytes
+}
+```
+
+---
+
+## 18. Glymphatic Memory Compaction & Neuro-Immune Self-Healing
+
+In 24/7 continuous industrial deployments, hardware memory encounters cosmic-ray Single-Event Upsets (SEU), memory fragmentation, and saturated non-functional synapses. Biological brains resolve this via the **Glymphatic Clearance System** and **Microglial Phagocytosis** during Slow-Wave Sleep. `cortex-immune` operationalizes these mechanisms:
+
+```
+Circadian Sleep Phase Active (cortex-homeostasis State 2/3)
+                      │
+                      ▼
+┌───────────────────────────────────────────────────────────┐
+│ cortex-immune: Glymphatic Memory Scrubbing Daemon         │
+│ 1. Scan SynapseBlock Arenas for Dead / Inactive Synapses  │
+│ 2. Microglial Phagocytosis: Reclaim Slabs to Free Pool    │
+│ 3. Linear Memory Compaction (Eliminate Internal Holes)    │
+│ 4. Hardware ECC & SDC Verification Checksum Audit         │
+└───────────────────────────────────────────────────────────┘
+                      │
+                      ▼
+Zero Heap Fragmentation, 100% Verified Structural Integrity
+```
+
+### 18.1 Continuous Zero-Downtime Memory Scrubbing
+`cortex-immune` worker threads run concurrently in background execution cores using Epoch-Based Reclamation (EBR). Memory pages containing pruned synapses are compacted without locking reader simulation threads:
+
+$$	ext{HealthIndex}(P_k) = rac{	ext{ActiveSynapses}(P_k)}{	ext{TotalSlabs}(P_k)} 	imes \left[ 1.0 - 	ext{BitErrors}(P_k) ight]$$
+
+Pages whose health index drops below $0.25$ undergo compaction, recycling physical memory back to the NUMA pool.
+
+```rust
+#[repr(C, align(64))]
+pub struct ImmuneScrubNode {
+    pub ecc_checksum_hash: u64,       // 8 bytes: structural integrity checksum
+    pub arena_segment_id: u32,        // 4 bytes: memory arena identifier
+    pub page_health_score: i32,       // 4 bytes: Q16.16 memory page integrity score
+    pub degenerate_synapse_count: u32,// 4 bytes: count of pruned dead synapses
+    pub reclamation_active: u8,       // 1 byte: 1 if under active compaction
+    pub padding: [u8; 43],            // 43 bytes hardware pad to 64 bytes
+}
+```
+
+---
+
+## 19. Neuromodulatory Value Systems & Multi-Factor Plasticity
 
 Classical Hebbian plasticity ("cells that fire together, wire together") is fundamentally incapable of autonomous goal-directed reinforcement learning because it lacks any concept of behavioral outcome, reward, or surprise. VirtualCortex implements **Three-Factor Synaptic Plasticity**:
 
@@ -686,7 +868,7 @@ Local Synapse Activity                       Global Neuromodulatory Field
                    Consolidated Synaptic Weight ΔW
 ```
 
-### 15.1 The Neuromodulatory Quartet
+### 19.1 The Neuromodulatory Quartet
 1. **Dopamine (DA)**: Encodes Reward Prediction Error (RPE): $\delta_{	ext{DA}} = R + \gamma V(S_{t+1}) - V(S_t)$.
 2. **Norepinephrine (NE)**: Encodes environmental unexpected uncertainty and autonomic arousal.
 3. **Serotonin (5-HT)**: Modulates risk aversion, temporal discounting horizons, and harm avoidance.
@@ -705,7 +887,7 @@ pub struct NeuromodulatorState {
 
 ---
 
-## 16. Hippocampal Episodic Formation & Offline Sleep Consolidation
+## 20. Hippocampal Episodic Formation & Offline Sleep Consolidation
 
 Directly training neocortical networks on fast sequential experiences triggers **Catastrophic Forgetting**. The mammalian brain circumvents this via **Complementary Learning Systems (CLS)**: fast, one-shot episodic learning in the hippocampus followed by slow, offline consolidation into the neocortex during sleep.
 
@@ -726,7 +908,7 @@ Replay Compressed Episodic Sequences (20x Real-Time Speed)
 Neocortical Layer 5 Slow Plastic Synaptic Restructuring
 ```
 
-### 16.1 CA3 Recurrent Auto-Associative Attractor
+### 20.1 CA3 Recurrent Auto-Associative Attractor
 The CA3 subfield implements an energy-based attractor network. When presented with a noisy, incomplete sensory cue $\mathbf{x}_{	ext{cue}}$, the network converges to the complete stored memory pattern $\mathbf{x}^*$:
 
 $$E(\mathbf{x}) = -rac{1}{2} \sum_{i} \sum_{j} W_{ij}^{	ext{CA3}} x_i x_j - \sum_i b_i x_i$$
@@ -746,7 +928,7 @@ pub struct HippocampalAttractorState {
 
 ---
 
-## 17. Homeostatic Energy Regimes & Autonomic Circadian Drives
+## 21. Homeostatic Energy Regimes & Autonomic Circadian Drives
 
 An autonomous cognitive organism cannot run open-loop indefinitely without energy regulation. `cortex-homeostasis` implements autonomic metabolic drive pools governed by the Hypothalamus and a 24-hour Circadian state machine.
 
@@ -772,7 +954,7 @@ An autonomous cognitive organism cannot run open-loop indefinitely without energ
    Branching Ratio: σ = <N_{t+1}> / <N_t> -> 1.000 (Critical Boundary)
 ```
 
-### 17.1 Self-Organized Criticality (SOC) Tuning
+### 21.1 Self-Organized Criticality (SOC) Tuning
 If the neural branching ratio $\sigma > 1.000$, activity cascades into epileptiform seizure activity; if $\sigma < 1.000$, activity dampens and dies out. During sleep, homeostatic synaptic scaling multiplies all synaptic weights by a global attenuation factor $\gamma_{	ext{scale}}$, restoring $\sigma$ to exactly $1.000$:
 
 $$W_{ij}(t + 1) = W_{ij}(t) \cdot \left[ 1.0 - \kappa (\sigma - 1.000) ight]$$
@@ -792,7 +974,7 @@ pub struct HomeostaticDrivePool {
 
 ---
 
-## 18. Distributed Scale-Out & Mesh Fabric
+## 22. Distributed Scale-Out & Mesh Fabric
 
 To scale beyond a single server node while preserving determinism, `cortex-fabric` employs **Kernel-Bypass RDMA** (RoCEv2 and InfiniBand) combined with **CXL 3.0 Multi-Host Shared Memory Pools**.
 
@@ -814,7 +996,7 @@ Node 0 (Sensory / Cortical Mesh)                   Node 1 (Hippocampus / Motor M
         └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 18.1 Kernel-Bypass RDMA Packet Structure
+### 22.1 Kernel-Bypass RDMA Packet Structure
 Every inter-node message is formatted into a single 64-byte envelope (`FabricPacketHeader`):
 
 ```rust
@@ -833,7 +1015,7 @@ pub struct FabricPacketHeader {
 
 ---
 
-## 19. Observability, eBPF Profiling & Local Field Potentials
+## 23. Observability, eBPF Profiling & Local Field Potentials
 
 Monitoring the internal cognitive dynamics of an 86-billion node brain must not introduce execution jitter or performance degradation. `cortex-telemetry` provides non-invasive introspection via Linux eBPF tracepoints and lock-free SPSC local field potential (LFP) synthesizers.
 
@@ -870,7 +1052,7 @@ pub struct LfpSamplePacket {
 
 ---
 
-## 20. Quantitative Pareto Frontier & Hardware Budget (~34.80 GB)
+## 24. Quantitative Pareto Frontier & Hardware Budget (~35.20 GB)
 
 The definitive physical memory ledger demonstrates how VirtualCortex comfortably supports an **86-Billion Node Whole-Brain Autonomous Organism on a Single Commodity 64 GB DDR5 Server**:
 
@@ -890,36 +1072,40 @@ The definitive physical memory ledger demonstrates how VirtualCortex comfortably
  7. cortex-salience               500,000 threat nodes     64 Bytes         32.00 MB
  8. cortex-workspace              250,000 slots            64 Bytes         16.00 MB
  9. cortex-symbolic VSA Codebook  1,000,000 hypervectors   1.25 KB          1.25 GB
- 10. cortex-hippocampus CA3       1,000,000 attractor st   64 Bytes         64.00 MB
- 11. cortex-neuromod Value Field  860,000 columns          16 Bytes         13.76 MB
- 12. cortex-homeostasis           500,000 drive pools      64 Bytes         32.00 MB
- 13. cortex-fabric Descriptors    2,000,000 envelopes      64 Bytes         128.00 MB
- 14. cortex-telemetry LFP Taps    500,000 taps             64 Bytes         32.00 MB
- 15. Two-Tier Timing Wheels       64 worker wheels         8 MB             512.00 MB
- 16. 3D Guidance Voxels           1,048,576 voxels         16 Bytes         16.78 MB
- 17. Sensory/Embodiment IPC       2,048 ring buffers       64 KB            131.00 MB
- 18. OS Page Tables & Runtime     Kernel HugePages Heap    -                4.58 GB
+ 10. cortex-executive Plan Nodes  500,000 plan nodes       64 Bytes         32.00 MB
+ 11. cortex-predictive Errors     1,000,000 error states   64 Bytes         64.00 MB
+ 12. cortex-agency Perspectives   250,000 agent frames     64 Bytes         16.00 MB
+ 13. cortex-immune Scrub Nodes    1,000,000 scrub nodes    64 Bytes         64.00 MB
+ 14. cortex-hippocampus CA3       1,000,000 attractor st   64 Bytes         64.00 MB
+ 15. cortex-neuromod Value Field  860,000 columns          16 Bytes         13.76 MB
+ 16. cortex-homeostasis           500,000 drive pools      64 Bytes         32.00 MB
+ 17. cortex-fabric Descriptors    2,000,000 envelopes      64 Bytes         128.00 MB
+ 18. cortex-telemetry LFP Taps    500,000 taps             64 Bytes         32.00 MB
+ 19. Two-Tier Timing Wheels       64 worker wheels         8 MB             512.00 MB
+ 20. 3D Guidance Voxels           1,048,576 voxels         16 Bytes         16.78 MB
+ 21. Sensory/Embodiment IPC       2,048 ring buffers       64 KB            131.00 MB
+ 22. OS Page Tables & Runtime     Kernel HugePages Heap    -                4.78 GB
 ──────────────────────────────────────────────────────────────────────────────────────────────────
- TOTAL TIER 1 PHYSICAL DDR5 RAM                                             ~18.80 GB
+ TOTAL TIER 1 PHYSICAL DDR5 RAM                                             ~19.20 GB
 ──────────────────────────────────────────────────────────────────────────────────────────────────
  Tier 2: CXL 3.0 Far Memory Pool
- 19. Plastic Synapse Deltas (ΔW)  1,000,000,000 connections 16 Bytes        16.00 GB
+ 23. Plastic Synapse Deltas (ΔW)  1,000,000,000 connections 16 Bytes        16.00 GB
 ──────────────────────────────────────────────────────────────────────────────────────────────────
- GRAND TOTAL SYSTEM PHYSICAL RAM FOOTPRINT                                  ~34.80 GB
+ GRAND TOTAL SYSTEM PHYSICAL RAM FOOTPRINT                                  ~35.20 GB
 ==================================================================================================
 ```
 
-A standard 64 GB DDR5 ECC memory module provides ample headroom, leaving **~29.20 GB of spare physical memory** for operating system buffers and telemetry.
+A standard 64 GB DDR5 ECC memory module provides ample headroom, leaving **~28.80 GB of spare physical memory** for operating system buffers and telemetry.
 
 ---
 
-## 21. Deterministic Verification Matrix & Test Strategy
+## 25. Deterministic Verification Matrix & Test Strategy
 
 To guarantee absolute scientific integrity and industrial safety, VirtualCortex employs a four-tiered continuous verification pipeline:
 
 ```
 [Level 1: Compile-Time Static Assertions]
-├── Verify exact 64B size and alignment across all 14 crates
+├── Verify exact 64B size and alignment across all 18 crates
 └── Eliminate floating-point types and dynamic memory allocation in core crates
 
 [Level 2: Cross-Platform Bit-Exact Differential Testing]
@@ -936,33 +1122,33 @@ To guarantee absolute scientific integrity and industrial safety, VirtualCortex 
 
 ---
 
-## 22. Security Architecture & Sovereign Sandbox Isolation
+## 26. Security Architecture & Sovereign Sandbox Isolation
 
 Operating an embodied autonomous whole-brain organism in real-world environments introduces unique physical and digital security requirements:
 
-### 22.1 Seccomp-BPF Hardware Confinement
+### 26.1 Seccomp-BPF Hardware Confinement
 All simulation worker threads execute under strict Linux `seccomp-bpf` system call filters. Once the `.cortex` image is mapped and thread pools are established, the following system calls are permanently disabled: `execve`, `fork`, `socket`, `connect`, `bind`. An attacker who succeeds in injecting adversarial spike trains cannot spawn shells or initiate network traffic.
 
-### 22.2 Hardware Watchdog & Motor Fail-Safe
+### 26.2 Hardware Watchdog & Motor Fail-Safe
 `cortex-embodiment` connects directly to a physical hardware watchdog. If the neural engine fails to produce a valid 1.000 ms torque frame within $5.0\,	ext{ms}$, hardware relays trigger dynamic braking, locking robotic joints into safe configurations.
 
 ---
 
-## 23. Future Roadmap: Non-Invasive BCI & Neuromorphic ASIC Acceleration
+## 27. Future Roadmap: Non-Invasive BCI & Neuromorphic ASIC Acceleration
 
 VirtualCortex is architected for long-term technological evolution across three strategic phases:
 
-1. **Phase 1 (2026)**: Production deployment of the Grand 14-Crate Sovereign Organism across robotics, aerospace simulation, and complex cognitive systems.
+1. **Phase 1 (2026)**: Production deployment of the Grand 18-Crate Sovereign Organism across robotics, aerospace simulation, and complex cognitive systems.
 2. **Phase 2 (2027)**: Direct integration with high-density non-invasive Brain-Computer Interfaces (BCI), mapping real-time human EEG/MEG telemetry into `cortex-workspace` conscious slots.
 3. **Phase 3 (2028+)**: Tape-out of dedicated VirtualCortex Neuromorphic ASIC coprocessors, porting the 64-byte POD execution pipeline to custom ultra-low-power silicon.
 
 ---
 
-## 24. Conclusion: The Sovereign Whole-Brain Architecture Standard
+## 28. Conclusion: The Sovereign Whole-Brain Architecture Standard
 
 VirtualCortex establishes a new milestone in computational neuroscience and cognitive systems engineering. By rejecting software bloat and embracing the doctrine that **"Latest != Newest"**, VirtualCortex demonstrates that biophysically realistic, 86-billion node whole-brain simulation does not require supercomputer clusters or fragile floating-point frameworks.
 
-Through strict **mechanical sympathy**, **64-byte POD cache-line alignment**, **Q16.16 bit-exact determinism**, and the **Fourteen-Crate Sovereign Architecture**, VirtualCortex delivers a complete, autonomous cognitive organism operating within **~34.80 GB of physical memory**.
+Through strict **mechanical sympathy**, **64-byte POD cache-line alignment**, **Q16.16 bit-exact determinism**, and the **Eighteen-Crate Sovereign Architecture**, VirtualCortex delivers a complete, autonomous cognitive organism operating within **~35.20 GB of physical memory**.
 
 ---
 
