@@ -424,7 +424,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (2) |
+| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (3) |
 | Status | Header layout: Implemented · Sections, CRC, loader: Specified (§8.7) · Atlas-derived priors: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -432,7 +432,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
 | `[0..8)` | `magic` | `[u8; 8]` | ASCII `VCORTEX1` (big-endian `0x5643_4F52_5445_5831`). |
-| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 2: version 1 is the whitepaper 3.0.0 layout before [ADR-0012](adr/0012-synaptic-weight-q1-15.md). |
+| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 3. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6). |
 | `[12..16)` | `reserved_flags` | `u32` | Feature flags; MUST be zero in version 1. |
 | `[16..24)` | `num_columns` | `u64` | Cortical hyper-column count. |
 | `[24..32)` | `num_neurons` | `u64` | `DendriticSuperNeuron` record count. |
@@ -442,7 +442,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | `[56..64)` | `_padding` | `[u8; 8]` | Reserved; MUST be zero. |
 
 <!-- @assert-count target="crates/cortex-connectome" symbol="CortexFileHeader" min="1" word="true" -->
-<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 2" min="1" reason="§5.2.2 states the current image format version; update both together" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 3" min="1" reason="§5.2.2 states the current image format version; update both together" -->
 
 #### 5.2.3 `cortex-sensory` — peripheral ingestion
 
@@ -522,24 +522,25 @@ The implemented rule is $g = d_2 + s - d_1$, stored in `gpi_snr_inhibition`; the
 | :--- | :--- |
 | Responsibility | Per-microzone internal forward model that predicts the sensory consequence of a motor command ahead of physical feedback (Smith-predictor role). |
 | Source | `crates/cortex-cerebellum/src/lib.rs` |
-| Public API | `CerebellarMicrozone::step_forward_model(&mut self, current_sensory: i32, motor_command: i32) -> i32` |
-| Status | Layout: Implemented · Dynamics: placeholder (finding F-8) · Granule expansion and climbing-fibre LTD: Specified (§8.8) |
+| Public API | `CerebellarMicrozone::step_forward_model(&mut self, current_sensory: i32, motor_command: i32) -> i32`, `set_plant_delay(&mut self, d: u8)`, `plant_delay()`, `filled()`, `MAX_PLANT_DELAY` (7) |
+| Status | Layout: Implemented · Forward model with delay line and climbing-fibre adaptation of a scalar gain: Implemented (brief 004) · Granule expansion and Smith-predictor lead: Specified (§8.8) |
 
 **`CerebellarMicrozone`** — 64 B, align 64.
 
 | Offset | Field | Type | Format | Meaning |
 | :--- | :--- | :--- | :--- | :--- |
 | `[0..4)` | `microzone_id` | `u32` | index | Anatomical microzone. |
-| `[4..8)` | `purkinje_output_rate` | `i32` | Q16.16 | Purkinje inhibitory output. |
-| `[8..12)` | `mossy_fiber_input` | `i32` | Q16.16 | Sensorimotor input. |
-| `[12..16)` | `granule_expansion_code` | `u32` | hash | Sparse high-dimensional code. |
-| `[16..20)` | `climbing_fiber_error` | `i32` | Q16.16 | Teaching signal from the inferior olive. |
-| `[20..24)` | `ltd_synaptic_weight` | `i32` | Q16.16 | Parallel-fibre to Purkinje weight. |
-| `[24..28)` | `forward_model_pred` | `i32` | Q16.16 | Predicted outcome. |
-| `[28..32)` | `lead_compensation_q16` | `i32` | Q16.16 | Predictor lead. |
-| `[32..64)` | `_reserved` | `[u8; 32]` | — | Reserved; MUST be zero. |
+| `[4..8)` | `purkinje_output_rate` | `i32` | Q16.16 | Predicted sensory change for the current command (the compensation signal); the function's return value. |
+| `[8..12)` | `mossy_fiber_input` | `i32` | Q16.16 | Sensorimotor input (the command). |
+| `[12..16)` | `granule_expansion_code` | `u32` | hash | Sparse high-dimensional code (Specified). |
+| `[16..20)` | `climbing_fiber_error` | `i32` | Q16.16 | Observation now minus the prediction made $d$ steps ago; 0 until the delay line holds $d$ entries. |
+| `[20..24)` | `ltd_synaptic_weight` | `i32` | Q16.16 | Learned forward gain $w$. |
+| `[24..28)` | `forward_model_pred` | `i32` | Q16.16 | Predicted observation $d$ steps ahead. |
+| `[28..32)` | `lead_compensation_q16` | `i32` | Q16.16 | Smith-predictor lead (Specified; unused by the current rule). |
+| `[32..60)` | `pred_ring` | `[i32; 7]` | Q16.16 | Delay line: the predictions made at the last seven steps. |
+| `[60..64)` | `delay_ctl` | `u32` | packed | Bits 0–7 ring head; 8–15 plant delay $d$ (0 disables learning, clamped to 7); 16–23 entries filled; 24–30 sign of the command per slot; bit 31 reserved zero. |
 
-The current function computes the prediction and the error from the *same* sample, so the error is identically $-(u \gg 2)$ and carries no information about the plant; a real forward model compares the prediction made at $t$ with the observation at $t + d$. This is documented as F-8 and the function is retained only as a layout exercise.
+The rule, per step, with gain $w$, observation $y$ and command $u$: $\delta = w u$ (Q16.16 product, widened and clamped), $\hat{y} = y + \delta$ is pushed into the delay line and returned as $\delta$; if the line holds a prediction from $d$ steps ago, $e = y - \hat{y}_{t-d}$ and $w \leftarrow w + \operatorname{sgn}(u_{t-d})\, \operatorname{round}(e / 16)$. On the plant $y_{t+d} = y_t + k u_t$ this converges to $w = k$ within half a learning step; the unit tests show $|e| \le 8$ LSB and $|w - k| \le 8$ LSB after 400 steps for $(k, d) \in \{(0.5, 2), (0.25, 7), (0.75, 1)\}$ and for an alternating-sign command. The step is the caller's period, intended to be the 1 ms embodiment epoch (R-4), so the in-record line covers plant delays up to 7 ms; longer delays are an open question in §11.1.
 
 <!-- @assert-count target="crates/cortex-cerebellum" symbol="CerebellarMicrozone" min="1" word="true" -->
 
@@ -989,7 +990,7 @@ No heap allocation occurs after initialisation (TC-5). Arenas are allocated once
 
 ### 8.7 Persistence and serialisation
 
-The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 2 (version 1 differs only in the semantics of the synaptic weight bytes, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)). Layout (Specified except the header):
+The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 3; the version history is in §5.2.2. Layout (Specified except the header):
 
 ```text
 [0..64)         CortexFileHeader
@@ -1015,7 +1016,7 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | STDP | `cortex-core` · `last_soma_spike_tick`, `SynapseBlock.last_spike_tick` | Pre-before-post potentiates; post-before-pre depresses; windowed by tick difference. | Specified |
 | Three-factor plasticity | `cortex-neuromod` | $\Delta W = \eta \cdot e_{ij} \cdot M$, with an eligibility trace $e_{ij}$ and modulator $M$ from the neuromodulator record. | Specified |
 | Striatal action selection | `cortex-basal-ganglia` | Linear gate (Implemented); lateral inhibition and dopamine-scaled D1/D2 balance (Specified). | Partial |
-| Cerebellar forward model | `cortex-cerebellum` | Granule expansion, Purkinje readout, climbing-fibre LTD; prediction compared with delayed observation. | Specified (F-8) |
+| Cerebellar forward model | `cortex-cerebellum` | Granule expansion, Purkinje readout, climbing-fibre LTD; prediction compared with delayed observation. | Partial: delay line and climbing-fibre adaptation of a scalar gain Implemented (brief 004); granule expansion Specified |
 | Dual-route threat (LeDoux) | `cortex-salience` | Fast low-road threshold (Implemented) with cortical contextual suppression (Specified). | Partial |
 | Global workspace (Dehaene–Changeux) | `cortex-workspace` | Threshold ignition (Implemented); decay and slot competition (Specified). | Partial |
 | Vector-symbolic architecture (Plate, Kanerva) | `cortex-symbolic` | Binding by XOR / circular convolution, bundling by majority, permutation by cyclic shift, clean-up by nearest codebook entry. | Specified |
@@ -1140,7 +1141,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-5 | All crates declare `edition = "2021"` and no `rust-version`; the README badge claims "Rust 2024/2026". There is no 2026 edition. | workspace | Open. [ADR-0009](adr/0009-rust-edition-and-msrv.md) proposes edition 2024 and an MSRV. |
 | F-6 | Only 4 of 18 crates were `#![no_std]` (TC-6). | 14 crates | **Resolved** (brief 002): all eighteen are `#![no_std]`; an executable assertion in §2.2 holds the count at 18. |
 | F-7 | Only 4 of 18 crates derived `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | **Resolved** (brief 002): every record without atomics derives the five; the two control records and `FlatTimingWheel` derive `Debug` only, with a comment citing L-5. |
-| F-8 | `CerebellarMicrozone::step_forward_model` computes its error from the sample it predicted from, so the error is constant. | `cortex-cerebellum` | Open. Placeholder; real forward model needs a delay line. |
+| F-8 | `CerebellarMicrozone::step_forward_model` computed its error from the sample it predicted from, so the error was constant. | `cortex-cerebellum` | **Resolved** (brief 004): a seven-slot delay line in the former reserved bytes; the error compares the prediction made $d$ steps ago with the observation now; a convergence test on a linear plant; image format version 3. |
 | F-9 | Crate metadata (`authors`, `description`, `license`) was present on 4 crates and absent on 14. | 14 crates | **Resolved**: `version`, `edition`, `authors`, `license` and `repository` are inherited from `[workspace.package]`; each crate keeps only its `name` and `description`. |
 | F-10 | `cargo fmt --check` reported diffs in twelve files; `cargo clippy` reported three warnings (`new_without_default` ×2, byte-string literal). | workspace | **Resolved**: formatted; `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer` (both delegate to `new`); `FabricPacketHeader::MAGIC` written as `*b"VCFB"`. Formatting and clippy are blocking in CI (Appendix B). |
 | F-11 | `FlatTimingWheel` slots are 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 is not a power of two. | `cortex-core` | Open. Design question in §11.1. |
@@ -1161,6 +1162,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 - [x] Which Q-format for `[i16; 4]` synaptic weights (F-3): Q8.8 for range or Q1.15 for resolution?
       **Resolved (2026-09-10):** Q1.15, because in-place STDP needs the resolution and summation supplies the range; [ADR-0012](adr/0012-synaptic-weight-q1-15.md).
 - [ ] Should `NeuromodulatorState` be widened to 64 bytes so that one record per column shares the arena discipline, or kept at 16 bytes for density?
+- [ ] The cerebellar delay line holds seven steps (7 ms at the embodiment epoch). A plant whose delay exceeds that needs a per-microzone delay arena addressed by index; nothing needs it yet, and adopting it would be an ADR.
 
 ---
 

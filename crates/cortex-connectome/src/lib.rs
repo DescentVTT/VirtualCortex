@@ -27,7 +27,9 @@ impl CortexFileHeader {
     ///   16-bit field; `intention_vector_ptr`).
     /// - 2: synaptic weights are Q1.15 (ADR-0012); `intention_vector_idx`. Byte layout
     ///   unchanged; the meaning of the weight bytes changed.
-    pub const FORMAT_VERSION: u32 = 2;
+    /// - 3: `CerebellarMicrozone`'s reserved bytes became `pred_ring` and `delay_ctl`
+    ///   (brief 004); a version-2 image has them zero, which reads as an empty delay line.
+    pub const FORMAT_VERSION: u32 = 3;
 }
 
 const _: () = {
@@ -46,6 +48,6 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 2);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 3);
     }
 }

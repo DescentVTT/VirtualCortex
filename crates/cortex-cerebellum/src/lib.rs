@@ -2,40 +2,151 @@
 
 #![no_std]
 
+/// Per-microzone forward model with an in-record delay line.
+///
+/// At each step the model predicts the observation `d` steps ahead from the current
+/// observation and the current motor command through a learned scalar gain, remembers that
+/// prediction, and compares the observation arriving now with the prediction it made `d`
+/// steps ago (whitepaper §5.2.6, §8.8). The climbing-fibre error drives the gain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct CerebellarMicrozone {
     pub microzone_id: u32,           // [0..4] Anatomical microzone identifier
-    pub purkinje_output_rate: i32,   // [4..8] High-frequency Purkinje inhibition (Q16.16)
-    pub mossy_fiber_input: i32,      // [8..12] Sensorimotor state input (Q16.16)
-    pub granule_expansion_code: u32, // [12..16] High-dimensional sparse pattern hash
-    pub climbing_fiber_error: i32,   // [16..20] Inferior Olive sensory prediction error
-    pub ltd_synaptic_weight: i32,    // [20..24] Parallel fiber -> Purkinje plastic weight
-    pub forward_model_pred: i32,     // [24..28] Predicted sensorimotor outcome (Q16.16)
-    pub lead_compensation_q16: i32,  // [28..32] Smith predictor lead time offset
-    pub _reserved: [u8; 32],         // [32..64] Strict 64-byte cache-line alignment padding
+    pub purkinje_output_rate: i32, // [4..8] Predicted sensory change for the current command (Q16.16)
+    pub mossy_fiber_input: i32,    // [8..12] Sensorimotor state input (Q16.16)
+    pub granule_expansion_code: u32, // [12..16] High-dimensional sparse pattern hash (Specified)
+    pub climbing_fiber_error: i32, // [16..20] Observation now minus the prediction made d steps ago (Q16.16)
+    pub ltd_synaptic_weight: i32, // [20..24] Learned forward gain, parallel fibre -> Purkinje (Q16.16)
+    pub forward_model_pred: i32,  // [24..28] Predicted observation d steps ahead (Q16.16)
+    pub lead_compensation_q16: i32, // [28..32] Smith predictor lead time offset (Specified)
+    pub pred_ring: [i32; 7], // [32..60] Delay line: the predictions made at the last seven steps (Q16.16)
+    pub delay_ctl: u32,      // [60..64] Packed: head | plant delay d | filled | command-sign bitmap
 }
 
 impl CerebellarMicrozone {
-    /// Placeholder forward model. The prediction and the error are computed from the same
-    /// sample, so the error carries no information about the plant (whitepaper finding F-8);
-    /// a real forward model compares the prediction made at `t` with the observation at
-    /// `t + d`. Arithmetic is saturating (whitepaper §8.1).
+    /// Longest plant delay the in-record delay line can hold, in steps.
+    pub const MAX_PLANT_DELAY: u8 = 7;
+
+    /// Learning rate as a right shift: eta = 1/16. The adjustment is rounded to nearest
+    /// (`HALF_STEP` added before the shift) rather than floored, so the steady-state residual
+    /// is bounded by half a learning step (8 LSB) instead of a whole one.
+    const LEARNING_SHIFT: u32 = 4;
+    const HALF_STEP: i32 = 1 << (Self::LEARNING_SHIFT - 1);
+
+    const RING: u32 = 7;
+    const HEAD_SHIFT: u32 = 0;
+    const DELAY_SHIFT: u32 = 8;
+    const FILLED_SHIFT: u32 = 16;
+    const SIGN_SHIFT: u32 = 24;
+    const BYTE: u32 = 0xFF;
+
+    /// Sets the plant delay `d` in steps, clamped to `1..=MAX_PLANT_DELAY`, and clears the
+    /// delay line. A delay of 0 disables comparison and learning.
+    #[inline]
+    pub fn set_plant_delay(&mut self, d: u8) {
+        let d = if d > Self::MAX_PLANT_DELAY {
+            Self::MAX_PLANT_DELAY
+        } else {
+            d
+        };
+        self.delay_ctl = (d as u32) << Self::DELAY_SHIFT;
+        self.pred_ring = [0; 7];
+        self.climbing_fiber_error = 0;
+    }
+
+    /// The plant delay `d` in steps (0 when unset).
+    #[inline]
+    pub const fn plant_delay(&self) -> u8 {
+        ((self.delay_ctl >> Self::DELAY_SHIFT) & Self::BYTE) as u8
+    }
+
+    /// Number of valid entries in the delay line, saturating at seven.
+    #[inline]
+    pub const fn filled(&self) -> u8 {
+        ((self.delay_ctl >> Self::FILLED_SHIFT) & Self::BYTE) as u8
+    }
+
+    #[inline]
+    const fn head(&self) -> u32 {
+        (self.delay_ctl >> Self::HEAD_SHIFT) & Self::BYTE
+    }
+
+    #[inline]
+    const fn sign_negative(&self, slot: u32) -> bool {
+        self.delay_ctl & (1 << (Self::SIGN_SHIFT + slot)) != 0
+    }
+
+    /// One step of the forward model. `current_sensory` is the observation arriving now;
+    /// `motor_command` is the command issued now. Returns the predicted sensory change for that
+    /// command (the Purkinje output), which is the compensation signal a Smith predictor uses.
+    ///
+    /// Update rule (whitepaper §8.8, discretised): with gain `w`, `delta = w * u`,
+    /// `prediction = y + delta`; if the line holds a prediction from `d` steps ago,
+    /// `error = y - prediction_old` and `w += sign(u_old) * round(error / 16)`, which converges
+    /// on a plant `y(t + d) = y(t) + k * u(t)` to `w = k` within half a learning step. Every
+    /// operation saturates (§8.1).
     #[inline(always)]
     pub fn step_forward_model(&mut self, current_sensory: i32, motor_command: i32) -> i32 {
         self.mossy_fiber_input = motor_command;
-        // Internal forward prediction: estimated outcome before physical body responds.
-        // `>>` on i32 is an arithmetic shift, so a negative command scales toward zero.
-        self.forward_model_pred = current_sensory.saturating_add(motor_command >> 2);
-        // Error from inferior olive climbing fiber
-        self.climbing_fiber_error = current_sensory.saturating_sub(self.forward_model_pred);
-        // Purkinje cell LTD adaptation
-        if self.climbing_fiber_error != 0 {
-            self.ltd_synaptic_weight = self
-                .ltd_synaptic_weight
-                .saturating_sub(self.climbing_fiber_error >> 4);
+
+        // Predicted change and predicted observation d steps ahead.
+        let delta = mul_q16(self.ltd_synaptic_weight, motor_command);
+        self.purkinje_output_rate = delta;
+        let prediction = current_sensory.saturating_add(delta);
+        self.forward_model_pred = prediction;
+
+        // Compare with the prediction made d steps ago and adapt the gain.
+        let d = self.plant_delay() as u32;
+        let head = self.head();
+        let filled = self.filled() as u32;
+        if d > 0 && filled >= d {
+            let slot = (head + Self::RING - d) % Self::RING;
+            let old_prediction = self.pred_ring[slot as usize];
+            let error = current_sensory.saturating_sub(old_prediction);
+            self.climbing_fiber_error = error;
+            let adjustment = error.saturating_add(Self::HALF_STEP) >> Self::LEARNING_SHIFT;
+            self.ltd_synaptic_weight = if self.sign_negative(slot) {
+                self.ltd_synaptic_weight.saturating_sub(adjustment)
+            } else {
+                self.ltd_synaptic_weight.saturating_add(adjustment)
+            };
+        } else {
+            self.climbing_fiber_error = 0;
         }
+
+        // Push the new prediction into the delay line.
+        self.pred_ring[head as usize] = prediction;
+        let sign_bit = 1 << (Self::SIGN_SHIFT + head);
+        let signs = if motor_command < 0 {
+            (self.delay_ctl & (0x7F << Self::SIGN_SHIFT)) | sign_bit
+        } else {
+            (self.delay_ctl & (0x7F << Self::SIGN_SHIFT)) & !sign_bit
+        };
+        let new_head = (head + 1) % Self::RING;
+        let new_filled = if filled < Self::RING {
+            filled + 1
+        } else {
+            filled
+        };
+        self.delay_ctl = (new_head << Self::HEAD_SHIFT)
+            | (d << Self::DELAY_SHIFT)
+            | (new_filled << Self::FILLED_SHIFT)
+            | signs;
+
         self.purkinje_output_rate
+    }
+}
+
+/// Q16.16 × Q16.16 → Q16.16, widened to `i64`, shifted once, clamped to `i32` (whitepaper §8.1).
+#[inline(always)]
+const fn mul_q16(a: i32, b: i32) -> i32 {
+    let p = (a as i64 * b as i64) >> 16;
+    if p > i32::MAX as i64 {
+        i32::MAX
+    } else if p < i32::MIN as i64 {
+        i32::MIN
+    } else {
+        p as i32
     }
 }
 
@@ -49,9 +160,10 @@ mod tests {
     use super::*;
 
     const ONE: i32 = 0x0001_0000;
+    const HALF: i32 = 0x0000_8000;
 
-    fn zone() -> CerebellarMicrozone {
-        CerebellarMicrozone {
+    fn zone(d: u8) -> CerebellarMicrozone {
+        let mut z = CerebellarMicrozone {
             microzone_id: 0,
             purkinje_output_rate: 0,
             mossy_fiber_input: 0,
@@ -60,43 +172,110 @@ mod tests {
             ltd_synaptic_weight: 0,
             forward_model_pred: 0,
             lead_compensation_q16: 0,
-            _reserved: [0; 32],
+            pred_ring: [0; 7],
+            delay_ctl: 0,
+        };
+        z.set_plant_delay(d);
+        z
+    }
+
+    /// Runs the model against the plant `y(t + d) = y(t) + k * u(t)` for `n` steps.
+    /// Returns the final climbing-fibre error and the learned gain.
+    fn run(k: i32, d: u8, n: usize, alternating: bool) -> (i32, i32) {
+        let mut z = zone(d);
+        let du = d as usize;
+        let mut y = [0i32; 512];
+        for t in 0..n {
+            let u = if alternating && t % 2 == 1 { -ONE } else { ONE };
+            z.step_forward_model(y[t], u);
+            y[t + du] = y[t].saturating_add(mul_q16(k, u));
+        }
+        (z.climbing_fiber_error, z.ltd_synaptic_weight)
+    }
+
+    #[test]
+    fn purkinje_output_is_the_predicted_change() {
+        let mut z = zone(2);
+        z.ltd_synaptic_weight = HALF;
+        let out = z.step_forward_model(3 * ONE, 2 * ONE);
+        assert_eq!(out, ONE);
+        assert_eq!(z.purkinje_output_rate, ONE);
+        assert_eq!(z.forward_model_pred, 4 * ONE);
+        assert_eq!(z.mossy_fiber_input, 2 * ONE);
+    }
+
+    #[test]
+    fn first_d_steps_produce_no_error() {
+        let d = 3u8;
+        let mut z = zone(d);
+        let mut y = [0i32; 16];
+        for t in 0..3usize {
+            z.step_forward_model(y[t], ONE);
+            y[t + 3] = y[t] + mul_q16(HALF, ONE);
+            assert_eq!(z.climbing_fiber_error, 0, "step {t}");
+            assert_eq!(z.ltd_synaptic_weight, 0);
+        }
+        // Step 3 compares y[3] = 0.5 with the prediction made at step 0 (gain 0 → 0).
+        z.step_forward_model(y[3], ONE);
+        assert_eq!(z.climbing_fiber_error, HALF);
+        assert_eq!(z.ltd_synaptic_weight, HALF >> 4);
+    }
+
+    #[test]
+    fn converges_on_a_linear_plant() {
+        // The residual is bounded by half a learning step (8 LSB) because the adjustment is
+        // rounded to nearest; with a floored adjustment it would be a whole step (16 LSB).
+        for &(k, d) in &[(HALF, 2u8), (ONE / 4, 7), (3 * ONE / 4, 1)] {
+            let (error, gain) = run(k, d, 400, false);
+            assert!(error.abs() <= 8, "k={k:#x} d={d}: error {error}");
+            assert!((gain - k).abs() <= 8, "k={k:#x} d={d}: gain {gain:#x}");
         }
     }
 
     #[test]
-    fn prediction_adds_a_quarter_of_the_command() {
-        let mut z = zone();
-        z.step_forward_model(ONE, 4 * ONE);
-        assert_eq!(z.mossy_fiber_input, 4 * ONE);
-        assert_eq!(z.forward_model_pred, 2 * ONE);
+    fn converges_with_alternating_command_sign() {
+        let (error, gain) = run(HALF, 3, 400, true);
+        assert!(error.abs() <= 8, "error {error}");
+        assert!((gain - HALF).abs() <= 8, "gain {gain:#x}");
     }
 
     #[test]
-    fn error_is_the_negated_command_quarter_and_drives_ltd() {
-        // Documents the F-8 placeholder: the error depends on the command alone.
-        let mut z = zone();
-        z.step_forward_model(ONE, 4 * ONE);
-        assert_eq!(z.climbing_fiber_error, -ONE);
-        assert_eq!(z.ltd_synaptic_weight, ONE >> 4);
+    fn plant_delay_is_clamped_and_zero_disables_learning() {
+        let mut z = zone(9);
+        assert_eq!(z.plant_delay(), 7);
+        let (error, gain) = run(HALF, 0, 50, false);
+        assert_eq!(error, 0);
+        assert_eq!(gain, 0);
+        z.set_plant_delay(0);
+        assert_eq!(z.plant_delay(), 0);
     }
 
     #[test]
-    fn negative_command_shift_is_arithmetic_and_prediction_saturates() {
-        let mut z = zone();
+    fn delay_line_fills_to_seven_and_wraps() {
+        let mut z = zone(7);
+        for t in 0..20 {
+            z.step_forward_model(t, ONE);
+            let expected = if t < 7 { t as u8 + 1 } else { 7 };
+            assert_eq!(z.filled(), expected, "step {t}");
+        }
+        assert_eq!(z.head(), 20 % 7);
+    }
+
+    #[test]
+    fn saturates_at_the_extremes_without_panicking() {
+        let mut z = zone(1);
+        z.ltd_synaptic_weight = i32::MAX;
+        // MAX × MAX clamps the predicted change; MAX + MAX saturates the prediction.
+        let out = z.step_forward_model(i32::MAX, i32::MAX);
+        assert_eq!(out, i32::MAX);
+        assert_eq!(z.forward_model_pred, i32::MAX);
+        // MIN − MAX saturates the error; round(MIN / 16) = −2^27 is applied to the gain
+        // (the remembered command was positive), which stays in range.
         z.step_forward_model(i32::MIN, i32::MIN);
-        assert_eq!(i32::MIN >> 2, -0x2000_0000);
-        assert_eq!(z.forward_model_pred, i32::MIN);
-        assert_eq!(z.climbing_fiber_error, 0);
-        assert_eq!(z.ltd_synaptic_weight, 0);
-    }
-
-    #[test]
-    fn ltd_weight_saturates_at_the_minimum() {
-        let mut z = zone();
-        z.ltd_synaptic_weight = i32::MIN;
-        z.step_forward_model(0, i32::MIN);
-        assert_eq!(z.climbing_fiber_error, 0x2000_0000);
-        assert_eq!(z.ltd_synaptic_weight, i32::MIN);
+        assert_eq!(z.climbing_fiber_error, i32::MIN);
+        assert_eq!(z.ltd_synaptic_weight, i32::MAX - 0x0800_0000);
+        // The next prediction from a large gain and a maximal command saturates again.
+        z.step_forward_model(i32::MAX, i32::MAX);
+        assert_eq!(z.forward_model_pred, i32::MAX);
     }
 }
