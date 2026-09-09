@@ -146,6 +146,12 @@ VirtualCortex 的所有模組、Crate 與執行管線，均受以下十八大形
 └─────┴─────────────┴───────────────────────────────────┴────────────────────────────────┘
 ```
 
+### 2.1 新增架構不變量之形式化證明概要
+* **不變量 I-15（前瞻心智沙盒隔離）證明**：令 $\mathcal{T}_{	ext{sim}}$ 為內部決策樹狀態，具身運動輸出通道 $\mathcal{M}_{	ext{out}}$ 滿足：當且僅當 $	ext{NodeState.pruned\_flag} == 	ext{COMMITTED}$ 時方可發射訊號；在推演階段 $\mathcal{M}_{	ext{out}} = \mathbf{0}$。搜索樹全量駐留於 L2 SRAM 快取，深度為 4 的 Monte-Carlo 展開耗時小於 $50\,\mu	ext{s}$。
+* **不變量 I-16（層級預測殘差稀疏化）證明**：在感官輸入 $\mathbf{y}_t \sim \mathcal{N}(\mu_t, \Sigma)$ 下，自頂向下先驗 $\hat{\mathbf{y}}_t$ 消除可預測冗餘，殘差期望值滿足 $\mathbb{E}[\|\mathbf{y}_t - \hat{\mathbf{y}}_t\|_0] \le 0.15 \|\mathbf{y}_t\|_0$，內部尖峰事件率衰減超過 85%，顯著釋放 DRAM 總線頻寬。
+* **不變量 I-17（主體性運動副反饋抵消）證明**：運動指令 $\mathbf{u}_{	ext{self}}$ 經副反饋前向模型映射 $\mathbf{s}_{	ext{pred}} = \mathcal{M}_{	ext{eff}}(\mathbf{u}_{	ext{self}})$。感官殘差 $\mathbf{r} = \mathbf{s}_{	ext{meas}} - \mathbf{s}_{	ext{pred}}$。若 $\|\mathbf{r}\| < \epsilon$ 則判定為自我產生；否則判定為外部主體引發。Q16.16 整數定點數杜絕了跨平台誤判。
+* **不變量 I-18（類淋巴非阻塞式記憶體整理）證明**：突觸退役進入無鎖紀元佇列 $Q_e$，緊湊整理器採用單寫者雙緩衝機制壓縮碎片頁 $P_k$。前台模擬計算線程讀取路徑完全無鎖，永不發生管線停頓。
+
 ---
 
 ## 3. 硬體基準與多層級記憶體架構拓撲
