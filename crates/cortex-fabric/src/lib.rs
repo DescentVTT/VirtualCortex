@@ -24,3 +24,20 @@ const _: () = {
     assert!(core::mem::size_of::<FabricPacketHeader>() == 64);
     assert!(core::mem::align_of::<FabricPacketHeader>() == 64);
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn header_is_one_cache_line() {
+        assert_eq!(core::mem::size_of::<FabricPacketHeader>(), 64);
+        assert_eq!(core::mem::align_of::<FabricPacketHeader>(), 64);
+    }
+
+    #[test]
+    fn magic_is_the_documented_constant() {
+        assert_eq!(&FabricPacketHeader::MAGIC, b"VCFB");
+        assert_eq!(u32::from_be_bytes(FabricPacketHeader::MAGIC), 0x5643_4642);
+    }
+}
