@@ -153,7 +153,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 4.2 MB | yes | yes | yes | wheel schedule and drain, efficacy |
 | `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | yes | — |
 | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | yes | — |
-| `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | yes | yes | yes | — |
+| `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame` | 64 B each | yes | yes | yes | SPSC ring protocol |
 | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | yes | yes | yes | `compute_gating` |
 | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | yes | yes | yes | `step_forward_model` |
 | `cortex-salience` | `SalienceNodeState` | 64 B | yes | yes | yes | `evaluate_threat` |
@@ -237,10 +237,10 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 
 <!-- @assert-absence target="crates" symbol="f32" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
 <!-- @assert-absence target="crates" symbol="f64" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
-<!-- @assert-absence target="crates" symbol="std::thread" glob="*.rs" reason="TC-5: state crates do not spawn threads; the executor is a separate runtime concern" -->
+<!-- @assert-absence target="crates" symbol="std::thread" glob="*.rs" exclude="tests" reason="TC-5: state crates do not spawn threads; the executor is a separate runtime concern; integration tests under crates/*/tests/ are excluded" -->
 <!-- @assert-count target="crates" symbol="#![no_std]" glob="*.rs" expected="18" reason="TC-6: every crate is no_std (F-6 closed by brief 002)" -->
-<!-- @assert-absence target="crates" symbol="Box<" glob="*.rs" reason="TC-5: no heap-owning types in state crates" -->
-<!-- @assert-absence target="crates" symbol="Vec<" glob="*.rs" reason="TC-5: no heap-owning types in state crates" -->
+<!-- @assert-absence target="crates" symbol="Box<" glob="*.rs" exclude="tests" reason="TC-5: no heap-owning types in state crates; integration tests under crates/*/tests/ are excluded" -->
+<!-- @assert-absence target="crates" symbol="Vec<" glob="*.rs" exclude="tests" reason="TC-5: no heap-owning types in state crates; integration tests under crates/*/tests/ are excluded" -->
 
 ### 2.3 Conventions
 
@@ -288,7 +288,7 @@ flowchart LR
 | Interface | Direction | Unit of exchange | Crate | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | Sensory ingestion | in | `SensoryEvent`, 8 B, batched via `SensoryPeripheral::poll_batch` | `cortex-sensory` | Implemented (types) · Specified (drivers) |
-| Embodiment | bidirectional | 64-byte `EmbodimentRingBuffer` control block over POSIX shared memory; torque and joint-state payload rings | `cortex-embodiment` | Specified |
+| Embodiment | bidirectional | 64-byte `TorqueFrame` out and `JointStateFrame` in, one per 1 ms period, through rings of 16 governed by a 64-byte `EmbodimentRingBuffer` control block ([ADR-0015](adr/0015-embodiment-frame-abi.md)); the shared-memory mapping is the runtime's | `cortex-embodiment` | Implemented (records, protocol) · Specified (mapping, loop, torque decoder) |
 | Connectome image | in | `.cortex` file, `CortexFileHeader` + 64-byte-aligned sections | `cortex-connectome` | Implemented (header) · Specified (sections, loader) |
 | Telemetry | out | `LfpSamplePacket`, 64 B, single-producer single-consumer ring | `cortex-telemetry` | Implemented (type) · Specified (ring, eBPF taps) |
 | Fabric | bidirectional | `FabricPacketHeader`, 64 B, over RDMA verbs or CXL shared memory | `cortex-fabric` | Implemented (header) · Specified (transport) |
@@ -493,20 +493,35 @@ Drivers fill a caller-provided slice through `poll_batch(&mut self, &mut [Sensor
 | :--- | :--- |
 | Responsibility | The control block of the shared-memory ring that couples layer-5 motor output to a physics engine or robot at a fixed 1 ms period. |
 | Source | `crates/cortex-embodiment/src/lib.rs` |
-| Public API | `EmbodimentRingBuffer::new()` (`const fn`) and `Default` (delegates to `new`; all cursors zero) |
-| Status | Control block: Implemented · Payload rings, torque decoder, watchdog: Specified (§6.4, §8.9) |
+| Public API | `TorqueFrame`, `JointStateFrame` (`Copy + Default + Eq`); `EmbodimentRingBuffer::{new, is_compatible, len, is_empty, is_full, producer_claim, producer_publish, consumer_peek, consumer_release}` and `Default`; constants `DOF` (12), `CAPACITY` (16), `FRAME_ABI_VERSION` (1) |
+| Status | Frame records and SPSC protocol: Implemented ([ADR-0015](adr/0015-embodiment-frame-abi.md)) · Shared-memory mapping, 1 ms loop, torque decoder, watchdog integration: Specified (§6.4, §8.9) |
 
-**`EmbodimentRingBuffer`** — 64 B, align 64. Four atomic cursors and a reserved area; the payload rings (torque frames out, joint state in) follow it in the shared mapping.
+**`TorqueFrame`** (engine → plant) and **`JointStateFrame`** (plant → engine) — 64 B, align 64 each; one of each per 1 ms period.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..8)` | `epoch` | `u64` | epoch | Simulation epoch (torque) or plant epoch (joint state). |
+| `[8..56)` | `torques_q16` / `positions_q16` | `[i32; 12]` | Q16.16 | Twelve joints in joint order; unused entries zero. Velocities are the consumer's finite difference of consecutive positions at the fixed period. |
+| `[56..64)` | `_reserved` | `[u8; 8]` | — | Reserved; MUST be zero. |
+
+**`EmbodimentRingBuffer`** — 64 B, align 64. The control block of one ring of 16 frames; the frame storage follows it in the shared mapping and is the runtime's.
 
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
-| `[0..8)` | `write_cursor` | `AtomicU64` | Producer position (release-store). |
-| `[8..16)` | `read_cursor` | `AtomicU64` | Consumer position (acquire-load). |
-| `[16..24)` | `epoch_id` | `AtomicU64` | Simulation epoch of the current frame. |
-| `[24..32)` | `heartbeat_ms` | `AtomicU64` | Producer liveness for the watchdog. |
-| `[32..64)` | `reserved` | `[u8; 32]` | Reserved; MUST be zero. |
+| `[0..8)` | `write_cursor` | `AtomicU64` | Frames published; release-stored by the producer, acquire-loaded by the consumer. |
+| `[8..16)` | `read_cursor` | `AtomicU64` | Frames released; release-stored by the consumer, acquire-loaded by the producer. |
+| `[16..24)` | `epoch_id` | `AtomicU64` | Epoch of the last published frame. |
+| `[24..32)` | `heartbeat_ms` | `AtomicU64` | Producer's monotonic clock in ms at the last publish (§8.9). |
+| `[32..36)` | `abi_version` | `u32` | `FRAME_ABI_VERSION`, written once by `new()`; consumers MUST check `is_compatible()`. |
+| `[36..40)` | `capacity` | `u32` | `CAPACITY`, written once by `new()`. |
+| `[40..64)` | `reserved` | `[u8; 24]` | Reserved; MUST be zero. |
+
+Cursors are monotonic; the slot of a cursor value is `cursor & 15`; the ring is empty when the cursors are equal and full when they differ by 16. The release/acquire pair on each cursor orders the plain frame writes before the plain frame reads, so the payload needs no synchronisation of its own; the protocol is index-only and contains no `unsafe`, and its two-thread integration test (`tests/spsc.rs`) drives 10⁵ frames through it over atomic slots ordered only by the cursors.
 
 <!-- @assert-count target="crates/cortex-embodiment" symbol="EmbodimentRingBuffer" min="1" word="true" -->
+<!-- @assert-count target="crates/cortex-embodiment" symbol="TorqueFrame" min="1" word="true" reason="ADR-0015: the frame ABI exists" -->
+<!-- @assert-count target="crates/cortex-embodiment" symbol="JointStateFrame" min="1" word="true" reason="ADR-0015: the frame ABI exists" -->
+<!-- @assert-count target="crates/cortex-embodiment" symbol="producer_claim" min="1" word="true" reason="ADR-0015: the SPSC protocol exists" -->
 
 #### 5.2.5 `cortex-basal-ganglia` — action selection
 
@@ -910,7 +925,7 @@ A peripheral thread calls `poll_batch` into a pre-allocated slice, stamps events
  └─────────────────────────────────────────┘      └─────────────────────────────────────────┘
 ```
 
-If `heartbeat_ms` is not advanced for 5 consecutive periods the external watchdog engages dynamic braking (§8.9). The period and jitter bound are Targets T-4 and T-5.
+Steps 3 and 4 are the SPSC protocol of §5.2.4 and are Implemented (`producer_claim`, write the `TorqueFrame`, `producer_publish`; `consumer_peek`, read the `JointStateFrame`, `consumer_release`); steps 1, 2 and 5, the mapping and the plant side are Specified. If `heartbeat_ms` falls 5 periods behind the watchdog's clock the watchdog engages dynamic braking (§8.9). The period and jitter bound are Targets T-4 and T-5.
 
 ### 6.5 Scenario R-5: action selection
 
@@ -1078,7 +1093,7 @@ All of the above are to be discretised in Q16.16 with the shift-based update for
 
 ### 8.9 Error handling and fail-safe
 
-Inside the tick loop there are no recoverable errors: a violated invariant is a bug and MUST abort the process rather than continue with corrupted state. Outside the loop, image validation, driver attachment and fabric setup return `Result`. Embodied safety does not depend on the engine: an external hardware watchdog observes `heartbeat_ms` and engages dynamic braking after 5 missed periods (Specified). The engine MUST NOT be the only thing standing between a robot and an unsafe configuration.
+Inside the tick loop there are no recoverable errors: a violated invariant is a bug and MUST abort the process rather than continue with corrupted state. Outside the loop, image validation, driver attachment and fabric setup return `Result`. Embodied safety does not depend on the engine: an external hardware watchdog observes `heartbeat_ms`, which the producer sets to its monotonic clock in milliseconds at every publish ([ADR-0015](adr/0015-embodiment-frame-abi.md)), and engages dynamic braking when that value falls 5 periods behind the watchdog's own clock (watchdog integration Specified). The engine MUST NOT be the only thing standing between a robot and an unsafe configuration.
 
 ### 8.10 Security
 
@@ -1113,6 +1128,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0012](adr/0012-synaptic-weight-q1-15.md) | Sixteen-bit synaptic base weights are Q1.15 |
 | [ADR-0013](adr/0013-timing-wheel-geometry.md) | Timing wheel geometry: 256 × 10 µs fine, 256 × 100 µs coarse, fixed-capacity token lists (amends ADR-0004) |
 | [ADR-0014](adr/0014-benchmark-harness.md) | Benchmark harness: criterion 0.7, confined to a bench-only crate |
+| [ADR-0015](adr/0015-embodiment-frame-abi.md) | Embodiment frame ABI and single-producer single-consumer ring protocol |
 
 ---
 
@@ -1176,7 +1192,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Resolved** (briefs 001, 005 and 007): every public function and associated constant has at least one unit test and every state crate carries a test module, held by eighteen executable assertions in §1.6; the per-item rule is a review rule in `CONTRIBUTING.md`. |
 | F-15 | 2.8.0 cited a `spec-guard` binary at an absolute path on one developer's machine. | README | **Resolved**: pinned as a dev dependency in `package.json`; run via `npx`. |
 | F-16 | `GlobalWorkspaceSlot` code comments say slots `0..7`; 2.8.0 said four slots. | `cortex-workspace` | **Resolved**: slot count declared a configuration parameter (§5.2.8). |
-| F-17 | `EmbodimentRingBuffer` is a control block; the payload rings and the torque decoder do not exist. | `cortex-embodiment` | Open (Specified in §6.4). |
+| F-17 | `EmbodimentRingBuffer` was a control block alone; the payload rings and the torque decoder did not exist. | `cortex-embodiment` | **Narrowed** (brief 008, [ADR-0015](adr/0015-embodiment-frame-abi.md)): the frame ABI and the SPSC protocol exist with eight tests. The torque decoder (layer-5 bursts to torques), the shared-memory mapping and the 1 ms loop remain Specified (milestone M6). |
 | F-18 | `cortex-sensory` had no compile-time assertion that `SensoryEvent` is 8 bytes with 8-byte alignment; it was the only crate without one. The executable assertion in §1.6 was first written as "18" and failed on this. | `cortex-sensory` | **Resolved**: `const _` block added; the §1.6 directive requires 18. |
 
 ### 11.1 Hypotheses and open questions
@@ -1205,6 +1221,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Epoch (simulation) | 1 ms; the embodiment period and checkpoint granularity. |
 | Epoch (reclamation) | A counter used by epoch-based reclamation to decide when a retired block can be reused. |
 | Fine / coarse tick | 10 µs / 100 µs slot widths of the timing wheel. |
+| Frame | One period's exchange with the plant: a 64-byte `TorqueFrame` out or `JointStateFrame` in ([ADR-0015](adr/0015-embodiment-frame-abi.md)). |
 | Hypervector | A high-dimensional (here 10 000-bit) bipolar vector used for symbolic binding. |
 | Macro-column | A cortical hyper-column; the granularity of the neuromodulator field. |
 | Mailbox | A lock-free MPSC list of pending inputs to one unit. |
@@ -1299,7 +1316,7 @@ Milestones follow the founding design note; each ends with a test that proves it
 | M3 Wheel and connectome | Wheel drain path; `SynapseBlock` fan-out; three-neuron delayed oscillator. | Oscillator period is exact to the tick. | Wheel insert done; drain and fan-out open. |
 | M4 Eviction and persistence | Clock sweep; `.cortex` loader and writer; lazy re-hydration. | Evict, spike, re-hydrate round trip preserves state bit-for-bit. | Header done; rest open. |
 | M5 Subsystem dynamics | Replace placeholder functions with the dynamics of §8.8, one crate at a time, each with tests. | Per-crate property tests. | Not started. |
-| M6 Embodiment | Payload rings, torque decoder, watchdog contract, MuJoCo stub. | T-4, T-5. | Not started. |
+| M6 Embodiment | Payload rings, torque decoder, watchdog contract, MuJoCo stub. | T-4, T-5. | Frame ABI and ring protocol done (brief 008); mapping, loop, decoder, watchdog integration and the stub open. |
 | M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1 not started. |
 
 Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.
