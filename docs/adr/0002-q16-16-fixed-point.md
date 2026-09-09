@@ -31,7 +31,7 @@ Option 3. `f32` and `f64` MUST NOT appear in any crate under `crates/`. Narrower
 - Good: associative, bit-exact, and identical on every target.
 - Good: overflow behaviour is defined (saturate or wrap, chosen per field), not implementation-defined.
 - Bad: dynamic range of ±32 768 and resolution of 2⁻¹⁶; models must be scaled into that range.
-- Bad: current update functions use plain operators rather than saturating ones (finding F-4); this ADR is the rule they are to be brought into line with.
+- Bad: the first update functions were written with plain operators (finding F-4, closed by brief 001); every new update function must use saturating or explicitly wrapping operations from the start, and the boundary tests added then are the pattern to copy.
 
 ## Confirmation
 
