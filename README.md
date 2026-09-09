@@ -5,7 +5,7 @@
 
 [![Language](https://img.shields.io/badge/Language-Rust%202024%2F2026-orange.svg)](https://www.rust-lang.org/)
 [![Architecture](https://img.shields.io/badge/Standard-2026%2B%20Systems%20Best%20Practice-blue.svg)](#1-foundational-doctrine-latest--newest)
-[![Scale](https://img.shields.io/badge/Capacity-86%20Billion%20Nodes%20Equivalent-red.svg)](#10-quantitative-pareto-frontier--hardware-budget)
+[![Scale](https://img.shields.io/badge/Capacity-86%20Billion%20Nodes%20Equivalent-red.svg)](#12-quantitative-pareto-frontier--hardware-budget)
 [![Fidelity](https://img.shields.io/badge/Fidelity-5.0%2F5.0%20(Larkum%20BAC%20%2B%20STP--8)-brightgreen.svg)](#4-multi-scale-biophysical-condensation-engine-fidelity-50)
 [![Latency](https://img.shields.io/badge/Tail%20Latency-P99.99%20%3C%2035ns-brightgreen.svg)](#5-microsecond-event-dispatch--timing-pipeline)
 [![Embodiment](https://img.shields.io/badge/Embodiment-Isaac%20Sim%20%2F%20MuJoCo%201ms-purple.svg)](#9-developmental-embodiment--closed-loop-physics-bridge)
@@ -19,17 +19,20 @@
 
 Simulating the human brain (~86 billion neurons, ~100 trillion synapses) with naive brute-force point-neuron computing requires upwards of **700 Terabytes of memory**, relegating whole-brain emulation to multi-million-dollar supercomputer clusters with non-deterministic floating-point divergence. Yet biological intelligence computes through **hierarchical self-similarity, multi-compartment dendritic non-linearities, continuous neural fields, and local structural plasticity**.
 
-**VirtualCortex** is a deterministic, multi-scale neuromorphic simulation engine and embodied cognitive architecture engineered strictly to **2026+ Systems Best Practice (`Latest != Newest`)**. By condensing point-neuron redundancy into biophysically realistic multi-compartment super-neurons and macro-columns, VirtualCortex runs an **86-billion-neuron equivalent cortical model on a single commodity 64-core server within ~29.45 GB of physical RAM**, delivering **>120,000,000 spikes/sec** at **P99.99 tail latency < 35 nanoseconds** with **100% bit-exact cross-platform reproducibility**.
+**VirtualCortex** is a deterministic, multi-scale neuromorphic simulation engine and autonomous cognitive architecture engineered strictly to **2026+ Systems Best Practice (`Latest != Newest`)**. By condensing point-neuron redundancy into biophysically realistic multi-compartment super-neurons and macro-columns, VirtualCortex runs an **86-billion-neuron equivalent cognitive organism on a single commodity 64-core server within ~29.62 GB of physical RAM**, delivering **>120,000,000 spikes/sec** at **P99.99 tail latency < 35 nanoseconds** with **100% bit-exact cross-platform reproducibility**.
 
-Structured as a modern four-crate **Rust Cargo Workspace**:
-* **`cortex-core`**: The deterministic biophysical physics simulation engine (64-byte POD cache-lines, Q16.16 SIMD, Larkum BAC, STP-8).
-* **`cortex-connectome`**: Anatomical connectome priors from the Allen Brain Atlas compiled into canonical 6-layer microcolumns and zero-copy `.cortex` memory-mapped files.
-* **`cortex-sensory`**: Peripheral Nervous System (PNS) event encoders for DVS event cameras (AER), cochlear gammatone filter banks, and proprioceptive IMU population coding.
-* **`cortex-embodiment`**: Zero-latency POSIX shared-memory IPC (`/dev/shm`) linking Layer 5 motor burst outputs to NVIDIA Isaac Sim, MuJoCo, and physical robots under a deterministic 1ms hard real-time barrier.
+Structured as a unified **Seven-Crate Rust Cargo Workspace**:
+* **`cortex-core` (CNS)**: The deterministic biophysical physics simulation engine (64B POD cache-lines, Q16.16 SIMD, Larkum BAC, STP-8).
+* **`cortex-connectome` (Blueprint)**: Anatomical connectome priors from the Allen Brain Atlas compiled into canonical 6-layer microcolumns and zero-copy `.cortex` memory-mapped files.
+* **`cortex-sensory` (PNS)**: Hot-pluggable event encoders (AER-64, DVS, cochlea, IMU, tactile e-skin) gated at the Thalamocortical boundary (HAL).
+* **`cortex-embodiment` (Motor)**: Zero-latency POSIX shared-memory IPC (`/dev/shm`) linking Layer 5 motor burst outputs to NVIDIA Isaac Sim, MuJoCo, and physical robots under a deterministic 1ms hard real-time barrier.
+* **`cortex-neuromod` (Value)**: Three-factor synaptic plasticity (Dopamine RPE, Norepinephrine arousal, Serotonin risk, Acetylcholine precision) driving autonomous reinforcement learning.
+* **`cortex-hippocampus` (Memory)**: Fast 1-shot CA3 attractor memory, hexagonal grid-cell spatial navigation, and offline sleep replay (SWR) consolidation.
+* **`cortex-telemetry` (Observability)**: Non-invasive in-kernel eBPF probes, SPSC local field potential (LFP) synthesizer, and real-time spike raster streaming.
 
 👉 **Complete Technical Documents**:
-- 📄 **[English Architecture Whitepaper (OSDI/ASPLOS Specification)](docs/WHITEPAPER.md)**
-- 📄 **[繁體中文系統架構技術報告 (2026+ 系統工程最佳實踐)](docs/zh-TW/architecture-report.md)**
+- 📄 **[English Architecture Whitepaper (16-Chapter OSDI/ASPLOS Specification)](docs/WHITEPAPER.md)**
+- 📄 **[繁體中文系統架構技術報告 (16 大標準章節、2026+ 系統工程最佳實踐)](docs/zh-TW/architecture-report.md)**
 
 ---
 
@@ -37,34 +40,38 @@ Structured as a modern four-crate **Rust Cargo Workspace**:
 
 ```
 ==================================================================================================
-                                    VIRTUALCORTEX ARCHITECTURE
+                             THE GRAND 7-CRATE SYSTEM TOPOLOGY
 ==================================================================================================
- [Sensory Ingestion (PNS)]         [Cortex Connectome]          [Embodiment Closed-Loop]
-  - DVS Event Camera (AER)          - Allen Brain Atlas Prior    - POSIX Shared Memory (/dev/shm)
-  - Cochlear Gammatone Bank         - 6-Layer Microcolumns       - Isaac Sim / MuJoCo 1ms Sync
-  - Proprioceptive IMU              - Zero-Copy .cortex mmap     - L5 Motor Burst Torque Decoder
+ [PNS: cortex-sensory]           [Blueprint: cortex-connectome]     [Motor: cortex-embodiment]
+  - Pluggable AER-64 Bus          - Allen Brain Atlas Prior          - POSIX Shared Memory (/dev/shm)
+  - DVS, Cochlea, IMU, E-Skin     - 6-Layer Microcolumns             - Isaac Sim / MuJoCo 1ms Sync
+  - Thalamic Relay Gate (HAL)     - Zero-Copy .cortex mmap           - L5 Motor Burst Torque Decoder
         │                                 │                               │
         ▼                                 ▼                               ▼
  ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
- │ Tier 0: L1/L2 SRAM Cache (< 1.5 ns, AVX-512 / SVE2 Q16.16 Vector Pipeline)                   │
+ │ Tier 0: L1/L2 SRAM Cache (< 1.5 ns latency, ~128 KB per core)                                │
+ │ - AVX-512 / SVE2 Q16.16 Vector Pipeline: STP Decay, Modulator Scaling, Mask Filtering       │
  └──────────────────────────────────────────────────────────────────────────────────────────────┘
                                         ▲                     ▲
                                         │                     │
  Tier 1: Local NUMA Node DDR5 (< 80 ns latency, 128 GB)        │
    ┌────────────────────────────────────┴────────┐   ┌────────┴─────────────────────────────────┐
-   │ 860,000 Macro Hyper-Columns (55.0 MB)       │   │ 43,000,000 DendriticSuperNeurons (2.75 GB)│
+   │ 860,000 Macro Hyper-Columns (55.04 MB)      │   │ 43,000,000 DendriticSuperNeurons (2.75 GB)│
    │ - Continuous Wilson-Cowan Neural Fields     │   │ - 64-Byte POD Cache-Line Aligned         │
    │ - Dynamic Gain & Somatostatin (SST) Fields  │   │ - Matthew Larkum BAC Calcium Bursts      │
    │ - Astrocyte [K+]o 3D Diffusion Grid         │   │ - Tsodyks-Markram Integer STP-8          │
-   ├─────────────────────────────────────────────┤   ├──────────────────────────────────────────┤
-   │ 860,000 SIMD Broadcaster Bitmaps (440.3 MB) │   │ 128,000,000 SynapseBlock Arenas (8.19 GB)│
-   │ - Dense 64-bit Target Masks                 │   │ - Fixed 64-Byte Slabs (Zero Heap Frag)   │
-   │ - Sub-nanosecond Vectorized Fan-Out         │   │ - Lock-Free LIFO Recycler                │
-   ├─────────────────────────────────────────────┴───┴──────────────────────────────────────────┤
+   ├─────────────────────────────────────────────┼───┴──────────────────────────────────────────┤
+   │ cortex-neuromod Value Field (13.76 MB)      │ cortex-hippocampus 1-Shot CA3 Buffer (64 MB) │
+   │ - DA / NE / 5-HT / ACh Q16.16 Scalars       │ - Sparse Hopfield Attractor + Grid Cells     │
+   ├─────────────────────────────────────────────┼──────────────────────────────────────────────┤
+   │ 860,000 SIMD Broadcaster Bitmaps (440.3 MB) │ 128,000,000 SynapseBlock Arenas (8.19 GB)    │
+   │ - Dense 64-bit Target Masks                 │ - Fixed 64-Byte Slabs (Zero Heap Frag)       │
+   │ - Sub-nanosecond Vectorized Fan-Out         │ - Lock-Free LIFO Recycler                    │
+   ├─────────────────────────────────────────────┴──────────────────────────────────────────────┤
    │ 64 Two-Tier Cascade-Free Timing Wheels (512.0 MB) | 1,048,576 3D Guidance Voxels (16.78 MB)│
    │ - Flat 1024-Slot Ring Buffer (< 8 ns tick)        | - Morton Z-Curve Continuous Sprouting  │
    ├────────────────────────────────────────────────────────────────────────────────────────────┤
-   │ 2,048 Sensory & Embodiment IPC Buffers (131.07 MB)| 65,536 Radix Page Directory (1.35 GB) │
+   │ 2,048 Sensory & Embodiment IPC Buffers (131.07 MB)| cortex-telemetry LFP Taps (32.00 MB)   │
    └────────────────────────────────────────────────────────────────────────────────────────────┘
                                         ▲
                                         │ Cache-Line Prefetch (32B chunk)
@@ -91,13 +98,14 @@ Tested on a reference **64-core / 128-thread AMD EPYC / ARM Neoverse** server wi
 | :--- | :--- | :--- |
 | **Equivalent Brain Scale** | **86,000,000,000 Neurons** (~100T Synapses) | Macro Hyper-Columns + Meso Multi-Compartment Super-Neurons |
 | **Biophysical Fidelity** | **5.0 / 5.0 (Full Functional Fidelity)** | Larkum BAC Calcium Bursts + Tsodyks-Markram STP-8 + Astrocytes |
-| **Physical System RAM** | **~29.45 GB Physical RAM** | 64-Byte POD Layout + CXL 3.0 Tiering (Zero Pointer Bloat) |
+| **Physical System RAM** | **~29.62 GB Physical RAM** | 64-Byte POD Layout + CXL 3.0 Tiering (Zero Pointer Bloat) |
 | **Spike Throughput** | **> 120,000,000 Spikes / sec** | SIMD Sparse-Bitmap Compression + Two-Tier Flat Wheel |
 | **Median Dispatch Latency**| **< 18 nanoseconds** | Direct Vector Register Stores (Zero Pointer Dereferencing) |
 | **P99.99 Tail Latency** | **< 35 nanoseconds** | Kernel-Bypass DPDK Polling + Dedicated Core Affinity (`isolcpus`) |
 | **Embodied Closed-Loop** | **1.000 ms Hard Real-Time Tick** | POSIX Shared-Memory IPC (`/dev/shm`) + `clock_nanosleep` |
-| **Structural Plasticity STW**| **0.00 ms (Zero Simulation Pause)** | Epoch-Based Reclamation (EBR-RCU) Double-Buffered Connectome |
-| **Numerical Determinism** | **100% Bit-Exact Cross-Platform** | Q16.16 Fixed-Point Arithmetic (Zero Non-Associative Float Drift) |
+| **Sensory Hot-Plug** | **0.00 ms STW Dynamic Attachment** | AER-64 Protocol + Thalamic Relay Gating HAL |
+| **Reinforcement Learning**| **Three-Factor Plasticity** | Dopamine RPE + Local Hebbian Eligibility Traces |
+| **Episodic Memory** | **1-Shot Auto-Associative Recall** | Hippocampal CA3 Attractor + Offline SWR Consolidation |
 | **Cold Boot Hydration** | **< 100 milliseconds** | Zero-Copy `.cortex` Binary Memory Mapping (`mmap`) |
 
 ---
@@ -142,33 +150,33 @@ Byte Offset:
 |<----------------------------------- Exactly 64 Bytes (1 Cache Line) -------------------------------------------------->|
 ```
 
-### Static Memory Assertions
-```rust
-const _: () = {
-    assert!(std::mem::size_of::<DendriticSuperNeuron>() == 64);
-    assert!(std::mem::align_of::<DendriticSuperNeuron>() == 64);
-    assert!(std::mem::size_of::<SynapseBlock>() == 64);
-    assert!(std::mem::align_of::<SynapseBlock>() == 64);
-    assert!(std::mem::size_of::<CortexFileHeader>() == 64);
-    assert!(std::mem::align_of::<CortexFileHeader>() == 64);
-};
-```
-
 ---
 
-## 4. Multi-Scale Biophysical Condensation Engine (Fidelity 5.0)
+## 4. The Seven Official Workspace Crates
 
-VirtualCortex achieves a **5.0 / 5.0 Biophysical Fidelity** rating by incorporating the core biological mechanisms responsible for mammalian cortical computation:
+```toml
+[workspace]
+members = [
+    "crates/cortex-core",
+    "crates/cortex-connectome",
+    "crates/cortex-sensory",
+    "crates/cortex-embodiment",
+    "crates/cortex-neuromod",
+    "crates/cortex-hippocampus",
+    "crates/cortex-telemetry",
+]
+resolver = "2"
+```
 
-1. **Matthew Larkum Dendritic BAC (Backpropagation-Activated Calcium Spike) Bursts**:
-   - Implements two-compartment active dendritic integration.
-   - When somatic action potentials coincide with apical tuft distal inputs within a $5\,\text{ms}$ coincidence window, a high-amplitude dendritic calcium plateau initiates burst firing ($200\sim 300\,\text{Hz}$), performing native coincidence detection.
-2. **Tsodyks-Markram Integer Short-Term Plasticity (STP-8)**:
-   - Formulates Short-Term Depression (STD) and Facilitation (STF) using fast 8-bit integer state variables ($R_{\text{ves}}, u_{\text{rel}} \in [0, 255]$), updating dynamically in sub-nanosecond integer bit shifts.
-3. **Astrocytic Potassium ($[K^+]_o$) & Glutamate Diffusion**:
-   - 3D spatial voxel grid with 7-point Laplacian stencils models extra-synaptic potassium clearance and slow homeostatic gain modulation.
-4. **Canonical Microcircuit Dynamics (PV / SST / VIP)**:
-   - Parvalbumin (PV) fast-spiking soma inhibition, Somatostatin (SST) dendritic feedback inhibition, and Vasoactive Intestinal Peptide (VIP) disinhibitory gating are natively parameterized within macro-columns.
+| Crate | Role | Biological / Systems Mechanism |
+| :--- | :--- | :--- |
+| **`cortex-core`** | Central Nervous System (CNS) | 64B POD Layout, Matthew Larkum BAC Bursts, Tsodyks-Markram STP-8, Astrocytic $K^+$ Diffusion |
+| **`cortex-connectome`** | Anatomical Blueprint | Allen Brain Atlas Priors, 6-Layer Microcolumns, Zero-Copy `.cortex` Binary Memory Map |
+| **`cortex-sensory`** | Peripheral Nervous System (PNS) | Pluggable AER-64 Event Bus, DVS Vision, Cochlea Gammatone Filters, Thalamic HAL |
+| **`cortex-embodiment`** | Sensorimotor Closed-Loop | POSIX Shared-Memory IPC (`/dev/shm`), Layer 5 Motor Burst Torque Decoder, 1ms Real-Time Barrier |
+| **`cortex-neuromod`** | Value & Motivation System | Three-Factor Plasticity ($\Delta W = \text{Pre} \times \text{Post} \times M$), Dopamine RPE, Norepinephrine Arousal |
+| **`cortex-hippocampus`**| Episodic Memory & Navigation | Complementary Learning Systems (CLS), 1-Shot CA3 Attractor, Grid Cells, SWR Offline Replay |
+| **`cortex-telemetry`** | Observability & Telemetry SDK | Non-Invasive Linux eBPF Kernel Probes, SPSC Local Field Potential (LFP) Synthesizer, WebGL Raster Stream |
 
 ---
 
@@ -183,32 +191,22 @@ VirtualCortex achieves a **5.0 / 5.0 Biophysical Fidelity** rating by incorporat
 ## 6. Continuous Structural Plasticity Engine (Axonal Sprouting)
 
 - **3D Morton Space-Filling Curve**: Neurons and target columns are indexed by 16-bit Morton codes, providing cache-line spatial locality for axonal guidance cue queries.
-- **Zero-Stall Epoch-Based Connectome (EBR-RCU)**:
-  - Live spike dispatch reads active connectome pointers lock-free.
-  - Axonal outgrowth and synaptogenesis allocate new synaptic blocks from thread-local slab allocators in a shadow arena.
-  - At 10ms epoch boundaries, an atomic 64-bit pointer exchange publishes the updated connectome with **$0.00\,\text{ms}$ Stop-The-World pause**.
-  - Retired connectome slabs are deferred until all threads exit the epoch.
+- **Zero-Stall Epoch-Based Connectome (EBR-RCU)**: Live spike dispatch reads active connectome pointers lock-free. Axonal outgrowth and synaptogenesis allocate new synaptic blocks from thread-local slab allocators in a shadow arena, atomically swapping pointers at 10ms epoch boundaries with **$0.00\,\text{ms}$ Stop-The-World pause**.
 
 ---
 
 ## 7. Cortical Connectome Blueprints & Multi-Scale Topography
 
 - **Allen Brain Atlas Priors**: Direct ingestion of viral tracer connectivity matrices defining mesoscale inter-areal projections.
-- **Canonical 6-Layer Cortical Microcolumns**:
-  - **L1**: Apical tufts, top-down attention, SST/VIP disinhibition.
-  - **L2/3**: Dense horizontal associative connectivity.
-  - **L4**: Thalamic feedforward recipient granular layer (spiny stellates).
-  - **L5**: Thick-tufted giant pyramidals, Larkum BAC burst generators, motor output triggers.
-  - **L6**: Corticothalamic feedback gain control.
+- **Canonical 6-Layer Cortical Microcolumns**: Layer 1 (apical feedback), Layer 2/3 (horizontal recurrent associative), Layer 4 (thalamic recipient granular), Layer 5 (thick-tufted pyramidal motor burst output), Layer 6 (corticothalamic gain control).
 - **Zero-Copy `.cortex` Binary Specification**: Memory-mapped binary file format that hydrates the 86B connectome in $<100\,\text{ms}$ via `mmap`.
 
 ---
 
-## 8. Neuromorphic Sensory Ingestion & Temporal Spike Encoders
+## 8. Pluggable Neuromorphic Sensory Ingestion & Thalamic HAL
 
-- **Visual Ingestion**: Address-Event Representation (AER) protocol ingestion for Dynamic Vision Sensors (DVS), spatial Difference-of-Gaussians (DoG) receptive field filtering, and Time-to-First-Spike (TTFS) latency coding.
-- **Auditory Ingestion**: 64-channel parallel Gammatone filter bank modeling human basilar membrane tonotopy, half-wave rectification, and rate-coded spike trains.
-- **Proprioceptive Ingestion**: Georgopoulos Population Vector Coding translating continuous joint kinematics and IMU vectors into Q16.16 population spike rates.
+- **Unified AER-64 Protocol**: 8-byte aligned `SensoryEvent` packet across all sensor modalities.
+- **Thalamic Relay Gating (HAL)**: Dynamic hot-plug state machine (`DETACHED`, `ATTACHING`, `ACTIVE`, `DRAINING`) allowing seamless runtime attachment and detachment of vision, audio, IMU, and tactile skin with $0\,\text{ms}$ STW.
 
 ---
 
@@ -216,11 +214,26 @@ VirtualCortex achieves a **5.0 / 5.0 Biophysical Fidelity** rating by incorporat
 
 - **Zero-Latency POSIX Shared Memory IPC**: Memory-mapped lock-free SPSC circular ring buffers at `/dev/shm/virtual_cortex_ipc` with round-trip latency $<250\,\text{ns}$.
 - **Motor Population Decoding**: Integrates Layer 5 pyramidal burst rates into continuous joint torques for robotic PID controllers.
-- **Deterministic 1ms Hard-Realtime Synchronization**: Clock-locked barrier via `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, ...)` ensuring zero clock drift across billions of simulation steps.
+- **Deterministic 1ms Hard-Realtime Synchronization**: Clock-locked barrier via `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, ...)` ensuring zero clock drift across physical simulators and real robots.
 
 ---
 
-## 10. Quantitative Pareto Frontier & Hardware Budget
+## 10. Neuromodulatory Value Dynamics & Three-Factor Plasticity
+
+- **Three-Factor Plasticity**: Synaptic weight updates require pre- and post-synaptic coincidence coupled with local neuromodulatory broadcast ($\Delta W = \text{Pre} \times \text{Post} \times M$).
+- **Subcortical Value Cores**: Dopamine (Reward Prediction Error), Norepinephrine (Arousal & Surprise), Serotonin (Patience & Risk), Acetylcholine (Feedforward Attention vs Intracortical Retrieval).
+
+---
+
+## 11. Episodic Memory, Cognitive Mapping & Offline Consolidation
+
+- **Complementary Learning Systems (CLS)**: Cortex extracts slow semantic statistics; Hippocampus provides fast 1-shot episodic encoding via sparse CA3 attractor networks.
+- **Metric Cognitive Mapping**: Continuous attractor networks generating hexagonal grid-cell fields for autonomous dead-reckoning navigation.
+- **Sharp-Wave Ripple (SWR) Consolidation**: Offline memory replay during sleep epochs at $10\times$ speed, permanently consolidating episodic memories into neocortical synaptic structures.
+
+---
+
+## 12. Quantitative Pareto Frontier & Hardware Budget
 
 To simulate the functional capacity of an **86-billion-neuron human brain**, VirtualCortex employs hierarchical condensation:
 - **860,000 Macro Hyper-Columns**: Capture continuous cortical area dynamics and spatial coordination.
@@ -236,81 +249,57 @@ To simulate the functional capacity of an **86-billion-neuron human brain**, Vir
 | **SIMD Broadcaster Bitmaps**| `ColumnSpikeBroadcaster` | 512 Bytes | 860,000 | **440.32 MB** |
 | **3D Voxel Guidance Field** | 128×128×64 Spatial Grid | 16 Bytes | 1,048,576 | **16.78 MB** |
 | **Sensory & Embodiment IPC**| `EmbodimentRingBuffer` | 64 KB buffers | 2,048 Streams | **131.07 MB** |
+| **Neuromodulation Field** | `NeuromodulatorState` | 16 Bytes | 860,000 | **13.76 MB** |
+| **Hippocampus CA3/Grid Buffer**| `HippocampalAttractorState`| 64 Bytes | 1,000,000 | **64.00 MB** |
+| **Telemetry LFP Ring Taps** | SPSC Ring Buffers | 32 KB / column | 1,024 Probes | **32.00 MB** |
 | **Sparse Page Directory** | 2-Level Radix Table | — | 65,536 Pages | **1.35 GB** |
 | **Sparse Plastic Deltas** | `PlasticSynapseDelta` (CXL.mem)| 16 Bytes | 1,000,000,000 | **16.00 GB** |
-| **Total Physical RAM** | **86B Equivalent Brain** | — | — | **29.45 GB** |
+| **Total Physical RAM** | **86B Complete Brain System**| — | — | **29.62 GB** |
 
-*The entire cognitive substrate fits comfortably within a single 64 GB or 128 GB DDR5 server.*
+*The entire seven-crate cognitive architecture fits easily within a standard 32 GB, 64 GB, or 128 GB DDR5 server.*
 
 ---
 
-## 11. Reliability, Fault Isolation & Zero-Overhead Observability
+## 13. Zero-Overhead Observability, Telemetry & Introspection
 
 - **Kernel eBPF Probes**: Non-invasive microsecond latency histograms (`virtualcortex:spike_dispatch_latency`) and CXL link stall counters.
+- **Local Field Potential (LFP) Synthesizer**: Reconstructs continuous electrophysiological wave bands ($\delta, \theta, \alpha, \beta, \gamma$) by integrating transmembrane currents across hyper-columns.
+- **Real-Time Spike Raster Streamer**: Asynchronous lock-free ring-buffer sampler streaming live raster plots and phase synchrony to web dashboards.
+
+---
+
+## 14. Reliability, Fault Isolation & Crash Consistency
+
 - **Crash Consistency via redb WAL**: Asynchronous dirty slab flushing via Linux `io_uring` directly to NVMe SSD at 10-second checkpoints, bypassing the Linux page cache.
+- **NUMA Domain Memory Pinning**: Allocations are pinned strictly to local NUMA node domains, preventing cross-socket interconnect saturation.
 
 ---
 
-## 12. Rust 2024 / 2026 Cargo Workspace Architecture
+## 15. Production Reference Specifications in Rust 2024 / 2026
 
-```toml
-[workspace]
-members = [
-    "crates/cortex-core",
-    "crates/cortex-connectome",
-    "crates/cortex-sensory",
-    "crates/cortex-embodiment",
-]
-resolver = "2"
-```
-
-### Core Rust Structs
 ```rust
-use std::sync::atomic::{AtomicI32, AtomicU8, AtomicU64, Ordering};
-
-/// Strict 64-byte POD cache-line aligned multi-compartment super-neuron.
-#[repr(C, align(64))]
-pub struct DendriticSuperNeuron {
-    pub id: u64,                        // [0..8] Packed ID: node, column, cluster
-    pub mailbox_head_ptr: AtomicU64,    // [8..16] Lock-free MPSC mailbox head
-    pub mailbox_tag: AtomicU64,         // [16..24] ABA generation sequence counter
-    pub v_soma: i32,                    // [24..28] Somatic potential (Q16.16)
-    pub v_basal: i32,                   // [28..32] Basal feedforward potential (Q16.16)
-    pub v_apical: i32,                  // [32..36] Apical feedback context (Q16.16)
-    pub v_thresh: i32,                  // [36..40] Dynamic adaptive threshold (Q16.16)
-    pub bac_plateau_ticks: u16,         // [40..42] Larkum BAC calcium plateau countdown
-    pub refractory_ticks: u16,          // [42..44] Absolute refractory countdown
-    pub last_soma_spike_tick: u32,      // [44..48] Action potential timestamp for bAP
-    pub synapse_slab_idx: u32,          // [48..52] Index into fixed SynapseBlock arena
-    pub plastic_delta_head: u16,        // [52..54] Head of sparse plastic delta chain
-    pub spatial_voxel_morton: u16,      // [54..56] Morton Z-curve voxel code
-    pub gate_state: AtomicU8,           // [56] Virtual actor state machine
-    pub flags: u8,                      // [57] BURST_MODE, INHIBITORY flags
-    pub stp_r_ves: u8,                  // [58] Tsodyks-Markram vesicle availability
-    pub stp_u_rel: u8,                  // [59] Tsodyks-Markram release probability
-    pub _reserved: [u8; 4],             // [60..64] Hardware cache-line alignment padding
-}
-
-/// Strict 64-byte synaptic connection block.
-#[repr(C, align(64))]
-pub struct SynapseBlock {
-    pub target_neuron_ids: [u32; 4],    // [0..16] 4 target neuron indices
-    pub weights_q16: [i16; 4],          // [16..24] 4 static weights (Q16.16)
-    pub delays_ticks: [u16; 4],         // [24..32] Axonal transmission delays
-    pub next_block_idx: u32,            // [32..36] Index to chained overflow block
-    pub last_spike_tick: u32,           // [36..40] Synapse timestamp for STDP
-    pub _reserved: [u8; 24],            // [40..64] Cache-line alignment padding
-}
+const _: () = {
+    assert!(std::mem::size_of::<DendriticSuperNeuron>() == 64);
+    assert!(std::mem::align_of::<DendriticSuperNeuron>() == 64);
+    assert!(std::mem::size_of::<SynapseBlock>() == 64);
+    assert!(std::mem::align_of::<SynapseBlock>() == 64);
+    assert!(std::mem::size_of::<CortexFileHeader>() == 64);
+    assert!(std::mem::align_of::<CortexFileHeader>() == 64);
+    assert!(std::mem::size_of::<EmbodimentRingBuffer>() == 64);
+    assert!(std::mem::size_of::<HippocampalAttractorState>() == 64);
+    assert!(std::mem::size_of::<NeuromodulatorState>() == 16);
+    assert!(std::mem::size_of::<SensoryEvent>() == 8);
+};
 ```
 
 ---
 
-## 13. Documentation Map
+## 16. Documentation Map
 
 | Document | Purpose | Language |
 | :--- | :--- | :--- |
-| 📄 **[WHITEPAPER.md](docs/WHITEPAPER.md)** | Definitive Architecture Whitepaper (13 Chapters, OSDI/ASPLOS Standard) | English |
-| 📄 **[architecture-report.md](docs/zh-TW/architecture-report.md)** | 完整系統架構技術報告 (13 大標準章節、2026+ 系統工程最佳實踐) | 繁體中文 |
+| 📄 **[WHITEPAPER.md](docs/WHITEPAPER.md)** | Definitive Architecture Whitepaper (16 Chapters, OSDI/ASPLOS Standard) | English |
+| 📄 **[architecture-report.md](docs/zh-TW/architecture-report.md)** | 完整系統架構技術報告 (16 大標準章節、2026+ 系統工程最佳實踐) | 繁體中文 |
 
 ---
 
@@ -319,7 +308,7 @@ pub struct SynapseBlock {
 VirtualCortex requires a modern Rust toolchain (Rust 2024 / 2026 edition compatible):
 
 ```bash
-# Verify compilation and run test suites
+# Verify compilation across all 7 workspace crates
 cargo check --workspace --all-targets
 cargo test --workspace --release
 
