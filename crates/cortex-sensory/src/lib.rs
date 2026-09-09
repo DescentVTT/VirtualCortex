@@ -9,6 +9,11 @@ pub struct SensoryEvent {
     pub payload: u8,
 }
 
+const _: () = {
+    assert!(core::mem::size_of::<SensoryEvent>() == 8);
+    assert!(core::mem::align_of::<SensoryEvent>() == 8);
+};
+
 pub trait SensoryPeripheral: Send + Sync {
     fn poll_batch(&mut self, output: &mut [SensoryEvent]) -> usize;
     fn peripheral_name(&self) -> &'static str;

@@ -6,7 +6,14 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ## [Unreleased]
 
+### Added
+
+- **`CLAUDE.md`**: the switchboard for coding agents — eight principles, the code invariants, a reading map and the exact command set CI runs.
+- **`briefs/`**: numbered, self-contained prompts for rounds of work, with a README defining the mandatory sections and the archive procedure; three seed briefs (001 saturating arithmetic, 002 `no_std` and derives, 003 synaptic weight Q-format); `scripts/check-briefs.mjs` enforces the sections and runs as `npm run spec:briefs` locally and in CI. Live briefs are also read by `spec-guard` (precondition directives) and `spec-graph` (deliverables as obligations).
+
 ### Changed
+
+- **Findings F-9 and F-18 closed.** Crate metadata (`version`, `edition`, `authors`, `license`, `repository`) is inherited from `[workspace.package]`; each manifest keeps only `name` and `description`, and all eighteen now carry one. `cortex-sensory` gained the compile-time assertion that `SensoryEvent` is 8 bytes, 8-aligned; the whitepaper's assertion-block directive now requires 18.
 
 - **Finding F-10 closed.** All crates formatted with `rustfmt` (whitespace and comment alignment only). `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer`, delegating to their `const fn new()`; `FabricPacketHeader::MAGIC` written as a byte-string literal. `cargo fmt --check` and `cargo clippy -D warnings` are now blocking in CI; the two advisory steps and their `continue-on-error` are gone.
 

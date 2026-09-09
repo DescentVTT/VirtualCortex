@@ -8,9 +8,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "spec": "npm run spec:guard && npm run spec:graph",
-    "spec:guard": "spec-guard \"docs/**/*.md\" README.md CONTRIBUTING.md --verbose",
-    "spec:graph": "spec-graph check"
+    "spec": "npm run spec:guard && npm run spec:graph && npm run spec:briefs",
+    "spec:guard": "spec-guard \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --verbose",
+    "spec:graph": "spec-graph check",
+    "spec:briefs": "node scripts/check-briefs.mjs"
   },
   "devDependencies": {
     "@descent-vtt/spec-graph": "0.2.1",

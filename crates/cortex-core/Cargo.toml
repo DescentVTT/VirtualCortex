@@ -1,6 +1,10 @@
 [package]
 name = "cortex-core"
-version = "0.1.0"
-edition = "2021"
+description = "Neural state and dispatch: 64-byte DendriticSuperNeuron and SynapseBlock records and the two-tier FlatTimingWheel for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

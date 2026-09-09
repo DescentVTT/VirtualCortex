@@ -28,7 +28,7 @@ Proposed: option 2. It is a code change and is recorded here rather than made si
 
 ### Consequences
 
-- Good: one place (`[workspace.package]`) for edition, version, license, authors and `rust-version`, which also closes finding F-9.
+- Good: `[workspace.package]` already carries version, authors, license and repository (finding F-9, closed) and the edition; adopting this decision is one edit to that table plus a `rust-version` line.
 - Good: CI and contributors agree on a toolchain.
 - Bad: contributors on toolchains older than 1.85 cannot build; acceptable given the toolchain in use is 1.97.
 

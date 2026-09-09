@@ -1,6 +1,10 @@
 [package]
 name = "cortex-salience"
-version = "0.1.0"
-edition = "2021"
+description = "Amygdalar threat salience and fast subcortical defensive reflex state for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

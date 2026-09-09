@@ -4,8 +4,10 @@
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
 #           and is it formatted and lint-clean? All four steps are blocking.
 #   specs - does the source tree still contain what the documents say it contains
-#           (spec-guard), and are the documents consistent with one another
-#           (spec-graph)? Both blocking. Whitepaper Appendix B describes the levels.
+#           (spec-guard), are the documents consistent with one another
+#           (spec-graph), and does every live brief carry its mandatory sections
+#           (scripts/check-briefs.mjs)? All blocking. Whitepaper Appendix B
+#           describes the levels.
 
 name: CI
 
@@ -65,3 +67,6 @@ jobs:
 
       - name: Cross-document consistency
         run: npm run spec:graph
+
+      - name: Live briefs carry their mandatory sections
+        run: npm run spec:briefs
