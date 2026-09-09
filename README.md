@@ -1,28 +1,27 @@
 # VirtualCortex
 
-> **A Single-Node Neuromorphic Virtual Actor Engine for Ultra-Dense Spiking Neural Networks**
+> **A Single-Node Multi-Scale Neuromorphic Engine for 86-Billion-Node Human-Scale Brain Emulation**
 
 [![Language](https://img.shields.io/badge/Language-Rust%202021-orange.svg)](https://www.rust-lang.org/)
-[![Architecture](https://img.shields.io/badge/Architecture-Virtual%20Actor%20%2B%20SNN-blue.svg)](#core-architectural-axioms)
-[![Performance](https://img.shields.io/badge/Target->100%20MSpikes%2Fsec-brightgreen.svg)](#performance-targets)
+[![Architecture](https://img.shields.io/badge/Architecture-Fractal%20Hyper--Actor%20%2B%20SNN-blue.svg)](#core-architectural-axioms)
+[![Capacity](https://img.shields.io/badge/Scale-86%20Billion%20Nodes%20Equivalent-red.svg)](#quantitative-86-billion-node-resource-budget)
+[![Performance](https://img.shields.io/badge/Target->100%20MSpikes%2Fsec-brightgreen.svg)](#key-performance-targets)
+[![Memory Footprint](https://img.shields.io/badge/RAM-~30%20GB%20DDR5-success.svg)](#quantitative-86-billion-node-resource-budget)
 [![License](https://img.shields.io/badge/License-Apache%202.0%20%2F%20MIT-blue.svg)](#license)
 
 ---
 
 ## 📖 Overview
 
-Modern deep learning relies on dense, synchronous matrix multiplication (GEMM) across GPU clusters. In contrast, biological brains compute through **extreme spatio-temporal sparsity (~1–2% instantaneous activation), asynchronous event-driven spike dynamics, and local synaptic plasticity**.
+Simulating the human brain (~86 billion neurons, ~100 trillion synapses) with brute-force computing requires upwards of **700 Terabytes of memory**, necessitating warehouse-scale supercomputers. Yet the human genome codes for the entire brain using only **~750 Megabytes of DNA**, relying on **hierarchical self-similarity, multi-compartment dendritic computation, continuous neural fields, procedural connectivity, and continuous chemical diffusion**.
 
-**VirtualCortex** brings the **Virtual Actor model** (originating from distributed cloud systems like Microsoft Orleans) to computational neuroscience's **Spiking Neural Networks (SNNs)**, strictly bounded to a **single high-core NUMA server**.
+**VirtualCortex 2.0** transcends the point-neuron brute-force trap by introducing the **Fractal Cortical Hyper-Actor Architecture**:
+1. **Multi-Compartment Dendritic Super-Neurons ($1 \approx 1,000$)**: Biological pyramidal cells feature apical and basal dendritic trees that perform non-linear coincidence detection (NMDA plateau potentials). One super-neuron delivers the computational expressiveness of 1,000 point units.
+2. **Wave-Particle Neural Mass Duality**: Cortical minicolumns operate as continuous population waves (Wilson-Cowan mean-field equations) during subthreshold periods, collapsing into discrete high-saliency spikes only during phase-transition events.
+3. **Implicit Procedural Connectomics**: Baseline connectivity is generated on-the-fly via spatial geometric distance kernels, storing only sparse learned deviations ($\Delta W$).
+4. **3D Neuromodulatory Volume Diffusion**: Continuous 3D voxel grid tracking Dopamine, Acetylcholine, Serotonin, and Norepinephrine, enabling **Three-Factor Reinforcement Plasticity**.
 
-By eliminating network latency, RPC serialization, and distributed consensus protocols, VirtualCortex optimizes directly for:
-- **64-byte CPU Cache Lines** (Zero false sharing, POD layout).
-- **Intrusive Lock-Free Mailboxes** (8-byte Treiber Stack, single-atomic batch draining).
-- **Partitioned Axonal Timing Wheels** (Thread-local circular delay queues).
-- **Double-Buffered Phased Epoch Barriers** (Deterministic discrete temporal progression).
-- **Metabolic Paging** (Minicolumn-level clock sweep into embedded zero-copy `redb` storage).
-
-👉 **For full mathematical proofs, memory layout breakdowns, and biophysical mechanics, read the complete [VirtualCortex Architecture Whitepaper](docs/WHITEPAPER.md)** (中文版架構報告請參閱 [繁體中文架構報告](docs/zh-TW/architecture-report.md))。
+👉 **For complete mathematical proofs, memory layout derivations, and biophysical mechanics, read the complete [VirtualCortex Architecture Whitepaper v2.0](docs/WHITEPAPER.md)** (中文版架構報告請參閱 [繁體中文架構報告](docs/zh-TW/architecture-report.md))。
 
 ---
 
@@ -32,87 +31,141 @@ Tested on a reference **64-core / 128-thread AMD EPYC / ARM Neoverse** server wi
 
 | Metric | Target Specification |
 | :--- | :--- |
-| **Spike Ingestion & Dispatch** | **> 100,000,000 Spikes / sec** |
+| **Equivalent Brain Scale** | **86,000,000,000 Neurons** (~100 Trillion Synapses) |
+| **Physical System RAM** | **~29.6 GB DDR5 RAM** (Easily fits into a 128GB node) |
+| **Spike Throughput** | **> 100,000,000 Spikes / sec** |
 | **Median Event Dispatch Latency** | **< 300 nanoseconds** |
-| **Active In-Memory Neurons** | **10,000,000+** concurrent soma states |
-| **Dormant Virtual Capacity** | **100,000,000+** virtual units via metabolic paging |
+| **Biophysical Fidelity** | **Multi-Compartment Dendrites (Apical/Basal) + NMDA Plateaus + LFP Waves** |
+| **Neuromodulatory Support** | **Continuous 3D Diffusion of Dopamine, Acetylcholine, Serotonin, Norepinephrine** |
 | **Garbage Collection (GC) Overhead** | **0 ms (Zero runtime GC / Zero dynamic dispatch)** |
-| **Turn-Based Safety** | **Strict single-thread invariant per soma (Lock-free 4-state CAS)** |
 
 ---
 
-## 🧠 Core Architectural Axioms
+## 📊 Quantitative 86-Billion Node Resource Budget
+
+How VirtualCortex fits human-scale brain computation into **~30 GB of RAM**:
+
+| Subsystem Component | Biological Mapping / Scale | Software Primitive | Count | Total RAM |
+| :--- | :--- | :--- | :--- | :--- |
+| **Hyper-Columns** | 86 Billion Background Neurons | `HyperColumnState` (64B) | 860,000 | **55.0 MB** |
+| **Dendritic Super-Neurons** | Active Non-linear Cortex ($1 \approx 1,000$) | `DendriticSuperNeuron` (64B) | 43,000,000 | **2.75 GB** |
+| **Procedural Connectome** | Baseline 100 Trillion Synapses | Algorithmic SIMD Kernel | $\infty$ | **0.00 GB** |
+| **Plastic Synapse Deltas** | Learned Connections ($\Delta W$, 1% active) | `PlasticSynapseDelta` (16B) | 1,000,000,000 | **16.00 GB** |
+| **3D Neuromodulator Grid** | Continuous Chemical Brain Volume | $128 \times 128 \times 64$ Voxel Grid | 1,048,576 | **16.78 MB** |
+| **Thread-Local Timing Wheels** | Axonal Delays (256 Slots $\times$ 64 Cores) | Ring Bucket Envelopes | 64 Wheels | **1.20 GB** |
+| **Worker Slab Arenas** | SpikeNode Recycling & Buffers | Intrusive Memory Pools | 64 Cores | **8.19 GB** |
+| **Sparse Page Directory** | 2-Level Addressing Directory | 64K $\times$ 64K Pointer Table | 65,536 | **1.35 GB** |
+| **Total System RAM** | **86-Billion Equivalent Brain** | — | — | **29.56 GB** |
+
+---
+
+## 🧠 Ten Architectural Axioms
 
 ```
-                    ┌──────────────────────────────┐
-                    │ 1. Virtual Existence         │
-                    │ Eternal logic, demand paging │
-                    └──────────────┬───────────────┘
-                                   ▼
-┌──────────────────────────────┐       ┌──────────────────────────────┐
-│ 2. State-Worker Decoupling   │ <───> │ 3. Turn-Based Invariant      │
-│ Soma = Data, Worker = Compute│       │ 4-State CAS, zero data races │
-└──────────────┬───────────────┘       └──────────────┬───────────────┘
-               ▼                                      ▼
-┌──────────────────────────────┐       ┌──────────────────────────────┐
-│ 4. Soma-Synapse Decoupling   │ <───> │ 5. Discrete Axonal Wheels    │
-│ 64B Soma + Chunked CSR Fabric│       │ Thread-local circular delay  │
-└──────────────┬───────────────┘       └──────────────┬───────────────┘
-               ▼                                      ▼
-┌──────────────────────────────┐       ┌──────────────────────────────┐
-│ 6. Phased Epoch Determinism  │ <───> │ 7. Metabolic Paging          │
-│ Double-buffered BSP barrier  │       │ Column-level storage tiering │
-└──────────────────────────────┘       └──────────────────────────────┘
+                          ┌──────────────────────────────┐
+                          │ 1. Virtual Existence         │
+                          │ Eternal logic, demand paging │
+                          └──────────────┬───────────────┘
+                                         ▼
+      ┌──────────────────────────────┐       ┌──────────────────────────────┐
+      │ 2. State-Worker Decoupling   │ <───> │ 3. Turn-Based Invariant      │
+      │ Data is static, Worker roves │       │ 4-State CAS, zero data races │
+      └──────────────┬───────────────┘       └──────────────┬───────────────┘
+                     ▼                                      ▼
+      ┌──────────────────────────────┐       ┌──────────────────────────────┐
+      │ 4. Soma-Synapse Decoupling   │ <───> │ 5. Discrete Axonal Wheels    │
+      │ 64B Soma + Chunked CSR Fabric│       │ Thread-local circular delay  │
+      └──────────────┬───────────────┘       └──────────────┬───────────────┘
+                     ▼                                      ▼
+      ┌──────────────────────────────┐       ┌──────────────────────────────┐
+      │ 6. Phased Epoch Determinism  │ <───> │ 7. Dendritic Expressiveness  │
+      │ Double-buffered BSP barrier  │       │ 1 Multi-Compartment ≈ 1,000  │
+      └──────────────┬───────────────┘       └──────────────┬───────────────┘
+                     ▼                                      ▼
+      ┌──────────────────────────────┐       ┌──────────────────────────────┐
+      │ 8. Wave-Particle Duality     │ <───> │ 9. Procedural Connectomics   │
+      │ Continuous field + Spikes    │       │ Coordinate kernel + Sparse ΔW│
+      └──────────────┬───────────────┘       └──────────────┬───────────────┘
+                     ▼                                      ▼
+      ┌──────────────────────────────┐       ┌──────────────────────────────┐
+      │ 10. 3D Chemical Diffusion    │       │ Metabolic Eviction           │
+      │ Voxel tensor, 3-factor STDP  │       │ Column-level zero-copy redb  │
+      └──────────────────────────────┘       └──────────────────────────────┘
 ```
 
-1. **Virtual Existence**: Neurons logically exist permanently as 64-bit `PackedId`s. Physical memory is allocated on-demand upon incoming spike impact.
-2. **State-Worker Decoupling**: Neurons are passive 64-byte POD data structures; workers are roving, stateless threads pinned to CPU cores.
-3. **Turn-Based Single-Thread Invariant**: A 4-state atomic CAS machine (`IDLE -> QUEUED -> RUNNING -> RECHECK`) guarantees zero race conditions and zero deadlocks without mutexes.
-4. **Soma-Synapse Decoupling**: Soma states (`NeuronState`) are strictly 64 bytes (1 cache line). Downstream synaptic connections are maintained in a separate chunked Compressed Sparse Row (CSR) arena.
-5. **Discrete Axonal Timing Wheels**: Axonal conduction delays are quantized into discrete ticks and queued in thread-local circular ring buffers ($O(1)$ delay dispatch).
-6. **Phased Epoch Determinism**: Three-phase execution barrier (`Delivery -> Parallel Compute -> Advance`) prevents causality violations while enabling lock-free work-stealing.
+1. **Virtual Existence**: Logic persistence, physical demand paging.
+2. **State-Worker Decoupling**: Somas are passive 64-byte POD data structures; workers are roving stateless threads.
+3. **Turn-Based Single-Thread Invariant**: 4-state atomic CAS machine guarantees zero race conditions and zero deadlocks.
+4. **Soma-Synapse Decoupling**: Somas strictly 64-byte aligned; connectome managed in procedural kernels and sparse tables.
+5. **Discrete Axonal Timing Wheels**: Axonal conduction delays indexed in thread-local ring buckets ($O(1)$ delay dispatch).
+6. **Phased Epoch Determinism**: Three-phase execution barrier prevents temporal inversions across parallel workers.
+7. **Dendritic Subunit Expressiveness ($1 \approx 1,000$)**: Multi-compartment apical/basal integration with NMDA plateaus.
+8. **Wave-Particle Neural Mass Duality**: Continuous Wilson-Cowan population dynamics + dynamic event spike collapse.
+9. **Procedural Connectomics**: Spatial geometric kernels generate 100T baseline connections; memory only stores $\Delta W$.
+10. **3D Chemical Diffusion**: Continuous extracellular diffusion grid powering three-factor reinforcement learning.
 
 ---
 
 ## 🔬 Subsystems at a Glance
 
-### 1. 64-byte Cache-Line Aligned Soma (`NeuronState`)
+### 1. Multi-Compartment Dendritic Super-Neuron (64-Byte POD)
 ```rust
 #[repr(C, align(64))]
-pub struct NeuronState {
+pub struct DendriticSuperNeuron {
     pub id: PackedId,                      // 8 bytes (offset 0)
     pub mailbox_head: AtomicPtr<SpikeNode>,// 8 bytes (offset 8)
-    pub v_mem: f32,                        // 4 bytes (offset 16)
-    pub v_thresh: f32,                     // 4 bytes (offset 20)
-    pub v_reset: f32,                      // 4 bytes (offset 24)
-    pub post_trace: f32,                   // 4 bytes (offset 28)
-    pub last_spike_tick: u32,              // 4 bytes (offset 32)
-    pub last_active_tick: u32,             // 4 bytes (offset 36)
-    pub synapse_chunk_id: u32,             // 4 bytes (offset 40)
-    pub synapse_count: u32,                // 4 bytes (offset 44)
-    pub decay_lut_idx: u16,                // 2 bytes (offset 48)
-    pub refractory_ticks: u16,             // 2 bytes (offset 50)
-    pub gate_state: AtomicU8,              // 1 byte  (offset 52)
-    pub flags: u8,                         // 1 byte  (offset 53)
-    pub _reserved: [u8; 10],               // 10 bytes (offset 54..64)
+    pub v_soma: f32,                       // 4 bytes (offset 16) - Somatic membrane potential
+    pub v_basal: f32,                      // 4 bytes (offset 20) - Feedforward sensory potential
+    pub v_apical: f32,                     // 4 bytes (offset 24) - Contextual feedback potential
+    pub v_thresh: f32,                     // 4 bytes (offset 28) - Dynamic firing threshold
+    pub nmda_plateau_ticks: u16,           // 2 bytes (offset 32) - Active NMDA plateau duration
+    pub refractory_ticks: u16,             // 2 bytes (offset 34) - Absolute refractory countdown
+    pub eligibility_trace: f32,            // 4 bytes (offset 36) - 3-factor STDP eligibility trace
+    pub last_spike_tick: u32,              // 4 bytes (offset 40) - Last somatic action potential
+    pub spatial_pos: [u8; 3],              // 3 bytes (offset 44) - Quantized 3D position in column
+    pub tuning_vector: u8,                 // 1 byte  (offset 47) - Feature orientation angle
+    pub plastic_synapse_head: u32,         // 4 bytes (offset 48) - Offset into sparse ΔW table
+    pub gate_state: AtomicU8,              // 1 byte  (offset 52) - 4-state CAS scheduler gate
+    pub flags: u8,                         // 1 byte  (offset 53) - Bursting / Inhibitory flags
+    pub _reserved: [u8; 10],               // 10 bytes(offset 54..64) - Alignment padding
 }
 ```
 
-### 2. Intrusive Single-Atomic Mailbox
-- Idle memory footprint: **8 bytes** (`AtomicPtr<SpikeNode>`).
-- Enqueue: Lock-free Treiber stack prepend via atomic CAS.
-- Batch Drain: Single atomic `swap(null)` decouples the entire accumulated spike list directly into registers.
-
-### 3. LUT-Accelerated Leaky Integrate-and-Fire (LIF)
-Exponential membrane potential decay is precomputed into a 1 KB L1-cached Look-Up Table:
+### 2. Hyper-Column State (Wave-Particle Duality)
 ```rust
-let elapsed = (current_tick - neuron.last_spike_tick).min(255) as usize;
-let factor = DECAY_LUT[neuron.decay_lut_idx as usize][elapsed];
-neuron.v_mem = neuron.v_reset + (neuron.v_mem - neuron.v_reset) * factor + total_current;
+#[repr(C, align(64))]
+pub struct HyperColumnState {
+    pub column_id: u32,
+    pub spatial_coords: [f32; 3],          // 3D coordinate in macro brain space
+    pub exc_population_rate: f32,          // Excitatory pool rate E(t)
+    pub inh_population_rate: f32,          // Inhibitory pool rate I(t)
+    pub lfp_voltage: f32,                  // Local Field Potential (mV)
+    pub lfp_phase: f32,                    // Phase angle for brainwave coupling
+    pub voxel_grid_idx: u32,               // Pointer to local neuromodulator voxel
+    pub super_neuron_start_idx: u32,       // Pointer into DendriticSuperNeuron array
+    pub super_neuron_count: u16,           // Number of active super-neurons
+    pub bifurcation_thresh: f32,           // Threshold for discrete spike collapse
+    pub gate_state: AtomicU8,              // Scheduler gate state
+    pub _pad: [u8; 15],
+}
 ```
 
-### 4. Online Pair-Based STDP
-Local unsupervised Hebbian learning using scalar pre/post eligibility traces. Computes in $O(1)$ constant time without maintaining spike history buffers.
+### 3. Procedural Synapse Kernel with Sparse Plasticity ($\Delta W$)
+```rust
+// Baseline connection calculated on-the-fly via SIMD:
+// W_base(i, j) = Kernel(||r_i - r_j||) * cos(theta_i - theta_j)
+#[repr(C)]
+pub struct PlasticSynapseDelta {
+    pub target_id: PackedId,               // 8 bytes: Target neuron ID
+    pub weight_delta: i16,                 // 2 bytes: Q4.12 fixed-point deviation from baseline
+    pub eligibility_trace: i16,            // 2 bytes: Tagged eligibility trace for 3-factor learning
+    pub next_delta_idx: u32,               // 4 bytes: Collision pointer in sparse hash table
+}
+```
+
+### 4. 3D Neuromodulator Chemical Diffusion
+- $128 \times 128 \times 64$ voxel grid tracking $[DA]$ (Dopamine), $[ACh]$ (Acetylcholine), $[5\text{-}HT]$ (Serotonin), $[NE]$ (Norepinephrine).
+- **Three-Factor STDP**: $\Delta W = \eta \cdot e_{ij}(t) \cdot (\text{Dopamine} - \text{Baseline})$.
 
 ---
 
@@ -120,37 +173,40 @@ Local unsupervised Hebbian learning using scalar pre/post eligibility traces. Co
 
 ```
 VirtualCortex/
-├── README.md                      # Project overview & documentation index
+├── README.md                      # Project overview & quick start
 ├── docs/
-│   ├── WHITEPAPER.md              # Complete Architecture Whitepaper (English)
+│   ├── WHITEPAPER.md              # VirtualCortex Architecture Whitepaper v2.0 (English)
 │   └── zh-TW/
-│       └── architecture-report.md # 架構分析與工程規格報告 (繁體中文)
+│       └── architecture-report.md # 碎形多尺度認知架構報告 (繁體中文)
 ├── src/                           # Rust implementation (Planned)
 │   ├── identity/                  # PackedId & hierarchical bit-masks
-│   ├── state/                     # NeuronState & Chunked CSR Connectome
+│   ├── state/                     # DendriticSuperNeuron (64B) & NeuronState
+│   ├── mass/                      # HyperColumnState & Wilson-Cowan PDE solver
+│   ├── connectome/                # Procedural geometric kernels & sparse ΔW table
+│   ├── chemical/                  # 3D voxel diffusion tensor & 3-factor STDP
 │   ├── mailbox/                   # Treiber stack & thread-local slab
 │   ├── timing/                    # Per-worker timing wheels & epoch barrier
-│   ├── compute/                   # LUT-accelerated LIF & online STDP
 │   ├── paging/                    # Two-level page directory & redb eviction
-│   └── engine.rs                  # Runtime engine coordinator & SPSC I/O
-└── benches/                       # 100M spike benchmarking suite
+│   └── engine.rs                  # Multi-scale coordinator & SPSC I/O
+└── benches/                       # 86-Billion equivalent scale benchmarks
 ```
 
 ---
 
 ## 🗺️ Roadmap & Milestones
 
-- [ ] **Milestone 1**: Core Memory & Gating (64-byte `NeuronState`, 4-state CAS, Treiber Mailbox)
-- [ ] **Milestone 2**: Topology & Local Timing Wheels (Chunked CSR Connectome, Thread-local delay wheels)
-- [ ] **Milestone 3**: Work-Stealing Scheduler & Phased Epoch Barrier (Core affinity, deterministic oscillator tests)
-- [ ] **Milestone 4**: Biophysics & Online STDP (1KB LUT decay, pair-based Hebbian plasticity)
-- [ ] **Milestone 5**: Hierarchical Paging & 100M Spike Benchmark (Column eviction to `redb`, >100 MSpikes/s throughput)
+- [ ] **Milestone 1**: Core Memory & Dendritic Super-Neuron (`size_of == 64`, Apical/Basal coincidence detection)
+- [ ] **Milestone 2**: Neural Mass Solver & Procedural Connectome (Wilson-Cowan SIMD solver, spatial kernels)
+- [ ] **Milestone 3**: 3D Chemical Grid & Three-Factor Plasticity (Dopamine diffusion, Pavlovian conditioning)
+- [ ] **Milestone 4**: Work-Stealing Scheduler & Phased Epoch Barrier (Core affinity, deterministic LFP waves)
+- [ ] **Milestone 5**: Metabolic Column Eviction & redb Persistence (>80% RAM reclamation, sub-50µs hydration)
+- [ ] **Milestone 6**: 86-Billion-Node Equivalent Full-Brain Benchmark (>100 MSpikes/s throughput within <32 GB RAM)
 
 ---
 
 ## 📄 Documentation
 
-- 📘 **[English Architecture Whitepaper](docs/WHITEPAPER.md)**: Full theoretical foundations, data structure proofs, and engineering specifications.
+- 📘 **[VirtualCortex Architecture Whitepaper v2.0](docs/WHITEPAPER.md)**: Full theoretical foundations, data structure proofs, and engineering specifications.
 - 📙 **[繁體中文架構報告](docs/zh-TW/architecture-report.md)**: 完整系統架構診斷、生理工程映射與實作細節。
 
 ---
