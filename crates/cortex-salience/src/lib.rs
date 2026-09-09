@@ -1,5 +1,8 @@
 //! Amygdalar Threat Valuation, 12ms Subcortical Low-Road & Emotional Tagging
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct SalienceNodeState {
     pub node_id: u32,                // [0..4] Salience node index

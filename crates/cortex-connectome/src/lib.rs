@@ -1,5 +1,8 @@
 //! Connectome Priors and Laminar Microcolumn Specifications
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct CortexFileHeader {
     pub magic: [u8; 8],      // "VCORTEX1" (0x56434F5254455831)

@@ -1,7 +1,9 @@
 //! Hot-Pluggable Sensory Ingestion & Thalamic HAL
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C, align(8))]
-#[derive(Copy, Clone, Debug, Default)]
 pub struct SensoryEvent {
     pub timestamp_us: u32,
     pub address: u16,

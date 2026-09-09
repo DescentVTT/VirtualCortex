@@ -1,6 +1,10 @@
 //! Sub-Millisecond Closed-Loop Physical Embodiment Bridge
+
+#![no_std]
 use core::sync::atomic::AtomicU64;
 
+// Control record (whitepaper §8.2, rule L-5): holds atomics, so it is Sync but not Copy.
+#[derive(Debug)]
 #[repr(C, align(64))]
 pub struct EmbodimentRingBuffer {
     pub write_cursor: AtomicU64,

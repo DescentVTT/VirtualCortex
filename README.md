@@ -14,7 +14,7 @@ This repository is at the **state-model stage**. Read the labels before reading 
 
 | Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 18 crates, 19 `#[repr(C)]` records with compile-time size and alignment assertions, 5 small deterministic update functions, zero dependencies, zero `unsafe`. |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 18 `#![no_std]` crates, 19 `#[repr(C)]` records with compile-time size and alignment assertions, 5 small deterministic update functions with boundary tests, zero dependencies, zero `unsafe`. |
 | **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, mailboxes, wheel dispatch, image loader, embodiment rings, reclamation, fabric transport, subsystem dynamics. |
 | **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. There is no benchmark in the tree yet. |
 | **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. |

@@ -1,5 +1,8 @@
 //! Hippocampal Attractor & Episodic Memory Engine
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct HippocampalAttractorState {
     pub dg_sparsity_bits: u32,     // Dentate Gyrus pattern separation sparsity

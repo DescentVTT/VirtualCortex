@@ -1,5 +1,8 @@
 //! Cerebellar Internal Forward Models & Microsecond Motor Coordination
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct CerebellarMicrozone {
     pub microzone_id: u32,           // [0..4] Anatomical microzone identifier

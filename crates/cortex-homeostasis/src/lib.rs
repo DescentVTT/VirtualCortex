@@ -1,5 +1,8 @@
 //! Autonomic Homeostatic Drive Pools & Circadian Sleep-Wake Engine
 
+#![no_std]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct HomeostaticDrivePool {
     pub energy_level: u32,          // [0..4] Glucose/Battery reserve (Q16.16)
