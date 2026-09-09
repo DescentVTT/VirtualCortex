@@ -508,3 +508,15 @@ VirtualCortex 證明了人類大腦尺度的類腦擬態計算並不需要依賴
 4. **確定性線速執行**：世代基無感拓撲置換（EBR-Topology）、AVX-512 向量壓縮點陣廣播、雙層平坦時間輪與核心隔離純輪詢，保證了 **$>120\text{ MSpikes/sec}$** 的高頻吞吐與 **$<35\,\text{ns}$** 的極限尾延遲。
 
 VirtualCortex 為即將到來的物理智慧（Physical AI）時代、大腦神經數位孿生與真正具備連續在線自適應能力的超級認知構造體，奠定了堅實可重現的計算工程基石。
+
+---
+
+## 📜 授權與版權聲明 (License & Copyright)
+
+版權所有 (c) 2026 Norman Hsu 與 VirtualCortex 貢獻者。
+
+VirtualCortex 遵循 Rust 生態系統之標準雙重授權機制（Dual Licensing）：
+* **Apache License, Version 2.0** ([LICENSE-APACHE](../../LICENSE-APACHE) 或 http://www.apache.org/licenses/LICENSE-2.0)
+* **MIT License** ([LICENSE-MIT](../../LICENSE-MIT) 或 http://opensource.org/licenses/MIT)
+
+使用者與下游專案可依自身法務需求自由選擇任一授權條款。

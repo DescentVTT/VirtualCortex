@@ -534,3 +534,15 @@ VirtualCortex proves that human-scale neuromorphic computation does not require 
 4. **Deterministic Line-Rate Execution**: Zero-stall Epoch-Based Connectome Swapping (EBR-Topology), AVX-512 sparse-bitmap fan-out, cascade-free timing wheels, and kernel-bypass polling ensure line-rate execution of **$>120\text{ MSpikes/sec}$** with a P99.99 tail latency below **35 nanoseconds**.
 
 VirtualCortex establishes a reproducible, deterministic, and physically grounded computational foundation for the coming era of physical intelligence and human-scale cognitive systems.
+
+---
+
+## 📜 License & Copyright
+
+Copyright (c) 2026 Norman Hsu and the VirtualCortex Contributors.
+
+VirtualCortex is dual-licensed under the standard Rust ecosystem conventions:
+* **Apache License, Version 2.0** ([LICENSE-APACHE](../LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+* **MIT License** ([LICENSE-MIT](../LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+Users and downstream projects may select either license at their option.
