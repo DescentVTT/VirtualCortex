@@ -1,6 +1,10 @@
 [package]
 name = "cortex-embodiment"
-version = "0.1.0"
-edition = "2021"
+description = "Shared-memory sensorimotor ring control block for 1 ms closed-loop embodiment in VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

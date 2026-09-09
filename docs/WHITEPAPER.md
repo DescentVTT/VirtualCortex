@@ -69,7 +69,7 @@ VirtualCortex is a Rust workspace for building a **spiking neural network (SNN) 
 
 The engine therefore rests on five axioms (§4): neural units exist virtually and are materialised on demand; state and compute are decoupled, so that a fixed pool of worker threads services tens of millions of passive records; each record is owned by at most one worker per tick, enforced by an atomic gate; axonal conduction delay is a constant-time index into a timing wheel, never an operating-system timer; and inactive tissue is evicted to local storage by a metabolic sweep. Around this core, the workspace defines subsystems that mirror the functional anatomy of the mammalian brain: sensory ingestion, embodiment, basal-ganglia action selection, cerebellar forward models, amygdalar salience, a global workspace, a vector-symbolic bridge, prefrontal planning, predictive coding, agency attribution, neuromodulation, hippocampal memory, homeostasis, an immune scrubber, a scale-out fabric and telemetry.
 
-**What exists today (Implemented).** Eighteen crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: sixteen 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them except the sensory event (finding F-18). Four crates are `#![no_std]` and carry unit tests. Five crates carry small, deterministic, integer-only update functions. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
+**What exists today (Implemented).** Eighteen crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: sixteen 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them. Four crates are `#![no_std]` and carry unit tests. Five crates carry small, deterministic, integer-only update functions. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
 
 **What is designed but not built (Specified).** The worker executor, mailboxes, the timing-wheel dispatch path, the `.cortex` memory-mapped image loader, the embodiment shared-memory ring, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the placeholder functions noted in §5.
 
@@ -152,7 +152,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | :--- | :--- | ---: | :---: | :---: | :---: | :---: |
 | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` | 64 B, 64 B, 2 248 B | no | yes | no | wheel insert |
 | `cortex-connectome` | `CortexFileHeader` | 64 B | no | yes | no | — |
-| `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | no | no | no | — |
+| `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | no | yes | no | — |
 | `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | no | yes | no | — |
 | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | no | yes | no | `compute_gating` |
 | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | no | yes | no | `step_forward_model` |
@@ -169,10 +169,11 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-fabric` | `FabricPacketHeader` | 64 B | no | yes | no | — |
 | `cortex-telemetry` | `LfpSamplePacket` | 64 B | no | yes | no | — |
 
-The workspace manifest lists exactly eighteen members, and every crate declares an empty dependency list. Seventeen crates carry a compile-time layout assertion block; `cortex-sensory` does not (finding F-18).
+The workspace manifest lists exactly eighteen members; every crate declares an empty dependency list, inherits its version, authors, license and repository from `[workspace.package]`, and carries a compile-time layout assertion block.
 
 <!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="18" reason="the workspace has eighteen member crates; update §1.6 and §5 if this changes" -->
-<!-- @assert-count target="crates" symbol="const _: () = {" min="17" glob="*.rs" reason="seventeen crates carry a compile-time layout assertion block; cortex-sensory is finding F-18. Raise to 18 when it is closed" -->
+<!-- @assert-count target="crates" symbol="const _: () = {" min="18" glob="*.rs" reason="every crate carries a compile-time layout assertion block (F-18 closed)" -->
+<!-- @assert-count target="crates" symbol="license.workspace = true" expected="18" glob="Cargo.toml" reason="every crate inherits its metadata from [workspace.package] (F-9 closed)" -->
 <!-- @assert-absence target="crates" symbol="unsafe" word="true" glob="*.rs" reason="no unsafe code exists yet; introducing it requires an ADR (§8.10)" -->
 
 ---
@@ -1135,7 +1136,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-6 | Only 4 of 18 crates are `#![no_std]` (TC-6). | 14 crates | Open. Mechanical change; no `std` items are used. |
 | F-7 | Only 4 of 18 crates derive `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | Open. Control records (`DendriticSuperNeuron`, `EmbodimentRingBuffer`) are exempt. |
 | F-8 | `CerebellarMicrozone::step_forward_model` computes its error from the sample it predicted from, so the error is constant. | `cortex-cerebellum` | Open. Placeholder; real forward model needs a delay line. |
-| F-9 | Crate metadata (`authors`, `description`, `license`) is present on 4 crates and absent on 14; `cargo publish` would fail for those. | 14 crates | Open. Use `[workspace.package]` inheritance. |
+| F-9 | Crate metadata (`authors`, `description`, `license`) was present on 4 crates and absent on 14. | 14 crates | **Resolved**: `version`, `edition`, `authors`, `license` and `repository` are inherited from `[workspace.package]`; each crate keeps only its `name` and `description`. |
 | F-10 | `cargo fmt --check` reported diffs in twelve files; `cargo clippy` reported three warnings (`new_without_default` ×2, byte-string literal). | workspace | **Resolved**: formatted; `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer` (both delegate to `new`); `FabricPacketHeader::MAGIC` written as `*b"VCFB"`. Formatting and clippy are blocking in CI (Appendix B). |
 | F-11 | `FlatTimingWheel` slots are 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 is not a power of two. | `cortex-core` | Open. Design question in §11.1. |
 | F-12 | `AgentPerspectiveState::intention_vector_ptr` is an index but named as a pointer (L-3). | `cortex-agency` | Open. Rename with image version bump. |
@@ -1144,7 +1145,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-15 | 2.8.0 cited a `spec-guard` binary at an absolute path on one developer's machine. | README | **Resolved**: pinned as a dev dependency in `package.json`; run via `npx`. |
 | F-16 | `GlobalWorkspaceSlot` code comments say slots `0..7`; 2.8.0 said four slots. | `cortex-workspace` | **Resolved**: slot count declared a configuration parameter (§5.2.8). |
 | F-17 | `EmbodimentRingBuffer` is a control block; the payload rings and the torque decoder do not exist. | `cortex-embodiment` | Open (Specified in §6.4). |
-| F-18 | `cortex-sensory` has no compile-time assertion that `SensoryEvent` is 8 bytes with 8-byte alignment; it is the only crate without one. The executable assertion in §1.6 was first written as "18" and failed on this. | `cortex-sensory` | Open. Add the `const _` block; raise the directive to 18. |
+| F-18 | `cortex-sensory` had no compile-time assertion that `SensoryEvent` is 8 bytes with 8-byte alignment; it was the only crate without one. The executable assertion in §1.6 was first written as "18" and failed on this. | `cortex-sensory` | **Resolved**: `const _` block added; the §1.6 directive requires 18. |
 
 ### 11.1 Hypotheses and open questions
 
@@ -1230,6 +1231,7 @@ Three independent checks, each answering a different question.
 | V-2 Vertical | Does the source tree still contain what this document says it contains? | [`@descent-vtt/spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard) executing the `@assert-*` directives in this file and the README | CI, blocking |
 | V-3 Horizontal | Are the documents consistent with each other: do links resolve, are ADR statuses coherent, is any open question delegated to a retired decision? | [`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) over `docs/**/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md` | CI, blocking |
 | Hygiene | Formatting and lints | `cargo fmt --check`, `cargo clippy -D warnings` | CI, blocking |
+| V-4 Intake | Does every live brief in `briefs/` carry its mandatory sections, so that a round handed to a fresh session is complete? | `scripts/check-briefs.mjs` (zero dependencies) | CI, blocking |
 
 Both spec tools are pinned to exact versions in `package.json` (0.4.0 and 0.2.1) and have no runtime dependencies; they require Node 22 or newer. To run everything locally:
 
@@ -1242,7 +1244,7 @@ npm run spec
 
 Planned, not yet present: T-1 differential testing across architectures, fault injection on the fabric and the sensory path, and the T-3 micro-benchmark.
 
-<!-- @assert-present file="LICENSE-APACHE,LICENSE-MIT,Cargo.toml,package.json,.spec-graph.json,.github/workflows/ci.yml,docs/adr/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md" -->
+<!-- @assert-present file="LICENSE-APACHE,LICENSE-MIT,Cargo.toml,package.json,.spec-graph.json,.github/workflows/ci.yml,docs/adr/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md,CLAUDE.md,briefs/README.md,scripts/check-briefs.mjs" -->
 
 ---
 
@@ -1261,6 +1263,8 @@ Milestones follow the founding design note; each ends with a test that proves it
 | M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Not started. |
 
 Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.
+
+Work is handed out as **briefs**: numbered, self-contained prompts in [`briefs/`](../briefs/README.md), each closing named findings or advancing a milestone, frozen into `briefs/archive/` when executed. A brief is an input; its outcome is recorded in the ADR it writes, in §11's dispositions and in the changelog, never in the brief itself.
 
 ---
 

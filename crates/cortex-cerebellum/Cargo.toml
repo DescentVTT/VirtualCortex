@@ -1,6 +1,10 @@
 [package]
 name = "cortex-cerebellum"
-version = "0.1.0"
-edition = "2021"
+description = "Cerebellar microzone forward models (Smith-predictor role) for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

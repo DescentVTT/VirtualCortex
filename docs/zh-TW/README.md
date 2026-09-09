@@ -71,7 +71,7 @@ npm run spec
 
 ## 如何貢獻
 
-流程、提交訊息慣例、文件治理規則與「完成的定義」在 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)；安全性回報在 [`SECURITY.md`](../../SECURITY.md)；變更紀錄在 [`CHANGELOG.md`](../../CHANGELOG.md)。
+流程、提交訊息慣例、文件治理規則與「完成的定義」在 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)；安全性回報在 [`SECURITY.md`](../../SECURITY.md)；變更紀錄在 [`CHANGELOG.md`](../../CHANGELOG.md)。給編碼代理的總機是 [`CLAUDE.md`](../../CLAUDE.md)。下一輪工作以編號的自足 prompt（brief）形式放在 [`briefs/`](../../briefs/README.md)，執行後凍結封存到 `briefs/archive/`；brief 是輸入，不是紀錄。
 
 ## 授權
 

@@ -1,6 +1,10 @@
 [package]
 name = "cortex-basal-ganglia"
-version = "0.1.0"
-edition = "2021"
+description = "Basal ganglia action selection: striatal D1/D2 and STN hyperdirect channel gating for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

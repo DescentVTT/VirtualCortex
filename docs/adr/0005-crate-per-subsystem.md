@@ -30,7 +30,7 @@ Option 3. Eighteen crates today. Dependencies are permitted only from a runtime 
 
 - Good: layout tests and `spec-guard` directives are per crate; a failure names the subsystem.
 - Good: a subsystem can be replaced or removed without touching the others.
-- Bad: eighteen `Cargo.toml` files to keep consistent; today four carry metadata and fourteen do not (finding F-9). Workspace inheritance (`[workspace.package]`) is the fix.
+- Bad: eighteen `Cargo.toml` files to keep consistent. Mitigated: version, edition, authors, license and repository are inherited from `[workspace.package]` (finding F-9, closed), so each manifest carries only its name and description.
 - Bad: cross-subsystem dynamics (neuromodulator gating of plasticity, salience tagging of hippocampal replay) must be expressed in the runtime crate, not in the state crates.
 
 ## Confirmation

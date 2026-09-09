@@ -1,9 +1,10 @@
 [package]
 name = "cortex-predictive"
-version = "0.1.0"
-edition = "2021"
-authors = ["VirtualCortex Architectural Committee <arch@virtualcortex.org>"]
 description = "Hierarchical Predictive Coding (HPC) and Active Inference Engine for VirtualCortex"
-license = "Apache-2.0 OR MIT"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

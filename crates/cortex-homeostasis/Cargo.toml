@@ -1,6 +1,10 @@
 [package]
 name = "cortex-homeostasis"
-version = "0.1.0"
-edition = "2021"
+description = "Homeostatic drive pools, circadian sleep gating and criticality control for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

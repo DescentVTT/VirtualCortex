@@ -55,6 +55,10 @@ The whitepaper is the canonical architecture document and is governed by [ADR-00
 - **English is canonical.** The Traditional Chinese file is a reader's guide; do not add layouts, figures or new claims to it.
 - **Findings, not silent fixes.** If the document and the tree disagree, record a numbered finding in §11 and fix it in a separate, visible step.
 
+### Briefs
+
+Rounds of work are written as numbered, self-contained prompts in [`briefs/`](briefs/README.md). A brief says what done looks like, re-derives its facts with paths and a date, lists deliverables as checkboxes, states what the round is not empowered to do and what it may override (as an ADR), and says how it is verified and reported. When executed it is moved to `briefs/archive/` with a frozen banner and every deliverable dispositioned; `spec-graph` fails CI on an archived brief that still holds open work. See that README for the sections every brief carries; `npm run spec:briefs` enforces them.
+
 ### Architecture decision records
 
 `docs/adr/` holds one [MADR](https://adr.github.io/madr/) file per decision. To propose one: copy the newest file, take the next number, set `status: proposed`, fill in context, drivers, options, outcome and confirmation, and open a pull request. It becomes `accepted` on merge with that status. Superseding a decision means adding `supersedes: ADR-NNNN` to the new record and `superseded-by:` to the old one; `spec-graph` reports the omission. Never renumber, never delete.
@@ -69,10 +73,10 @@ cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 npm ci
-npm run spec                        # spec-guard + spec-graph
+npm run spec                        # spec-guard + spec-graph + check-briefs
 ```
 
-`npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks. Both exit non-zero with a file and line number when something is wrong.
+`npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks; `npm run spec:briefs` alone checks the live briefs. All exit non-zero with a file and line number when something is wrong.
 
 ## Definition of done
 

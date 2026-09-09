@@ -1,6 +1,10 @@
 [package]
 name = "cortex-connectome"
-version = "0.1.0"
-edition = "2021"
+description = "The .cortex memory-mappable image header and anatomical connectome priors for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

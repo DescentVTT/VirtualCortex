@@ -14,7 +14,7 @@ This repository is at the **state-model stage**. Read the labels before reading 
 
 | Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 18 crates, 19 `#[repr(C)]` records (18 of them with compile-time size and alignment assertions), 5 small deterministic update functions, zero dependencies, zero `unsafe`. |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 18 crates, 19 `#[repr(C)]` records with compile-time size and alignment assertions, 5 small deterministic update functions, zero dependencies, zero `unsafe`. |
 | **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, mailboxes, wheel dispatch, image loader, embodiment rings, reclamation, fabric transport, subsystem dynamics. |
 | **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. There is no benchmark in the tree yet. |
 | **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. |
@@ -57,6 +57,8 @@ Exact field layouts, the numeric model, the concurrency rules and the status of 
 | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) | The canonical architecture document: arc42 structure, C4 views, per-crate record layouts, runtime scenarios, quality targets, findings, capacity model. Its claims about the tree are executable. |
 | [docs/adr/](docs/adr/README.md) | Architecture decision records (MADR). |
 | [docs/zh-TW/README.md](docs/zh-TW/README.md) | 繁體中文導讀：how to read the whitepaper, with no layouts or figures of its own. |
+| [briefs/](briefs/README.md) | Numbered, self-contained prompts for the next rounds of work; executed briefs are frozen in `briefs/archive/`. |
+| [CLAUDE.md](CLAUDE.md) | The switchboard for coding agents: principles, invariants, map, commands. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Workflow, commit conventions, documentation rules, definition of done. |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting. |
 | [CHANGELOG.md](CHANGELOG.md) | Notable changes. |
@@ -77,7 +79,7 @@ npm ci
 npm run spec
 ```
 
-`npm run spec` runs [`spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard), which executes the `<!-- @assert-* -->` directives embedded in the documents against `crates/`, and [`spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph), which checks that the documents are consistent with one another (links, ADR lifecycle, open questions). Both are pinned to exact versions and run as blocking checks in [CI](.github/workflows/ci.yml), alongside `cargo fmt --check` and `cargo clippy -D warnings`.
+`npm run spec` runs [`spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard), which executes the `<!-- @assert-* -->` directives embedded in the documents against `crates/`; [`spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph), which checks that the documents are consistent with one another (links, ADR lifecycle, open questions); and a dependency-free script that checks every live brief carries its mandatory sections. Both are pinned to exact versions and run as blocking checks in [CI](.github/workflows/ci.yml), alongside `cargo fmt --check` and `cargo clippy -D warnings`.
 
 ## Contributing
 

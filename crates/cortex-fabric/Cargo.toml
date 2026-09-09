@@ -1,6 +1,10 @@
 [package]
 name = "cortex-fabric"
-version = "0.1.0"
-edition = "2021"
+description = "64-byte fabric packet header for deterministic multi-node scale-out of VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

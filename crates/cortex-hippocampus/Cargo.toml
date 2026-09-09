@@ -1,6 +1,10 @@
 [package]
 name = "cortex-hippocampus"
-version = "0.1.0"
-edition = "2021"
+description = "Hippocampal attractor, replay scheduling and grid/place spatial state for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
