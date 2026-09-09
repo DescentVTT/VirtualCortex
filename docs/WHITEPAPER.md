@@ -150,7 +150,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 
 | Crate | Primary public type(s) | Size | `no_std` | Layout | Test | Logic |
 | :--- | :--- | ---: | :---: | :---: | :---: | :---: |
-| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel`, `synaptic_efficacy_q16` | 64 B, 64 B, 2 248 B | yes | yes | yes | wheel insert, efficacy |
+| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 4.2 MB | yes | yes | yes | wheel schedule and drain, efficacy |
 | `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | yes | — |
 | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | no | — |
 | `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B | yes | yes | no | — |
@@ -371,8 +371,8 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | :--- | :--- |
 | Responsibility | The two arena record types every other subsystem indexes into, and the timing wheel that orders delayed delivery. |
 | Source | `crates/cortex-core/src/dynamics/neuron.rs`, `crates/cortex-core/src/dispatch/wheel.rs` |
-| Public API | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel::{new, schedule_fine}` and `Default` (delegates to `new`), `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8) -> i32` (`const fn`, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)) |
-| Status | Layout: Implemented · Membrane dynamics: Specified (§8.8) · Dispatch: Specified (§6.2) |
+| Public API | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel<CAP>::{new, schedule, advance, tick, horizon_ticks}` and `Default`, `WorkerWheel` (= `FlatTimingWheel<2048>`), `ScheduleError`, `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8) -> i32` (`const fn`, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)) |
+| Status | Layout: Implemented · Membrane dynamics: Specified (§8.8) · Wheel schedule and drain: Implemented ([ADR-0013](adr/0013-timing-wheel-geometry.md)) · Mailbox delivery: Specified (§6.1) |
 
 **`DendriticSuperNeuron`** — 64 B, align 64. A two-compartment pyramidal model (basal and apical dendrites plus soma) with short-term-plasticity state and the virtual-actor control fields.
 
@@ -410,11 +410,13 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | `[36..40)` | `last_spike_tick` | `u32` | tick | Pre-synaptic spike time for STDP. |
 | `[40..64)` | `_reserved` | `[u8; 24]` | — | Reserved; MUST be zero. |
 
-**`FlatTimingWheel`** — 2 248 B, natural alignment; one per worker. Two rings of 64-bit slots: `fine_ring[200]` at 10 µs per slot (2 ms horizon) and `coarse_ring[80]` at 100 µs per slot (8 ms horizon). `schedule_fine(delay_ticks, event_mask)` ORs `event_mask` into slot `(cursor + delay_ticks) % 200`. Each slot is currently a 64-bit mask, that is, up to 64 event lanes per slot; the design intent that a slot addresses a list of `SynapseBlock` offsets is Specified (§6.2) and is finding F-11. The ring length is not a power of two, so the modulo is a multiply-shift rather than a mask; a power-of-two ring is an open question (§11).
+**`FlatTimingWheel<CAP>`** — one per worker; `WorkerWheel = FlatTimingWheel<2048>` is 4 195 336 B ([ADR-0013](adr/0013-timing-wheel-geometry.md)). Two rings of fixed-capacity token lists: 256 fine slots of 10 µs (2.56 ms) and 256 coarse slots of 100 µs (25.6 ms), both powers of two so that slot selection is a mask. A token is an opaque 28-bit value (a `SynapseBlock` offset or a unit index); in the coarse ring its top four bits carry the fine residual. `schedule(delay_ticks, token)` places the token in the fine ring for delays below 256 ticks and in the coarse ring otherwise, and returns `ZeroDelay`, `BeyondHorizon` (2 560 ticks), `TokenTooLarge` or `SlotFull` without mutating the wheel. `advance()` clears the slot consumed at the previous tick, steps the tick, cascades the coarse window that begins at that tick into the fine ring, and returns the due slot in a deterministic order (tokens already in the fine slot, then the cascaded tokens, each group in scheduling order). Two wheels fed the same sequence produce identical slots; eight unit tests cover both rings, both wrap boundaries, the order and the rejections.
 
 <!-- @assert-count target="crates/cortex-core" symbol="DendriticSuperNeuron" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-core" symbol="SynapseBlock" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-core" symbol="FlatTimingWheel" min="1" word="true" -->
+<!-- @assert-count target="crates/cortex-core" symbol="WorkerWheel" min="1" word="true" reason="ADR-0013: the production wheel geometry is a named alias" -->
+<!-- @assert-count target="crates/cortex-core" symbol="ScheduleError" min="1" word="true" reason="ADR-0013: scheduling failures are explicit" -->
 <!-- @assert-count target="crates/cortex-core" symbol="weights_q1_15" min="1" word="true" reason="ADR-0012: the weight field names its format" -->
 <!-- @assert-count target="crates/cortex-core" symbol="synaptic_efficacy_q16" min="1" word="true" reason="ADR-0012: the widening arithmetic is implemented and tested" -->
 
@@ -846,8 +848,8 @@ Scenarios are written against the records of §5. Steps marked *(Specified)* hav
 [upstream unit fires]
       │
       ▼
-[1] delay lookup ── delays_ticks[k] > 0 ──► FlatTimingWheel slot (cursor + d) % 200   (Implemented: insert)
-      │                                          │ tick advance drains the slot        (Specified)
+[1] delay lookup ── delays_ticks[k] > 0 ──► FlatTimingWheel::schedule(d, token): fine or coarse ring   (Implemented)
+      │                                          │ advance() drains the due slot, cascading coarse → fine (Implemented)
       └── delay == 0 ────────────────────────────┤
                                                  ▼
 [2] mailbox push: CAS on mailbox_head_ptr with mailbox_tag as ABA guard               (Specified)
@@ -869,7 +871,7 @@ The turn invariant (A3) guarantees that steps 4–6 for one unit never run on tw
 
 ### 6.2 Scenario R-2: timing-wheel tick
 
-On each fine tick the worker advances `cursor`, reads `fine_ring[cursor]`, clears it, and dispatches every set bit. Every tenth fine tick it also drains one coarse slot into the fine ring. Insert and expiry are both $O(1)$; there is no heap, no comparison and no rebalancing. A delay beyond the coarse horizon (8 ms at the current tick sizes) is a configuration error and MUST be rejected at connectome load time (Specified).
+On each fine tick the worker calls `advance()`: the slot consumed at the previous tick is cleared, the tick steps, and when the tick is a multiple of ten the coarse window that begins at it is cascaded into the fine ring (each token to the slot of its exact due tick, using the residual packed in its top four bits); the due slot is then returned as a slice in a deterministic order (fine-scheduled tokens, then cascaded tokens, each in scheduling order) and the worker dispatches each token (R-1 step 2). Schedule and advance are $O(1)$ apart from the length of one cascaded window every ten ticks; there is no heap, no comparison and no rebalancing ([ADR-0013](adr/0013-timing-wheel-geometry.md)). A delay at or beyond the horizon (2 560 fine ticks, 25.6 ms) is `ScheduleError::BeyondHorizon`; the connectome loader MUST reject such a delay at load time so that the error never occurs in the tick loop (Specified).
 
 ### 6.3 Scenario R-3: sensory ingestion and hot-plug
 
@@ -968,13 +970,13 @@ A run is defined by `(image, seed, input trace)`. Two runs with equal inputs MUS
 
 | Concept | Definition |
 | :--- | :--- |
-| Fine tick | 10 µs; `fine_ring` slot width. |
-| Coarse tick | 100 µs; `coarse_ring` slot width; drained into the fine ring. |
-| Horizons | 2 ms fine, 8 ms coarse; longer delays are rejected at load (§6.2). |
+| Fine tick | 10 µs; one slot of the 256-slot fine ring. |
+| Coarse tick | 100 µs; one slot of the 256-slot coarse ring, ten fine ticks; cascaded into the fine ring when its window begins. |
+| Horizons | 2.56 ms fine, 25.6 ms coarse (2 560 fine ticks); a longer delay is `ScheduleError::BeyondHorizon` and MUST be rejected at load (§6.2, [ADR-0013](adr/0013-timing-wheel-geometry.md)). |
 | Epoch | 1 ms; the embodiment period and the checkpoint granularity. |
 | Timestamps | `u32` microseconds in `SensoryEvent` (wraps at ~71.6 min), `u32` ticks in neuron and synapse records, `u64` microseconds in telemetry. |
 
-Tick sizes are configuration; the record types do not encode them. Changing them changes the meaning of every `*_ticks` field, so they belong in `CortexFileHeader` (open question in §11).
+Tick sizes and the wheel geometry are `cortex-core` constants; the record types do not encode them. Changing them changes the meaning of every `*_ticks` field, so a self-describing image must carry the tick duration; where it lives is deferred to the loader milestone (§11.1).
 
 ### 8.5 Concurrency and ownership
 
@@ -1091,6 +1093,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0010](adr/0010-measured-or-target.md) | Every performance figure is Measured or Target, never asserted |
 | [ADR-0011](adr/0011-epoch-based-reclamation.md) | Epoch-based reclamation for structural plasticity |
 | [ADR-0012](adr/0012-synaptic-weight-q1-15.md) | Sixteen-bit synaptic base weights are Q1.15 |
+| [ADR-0013](adr/0013-timing-wheel-geometry.md) | Timing wheel geometry: 256 × 10 µs fine, 256 × 100 µs coarse, fixed-capacity token lists (amends ADR-0004) |
 
 ---
 
@@ -1144,10 +1147,10 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-8 | `CerebellarMicrozone::step_forward_model` computed its error from the sample it predicted from, so the error was constant. | `cortex-cerebellum` | **Resolved** (brief 004): a seven-slot delay line in the former reserved bytes; the error compares the prediction made $d$ steps ago with the observation now; a convergence test on a linear plant; image format version 3. |
 | F-9 | Crate metadata (`authors`, `description`, `license`) was present on 4 crates and absent on 14. | 14 crates | **Resolved**: `version`, `edition`, `authors`, `license` and `repository` are inherited from `[workspace.package]`; each crate keeps only its `name` and `description`. |
 | F-10 | `cargo fmt --check` reported diffs in twelve files; `cargo clippy` reported three warnings (`new_without_default` ×2, byte-string literal). | workspace | **Resolved**: formatted; `Default` implemented for `FlatTimingWheel` and `EmbodimentRingBuffer` (both delegate to `new`); `FabricPacketHeader::MAGIC` written as `*b"VCFB"`. Formatting and clippy are blocking in CI (Appendix B). |
-| F-11 | `FlatTimingWheel` slots are 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 is not a power of two. | `cortex-core` | Open. Design question in §11.1. |
+| F-11 | `FlatTimingWheel` slots were 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 was not a power of two; nothing drained the wheel. | `cortex-core` | **Resolved** (brief 005, [ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 × 256 slots of fixed-capacity 28-bit tokens, `schedule` with explicit rejections, `advance` with the coarse-to-fine cascade, eight tests. |
 | F-12 | `AgentPerspectiveState::intention_vector_ptr` was an index but named as a pointer (L-3). | `cortex-agency` | **Resolved** (brief 003): renamed `intention_vector_idx`; image format version 2. |
 | F-13 | No benchmark exists; every performance figure is a Target (§10). | workspace | Open. First benchmark: T-3. |
-| F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Narrowed** (brief 001): the five update functions have boundary tests. `FlatTimingWheel::schedule_fine` and `SymbolicHypervectorHeader::bind` remain untested. |
+| F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Narrowed** (briefs 001 and 005): the five update functions and the timing wheel have tests. `SymbolicHypervectorHeader::bind` and `DIMENSIONS`, `EmbodimentRingBuffer::new`/`Default` and `FabricPacketHeader::MAGIC` remain untested (brief 007). |
 | F-15 | 2.8.0 cited a `spec-guard` binary at an absolute path on one developer's machine. | README | **Resolved**: pinned as a dev dependency in `package.json`; run via `npx`. |
 | F-16 | `GlobalWorkspaceSlot` code comments say slots `0..7`; 2.8.0 said four slots. | `cortex-workspace` | **Resolved**: slot count declared a configuration parameter (§5.2.8). |
 | F-17 | `EmbodimentRingBuffer` is a control block; the payload rings and the torque decoder do not exist. | `cortex-embodiment` | Open (Specified in §6.4). |
@@ -1157,8 +1160,10 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 
 - [ ] **H-1 (condensation ratio).** The reference capacity model assumes that 43 M two-compartment records reproduce the functional behaviour of a point-neuron population roughly 2 000× larger. No experiment supports a specific ratio. Until one does, any "whole-brain" statement is a hypothesis, and this document makes none.
 - [ ] **H-2 (predictive-coding traffic reduction).** The claim that top-down cancellation removes more than 85 % of ascending spike traffic is plausible from the literature but unmeasured in this engine.
-- [ ] Should `FlatTimingWheel` rings be power-of-two length (256 / 64) so that slot selection is a mask? The cost is a 2.56 ms / 6.4 ms horizon instead of 2 ms / 8 ms.
-- [ ] Should tick sizes be recorded in `CortexFileHeader` so that an image is self-describing (§8.4)?
+- [x] Should `FlatTimingWheel` rings be power-of-two length (256 / 64) so that slot selection is a mask? The cost is a 2.56 ms / 6.4 ms horizon instead of 2 ms / 8 ms.
+      **Resolved (2026-09-10):** 256 fine and 256 coarse slots, 2.56 ms / 25.6 ms; [ADR-0013](adr/0013-timing-wheel-geometry.md).
+- [~] Should tick sizes be recorded in `CortexFileHeader` so that an image is self-describing (§8.4)?
+      **Narrowed (2026-09-10):** ADR-0013 fixes tick sizes and geometry as `cortex-core` constants and confirms a self-describing image needs the tick duration; where it lives is decided with the loader (milestone M4).
 - [x] Which Q-format for `[i16; 4]` synaptic weights (F-3): Q8.8 for range or Q1.15 for resolution?
       **Resolved (2026-09-10):** Q1.15, because in-place STDP needs the resolution and summation supplies the range; [ADR-0012](adr/0012-synaptic-weight-q1-15.md).
 - [ ] Should `NeuromodulatorState` be widened to 64 bytes so that one record per column shares the arena discipline, or kept at 16 bytes for density?
@@ -1187,6 +1192,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Q16.16 | Signed 32-bit fixed point with 16 fractional bits; membrane potentials, drives and every other state quantity. |
 | Record | One of the `#[repr(C)]` structures of §5.2. |
 | Timing wheel | A ring of slots indexed by (current + delay) mod length; $O(1)$ timer insert and expiry. |
+| Token | The opaque 28-bit payload a timing-wheel slot holds: a `SynapseBlock` offset or a unit index ([ADR-0013](adr/0013-timing-wheel-geometry.md)). |
 | Turn invariant | At most one worker touches a record per tick (A3). |
 | Unit | A `DendriticSuperNeuron` record; the engine's neural entity. |
 | Worker | A core-pinned, stateless thread that executes units (A2). |
@@ -1219,15 +1225,15 @@ Parameters: `N_col` = 860 000, `N_neuron` = 43 000 000, `N_block` = 128 000 000 
 | 16 | `HomeostaticDrivePool` | 500 000 | 64 B | 32 MB |
 | 17 | `FabricPacketHeader` queues | 2 000 000 | 64 B | 128 MB |
 | 18 | `LfpSamplePacket` rings | 500 000 | 64 B | 32 MB |
-| 19 | Timing wheels (design size, 8 MB each) | 64 | 8 MB | 512 MB |
+| 19 | Timing wheels (`WorkerWheel`, 4 195 336 B each) | 64 | 4.2 MB | 268.5 MB |
 | 20 | Spatial voxels | 1 048 576 | 16 B | 16.8 MB |
 | 21 | Sensory / embodiment rings | 2 048 | 64 KB | 131 MB |
 | 22 | Page tables, stacks, OS | — | — | ~4.8 GB |
-| | **Tier 1 total** | | | **≈ 19.2 GB** |
+| | **Tier 1 total** | | | **≈ 19.0 GB** |
 | 23 | Plastic deltas ΔW (Tier 2, Specified; no record type yet) | 1 000 000 000 | 16 B | 16.0 GB |
-| | **Total addressable** | | | **≈ 35.2 GB** |
+| | **Total addressable** | | | **≈ 35.0 GB** |
 
-Row 19 uses the *designed* wheel size of 8 MB per worker (1 024 slots × offset lists); the implemented `FlatTimingWheel` is 2 248 bytes (F-11). Row 23 has no record type in the tree and is included so that the far-memory tier is sized. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
+Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 fine and 256 coarse slots of 2 048 tokens each, 4 195 336 bytes, asserted at compile time. Row 23 has no record type in the tree and is included so that the far-memory tier is sized. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
 
 ---
 

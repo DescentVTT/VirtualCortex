@@ -18,3 +18,4 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0010](0010-measured-or-target.md) | Every performance figure is Measured or Target, never asserted | accepted |
 | [ADR-0011](0011-epoch-based-reclamation.md) | Epoch-based reclamation for structural plasticity | accepted |
 | [ADR-0012](0012-synaptic-weight-q1-15.md) | Sixteen-bit synaptic base weights are Q1.15 | accepted |
+| [ADR-0013](0013-timing-wheel-geometry.md) | Timing wheel geometry: 256 × 10 µs fine, 256 × 100 µs coarse, fixed-capacity token lists (amends ADR-0004) | accepted |

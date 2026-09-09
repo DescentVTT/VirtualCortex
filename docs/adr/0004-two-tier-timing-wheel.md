@@ -2,9 +2,12 @@
 status: accepted
 date: 2026-09-10
 decision-makers: VirtualCortex maintainers
+amended-by: ADR-0013
 ---
 
 # ADR-0004: Two-tier timing wheel for axonal delay
+
+> Amended by [ADR-0013](0013-timing-wheel-geometry.md) (2026-09-10), which fixes the ring lengths, the slot representation and the cascade. The decision to use a two-tier wheel stands; the figures below describe the first implementation.
 
 ## Context and Problem Statement
 
@@ -31,9 +34,9 @@ Option 3, implemented as `FlatTimingWheel` in `cortex-core` with `fine_ring: [u6
 
 - Good: every insert is one index computation and one OR; every tick drain is one load and one clear.
 - Good: the per-worker wheel is 2 248 bytes and lives in L1.
-- Bad: the ring length 200 is not a power of two, so slot selection is a multiply-shift rather than a mask; and each slot is a 64-bit lane mask rather than a list of `SynapseBlock` offsets (finding F-11). Both are open questions in whitepaper §11.1.
+- Bad, at the time: the ring length 200 was not a power of two, and each slot was a 64-bit lane mask rather than a list of `SynapseBlock` offsets (finding F-11). Both were resolved by [ADR-0013](0013-timing-wheel-geometry.md): 256 × 256 slots and fixed-capacity token lists.
 - Bad: delay resolution is the slot width; sub-slot jitter is quantised away by design.
 
 ## Confirmation
 
-`npx spec-guard` asserts `FlatTimingWheel` exists in `cortex-core`. Milestone M3 adds a three-neuron delayed oscillator whose period must be exact to the tick.
+`npx spec-guard` asserts `FlatTimingWheel` exists in `cortex-core`; ADR-0013's tests prove delivery at exactly the requested delay. Milestone M3 adds a three-neuron delayed oscillator whose period must be exact to the tick.

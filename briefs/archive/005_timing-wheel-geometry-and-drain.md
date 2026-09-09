@@ -1,7 +1,13 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #9.** Closes finding F-11; writes
+> [ADR-0013](../../docs/adr/0013-timing-wheel-geometry.md), which amends ADR-0004; closes one §11.1
+> question and narrows the other to the loader milestone. The report is in the pull request and in
+> `CHANGELOG.md`. The body below describes the tree before execution and is not maintained, apart
+> from relative links, which gained one `../` so that they still resolve from `archive/`.
 
 # Brief 005 — Decide the timing wheel's geometry and slot representation, and implement the drain
 
@@ -21,8 +27,8 @@ timing-wheel questions in §11.1 are closed.
 - **Verify before asserting.** Read the file; run the command.
 - **Label every claim** Implemented, Specified, Target or Hypothesis.
 - **Latest ≠ Newest.** Stable Rust only; no new dependencies
-  ([ADR-0005](../docs/adr/0005-crate-per-subsystem.md)); no allocation
-  ([ADR-0003](../docs/adr/0003-zero-allocation-hot-path.md)).
+  ([ADR-0005](../../docs/adr/0005-crate-per-subsystem.md)); no allocation
+  ([ADR-0003](../../docs/adr/0003-zero-allocation-hot-path.md)).
 - **Say what you did not do** in the closing report.
 - Branch and pull request; Conventional Commits with a real body; run every command in
   `CLAUDE.md` before pushing.
@@ -36,15 +42,15 @@ Re-derived against `main` on 2026-09-10.
   `const fn new()`; `schedule_fine(delay_ticks, event_mask)` does
   `fine_ring[(cursor + delay_ticks) % 200] |= event_mask`. There is no `advance`, no coarse-ring
   insert, no horizon check and no test.
-- [ADR-0004](../docs/adr/0004-two-tier-timing-wheel.md) fixes the structure (two tiers, 10 µs and
+- [ADR-0004](../../docs/adr/0004-two-tier-timing-wheel.md) fixes the structure (two tiers, 10 µs and
   100 µs slots) and records the two open points: ring length 200 is not a power of two, and a slot
   is a 64-bit lane mask rather than the list of `SynapseBlock` offsets the design intended.
-- Whitepaper [§6.2](../docs/WHITEPAPER.md#62-scenario-r-2-timing-wheel-tick) specifies the tick:
+- Whitepaper [§6.2](../../docs/WHITEPAPER.md#62-scenario-r-2-timing-wheel-tick) specifies the tick:
   advance the cursor, read and clear the slot, dispatch every set bit; every tenth fine tick drain
   one coarse slot into the fine ring; a delay beyond the coarse horizon is a load-time error.
-  [§8.4](../docs/WHITEPAPER.md#84-time-model) gives the horizons (2 ms fine, 8 ms coarse) and says
+  [§8.4](../../docs/WHITEPAPER.md#84-time-model) gives the horizons (2 ms fine, 8 ms coarse) and says
   tick sizes are configuration, not properties of the type.
-- [§11.1](../docs/WHITEPAPER.md#111-hypotheses-and-open-questions) asks: power-of-two rings
+- [§11.1](../../docs/WHITEPAPER.md#111-hypotheses-and-open-questions) asks: power-of-two rings
   (256 / 64, giving 2.56 ms / 6.4 ms) so that slot selection is a mask? And should tick sizes be
   recorded in `CortexFileHeader`?
 - Appendix A row 19 budgets the *designed* wheel at 8 MB per worker (1 024 slots × offset lists)
@@ -56,28 +62,33 @@ Re-derived against `main` on 2026-09-10.
 
 ## Deliverables
 
-- [ ] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR, deciding:
+- [x] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR, deciding:
       the fine and coarse ring lengths (powers of two) and the horizons they give at 10 µs / 100 µs;
       the slot representation (a 64-lane mask, an offset list of fixed capacity, or a mask that
       indexes a per-worker lane table) with the memory per worker and the cost of the cascade;
       and what a "lane" denotes. It must reconcile Appendix A row 19 with the decision.
-- [ ] `FlatTimingWheel` rewritten to the decided geometry with `const` ring lengths and masks;
+      ADR-0013: 256 / 256 slots, fixed-capacity lists of 28-bit tokens, 4 195 336 B per worker;
+      there are no lanes. Committed `accepted` per `docs/adr/README.md`.
+- [x] `FlatTimingWheel` rewritten to the decided geometry with `const` ring lengths and masks;
       `schedule(delay_ticks, payload) -> Result<(), BeyondHorizon>` routing to the fine or coarse
       ring; `advance(&mut self) -> Slot` returning and clearing the current fine slot and, at every
       coarse boundary, draining the next coarse slot into the fine ring; `schedule_fine` kept or
       removed as the ADR decides, with the whitepaper following.
-- [ ] Tests: an event scheduled at delay `d` is delivered on exactly the `d`-th `advance` for
+      `schedule` returns `Result<(), ScheduleError>` with four variants; `advance` returns a slice;
+      `schedule_fine` removed.
+- [x] Tests: an event scheduled at delay `d` is delivered on exactly the `d`-th `advance` for
       `d` across both rings and both wrap boundaries; a coarse event is not delivered early; a
       delay beyond the horizon is rejected without mutating the wheel; two wheels fed the same
       sequence produce identical slots (determinism); the wheel never allocates (it is `no_std`
       already; state that no `alloc` is linked).
-- [ ] Whitepaper §5.2.1 (`FlatTimingWheel` paragraph and public API), §6.2, §8.4 (horizons),
-      Appendix A row 19, [ADR-0004](../docs/adr/0004-two-tier-timing-wheel.md) consequences
+- [x] Whitepaper §5.2.1 (`FlatTimingWheel` paragraph and public API), §6.2, §8.4 (horizons),
+      Appendix A row 19, [ADR-0004](../../docs/adr/0004-two-tier-timing-wheel.md) consequences
       (amended by the new ADR; say so in both), §11 F-11 Resolved, §11.1 both questions checked
       off with the decision (the `CortexFileHeader` question may be answered "no, tick sizes are
       worker configuration" or deferred with a reason).
-- [ ] `CHANGELOG.md` entry under Unreleased.
-- [ ] Archive this brief.
+      The header question is narrowed to the loader milestone rather than closed.
+- [x] `CHANGELOG.md` entry under Unreleased.
+- [x] Archive this brief.
 
 ## Not empowered
 
