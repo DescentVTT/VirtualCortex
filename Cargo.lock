@@ -39,9 +39,21 @@ name = "cortex-neuromod"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-salience"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-sensory"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-symbolic"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-telemetry"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-workspace"
 version = "0.1.0"
