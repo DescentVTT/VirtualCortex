@@ -3,18 +3,18 @@
 **Architecture Whitepaper — 2026+ High-Performance Systems Edition**  
 *Codename: VirtualCortex*  
 *Repository: [https://github.com/DescentVTT/VirtualCortex](https://github.com/DescentVTT/VirtualCortex)*  
-*Design Standard: 2026+ Systems Best Practice (`Latest != Newest`)*  
+*Design Standard: 2026+ Systems Engineering Best Practice (`Latest != Newest`)*  
 
 ---
 
 ## Abstract
 
-Simulating the mammalian neocortex at human scale (~86 billion neurons, ~100 trillion synapses) has historically presented an intractable trade-off between computational scale and biophysical realism. Contemporary approaches typically bifurcate into either brute-force distributed supercomputing clusters that require petabytes of memory and suffer from synchronization barriers, or specialized application-specific integrated circuits (ASICs) that require multi-million-dollar fabrications with rigid silicon geometries and non-deterministic analog drift.
+Simulating the mammalian neocortex at human scale (~86 billion neurons, ~100 trillion synapses) has historically presented an intractable computational dilemma between physical scale and biophysical realism. Contemporary approaches typically bifurcate into either brute-force distributed supercomputing clusters that require petabytes of memory, burn megawatts of power, and suffer from inter-node synchronization barriers, or specialized application-specific integrated circuits (ASICs) that require multi-million-dollar silicon fabrications with rigid spatial geometries and non-deterministic analog drift.
 
-**VirtualCortex** resolves this dichotomy by establishing a formal, production-grade systems architecture engineered under the **2026+ Systems Engineering Doctrine: "Latest is not equal to newest" (`Latest != Newest`)**. Rather than chasing speculative runtime abstractions, VirtualCortex synthesizes battle-tested high-performance computing (HPC) principles: **hardware cache-line sympathy (64-byte POD alignment), bit-exact fixed-point determinism (Q16.16 SIMD), tiered memory hierarchies (NUMA DDR5 + CXL 3.0 Far Memory + NVMe `io_uring`), ABA-free lock-free atomics, kernel-bypass CPU core isolation (`isolcpus`/`nohz_full`), zero-stall Epoch-Based Double-Buffered Connectome Swapping (EBR-Topology), and condensed multi-scale biophysical dynamics**.
+**VirtualCortex** resolves this dilemma by establishing a formal, production-grade systems architecture engineered strictly under the **2026+ Systems Engineering Doctrine: "Latest is not equal to newest" (`Latest != Newest`)**. Rather than chasing ephemeral language trends or speculative runtime layers, VirtualCortex synthesizes battle-tested high-performance computing (HPC) principles: **hardware cache-line sympathy (64-byte POD alignment), bit-exact fixed-point determinism (Q16.16 SIMD), tiered memory hierarchies (NUMA DDR5 + CXL 3.0 Far Memory + NVMe `io_uring`), ABA-free lock-free atomics, kernel-bypass CPU core isolation (`isolcpus`/`nohz_full`), zero-stall Epoch-Based Double-Buffered Connectome Swapping (EBR-Topology), and multi-scale condensed biophysical dynamics**.
 
-To transition from an isolated mathematical simulator into a fully functional, autonomous, embodied cognitive organism, VirtualCortex organizes its capabilities across seven decoupled, production-grade **Rust 2024 / 2026 Cargo Workspace crates**:
-1. **`cortex-core` (Central Nervous System / CNS)**: Deterministic, biophysically condensed simulation physics engine.
+To transition from an isolated mathematical simulator into an autonomous, embodied cognitive organism, VirtualCortex structures its operational domain across seven decoupled, production-grade **Rust 2024 / 2026 Cargo Workspace crates**:
+1. **`cortex-core` (Central Nervous System / CNS)**: The deterministic, biophysically condensed simulation physics engine.
 2. **`cortex-connectome` (Anatomical Blueprint)**: Biological connectome priors derived from the Allen Brain Atlas, structured into canonical 6-layer microcolumns and hydrated via zero-copy memory-mapped (`.cortex`) files.
 3. **`cortex-sensory` (Peripheral Nervous System / PNS)**: Hot-pluggable event encoders (AER-64, DVS vision, cochlear gammatone filters, IMU kinetics, e-skin) gated at the Thalamocortical boundary (HAL).
 4. **`cortex-embodiment` (Sensorimotor Closed-Loop Bridge)**: Zero-latency POSIX shared-memory IPC (`/dev/shm`) linking Layer 5 motor burst outputs to physics engines (NVIDIA Isaac Sim, MuJoCo) and physical robots under a 1ms hard real-time barrier.
@@ -23,6 +23,29 @@ To transition from an isolated mathematical simulator into a fully functional, a
 7. **`cortex-telemetry` (Zero-Overhead Observability SDK)**: Non-invasive in-kernel eBPF probes, SPSC ring-buffer LFP synthesizer, real-time spike raster streamer, and headless introspection tools.
 
 By decomposing the neocortical computational graph into a **Three-Tier Multi-Scale Hierarchy**—Continuous Neural Mass Fields (Macro), Multi-Compartment Pyramidal Units with Larkum Backpropagation-Activated Calcium (BAC) firing and Tsodyks-Markram short-term plasticity (Meso), and Sparse Event Spikes (Micro)—VirtualCortex delivers the functional computational capacity of an **86-billion-node neocortex within ~29.62 GB of physical RAM, sustaining over 120 million spikes per second (120 MSpikes/s) line-rate throughput with a P99.99 tail dispatch latency below 35 nanoseconds on a single commodity dual-socket 64-core COTS server**.
+
+## Table of Contents
+
+- [VirtualCortex: A Production-Grade, Deterministic Neuromorphic Engine for Scalable Spiking Neural Computing](#virtualcortex-a-production-grade-deterministic-neuromorphic-engine-for-scalable-spiking-neural-computing)
+  - [Abstract](#abstract)
+  - [Table of Contents](#table-of-contents)
+  - [1. Foundational Doctrine: \"Latest != Newest\"](#1-foundational-doctrine-latest--newest)
+  - [2. The Nine Formal Architectural Invariants](#2-the-nine-formal-architectural-invariants)
+  - [3. Memory Hierarchy & Microarchitectural Contracts](#3-memory-hierarchy--microarchitectural-contracts)
+  - [4. Multi-Scale Biophysical Condensation Engine (Fidelity 5.0)](#4-multi-scale-biophysical-condensation-engine-fidelity-50)
+  - [5. Microsecond Event Dispatch & Timing Pipeline](#5-microsecond-event-dispatch--timing-pipeline)
+  - [6. Continuous Structural Plasticity Engine (Axonal Sprouting)](#6-continuous-structural-plasticity-engine-axonal-sprouting)
+  - [7. Cortical Connectome Blueprints & Laminar Microcolumns (`cortex-connectome`)](#7-cortical-connectome-blueprints--laminar-microcolumns-cortex-connectome)
+  - [8. Pluggable Neuromorphic Sensory Ingestion & Thalamic HAL (`cortex-sensory`)](#8-pluggable-neuromorphic-sensory-ingestion--thalamic-hal-cortex-sensory)
+  - [9. Developmental Embodiment & Sub-Millisecond Closed-Loop Physics (`cortex-embodiment`)](#9-developmental-embodiment--sub-millisecond-closed-loop-physics-cortex-embodiment)
+  - [10. Neuromodulatory Value Dynamics & Three-Factor Plasticity (`cortex-neuromod`)](#10-neuromodulatory-value-dynamics--three-factor-plasticity-cortex-neuromod)
+  - [11. Episodic Memory, Cognitive Mapping & Offline Consolidation (`cortex-hippocampus`)](#11-episodic-memory-cognitive-mapping--offline-consolidation-cortex-hippocampus)
+  - [12. Quantitative Pareto Frontier & Hardware Resource Budget](#12-quantitative-pareto-frontier--hardware-resource-budget)
+  - [13. Zero-Overhead Observability, Telemetry & Introspection (`cortex-telemetry`)](#13-zero-overhead-observability-telemetry--introspection-cortex-telemetry)
+  - [14. Reliability, Fault Isolation & Crash Consistency](#14-reliability-fault-isolation--crash-consistency)
+  - [15. Production Reference Specifications in Rust 2024 / 2026](#15-production-reference-specifications-in-rust-2024--2026)
+  - [16. Conclusion & Theoretical Implications](#16-conclusion--theoretical-implications)
+  - [📜 License & Copyright](#-license--copyright)
 
 ---
 
@@ -89,7 +112,7 @@ VirtualCortex exploits these silicon physical advantages to condense massive red
 Every subsystem in VirtualCortex is bound by nine mathematically verifiable invariants:
 
 ### Invariant 1: Exact 64-Byte POD Cache-Line Alignment
-Every primary actor struct (`DendriticSuperNeuron`, `SynapseBlock`, `HyperColumnState`, `CortexFileHeader`) must occupy exactly 64 bytes of memory, matching modern CPU L1/L2/L3 cache-line sizes (`#[repr(C, align(64))]`). No struct may cross cache-line boundaries, eliminating split-lock penalties and false sharing.
+Every primary actor struct (`DendriticSuperNeuron`, `SynapseBlock`, `HyperColumnState`, `CortexFileHeader`, `HippocampalAttractorState`) must occupy exactly 64 bytes of memory, matching modern CPU L1/L2/L3 cache-line sizes (`#[repr(C, align(64))]`). No struct may cross cache-line boundaries, eliminating split-lock penalties and false sharing.
 <!-- @assert-count target="crates/cortex-core" symbol="DendriticSuperNeuron" min="1" -->
 <!-- @assert-count target="crates/cortex-core" symbol="SynapseBlock" min="1" -->
 
@@ -616,8 +639,45 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 ```
 
-### 15.1 Static Compile-Time Architecture Guards
+### 15.1 Core Rust Struct Specifications
 ```rust
+use std::sync::atomic::{AtomicI32, AtomicU8, AtomicU64, Ordering};
+
+/// Strict 64-byte POD cache-line aligned multi-compartment super-neuron.
+#[repr(C, align(64))]
+pub struct DendriticSuperNeuron {
+    pub id: u64,                        // [0..8] Packed node/column/cluster ID
+    pub mailbox_head_ptr: AtomicU64,    // [8..16] Lock-free MPSC mailbox head
+    pub mailbox_tag: AtomicU64,         // [16..24] 64-bit ABA generation counter
+    pub v_soma: i32,                    // [24..28] Somatic membrane potential (Q16.16)
+    pub v_basal: i32,                   // [28..32] Basal feedforward potential (Q16.16)
+    pub v_apical: i32,                  // [32..36] Apical contextual potential (Q16.16)
+    pub v_thresh: i32,                  // [36..40] Dynamic adaptive threshold (Q16.16)
+    pub bac_plateau_ticks: u16,         // [40..42] Larkum BAC calcium burst countdown
+    pub refractory_ticks: u16,          // [42..44] Absolute refractory countdown
+    pub last_soma_spike_tick: u32,      // [44..48] Somatic action potential timestamp
+    pub synapse_slab_idx: u32,          // [48..52] Index into SynapseBlock arena
+    pub plastic_delta_head: u16,        // [52..54] Index into CXL.mem delta table
+    pub spatial_voxel_morton: u16,      // [54..56] 16-bit Morton spatial voxel code
+    pub gate_state: AtomicU8,           // [56] Virtual actor state machine flag
+    pub flags: u8,                      // [57] BURST_MODE / Inhibitory Flags
+    pub stp_r_ves: u8,                  // [58] Tsodyks-Markram vesicle pool (STD)
+    pub stp_u_rel: u8,                  // [59] Tsodyks-Markram release fraction (STF)
+    pub _reserved: [u8; 4],             // [60..64] Hardware cache-line alignment padding
+}
+
+/// Strict 64-byte synaptic connection block.
+#[repr(C, align(64))]
+pub struct SynapseBlock {
+    pub target_neuron_ids: [u32; 4],    // [0..16] 4 target neuron indices
+    pub weights_q16: [i16; 4],          // [16..24] 4 static weights (Q16.16)
+    pub delays_ticks: [u16; 4],         // [24..32] Axonal transmission delays
+    pub next_block_idx: u32,            // [32..36] Index to chained overflow block
+    pub last_spike_tick: u32,           // [36..40] Synapse timestamp for STDP
+    pub _reserved: [u8; 24],            // [40..64] Cache-line alignment padding
+}
+
+/// Static compile-time architecture guards.
 const _: () = {
     assert!(std::mem::size_of::<DendriticSuperNeuron>() == 64);
     assert!(std::mem::align_of::<DendriticSuperNeuron>() == 64);

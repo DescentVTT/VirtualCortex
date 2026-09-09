@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cortex-core",
+    "crates/cortex-connectome",
+    "crates/cortex-sensory",
+    "crates/cortex-embodiment",
+    "crates/cortex-neuromod",
+    "crates/cortex-hippocampus",
+    "crates/cortex-telemetry",
+]
