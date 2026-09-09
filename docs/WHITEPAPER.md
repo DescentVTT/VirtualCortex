@@ -27,7 +27,7 @@ To transition from an isolated mathematical simulator into an autonomous, embodi
 10. **`cortex-fabric` (Distributed Scale-Out Cluster Mesh)**: Kernel-bypass RDMA (RoCEv2 / InfiniBand) messaging, CXL 3.0 multi-host shared memory fabric, and microsecond distributed causal barrier synchronization.
 11. **`cortex-telemetry` (Zero-Overhead Observability SDK)**: Non-invasive in-kernel eBPF probes, SPSC ring-buffer LFP synthesizer, real-time spike raster streamer, and headless introspection tools.
 
-By decomposing the neocortical computational graph into a **Three-Tier Multi-Scale Hierarchy**—Continuous Neural Mass Fields (Macro), Multi-Compartment Pyramidal Units with Larkum Backpropagation-Activated Calcium (BAC) firing and Tsodyks-Markram short-term plasticity (Meso), and Sparse Event Spikes (Micro)—VirtualCortex delivers the functional computational capacity of an **86-billion-node whole-brain cognitive organism within ~32.4 GB of physical RAM, sustaining over 120 million spikes per second (120 MSpikes/s) line-rate throughput with a P99.99 tail dispatch latency below 35 nanoseconds on a single commodity dual-socket COTS server**.
+By decomposing the neocortical computational graph into a **Three-Tier Multi-Scale Hierarchy**—Continuous Neural Mass Fields (Macro), Multi-Compartment Pyramidal Units with Larkum Backpropagation-Activated Calcium (BAC) firing and Tsodyks-Markram short-term plasticity (Meso), and Sparse Event Spikes (Micro)—VirtualCortex delivers the functional computational capacity of an **86-billion-node whole-brain cognitive organism within ~32.40 GB of physical RAM, sustaining over 120 million spikes per second (120 MSpikes/s) line-rate throughput with a P99.99 tail dispatch latency below 35 nanoseconds on a single commodity dual-socket COTS server**.
 
 ---
 
@@ -63,6 +63,11 @@ By decomposing the neocortical computational graph into a **Three-Tier Multi-Sca
 ## 1. Foundational Doctrine: "Latest != Newest"
 
 In modern computer systems engineering, architectural maturity is not demonstrated by adopting transient programming language trends or unverified runtime layers. In 2026+, true architectural leadership is defined by **mechanical sympathy, bounded latency Service Level Agreements (SLAs), mathematically provable safety invariants, bit-exact reproducibility, and zero-allocation runtime guarantees**.
+
+Modern compute architectures are bounded by immovable physical laws:
+- **Speed-of-Light Signal Propagation**: Approximately $0.15\,\text{m/ns}$ in silicon and copper interconnections.
+- **DRAM Access Wall**: Uncached random DRAM accesses take $60\sim 80\,\text{ns}$, while an arithmetic logic unit (ALU) cycle takes $\approx 0.25\,\text{ns}$—a $300\times$ disparity.
+- **Cache Line Sizing**: Standard x86_64 and ARM Neoverse processors fetch memory strictly in 64-byte chunks. Unaligned or scattered data structures waste over $90\%$ of memory bandwidth on unused cache lines.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -597,7 +602,7 @@ VirtualCortex proves that human-scale neuromorphic computation and embodied auto
 1. **Mechanical Cache Sympathy**: Structuring all core entities as 64-byte POD cache-line aligned entities eliminates pointer dereferencing, split locks, and false sharing.
 2. **Mathematical Condensation**: Discretizing complex biophysical dynamics (Matthew Larkum BAC calcium bursts, Tsodyks-Markram short-term plasticity, astrocytic fields) into integer automata preserves functional realism without floating-point bloat.
 3. **Whole-Brain Anatomical Completeness**: Unifying the **11 first-class crates**—Cortex, Connectome, Sensory, Embodiment, Basal Ganglia, Cerebellum, Neuromodulation, Hippocampus, Homeostasis, Distributed Fabric, and Telemetry—transforms VirtualCortex into a complete autonomous cognitive organism.
-4. **Hardware-Native Memory Tiering**: Coordinating L1/L3 SRAM, NUMA DDR5, CXL 3.0 Far Memory, and NVMe `io_uring` delivers an **86-billion-node complete cognitive organism within ~32.4 GB of physical RAM**.
+4. **Hardware-Native Memory Tiering**: Coordinating L1/L3 SRAM, NUMA DDR5, CXL 3.0 Far Memory, and NVMe `io_uring` delivers an **86-billion-node complete cognitive organism within ~32.40 GB of physical RAM**.
 
 ---
 
