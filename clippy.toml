@@ -1,0 +1,10 @@
+# Clippy configuration for the workspace (ADR-0029).
+#
+# TC-4: no IEEE-754 in any crate. `clippy::disallowed_types` is denied by `[workspace.lints]`
+# in Cargo.toml and inherited by every state crate and the benchmark crate; the runtime crate
+# denies it in its own `[lints]` table. The spec-guard directives in whitepaper §2.2 hold the
+# document's side of the same rule.
+disallowed-types = [
+    { path = "f32", reason = "TC-4: Q16.16 in i32/u32, widened to i64 (ADR-0002); no IEEE-754 in any crate" },
+    { path = "f64", reason = "TC-4: Q16.16 in i32/u32, widened to i64 (ADR-0002); no IEEE-754 in any crate" },
+]

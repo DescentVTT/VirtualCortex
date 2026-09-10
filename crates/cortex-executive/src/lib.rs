@@ -3,6 +3,9 @@
 //! (ADR-0016).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here, one of the crates that passed the lint when it was adopted (ADR-0029).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 64-byte record: one node of a lookahead tree (whitepaper §5.2.10).
 #[repr(C, align(64))]

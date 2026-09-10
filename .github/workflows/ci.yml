@@ -2,8 +2,9 @@
 #
 # Three jobs, four questions:
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
-#           is it formatted and lint-clean, and do the benchmarks still execute?
-#           All five steps are blocking; the benchmark step asserts no timing
+#           is it formatted and lint-clean (the workspace lints of ADR-0029 included),
+#           does rustdoc build without a warning, and do the benchmarks still execute?
+#           All six steps are blocking; the benchmark step asserts no timing
 #           (ADR-0014): a shared runner cannot hold a latency threshold. The
 #           toolchain is the one pinned in rust-toolchain.toml (ADR-0009).
 #   msrv  - does the workspace still build and test on the minimum supported
@@ -11,8 +12,10 @@
 #           manifest, so it lives in one place.
 #   specs - does the source tree still contain what the documents say it contains
 #           (spec-guard), are the documents consistent with one another
-#           (spec-graph), and does every live brief carry its mandatory sections
-#           (scripts/check-briefs.mjs)? All blocking. Whitepaper Appendix B
+#           (spec-graph), does every live brief carry its mandatory sections
+#           (scripts/check-briefs.mjs), and do the manifests keep TC-2, state crates
+#           without dependencies (scripts/check-deps.mjs)? All blocking. Actions are
+#           pinned to commits and the runner image to a release (ADR-0029). Whitepaper Appendix B
 #           describes the levels.
 
 name: CI
@@ -32,16 +35,16 @@ concurrency:
 jobs:
   rust:
     name: Rust (check, test, fmt, clippy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
         run: |
           rustup toolchain install
           rustup show active-toolchain
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Check
         run: cargo check --workspace --all-targets --locked
@@ -55,14 +58,19 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Rustdoc builds without a warning (ADR-0029)
+        run: cargo doc --workspace --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+
       - name: Benchmarks execute (one iteration each, no timing asserted)
         run: cargo bench -p cortex-bench --bench hot_path --locked -- --test
 
   msrv:
     name: Rust (minimum supported version)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Select the rust-version declared in Cargo.toml (an override outranks rust-toolchain.toml)
         run: |
@@ -72,7 +80,7 @@ jobs:
           rustup override set "$msrv"
           rustc -V
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Check on the MSRV
         run: cargo check --workspace --all-targets --locked
@@ -82,11 +90,11 @@ jobs:
 
   specs:
     name: Documentation (spec-guard, spec-graph)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: npm
@@ -102,3 +110,6 @@ jobs:
 
       - name: Live briefs carry their mandatory sections
         run: npm run spec:briefs
+
+      - name: State crates declare no dependencies (TC-2)
+        run: npm run spec:deps

@@ -67,7 +67,7 @@ npm ci
 npm run spec
 ```
 
-`npm run spec` 會執行三個檢查：[`@descent-vtt/spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard) 執行白皮書與 README 中嵌入的 `<!-- @assert-* -->` 斷言，確認 `crates/` 仍然含有文件宣稱的型別、且不含被禁止的東西（`f32`、`f64`、`unsafe`、`Box<`、`Vec<`…）；[`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) 檢查所有 Markdown 文件之間的連結、ADR 狀態與開放問題是否一致。兩者都以精確版本釘在 `package.json`；第三個是倉庫內的 `scripts/check-briefs.mjs`，確認每份 live brief 都帶有必要章節。三者都在 CI 中作為阻斷性檢查執行。
+`npm run spec` 會執行四個檢查：[`@descent-vtt/spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard) 執行白皮書與 README 中嵌入的 `<!-- @assert-* -->` 斷言，確認 `crates/` 仍然含有文件宣稱的型別、且不含被禁止的東西（`f32`、`f64`、`unsafe`、`Box<`、`Vec<`…）；[`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) 檢查所有 Markdown 文件之間的連結、ADR 狀態與開放問題是否一致。兩者都以精確版本釘在 `package.json`；第三、第四個是倉庫內的 `scripts/check-briefs.mjs`（每份 live brief 都帶有必要章節）與 `scripts/check-deps.mjs`（state crate 不宣告任何依賴，TC-2）。四者都在 CI 中作為阻斷性檢查執行。
 
 ## 如何貢獻
 

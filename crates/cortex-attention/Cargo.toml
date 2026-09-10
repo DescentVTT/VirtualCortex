@@ -9,3 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+
+# Inherited from [workspace.lints]: no `unsafe`, no `f32`/`f64` (ADR-0029).
+[lints]
+workspace = true
