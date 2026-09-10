@@ -1,0 +1,11 @@
+[package]
+name = "cortex-knowledge"
+description = "Semantic ontology nodes: categories, affordances and consolidated world knowledge for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

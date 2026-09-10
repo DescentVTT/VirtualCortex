@@ -1,0 +1,11 @@
+[package]
+name = "cortex-tools"
+description = "Tool-invocation frames for brokered actions on a digital environment for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

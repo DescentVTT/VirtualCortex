@@ -1,0 +1,11 @@
+[package]
+name = "cortex-affect"
+description = "Interoceptive state: allostatic load, somatic comfort and mood baseline for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

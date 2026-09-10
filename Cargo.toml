@@ -18,6 +18,21 @@ members = [
     "crates/cortex-homeostasis",
     "crates/cortex-fabric",
     "crates/cortex-telemetry",
+    # Admitted by ADR-0016 (2026-09-10); whitepaper §5.2.19 to §5.2.32.
+    "crates/cortex-thalamus",
+    "crates/cortex-linguistic",
+    "crates/cortex-tools",
+    "crates/cortex-attention",
+    "crates/cortex-affect",
+    "crates/cortex-autonomic",
+    "crates/cortex-spatial",
+    "crates/cortex-curiosity",
+    "crates/cortex-social",
+    "crates/cortex-ethics",
+    "crates/cortex-knowledge",
+    "crates/cortex-reasoning",
+    "crates/cortex-arithmetic",
+    "crates/cortex-imagination",
     # Not a state crate: benchmarks only, never published (ADR-0014).
     "benches/cortex-bench",
 ]

@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 3.0.0
+version: 4.0.0
 status: active
 date: 2026-09-10
 ---
@@ -11,10 +11,10 @@ date: 2026-09-10
 
 | Document control | |
 | :--- | :--- |
-| Version | 3.0.0 |
+| Version | 4.0.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-10 |
-| Supersedes | Specification 2.8.0, "Grand 18-Crate Sovereign Autonomous Organism" |
+| Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
 | Decision log | [docs/adr/](adr/README.md) ([MADR](https://adr.github.io/madr/) format) |
@@ -67,11 +67,11 @@ Every claim about the system carries one of four **status labels**, which state 
 
 VirtualCortex is a Rust workspace for building a **spiking neural network (SNN) engine on the virtual-actor model, constrained to a single physical server**. Its design premise is that biological neural tissue is sparse, event-driven, asynchronous and defined by its connectivity, and that a general-purpose CPU can execute such a system efficiently only when every data structure respects the physical realities of the machine: the 64-byte cache line, the memory wall, the branch predictor, and the cost of a heap allocation or a system call on a hot path.
 
-The engine therefore rests on five axioms (§4): neural units exist virtually and are materialised on demand; state and compute are decoupled, so that a fixed pool of worker threads services tens of millions of passive records; each record is owned by at most one worker per tick, enforced by an atomic gate; axonal conduction delay is a constant-time index into a timing wheel, never an operating-system timer; and inactive tissue is evicted to local storage by a metabolic sweep. Around this core, the workspace defines subsystems that mirror the functional anatomy of the mammalian brain: sensory ingestion, embodiment, basal-ganglia action selection, cerebellar forward models, amygdalar salience, a global workspace, a vector-symbolic bridge, prefrontal planning, predictive coding, agency attribution, neuromodulation, hippocampal memory, homeostasis, an immune scrubber, a scale-out fabric and telemetry.
+The engine therefore rests on five axioms (§4): neural units exist virtually and are materialised on demand; state and compute are decoupled, so that a fixed pool of worker threads services tens of millions of passive records; each record is owned by at most one worker per tick, enforced by an atomic gate; axonal conduction delay is a constant-time index into a timing wheel, never an operating-system timer; and inactive tissue is evicted to local storage by a metabolic sweep. Around this core, the workspace defines subsystems that mirror the functional anatomy of the mammalian brain: sensory ingestion, embodiment, basal-ganglia action selection, cerebellar forward models, amygdalar salience, a global workspace, a vector-symbolic bridge, prefrontal planning, predictive coding, agency attribution, neuromodulation, hippocampal memory, homeostasis, an immune scrubber, a scale-out fabric and telemetry; and, admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md) on 2026-09-10, a thalamic relay, native construction-grammar frames, brokered tool invocation, foveal attention, interoception, autonomic vitals, a metric cognitive map, epistemic curiosity, social perspective, an ethical veto gate, a semantic ontology, symbolic rules, an exact arithmetic scratchpad and a counterfactual canvas.
 
-**What exists today (Implemented).** Eighteen `#![no_std]` crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: sixteen 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Five crates carry small, deterministic, integer-only update functions with boundary tests; four more carry layout tests. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
+**What exists today (Implemented).** Thirty-two `#![no_std]` crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: thirty 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Twenty-two crates carry small, deterministic, integer-only update rules with boundary tests (the Logic column of §1.6), and every crate carries a test module. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
 
-**What is designed but not built (Specified).** The worker executor, mailboxes, the timing-wheel dispatch path, the `.cortex` memory-mapped image loader, the embodiment shared-memory ring, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the placeholder functions noted in §5.
+**What is designed but not built (Specified).** The worker executor, mailboxes, the delivery path from the timing wheel into mailboxes, the `.cortex` memory-mapped image loader, the shared-memory mappings of the embodiment and tool rings and the broker process behind the tool ring, the lexicon that realises linguistic frames as tokens, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the rules noted in §5.
 
 **What must be proved (Hypothesis).** That multi-compartment "super-neuron" records can condense the behaviour of point-neuron populations at a ratio that makes whole-brain-scale behaviour reachable within a single 64 GB server. The capacity model in Appendix A is parameterised on that ratio and is a plan, not a measurement.
 
@@ -107,9 +107,10 @@ VirtualCortex attacks the problem from the hardware upward. The target is not to
 | FR-3 | Schedule delayed spike delivery in $O(1)$ time using a two-tier timing wheel. | Implemented (structure) · Specified (dispatch) (§5.2.1, §6.2) |
 | FR-4 | Load a whole connectome image by memory mapping, without a deserialisation pass. | Specified (§8.7) |
 | FR-5 | Ingest events from hot-pluggable peripherals through a trait-based hardware abstraction layer. | Implemented (trait) · Specified (runtime) (§5.2.3) |
-| FR-6 | Exchange motor commands and proprioceptive feedback with a physics engine or robot under a 1 ms period. | Specified (§5.2.4, §6.4) |
+| FR-6 | Exchange motor commands and proprioceptive feedback with a physics engine or robot under a 1 ms period. | Implemented (frames, ring protocol) · Specified (mapping, loop, torque decoder) (§5.2.4, §6.4) |
 | FR-7 | Provide subcortical, cortical and systemic subsystems as independent crates with 64-byte state records. | Implemented (records) · Specified (dynamics) (§5.2) |
 | FR-8 | Verify all layout invariants at compile time and all documentation claims in CI. | Implemented (Appendix B) |
+| FR-9 | Act on a digital environment through a broker outside the engine process, as 64-byte shared-memory frames that pass an in-engine veto gate first; and realise language natively, from hypervector unbinding into construction-grammar frames, with no external language model. | Implemented (frames, gate rule, frame assembly) · Specified (broker, ring mapping, unbinding, lexicon) (§5.2.20, §5.2.21, §5.2.28, §6.8, §6.9) |
 
 ### 1.3 Quality goals
 
@@ -135,7 +136,7 @@ Ordered by priority. Each is refined into measurable scenarios in §10.
 
 ### 1.5 Scope and non-goals
 
-In scope: a single-node engine, its state model, its subsystems, its interfaces to the outside world, and its verification.
+In scope: a single-node engine, its state model, its subsystems, its interfaces to the outside world (sensors, a body, platform vitals and a brokered digital environment), its native language realisation, and its verification.
 
 Out of scope, by design. These are the boundaries the founding design note drew and they still hold:
 
@@ -143,6 +144,8 @@ Out of scope, by design. These are the boundaries the founding design note drew 
 - **Cross-machine fault tolerance inside the engine.** The engine assumes a node does not partially fail. High availability, if needed, wraps the engine with snapshots; it is not built into the tick loop. Multi-node *scale-out* (§5.2.17) is a data-plane concern and is Specified, not Implemented.
 - **All-to-all connectivity.** Mailboxes assume the small-world sparsity of biological tissue. A dense graph exhausts memory bandwidth by construction.
 - **A general-purpose actor framework.** Actors here are passive 64-byte records, not objects with behaviour; there is no supervision tree, no message serialisation and no location transparency beyond the node.
+
+One boundary moved on 2026-09-10 ([ADR-0016](adr/0016-thirty-two-crate-architecture.md)): the engine may act on a digital environment, through a broker process outside its own seccomp filter (§8.10). That does not make the engine a general-purpose framework: a tool call is a 64-byte frame in a shared-memory ring, exactly as a motor command is. Language stays inside the engine: frames are assembled natively from hypervector unbinding (§5.2.20) and no external language model is part of the system.
 
 ### 1.6 Implementation status at a glance
 
@@ -168,12 +171,26 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | yes | yes | yes | `update_circadian_tick` |
 | `cortex-fabric` | `FabricPacketHeader` | 64 B | yes | yes | yes | — |
 | `cortex-telemetry` | `LfpSamplePacket` | 64 B | yes | yes | yes | — |
+| `cortex-thalamus` | `ThalamicRelayNode` | 64 B | yes | yes | yes | `relay` gate (tonic / burst / closed) |
+| `cortex-linguistic` | `LinguisticFrameSlot` | 64 B | yes | yes | yes | `bind_role`, `realisation_order`, `advance_prosody` (recurrent cell) |
+| `cortex-tools` | `ToolInvocationFrame` | 64 B | yes | yes | yes | frame state machine |
+| `cortex-attention` | `FovealAttentionFocus` | 64 B | yes | yes | yes | saccade state machine |
+| `cortex-affect` | `InteroceptiveState` | 64 B | yes | yes | yes | `integrate` |
+| `cortex-autonomic` | `AutonomicVitalsState` | 64 B | yes | yes | yes | `sample` limit check |
+| `cortex-spatial` | `SpatialGridCoordinate` | 64 B | yes | yes | yes | `integrate`, `fix` |
+| `cortex-curiosity` | `CuriosityExplorationVector` | 64 B | yes | yes | yes | `visit` |
+| `cortex-social` | `SocialPerspectiveNode` | 64 B | yes | yes | yes | `resonate`, `update_trust` |
+| `cortex-ethics` | `EthicalEvaluationGate` | 64 B | yes | yes | yes | `evaluate` (veto) |
+| `cortex-knowledge` | `SemanticOntologyNode` | 64 B | yes | yes | yes | `consolidate`, `affords` |
+| `cortex-reasoning` | `SymbolicRuleNode` | 64 B | yes | yes | yes | `evaluate` (truth table) |
+| `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B | yes | yes | yes | `execute` (eight opcodes, 128-bit) |
+| `cortex-imagination` | `MentalCanvasFrame` | 64 B | yes | yes | yes | `step`, `has_diverged` |
 
-The workspace manifest lists exactly eighteen state crates under `crates/`, plus the benchmark crate `benches/cortex-bench` ([ADR-0014](adr/0014-benchmark-harness.md)), which is not a state crate and is never published. Every state crate declares an empty dependency list, inherits its version, edition (2024), minimum supported Rust version (1.85), authors, license and repository from `[workspace.package]`, carries a compile-time layout assertion block, and carries a unit-test module; every public function and associated constant has at least one test (brief 007).
+The workspace manifest lists exactly thirty-two state crates under `crates/` (eighteen from the founding decomposition and fourteen admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md)), plus the benchmark crate `benches/cortex-bench` ([ADR-0014](adr/0014-benchmark-harness.md)), which is not a state crate and is never published. Every state crate declares an empty dependency list, inherits its version, edition (2024), minimum supported Rust version (1.85), authors, license and repository from `[workspace.package]`, carries a compile-time layout assertion block, and carries a unit-test module; every public function and associated constant has at least one test (brief 007).
 
-<!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="18" reason="the workspace has eighteen member crates; update §1.6 and §5 if this changes" -->
-<!-- @assert-count target="crates" symbol="const _: () = {" min="18" glob="*.rs" reason="every crate carries a compile-time layout assertion block (F-18 closed)" -->
-<!-- @assert-count target="crates" symbol="license.workspace = true" expected="18" glob="Cargo.toml" reason="every crate inherits its metadata from [workspace.package] (F-9 closed)" -->
+<!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="32" reason="the workspace has thirty-two member crates (ADR-0016); update §1.6 and §5 if this changes" -->
+<!-- @assert-count target="crates" symbol="const _: () = {" min="32" glob="*.rs" reason="every crate carries a compile-time layout assertion block (F-18 closed)" -->
+<!-- @assert-count target="crates" symbol="license.workspace = true" expected="32" glob="Cargo.toml" reason="every crate inherits its metadata from [workspace.package] (F-9 closed)" -->
 <!-- @assert-count target="crates/cortex-core" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
 <!-- @assert-count target="crates/cortex-connectome" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
 <!-- @assert-count target="crates/cortex-sensory" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
@@ -192,6 +209,20 @@ The workspace manifest lists exactly eighteen state crates under `crates/`, plus
 <!-- @assert-count target="crates/cortex-homeostasis" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
 <!-- @assert-count target="crates/cortex-fabric" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
 <!-- @assert-count target="crates/cortex-telemetry" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-thalamus" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-linguistic" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-tools" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-attention" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-affect" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-autonomic" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-spatial" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-curiosity" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-social" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-ethics" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-knowledge" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-reasoning" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-arithmetic" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
+<!-- @assert-count target="crates/cortex-imagination" symbol="#[cfg(test)]" min="1" glob="*.rs" reason="F-14: every state crate carries a unit-test module" -->
 <!-- @assert-absence target="crates" symbol="unsafe" word="true" glob="*.rs" reason="no unsafe code exists yet; introducing it requires an ADR (§8.10)" -->
 
 ---
@@ -226,11 +257,11 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 | ID | Constraint | Maturity |
 | :--- | :--- | :--- |
 | TC-1 | The engine is written in Rust and builds on stable `rustc`. Nightly features MUST NOT be required. | Implemented |
-| TC-2 | State crates MUST declare no external dependencies. Runtime crates MAY depend on a vetted allow-list ([ADR-0005](adr/0005-crate-per-subsystem.md)). | Implemented (all 18 state crates; the only third-party dependency in the workspace is the benchmark harness, a dev-dependency of `benches/cortex-bench`, [ADR-0014](adr/0014-benchmark-harness.md)) |
+| TC-2 | State crates MUST declare no external dependencies. Runtime crates MAY depend on a vetted allow-list ([ADR-0005](adr/0005-crate-per-subsystem.md)). | Implemented (all 32 state crates; the only third-party dependency in the workspace is the benchmark harness, a dev-dependency of `benches/cortex-bench`, [ADR-0014](adr/0014-benchmark-harness.md)) |
 | TC-3 | Every primary state record MUST be `#[repr(C)]`, and its size and alignment MUST be asserted at compile time. | Implemented (§5.2) |
 | TC-4 | `f32` and `f64` MUST NOT appear in any crate under `crates/`. Dynamics use Q16.16 (§8.1). | Implemented |
 | TC-5 | The simulation hot path MUST NOT allocate, MUST NOT block, and MUST NOT make system calls after initialisation. | Specified (no hot path exists yet; §8.6) |
-| TC-6 | State crates MUST be `#![no_std]`. | Implemented (18 of 18; brief 002) |
+| TC-6 | State crates MUST be `#![no_std]`. | Implemented (32 of 32; brief 002, ADR-0016) |
 | TC-7 | The runtime target is Linux on x86-64-v4 or ARMv9-A; state crates MUST remain portable to any target with 64-bit atomics. | Specified |
 | TC-8 | Crates MUST declare `edition = "2024"` and `rust-version = "1.85"` by inheritance from `[workspace.package]`; the toolchain CI builds with MUST be pinned in `rust-toolchain.toml` and moved only deliberately. | Implemented ([ADR-0009](adr/0009-rust-edition-and-msrv.md); finding F-5 closed; a CI job builds and tests on the MSRV) |
 | TC-9 | `unsafe` MUST NOT be introduced without an ADR that names the invariant it upholds and the test that checks it. | Implemented (zero `unsafe` today) |
@@ -238,12 +269,13 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 <!-- @assert-absence target="crates" symbol="f32" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
 <!-- @assert-absence target="crates" symbol="f64" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
 <!-- @assert-absence target="crates" symbol="std::thread" glob="*.rs" exclude="tests" reason="TC-5: state crates do not spawn threads; the executor is a separate runtime concern; integration tests under crates/*/tests/ are excluded" -->
-<!-- @assert-count target="crates" symbol="#![no_std]" glob="*.rs" expected="18" reason="TC-6: every crate is no_std (F-6 closed by brief 002)" -->
+<!-- @assert-count target="crates" symbol="#![no_std]" glob="*.rs" expected="32" reason="TC-6: every crate is no_std (F-6 closed by brief 002; ADR-0016)" -->
 <!-- @assert-absence target="crates" symbol="Box<" glob="*.rs" exclude="tests" reason="TC-5: no heap-owning types in state crates; integration tests under crates/*/tests/ are excluded" -->
 <!-- @assert-absence target="crates" symbol="Vec<" glob="*.rs" exclude="tests" reason="TC-5: no heap-owning types in state crates; integration tests under crates/*/tests/ are excluded" -->
+<!-- @assert-absence target="crates" symbol="String" word="true" glob="*.rs" exclude="tests" reason="TC-5: no heap-owning types in state crates (ADR-0016 restated the rule); integration tests under crates/*/tests/ are excluded" -->
 <!-- @assert-count target="Cargo.toml" symbol='edition = "2024"' expected="1" reason="TC-8: the workspace edition is 2024 (ADR-0009)" -->
 <!-- @assert-count target="Cargo.toml" symbol='rust-version = "1.85"' expected="1" reason="TC-8: the minimum supported Rust version is 1.85 (ADR-0009)" -->
-<!-- @assert-count target="crates" symbol="rust-version.workspace = true" expected="18" glob="Cargo.toml" reason="TC-8: every state crate inherits the MSRV (ADR-0009)" -->
+<!-- @assert-count target="crates" symbol="rust-version.workspace = true" expected="32" glob="Cargo.toml" reason="TC-8: every state crate inherits the MSRV (ADR-0009)" -->
 
 ### 2.3 Conventions
 
@@ -277,6 +309,8 @@ flowchart LR
     IMG[(.cortex connectome image<br/>local NVMe)]
     TEL[Telemetry consumers<br/>raster / LFP stream]
     PEER[Peer nodes<br/>fabric - Specified]
+    BROKER[Tool broker process<br/>digital environment - Specified]
+    VITALS[Platform sensors<br/>voltage / temperature / power]
 
     DVS & AUD & IMU & SKIN -- "SensoryEvent (8 B)" --> CORE
     CORE -- "torque frame, 1 ms" --> PHYS & ROBOT
@@ -284,6 +318,8 @@ flowchart LR
     IMG -- "mmap" --> CORE
     CORE -- "LfpSamplePacket (64 B)" --> TEL
     CORE <-- "FabricPacketHeader (64 B)" --> PEER
+    CORE <-- "ToolInvocationFrame (64 B), after the veto gate" --> BROKER
+    VITALS -- "vitals sample" --> CORE
 ```
 
 ### 3.2 External interfaces
@@ -295,6 +331,8 @@ flowchart LR
 | Connectome image | in | `.cortex` file, `CortexFileHeader` + 64-byte-aligned sections | `cortex-connectome` | Implemented (header) · Specified (sections, loader) |
 | Telemetry | out | `LfpSamplePacket`, 64 B, single-producer single-consumer ring | `cortex-telemetry` | Implemented (type) · Specified (ring, eBPF taps) |
 | Fabric | bidirectional | `FabricPacketHeader`, 64 B, over RDMA verbs or CXL shared memory | `cortex-fabric` | Implemented (header) · Specified (transport) |
+| Tool broker | bidirectional | `ToolInvocationFrame`, 64 B, through a ring read by a separate broker process that holds the credentials and the allow-list (§8.10); every frame passes the veto gate of `cortex-ethics` first | `cortex-tools` | Implemented (frame state machine, gate rule) · Specified (broker, ring mapping) |
+| Platform vitals | in | Voltage, temperature and power samples from the platform's sensors into `AutonomicVitalsState::sample` | `cortex-autonomic` | Implemented (limit check) · Specified (sensor driver, shedding policy) |
 
 ---
 
@@ -326,6 +364,8 @@ The founding design note fixed five axioms. Every later subsystem is built on th
 
 One crate per functional subsystem, each exporting a single primary 64-byte record and, where the dynamics are settled, one deterministic update function ([ADR-0005](adr/0005-crate-per-subsystem.md)). Crates do not depend on one another today. When a runtime crate is introduced it will compose them; state crates MUST NOT gain dependencies on each other to keep the layout contracts independently testable.
 
+The number of crates is not a design parameter. A new state crate is admitted only by a record that names the gap it fills, with no Responsibility row in §5.2 already covering the quantity and its mechanism written in §8.8 in the same change as its layout ([ADR-0016](adr/0016-thirty-two-crate-architecture.md)); a quantity that belongs to an existing subsystem is a field in that record's reserved bytes, not a crate. Fourteen crates were admitted under that test on 2026-09-10 (§5.2.19 to §5.2.32): the boundaries of §1.5, §8.9 and §8.10 were moved to make room for three of them (the tool broker, the veto gate and the vitals flags), and the responsibilities of six existing crates were narrowed so that every quantity keeps one owner; the record lists each crate with the responsibility it took and what its neighbour kept.
+
 ---
 
 ## 5. Building block view
@@ -345,6 +385,12 @@ flowchart TB
         executive[cortex-executive]
         predictive[cortex-predictive]
         agency[cortex-agency]
+        social[cortex-social]
+        ethics[cortex-ethics]
+        knowledge[cortex-knowledge]
+        reasoning[cortex-reasoning]
+        arithmetic[cortex-arithmetic]
+        imagination[cortex-imagination]
     end
     subgraph subcortical [Subcortical layer]
         bg[cortex-basal-ganglia]
@@ -353,10 +399,18 @@ flowchart TB
         nm[cortex-neuromod]
         hc[cortex-hippocampus]
         hs[cortex-homeostasis]
+        affect[cortex-affect]
+        autonomic[cortex-autonomic]
+        spatial[cortex-spatial]
+        curiosity[cortex-curiosity]
+        attention[cortex-attention]
     end
     subgraph periphery [Periphery]
         sensory[cortex-sensory]
+        thalamus[cortex-thalamus]
         embodiment[cortex-embodiment]
+        linguistic[cortex-linguistic]
+        tools[cortex-tools]
     end
     subgraph structure [Structure]
         connectome[cortex-connectome]
@@ -377,9 +431,9 @@ Dotted edges are the *intended* dependency direction for a future runtime; today
 | :--- | :--- | :--- |
 | Foundation | `cortex-core` | Neuron and synapse records; timing wheel. |
 | Structure | `cortex-connectome` | Image format and anatomical priors. |
-| Periphery | `cortex-sensory`, `cortex-embodiment` | Ingress from sensors; egress to actuators. |
-| Subcortical | `cortex-basal-ganglia`, `cortex-cerebellum`, `cortex-salience`, `cortex-neuromod`, `cortex-hippocampus`, `cortex-homeostasis` | Action selection, motor prediction, threat, value, memory, drives. |
-| Cortical / cognitive | `cortex-workspace`, `cortex-symbolic`, `cortex-executive`, `cortex-predictive`, `cortex-agency` | Broadcast, symbols, planning, prediction, self/other. |
+| Periphery | `cortex-sensory`, `cortex-thalamus`, `cortex-embodiment`, `cortex-linguistic`, `cortex-tools` | Ingress from sensors and its relay gate; egress to actuators, to a lexicon (native language frames) and, through a broker, to a digital environment. |
+| Subcortical | `cortex-basal-ganglia`, `cortex-cerebellum`, `cortex-salience`, `cortex-neuromod`, `cortex-hippocampus`, `cortex-homeostasis`, `cortex-affect`, `cortex-autonomic`, `cortex-spatial`, `cortex-curiosity`, `cortex-attention` | Action selection, motor prediction, threat, value, memory, drives, interoception, hardware vitals, the metric map, epistemic drive, gaze. |
+| Cortical / cognitive | `cortex-workspace`, `cortex-symbolic`, `cortex-executive`, `cortex-predictive`, `cortex-agency`, `cortex-social`, `cortex-ethics`, `cortex-knowledge`, `cortex-reasoning`, `cortex-arithmetic`, `cortex-imagination` | Broadcast, symbols, planning, prediction, self/other, other minds, the veto gate, world knowledge, rules, exact arithmetic, counterfactual rehearsal. |
 | Systems | `cortex-immune`, `cortex-fabric`, `cortex-telemetry` | Memory hygiene, scale-out, observability. |
 
 ### 5.2 Level 2: crates
@@ -474,7 +528,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Responsibility | The event type every peripheral produces and the trait every peripheral driver implements. |
 | Source | `crates/cortex-sensory/src/lib.rs` |
 | Public API | `SensoryEvent`, `trait SensoryPeripheral: Send + Sync { poll_batch, peripheral_name, channel_count }` |
-| Status | Types: Implemented · Thalamic gate and hot-plug slot swap: Specified (§6.3) |
+| Status | Types: Implemented · Hot-plug slot swap: Specified (§6.3) · The relay gate is `cortex-thalamus` (§5.2.19) |
 
 **`SensoryEvent`** — 8 B, align 8, `Clone + Copy + Debug + Default + PartialEq + Eq`. An address-event representation (AER) sample.
 
@@ -872,6 +926,387 @@ Implemented rule: `circadian_phase` advances by `dt_ticks` modulo $2^{16}$; slee
 
 <!-- @assert-count target="crates/cortex-telemetry" symbol="LfpSamplePacket" min="1" word="true" -->
 
+#### 5.2.19 `cortex-thalamus` — sensory relay and gating
+
+| | |
+| :--- | :--- |
+| Responsibility | The gate between a relayed `SensoryEvent` and the cortical column it reaches: tonic, burst (decimating) or closed, with a gain. `cortex-sensory` keeps the event type and the driver trait; this crate keeps the routing decision. |
+| Source | `crates/cortex-thalamus/src/lib.rs` |
+| Public API | `ThalamicRelayNode::{set_gating_mode, relay}`; constants `GATING_TONIC` (0), `GATING_BURST` (1), `GATING_CLOSED` (2), `BURST_LENGTH` (4) |
+| Status | Layout: Implemented · Gate rule: Implemented · Burst waveform and corticothalamic synchrony: Specified (§8.8) |
+
+**`ThalamicRelayNode`** — 64 B, align 64. One per relay channel.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `relay_channel_id` | `u32` | index | Relay channel. |
+| `[4..8)` | `target_cortical_column` | `u32` | index | Column the relayed input reaches. |
+| `[8..12)` | `sensory_gain_q16` | `u32` | Q16.16 | Multiplier applied to a relayed input. |
+| `[12..16)` | `oscillation_phase_q16` | `u32` | phase | Corticothalamic phase; wraps at 16 bits (Specified). |
+| `[16..18)` | `source_address` | `u16` | address | `SensoryEvent::address` this node relays. |
+| `[18..19)` | `source_peripheral_type` | `u8` | enum | `SensoryEvent::peripheral_type` this node relays. |
+| `[19..20)` | `gating_mode` | `u8` | enum | 0 tonic · 1 burst · 2 closed. |
+| `[20..21)` | `burst_spikes_pending` | `u8` | count | Inputs withheld toward the next burst. |
+| `[21..64)` | `_reserved` | `[u8; 43]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `relay(input)` returns `input × gain` (widened, clamped) in tonic mode; in burst mode returns it for every fourth input and `None` otherwise; in closed mode returns `None` and changes nothing. `set_gating_mode` refuses an unknown mode and resets the burst counter. Six tests, including the clamp at both `i32` extremes.
+
+<!-- @assert-count target="crates/cortex-thalamus" symbol="ThalamicRelayNode" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.20 `cortex-linguistic` — native language: grounding, framing, prosody
+
+| | |
+| :--- | :--- |
+| Responsibility | The record of the engine's three-layer language pipeline, entirely inside the engine: **Layer 1**, semantic grounding, unbinds a hypervector by role, $\text{Concept} \approx S \otimes \text{Role}^{-1}$ (`cortex-symbolic`, Specified); **Layer 2**, syntactic framing, fills construction-grammar templates with strict role slots and fixes the order a lexicon emits them in (this crate, Implemented); **Layer 3**, temporal flow and prosody, runs a linear recurrent cell in saturating Q16.16, $s_{t+1} = \alpha\, s_t + k_t v_t$, whose energy band selects the particle class that fills the frame's particle slot (this crate, Implemented for the scalar cell; the fixed-dimension state vector is an arena, Specified). No external language model, transformer runtime or heap is part of the system. |
+| Source | `crates/cortex-linguistic/src/lib.rs` |
+| Public API | `LinguisticFrameSlot::{new, bind_role, filled_roles, is_complete, seal, is_sealed, realisation_order, advance_prosody}`, `required_roles(template)`, `role_order(template)`; roles `ROLE_SUBJECT`, `ROLE_ACTION`, `ROLE_OBJECT`, `ROLE_AFFECT` (bits 0–3); templates `TEMPLATE_STATE` (0), `TEMPLATE_REQUEST` (1), `TEMPLATE_NEED` (2), `TEMPLATE_CAUSATIVE` (3), `TEMPLATE_EPISTEMIC` (4); speech acts `SPEECH_ACT_ASSERTIVE` (0), `SPEECH_ACT_DIRECTIVE` (1), `SPEECH_ACT_COMMISSIVE` (2), `SPEECH_ACT_EXPRESSIVE` (3); markers `PROSODY_NONE` (0), `PROSODY_SOFTEN` (1), `PROSODY_SUGGEST` (2), `PROSODY_REFLECT` (3), `PROSODY_TOPIC_SHIFT` (4); gate bits `GATE_PARTICLE_OPEN`, `GATE_SEALED`, `GATE_ROLES_SHIFT` (4); `Q16_ONE` |
+| Status | Layout: Implemented · Layer 2 (binding, completeness, sealing, realisation order): Implemented · Layer 3 scalar cell, marker bands and trajectory hash: Implemented · Layer 1 unbinding in `cortex-symbolic`, the state-vector arena, the lexicon (Chinese and English) and the placement of the marker bands: Specified (§6.9, §8.8) |
+
+**`LinguisticFrameSlot`** — 64 B, align 64. One frame per utterance under assembly. The layout is the proposal's, byte for byte.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..2)` | `frame_template_id` | `u16` | enum | `TEMPLATE_*`. |
+| `[2..3)` | `speech_act_type` | `u8` | enum | `SPEECH_ACT_*` (assertive, directive, commissive, expressive). |
+| `[3..4)` | `politeness_level` | `u8` | level | Register; 0 plain, higher more polite; the lexicon reads it. |
+| `[4..8)` | `subject_concept_id` | `u32` | index | Concept unbound into the subject role. |
+| `[8..12)` | `action_predicate_id` | `u32` | index | Concept unbound into the action role. |
+| `[12..16)` | `object_concept_id` | `u32` | index | Concept unbound into the object role. |
+| `[16..18)` | `affect_modifier_id` | `u16` | index | Concept unbound into the affect role. |
+| `[18..19)` | `prosody_tone_marker` | `u8` | enum | `PROSODY_*`, selected by the cell's energy band. |
+| `[19..20)` | `syntax_gate_flags` | `u8` | bitfield | Bit 0 particle slot open · bit 1 sealed · bits 4–7 the `ROLE_*` bits bound so far. |
+| `[20..24)` | `confidence_q16` | `u32` | Q16.16 | Frame confidence: the weakest binding, clamped to 1.0. |
+| `[24..28)` | `recurrent_state_hash` | `u32` | hash | Running hash of the cell's trajectory, mixed on every step. |
+| `[28..32)` | `surface_token_id` | `u32` | index | Surface token the lexicon last realised. |
+| `[32..36)` | `linear_attention_energy_q16` | `i32` | Q16.16 | The cell's scalar energy $s_t$. |
+| `[36..64)` | `_reserved` | `[u8; 28]` | — | Reserved; MUST be zero. |
+
+Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly one role (refused for a mask, an affect concept wider than sixteen bits, or a sealed frame) and lowers the frame's confidence to the weakest binding; `is_complete` holds when the roles the template requires are bound, never for an unknown template; `seal` closes a complete frame; `realisation_order` is the template's order restricted to the bound roles: subject–action–object with the affect as a trailing tag, except the epistemic template, where the affect is the hedge that opens the utterance. Layer 3: `advance_prosody(α, k, v)` computes $s \leftarrow \alpha s + k v$ with every product widened to `i64` and clamped, mixes $s$ into the trajectory hash, and selects the marker from the energy's band ($|s| < \tfrac14$ none; $s \ge 1$ suggest, $s \ge \tfrac14$ soften; $s \le -1$ topic shift, $s \le -\tfrac14$ reflect), opening the particle slot when a marker is selected. Nine tests, including the truth of every template, the hedge-first epistemic order, the decay by $\alpha$, the clamp at both `i32` extremes and the determinism of the hash.
+
+<!-- @assert-count target="crates/cortex-linguistic" symbol="LinguisticFrameSlot" min="1" word="true" reason="ADR-0016" -->
+<!-- @assert-count target="crates/cortex-linguistic" symbol="advance_prosody" min="1" word="true" reason="ADR-0016: the recurrent cell of the tri-hybrid pipeline is implemented" -->
+
+#### 5.2.21 `cortex-tools` — brokered digital actuation
+
+| | |
+| :--- | :--- |
+| Responsibility | The frame through which the engine acts on a digital environment, and its state machine. The engine writes a pending frame after the veto gate (§5.2.28); a broker process outside the engine's seccomp filter (§8.10) claims it, performs the action under its own allow-list and the frame's `authorization_level`, and writes the result back in place. |
+| Source | `crates/cortex-tools/src/lib.rs` |
+| Public API | `ToolInvocationFrame::{start, complete, fail, deny, is_terminal, payload}`; constants `STATUS_PENDING` (0), `STATUS_RUNNING` (1), `STATUS_COMPLETED` (2), `STATUS_FAILED` (3), `STATUS_DENIED` (4), `PAYLOAD_BYTES` (32) |
+| Status | Layout: Implemented · State machine: Implemented · Broker and ring mapping: Specified (§6.8, §8.10) |
+
+**`ToolInvocationFrame`** — 64 B, align 64.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..8)` | `call_id` | `u64` | id | Unique call. |
+| `[8..40)` | `return_payload` | `[u8; 32]` | bytes | Result, valid up to `payload_len`. |
+| `[40..44)` | `param_hash` | `u32` | hash | Parameters, held elsewhere. |
+| `[44..48)` | `execution_status` | `u32` | enum | `STATUS_*`. |
+| `[48..50)` | `tool_category` | `u16` | enum | Broker-defined category. |
+| `[50..52)` | `action_opcode` | `u16` | enum | Broker-defined action. |
+| `[52..53)` | `authorization_level` | `u8` | level | Written by the ethics gate; checked by the broker. |
+| `[53..54)` | `payload_len` | `u8` | count | Valid bytes of the payload. |
+| `[54..64)` | `_reserved` | `[u8; 10]` | — | Reserved; MUST be zero. |
+
+Implemented rule: pending → running (`start`) → completed (`complete`, at most 32 bytes, refused otherwise with the frame unchanged) or failed (`fail`); pending → denied (`deny`). A terminal frame refuses every transition; `deny` and `fail` clear the payload length. Five tests.
+
+<!-- @assert-count target="crates/cortex-tools" symbol="ToolInvocationFrame" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.22 `cortex-attention` — foveal focus and saccades
+
+| | |
+| :--- | :--- |
+| Responsibility | Where the sensory field is sampled at full resolution, and the saccades that move it: a flight of a fixed number of ticks during which the field is not sampled, then fixation. `cortex-salience` supplies the peak that selects a target; `cortex-thalamus` gains are what foveal gating modulates. |
+| Source | `crates/cortex-attention/src/lib.rs` |
+| Public API | `FovealAttentionFocus::{begin_saccade, tick, is_in_flight}`; constant `MODE_SMOOTH_PURSUIT` (bit 0) |
+| Status | Layout: Implemented · Saccade state machine: Implemented · Salience-map selection and smooth pursuit: Specified (§8.8) |
+
+**`FovealAttentionFocus`** — 64 B, align 64. One per attention field.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `gaze_target_x_q16` | `i32` | Q16.16 | Target in the field. |
+| `[4..8)` | `gaze_target_y_q16` | `i32` | Q16.16 | Target in the field. |
+| `[8..12)` | `fixation_duration_ticks` | `u32` | ticks | Ticks since the last landing. |
+| `[12..16)` | `saccade_remaining_ticks` | `u32` | ticks | Flight ticks left; 0 while fixating. |
+| `[16..20)` | `salience_peak_magnitude_q16` | `u32` | Q16.16 | Salience that selected the target. |
+| `[20..22)` | `attention_mode_flags` | `u16` | bitfield | Bit 0 smooth pursuit (Specified). |
+| `[22..23)` | `saccade_in_flight` | `u8` | 0 / 1 | In flight. |
+| `[23..64)` | `_reserved` | `[u8; 41]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `begin_saccade` is refused while in flight or for a zero-length flight; `tick` counts a flight down and returns `true` on the tick it lands, resetting fixation, and otherwise counts fixation up (saturating). Five tests.
+
+<!-- @assert-count target="crates/cortex-attention" symbol="FovealAttentionFocus" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.23 `cortex-affect` — interoception
+
+| | |
+| :--- | :--- |
+| Responsibility | What the body feels like: pain, strain and recovery integrated into an allostatic load, a comfort signal in $[-1, 1]$ and a slow mood baseline. `cortex-homeostasis` keeps the metabolic drives and the circadian gate; `cortex-salience` keeps the aversive input itself. |
+| Source | `crates/cortex-affect/src/lib.rs` |
+| Public API | `InteroceptiveState::integrate(&mut self, pain_burst_q16, thermal_strain_q16, recovery_q16) -> i32`; constants `Q16_ONE`, `MOOD_SHIFT` (6) |
+| Status | Layout: Implemented · Integration rule: Implemented · Mood bias on `cortex-neuromod`: Specified (§8.8) |
+
+**`InteroceptiveState`** — 64 B, align 64. One per interoceptive region.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `somatic_comfort_q16` | `i32` | Q16.16 | $1 - 2\min(\text{load}, 1)$. |
+| `[4..8)` | `allostatic_load_q16` | `u32` | Q16.16 | Strain not yet recovered. |
+| `[8..12)` | `thermal_strain_q16` | `u32` | Q16.16 | Last strain input. |
+| `[12..16)` | `energy_resilience_q16` | `u32` | Q16.16 | Reserve to absorb load (Specified). |
+| `[16..20)` | `mood_baseline_q16` | `i32` | Q16.16 | Slow average of comfort. |
+| `[20..24)` | `pain_signal_burst` | `u32` | Q16.16 | Last pain input. |
+| `[24..64)` | `_reserved` | `[u8; 40]` | — | Reserved; MUST be zero. |
+
+Implemented rule: load $\leftarrow$ saturating $(\text{load} + \text{pain} + \text{strain}) - \text{recovery}$, never below zero; comfort as above; mood $\leftarrow$ mood $+ (\text{comfort} - \text{mood}) \gg 6$. Five tests, including convergence of the mood to within one step of a held comfort.
+
+<!-- @assert-count target="crates/cortex-affect" symbol="InteroceptiveState" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.24 `cortex-autonomic` — hardware vitals
+
+| | |
+| :--- | :--- |
+| Responsibility | The substrate's voltage, temperature and power in their own units, the limits they are held against, and the emergency flags that cross them. One record per worker core; the runtime samples the platform sensors outside the tick loop. `cortex-homeostasis` keeps the normalised drives derived from these. |
+| Source | `crates/cortex-autonomic/src/lib.rs` |
+| Public API | `AutonomicVitalsState::{with_limits, sample, is_within_limits}`; constants `CUT_OVER_TEMPERATURE` (bit 0), `CUT_OVER_POWER` (bit 1), `CUT_UNDER_VOLTAGE` (bit 2) |
+| Status | Layout: Implemented · Limit check: Implemented · Sensor driver, shedding and throttling policy, arousal coupling: Specified (§8.9) |
+
+**`AutonomicVitalsState`** — 64 B, align 64.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..8)` | `watchdog_heartbeat_counter` | `u64` | counter | Samples taken; wraps. |
+| `[8..12)` | `bus_voltage_mv` | `u32` | mV | Last sample. |
+| `[12..16)` | `core_temperature_milli_c` | `i32` | m°C | Last sample. |
+| `[16..20)` | `power_draw_mw` | `u32` | mW | Last sample. |
+| `[20..24)` | `arousal_tone_q16` | `u32` | Q16.16 | Autonomic arousal (Specified). |
+| `[24..28)` | `thermal_limit_milli_c` | `i32` | m°C | Cut above. |
+| `[28..32)` | `power_limit_mw` | `u32` | mW | Cut above. |
+| `[32..36)` | `voltage_floor_mv` | `u32` | mV | Cut below. |
+| `[36..38)` | `emergency_cut_flags` | `u16` | bitfield | `CUT_*` from the last sample. |
+| `[38..64)` | `_reserved` | `[u8; 26]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `sample` stores the three readings, advances the heartbeat (wrapping), and recomputes the flags from this sample alone, strictly beyond each limit; a flag does not latch, so the policy that acts on it is the runtime's. Five tests.
+
+<!-- @assert-count target="crates/cortex-autonomic" symbol="AutonomicVitalsState" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.25 `cortex-spatial` — metric cognitive map
+
+| | |
+| :--- | :--- |
+| Responsibility | Where the body is on a metric grid and which way it faces, maintained by dead-reckoning path integration between landmark fixes. `cortex-hippocampus` keeps the episodic attractor and the place field the body is in. |
+| Source | `crates/cortex-spatial/src/lib.rs` |
+| Public API | `SpatialGridCoordinate::{integrate, fix}`; constants `Q16_ONE`, `TURN_MASK` (`0xFFFF`), `CONFIDENCE_DECAY_SHIFT` (8) |
+| Status | Layout: Implemented · Path integration and fix: Implemented · Grid-cell attractor correcting drift: Specified (§8.8) |
+
+**`SpatialGridCoordinate`** — 64 B, align 64. One per navigating body.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `grid_x_q16` | `i32` | Q16.16 | Position. |
+| `[4..8)` | `grid_y_q16` | `i32` | Q16.16 | Position. |
+| `[8..12)` | `grid_z_q16` | `i32` | Q16.16 | Position. |
+| `[12..16)` | `heading_yaw_turns` | `u32` | 0..65535 | Yaw as a fraction of a turn; wraps (the phase-counter convention of §8.1). |
+| `[16..20)` | `heading_pitch_q16` | `i32` | Q16.16 | Pitch. |
+| `[20..24)` | `path_integration_confidence_q16` | `u32` | Q16.16 | 1.0 at a fix, decaying by $2^{-8}$ of itself per step. |
+| `[24..28)` | `steps_since_fix` | `u32` | count | Steps since the last fix. |
+| `[28..64)` | `_reserved` | `[u8; 36]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `integrate` adds the deltas (saturating), adds the yaw delta within the turn (wrapping), decays confidence and counts the step; `fix` sets position and yaw, restores confidence to 1.0 and zeroes the counter. Five tests, including monotone decay over 5 000 steps without wrap.
+
+<!-- @assert-count target="crates/cortex-spatial" symbol="SpatialGridCoordinate" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.26 `cortex-curiosity` — epistemic drive
+
+| | |
+| :--- | :--- |
+| Responsibility | One record per candidate target: its novelty, the uncertainty of the prediction about it, and the intrinsic urgency they produce, so that the organism's single `curiosity_drive` (`cortex-homeostasis`) can be pointed at something. |
+| Source | `crates/cortex-curiosity/src/lib.rs` |
+| Public API | `CuriosityExplorationVector::{new, visit}`; constants `Q16_ONE`, `NOVELTY_DECAY_SHIFT` (2) |
+| Status | Layout: Implemented · Visit rule: Implemented · Competition of urgencies in `cortex-basal-ganglia`: Specified (§8.8) |
+
+**`CuriosityExplorationVector`** — 64 B, align 64.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `target_state_hash` | `u32` | hash | The target. |
+| `[4..8)` | `novelty_magnitude_q16` | `u32` | Q16.16 | 1.0 before the first visit; loses a quarter of itself per visit. |
+| `[8..12)` | `epistemic_entropy_q16` | `u32` | Q16.16 | Uncertainty of the prediction about the target. |
+| `[12..16)` | `exploration_urgency_q16` | `u32` | Q16.16 | $\text{novelty}/2 + \text{error}/4 + \text{entropy}/4$. |
+| `[16..20)` | `visited_count` | `u32` | count | Visits; saturating. |
+| `[20..24)` | `prediction_error_q16` | `u32` | Q16.16 | Error of the last prediction. |
+| `[24..64)` | `_reserved` | `[u8; 40]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `new(hash)` starts at full novelty; `visit(error, entropy)` decays novelty, counts the visit, stores the inputs and returns the urgency, which cannot overflow. Five tests, including exhaustion of a target after a hundred visits.
+
+<!-- @assert-count target="crates/cortex-curiosity" symbol="CuriosityExplorationVector" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.27 `cortex-social` — other minds
+
+| | |
+| :--- | :--- |
+| Responsibility | One record per *other* agent: the intention and belief attributed to it, the trust placed in it, and the affective resonance it evokes through an empathy gain. `cortex-agency` keeps the self/other attribution of a sensory change. |
+| Source | `crates/cortex-social/src/lib.rs` |
+| Public API | `SocialPerspectiveNode::{resonate, update_trust}`; constants `Q16_ONE`, `TRUST_GAIN_SHIFT` (4), `TRUST_LOSS_SHIFT` (3) |
+| Status | Layout: Implemented · Resonance and trust rules: Implemented · Intention inference and false-belief tracking: Specified (§8.8) |
+
+**`SocialPerspectiveNode`** — 64 B, align 64.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `target_agent_id` | `u32` | id | The other agent; the self is agent 0 of `cortex-agency`. |
+| `[4..8)` | `inferred_intention_id` | `u32` | index | Attributed intention (Specified). |
+| `[8..12)` | `attention_focus_hash` | `u32` | hash | What the agent attends to (Specified). |
+| `[12..16)` | `belief_state_hash` | `u32` | hash | What the agent is believed to believe (Specified). |
+| `[16..20)` | `emotional_valence_q16` | `i32` | Q16.16 | The agent's last observed valence. |
+| `[20..24)` | `trust_score_q16` | `u32` | Q16.16 | Trust in $[0, 1]$. |
+| `[24..28)` | `empathy_gain_q16` | `u32` | Q16.16 | Fraction of the agent's valence mirrored. |
+| `[28..32)` | `resonance_q16` | `i32` | Q16.16 | Mirrored valence from the last `resonate`. |
+| `[32..33)` | `false_belief_flag` | `u8` | 0 / 1 | The agent's belief is known to be false (Specified). |
+| `[33..64)` | `_reserved` | `[u8; 31]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `resonate(v)` stores $v$ and returns $v \times \text{gain}$ (widened, clamped); `update_trust(confirmed)` closes $1/16$ of the distance to 1.0 on a confirmation and removes $1/8$ of the trust on a disconfirmation, so trust breaks faster than it builds and stays in $[0, 1]$. Five tests.
+
+<!-- @assert-count target="crates/cortex-social" symbol="SocialPerspectiveNode" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.28 `cortex-ethics` — veto gate
+
+| | |
+| :--- | :--- |
+| Responsibility | The check every proposed motor or tool action passes before dispatch: a forbidden imperative vetoes first, then harm at or above the threshold, then insufficient authorization; benefit is recorded and never overrides a veto. A gate inside the engine, in front of the external watchdog of §8.9, not in place of it. |
+| Source | `crates/cortex-ethics/src/lib.rs` |
+| Public API | `EthicalEvaluationGate::{evaluate, is_permitted}`; constants `Q16_ONE`, `VETO_NONE` (0), `VETO_IMPERATIVE` (1), `VETO_HARM` (2), `VETO_AUTHORIZATION` (3) |
+| Status | Layout: Implemented · Gate rule: Implemented · Harm and benefit estimation from `cortex-executive` rollouts, and the dispatch path that consults the gate: Specified (§6.8, §8.9) |
+
+**`EthicalEvaluationGate`** — 64 B, align 64. One per proposal.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `proposal_action_id` | `u32` | index | The proposed action. |
+| `[4..8)` | `predicted_harm_risk_q16` | `u32` | Q16.16 | Predicted harm in $[0, 1]$. |
+| `[8..12)` | `harm_threshold_q16` | `u32` | Q16.16 | Harm at or above which the proposal is vetoed; a zero threshold permits nothing. |
+| `[12..16)` | `moral_imperative_mask` | `u32` | bitmask | Imperatives the proposal touches. |
+| `[16..20)` | `utilitarian_benefit_q16` | `i32` | Q16.16 | Predicted benefit; never overrides a veto. |
+| `[20..24)` | `deontology_score_q16` | `u32` | Q16.16 | $1 - \text{harm}$ when permitted, 0 when vetoed. The proposal's 16-bit field was a width defect; Q16.16 is 32 bits (§2.3). |
+| `[24..25)` | `authorization_level` | `u8` | level | Level the proposal carries. |
+| `[25..26)` | `veto_decision_flag` | `u8` | 0 / 1 | Vetoed. |
+| `[26..27)` | `veto_reason` | `u8` | enum | `VETO_*`. |
+| `[27..64)` | `_reserved` | `[u8; 37]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `evaluate(forbidden_mask, required_authorization)` applies the three checks in that order and returns `true` when the proposal is vetoed; a default gate (zero threshold) fails closed. Six tests, including that a maximal benefit does not override a forbidden imperative.
+
+<!-- @assert-count target="crates/cortex-ethics" symbol="EthicalEvaluationGate" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.29 `cortex-knowledge` — semantic ontology
+
+| | |
+| :--- | :--- |
+| Responsibility | What survives consolidation: one concept per record with its category, affordances, typical mass and hazard, in a tree by `parent_category_id`. `cortex-symbolic` keeps transient bindings and `cortex-hippocampus` the episodes they came from. |
+| Source | `crates/cortex-knowledge/src/lib.rs` |
+| Public API | `SemanticOntologyNode::{affords, is_root, consolidate}` |
+| Status | Layout: Implemented · Consolidation and affordance rules: Implemented · The replay that drives consolidation (§6.6): Specified |
+
+**`SemanticOntologyNode`** — 64 B, align 64.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `concept_node_id` | `u32` | index | This concept. |
+| `[4..8)` | `parent_category_id` | `u32` | index | Its category; the root names itself. |
+| `[8..12)` | `property_vector_hash` | `u32` | hash | Consolidated property hypervector (Specified). |
+| `[12..16)` | `affordance_action_mask` | `u32` | bitmask | Actions afforded. |
+| `[16..20)` | `typical_mass_grams_q16` | `u32` | Q16.16 | Typical mass in grams. |
+| `[20..24)` | `consolidation_count` | `u32` | count | Replays that reinforced the node; saturating. |
+| `[24..25)` | `safety_hazard_level` | `u8` | level | 0 none; higher is more hazardous. |
+| `[25..64)` | `_reserved` | `[u8; 39]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `affords(bits)` requires every requested bit; `consolidate(bits, hazard)` accumulates affordances, keeps the maximum hazard and counts the replay. Four tests.
+
+<!-- @assert-count target="crates/cortex-knowledge" symbol="SemanticOntologyNode" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.30 `cortex-reasoning` — symbolic rules
+
+| | |
+| :--- | :--- |
+| Responsibility | One rule per record: a condition predicate, a consequence, and the operator that combines the condition with the parent rule's satisfaction; chains of nodes are proofs. `cortex-symbolic` grounds the predicates; `cortex-executive` searches goals. |
+| Source | `crates/cortex-reasoning/src/lib.rs` |
+| Public API | `SymbolicRuleNode::evaluate(&mut self, condition_holds, parent_satisfied) -> bool`; constants `OP_AND` (0), `OP_OR` (1), `OP_NOT` (2), `OP_IMPLIES` (3), `STATE_UNKNOWN` (0), `STATE_SATISFIED` (1), `STATE_VIOLATED` (2) |
+| Status | Layout: Implemented · Truth-table rule: Implemented · Chain search and constraint propagation: Specified (§8.8) |
+
+**`SymbolicRuleNode`** — 64 B, align 64.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `rule_id` | `u32` | index | This rule. |
+| `[4..8)` | `condition_predicate_id` | `u32` | index | Predicate whose truth is the condition. |
+| `[8..12)` | `consequence_action_id` | `u32` | index | What follows when satisfied. |
+| `[12..16)` | `parent_rule_idx` | `u32` | index | The rule this one chains from. |
+| `[16..20)` | `support_count` | `u32` | count | Evaluations that satisfied the rule; saturating. |
+| `[20..24)` | `confidence_q16` | `u32` | Q16.16 | Confidence in the rule (Specified). |
+| `[24..25)` | `logical_operator` | `u8` | enum | `OP_*`. |
+| `[25..26)` | `proof_depth` | `u8` | depth | Distance from the axiom. |
+| `[26..27)` | `satisfaction_state` | `u8` | enum | `STATE_*`. |
+| `[27..64)` | `_reserved` | `[u8; 37]` | — | Reserved; MUST be zero. |
+
+Implemented rule: AND, OR, NOT (parent ignored) and IMPLIES (`!parent || condition`) over the two inputs; a satisfied evaluation counts support; an unknown operator leaves the state unknown and is never satisfied. Four tests, one of them the full truth table.
+
+<!-- @assert-count target="crates/cortex-reasoning" symbol="SymbolicRuleNode" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.31 `cortex-arithmetic` — exact scratchpad
+
+| | |
+| :--- | :--- |
+| Responsibility | Exact 128-bit integer and Q16.16 arithmetic with explicit error flags, for the calculations the spiking substrate cannot do exactly. Overflow and division by zero are reported, not saturated: a scratchpad is not a state field, and a wrong answer must be visible. |
+| Source | `crates/cortex-arithmetic/src/lib.rs` |
+| Public API | `ArithmeticScratchpadSlot::{operand_a, operand_b, result, set_operands, execute}`; opcodes `OP_NOP` (0), `OP_ADD` (1), `OP_SUB` (2), `OP_MUL` (3), `OP_DIV` (4), `OP_REM` (5), `OP_MUL_Q16` (6), `OP_DIV_Q16` (7); flags `ERR_OVERFLOW` (bit 0), `ERR_DIVIDE_BY_ZERO` (bit 1), `ERR_UNKNOWN_OP` (bit 2) |
+| Status | Layout: Implemented · Eight opcodes: Implemented · Sequencing of slots into an expression: Specified (§8.8) |
+
+**`ArithmeticScratchpadSlot`** — 64 B, align 64. Operands are 128-bit two's complement split into a `u64` low word and an `i64` high word, so that the record stays `#[repr(C)]`; the proposal's tuple fields had no defined layout (§8.2).
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..8)` | `operand_a_lo` | `u64` | bits 0–63 | Operand A. |
+| `[8..16)` | `operand_a_hi` | `i64` | bits 64–127 | Operand A (sign). |
+| `[16..24)` | `operand_b_lo` | `u64` | bits 0–63 | Operand B. |
+| `[24..32)` | `operand_b_hi` | `i64` | bits 64–127 | Operand B (sign). |
+| `[32..40)` | `result_lo` | `u64` | bits 0–63 | Result. |
+| `[40..48)` | `result_hi` | `i64` | bits 64–127 | Result (sign). |
+| `[48..50)` | `error_flags` | `u16` | bitfield | `ERR_*` from the last `execute`. |
+| `[50..51)` | `opcode` | `u8` | enum | `OP_*`. |
+| `[51..52)` | `operand_type` | `u8` | enum | 0 integer · 1 Q16.16 (informational). |
+| `[52..64)` | `_reserved` | `[u8; 12]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `execute` performs the opcode with `i128` checked arithmetic; `OP_MUL_Q16` is $(a \times b) \gg 16$ and `OP_DIV_Q16` is $(a \ll 16) / b$; on success the result is stored and the flags cleared, on any error the result is zero and one flag names it. Seven tests, including `i128::MIN / -1` and the pre-shift overflow of `OP_DIV_Q16`.
+
+<!-- @assert-count target="crates/cortex-arithmetic" symbol="ArithmeticScratchpadSlot" min="1" word="true" reason="ADR-0016" -->
+
+#### 5.2.32 `cortex-imagination` — counterfactual canvas
+
+| | |
+| :--- | :--- |
+| Responsibility | One frame of an offline rollout with no goal, only a hypothetical action and where it leads; sandboxed by construction, since a frame whose `motor_release_flag` is set is invalid and refuses to step. `cortex-executive` keeps goal-directed plan trees. |
+| Source | `crates/cortex-imagination/src/lib.rs` |
+| Public API | `MentalCanvasFrame::{is_sandboxed, step, has_diverged}` |
+| Status | Layout: Implemented · Step and divergence rules: Implemented · The generative model that supplies the deltas: Specified (§8.8) |
+
+**`MentalCanvasFrame`** — 64 B, align 64.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..8)` | `simulation_id` | `u64` | id | The rollout. |
+| `[8..12)` | `hypothetical_action_hash` | `u32` | hash | The imagined action. |
+| `[12..16)` | `predicted_outcome_valence_q16` | `i32` | Q16.16 | Accumulated predicted valence. |
+| `[16..20)` | `divergence_uncertainty_q16` | `u32` | Q16.16 | Accumulated uncertainty. |
+| `[20..24)` | `canvas_epoch_ticks` | `u32` | ticks | Imagined time elapsed. |
+| `[24..26)` | `rollout_depth` | `u16` | count | Steps taken. |
+| `[26..27)` | `motor_release_flag` | `u8` | 0 | MUST be zero: the frame never reaches the egress. |
+| `[27..64)` | `_reserved` | `[u8; 37]` | — | Reserved; MUST be zero. |
+
+Implemented rule: `step` accumulates valence, uncertainty, time and depth, all saturating, and is refused for a frame that is not sandboxed; `has_diverged(limit)` is true once the uncertainty reaches the limit. Four tests.
+
+<!-- @assert-count target="crates/cortex-imagination" symbol="MentalCanvasFrame" min="1" word="true" reason="ADR-0016" -->
+
 ---
 
 ## 6. Runtime view
@@ -911,7 +1346,7 @@ On each fine tick the worker calls `advance()`: the slot consumed at the previou
 
 ### 6.3 Scenario R-3: sensory ingestion and hot-plug
 
-A peripheral thread calls `poll_batch` into a pre-allocated slice, stamps events, and hands the slice to the thalamic relay. The relay maps `(peripheral_type, address)` to a unit index and treats each event as a zero-delay spike (R-1, step 2). Replacing a driver is an atomic pointer swap of the slot in the relay table; in-flight batches complete against the old driver. No lock is held by the simulation loop at any point (Target T-6).
+A peripheral thread calls `poll_batch` into a pre-allocated slice, stamps events, and hands the slice to the thalamic relay. The relay maps `(peripheral_type, address)` to a `ThalamicRelayNode` (§5.2.19), whose gate decides whether the event reaches its `target_cortical_column` and with what gain (Implemented rule); a relayed event is a zero-delay spike (R-1, step 2). Replacing a driver is an atomic pointer swap of the slot in the relay table; in-flight batches complete against the old driver. No lock is held by the simulation loop at any point (Target T-6).
 
 ### 6.4 Scenario R-4: embodiment period (Specified)
 
@@ -942,6 +1377,28 @@ Each candidate action channel's `BasalGangliaChannelState` is updated with corti
 
 Open the file, validate `magic`, `version` and `crc64`, `mmap` it with `MAP_POPULATE`, apply `madvise(MADV_HUGEPAGE)` where the mapping is private and writable, pin the pages to the local NUMA node, and hand section offsets to the arenas. No per-record deserialisation happens; the file *is* the arena. Boot time is bounded by page-cache state and device bandwidth (Target T-7).
 
+### 6.8 Scenario R-8: tool invocation (Specified)
+
+```text
+ VirtualCortex worker                                  Tool broker process (§8.10)
+ ┌────────────────────────────────────────────────┐    ┌──────────────────────────────────────┐
+ │ 1. a released action channel names a tool      │    │                                      │
+ │ 2. EthicalEvaluationGate::evaluate (§5.2.28)   │    │                                      │
+ │    vetoed → ToolInvocationFrame::deny, stop    │    │                                      │
+ │ 3. write a pending frame with the gate's       │───►│ 4. start; check authorization_level  │
+ │    authorization_level; release-store cursor   │    │    against the broker allow-list     │
+ │                                                │    │ 5. perform the action with the       │
+ │ 7. acquire-load; read complete / failed /      │◄───│    broker's own credentials          │
+ │    denied; payload ≤ 32 B in place             │    │ 6. complete or fail; release-store   │
+ └────────────────────────────────────────────────┘    └──────────────────────────────────────┘
+```
+
+The frame's transitions (steps 3 to 6) are Implemented (§5.2.21) and the gate rule (step 2) is Implemented (§5.2.28); the ring mapping, the broker and the channel that names a tool are Specified. The worker makes no system call: the broker is the only process that can, under its own filter (§8.10).
+
+### 6.9 Scenario R-9: language realisation (Specified)
+
+An ignited workspace slot (§5.2.8) names a hypervector. **Layer 1:** `cortex-symbolic` unbinds it by role, $\text{Concept} \approx S \otimes \text{Role}^{-1}$, into a subject, an action, an object and an affect with a confidence each (Specified). **Layer 2:** the runtime binds them into a `LinguisticFrameSlot` for the template the speech act calls for (`bind_role`, Implemented, §5.2.20) and seals it when complete; `realisation_order` yields the roles in the template's order. **Layer 3:** for each emitted role the recurrent cell advances, $s \leftarrow \alpha s + k v$, with $k$ and $v$ drawn from the concept and the affect (Specified), and its energy band selects the particle class for the frame's particle slot (`advance_prosody`, Implemented); a lexicon maps each concept, the politeness level and the marker to Chinese or English tokens (Specified) and writes the token into `surface_token_id`. No external language model is part of the system: every step is a deterministic integer operation on records in this workspace, in constant memory. An utterance has no period, since language is not a control loop, and no token leaves the engine except through the telemetry stream (§8.11) or a tool frame (R-8) that passed the veto gate.
+
 ---
 
 ## 7. Deployment view
@@ -951,7 +1408,7 @@ Open the file, validate `magic`, `version` and `crc64`, `mmap` it with `MAP_POPU
 | Component | Reference | Notes |
 | :--- | :--- | :--- |
 | CPU | 64 cores, x86-64-v4 (AVX-512) or ARMv9-A (SVE2) | Two cores reserved for the OS and telemetry; the rest isolated for workers. |
-| Memory | 64 GB DDR5 ECC, single NUMA node preferred | The reference capacity model (Appendix A) fits in roughly 19 GB of local DRAM. |
+| Memory | 64 GB DDR5 ECC, single NUMA node preferred | The reference capacity model (Appendix A) fits in roughly 20 GB of local DRAM. |
 | Far memory | CXL 3.0 memory pool (optional) | Plastic deltas (Specified) may live here; latency ~180 ns. |
 | Storage | NVMe, PCIe 5.0 | `.cortex` images, epoch snapshots, write-ahead log. |
 | OS | Linux with `isolcpus`, `nohz_full`, `rcu_nocbs` for worker cores; huge pages enabled | Kernel tuning is required for the latency targets; the crates themselves do not depend on it. |
@@ -961,7 +1418,7 @@ Open the file, validate `magic`, `version` and `crc64`, `mmap` it with `MAP_POPU
 
 ```text
 Tier 0  L1/L2 SRAM, per core          hot SynapseBlock lines, spike masks, one FlatTimingWheel per worker
-Tier 1  local DDR5                    all 64-byte arenas of §5.2 (Appendix A, ~19 GB at reference parameters)
+Tier 1  local DDR5                    all 64-byte arenas of §5.2 (Appendix A, ~20 GB at reference parameters)
 Tier 2  CXL far memory (optional)     plastic synapse deltas ΔW (Specified; no record type exists yet)
 Tier 3  NVMe                          .cortex image, epoch snapshots, WAL; evicted cold units (A5)
 ```
@@ -1064,6 +1521,20 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | Complementary learning systems | `cortex-hippocampus` | Fast one-shot CA3 attractor; replay during slow-wave sleep into slow neocortical weights. | Specified |
 | Self-organised criticality | `cortex-homeostasis` | Rescale weights by $1 - \kappa(\sigma - 1)$ during sleep to hold the branching ratio at 1. | Specified |
 | Glymphatic clearance | `cortex-immune` | Sleep-phase reclamation, compaction and checksum audit. | Specified |
+| Thalamic relay and gating (Sherman–Guillery) | `cortex-thalamus` · `gating_mode`, `sensory_gain_q16`, `oscillation_phase_q16` | Tonic relay scaled by gain; burst mode as a decimating gate; closed during sleep; 40 Hz corticothalamic phase. | Partial: gate Implemented; burst waveform and synchrony Specified |
+| Native language: vector-symbolic grounding, construction grammar, linear recurrence (Plate; Goldberg) | `cortex-linguistic` · `frame_template_id`, `syntax_gate_flags`, `linear_attention_energy_q16`, `prosody_tone_marker` | Layer 1: $\text{Concept} \approx S \otimes \text{Role}^{-1}$. Layer 2: a frame is complete when the roles its template requires are bound; the template fixes the emission order. Layer 3: $s_{t+1} = \alpha s_t + k_t v_t$ in saturating Q16.16, the leaky-integrator form that linear-attention and RWKV-style models share, whose energy band selects the particle class. | Partial: Layers 2 and 3 (scalar) Implemented; Layer 1, the state-vector arena and the lexicon Specified |
+| Tool incorporation into the body schema | `cortex-tools` · `execution_status`, `authorization_level` | A tool call is a motor act with a result: pending → running → completed / failed, or denied by the gate. | Partial: state machine Implemented; broker Specified |
+| Saccade and fixation (superior colliculus, FEF) | `cortex-attention` · `saccade_remaining_ticks`, `fixation_duration_ticks` | Flight of fixed ticks toward a salience peak, then fixation; smooth pursuit between saccades. | Partial: state machine Implemented; selection and pursuit Specified |
+| Interoception and allostasis (Craig) | `cortex-affect` · `allostatic_load_q16`, `somatic_comfort_q16`, `mood_baseline_q16` | $L \leftarrow \max(0, L + p + s - r)$; comfort $= 1 - 2\min(L, 1)$; mood follows comfort with $\tau = 64$ steps. | Partial: integration Implemented; mood bias on modulators Specified |
+| Brainstem vitals and arousal | `cortex-autonomic` · `emergency_cut_flags`, `arousal_tone_q16` | Each sample is checked against thermal, power and voltage limits; flags drive shedding and throttling. | Partial: limit check Implemented; policy and arousal Specified |
+| Path integration and grid cells (Moser) | `cortex-spatial` · `grid_*_q16`, `heading_yaw_turns`, `path_integration_confidence_q16` | Dead reckoning with a wrapping heading; confidence decays by $2^{-8}$ per step and is restored by a landmark fix; a grid attractor corrects drift. | Partial: integration and fix Implemented; attractor Specified |
+| Intrinsic motivation (Oudeyer) | `cortex-curiosity` · `novelty_magnitude_q16`, `exploration_urgency_q16` | Novelty decays by a quarter per visit; urgency $= n/2 + e/4 + h/4$ from novelty, prediction error and entropy. | Partial: visit rule Implemented; competition Specified |
+| Mentalising and mirror resonance (Frith; Rizzolatti) | `cortex-social` · `resonance_q16`, `trust_score_q16` | Resonance $= v \times g$; trust gains $1/16$ of the remainder per confirmation and loses $1/8$ of itself per disconfirmation. | Partial: resonance and trust Implemented; intention and belief Specified |
+| Deontological veto (OFC / vmPFC) | `cortex-ethics` · `veto_reason`, `deontology_score_q16` | Imperative, then harm $\ge$ threshold, then authorization; benefit never overrides. | Partial: gate Implemented; harm estimation Specified |
+| Semantic hub (anterior temporal lobe) | `cortex-knowledge` · `affordance_action_mask`, `consolidation_count` | Replay accumulates affordances and the maximum hazard into a category tree. | Partial: consolidation Implemented; replay Specified |
+| Propositional deduction | `cortex-reasoning` · `logical_operator`, `satisfaction_state` | AND, OR, NOT, IMPLIES over the condition and the parent rule; support counts satisfactions. | Partial: truth table Implemented; chain search Specified |
+| Exact mental arithmetic (intraparietal sulcus) | `cortex-arithmetic` · `opcode`, `error_flags` | Checked 128-bit and Q16.16 arithmetic with explicit overflow and divide-by-zero flags. | Partial: opcodes Implemented; expression sequencing Specified |
+| Default-mode rehearsal | `cortex-imagination` · `divergence_uncertainty_q16`, `motor_release_flag` | Saturating accumulation of valence and uncertainty along a rollout that can never release motor output. | Partial: step and divergence Implemented; generative model Specified |
 
 The reference equations, for implementers:
 
@@ -1096,12 +1567,13 @@ All of the above are to be discretised in Q16.16 with the shift-based update for
 
 ### 8.9 Error handling and fail-safe
 
-Inside the tick loop there are no recoverable errors: a violated invariant is a bug and MUST abort the process rather than continue with corrupted state. Outside the loop, image validation, driver attachment and fabric setup return `Result`. Embodied safety does not depend on the engine: an external hardware watchdog observes `heartbeat_ms`, which the producer sets to its monotonic clock in milliseconds at every publish ([ADR-0015](adr/0015-embodiment-frame-abi.md)), and engages dynamic braking when that value falls 5 periods behind the watchdog's own clock (watchdog integration Specified). The engine MUST NOT be the only thing standing between a robot and an unsafe configuration.
+Inside the tick loop there are no recoverable errors: a violated invariant is a bug and MUST abort the process rather than continue with corrupted state. Outside the loop, image validation, driver attachment and fabric setup return `Result`. Two gates stand inside the engine, in front of the watchdog and not in place of it ([ADR-0016](adr/0016-thirty-two-crate-architecture.md)): every proposed motor or tool action passes the veto gate of `cortex-ethics` (§5.2.28) before dispatch, and the vitals of `cortex-autonomic` (§5.2.24) raise emergency flags that a shedding and throttling policy acts on (Specified). Embodied safety does not depend on the engine: an external hardware watchdog observes `heartbeat_ms`, which the producer sets to its monotonic clock in milliseconds at every publish ([ADR-0015](adr/0015-embodiment-frame-abi.md)), and engages dynamic braking when that value falls 5 periods behind the watchdog's own clock (watchdog integration Specified). The engine MUST NOT be the only thing standing between a robot and an unsafe configuration.
 
 ### 8.10 Security
 
 - No `unsafe` code exists in the workspace today; introducing it requires an ADR (TC-9). The first legitimate uses will be SIMD intrinsics and `mmap`; each MUST be wrapped in a safe API with a documented invariant and a test.
 - After initialisation, worker threads install a seccomp-BPF allow-list that excludes `execve`, `fork`, `socket`, `connect` and `bind` (Specified). Adversarial spike trains cannot escalate to process creation or network access.
+- **Tool broker.** The engine acts on a digital environment only through `ToolInvocationFrame`s (§5.2.21) in a shared-memory ring read by a separate broker process. The broker holds the only credentials, enforces its own opcode allow-list and the `authorization_level` the veto gate wrote into the frame, and runs under its own seccomp profile; the worker filter above is unchanged, so spike trains still cannot escalate inside the engine process. The broker's policy is configuration and is reviewed like an ADR (Specified; [ADR-0016](adr/0016-thirty-two-crate-architecture.md)).
 - Images and fabric packets carry checksums and MUST be rejected on mismatch; the engine never trusts a byte it did not verify.
 - Vulnerability reporting: [SECURITY.md](../SECURITY.md).
 
@@ -1132,6 +1604,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0013](adr/0013-timing-wheel-geometry.md) | Timing wheel geometry: 256 × 10 µs fine, 256 × 100 µs coarse, fixed-capacity token lists (amends ADR-0004) |
 | [ADR-0014](adr/0014-benchmark-harness.md) | Benchmark harness: criterion 0.7, confined to a bench-only crate |
 | [ADR-0015](adr/0015-embodiment-frame-abi.md) | Embodiment frame ABI and single-producer single-consumer ring protocol |
+| [ADR-0016](adr/0016-thirty-two-crate-architecture.md) | Thirty-two state crates: fourteen subsystems admitted, three boundaries moved, and the admission test for the next one (amends ADR-0005) |
 
 ---
 
@@ -1210,6 +1683,9 @@ Findings are numbered and carried forward until closed. Each names its owner (th
       **Resolved (2026-09-10):** Q1.15, because in-place STDP needs the resolution and summation supplies the range; [ADR-0012](adr/0012-synaptic-weight-q1-15.md).
 - [ ] Should `NeuromodulatorState` be widened to 64 bytes so that one record per column shares the arena discipline, or kept at 16 bytes for density?
 - [ ] The cerebellar delay line holds seven steps (7 ms at the embodiment epoch). A plant whose delay exceeds that needs a per-microzone delay arena addressed by index; nothing needs it yet, and adopting it would be an ADR.
+- [x] Should the engine have a second, non-motor egress frame: a discrete command to a digital environment? [ADR-0015](adr/0015-embodiment-frame-abi.md) reserved a second ring for a new ADR.
+      **Resolved (2026-09-10):** yes, `ToolInvocationFrame` (§5.2.21) through a broker outside the engine's seccomp filter (§8.10), every frame passing the veto gate first; [ADR-0016](adr/0016-thirty-two-crate-architecture.md).
+- [ ] The fourteen crates of ADR-0016 carry one rule each. Which of them need a second record (a relay table for `cortex-thalamus`, an expression of slots for `cortex-arithmetic`, a rollout of frames for `cortex-imagination`) is decided when milestone M8 reaches each; a second record in a crate is an ADR.
 
 ---
 
@@ -1219,6 +1695,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | :--- | :--- |
 | Arena | A contiguous, index-addressed array of fixed-size records allocated once at start-up. |
 | BAC firing | Back-propagation-activated calcium spike: a dendritic plateau triggered by coincidence of a somatic spike and apical input, producing a burst (Larkum). |
+| Broker | A process outside the engine that performs tool actions the engine requests through `ToolInvocationFrame`s, under its own credentials and allow-list (§8.10). |
 | Control record | A 64-byte record containing atomics; `Sync` but not `Copy` (§8.2, L-5). |
 | Efference copy | An internal copy of a motor command used to predict, and cancel, its sensory consequences. |
 | Epoch (simulation) | 1 ms; the embodiment period and checkpoint granularity. |
@@ -1238,6 +1715,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Token | The opaque 28-bit payload a timing-wheel slot holds: a `SynapseBlock` offset or a unit index ([ADR-0013](adr/0013-timing-wheel-geometry.md)). |
 | Turn invariant | At most one worker touches a record per tick (A3). |
 | Unit | A `DendriticSuperNeuron` record; the engine's neural entity. |
+| Veto gate | `EthicalEvaluationGate`: the in-engine check a proposed action passes before dispatch (§5.2.28); it stands in front of the watchdog, not in place of it. |
 | Worker | A core-pinned, stateless thread that executes units (A2). |
 
 ---
@@ -1271,12 +1749,26 @@ Parameters: `N_col` = 860 000, `N_neuron` = 43 000 000, `N_block` = 128 000 000 
 | 19 | Timing wheels (`WorkerWheel`, 4 195 336 B each) | 64 | 4.2 MB | 268.5 MB |
 | 20 | Spatial voxels | 1 048 576 | 16 B | 16.8 MB |
 | 21 | Sensory / embodiment rings | 2 048 | 64 KB | 131 MB |
-| 22 | Page tables, stacks, OS | — | — | ~4.8 GB |
-| | **Tier 1 total** | | | **≈ 19.0 GB** |
-| 23 | Plastic deltas ΔW (Tier 2, Specified; no record type yet) | 1 000 000 000 | 16 B | 16.0 GB |
-| | **Total addressable** | | | **≈ 35.0 GB** |
+| 22 | `ThalamicRelayNode` | 1 048 576 | 64 B | 67.1 MB |
+| 23 | `LinguisticFrameSlot` | 65 536 | 64 B | 4.2 MB |
+| 24 | `ToolInvocationFrame` rings (2 × 4 096) | 8 192 | 64 B | 0.5 MB |
+| 25 | `FovealAttentionFocus` | 4 096 | 64 B | 0.3 MB |
+| 26 | `InteroceptiveState` | 250 000 | 64 B | 16 MB |
+| 27 | `AutonomicVitalsState` (one per worker) | 64 | 64 B | 4.1 KB |
+| 28 | `SpatialGridCoordinate` | 1 048 576 | 64 B | 67.1 MB |
+| 29 | `CuriosityExplorationVector` | 1 000 000 | 64 B | 64 MB |
+| 30 | `SocialPerspectiveNode` | 250 000 | 64 B | 16 MB |
+| 31 | `EthicalEvaluationGate` | 1 000 000 | 64 B | 64 MB |
+| 32 | `SemanticOntologyNode` | 4 000 000 | 64 B | 256 MB |
+| 33 | `SymbolicRuleNode` | 1 000 000 | 64 B | 64 MB |
+| 34 | `ArithmeticScratchpadSlot` | 65 536 | 64 B | 4.2 MB |
+| 35 | `MentalCanvasFrame` | 500 000 | 64 B | 32 MB |
+| 36 | Page tables, stacks, OS | — | — | ~4.8 GB |
+| | **Tier 1 total** | | | **≈ 19.6 GB** |
+| 37 | Plastic deltas ΔW (Tier 2, Specified; no record type yet) | 1 000 000 000 | 16 B | 16.0 GB |
+| | **Total addressable** | | | **≈ 35.6 GB** |
 
-Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 fine and 256 coarse slots of 2 048 tokens each, 4 195 336 bytes, asserted at compile time. Row 23 has no record type in the tree and is included so that the far-memory tier is sized. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
+Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 fine and 256 coarse slots of 2 048 tokens each, 4 195 336 bytes, asserted at compile time. Rows 22 to 35 are the arenas admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md); their counts are placeholders like the others, and together they add 0.66 GB. Row 37 has no record type in the tree and is included so that the far-memory tier is sized. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
 
 ---
 
@@ -1322,6 +1814,7 @@ Milestones follow the founding design note; each ends with a test that proves it
 | M5 Subsystem dynamics | Replace placeholder functions with the dynamics of §8.8, one crate at a time, each with tests. | Per-crate property tests. | Not started. |
 | M6 Embodiment | Payload rings, torque decoder, watchdog contract, MuJoCo stub. | T-4, T-5. | Frame ABI and ring protocol done (brief 008); mapping, loop, decoder, watchdog integration and the stub open. |
 | M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1 not started. |
+| M8 Digital embodiment and language | Tool ring and broker; hypervector unbinding and the lexicon behind `cortex-linguistic`; the veto gate in the dispatch path; the relay table behind `cortex-thalamus`; second records for the crates of [ADR-0016](adr/0016-thirty-two-crate-architecture.md) that need one. | A tool call round trip through the broker under the veto gate, denied and permitted; a frame realised as tokens in both lexicon languages. | Frames and rules done (ADR-0016); broker, rings, stub and dispatch path open. |
 
 Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.
 
@@ -1353,6 +1846,13 @@ Work is handed out as **briefs**: numbered, self-contained prompts in [`briefs/`
 20. Brown, S. *The C4 model for visualising software architecture.* https://c4model.com
 21. Kopp, O. et al. *MADR: Markdown Architectural Decision Records*, version 4. https://adr.github.io/madr/
 22. Bradner, S. *Key words for use in RFCs to Indicate Requirement Levels.* RFC 2119 / BCP 14, 1997; Leiba, B. RFC 8174, 2017.
+23. Sherman, S. M., Guillery, R. W. *Exploring the Thalamus and Its Role in Cortical Function.* MIT Press, 2006.
+24. Hafting, T., Fyhn, M., Molden, S., Moser, M.-B., Moser, E. I. *Microstructure of a spatial map in the entorhinal cortex.* Nature 436, 2005.
+25. Oudeyer, P.-Y., Kaplan, F., Hafner, V. V. *Intrinsic motivation systems for autonomous mental development.* IEEE Trans. Evol. Comput. 11, 2007.
+26. Craig, A. D. *How do you feel? Interoception: the sense of the physiological condition of the body.* Nature Reviews Neuroscience 3, 2002.
+27. Frith, C. D., Frith, U. *The neural basis of mentalizing.* Neuron 50, 2006.
+28. Rizzolatti, G., Craighero, L. *The mirror-neuron system.* Annual Review of Neuroscience 27, 2004.
+29. Goldberg, A. E. *Constructions: A Construction Grammar Approach to Argument Structure.* University of Chicago Press, 1995.
 
 ---
 

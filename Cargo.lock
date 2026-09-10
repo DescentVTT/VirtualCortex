@@ -94,7 +94,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "cortex-affect"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-agency"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-arithmetic"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-attention"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-autonomic"
 version = "0.1.0"
 
 [[package]]
@@ -124,7 +140,15 @@ name = "cortex-core"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-curiosity"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-embodiment"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-ethics"
 version = "0.1.0"
 
 [[package]]
@@ -144,7 +168,19 @@ name = "cortex-homeostasis"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-imagination"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-immune"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-knowledge"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-linguistic"
 version = "0.1.0"
 
 [[package]]
@@ -156,6 +192,10 @@ name = "cortex-predictive"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-reasoning"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-salience"
 version = "0.1.0"
 
@@ -164,11 +204,27 @@ name = "cortex-sensory"
 version = "0.1.0"
 
 [[package]]
+name = "cortex-social"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-spatial"
+version = "0.1.0"
+
+[[package]]
 name = "cortex-symbolic"
 version = "0.1.0"
 
 [[package]]
 name = "cortex-telemetry"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-thalamus"
+version = "0.1.0"
+
+[[package]]
+name = "cortex-tools"
 version = "0.1.0"
 
 [[package]]

@@ -26,7 +26,7 @@ VirtualCortex 是一個以 Rust 撰寫的**單機神經擬態虛擬 Actor 引擎
 
 ## 五大公理（設計骨幹）
 
-白皮書 §4 重新以專案最初設計稿的五大公理為核心，18 個 crate 都建立在它們之上：
+白皮書 §4 重新以專案最初設計稿的五大公理為核心，32 個 crate 都建立在它們之上（其中 14 個由 [ADR-0016](../adr/0016-thirty-two-crate-architecture.md) 於 2026-09-10 納入）：
 
 | 公理 | 內容 |
 | :--- | :--- |
@@ -41,7 +41,7 @@ VirtualCortex 是一個以 Rust 撰寫的**單機神經擬態虛擬 Actor 引擎
 | 英文原版章節 | 內容 |
 | :--- | :--- |
 | [Executive summary](../WHITEPAPER.md#executive-summary) | 今天有什麼、設計了什麼、必須證明什麼。 |
-| [§1 Introduction and goals](../WHITEPAPER.md#1-introduction-and-goals) | 問題陳述、功能需求、品質目標、非目標、**18 個 crate 的實作現況表**。 |
+| [§1 Introduction and goals](../WHITEPAPER.md#1-introduction-and-goals) | 問題陳述、功能需求、品質目標、非目標、**32 個 crate 的實作現況表**。 |
 | [§2 Constraints](../WHITEPAPER.md#2-constraints) | 「Latest ≠ Newest」信條的可操作定義、技術限制（TC-1 至 TC-9）、書寫慣例。 |
 | [§3 Context and scope](../WHITEPAPER.md#3-context-and-scope) | C4 第一層系統情境圖與對外介面。 |
 | [§4 Solution strategy](../WHITEPAPER.md#4-solution-strategy) | 五大公理、品質目標的達成策略、分解原則。 |
@@ -51,7 +51,7 @@ VirtualCortex 是一個以 Rust 撰寫的**單機神經擬態虛擬 Actor 引擎
 | [§8 Cross-cutting concepts](../WHITEPAPER.md#8-cross-cutting-concepts) | Q16.16 數值模型、記錄佈局規則 L-1 至 L-6、確定性、時間、並行、記憶體、序列化、**生物機制對照表與參考方程式**、安全、可觀測性。 |
 | [§9 Architecture decisions](../WHITEPAPER.md#9-architecture-decisions) | ADR 索引；決策本體在 [`docs/adr/`](../adr/README.md)。 |
 | [§10 Quality requirements](../WHITEPAPER.md#10-quality-requirements) | 品質樹與 T-1 至 T-8 目標情境，每列都有量測協定與空白的「Measured」欄。 |
-| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding F-1 至 F-17、假設 H-1 與 H-2、開放問題。 |
+| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding F-1 至 F-18、假設 H-1 與 H-2、開放問題。 |
 | [§12 Glossary](../WHITEPAPER.md#12-glossary) | 術語表。 |
 | [附錄 A](../WHITEPAPER.md#appendix-a-capacity-model) | 容量模型（是計畫，不是量測）。 |
 | [附錄 B](../WHITEPAPER.md#appendix-b-verification-and-conformance) | 三層驗證：編譯期佈局斷言、spec-guard（文件對程式碼）、spec-graph（文件對文件）。 |
