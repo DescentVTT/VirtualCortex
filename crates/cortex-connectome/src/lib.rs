@@ -39,7 +39,12 @@ impl CortexFileHeader {
     ///   `SymbolicHypervectorHeader` (blend source, domain mask, depth), `LinguisticFrameSlot`
     ///   (parent, child, metaphor), `SocialPerspectiveNode` (repairs, turn state, common
     ///   ground). A version-4 image has them zero, which every rule reads as "not yet".
-    pub const FORMAT_VERSION: u32 = 5;
+    /// - 6: `SynapseBlock` indices are `index + 1` (zero: an empty slot, the end of a chain, a
+    ///   unit without fan-out) and its reserved bytes became `last_release_q16` and
+    ///   `apical_mask` (ADR-0022); `DendriticSuperNeuron::synapse_slab_idx` is `index + 1` too.
+    ///   A version-5 arena's zero indices now read as empty rather than as block 0, and every
+    ///   non-zero index moved by one, so a version-5 image MUST NOT be read as version 6.
+    pub const FORMAT_VERSION: u32 = 6;
 }
 
 const _: () = {
@@ -58,6 +63,6 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 5);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 6);
     }
 }

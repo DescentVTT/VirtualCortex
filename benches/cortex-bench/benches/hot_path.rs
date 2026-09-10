@@ -8,7 +8,7 @@
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_bench::Lcg;
 use cortex_core::{
-    DendriticSuperNeuron, MailboxNode, STP_MAX, STP_U, THRESHOLD_BASE, WorkerWheel,
+    DendriticSuperNeuron, MailboxNode, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, WorkerWheel,
     synaptic_efficacy_q16,
 };
 use cortex_workspace::GlobalWorkspaceSlot;
@@ -247,7 +247,58 @@ fn stp(c: &mut Criterion) {
     group.finish();
 }
 
+/// R-1 step 6 (ADR-0022): one walk of a unit's chain of two full blocks (eight synapses;
+/// divide by 8), and one `step_stdp_all` on a block whose four targets last fired at
+/// pseudo-random ticks, the four window exponentiations included.
+fn synapse(c: &mut Criterion) {
+    let mut group = c.benchmark_group("synapse");
+    group.throughput(Throughput::Elements(8));
+    group.bench_function("fan_out_x8", |b| {
+        let mut blocks = [SynapseBlock::new(); 2];
+        for (i, block) in blocks.iter_mut().enumerate() {
+            for slot in 0..4 {
+                let k = (4 * i + slot) as u32;
+                assert!(block.set_synapse(
+                    slot,
+                    10 + k,
+                    0x1000 * (k as i16 + 1),
+                    1 + k as u16,
+                    slot & 1 == 1
+                ));
+            }
+        }
+        assert!(blocks[0].link(1));
+        let mut unit = DendriticSuperNeuron::new(1);
+        assert!(unit.set_first_block(0));
+        b.iter(|| {
+            let mut acc = 0u32;
+            for s in unit.fan_out(black_box(&blocks[..])) {
+                acc = acc
+                    .wrapping_add(s.target)
+                    .wrapping_add(s.delay_ticks as u32)
+                    .wrapping_add(s.weight_q1_15 as u32);
+            }
+            black_box(acc)
+        });
+    });
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("step_stdp", |b| {
+        let mut block = SynapseBlock::new();
+        for slot in 0..4 {
+            assert!(block.set_synapse(slot, slot as u32, 0, 1, false));
+        }
+        let mut rng = Lcg(Lcg::SEED);
+        let mut now = 1u32;
+        b.iter(|| {
+            now = now.wrapping_add(1 + (rng.next_u32() >> 20));
+            let posts: [u32; 4] = core::array::from_fn(|_| now.wrapping_sub(rng.next_u32() >> 19));
+            black_box(block.step_stdp_all(black_box(now), posts))
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
-    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp
+    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp, synapse
 );
 criterion_main!(benches);

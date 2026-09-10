@@ -153,7 +153,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 
 | Crate | Primary public type(s) | Size | `no_std` | Layout | Test | Logic |
 | :--- | :--- | ---: | :---: | :---: | :---: | :---: |
-| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `MailboxNode`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 8 B, 4.2 MB | yes | yes | yes | membrane integration, short-term plasticity, turn gate and mailbox, wheel schedule and drain, efficacy |
+| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `MailboxNode`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 8 B, 4.2 MB | yes | yes | yes | membrane integration, short-term plasticity, turn gate and mailbox, wheel schedule and drain, efficacy, fan-out and STDP |
 | `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | yes | — |
 | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | yes | — |
 | `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame` | 64 B each | yes | yes | yes | SPSC ring protocol |
@@ -447,9 +447,9 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | | |
 | :--- | :--- |
 | Responsibility | The two arena record types every other subsystem indexes into, and the timing wheel that orders delayed delivery. |
-| Source | `crates/cortex-core/src/dynamics/neuron.rs`, `crates/cortex-core/src/dispatch/wheel.rs` |
-| Public API | `DendriticSuperNeuron::{new, integrate, ticks_since_spike, step_stp, gate, try_schedule, begin_turn, end_turn, mailbox_is_empty, mailbox_push, mailbox_drain}` and `Default`; membrane constants `SOMA_LEAK_SHIFT` (11), `BASAL_LEAK_SHIFT` (9), `APICAL_LEAK_SHIFT` (10), `COUPLING_SHIFT` (4), `PLATEAU_COUPLING_SHIFT` (2), `V_RESET` (−0.25), `REFRACTORY_TICKS` (200), `BURST_REFRACTORY_TICKS` (50), `BAC_APICAL_THRESHOLD` (0.5), `BAC_PLATEAU_TICKS` (200), `THRESHOLD_BASE` (1.0), `THRESHOLD_STEP` (0.02), `THRESHOLD_DECAY_SHIFT` (12), `FLAG_BURST_MODE` (bit 0), `FLAG_INHIBITORY` (bit 1) ([ADR-0018](adr/0018-membrane-integration.md)); plasticity constants `STP_U` (51/256), `STP_TAU_F_SHIFT` (14), `STP_TAU_D_SHIFT` (15), `STP_MAX` (255) and `stp_decay_factor_q16(elapsed, tau_shift)` ([ADR-0019](adr/0019-short-term-plasticity.md)); `GateState`, `MailboxNode::new` and `Default`, `MailboxDrain`, `MAILBOX_EMPTY`, `MAILBOX_NIL` ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); `SynapseBlock`; `FlatTimingWheel<CAP>::{new, schedule, advance, tick, horizon_ticks}` and `Default`, `WorkerWheel` (= `FlatTimingWheel<2048>`), `ScheduleError`; `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8) -> i32` (`const fn`, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)) |
-| Status | Layout: Implemented · Turn gate and mailbox: Implemented ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)) · Wheel schedule and drain: Implemented ([ADR-0013](adr/0013-timing-wheel-geometry.md)) · Membrane integration (leaks, coupling, threshold, refractory window, BAC plateau, threshold adaptation): Implemented ([ADR-0018](adr/0018-membrane-integration.md)) · Short-term plasticity update: Implemented ([ADR-0019](adr/0019-short-term-plasticity.md)) · Delivery from the wheel into mailboxes and the executor: Specified (§6.1) |
+| Source | `crates/cortex-core/src/dynamics/{neuron, membrane, plasticity, synapse}.rs`, `crates/cortex-core/src/dispatch/wheel.rs` |
+| Public API | `DendriticSuperNeuron::{new, integrate, ticks_since_spike, step_stp, gate, try_schedule, begin_turn, end_turn, mailbox_is_empty, mailbox_push, mailbox_drain, first_block, set_first_block, fan_out, chain}` and `Default`; membrane constants `SOMA_LEAK_SHIFT` (11), `BASAL_LEAK_SHIFT` (9), `APICAL_LEAK_SHIFT` (10), `COUPLING_SHIFT` (4), `PLATEAU_COUPLING_SHIFT` (2), `V_RESET` (−0.25), `REFRACTORY_TICKS` (200), `BURST_REFRACTORY_TICKS` (50), `BAC_APICAL_THRESHOLD` (0.5), `BAC_PLATEAU_TICKS` (200), `THRESHOLD_BASE` (1.0), `THRESHOLD_STEP` (0.02), `THRESHOLD_DECAY_SHIFT` (12), `FLAG_BURST_MODE` (bit 0), `FLAG_INHIBITORY` (bit 1) ([ADR-0018](adr/0018-membrane-integration.md)); plasticity constants `STP_U` (51/256), `STP_TAU_F_SHIFT` (14), `STP_TAU_D_SHIFT` (15), `STP_MAX` (255) and `stp_decay_factor_q16(elapsed, tau_shift)` ([ADR-0019](adr/0019-short-term-plasticity.md)); `GateState`, `MailboxNode::new` and `Default`, `MailboxDrain`, `MAILBOX_EMPTY`, `MAILBOX_NIL` ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); `SynapseBlock::{new, is_end, next, link, unlink, target, is_apical, set_synapse, clear_synapse, fan_out, chain, release, release_all, step_stdp, step_stdp_all, stamp_presynaptic}` and `Default`, `FanOut`, `Chain`, `Synapse`, `SYNAPSES_PER_BLOCK` (4), `CHAIN_END` (0), `SLOT_EMPTY` (0), `NO_SPIKE_ON_RECORD` (0), `STDP_TAU_SHIFT` (11), `STDP_A_PLUS_Q1_15` (328), `STDP_A_MINUS_Q1_15` (344), `MAX_TOKEN_BLOCK`, `synapse_token`, `token_block`, `token_slot`, `spike_message`, `message_efficacy_q16`, `message_is_apical`, `MESSAGE_APICAL` ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); `FlatTimingWheel<CAP>::{new, schedule, advance, tick, horizon_ticks}` and `Default`, `WorkerWheel` (= `FlatTimingWheel<2048>`), `ScheduleError`, `MAX_TOKEN`; `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8) -> i32` (`const fn`, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)) |
+| Status | Layout: Implemented · Turn gate and mailbox: Implemented ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)) · Wheel schedule and drain: Implemented ([ADR-0013](adr/0013-timing-wheel-geometry.md)) · Membrane integration (leaks, coupling, threshold, refractory window, BAC plateau, threshold adaptation): Implemented ([ADR-0018](adr/0018-membrane-integration.md)) · Short-term plasticity update: Implemented ([ADR-0019](adr/0019-short-term-plasticity.md)) · Fan-out, the delivery encodings and STDP: Implemented ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)) · The executor that runs the sequence across workers: Specified (§6.1, brief 012) |
 
 **`DendriticSuperNeuron`** — 64 B, align 64. A two-compartment pyramidal model (basal and apical dendrites plus soma) with short-term-plasticity state and the virtual-actor control fields.
 
@@ -464,8 +464,8 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | `[36..40)` | `v_thresh` | `i32` | Q16.16 | Adaptive firing threshold: steps up 0.02 per spike and decays to the base 1.0; at or below zero the unit is unconfigured and never fires. |
 | `[40..42)` | `bac_plateau_ticks` | `u16` | ticks | Remaining duration of a dendritic calcium plateau (BAC burst). |
 | `[42..44)` | `refractory_ticks` | `u16` | ticks | Absolute refractory countdown. |
-| `[44..48)` | `last_soma_spike_tick` | `u32` | tick | Time of the last somatic spike (STDP, BAC coincidence). |
-| `[48..52)` | `synapse_slab_idx` | `u32` | index | First `SynapseBlock` of this unit's fan-out. |
+| `[44..48)` | `last_soma_spike_tick` | `u32` | tick | Time of the last somatic spike; 0 is no spike on record (STDP, [ADR-0022](adr/0022-synapse-fan-out-and-stdp.md); BAC coincidence). |
+| `[48..52)` | `synapse_slab_idx` | `u32` | index + 1 | First `SynapseBlock` of this unit's fan-out, as index + 1; 0 for a unit without one ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)). |
 | `[52..54)` | `plastic_delta_head` | `u16` | index | Head of the far-memory plastic-delta list (Specified; finding F-20: sixteen bits cannot address the table Appendix A sizes). |
 | `[54..56)` | `spatial_voxel_morton` | `u16` | Morton code | Spatial voxel for structural growth (Specified). |
 | `[56..57)` | `gate_state` | `AtomicU8` | enum | Turn gate, a `GateState` byte: idle 0 · scheduled 1 · running 2 (A3, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)). |
@@ -487,20 +487,24 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Format | Meaning |
 | :--- | :--- | :--- | :--- | :--- |
 | `[0..4)` | `next` | `AtomicU32` | index + 1 | The next node of the list; `MAILBOX_NIL` (0) at the end. |
-| `[4..8)` | `payload` | `AtomicU32` | token | The message: an opaque token (a `SynapseBlock` offset or a unit index). |
+| `[4..8)` | `payload` | `AtomicU32` | message | The message: for a spike delivery, `spike_message` (efficacy and compartment, [ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); opaque to the mailbox. |
 
-**`SynapseBlock`** — 64 B, align 64. Four outgoing synapses per block; blocks chain by index.
+**`SynapseBlock`** — 64 B, align 64. Four outgoing synapses of one unit per block; blocks chain by index. Every index stored is `index + 1`, so zero is an empty slot, the end of a chain or a unit without fan-out, and a zeroed arena is a valid arena of empty blocks ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)).
 
 | Offset | Field | Type | Format | Meaning |
 | :--- | :--- | :--- | :--- | :--- |
-| `[0..16)` | `target_neuron_ids` | `[u32; 4]` | index | Post-synaptic unit indices. |
-| `[16..24)` | `weights_q1_15` | `[i16; 4]` | Q1.15 | Base weight as a signed fraction of the firing threshold, in $[-1, 1)$ ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)). Combined with the Q0.8 STP factors by `synaptic_efficacy_q16`. |
-| `[24..32)` | `delays_ticks` | `[u16; 4]` | ticks | Axonal conduction delay per synapse. |
-| `[32..36)` | `next_block_idx` | `u32` | index | Next block in the chain; sentinel for end. |
-| `[36..40)` | `last_spike_tick` | `u32` | tick | Pre-synaptic spike time for STDP. |
-| `[40..64)` | `_reserved` | `[u8; 24]` | — | Reserved; MUST be zero. |
+| `[0..16)` | `target_neuron_ids` | `[u32; 4]` | index + 1 | Post-synaptic unit index + 1 per slot; `SLOT_EMPTY` (0) for an empty slot. |
+| `[16..24)` | `weights_q1_15` | `[i16; 4]` | Q1.15 | Base weight as a signed fraction of the firing threshold, in $[-1, 1)$ ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); moved by STDP. Combined with the Q0.8 STP factors by `synaptic_efficacy_q16`. |
+| `[24..32)` | `delays_ticks` | `[u16; 4]` | ticks | Conduction delay per slot: 0 delivers into the target's mailbox now, otherwise through the wheel. |
+| `[32..36)` | `next_block_idx` | `u32` | index + 1 | Next block in the chain + 1; `CHAIN_END` (0) for the last. |
+| `[36..40)` | `last_spike_tick` | `u32` | tick | The last presynaptic spike this block carried; 0 is no spike on record. |
+| `[40..56)` | `last_release_q16` | `[i32; 4]` | Q16.16 | The efficacy each slot released at the last presynaptic spike, read back at a delayed delivery. |
+| `[56..57)` | `apical_mask` | `u8` | bitfield | Bit $k$: slot $k$ lands in the target's apical compartment; clear, the basal one. |
+| `[57..64)` | `_reserved` | `[u8; 7]` | — | Reserved; MUST be zero. |
 
-**`FlatTimingWheel<CAP>`** — one per worker; `WorkerWheel = FlatTimingWheel<2048>` is 4 195 336 B ([ADR-0013](adr/0013-timing-wheel-geometry.md)). Two rings of fixed-capacity token lists: 256 fine slots of 10 µs (2.56 ms) and 256 coarse slots of 100 µs (25.6 ms), both powers of two so that slot selection is a mask. A token is an opaque 28-bit value (a `SynapseBlock` offset or a unit index); in the coarse ring its top four bits carry the fine residual. `schedule(delay_ticks, token)` places the token in the fine ring for delays below 256 ticks and in the coarse ring otherwise, and returns `ZeroDelay`, `BeyondHorizon` (2 560 ticks), `TokenTooLarge` or `SlotFull` without mutating the wheel. `advance()` clears the slot consumed at the previous tick, steps the tick, cascades the coarse window that begins at that tick into the fine ring, and returns the due slot in a deterministic order (tokens already in the fine slot, then the cascaded tokens, each group in scheduling order). Two wheels fed the same sequence produce identical slots; eight unit tests cover both rings, both wrap boundaries, the order and the rejections.
+**Fan-out and STDP** ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md), Implemented). `fan_out` walks a chain and yields every non-empty slot as a `Synapse` (block, slot, compartment, target, weight, delay), in block and slot order; `chain` yields the block indices for a caller that mutates. Both stop at the chain's end, at an index outside the arena and after `arena.len()` blocks, so a corrupt or cyclic chain terminates; a delay beyond the wheel's horizon is yielded unchanged, since the loader rejects it (§6.2). At a presynaptic spike, `release(slot, u, r)` stores `synaptic_efficacy_q16(weight, u, r)` in `last_release_q16` and a delayed delivery reads it back, so what arrives is what was released and the delivering worker needs only the block. A delayed delivery is scheduled as `synapse_token(block, slot)` (`block << 2 | slot`, 28 bits, so a token names a block up to $2^{26} - 1$: finding F-23) and arrives, as does a zero-delay one at once, as `spike_message(efficacy, apical)`: the efficacy in 18-bit two's complement and the compartment in bit 18, a total order the executor sorts a batch by (§8.3). STDP is the nearest-neighbour pair rule at the presynaptic spike, `step_stdp(slot, t, q)` with $p$ the block's previous stamp and $q$ the target's last somatic spike: if $p < q \le t$ the weight gains $A_+ (1 - 2^{-11})^{q - p}$; then, if $q < t$, it loses $A_- (1 - 2^{-11})^{t - q}$; $A_+ = 328/32768$, $A_- = 344/32768$, the window by `stp_decay_factor_q16`, rounded to nearest, saturating in $[-1, 1)$; every comparison is a wrapping difference read as signed (§8.4) and a stamp of zero pairs with nothing. `step_stdp_all` updates the four slots and then stamps. Eleven tests, and the M3 exit test: three units in a ring of thirteen synapses per hop oscillate with periods of 1 527, 3 793 and 2 433 ticks for the delay triples (300, 500, 700), (2 559, 1, 1 200) and (0, 1 500, 900), each the delays plus nine or eleven ticks of integration per hop, exact over a hundred steady cycles and identical on a second run (`tests/oscillator.rs`). Two benchmarks.
+
+**`FlatTimingWheel<CAP>`** — one per worker; `WorkerWheel = FlatTimingWheel<2048>` is 4 195 336 B ([ADR-0013](adr/0013-timing-wheel-geometry.md)). Two rings of fixed-capacity token lists: 256 fine slots of 10 µs (2.56 ms) and 256 coarse slots of 100 µs (25.6 ms), both powers of two so that slot selection is a mask. A token is an opaque 28-bit value; a spike delivery's is `synapse_token(block, slot)` ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); in the coarse ring its top four bits carry the fine residual. `schedule(delay_ticks, token)` places the token in the fine ring for delays below 256 ticks and in the coarse ring otherwise, and returns `ZeroDelay`, `BeyondHorizon` (2 560 ticks), `TokenTooLarge` or `SlotFull` without mutating the wheel. `advance()` clears the slot consumed at the previous tick, steps the tick, cascades the coarse window that begins at that tick into the fine ring, and returns the due slot in a deterministic order (tokens already in the fine slot, then the cascaded tokens, each group in scheduling order). Two wheels fed the same sequence produce identical slots; eight unit tests cover both rings, both wrap boundaries, the order and the rejections.
 
 <!-- @assert-count target="crates/cortex-core" symbol="DendriticSuperNeuron" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-core" symbol="SynapseBlock" min="1" word="true" -->
@@ -510,6 +514,9 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 <!-- @assert-count target="crates/cortex-core" symbol="weights_q1_15" min="1" word="true" reason="ADR-0012: the weight field names its format" -->
 <!-- @assert-count target="crates/cortex-core" symbol="synaptic_efficacy_q16" min="1" word="true" reason="ADR-0012: the widening arithmetic is implemented and tested" -->
 <!-- @assert-count target="crates/cortex-core" symbol="try_schedule" min="1" word="true" reason="ADR-0017: the turn gate is implemented" -->
+<!-- @assert-count target="crates/cortex-core" symbol="fn fan_out" min="1" reason="ADR-0022: the chain walk is implemented" -->
+<!-- @assert-count target="crates/cortex-core" symbol="fn step_stdp" min="1" reason="ADR-0022: the pair rule is implemented" -->
+<!-- @assert-count target="crates/cortex-core" symbol="spike_message" min="1" word="true" reason="ADR-0022: a delivery is an encoded message" -->
 <!-- @assert-count target="crates/cortex-core" symbol="MailboxNode" min="1" word="true" reason="ADR-0017: the mailbox is implemented" -->
 <!-- @assert-absence target="crates/cortex-core" symbol="mailbox_tag" word="true" reason="ADR-0017: the ABA tag is gone (finding F-19)" -->
 <!-- @assert-count target="crates/cortex-core" symbol="fn integrate" min="1" reason="ADR-0018: membrane integration is implemented" -->
@@ -521,7 +528,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (5) |
+| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (6) |
 | Status | Header layout: Implemented · Sections, CRC, loader: Specified (§8.7) · Atlas-derived priors: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -529,7 +536,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
 | `[0..8)` | `magic` | `[u8; 8]` | ASCII `VCORTEX1` (big-endian `0x5643_4F52_5445_5831`). |
-| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 4. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); 5 carved fields from the reserved bytes of six records for the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) and [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) (§5.2.8, §5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.32); a version-4 image has them zero, which every rule reads as "not yet". |
+| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 6. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); 5 carved fields from the reserved bytes of six records for the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) and [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) (§5.2.8, §5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.32); a version-4 image has them zero, which every rule reads as "not yet"; 6 re-encoded every `SynapseBlock` index and `synapse_slab_idx` as index + 1 and carved `last_release_q16` and `apical_mask` from the block's reserved bytes ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); a version-5 image's indices moved by one, so it MUST NOT be read as version 6. |
 | `[12..16)` | `reserved_flags` | `u32` | Feature flags; MUST be zero in version 1. |
 | `[16..24)` | `num_columns` | `u64` | Cortical hyper-column count. |
 | `[24..32)` | `num_neurons` | `u64` | `DendriticSuperNeuron` record count. |
@@ -539,7 +546,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | `[56..64)` | `_padding` | `[u8; 8]` | Reserved; MUST be zero. |
 
 <!-- @assert-count target="crates/cortex-connectome" symbol="CortexFileHeader" min="1" word="true" -->
-<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 5" min="1" reason="§5.2.2 states the current image format version; update both together" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 6" min="1" reason="§5.2.2 states the current image format version; update both together" -->
 
 #### 5.2.3 `cortex-sensory` — peripheral ingestion
 
@@ -1393,14 +1400,18 @@ Scenarios are written against the records of §5. Steps marked *(Specified)* hav
       ├── below v_thresh → end_turn: idle, or re-scheduled if a message arrived meanwhile (Implemented)
       └── at/above       → emit, set last_soma_spike_tick, start refractory_ticks
                                                  ▼
-[6] fan-out: walk SynapseBlock chain from synapse_slab_idx; for each target → step 1  (Specified)
+[6] fan-out: step_stp; per block of the chain step_stdp_all, release_all; per synapse         (Implemented, ADR-0022)
+      ├── delay > 0 → step 1 with synapse_token(block, slot)
+      └── delay == 0 → step 2 now with spike_message(release, apical)
 ```
+
+At a token's delivery (R-2) the worker reads the block the token names, builds `spike_message(last_release_q16[slot], is_apical(slot))` and pushes it (step 2). Every step is a record method; the loop that runs them for every spike on every worker, with the batch order of §8.3, is the executor's (brief 012, Specified). The single-threaded loop of `crates/cortex-core/tests/oscillator.rs` runs them all.
 
 The turn invariant (A3) guarantees that steps 4–6 for one unit never run on two workers at once, so no field of `DendriticSuperNeuron` other than the two atomics is ever written concurrently.
 
 ### 6.2 Scenario R-2: timing-wheel tick
 
-On each fine tick the worker calls `advance()`: the slot consumed at the previous tick is cleared, the tick steps, and when the tick is a multiple of ten the coarse window that begins at it is cascaded into the fine ring (each token to the slot of its exact due tick, using the residual packed in its top four bits); the due slot is then returned as a slice in a deterministic order (fine-scheduled tokens, then cascaded tokens, each in scheduling order) and the worker dispatches each token (R-1 step 2). Schedule and advance are $O(1)$ apart from the length of one cascaded window every ten ticks; there is no heap, no comparison and no rebalancing ([ADR-0013](adr/0013-timing-wheel-geometry.md)). A delay at or beyond the horizon (2 560 fine ticks, 25.6 ms) is `ScheduleError::BeyondHorizon`; the connectome loader MUST reject such a delay at load time so that the error never occurs in the tick loop (Specified).
+On each fine tick the worker calls `advance()`: the slot consumed at the previous tick is cleared, the tick steps, and when the tick is a multiple of ten the coarse window that begins at it is cascaded into the fine ring (each token to the slot of its exact due tick, using the residual packed in its top four bits); the due slot is then returned as a slice in a deterministic order (fine-scheduled tokens, then cascaded tokens, each in scheduling order) and the worker dispatches each token: a synapse token names the block and slot whose stored release becomes a spike message pushed at R-1 step 2 ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)). Schedule and advance are $O(1)$ apart from the length of one cascaded window every ten ticks; there is no heap, no comparison and no rebalancing ([ADR-0013](adr/0013-timing-wheel-geometry.md)). A delay at or beyond the horizon (2 560 fine ticks, 25.6 ms) is `ScheduleError::BeyondHorizon`; the connectome loader MUST reject such a delay at load time so that the error never occurs in the tick loop (Specified).
 
 ### 6.3 Scenario R-3: sensory ingestion and hot-plug
 
@@ -1573,7 +1584,7 @@ A run is defined by `(image, seed, input trace)`. Two runs with equal inputs MUS
 | Horizons | 2.56 ms fine, 25.6 ms coarse (2 560 fine ticks); a longer delay is `ScheduleError::BeyondHorizon` and MUST be rejected at load (§6.2, [ADR-0013](adr/0013-timing-wheel-geometry.md)). |
 | Epoch | 1 ms; the embodiment period and the checkpoint granularity. |
 | Timestamps | `u32` microseconds in `SensoryEvent` (wraps at ~71.6 min), `u32` ticks in neuron and synapse records, `u64` microseconds in telemetry. |
-| Wrap | `u32` tick stamps wrap every $2^{32}$ ticks (≈ 11.9 h at 10 µs). A comparison of two stamps MUST be their wrapping difference read as signed (`a.wrapping_sub(b) as i32`), never `a < b`; a stamp older than $2^{31}$ ticks is indistinguishable from a future one, so anything that keeps a stamp that long MUST refresh it. Implemented for the neuron by `ticks_since_spike` ([ADR-0018](adr/0018-membrane-integration.md)), whose result is what `step_stp` takes as its interval ([ADR-0019](adr/0019-short-term-plasticity.md)). |
+| Wrap | `u32` tick stamps wrap every $2^{32}$ ticks (≈ 11.9 h at 10 µs). A comparison of two stamps MUST be their wrapping difference read as signed (`a.wrapping_sub(b) as i32`), never `a < b`; a stamp older than $2^{31}$ ticks is indistinguishable from a future one, so anything that keeps a stamp that long MUST refresh it. Implemented for the neuron by `ticks_since_spike` ([ADR-0018](adr/0018-membrane-integration.md)), whose result is what `step_stp` takes as its interval ([ADR-0019](adr/0019-short-term-plasticity.md)); STDP's comparisons use the same difference and read a stamp of zero as no spike on record ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)). |
 
 Tick sizes and the wheel geometry are `cortex-core` constants; the record types do not encode them. Changing them changes the meaning of every `*_ticks` field, so a self-describing image must carry the tick duration; where it lives is deferred to the loader milestone (§11.1).
 
@@ -1591,7 +1602,7 @@ No heap allocation occurs after initialisation (TC-5). Arenas are allocated once
 
 ### 8.7 Persistence and serialisation
 
-The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 5; the version history is in §5.2.2. Layout (Specified except the header):
+The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 6; the version history is in §5.2.2. Layout (Specified except the header):
 
 ```text
 [0..64)         CortexFileHeader
@@ -1614,7 +1625,7 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | Leaky integrate-and-fire with refractory period | `cortex-core` · `v_soma`, `v_thresh`, `refractory_ticks` | Shift leak per tick with a one-LSB floor; the soma driven by its difference to each compartment; fire at an adaptive threshold; reset to −0.25; a 2 ms window that drops inputs. | Implemented ([ADR-0018](adr/0018-membrane-integration.md)) |
 | Two-compartment BAC firing (Larkum) | `cortex-core` · `v_basal`, `v_apical`, `bac_plateau_ticks`, `last_soma_spike_tick` | A somatic spike with the apical compartment at or above 0.5 starts a 2 ms plateau: apical coupling ×4 and a 0.5 ms refractory window, so single spikes become a burst. | Implemented ([ADR-0018](adr/0018-membrane-integration.md)) |
 | Short-term plasticity (Tsodyks–Markram) | `cortex-core` · `stp_r_ves`, `stp_u_rel` | Per presynaptic spike with the elapsed interval: relaxation by $(1 - 2^{-k})^{\Delta t}$, facilitation $U(1-u)$, release $uR$, depletion by the release; efficacy $\propto uR$ through `synaptic_efficacy_q16`. | Implemented ([ADR-0019](adr/0019-short-term-plasticity.md)) |
-| STDP | `cortex-core` · `last_soma_spike_tick`, `SynapseBlock.last_spike_tick` | Pre-before-post potentiates; post-before-pre depresses; windowed by tick difference. | Specified |
+| STDP | `cortex-core` · `last_soma_spike_tick`, `SynapseBlock::{last_spike_tick, step_stdp}` | Nearest-neighbour pairs at the presynaptic spike $t$: $+A_+ (1 - 2^{-11})^{q - p}$ when the target's last spike $q$ follows the previous presynaptic spike $p$; then $-A_- (1 - 2^{-11})^{t - q}$ when $q$ precedes $t$; $A_+ = 0.0100$, $A_- = 0.0105$, Q1.15 saturating. | Implemented ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); the three-factor modulation Specified |
 | Three-factor plasticity | `cortex-neuromod` | $\Delta W = \eta \cdot e_{ij} \cdot M$, with an eligibility trace $e_{ij}$ and modulator $M$ from the neuromodulator record. | Specified |
 | Striatal action selection | `cortex-basal-ganglia` | Linear gate (Implemented); lateral inhibition and dopamine-scaled D1/D2 balance (Specified). | Partial |
 | Cerebellar forward model | `cortex-cerebellum` | Granule expansion, Purkinje readout, climbing-fibre LTD; prediction compared with delayed observation. | Partial: delay line and climbing-fibre adaptation of a scalar gain Implemented (brief 004); granule expansion Specified |
@@ -1739,6 +1750,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0019](adr/0019-short-term-plasticity.md) | Short-term plasticity: event-driven Tsodyks–Markram on the Q0.8 fields, exponentials by binary exponentiation |
 | [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) | Computational phenomenology: the state variables the theories name, as integer rules, and what the document does not claim for them |
 | [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) | Native cognitive language: nested constructions, conceptual blending, default-mode wandering and dialogue grounding, without a language model |
+| [ADR-0022](adr/0022-synapse-fan-out-and-stdp.md) | Synaptic fan-out and STDP: index + 1 chains, synapse tokens, stored releases, spike messages, and the nearest-neighbour pair rule at the presynaptic spike; image format 6 |
 
 ---
 
@@ -1808,6 +1820,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-20 | `DendriticSuperNeuron::plastic_delta_head` is a `u16` index into the far-memory delta table, which Appendix A sizes at 10⁹ entries; sixteen bits address 65 536. A width that cannot hold its index space is a finding of the F-3 class. | `cortex-core` | **Open**: decided with the Tier 2 delta record (milestone M4 / M5); until then the field is Specified and unused. Brief 015 is the round. |
 | F-21 | §8.3 defined the delivery order within a tick as "(slot, lane, source index)"; lanes were removed with the wheel geometry of ADR-0013 (brief 005). | this document | **Resolved**: the order is by slot, then fine-scheduled before cascaded tokens, each in scheduling order; the mailbox batch order is brief 009's. |
 | F-22 | Crate-level documentation in eleven crates stated capabilities or figures the crates do not implement (`cortex-predictive` asserted a traffic reduction that hypothesis H-2 calls unmeasured; four crates were "Engineered to 2026+ Systems Best Practice"; `neuron.rs` called a control record plain old data, contrary to rule L-5), and four manifest descriptions named responsibilities that ADR-0016 moved to other crates. `cargo doc` would have published all of it. | eleven crates | **Resolved**: every crate comment states what the crate holds, labels the rest Specified and points to its whitepaper section; the four descriptions are corrected. |
+| F-23 | A delayed delivery names its synapse in the wheel's 28-bit token as `block × 4 + slot` ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)), so the wheel addresses $2^{26}$ blocks (67 108 864, 4.3 GB); Appendix A row 3 sizes the synapse arena at 128 000 000 blocks. | `cortex-core`, Appendix A | **Open.** Either the token widens (move the coarse ring's residual out of the token into its own byte per entry, an amendment of [ADR-0013](adr/0013-timing-wheel-geometry.md) costing 512 KB per worker) or Appendix A halves the arena. Decided with the loader (brief 015), which is where an arena's size is first fixed. |
 
 ### 11.1 Hypotheses and open questions
 
@@ -1853,7 +1866,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Q16.16 | Signed 32-bit fixed point with 16 fractional bits; membrane potentials, drives and every other state quantity. |
 | Record | One of the `#[repr(C)]` structures of §5.2. |
 | Timing wheel | A ring of slots indexed by (current + delay) mod length; $O(1)$ timer insert and expiry. |
-| Token | The opaque 28-bit payload a timing-wheel slot holds: a `SynapseBlock` offset or a unit index ([ADR-0013](adr/0013-timing-wheel-geometry.md)). |
+| Token | The opaque 28-bit payload a timing-wheel slot holds; for a spike delivery, `synapse_token(block, slot)` ([ADR-0013](adr/0013-timing-wheel-geometry.md), [ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)). |
+| Spike message | The 32-bit mailbox payload of a delivery: an 18-bit efficacy and a compartment bit, `spike_message` ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)). |
 | Turn invariant | At most one worker touches a record per tick (A3). |
 | Unit | A `DendriticSuperNeuron` record; the engine's neural entity. |
 | Veto gate | `EthicalEvaluationGate`: the in-engine check a proposed action passes before dispatch (§5.2.28); it stands in front of the watchdog, not in place of it. |
@@ -1875,7 +1889,7 @@ Parameters: `N_col` = 860 000, `N_neuron` = 43 000 000, `N_block` = 128 000 000 
 | :--- | :--- | ---: | ---: | ---: |
 | 1 | Macro-column directory | 860 000 | 64 B | 55.0 MB |
 | 2 | `DendriticSuperNeuron` arena | 43 000 000 | 64 B | 2.75 GB |
-| 3 | `SynapseBlock` arena | 128 000 000 | 64 B | 8.19 GB |
+| 3 | `SynapseBlock` arena | 128 000 000 | 64 B | 8.19 GB (finding F-23: a delayed-delivery token addresses 67 108 864 blocks) |
 | 4 | Column broadcast bitmaps | 860 000 | 512 B | 440 MB |
 | 5 | `BasalGangliaChannelState` | 1 000 000 | 64 B | 64 MB |
 | 6 | `CerebellarMicrozone` | 8 000 000 | 64 B | 512 MB |
@@ -1954,7 +1968,7 @@ Milestones follow the founding design note; each ends with a test that proves it
 | :--- | :--- | :--- | :--- |
 | M1 Memory and gating core | Packed ids; 64-byte records; layout assertions; lock-free mailbox; CAS gate. | Push → gate → callback unit test. | Records, assertions, mailbox and gate done (brief 009, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); the exit test passes as `crates/cortex-core/tests/mailbox.rs`; packed-id helpers open. |
 | M2 Executor | Core-pinned worker pool; work-stealing deque; batch draining. | 10⁶ events delivered with no loss and no deadlock under contention. | Not started; brief 012 (a runtime crate outside `crates/`). |
-| M3 Wheel and connectome | Wheel drain path; `SynapseBlock` fan-out; three-neuron delayed oscillator. | Oscillator period is exact to the tick. | Wheel schedule and drain done ([ADR-0013](adr/0013-timing-wheel-geometry.md)); fan-out and STDP open (brief 013). |
+| M3 Wheel and connectome | Wheel drain path; `SynapseBlock` fan-out; three-neuron delayed oscillator. | Oscillator period is exact to the tick. | Done: wheel schedule and drain ([ADR-0013](adr/0013-timing-wheel-geometry.md)), fan-out, delivery encodings and STDP (brief 013, [ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); the exit test passes as `crates/cortex-core/tests/oscillator.rs` (periods 1 527, 3 793 and 2 433 ticks for three delay triples, exact over a hundred cycles). The delivery loop across workers is M2's. |
 | M4 Eviction and persistence | Clock sweep; `.cortex` loader and writer; lazy re-hydration. | Evict, spike, re-hydrate round trip preserves state bit-for-bit. | Header done; the section directory, CRC, loader, writer, sweep and the Tier-2 delta record are brief 015 (with finding F-20). |
 | M5 Subsystem dynamics | Replace placeholder functions with the dynamics of §8.8, one crate at a time, each with tests. | Per-crate property tests. | `cortex-core` membrane integration (brief 011, [ADR-0018](adr/0018-membrane-integration.md)) and short-term plasticity (brief 010, [ADR-0019](adr/0019-short-term-plasticity.md)) done; STDP and the other crates not started. |
 | M6 Embodiment | Payload rings, torque decoder, watchdog contract, MuJoCo stub. | T-4, T-5. | Frame ABI, ring protocol (brief 008) and the push–pull torque decoder done; mapping, loop, watchdog integration and the stub open. |

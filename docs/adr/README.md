@@ -27,3 +27,4 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0019](0019-short-term-plasticity.md) | Short-term plasticity: event-driven Tsodyks–Markram on the Q0.8 fields, exponentials by binary exponentiation | accepted |
 | [ADR-0020](0020-computational-phenomenology-and-synthetic-qualia.md) | Computational phenomenology: the state variables the theories name, as integer rules, and what the document does not claim for them | accepted |
 | [ADR-0021](0021-native-cognitive-language-and-conceptual-blending.md) | Native cognitive language: nested constructions, conceptual blending, default-mode wandering and dialogue grounding, without a language model | accepted |
+| [ADR-0022](0022-synapse-fan-out-and-stdp.md) | Synaptic fan-out and STDP: index + 1 chains, synapse tokens, stored releases, spike messages, the nearest-neighbour pair rule at the presynaptic spike; image format 6 | accepted |
