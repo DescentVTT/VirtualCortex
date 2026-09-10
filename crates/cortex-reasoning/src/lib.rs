@@ -9,10 +9,18 @@
 //! when it reaches the empty clause. Literals are `u32` atoms with the top bit as negation;
 //! atom 0 is "no literal", so a unit clause is `(lit, LITERAL_NONE)` and the empty clause is
 //! `(LITERAL_NONE, LITERAL_NONE)`. The truth tables and the propositional resolution step are
-//! Implemented; first-order term unification, which needs a term arena, and clause search are
-//! Specified.
+//! Implemented, and so are the term arena and first-order unification of [`term`] (ADR-0025):
+//! a literal may name a term node, and a resolution step unifies the complementary pair. Clause
+//! search and constraint propagation are Specified.
 
 #![no_std]
+
+pub mod term;
+pub use term::{
+    Binding, MAX_ARITY, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TERM_NONE, TERM_VARIABLE,
+    TermNode, UnifyResult, deref, is_negated, literal_of_term, resolve_first_order,
+    term_of_literal, undo, unify,
+};
 
 /// Satisfied when the condition holds and the parent is satisfied.
 pub const OP_AND: u8 = 0;
@@ -177,22 +185,35 @@ impl SymbolicRuleNode {
         depth: u8,
     ) -> bool {
         match resolve(parent, other) {
-            Some((first, second)) => {
-                self.condition_predicate_id = first;
-                self.consequence_action_id = second;
-                self.parent_rule_idx = parent_idx;
-                self.resolved_with_idx = other_idx;
-                self.logical_operator = OP_RESOLVE;
-                self.proof_depth = depth.saturating_add(1);
-                self.satisfaction_state = STATE_SATISFIED;
-                self.support_count = self.support_count.saturating_add(1);
-                true
-            }
+            Some(resolvent) => self.record_resolvent(resolvent, parent_idx, other_idx, depth),
             None => {
                 self.satisfaction_state = STATE_VIOLATED;
                 false
             }
         }
+    }
+
+    /// Records a resolvent another step computed (a first-order one through
+    /// [`term::resolve_first_order`], whose bindings live in the caller's table): the node
+    /// holds it, is a RESOLVE node one step deeper than `depth`, satisfied, with both parents.
+    /// Always `true`; the propositional [`apply_resolution`](Self::apply_resolution) is this
+    /// after [`resolve`].
+    pub fn record_resolvent(
+        &mut self,
+        resolvent: Clause,
+        parent_idx: u32,
+        other_idx: u32,
+        depth: u8,
+    ) -> bool {
+        self.condition_predicate_id = resolvent.0;
+        self.consequence_action_id = resolvent.1;
+        self.parent_rule_idx = parent_idx;
+        self.resolved_with_idx = other_idx;
+        self.logical_operator = OP_RESOLVE;
+        self.proof_depth = depth.saturating_add(1);
+        self.satisfaction_state = STATE_SATISFIED;
+        self.support_count = self.support_count.saturating_add(1);
+        true
     }
 
     /// True for a RESOLVE node that derived the empty clause: the premises it descends from

@@ -72,6 +72,8 @@ pub const SECTION_PLASTIC_DELTA: u32 = 37;
 pub const SECTION_LAMINAR: u32 = 38;
 /// The routing table (Specified).
 pub const SECTION_ROUTING: u32 = 39;
+/// `TermNode` arena of `cortex-reasoning` (ADR-0025; the loader's support is Specified).
+pub const SECTION_TERM: u32 = 40;
 
 /// Why a header is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
