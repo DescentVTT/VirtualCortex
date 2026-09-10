@@ -310,7 +310,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 8);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 9);
     }
 
     #[test]
