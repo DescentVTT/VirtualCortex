@@ -8,7 +8,8 @@
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_bench::Lcg;
 use cortex_core::{
-    DendriticSuperNeuron, MailboxNode, THRESHOLD_BASE, WorkerWheel, synaptic_efficacy_q16,
+    DendriticSuperNeuron, MailboxNode, STP_MAX, STP_U, THRESHOLD_BASE, WorkerWheel,
+    synaptic_efficacy_q16,
 };
 use cortex_workspace::GlobalWorkspaceSlot;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -226,7 +227,25 @@ fn neuron(c: &mut Criterion) {
     group.finish();
 }
 
+/// Short-term plasticity (ADR-0019): one `step_stp` per presynaptic spike with a pseudo-random
+/// interval up to about 16 ms, the two exponentiations included.
+fn stp(c: &mut Criterion) {
+    let mut group = c.benchmark_group("stp");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("step_stp", |b| {
+        let mut unit = DendriticSuperNeuron::new(1);
+        unit.stp_u_rel = STP_U;
+        unit.stp_r_ves = STP_MAX;
+        let mut rng = Lcg(Lcg::SEED);
+        b.iter(|| {
+            let elapsed = rng.next_u32() >> 21;
+            black_box(unit.step_stp(black_box(elapsed)))
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
-    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron
+    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp
 );
 criterion_main!(benches);
