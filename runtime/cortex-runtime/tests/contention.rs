@@ -17,6 +17,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         workers,
         units: UNITS,
         blocks: 0,
+        deltas: 0,
         nodes_per_worker: 1 << 17,
         deque_capacity: 0,
         injector_capacity: 1 << 16,

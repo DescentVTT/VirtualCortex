@@ -27,15 +27,17 @@
 use crate::arena::Arena;
 use crate::barrier::SpinBarrier;
 use crate::deque::{self, Local, Steal, Stealer};
+use crate::image::{ImageError, WriteAheadLog};
 use crate::injector::{self, Injector};
 use crate::pool::Pools;
 use cortex_core::{
-    CHAIN_END, DendriticSuperNeuron, FlatTimingWheel, NO_SPIKE_ON_RECORD, SYNAPSES_PER_BLOCK,
-    SynapseBlock, THRESHOLD_BASE, message_efficacy_q16, message_is_apical, spike_message,
-    synapse_token, token_block, token_slot,
+    CHAIN_END, DendriticSuperNeuron, FlatTimingWheel, NO_SPIKE_ON_RECORD, PlasticDelta,
+    SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, message_efficacy_q16, message_is_apical,
+    spike_message, synapse_token, token_block, token_slot,
 };
+use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
 
 /// How the executor is sized. Every capacity is allocated once in [`Executor::new`].
@@ -47,6 +49,8 @@ pub struct Config {
     pub units: usize,
     /// Synapse blocks in the arena.
     pub blocks: usize,
+    /// Tier-2 plastic deltas in the arena (stored and read; applying them is Specified).
+    pub deltas: usize,
     /// Mailbox nodes per worker: the most messages one worker can have in flight at once. A
     /// tick takes at most one wheel slot's tokens plus the zero-delay synapses of the units
     /// that fired, and, on worker 0, one injector ring's worth; nodes come back the tick after.
@@ -66,6 +70,7 @@ impl Default for Config {
             workers: 1,
             units: 1,
             blocks: 0,
+            deltas: 0,
             nodes_per_worker: 64,
             deque_capacity: 0,
             injector_capacity: 64,
@@ -122,6 +127,13 @@ fn push_bounded<T>(v: &mut Vec<T>, x: T, what: &str) {
 struct Shared {
     units: Arena<DendriticSuperNeuron>,
     blocks: Arena<SynapseBlock>,
+    deltas: Arena<PlasticDelta>,
+    /// Units whose record is in the write-ahead log (ADR-0024); set and cleared between ticks.
+    evicted: Box<[AtomicBool]>,
+    /// Units that received a message while evicted; re-hydrated after the tick.
+    needs_rehydration: Box<[AtomicBool]>,
+    rehydration_pending: AtomicUsize,
+    in_flight: Box<[AtomicI64]>,
     pools: Pools,
     stealers: Box<[Stealer]>,
     barrier: SpinBarrier,
@@ -145,6 +157,7 @@ struct Worker<const CAP: usize> {
     spike_trace: Vec<(u32, u32)>,
     trace_dropped: u64,
     delivered: u64,
+    in_flight: i64,
 }
 
 /// What a worker kept.
@@ -200,6 +213,10 @@ pub struct Executor<const CAP: usize> {
     worker0: Worker<CAP>,
     threads: Vec<JoinHandle<Worker<CAP>>>,
     tick: u64,
+    log: Option<WriteAheadLog>,
+    hand: usize,
+    evictions: u64,
+    rehydrations: u64,
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -236,6 +253,11 @@ impl<const CAP: usize> Executor<CAP> {
                     .collect(),
             ),
             blocks: Arena::from_vec(vec![SynapseBlock::new(); config.blocks]),
+            deltas: Arena::from_vec(vec![PlasticDelta::default(); config.deltas]),
+            evicted: (0..config.units).map(|_| AtomicBool::new(false)).collect(),
+            needs_rehydration: (0..config.units).map(|_| AtomicBool::new(false)).collect(),
+            rehydration_pending: AtomicUsize::new(0),
+            in_flight: (0..workers).map(|_| AtomicI64::new(0)).collect(),
             pools: Pools::new(workers, config.nodes_per_worker),
             stealers: stealers.into_boxed_slice(),
             barrier: SpinBarrier::new(workers),
@@ -262,6 +284,7 @@ impl<const CAP: usize> Executor<CAP> {
                 spike_trace: Vec::with_capacity(config.trace_capacity),
                 trace_dropped: 0,
                 delivered: 0,
+                in_flight: 0,
             })
             .collect();
         let worker0 = states.remove(0);
@@ -284,6 +307,10 @@ impl<const CAP: usize> Executor<CAP> {
             worker0,
             threads,
             tick: 0,
+            log: None,
+            hand: 0,
+            evictions: 0,
+            rehydrations: 0,
         })
     }
 
@@ -337,6 +364,139 @@ impl<const CAP: usize> Executor<CAP> {
         unsafe { self.shared.blocks.as_mut_slice() }
     }
 
+    /// The Tier-2 delta arena, between ticks.
+    pub fn deltas(&self) -> &[PlasticDelta] {
+        // SAFETY: as in `units`.
+        unsafe { self.shared.deltas.as_slice() }
+    }
+
+    /// The Tier-2 delta arena, exclusively, between ticks.
+    pub fn deltas_mut(&mut self) -> &mut [PlasticDelta] {
+        // SAFETY: as in `units_mut`.
+        unsafe { self.shared.deltas.as_mut_slice() }
+    }
+
+    /// True between ticks when no unit holds a message and no token is in flight: the state an
+    /// image can be written from (whitepaper §8.7).
+    pub fn is_quiescent(&self) -> bool {
+        self.units().iter().all(|u| u.mailbox_is_empty()) && self.tokens_in_flight() == 0
+    }
+
+    /// Tokens scheduled in the wheels and not yet delivered.
+    pub fn tokens_in_flight(&self) -> i64 {
+        self.shared
+            .in_flight
+            .iter()
+            .map(|n| n.load(Ordering::Relaxed))
+            .sum()
+    }
+
+    /// Attaches a fresh write-ahead log at `path`, which the clock sweep evicts into and
+    /// re-hydration reads from (ADR-0024). Between ticks; allocates the log's index once.
+    pub fn attach_log(&mut self, path: &Path) -> Result<(), ImageError> {
+        self.log = Some(WriteAheadLog::create(path, self.shared.units.len())?);
+        Ok(())
+    }
+
+    /// The attached log.
+    pub fn log(&self) -> Option<&WriteAheadLog> {
+        self.log.as_ref()
+    }
+
+    /// True when `unit`'s record is in the log and its slot holds only its id, its last spike
+    /// stamp, its gate and its mailbox.
+    pub fn is_evicted(&self, unit: u32) -> bool {
+        self.shared
+            .evicted
+            .get(unit as usize)
+            .is_some_and(|e| e.load(Ordering::Relaxed))
+    }
+
+    /// Units evicted so far.
+    pub fn evictions(&self) -> u64 {
+        self.evictions
+    }
+
+    /// Units re-hydrated so far.
+    pub fn rehydrations(&self) -> u64 {
+        self.rehydrations
+    }
+
+    /// The clock sweep of axiom A5 (§8.6), between ticks: the hand walks up to one full turn of
+    /// the unit arena and evicts at most `budget` units that are idle, unscheduled, at rest and
+    /// quiet for at least `quiet_ticks` since their last spike. An evicted unit's 64 bytes go to
+    /// the log and its slot keeps only its id and its last spike stamp; a message to it
+    /// re-hydrates it after the tick
+    /// that delivered the message. Returns the number evicted.
+    pub fn sweep(&mut self, quiet_ticks: u32, budget: usize) -> Result<usize, ImageError> {
+        let Some(log) = self.log.as_mut() else {
+            return Err(ImageError::NoLog);
+        };
+        let now = self.tick as u32;
+        let len = self.shared.units.len();
+        // SAFETY: `&mut self` between ticks; every worker is parked at the barrier.
+        let units = unsafe { self.shared.units.as_mut_slice() };
+        let mut evicted = 0;
+        for _ in 0..len {
+            if evicted >= budget {
+                break;
+            }
+            let i = self.hand;
+            self.hand = (self.hand + 1) % len;
+            if self.shared.evicted[i].load(Ordering::Relaxed) {
+                continue;
+            }
+            let unit = &mut units[i];
+            if !unit.is_image_ready() || !at_rest(unit) || unit.ticks_since_spike(now) < quiet_ticks
+            {
+                continue;
+            }
+            log.append(i as u32, &unit.encode())?;
+            // The slot keeps what other units read of it: its id and its last spike stamp,
+            // which STDP pairs against (ADR-0022).
+            let mut empty = DendriticSuperNeuron::new(unit.id);
+            empty.last_soma_spike_tick = unit.last_soma_spike_tick;
+            *unit = empty;
+            self.shared.evicted[i].store(true, Ordering::Relaxed);
+            evicted += 1;
+        }
+        self.evictions += evicted as u64;
+        Ok(evicted)
+    }
+
+    /// After a tick: every evicted unit that received a message gets its plain fields back from
+    /// the log, keeping the gate and the mailbox the delivery left in its slot.
+    fn rehydrate_pending(&mut self) {
+        if self.shared.rehydration_pending.swap(0, Ordering::AcqRel) == 0 {
+            return;
+        }
+        let Some(log) = self.log.as_ref() else {
+            abort("a message reached an evicted unit with no log attached");
+        };
+        // SAFETY: between ticks; every worker is parked at the barrier.
+        let units = unsafe { self.shared.units.as_mut_slice() };
+        for (i, flag) in self.shared.needs_rehydration.iter().enumerate() {
+            if !flag.swap(false, Ordering::AcqRel) {
+                continue;
+            }
+            let Ok(record) = log.read(i as u32) else {
+                abort("the log does not hold the record of an evicted unit");
+            };
+            let cold = DendriticSuperNeuron::decode(&record);
+            units[i].restore_plain_fields(&cold);
+            self.shared.evicted[i].store(false, Ordering::Relaxed);
+            self.rehydrations += 1;
+        }
+    }
+
+    /// Between ticks: queues `units` for a turn on the next tick without a message (the loader
+    /// wakes every unit that is not at rest).
+    pub(crate) fn wake_now(&mut self, units: &[u32]) {
+        for &unit in units {
+            self.worker0.wake(&self.shared, unit);
+        }
+    }
+
     /// One fine tick: the three phases on every worker, this thread running as worker 0.
     pub fn tick(&mut self) {
         let now = self.tick as u32;
@@ -349,6 +509,7 @@ impl<const CAP: usize> Executor<CAP> {
         self.worker0.phase_deliveries(&self.shared);
         self.shared.barrier.wait();
         self.tick += 1;
+        self.rehydrate_pending();
     }
 
     /// `ticks` fine ticks.
@@ -404,7 +565,7 @@ fn build_wheels<const CAP: usize>(count: usize) -> Vec<Box<FlatTimingWheel<CAP>>
 
 /// A unit at rest has nothing to integrate: every potential zero, no window running, the
 /// threshold at or below its base. It leaves the active set until a message wakes it.
-fn at_rest(u: &DendriticSuperNeuron) -> bool {
+pub(crate) fn at_rest(u: &DendriticSuperNeuron) -> bool {
     u.v_soma == 0
         && u.v_basal == 0
         && u.v_apical == 0
@@ -586,6 +747,7 @@ impl<const CAP: usize> Worker<CAP> {
                         if self.wheel.schedule(delay as u32, token).is_err() {
                             abort("a delay the loader should have rejected, or a full wheel slot");
                         }
+                        self.in_flight += 1;
                     }
                 }
                 next = block.next_block_idx;
@@ -599,6 +761,7 @@ impl<const CAP: usize> Worker<CAP> {
     fn phase_deliveries(&mut self, shared: &Shared) {
         self.due.clear();
         self.due.extend_from_slice(self.wheel.advance());
+        self.in_flight -= self.due.len() as i64;
         for i in 0..self.due.len() {
             let token = self.due[i];
             let slot = token_slot(token) as usize;
@@ -636,6 +799,7 @@ impl<const CAP: usize> Worker<CAP> {
         }
         self.next_tick.clear();
         shared.delivered[self.id].store(self.delivered, Ordering::Relaxed);
+        shared.in_flight[self.id].store(self.in_flight, Ordering::Relaxed);
     }
 
     /// Phases 2 and 3: a message into a unit's mailbox, and the unit onto this worker's deque
@@ -655,6 +819,17 @@ impl<const CAP: usize> Worker<CAP> {
         if u.try_schedule() && self.local.push(target).is_err() {
             abort("the deque is full");
         }
+        Self::note_evicted(shared, target);
+    }
+
+    /// A message or a wake reached an evicted unit: the coordinator re-hydrates it after the
+    /// tick, before the turn that drains the message.
+    fn note_evicted(shared: &Shared, unit: u32) {
+        if shared.evicted[unit as usize].load(Ordering::Relaxed)
+            && !shared.needs_rehydration[unit as usize].swap(true, Ordering::AcqRel)
+        {
+            shared.rehydration_pending.fetch_add(1, Ordering::AcqRel);
+        }
     }
 
     /// Phase 3: a turn without a message.
@@ -666,6 +841,7 @@ impl<const CAP: usize> Worker<CAP> {
         if u.try_schedule() && self.local.push(unit).is_err() {
             abort("the deque is full");
         }
+        Self::note_evicted(shared, unit);
     }
 }
 

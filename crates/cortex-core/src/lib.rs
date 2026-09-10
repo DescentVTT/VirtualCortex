@@ -1,14 +1,17 @@
 //! Neural state and dispatch: the `DendriticSuperNeuron` and `SynapseBlock` arena records, the
 //! turn gate and mailbox (ADR-0017), membrane integration (ADR-0018), short-term plasticity
-//! (ADR-0019), synaptic fan-out with STDP and the delivery encodings (ADR-0022), and the
-//! two-tier timing wheel (ADR-0013); whitepaper §5.2.1. The executor that composes them is a
+//! (ADR-0019), synaptic fan-out with STDP and the delivery encodings (ADR-0022), the Tier-2
+//! plastic delta and the records' image bytes (ADR-0024), and the two-tier timing wheel
+//! (ADR-0013); whitepaper §5.2.1. The executor that composes them is a
 //! runtime crate (§6.1; brief 012).
 
 #![no_std]
 pub mod dispatch;
 pub mod dynamics;
+pub mod serial;
 
 pub use dispatch::wheel::{FlatTimingWheel, MAX_TOKEN, ScheduleError, WorkerWheel};
+pub use dynamics::delta::{DELTA_END, DeltaChain, PlasticDelta};
 pub use dynamics::membrane::{
     APICAL_LEAK_SHIFT, BAC_APICAL_THRESHOLD, BAC_PLATEAU_TICKS, BASAL_LEAK_SHIFT,
     BURST_REFRACTORY_TICKS, COUPLING_SHIFT, FLAG_BURST_MODE, FLAG_INHIBITORY,
