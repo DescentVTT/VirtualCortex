@@ -1,0 +1,11 @@
+[package]
+name = "cortex-linguistic"
+description = "Language-bridge frames exchanging tokens and hypervector ids with an external language model for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

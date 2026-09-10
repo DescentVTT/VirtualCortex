@@ -1,0 +1,11 @@
+[package]
+name = "cortex-reasoning"
+description = "Symbolic rule nodes for propositional deduction and constraint checking for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

@@ -1,0 +1,11 @@
+[package]
+name = "cortex-spatial"
+description = "Metric cognitive map coordinate with path integration and heading for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

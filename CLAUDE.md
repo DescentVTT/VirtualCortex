@@ -10,11 +10,13 @@
 
 A Rust workspace for a **deterministic, single-node neuromorphic virtual-actor engine**: spiking
 neural computation on 64-byte cache-line records, Q16.16 fixed point, and a fixed pool of
-core-pinned workers. Eighteen crates, one per subsystem, no dependencies between them.
+core-pinned workers. Thirty-two crates, one per subsystem, no dependencies between them;
+fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
-It is at the **state-model stage**. The records, their compile-time layout assertions and five
-small update functions exist; the executor, the timing-wheel drain path, the image loader, the
-embodiment rings and every subsystem's real dynamics do not. The whitepaper's
+It is at the **state-model stage**. The records, their compile-time layout assertions and one
+small update rule in most crates exist; the executor, the delivery path from the wheel into
+mailboxes, the image loader, the shared-memory mappings, the tool broker and every subsystem's
+real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.
 
@@ -71,6 +73,12 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 - Edition 2024 and MSRV 1.85 are decided by [ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)
   and inherited from `[workspace.package]`; the toolchain CI builds with is pinned in
   `rust-toolchain.toml`. Moving any of the three is its own pull request, never a passing edit.
+- The crate count is not a design parameter. A new state crate needs an ADR that names the gap
+  it fills, no existing record owning the quantity, its mechanism in whitepaper §8.8 with the
+  layout, formats that fit their widths, and the §1.5 and §8.10 boundaries intact or moved by
+  that ADR first ([ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md)); a quantity that belongs
+  to an existing subsystem is a field in that record, not a crate. The `expected="32"`
+  directives are the tripwire; the fourteen crates admitted on 2026-09-10 each passed that test.
 
 ## Where to read
 

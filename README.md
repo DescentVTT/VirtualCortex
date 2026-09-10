@@ -14,41 +14,55 @@ This repository is at the **state-model stage**. Read the labels before reading 
 
 | Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 18 `#![no_std]` crates, 19 `#[repr(C)]` records with compile-time size and alignment assertions, 5 small deterministic update functions with boundary tests, zero dependencies, zero `unsafe`. |
-| **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, mailboxes, wheel dispatch, image loader, embodiment rings, reclamation, fabric transport, subsystem dynamics. |
-| **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. There is no benchmark in the tree yet. |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates, 35 `#[repr(C)]` records with compile-time size and alignment assertions, small deterministic update rules with boundary tests in 22 crates, zero dependencies, zero `unsafe`. |
+| **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, mailboxes, delivery from the wheel into mailboxes, image loader, the shared-memory mappings of the embodiment and tool rings, the tool broker, the lexicon behind the language frames, reclamation, fabric transport, subsystem dynamics beyond the rules in §5. |
+| **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. A benchmark harness exists; no admissible run on the reference platform does. |
 | **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. |
 
 Where a document and the repository disagree, the repository wins and the disagreement is a numbered finding in the whitepaper's §11.
 
 ## Workspace
 
-Eighteen crates, one per subsystem, with no dependencies between them ([ADR-0005](docs/adr/0005-crate-per-subsystem.md)). Each exports one primary state record; sizes are asserted at compile time.
+Thirty-two crates, one per subsystem, with no dependencies between them ([ADR-0005](docs/adr/0005-crate-per-subsystem.md); fourteen admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md)). Each exports one primary state record; sizes are asserted at compile time.
 
 | Layer | Crate | Primary record | Size |
 | :--- | :--- | :--- | ---: |
 | Foundation | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` (`WorkerWheel`) | 64 B, 64 B, 4.2 MB |
 | Structure | `cortex-connectome` | `CortexFileHeader` | 64 B |
 | Periphery | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B |
-| Periphery | `cortex-embodiment` | `EmbodimentRingBuffer` | 64 B |
+| Periphery | `cortex-thalamus` | `ThalamicRelayNode` | 64 B |
+| Periphery | `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame` | 64 B each |
+| Periphery | `cortex-linguistic` | `LinguisticFrameSlot` | 64 B |
+| Periphery | `cortex-tools` | `ToolInvocationFrame` | 64 B |
 | Subcortical | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B |
 | Subcortical | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B |
 | Subcortical | `cortex-salience` | `SalienceNodeState` | 64 B |
 | Subcortical | `cortex-neuromod` | `NeuromodulatorState` | 16 B |
 | Subcortical | `cortex-hippocampus` | `HippocampalAttractorState` | 64 B |
 | Subcortical | `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B |
+| Subcortical | `cortex-affect` | `InteroceptiveState` | 64 B |
+| Subcortical | `cortex-autonomic` | `AutonomicVitalsState` | 64 B |
+| Subcortical | `cortex-spatial` | `SpatialGridCoordinate` | 64 B |
+| Subcortical | `cortex-curiosity` | `CuriosityExplorationVector` | 64 B |
+| Subcortical | `cortex-attention` | `FovealAttentionFocus` | 64 B |
 | Cognitive | `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B |
 | Cognitive | `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B |
 | Cognitive | `cortex-executive` | `ExecutivePlanNode` | 64 B |
 | Cognitive | `cortex-predictive` | `PredictiveErrorState` | 64 B |
 | Cognitive | `cortex-agency` | `AgentPerspectiveState` | 64 B |
+| Cognitive | `cortex-social` | `SocialPerspectiveNode` | 64 B |
+| Cognitive | `cortex-ethics` | `EthicalEvaluationGate` | 64 B |
+| Cognitive | `cortex-knowledge` | `SemanticOntologyNode` | 64 B |
+| Cognitive | `cortex-reasoning` | `SymbolicRuleNode` | 64 B |
+| Cognitive | `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B |
+| Cognitive | `cortex-imagination` | `MentalCanvasFrame` | 64 B |
 | Systems | `cortex-immune` | `ImmuneScrubNode` | 64 B |
 | Systems | `cortex-fabric` | `FabricPacketHeader` | 64 B |
 | Systems | `cortex-telemetry` | `LfpSamplePacket` | 64 B |
 
 Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8. A nineteenth workspace member, `benches/cortex-bench`, holds the benchmarks and the workspace's only third-party dependency (the harness, as a dev-dependency; [ADR-0014](docs/adr/0014-benchmark-harness.md)); see [docs/benchmarks/README.md](docs/benchmarks/README.md) for what makes a run admissible.
 
-<!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="18" reason="the table above lists eighteen crates" -->
+<!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="32" reason="the table above lists thirty-two crates" -->
 
 ## Documentation
 

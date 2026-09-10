@@ -1,0 +1,11 @@
+[package]
+name = "cortex-ethics"
+description = "Ethical evaluation gate: deontological veto of proposed actions before dispatch for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

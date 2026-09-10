@@ -1,0 +1,11 @@
+[package]
+name = "cortex-social"
+description = "Social perspective nodes: other agents' intentions, beliefs, trust and affective resonance for VirtualCortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
