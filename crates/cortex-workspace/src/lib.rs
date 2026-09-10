@@ -31,7 +31,10 @@ impl GlobalWorkspaceSlot {
 
     /// Accumulates evidence and ignites at or above the threshold. The accumulator
     /// saturates (whitepaper §8.1), so sustained evidence can never wrap to a negative
-    /// potential and silently un-ignite the slot. Decay and competition are Specified.
+    /// potential and silently un-ignite the slot. Returns whether the slot is ignited after the
+    /// step: it crossed the threshold now, or the hold of an earlier crossing has not run out;
+    /// the hold is `PERSISTENCE_TICKS` steps and counts down one per sub-threshold step. Decay
+    /// and competition are Specified.
     #[inline(always)]
     pub fn step_ignition(&mut self, bottom_up_evidence: i32) -> bool {
         self.criticality_distance_q16 = 0;
@@ -73,15 +76,19 @@ impl GlobalWorkspaceSlot {
 
     fn ignite_at(&mut self, bottom_up_evidence: i32, threshold: i32) -> bool {
         self.ignition_potential = self.ignition_potential.saturating_add(bottom_up_evidence);
-        let ignited = self.ignition_potential >= threshold;
-        if ignited {
+        if self.ignition_potential >= threshold {
             self.is_ignited = 1;
             self.persistence_ticks = Self::PERSISTENCE_TICKS;
+        } else if self.persistence_ticks > 0 {
+            // Within the hold of an earlier crossing: the slot stays ignited and the window
+            // counts down one tick per step.
+            self.persistence_ticks -= 1;
+            self.is_ignited = 1;
         } else {
             self.is_ignited = 0;
         }
         self.update_attention_schema();
-        ignited
+        self.is_ignited == 1
     }
 }
 
@@ -149,6 +156,24 @@ mod tests {
         assert!(!s.step_ignition(-HALF));
         assert_eq!(s.is_ignited, 0);
         assert_eq!(s.persistence_ticks, 0);
+    }
+
+    #[test]
+    fn an_ignited_slot_is_held_for_the_persistence_window_and_then_released() {
+        let mut s = slot(ONE);
+        assert!(s.step_ignition(HALF));
+        for i in 1..=GlobalWorkspaceSlot::PERSISTENCE_TICKS {
+            assert!(s.step_ignition(-1), "held at step {i}");
+            assert_eq!(s.is_ignited, 1);
+            assert_eq!(
+                s.persistence_ticks,
+                GlobalWorkspaceSlot::PERSISTENCE_TICKS - i
+            );
+        }
+        assert!(!s.step_ignition(-1), "the hold has run out");
+        assert_eq!((s.is_ignited, s.persistence_ticks), (0, 0));
+        assert!(s.step_ignition(2 * ONE), "and a new crossing reloads it");
+        assert_eq!(s.persistence_ticks, GlobalWorkspaceSlot::PERSISTENCE_TICKS);
     }
 
     #[test]

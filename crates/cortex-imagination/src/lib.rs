@@ -26,7 +26,8 @@ pub struct MentalCanvasFrame {
     pub strange_loop_fixed_point_hash: u32, // [28..32] The self the rollout last observed itself to be (ADR-0020)
     pub dmn_wander_temperature_q16: u32, // [32..36] Amplitude of the default mode's wandering (Q16.16, ADR-0021)
     pub wander_state: u32, // [36..40] State of the deterministic generator behind wander() (ADR-0021)
-    pub _reserved: [u8; 24], // [40..64] Reserved; MUST be zero
+    pub reflection_count: u8, // [40] Reflections so far, saturating: a fresh frame has no previous self to agree with (ADR-0020)
+    pub _reserved: [u8; 23],  // [41..64] Reserved; MUST be zero
 }
 
 impl MentalCanvasFrame {
@@ -69,14 +70,17 @@ impl MentalCanvasFrame {
     /// The strange loop (ADR-0020, whitepaper §8.12): the rollout observes the self that is
     /// doing the imagining, as a hash of its state, and stores it; the self-model is at its
     /// fixed point when the self observed now is the self observed at the previous reflection,
-    /// so the model of the self contains a model that agrees with itself. Returns whether the
-    /// fixed point was reached, and records it. Refused for a frame that is not sandboxed.
+    /// so the model of the self contains a model that agrees with itself; a fresh frame has
+    /// observed nothing and cannot be at it. Returns whether the fixed point was reached, and
+    /// records it. Refused for a frame that is not sandboxed.
     pub fn reflect(&mut self, observed_self_hash: u32) -> bool {
         if !self.is_sandboxed() {
             return false;
         }
-        let converged = self.strange_loop_fixed_point_hash == observed_self_hash;
+        let converged =
+            self.reflection_count > 0 && self.strange_loop_fixed_point_hash == observed_self_hash;
         self.strange_loop_fixed_point_hash = observed_self_hash;
+        self.reflection_count = self.reflection_count.saturating_add(1);
         self.reflection_converged = converged as u8;
         converged
     }
@@ -100,6 +104,11 @@ impl MentalCanvasFrame {
             .wander_state
             .wrapping_mul(1_664_525)
             .wrapping_add(1_013_904_223);
+        if self.wander_state == 0 {
+            // Zero is the unseeded sentinel; the one state that maps to it steps to 1 instead
+            // of reseeding the orbit in the middle of a rollout.
+            self.wander_state = 1;
+        }
         let draw = self.wander_state;
         self.hypothetical_action_hash =
             (self.hypothetical_action_hash ^ draw).wrapping_mul(0x0100_0193);
@@ -189,7 +198,33 @@ mod tests {
     }
 
     #[test]
+    fn the_generator_never_returns_to_the_unseeded_state() {
+        let mut z = MentalCanvasFrame {
+            wander_state: 0x25D6_0FE5,
+            ..Default::default()
+        };
+        assert_eq!(z.wander(), Some(0), "zero temperature, zero perturbation");
+        assert_eq!(
+            z.wander_state, 1,
+            "the one state that maps to zero steps to 1"
+        );
+        assert_eq!(z.wander(), Some(0));
+        assert_ne!(z.wander_state, 0);
+        assert_eq!(z.rollout_depth, 2, "and the rollout was not restarted");
+    }
+
+    #[test]
     fn the_self_model_reaches_its_fixed_point_when_the_observed_self_stops_changing() {
+        let mut fresh = MentalCanvasFrame::default();
+        assert!(
+            !fresh.reflect(0),
+            "a fresh frame has no previous self to agree with, even a zero one"
+        );
+        assert_eq!(fresh.reflection_count, 1);
+        assert!(
+            fresh.reflect(0),
+            "the second observation of the same self is the fixed point"
+        );
         let mut f = MentalCanvasFrame::default();
         assert!(!f.reflect(0xA1), "the first observation is new");
         assert_eq!(f.reflection_converged, 0);
