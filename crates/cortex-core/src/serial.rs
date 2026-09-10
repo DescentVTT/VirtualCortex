@@ -114,6 +114,7 @@ impl DendriticSuperNeuron {
     pub fn is_at_rest_image(&self) -> bool {
         self.is_image_ready()
             && self.mailbox_reserved == 0
+            && self._reserved == 0
             && self.mailbox_head_ptr.load(Ordering::SeqCst) == MAILBOX_EMPTY
     }
 }
@@ -162,6 +163,19 @@ impl SynapseBlock {
 mod tests {
     use super::*;
     use crate::dynamics::neuron::MailboxNode;
+
+    #[test]
+    fn a_reserved_byte_that_is_not_zero_is_not_at_rest() {
+        let mut bytes = DendriticSuperNeuron::new(1).encode();
+        bytes[52] = 1;
+        let u = DendriticSuperNeuron::decode(&bytes);
+        assert_eq!(u._reserved, 1);
+        assert!(u.is_image_ready(), "the gate and the mailbox are fine");
+        assert!(!u.is_at_rest_image(), "but the reserved bytes are not zero");
+        let mut bytes = DendriticSuperNeuron::new(1).encode();
+        bytes[16] = 1;
+        assert!(!DendriticSuperNeuron::decode(&bytes).is_at_rest_image());
+    }
 
     #[test]
     fn a_unit_round_trips_through_its_bytes_and_a_unit_at_rest_is_image_ready() {

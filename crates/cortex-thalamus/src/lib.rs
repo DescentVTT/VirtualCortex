@@ -80,6 +80,8 @@ impl ThalamicRelayNode {
                     None
                 }
             }
+            // An unknown mode, reachable only through the public field or an image, relays
+            // nothing, like a closed gate (ADR-0028).
             _ => None,
         }
     }
@@ -155,6 +157,19 @@ mod tests {
         let mut n = node(GATING_TONIC, u32::MAX);
         assert_eq!(n.relay(i32::MAX), Some(i32::MAX));
         assert_eq!(n.relay(i32::MIN), Some(i32::MIN));
+    }
+
+    #[test]
+    fn an_unknown_mode_in_the_field_relays_nothing_like_a_closed_gate() {
+        let mut n = ThalamicRelayNode {
+            gating_mode: GATING_TONIC,
+            sensory_gain_q16: 0x0001_0000,
+            ..Default::default()
+        };
+        assert!(!n.set_gating_mode(3));
+        n.gating_mode = 3;
+        assert_eq!(n.relay(0x0001_0000), None);
+        assert_eq!(n.burst_spikes_pending, 0, "and counts nothing");
     }
 
     #[test]

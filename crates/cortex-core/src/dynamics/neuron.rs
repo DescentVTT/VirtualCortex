@@ -204,7 +204,9 @@ impl DendriticSuperNeuron {
     /// Any worker: pushes `payload` in node `node` of the caller's arena onto the mailbox. One
     /// compare-exchange on the head; the payload and link are stored before it and are ordered
     /// by it. Refused, with nothing changed, for a node outside the arena, for node
-    /// `u32::MAX` (whose `+ 1` encoding does not fit) and for a corrupt head. A pusher calls
+    /// `u32::MAX` (whose `+ 1` encoding does not fit) and for a corrupt head (read before the
+    /// payload is stored; a head that turns corrupt during the retry leaves the payload in the
+    /// caller's own node). A pusher calls
     /// [`try_schedule`](Self::try_schedule) after a successful push, never before.
     pub fn mailbox_push(&self, nodes: &[MailboxNode], node: u32, payload: u32) -> bool {
         if node == u32::MAX {
@@ -213,9 +215,12 @@ impl DendriticSuperNeuron {
         let Some(n) = nodes.get(node as usize) else {
             return false;
         };
+        let mut head = self.mailbox_head_ptr.load(Ordering::Relaxed);
+        if head > u32::MAX as u64 {
+            return false;
+        }
         n.payload.store(payload, Ordering::Relaxed);
         let encoded = node as u64 + 1;
-        let mut head = self.mailbox_head_ptr.load(Ordering::Relaxed);
         loop {
             if head > u32::MAX as u64 {
                 return false;
@@ -404,6 +409,20 @@ mod tests {
             None,
             "a second drain is empty"
         );
+    }
+
+    #[test]
+    fn a_corrupt_head_refuses_a_push_before_the_payload_is_stored() {
+        let nodes = [MailboxNode::new()];
+        let u = DendriticSuperNeuron::new(1);
+        u.mailbox_head_ptr.store(u64::MAX, Ordering::SeqCst);
+        assert!(!u.mailbox_push(&nodes, 0, 0xABCD));
+        assert_eq!(
+            nodes[0].payload.load(Ordering::Relaxed),
+            0,
+            "nothing changed"
+        );
+        assert_eq!(u.mailbox_head_ptr.load(Ordering::SeqCst), u64::MAX);
     }
 
     #[test]

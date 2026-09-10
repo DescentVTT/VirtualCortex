@@ -25,9 +25,11 @@ pub const STP_TAU_D_SHIFT: u32 = 15;
 
 /// $(1 - 2^{-\text{tau\_shift}})^{\text{elapsed}}$ in Q16.16, by binary exponentiation: the
 /// fraction of a deviation that survives `elapsed_ticks` of relaxation with time constant
-/// $2^{\text{tau\_shift}}$ ticks. 1.0 for zero elapsed; 0 once the deviation has vanished.
+/// $2^{\text{tau\_shift}}$ ticks. 1.0 for zero elapsed; 0 once the deviation has vanished. A
+/// time constant above $2^{16}$ ticks is read as $2^{16}$, the longest a Q16.16 base resolves
+/// (ADR-0028).
 pub fn stp_decay_factor_q16(elapsed_ticks: u32, tau_shift: u32) -> u32 {
-    let mut base = Q16_ONE - (Q16_ONE >> tau_shift);
+    let mut base = Q16_ONE - (Q16_ONE >> tau_shift.min(16));
     let mut result = Q16_ONE;
     let mut exp = elapsed_ticks;
     while exp > 0 && result > 0 {
@@ -104,6 +106,24 @@ mod tests {
         let a = stp_decay_factor_q16(1000, STP_TAU_F_SHIFT);
         let b = stp_decay_factor_q16(2000, STP_TAU_F_SHIFT);
         assert!(a > b && b > 0, "monotone in the interval");
+    }
+
+    #[test]
+    fn a_time_constant_past_the_resolution_is_the_longest_one_and_never_a_panic() {
+        let longest = stp_decay_factor_q16(1, 16);
+        assert_eq!(longest, Q16_ONE as u32 - 1);
+        assert_eq!(stp_decay_factor_q16(1, 17), longest);
+        assert_eq!(
+            stp_decay_factor_q16(1, 64),
+            longest,
+            "a shift past the width"
+        );
+        assert_eq!(stp_decay_factor_q16(1, u32::MAX), longest);
+        assert_eq!(
+            stp_decay_factor_q16(u32::MAX, u32::MAX),
+            0,
+            "and it still decays"
+        );
     }
 
     #[test]

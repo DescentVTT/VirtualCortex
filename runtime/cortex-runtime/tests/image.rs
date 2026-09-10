@@ -4,11 +4,14 @@
 //! cannot hold is refused at load; and evict, spike, re-hydrate preserves a unit bit for bit:
 //! a run that sweeps and re-hydrates ends in the same image as one that never evicts.
 
-use cortex_connectome::{CortexFileHeader, HeaderError, SECTION_NEURON};
+use cortex_connectome::{
+    CortexFileHeader, HeaderError, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE,
+    SectionEntry, crc64,
+};
 use cortex_core::{
     PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
-use cortex_runtime::{Config, Executor, Image, ImageError};
+use cortex_runtime::{Config, Executor, Image, ImageError, WriteAheadLog};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
@@ -209,6 +212,130 @@ fn a_delay_beyond_the_horizon_and_a_dangling_target_are_refused_at_load() {
     ));
     assert!(Image::decode::<64>(&good, config()).is_ok());
     let _ = std::fs::remove_file(&path);
+}
+
+/// A small image: two units, one synapse, one delta.
+fn small_image() -> Vec<u8> {
+    let mut exec = Executor::<8>::new(Config {
+        units: 2,
+        blocks: 1,
+        deltas: 1,
+        ..Config::default()
+    })
+    .unwrap();
+    assert!(exec.blocks_mut()[0].set_synapse(0, 1, 100, 1, false));
+    assert!(exec.units_mut()[0].set_first_block(0));
+    exec.deltas_mut()[0] = PlasticDelta::new(0, 0, 5, 1).unwrap();
+    assert!(exec.units_mut()[0].set_delta_head(0));
+    Image::encode(&exec).unwrap()
+}
+
+/// Edits section `kind` in place and re-seals its checksum, so only the record check can
+/// refuse the image.
+fn patch_section(img: &mut [u8], kind: u32, patch: impl Fn(&mut [u8])) {
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for i in 0..header.section_count as usize {
+        let at = 64 + 64 * i;
+        let mut entry = SectionEntry::decode(img[at..at + 64].try_into().unwrap());
+        if entry.kind == kind {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            patch(&mut img[offset..offset + length]);
+            entry.crc64 = crc64(&img[offset..offset + length]);
+            img[at..at + 64].copy_from_slice(&entry.encode());
+            return;
+        }
+    }
+    panic!("no section {kind}");
+}
+
+#[test]
+fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_load() {
+    assert!(Image::decode::<8>(&small_image(), Config::default()).is_ok());
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_PLASTIC_DELTA, |s| s[4] = 9);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::DanglingIndex { block: 0, slot: 5 })
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_PLASTIC_DELTA, |s| s[5] = 0xFF);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::ReservedNotZero {
+            section: SECTION_PLASTIC_DELTA,
+            index: 0
+        })
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_NEURON, |s| {
+        s[52] = 1;
+        s[53] = 2;
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::NotAtRest(0))
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_SYNAPSE, |s| s[63] = 7);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::ReservedNotZero {
+            section: SECTION_SYNAPSE,
+            index: 0
+        })
+    ));
+}
+
+#[test]
+fn a_sealed_header_claiming_more_directory_than_the_file_holds_is_truncated_not_an_allocation() {
+    let header = CortexFileHeader::new(0, 1, 0, u32::MAX);
+    assert_eq!(header.validate(), Ok(()));
+    assert!(matches!(
+        Image::decode::<8>(&header.encode(), Config::default()),
+        Err(ImageError::Truncated)
+    ));
+    let mut two = header.encode().to_vec();
+    two.extend_from_slice(&[0; 64]);
+    assert!(matches!(
+        Image::decode::<8>(&two, Config::default()),
+        Err(ImageError::Truncated)
+    ));
+}
+
+#[test]
+fn the_log_refuses_a_unit_outside_it_before_writing() {
+    let path = scratch("outside.wal");
+    let mut log = WriteAheadLog::create(&path, 2).unwrap();
+    assert!(!log.holds(5));
+    let err = log.append(5, &[0; 64]).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        0,
+        "nothing was written"
+    );
+    assert!(matches!(log.read(5), Err(ImageError::LogCorrupt(5))));
+    assert!(log.append(1, &[7; 64]).is_ok());
+    assert_eq!(log.read(1).unwrap(), [7; 64]);
+}
+
+#[test]
+fn a_pair_still_in_the_injector_ring_is_not_a_quiescent_point() {
+    let mut exec = Executor::<8>::new(Config {
+        units: 2,
+        ..Config::default()
+    })
+    .unwrap();
+    assert!(exec.is_quiescent());
+    exec.injector().inject(1, 0x100).unwrap();
+    assert!(!exec.is_quiescent(), "the pair is in no record yet");
+    assert!(matches!(
+        Image::encode(&exec),
+        Err(ImageError::NotQuiescent)
+    ));
+    exec.run(2);
+    assert!(exec.is_quiescent(), "drained, delivered and integrated");
+    assert!(Image::encode(&exec).is_ok());
 }
 
 #[test]

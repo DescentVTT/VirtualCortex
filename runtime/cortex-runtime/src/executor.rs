@@ -376,10 +376,14 @@ impl<const CAP: usize> Executor<CAP> {
         unsafe { self.shared.deltas.as_mut_slice() }
     }
 
-    /// True between ticks when no unit holds a message and no token is in flight: the state an
-    /// image can be written from (whitepaper §8.7).
+    /// True between ticks when no unit holds a message, no token is in flight and the injector
+    /// ring holds nothing not yet drained: the state an image can be written from (whitepaper
+    /// §8.7; a pair still in the ring is not in any record, so an image written over it would
+    /// lose it, ADR-0028).
     pub fn is_quiescent(&self) -> bool {
-        self.units().iter().all(|u| u.mailbox_is_empty()) && self.tokens_in_flight() == 0
+        self.units().iter().all(|u| u.mailbox_is_empty())
+            && self.tokens_in_flight() == 0
+            && self.shared.injector.is_empty()
     }
 
     /// Tokens scheduled in the wheels and not yet delivered.

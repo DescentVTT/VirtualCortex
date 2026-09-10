@@ -85,7 +85,7 @@ impl ArithmeticScratchpadSlot {
             OP_SUB => a.checked_sub(b).ok_or(ERR_OVERFLOW),
             OP_MUL => a.checked_mul(b).ok_or(ERR_OVERFLOW),
             OP_DIV => Self::divide(a, b, i128::checked_div),
-            OP_REM => Self::divide(a, b, i128::checked_rem),
+            OP_REM => Self::divide(a, b, |a, b| Some(a.wrapping_rem(b))),
             OP_MUL_Q16 => a.checked_mul(b).map(|p| p >> 16).ok_or(ERR_OVERFLOW),
             OP_DIV_Q16 => match a.checked_mul(1 << 16) {
                 Some(scaled) => Self::divide(scaled, b, i128::checked_div),
@@ -107,8 +107,9 @@ impl ArithmeticScratchpadSlot {
         }
     }
 
-    /// Division and remainder share their two failure modes: a zero divisor, and
-    /// `i128::MIN / -1`, which `checked_div` reports as `None`.
+    /// Division and remainder share a zero divisor as a failure; `i128::MIN / -1` fails the
+    /// division (`checked_div` reports `None`) and not the remainder, which is exactly 0 and
+    /// fits, so `OP_REM` wraps after the zero check (ADR-0028).
     fn divide(a: i128, b: i128, op: fn(i128, i128) -> Option<i128>) -> Result<i128, u16> {
         if b == 0 {
             return Err(ERR_DIVIDE_BY_ZERO);
@@ -209,6 +210,12 @@ mod tests {
         assert_eq!(run(OP_ADD, i128::MAX, 1), (false, 0, ERR_OVERFLOW));
         assert_eq!(run(OP_MUL, i128::MIN, -1), (false, 0, ERR_OVERFLOW));
         assert_eq!(run(OP_DIV, i128::MIN, -1), (false, 0, ERR_OVERFLOW));
+        assert_eq!(
+            run(OP_REM, i128::MIN, -1),
+            (true, 0, 0),
+            "the remainder is exact and fits"
+        );
+        assert_eq!(run(OP_REM, i128::MIN, 0), (false, 0, ERR_DIVIDE_BY_ZERO));
         assert_eq!(
             run(OP_DIV_Q16, i128::MAX, ONE),
             (false, 0, ERR_OVERFLOW),
