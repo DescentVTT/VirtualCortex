@@ -412,8 +412,8 @@ impl PolicyAmendment {
     /// the reason names, having passed the ones before it. The id is not zero here.
     fn rejection_is_consistent(&self) -> bool {
         let passed_bounds = self.own_bounds_reason() == REJECT_NONE;
+        // `REJECT_NO_ID` falls to the last arm: a zero id was handled before this is reached.
         match self.reason {
-            REJECT_NO_ID => false,
             REJECT_UNKNOWN_PARAMETER
             | REJECT_OUT_OF_BOUNDS
             | REJECT_NO_CHANGE
