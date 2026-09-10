@@ -1294,7 +1294,7 @@ Three independent checks, each answering a different question.
 | V-4 Intake | Does every live brief in `briefs/` carry its mandatory sections, so that a round handed to a fresh session is complete? | `scripts/check-briefs.mjs` (zero dependencies) | CI, blocking |
 | Benchmarks | Do the benchmarks still build and execute? (No timing is asserted; see §10.2.) | `cargo bench -p cortex-bench --bench hot_path -- --test` | CI, blocking |
 
-Both spec tools are pinned to exact versions in `package.json` (0.4.0 and 0.2.1) and have no runtime dependencies; they require Node 22 or newer. To run everything locally:
+Both spec tools are pinned to exact versions in `package.json` (spec-guard 0.5.0, spec-graph 0.3.0) and have no runtime dependencies; they require Node 22 or newer. To run everything locally:
 
 ```bash
 cargo check --workspace --all-targets
