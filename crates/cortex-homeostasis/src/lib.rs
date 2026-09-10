@@ -3,6 +3,9 @@
 //! `cortex-autonomic`'s (ADR-0016).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
@@ -24,10 +27,11 @@ impl HomeostaticDrivePool {
     /// by the spikes that caused them; 1.0 is criticality. Widened, saturating; a window with
     /// no ancestors leaves `sigma` unchanged, since nothing was measured. Returns `sigma`.
     pub fn update_branching_ratio(&mut self, descendants: u32, ancestors: u32) -> u32 {
-        if ancestors == 0 {
+        // A window with no ancestors measured nothing: the division is refused and `sigma`
+        // stays as it was.
+        let Some(sigma) = ((descendants as u64) << 16).checked_div(ancestors as u64) else {
             return self.branching_ratio_q16;
-        }
-        let sigma = ((descendants as u64) << 16) / ancestors as u64;
+        };
         self.branching_ratio_q16 = sigma.min(u32::MAX as u64) as u32;
         self.branching_ratio_q16
     }

@@ -20,3 +20,6 @@ npm-debug.log*
 # cargo-mutants output (ADR-0030); the CI job and a local run write it here
 mutants.out/
 mutants.out.old/
+
+# Agent worktrees and session files (never part of the tree).
+.claude/

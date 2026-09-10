@@ -18,6 +18,9 @@
 //! English tokens is the runtime's (Specified).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 1.0 in Q16.16.
 pub const Q16_ONE: u32 = 0x0001_0000;
@@ -231,17 +234,16 @@ impl LinguisticFrameSlot {
         if parent_idx == u16::MAX || is_child {
             return false;
         }
-        self.parent_frame_idx = parent_idx + 1;
+        // `u16::MAX` was refused above, so the encoding cannot wrap.
+        self.parent_frame_idx = parent_idx.wrapping_add(1);
         true
     }
 
     /// The frame this one is nested in, or `None` for a root.
     #[inline]
     pub const fn parent(&self) -> Option<u16> {
-        match self.parent_frame_idx {
-            0 => None,
-            p => Some(p - 1),
-        }
+        // Zero, a root, is the one value the decoding refuses.
+        self.parent_frame_idx.checked_sub(1)
     }
 
     /// Attaches a conceptual blend (`cortex-symbolic`, ADR-0021) as the frame's metaphor: the
@@ -272,17 +274,18 @@ impl LinguisticFrameSlot {
         {
             return false;
         }
-        self.intended_speech_act = intended_act + 1;
+        // At most `SPEECH_ACT_EXPRESSIVE + 1` after the check above.
+        self.intended_speech_act = intended_act.wrapping_add(1);
         true
     }
 
     /// The act the frame means: the intended one when it is indirect, else the surface act.
     #[inline]
     pub const fn intended_act(&self) -> u8 {
-        if self.intended_speech_act == 0 {
-            self.speech_act_type
-        } else {
-            self.intended_speech_act - 1
+        match self.intended_speech_act.checked_sub(1) {
+            Some(intended) => intended,
+            // Zero: direct, so the surface act is the meaning.
+            None => self.speech_act_type,
         }
     }
 
@@ -361,11 +364,12 @@ impl LinguisticFrameSlot {
             } else {
                 role != 0 && self.filled_roles() & role != 0
             };
+            // Both counters stay within the five entries of the order.
             if present {
                 order[n] = role;
-                n += 1;
+                n = n.wrapping_add(1);
             }
-            i += 1;
+            i = i.wrapping_add(1);
         }
         Some(order)
     }
@@ -377,21 +381,24 @@ impl LinguisticFrameSlot {
     /// shifts the topic at or below it. The particle slot opens when a marker is selected. The
     /// trajectory hash mixes the new energy in. Returns the marker.
     pub fn advance_prosody(&mut self, alpha_q16: u32, key_q16: i32, value_q16: i32) -> u8 {
-        let decayed = (self.linear_attention_energy_q16 as i64 * alpha_q16 as i64) >> 16;
-        let input = (key_q16 as i64 * value_q16 as i64) >> 16;
-        let energy = (decayed + input).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        let decayed =
+            (self.linear_attention_energy_q16 as i64).saturating_mul(alpha_q16 as i64) >> 16;
+        let input = (key_q16 as i64).saturating_mul(value_q16 as i64) >> 16;
+        let energy = decayed
+            .saturating_add(input)
+            .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         self.linear_attention_energy_q16 = energy;
         self.recurrent_state_hash =
             (self.recurrent_state_hash ^ energy as u32).wrapping_mul(0x0100_0193);
-        let one = Q16_ONE as i32;
-        let quarter = one / 4;
-        self.prosody_tone_marker = if energy >= one {
+        const ONE: i32 = Q16_ONE as i32;
+        const QUARTER: i32 = ONE / 4;
+        self.prosody_tone_marker = if energy >= ONE {
             PROSODY_SUGGEST
-        } else if energy >= quarter {
+        } else if energy >= QUARTER {
             PROSODY_SOFTEN
-        } else if energy > -quarter {
+        } else if energy > -QUARTER {
             PROSODY_NONE
-        } else if energy > -one {
+        } else if energy > -ONE {
             PROSODY_REFLECT
         } else {
             PROSODY_TOPIC_SHIFT

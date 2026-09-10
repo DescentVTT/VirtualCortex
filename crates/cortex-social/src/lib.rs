@@ -8,6 +8,9 @@
 //! false-belief tracking are Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 1.0 in Q16.16.
 pub const Q16_ONE: u32 = 0x0001_0000;
@@ -68,7 +71,8 @@ impl SocialPerspectiveNode {
     /// resonance.
     pub fn resonate(&mut self, observed_valence_q16: i32) -> i32 {
         self.emotional_valence_q16 = observed_valence_q16;
-        let product = (observed_valence_q16 as i64 * self.empathy_gain_q16 as i64) >> 16;
+        let product =
+            (observed_valence_q16 as i64).saturating_mul(self.empathy_gain_q16 as i64) >> 16;
         self.resonance_q16 = product.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         self.resonance_q16
     }
@@ -81,7 +85,7 @@ impl SocialPerspectiveNode {
         if prediction_confirmed {
             let remaining = Q16_ONE.saturating_sub(self.trust_score_q16);
             let gain = (remaining >> TRUST_GAIN_SHIFT).max(1).min(remaining);
-            self.trust_score_q16 = (self.trust_score_q16 + gain).min(Q16_ONE);
+            self.trust_score_q16 = self.trust_score_q16.saturating_add(gain).min(Q16_ONE);
         } else {
             let loss = (self.trust_score_q16 >> TRUST_LOSS_SHIFT).max(1);
             self.trust_score_q16 = self.trust_score_q16.saturating_sub(loss);
@@ -195,14 +199,15 @@ impl SocialPerspectiveNode {
     /// above 0.5 is a disconfirmed prediction about the agent (`update_trust(false)`), a smaller
     /// one a confirmed one. Returns the gap.
     pub fn assess_sincerity(&mut self, stated_valence_q16: i32, outcome_valence_q16: i32) -> u32 {
-        let gap = (stated_valence_q16 as i64 - outcome_valence_q16 as i64)
+        let gap = (stated_valence_q16 as i64)
+            .saturating_sub(outcome_valence_q16 as i64)
             .unsigned_abs()
             .min(Q16_ONE as u64) as u32;
         let current = self.insincerity_q16;
         self.insincerity_q16 = if gap > current {
-            current.saturating_add(((gap - current) >> INSINCERITY_SHIFT).max(1))
+            current.saturating_add((gap.abs_diff(current) >> INSINCERITY_SHIFT).max(1))
         } else if gap < current {
-            current - ((current - gap) >> INSINCERITY_SHIFT).max(1)
+            current.saturating_sub((current.abs_diff(gap) >> INSINCERITY_SHIFT).max(1))
         } else {
             current
         };

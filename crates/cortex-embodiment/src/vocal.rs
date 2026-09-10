@@ -39,6 +39,8 @@ pub const TONE_TOPIC_SHIFT: u8 = 4;
 pub const TONE_PLAYFUL: u8 = 5;
 
 const Q16_ONE: i64 = 1 << 16;
+/// $2\pi$ in Q16.16, formed at compile time.
+const TWO_PI_Q16: i64 = 2 * PI_Q16 as i64;
 
 /// One epoch's vocal command, engine → audio actuator. 64 B, align 64.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -97,14 +99,18 @@ impl VocalFrame {
                 _ => return false,
             };
         let valence = (valence_q16 as i64).clamp(-Q16_ONE, Q16_ONE);
-        let f0_factor = Q16_ONE + f0_shift_q16 + (valence >> 2);
-        let f0 = ((self.f0_hz_q16 as i64 * f0_factor) >> 16)
+        let f0_factor = Q16_ONE
+            .saturating_add(f0_shift_q16)
+            .saturating_add(valence >> 2);
+        let f0 = mul_q16(self.f0_hz_q16 as i64, f0_factor)
             .clamp((F0_MIN_HZ as i64) << 16, (F0_MAX_HZ as i64) << 16);
         self.f0_hz_q16 = f0 as u32;
-        let amp_factor = Q16_ONE + amp_shift_q16 - (valence.min(0).abs() >> 2);
+        let amp_factor = Q16_ONE
+            .saturating_add(amp_shift_q16)
+            .saturating_sub(valence.min(0).abs() >> 2);
         self.amplitude_q1_15 =
-            ((self.amplitude_q1_15 as i64 * amp_factor) >> 16).clamp(0, i16::MAX as i64) as i16;
-        let valence_breath = ((valence.min(0).abs() * 64) >> 16) as u8;
+            mul_q16(self.amplitude_q1_15 as i64, amp_factor).clamp(0, i16::MAX as i64) as i16;
+        let valence_breath = (valence.min(0).abs().saturating_mul(64) >> 16) as u8;
         self.aspiration_q0_8 = self
             .aspiration_q0_8
             .saturating_add(breath)
@@ -119,17 +125,22 @@ impl VocalFrame {
     }
 }
 
-/// $(a \times b) \gg 16$ for Q16.16 operands in `i64`.
+/// $(a \times b) \gg 16$ for Q16.16 operands in `i64`. The product saturates by name (§8.1);
+/// no pair of operands in this crate reaches $2^{63}$ (the widest is a coefficient below
+/// $2^{17}$ by a sample below $2^{31}$).
 #[inline(always)]
 const fn mul_q16(a: i64, b: i64) -> i64 {
-    (a * b) >> 16
+    a.saturating_mul(b) >> 16
 }
 
 /// $e^{-x}$ for $0 \le x \lesssim 0.4$ in Q16.16 by $1 - x + x^2/2 - x^3/6$.
 const fn exp_neg_q16(x: i64) -> i64 {
     let x2 = mul_q16(x, x);
     let x3 = mul_q16(x2, x);
-    Q16_ONE - x + x2 / 2 - x3 / 6
+    Q16_ONE
+        .saturating_sub(x)
+        .saturating_add(x2 / 2)
+        .saturating_sub(x3 / 6)
 }
 
 /// $\cos\theta$ for $0 \le \theta \le \pi/2$ in Q16.16 by the series to $\theta^8$.
@@ -138,7 +149,11 @@ const fn cos_q16(theta: i64) -> i64 {
     let t4 = mul_q16(t2, t2);
     let t6 = mul_q16(t4, t2);
     let t8 = mul_q16(t4, t4);
-    Q16_ONE - t2 / 2 + t4 / 24 - t6 / 720 + t8 / 40_320
+    Q16_ONE
+        .saturating_sub(t2 / 2)
+        .saturating_add(t4 / 24)
+        .saturating_sub(t6 / 720)
+        .saturating_add(t8 / 40_320)
 }
 
 /// A second-order resonator, $y_n = x_n + B\,y_{n-1} + C\,y_{n-2}$ with
@@ -161,17 +176,22 @@ impl Resonator {
     pub const fn new(f_hz: u16, bw_hz: u16, sample_rate_hz: u16) -> Option<Self> {
         if sample_rate_hz == 0
             || bw_hz == 0
-            || f_hz as u32 * 4 > sample_rate_hz as u32
-            || bw_hz as u32 * 32 > sample_rate_hz as u32
+            || (f_hz as u32).saturating_mul(4) > sample_rate_hz as u32
+            || (bw_hz as u32).saturating_mul(32) > sample_rate_hz as u32
         {
             return None;
         }
         let fs = sample_rate_hz as i64;
-        let theta = (2 * PI_Q16 as i64 * f_hz as i64) / fs;
-        let damping = (PI_Q16 as i64 * bw_hz as i64) / fs;
+        // `fs` is non-zero (refused above); the checked divisions carry the same refusal.
+        let Some(theta) = TWO_PI_Q16.saturating_mul(f_hz as i64).checked_div(fs) else {
+            return None;
+        };
+        let Some(damping) = (PI_Q16 as i64).saturating_mul(bw_hz as i64).checked_div(fs) else {
+            return None;
+        };
         let r = exp_neg_q16(damping);
-        let b = 2 * mul_q16(r, cos_q16(theta));
-        let c = -mul_q16(r, r);
+        let b = mul_q16(r, cos_q16(theta)).saturating_mul(2);
+        let c = mul_q16(r, r).saturating_neg();
         Some(Self {
             b_q16: b as i32,
             c_q16: c as i32,
@@ -188,9 +208,9 @@ impl Resonator {
     /// One sample in, one out.
     #[inline]
     pub fn step(&mut self, x_q16: i32) -> i32 {
-        let y = x_q16 as i64
-            + mul_q16(self.b_q16 as i64, self.y1 as i64)
-            + mul_q16(self.c_q16 as i64, self.y2 as i64);
+        let y = (x_q16 as i64)
+            .saturating_add(mul_q16(self.b_q16 as i64, self.y1 as i64))
+            .saturating_add(mul_q16(self.c_q16 as i64, self.y2 as i64));
         let y = y.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         self.y2 = self.y1;
         self.y1 = y;
@@ -232,7 +252,10 @@ impl VocalSynth {
             if frame.f0_hz_q16 == 0 {
                 return None;
             }
-            let period = ((frame.sample_rate_hz as u64) << 16) / frame.f0_hz_q16 as u64;
+            // `f0_hz_q16` is non-zero (refused above); the checked division carries the same
+            // refusal.
+            let period =
+                ((frame.sample_rate_hz as u64) << 16).checked_div(frame.f0_hz_q16 as u64)?;
             if period == 0 || period > u16::MAX as u64 {
                 return None;
             }
@@ -269,7 +292,7 @@ impl VocalSynth {
             .generator
             .wrapping_mul(1_664_525)
             .wrapping_add(1_013_904_223);
-        ((self.generator >> 16) as i64 - 0x8000) << 1
+        ((self.generator >> 16) as i64).wrapping_sub(0x8000) << 1
     }
 
     /// The next excitation sample before the filter: a pulse at the start of each period
@@ -280,25 +303,32 @@ impl VocalSynth {
         if self.voiced {
             if self.phase == 0 {
                 let shimmer = mul_q16(
-                    self.amplitude_q16 * self.shimmer_q0_8 as i64 / 256,
+                    self.amplitude_q16.saturating_mul(self.shimmer_q0_8 as i64) / 256,
                     self.draw(),
                 );
-                x += self.amplitude_q16 + shimmer;
-                let jitter =
-                    (self.base_period as i64 * self.jitter_q0_8 as i64 * self.draw()) >> 24;
-                self.period = (self.base_period as i64 + jitter).clamp(1, u16::MAX as i64) as u32;
+                x = x.saturating_add(self.amplitude_q16.saturating_add(shimmer));
+                let jitter = (self.base_period as i64)
+                    .saturating_mul(self.jitter_q0_8 as i64)
+                    .saturating_mul(self.draw())
+                    >> 24;
+                self.period = (self.base_period as i64)
+                    .saturating_add(jitter)
+                    .clamp(1, u16::MAX as i64) as u32;
             }
-            self.phase += 1;
+            // A phase counter wraps by name (§8.1); it is reset below before it reaches the period.
+            self.phase = self.phase.wrapping_add(1);
             if self.phase >= self.period {
                 self.phase = 0;
             }
         }
         if self.aspiration_q0_8 != 0 {
             let noise = mul_q16(
-                self.amplitude_q16 * self.aspiration_q0_8 as i64 / 256,
+                self.amplitude_q16
+                    .saturating_mul(self.aspiration_q0_8 as i64)
+                    / 256,
                 self.draw(),
             );
-            x += noise;
+            x = x.saturating_add(noise);
         }
         x.clamp(i32::MIN as i64, i32::MAX as i64) as i32
     }

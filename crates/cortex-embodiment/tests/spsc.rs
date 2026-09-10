@@ -5,6 +5,10 @@
 //! This is an integration test rather than a unit test so that the library itself stays free of
 //! thread spawning and heap types, which whitepaper TC-5 forbids in state crates.
 
+// §8.1: this integration test is its own crate root, so it carries the crate's lint itself
+// (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
+
 use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use cortex_embodiment::{CAPACITY, DOF, EmbodimentRingBuffer};
 use std::sync::Arc;

@@ -14,6 +14,9 @@
 //! search and constraint propagation are Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 pub mod term;
 pub use term::{

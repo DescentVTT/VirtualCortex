@@ -8,6 +8,9 @@
 //! Implemented; the replay that drives consolidation (whitepaper §6.6) is Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// `affordance_action_mask` bit: the node is a certified theorem; `property_vector_hash` is the
 /// hash of its statement, and the certificate came through the brokered prover (§6.10).
@@ -79,9 +82,9 @@ impl SemanticOntologyNode {
     pub fn note_anomaly(&mut self, error_q16: u32) -> bool {
         let current = self.anomaly_q16;
         self.anomaly_q16 = if error_q16 > current {
-            current.saturating_add(((error_q16 - current) >> ANOMALY_SHIFT).max(1))
+            current.saturating_add((error_q16.abs_diff(current) >> ANOMALY_SHIFT).max(1))
         } else if error_q16 < current {
-            current - ((current - error_q16) >> ANOMALY_SHIFT).max(1)
+            current.saturating_sub((current.abs_diff(error_q16) >> ANOMALY_SHIFT).max(1))
         } else {
             current
         };

@@ -3,6 +3,9 @@
 //! runtime's (`runtime/cortex-runtime`); the laminar priors are Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// The reflected form of the ECMA-182 polynomial `0x42F0E1EBA9EA3693`: the CRC-64/XZ
 /// parameters (reflected input and output, initial and final value all ones).
@@ -26,14 +29,12 @@ impl Crc64 {
         let mut crc = self.state;
         for &byte in bytes {
             crc ^= byte as u64;
-            let mut bit = 0;
-            while bit < 8 {
+            for _ in 0..8 {
                 crc = if crc & 1 == 1 {
                     (crc >> 1) ^ CRC64_POLY_REFLECTED
                 } else {
                     crc >> 1
                 };
-                bit += 1;
             }
         }
         self.state = crc;
@@ -258,10 +259,14 @@ impl SectionEntry {
 
     /// Records in the section; zero when `record_size` is zero or does not divide `length`.
     pub const fn record_count(&self) -> u64 {
-        if self.record_size == 0 || self.length % self.record_size as u64 != 0 {
-            0
-        } else {
-            self.length / self.record_size as u64
+        // Both are `None` for a zero record size: no records either way.
+        let record_size = self.record_size as u64;
+        match (
+            self.length.checked_rem(record_size),
+            self.length.checked_div(record_size),
+        ) {
+            (Some(0), Some(count)) => count,
+            _ => 0,
         }
     }
 
@@ -270,7 +275,7 @@ impl SectionEntry {
     pub fn is_well_formed(&self) -> bool {
         self.offset % 64 == 0
             && self.record_size != 0
-            && self.length % self.record_size as u64 == 0
+            && self.length.checked_rem(self.record_size as u64) == Some(0)
             && self._reserved == [0; 32]
     }
 

@@ -1,6 +1,9 @@
 //! Cerebellum: a per-microzone forward model with an in-record delay line (whitepaper §5.2.6).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// Per-microzone forward model with an in-record delay line.
 ///
@@ -83,9 +86,16 @@ impl CerebellarMicrozone {
         (self.delay_ctl & Self::BYTE) % Self::RING
     }
 
+    /// The bit of the control word that remembers the sign of the command in `slot`; a slot
+    /// is below the ring, so the shift stays below the width.
+    #[inline]
+    const fn sign_bit(slot: u32) -> u32 {
+        1 << Self::SIGN_SHIFT.wrapping_add(slot)
+    }
+
     #[inline]
     const fn sign_negative(&self, slot: u32) -> bool {
-        self.delay_ctl & (1 << (Self::SIGN_SHIFT + slot)) != 0
+        self.delay_ctl & Self::sign_bit(slot) != 0
     }
 
     /// One step of the forward model. `current_sensory` is the observation arriving now;
@@ -112,7 +122,9 @@ impl CerebellarMicrozone {
         let head = self.head();
         let filled = self.filled() as u32;
         if d > 0 && filled >= d {
-            let slot = (head + Self::RING - d) % Self::RING;
+            // `head` is below the ring and `d` at most the ring: the sum stays small and never
+            // dips below zero.
+            let slot = head.wrapping_add(Self::RING).wrapping_sub(d) % Self::RING;
             let old_prediction = self.pred_ring[slot as usize];
             let error = current_sensory.saturating_sub(old_prediction);
             self.climbing_fiber_error = error;
@@ -128,7 +140,7 @@ impl CerebellarMicrozone {
 
         // Push the new prediction into the delay line.
         self.pred_ring[head as usize] = prediction;
-        let sign_bit = 1 << (Self::SIGN_SHIFT + head);
+        let sign_bit = Self::sign_bit(head);
         // The slot's old sign is cleared first, then set for a negative command: the fields
         // of the word never overlap, so the assembly below is a disjoint union.
         let others = self.delay_ctl & (0x7F << Self::SIGN_SHIFT) & !sign_bit;
@@ -137,9 +149,9 @@ impl CerebellarMicrozone {
         } else {
             others
         };
-        let new_head = (head + 1) % Self::RING;
+        let new_head = head.wrapping_add(1) % Self::RING;
         let new_filled = if filled < Self::RING {
-            filled + 1
+            filled.wrapping_add(1)
         } else {
             filled
         };
@@ -153,7 +165,7 @@ impl CerebellarMicrozone {
 /// Q16.16 × Q16.16 → Q16.16, widened to `i64`, shifted once, clamped to `i32` (whitepaper §8.1).
 #[inline(always)]
 const fn mul_q16(a: i32, b: i32) -> i32 {
-    let p = (a as i64 * b as i64) >> 16;
+    let p = (a as i64).saturating_mul(b as i64) >> 16;
     if p > i32::MAX as i64 {
         i32::MAX
     } else if p < i32::MIN as i64 {
@@ -245,7 +257,8 @@ mod tests {
         for t in 0..n {
             let u = if alternating && t % 2 == 1 { -ONE } else { ONE };
             z.step_forward_model(y[t], u);
-            y[t + du] = y[t].saturating_add(mul_q16(k, u));
+            // `t` is below `n` and `du` at most seven, well inside the 512 entries.
+            y[t.wrapping_add(du)] = y[t].saturating_add(mul_q16(k, u));
         }
         (z.climbing_fiber_error, z.ltd_synaptic_weight)
     }

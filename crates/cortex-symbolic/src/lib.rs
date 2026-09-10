@@ -4,6 +4,9 @@
 //! `cortex-linguistic`'s (ADR-0016).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// `flags` bit: the header holds a role/filler binding.
 pub const FLAG_BOUND: u16 = 0x0001;
@@ -73,10 +76,15 @@ impl SymbolicHypervectorHeader {
     /// two rotations are one). Refused, with nothing changed, for a zero shift, a zero
     /// dimensionality, or one the sixteen-bit shift cannot index. Returns the new shift.
     pub fn rebase(&mut self, shift: u16) -> Option<u16> {
-        if shift == 0 || self.dimensionality == 0 || self.dimensionality > u16::MAX as u32 + 1 {
+        // One past `u16::MAX`: the largest dimensionality a sixteen-bit shift indexes.
+        const SHIFT_SPAN: u32 = 1 << 16;
+        if shift == 0 || self.dimensionality == 0 || self.dimensionality > SHIFT_SPAN {
             return None;
         }
-        let composed = (self.permutation_shift as u32 + shift as u32) % self.dimensionality;
+        // Two sixteen-bit shifts cannot leave the `u32`; the modulus was checked non-zero.
+        let composed = (self.permutation_shift as u32)
+            .wrapping_add(shift as u32)
+            .checked_rem(self.dimensionality)?;
         self.permutation_shift = composed as u16;
         self.rebase_count = self.rebase_count.saturating_add(1);
         self.flags |= FLAG_REBASED;
