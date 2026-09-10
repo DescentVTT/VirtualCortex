@@ -13,6 +13,9 @@ pub use dynamics::membrane::{
     PLATEAU_COUPLING_SHIFT, REFRACTORY_TICKS, SOMA_LEAK_SHIFT, THRESHOLD_BASE,
     THRESHOLD_DECAY_SHIFT, THRESHOLD_STEP, V_RESET,
 };
+pub use dynamics::plasticity::{
+    STP_MAX, STP_TAU_D_SHIFT, STP_TAU_F_SHIFT, STP_U, stp_decay_factor_q16,
+};
 pub use dynamics::{
     DendriticSuperNeuron, GateState, MAILBOX_EMPTY, MAILBOX_NIL, MailboxDrain, MailboxNode,
     SynapseBlock, synaptic_efficacy_q16,
