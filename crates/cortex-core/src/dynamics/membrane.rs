@@ -87,9 +87,11 @@ impl DendriticSuperNeuron {
     /// below zero is an unconfigured unit, which never fires. Returns `true` on the tick the unit
     /// fires.
     pub fn integrate(&mut self, basal_q16: i32, apical_q16: i32, now_tick: u32) -> bool {
-        if self.bac_plateau_ticks > 0 {
-            self.bac_plateau_ticks = self.bac_plateau_ticks.saturating_sub(1);
-            if self.bac_plateau_ticks == 0 {
+        // A plateau that is running counts down; `checked_sub` is `None` exactly at zero, so no
+        // comparison exists for a mutant to move off the bound.
+        if let Some(left) = self.bac_plateau_ticks.checked_sub(1) {
+            self.bac_plateau_ticks = left;
+            if left == 0 {
                 self.flags &= !FLAG_BURST_MODE;
             }
         }
@@ -204,6 +206,28 @@ mod tests {
             u.last_soma_spike_tick,
             u.flags,
         )
+    }
+
+    #[test]
+    fn one_tick_of_leak_is_the_compartment_s_fraction_of_the_displacement_in_both_signs() {
+        let mut up = unit();
+        up.v_basal = 0x0001_0000;
+        up.v_apical = -0x0001_0000;
+        up.integrate(0, 0, 1);
+        assert_eq!(
+            up.v_basal,
+            0x0001_0000 - 0x80,
+            "a positive basal potential leaks by 2^-9 of itself"
+        );
+        assert_eq!(
+            up.v_apical,
+            -0x0001_0000 + 0x40,
+            "a negative apical potential leaks by 2^-10 of its magnitude"
+        );
+        let mut small = unit();
+        small.v_basal = -3;
+        small.integrate(0, 0, 1);
+        assert_eq!(small.v_basal, -2, "and by at least one LSB");
     }
 
     #[test]
