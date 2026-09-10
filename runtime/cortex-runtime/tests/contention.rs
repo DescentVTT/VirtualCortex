@@ -78,10 +78,13 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         reports.iter().all(|r| r.spikes.is_empty()),
         "an unconfigured unit never fires"
     );
+    // Whether the work was shared depends on timing: in the release profile on a few cores,
+    // worker 0 can drain every event before another worker wakes to steal (the release step's
+    // first run, ADR-0030). Exactly-once delivery is the property; the shares are reported,
+    // not asserted.
     if workers > 1 {
-        assert!(
-            reports.iter().filter(|r| r.delivered_count > 0).count() > 1,
-            "the work was shared: {:?}",
+        eprintln!(
+            "shares on {workers} workers: {:?}",
             reports
                 .iter()
                 .map(|r| r.delivered_count)
