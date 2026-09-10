@@ -444,6 +444,44 @@ mod tests {
     }
 
     #[test]
+    fn a_change_equal_to_the_stake_is_a_fixed_point_and_the_steps_are_a_sixteenth_of_the_gap() {
+        let mut s = InteroceptiveState {
+            free_energy_prev_q16: ONE,
+            existential_stake_q16: 0x1000,
+            ..Default::default()
+        };
+        s.update_valence(ONE + 0x1000);
+        assert_eq!(
+            s.existential_stake_q16, 0x1000,
+            "a change equal to the stake leaves it where it is"
+        );
+        s.update_valence(ONE + 0x3000);
+        assert_eq!(
+            s.existential_stake_q16, 0x1100,
+            "a change of 0x2000: up by a sixteenth of the gap"
+        );
+        s.update_valence(ONE + 0x3000);
+        assert_eq!(
+            s.existential_stake_q16, 0xFF0,
+            "no change: down by a sixteenth of the stake"
+        );
+    }
+
+    #[test]
+    fn mirth_equal_to_the_incongruity_is_a_fixed_point_and_moves_by_a_quarter_of_the_gap() {
+        let mut s = InteroceptiveState {
+            mirth_q16: 0x1000,
+            ..Default::default()
+        };
+        assert_eq!(s.appraise_incongruity(0x1000, 0), 0x1000);
+        assert_eq!(s.mirth_q16, 0x1000, "an incongruity equal to the mirth");
+        assert_eq!(s.appraise_incongruity(0, 0), 0);
+        assert_eq!(s.mirth_q16, 0xC00, "a quarter of the gap down");
+        assert_eq!(s.appraise_incongruity(0x1C00, 0), 0x1C00);
+        assert_eq!(s.mirth_q16, 0x1000, "a quarter of the gap up");
+    }
+
+    #[test]
     fn mirth_saturates_toward_the_surprise_and_two_bodies_appraise_alike() {
         let mut a = InteroceptiveState::default();
         let mut b = InteroceptiveState::default();

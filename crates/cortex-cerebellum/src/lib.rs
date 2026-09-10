@@ -310,6 +310,22 @@ mod tests {
     }
 
     #[test]
+    fn a_zero_delay_never_reads_the_ring_whatever_it_holds() {
+        let mut z = zone(0);
+        z.ltd_synaptic_weight = HALF;
+        for _ in 0..20 {
+            assert_eq!(
+                z.step_forward_model(0, ONE),
+                HALF,
+                "the prediction is the gain's change"
+            );
+            assert_eq!(z.climbing_fiber_error, 0, "no delay, no comparison");
+            assert_eq!(z.ltd_synaptic_weight, HALF, "and no learning");
+        }
+        assert_eq!(z.filled(), 7, "the line still fills");
+    }
+
+    #[test]
     fn plant_delay_is_clamped_and_zero_disables_learning() {
         let mut z = zone(9);
         assert_eq!(z.plant_delay(), 7);

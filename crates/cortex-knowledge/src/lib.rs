@@ -190,6 +190,20 @@ mod tests {
     }
 
     #[test]
+    fn an_error_equal_to_the_anomaly_is_a_fixed_point_and_the_steps_are_an_eighth_of_the_gap() {
+        let mut n = SemanticOntologyNode {
+            anomaly_q16: 0x1000,
+            ..Default::default()
+        };
+        assert!(!n.note_anomaly(0x1000));
+        assert_eq!(n.anomaly_q16, 0x1000, "an error equal to the anomaly");
+        assert!(!n.note_anomaly(0x800));
+        assert_eq!(n.anomaly_q16, 0xF00, "an eighth of the gap down");
+        assert!(!n.note_anomaly(0x1700));
+        assert_eq!(n.anomaly_q16, 0x1000, "an eighth of the gap up");
+    }
+
+    #[test]
     fn record_is_one_cache_line_and_default_is_an_unconsolidated_root() {
         assert_eq!(core::mem::size_of::<SemanticOntologyNode>(), 64);
         assert_eq!(core::mem::align_of::<SemanticOntologyNode>(), 64);
