@@ -13,8 +13,8 @@ neural computation on 64-byte cache-line records, Q16.16 fixed point, and a fixe
 core-pinned workers. Thirty-two crates, one per subsystem, no dependencies between them;
 fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
-It is at the **state-model stage**. The records, their compile-time layout assertions and one
-small update rule in most crates exist; the executor, the delivery path from the wheel into
+It is at the **state-model stage**. The records, their compile-time layout assertions and small
+update rules in twenty-two crates exist; the executor, the delivery path from the wheel into
 mailboxes, the image loader, the shared-memory mappings, the tool broker and every subsystem's
 real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;

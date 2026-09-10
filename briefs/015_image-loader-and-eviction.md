@@ -35,7 +35,8 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
 
 - `crates/cortex-connectome/src/lib.rs`: `CortexFileHeader { magic, version, reserved_flags,
   num_columns, num_neurons, num_synapses, layers_offset, crc64, _padding }`, `MAGIC`,
-  `FORMAT_VERSION = 4`; no validation, no CRC, no section record. Whitepaper
+  `FORMAT_VERSION = 5` (4 at the commit above; ADR-0020 and ADR-0021 carved fields from six
+  records); no validation, no CRC, no section record. Whitepaper
   [§8.7](../docs/WHITEPAPER.md#87-persistence-and-serialisation): a section directory of
   `(kind: u32, offset: u64, length: u64, crc64: u64)` entries padded to 64 B, then sections
   whose bytes are the arenas; an image with a foreign version MUST fail closed; atomics are

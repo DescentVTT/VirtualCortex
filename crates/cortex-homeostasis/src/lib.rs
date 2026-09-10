@@ -19,6 +19,19 @@ pub struct HomeostaticDrivePool {
 }
 
 impl HomeostaticDrivePool {
+    /// The branching ratio of self-organised criticality (ADR-0020, whitepaper §8.12):
+    /// `sigma = descendants / ancestors` in Q16.16, the spikes a window's spikes caused divided
+    /// by the spikes that caused them; 1.0 is criticality. Widened, saturating; a window with
+    /// no ancestors leaves `sigma` unchanged, since nothing was measured. Returns `sigma`.
+    pub fn update_branching_ratio(&mut self, descendants: u32, ancestors: u32) -> u32 {
+        if ancestors == 0 {
+            return self.branching_ratio_q16;
+        }
+        let sigma = ((descendants as u64) << 16) / ancestors as u64;
+        self.branching_ratio_q16 = sigma.min(u32::MAX as u64) as u32;
+        self.branching_ratio_q16
+    }
+
     /// Advances the 16-bit circadian phase and sets the sleep gate. The phase is a counter
     /// whose wrap is the intended semantics (whitepaper §8.1), so the addition is explicitly
     /// wrapping before the mask; the mask alone would not prevent a debug-build overflow
@@ -43,6 +56,30 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_branching_ratio_is_descendants_over_ancestors_and_an_empty_window_measures_nothing() {
+        let mut p = pool(0, 0);
+        p.branching_ratio_q16 = 0x1234;
+        assert_eq!(p.update_branching_ratio(100, 100), 0x0001_0000, "critical");
+        assert_eq!(
+            p.update_branching_ratio(50, 100),
+            0x0000_8000,
+            "subcritical"
+        );
+        assert_eq!(
+            p.update_branching_ratio(300, 100),
+            0x0003_0000,
+            "supercritical"
+        );
+        assert_eq!(
+            p.update_branching_ratio(7, 0),
+            0x0003_0000,
+            "no ancestors: unchanged"
+        );
+        assert_eq!(p.update_branching_ratio(u32::MAX, 1), u32::MAX, "saturates");
+        assert_eq!(p.update_branching_ratio(0, 5), 0, "an avalanche that died");
+    }
 
     fn pool(circadian_phase: u32, sensory_fatigue: u32) -> HomeostaticDrivePool {
         HomeostaticDrivePool {

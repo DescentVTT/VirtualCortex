@@ -21,7 +21,9 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0013](0013-timing-wheel-geometry.md) | Timing wheel geometry: 256 × 10 µs fine, 256 × 100 µs coarse, fixed-capacity token lists (amends ADR-0004) | accepted |
 | [ADR-0014](0014-benchmark-harness.md) | Benchmark harness: criterion 0.7, confined to a bench-only crate | accepted |
 | [ADR-0015](0015-embodiment-frame-abi.md) | Embodiment frame ABI and single-producer single-consumer ring protocol | accepted |
-| [ADR-0016](0016-thirty-two-crate-architecture.md) | Thirty-two state crates: fourteen subsystems admitted, three boundaries moved, and the admission test for the next one (amends ADR-0005) | proposed |
-| [ADR-0017](0017-mailbox-and-gate-protocol.md) | Mailbox and gate protocol: an index stack drained whole, no ABA tag, four sequentially consistent operations (amends ADR-0006) | proposed |
-| [ADR-0018](0018-membrane-integration.md) | Membrane integration: shift leaks with a one-LSB floor, difference coupling, a 2 ms refractory window, apical-gated plateaus, adaptive threshold | proposed |
-| [ADR-0019](0019-short-term-plasticity.md) | Short-term plasticity: event-driven Tsodyks–Markram on the Q0.8 fields, exponentials by binary exponentiation | proposed |
+| [ADR-0016](0016-thirty-two-crate-architecture.md) | Thirty-two state crates: fourteen subsystems admitted, three boundaries moved, and the admission test for the next one (amends ADR-0005) | accepted |
+| [ADR-0017](0017-mailbox-and-gate-protocol.md) | Mailbox and gate protocol: an index stack drained whole, no ABA tag, four sequentially consistent operations (amends ADR-0006) | accepted |
+| [ADR-0018](0018-membrane-integration.md) | Membrane integration: shift leaks with a one-LSB floor, difference coupling, a 2 ms refractory window, apical-gated plateaus, adaptive threshold | accepted |
+| [ADR-0019](0019-short-term-plasticity.md) | Short-term plasticity: event-driven Tsodyks–Markram on the Q0.8 fields, exponentials by binary exponentiation | accepted |
+| [ADR-0020](0020-computational-phenomenology-and-synthetic-qualia.md) | Computational phenomenology: the state variables the theories name, as integer rules, and what the document does not claim for them | accepted |
+| [ADR-0021](0021-native-cognitive-language-and-conceptual-blending.md) | Native cognitive language: nested constructions, conceptual blending, default-mode wandering and dialogue grounding, without a language model | accepted |

@@ -39,6 +39,10 @@ pub const TEMPLATE_NEED: u16 = 2;
 pub const TEMPLATE_CAUSATIVE: u16 = 3;
 /// "subject holds that object, with a hedge": subject + action + object + affect, hedge first.
 pub const TEMPLATE_EPISTEMIC: u16 = 4;
+/// "subject acts on [a clause]": subject + action + a child frame in the object slot (ADR-0021).
+pub const TEMPLATE_RELATIVE: u16 = 5;
+/// "subject acts on object because [a clause]": subject + action + object + a child frame after them (ADR-0021).
+pub const TEMPLATE_CAUSAL: u16 = 6;
 
 /// Speech acts: the illocutionary force the lexicon marks the utterance with.
 pub const SPEECH_ACT_ASSERTIVE: u8 = 0;
@@ -61,8 +65,14 @@ pub const PROSODY_TOPIC_SHIFT: u8 = 4;
 pub const GATE_PARTICLE_OPEN: u8 = 0x01;
 /// `syntax_gate_flags` bit: the frame is sealed; no further binding is accepted.
 pub const GATE_SEALED: u8 = 0x02;
+/// `syntax_gate_flags` bit: a child frame is bound (ADR-0021).
+pub const GATE_CHILD_BOUND: u8 = 0x04;
+/// `syntax_gate_flags` bit: a blended metaphor is attached (ADR-0021).
+pub const GATE_METAPHOR: u8 = 0x08;
 /// `syntax_gate_flags` bits 4–7 hold the `ROLE_*` bits bound so far, shifted by this.
 pub const GATE_ROLES_SHIFT: u32 = 4;
+/// A realisation-order entry, not a role bit: descend into `child_frame_idx` here (ADR-0021).
+pub const ROLE_CHILD: u8 = 0x10;
 
 /// Roles a template requires, or `None` for an unknown template.
 pub const fn required_roles(template: u16) -> Option<u8> {
@@ -72,8 +82,15 @@ pub const fn required_roles(template: u16) -> Option<u8> {
         TEMPLATE_NEED => Some(ROLE_SUBJECT | ROLE_OBJECT),
         TEMPLATE_CAUSATIVE => Some(ROLE_SUBJECT | ROLE_ACTION | ROLE_OBJECT),
         TEMPLATE_EPISTEMIC => Some(ROLE_SUBJECT | ROLE_ACTION | ROLE_OBJECT | ROLE_AFFECT),
+        TEMPLATE_RELATIVE => Some(ROLE_SUBJECT | ROLE_ACTION),
+        TEMPLATE_CAUSAL => Some(ROLE_SUBJECT | ROLE_ACTION | ROLE_OBJECT),
         _ => None,
     }
+}
+
+/// True for a template that needs a child frame bound before it is complete (ADR-0021).
+pub const fn requires_child(template: u16) -> bool {
+    matches!(template, TEMPLATE_RELATIVE | TEMPLATE_CAUSAL)
 }
 
 /// The order a template realises its roles in, or `None` for an unknown template. The affect
@@ -86,6 +103,8 @@ pub const fn role_order(template: u16) -> Option<[u8; 4]> {
         TEMPLATE_NEED => Some([ROLE_SUBJECT, ROLE_OBJECT, ROLE_AFFECT, 0]),
         TEMPLATE_CAUSATIVE => Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_OBJECT, ROLE_AFFECT]),
         TEMPLATE_EPISTEMIC => Some([ROLE_AFFECT, ROLE_SUBJECT, ROLE_ACTION, ROLE_OBJECT]),
+        TEMPLATE_RELATIVE => Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_CHILD, ROLE_AFFECT]),
+        TEMPLATE_CAUSAL => Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_OBJECT, ROLE_CHILD]),
         _ => None,
     }
 }
@@ -107,7 +126,10 @@ pub struct LinguisticFrameSlot {
     pub recurrent_state_hash: u32, // [24..28] Running hash of the recurrent cell's trajectory
     pub surface_token_id: u32, // [28..32] Surface token the lexicon last realised
     pub linear_attention_energy_q16: i32, // [32..36] The recurrent cell's scalar energy (Q16.16)
-    pub _reserved: [u8; 28],  // [36..64] Reserved; MUST be zero
+    pub parent_frame_idx: u16, // [36..38] The frame this one is nested in, or 0 for a root (ADR-0021)
+    pub child_frame_idx: u16,  // [38..40] The frame realised in this one's child slot (ADR-0021)
+    pub blended_metaphor_id: u32, // [40..44] SymbolicHypervectorHeader::vector_id of an attached blend (ADR-0021)
+    pub _reserved: [u8; 20],      // [44..64] Reserved; MUST be zero
 }
 
 impl LinguisticFrameSlot {
@@ -158,13 +180,51 @@ impl LinguisticFrameSlot {
         self.syntax_gate_flags >> GATE_ROLES_SHIFT
     }
 
-    /// True when every role the template requires is bound. An unknown template is never
-    /// complete.
+    /// True when every role the template requires is bound, and the child frame too for a
+    /// template that nests one. An unknown template is never complete.
     pub const fn is_complete(&self) -> bool {
+        let child_ok = !requires_child(self.frame_template_id)
+            || self.syntax_gate_flags & GATE_CHILD_BOUND != 0;
         match required_roles(self.frame_template_id) {
-            Some(required) => self.filled_roles() & required == required,
+            Some(required) => child_ok && self.filled_roles() & required == required,
             None => false,
         }
+    }
+
+    /// Recursive construction grammar (ADR-0021): binds the frame at `child_idx` of the
+    /// caller's arena into this frame's child slot; the runtime realises it in place at the
+    /// `ROLE_CHILD` position of the template's order, descending by index with the arena as
+    /// the bound, so nesting needs no allocation and no recursion in this crate. Refused, with
+    /// nothing changed, when the frame is sealed or `child_idx` names this frame.
+    pub fn bind_child(&mut self, child_idx: u16, self_idx: u16) -> bool {
+        if self.is_sealed() || child_idx == self_idx {
+            return false;
+        }
+        self.child_frame_idx = child_idx;
+        self.syntax_gate_flags |= GATE_CHILD_BOUND;
+        true
+    }
+
+    /// Records the frame this one is nested in (0 for a root).
+    pub fn set_parent(&mut self, parent_idx: u16) {
+        self.parent_frame_idx = parent_idx;
+    }
+
+    /// Attaches a conceptual blend (`cortex-symbolic`, ADR-0021) as the frame's metaphor: the
+    /// lexicon realises the affect slot through it. Refused when the frame is sealed.
+    pub fn attach_metaphor(&mut self, blend_vector_id: u32) -> bool {
+        if self.is_sealed() {
+            return false;
+        }
+        self.blended_metaphor_id = blend_vector_id;
+        self.syntax_gate_flags |= GATE_METAPHOR;
+        true
+    }
+
+    /// True when a metaphor is attached.
+    #[inline]
+    pub const fn has_metaphor(&self) -> bool {
+        self.syntax_gate_flags & GATE_METAPHOR != 0
     }
 
     /// True once `seal` has closed the frame to further binding.
@@ -196,7 +256,12 @@ impl LinguisticFrameSlot {
         let mut i = 0;
         while i < template_order.len() {
             let role = template_order[i];
-            if role != 0 && self.filled_roles() & role != 0 {
+            let present = if role == ROLE_CHILD {
+                self.syntax_gate_flags & GATE_CHILD_BOUND != 0
+            } else {
+                role != 0 && self.filled_roles() & role != 0
+            };
+            if present {
                 order[n] = role;
                 n += 1;
             }
@@ -286,9 +351,17 @@ mod tests {
             required_roles(TEMPLATE_EPISTEMIC),
             Some(ROLE_SUBJECT | ROLE_ACTION | ROLE_OBJECT | ROLE_AFFECT)
         );
-        assert_eq!(required_roles(5), None);
-        assert_eq!(role_order(5), None);
-        let mut f = LinguisticFrameSlot::new(5, SPEECH_ACT_ASSERTIVE, 0);
+        assert_eq!(
+            required_roles(TEMPLATE_RELATIVE),
+            Some(ROLE_SUBJECT | ROLE_ACTION)
+        );
+        assert_eq!(
+            required_roles(TEMPLATE_CAUSAL),
+            Some(ROLE_SUBJECT | ROLE_ACTION | ROLE_OBJECT)
+        );
+        assert_eq!(required_roles(7), None);
+        assert_eq!(role_order(7), None);
+        let mut f = LinguisticFrameSlot::new(7, SPEECH_ACT_ASSERTIVE, 0);
         for role in [ROLE_SUBJECT, ROLE_ACTION, ROLE_OBJECT, ROLE_AFFECT] {
             assert!(f.bind_role(role, 1, Q16_ONE));
         }
@@ -382,6 +455,57 @@ mod tests {
         let sealed = f;
         assert!(!f.bind_role(ROLE_OBJECT, 3, Q16_ONE));
         assert_eq!(f, sealed);
+    }
+
+    #[test]
+    fn a_relative_frame_needs_its_child_and_realises_it_in_the_object_position() {
+        let mut f = LinguisticFrameSlot::new(TEMPLATE_RELATIVE, SPEECH_ACT_ASSERTIVE, 0);
+        assert!(f.bind_role(ROLE_SUBJECT, 1, Q16_ONE));
+        assert!(f.bind_role(ROLE_ACTION, 2, Q16_ONE));
+        assert!(
+            !f.is_complete(),
+            "the roles are bound but the clause is not"
+        );
+        assert!(!f.bind_child(3, 3), "a frame cannot nest itself");
+        assert!(f.bind_child(7, 3));
+        assert_eq!(f.child_frame_idx, 7);
+        assert!(f.is_complete());
+        assert_eq!(
+            f.realisation_order(),
+            Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_CHILD, 0])
+        );
+        assert!(f.bind_role(ROLE_AFFECT, 9, Q16_ONE));
+        assert_eq!(
+            f.realisation_order(),
+            Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_CHILD, ROLE_AFFECT])
+        );
+        f.set_parent(2);
+        assert_eq!(f.parent_frame_idx, 2);
+        assert!(f.seal());
+        assert!(!f.bind_child(8, 3), "sealed frames refuse a new child");
+        assert_eq!(f.child_frame_idx, 7);
+    }
+
+    #[test]
+    fn a_causal_frame_realises_its_reason_after_the_core_and_a_metaphor_can_be_attached() {
+        let mut f = LinguisticFrameSlot::new(TEMPLATE_CAUSAL, SPEECH_ACT_ASSERTIVE, 1);
+        for role in [ROLE_SUBJECT, ROLE_ACTION, ROLE_OBJECT] {
+            assert!(f.bind_role(role, 1, Q16_ONE));
+        }
+        assert!(!f.is_complete());
+        assert!(f.bind_child(4, 0));
+        assert_eq!(
+            f.realisation_order(),
+            Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_OBJECT, ROLE_CHILD])
+        );
+        assert!(!f.has_metaphor());
+        assert!(f.attach_metaphor(0xB1E7D));
+        assert!(f.has_metaphor());
+        assert_eq!(f.blended_metaphor_id, 0xB1E7D);
+        assert!(f.seal());
+        assert!(!f.attach_metaphor(1), "sealed frames keep their metaphor");
+        assert!(!requires_child(TEMPLATE_STATE));
+        assert!(requires_child(TEMPLATE_RELATIVE) && requires_child(TEMPLATE_CAUSAL));
     }
 
     #[test]

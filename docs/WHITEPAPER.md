@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.0.0
+version: 4.1.0
 status: active
 date: 2026-09-10
 ---
@@ -11,7 +11,7 @@ date: 2026-09-10
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.0.0 |
+| Version | 4.1.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-10 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -160,31 +160,31 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | yes | yes | yes | `compute_gating` |
 | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | yes | yes | yes | `step_forward_model` |
 | `cortex-salience` | `SalienceNodeState` | 64 B | yes | yes | yes | `evaluate_threat` |
-| `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | yes | yes | yes | `step_ignition` |
-| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | yes | `bind` |
+| `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | yes | yes | yes | `step_ignition`, `step_ignition_at` (criticality-gated), `update_attention_schema` |
+| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | yes | `bind`, `blend` |
 | `cortex-executive` | `ExecutivePlanNode` | 64 B | yes | yes | yes | — |
 | `cortex-predictive` | `PredictiveErrorState` | 64 B | yes | yes | yes | — |
 | `cortex-agency` | `AgentPerspectiveState` | 64 B | yes | yes | yes | — |
 | `cortex-immune` | `ImmuneScrubNode` | 64 B | yes | yes | yes | — |
 | `cortex-neuromod` | `NeuromodulatorState` | 16 B | yes | yes | yes | — |
 | `cortex-hippocampus` | `HippocampalAttractorState` | 64 B | yes | yes | yes | — |
-| `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | yes | yes | yes | `update_circadian_tick` |
+| `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | yes | yes | yes | `update_circadian_tick`, `update_branching_ratio` |
 | `cortex-fabric` | `FabricPacketHeader` | 64 B | yes | yes | yes | — |
 | `cortex-telemetry` | `LfpSamplePacket` | 64 B | yes | yes | yes | — |
 | `cortex-thalamus` | `ThalamicRelayNode` | 64 B | yes | yes | yes | `relay` gate (tonic / burst / closed) |
-| `cortex-linguistic` | `LinguisticFrameSlot` | 64 B | yes | yes | yes | `bind_role`, `realisation_order`, `advance_prosody` (recurrent cell) |
+| `cortex-linguistic` | `LinguisticFrameSlot` | 64 B | yes | yes | yes | `bind_role`, `bind_child` (nesting), `attach_metaphor`, `realisation_order`, `advance_prosody` (recurrent cell) |
 | `cortex-tools` | `ToolInvocationFrame` | 64 B | yes | yes | yes | frame state machine, `is_known_action`, `new_call` |
 | `cortex-attention` | `FovealAttentionFocus` | 64 B | yes | yes | yes | saccade state machine, `document_target` |
-| `cortex-affect` | `InteroceptiveState` | 64 B | yes | yes | yes | `integrate` |
+| `cortex-affect` | `InteroceptiveState` | 64 B | yes | yes | yes | `integrate`, `update_valence`, `metaphor_source_domain` |
 | `cortex-autonomic` | `AutonomicVitalsState` | 64 B | yes | yes | yes | `sample` limit check |
 | `cortex-spatial` | `SpatialGridCoordinate` | 64 B | yes | yes | yes | `integrate`, `fix` |
 | `cortex-curiosity` | `CuriosityExplorationVector` | 64 B | yes | yes | yes | `visit` |
-| `cortex-social` | `SocialPerspectiveNode` | 64 B | yes | yes | yes | `resonate`, `update_trust` |
+| `cortex-social` | `SocialPerspectiveNode` | 64 B | yes | yes | yes | `resonate`, `update_trust`, turn-taking and grounding, `register` |
 | `cortex-ethics` | `EthicalEvaluationGate` | 64 B | yes | yes | yes | `evaluate` (veto) |
 | `cortex-knowledge` | `SemanticOntologyNode` | 64 B | yes | yes | yes | `consolidate`, `affords`, `certify` |
 | `cortex-reasoning` | `SymbolicRuleNode` | 64 B | yes | yes | yes | `evaluate` (truth table), `resolve`, `apply_resolution` |
 | `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B | yes | yes | yes | `execute` (eight opcodes, 128-bit) |
-| `cortex-imagination` | `MentalCanvasFrame` | 64 B | yes | yes | yes | `step`, `has_diverged` |
+| `cortex-imagination` | `MentalCanvasFrame` | 64 B | yes | yes | yes | `step`, `has_diverged`, `reflect` (self-model fixed point), `wander` |
 
 The workspace manifest lists exactly thirty-two state crates under `crates/` (eighteen from the founding decomposition and fourteen admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md)), plus the benchmark crate `benches/cortex-bench` ([ADR-0014](adr/0014-benchmark-harness.md)), which is not a state crate and is never published. Every state crate declares an empty dependency list, inherits its version, edition (2024), minimum supported Rust version (1.85), authors, license and repository from `[workspace.package]`, carries a compile-time layout assertion block, and carries a unit-test module; every public function and associated constant has at least one test (brief 007).
 
@@ -521,7 +521,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (4) |
+| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (5) |
 | Status | Header layout: Implemented · Sections, CRC, loader: Specified (§8.7) · Atlas-derived priors: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -529,7 +529,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
 | `[0..8)` | `magic` | `[u8; 8]` | ASCII `VCORTEX1` (big-endian `0x5643_4F52_5445_5831`). |
-| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 4. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)). |
+| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 4. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); 5 carved fields from the reserved bytes of six records for the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) and [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) (§5.2.8, §5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.32); a version-4 image has them zero, which every rule reads as "not yet". |
 | `[12..16)` | `reserved_flags` | `u32` | Feature flags; MUST be zero in version 1. |
 | `[16..24)` | `num_columns` | `u64` | Cortical hyper-column count. |
 | `[24..32)` | `num_neurons` | `u64` | `DendriticSuperNeuron` record count. |
@@ -539,7 +539,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | `[56..64)` | `_padding` | `[u8; 8]` | Reserved; MUST be zero. |
 
 <!-- @assert-count target="crates/cortex-connectome" symbol="CortexFileHeader" min="1" word="true" -->
-<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 4" min="1" reason="§5.2.2 states the current image format version; update both together" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 5" min="1" reason="§5.2.2 states the current image format version; update both together" -->
 
 #### 5.2.3 `cortex-sensory` — peripheral ingestion
 
@@ -690,8 +690,8 @@ Implemented rule: a shock above 2.0, or a conditioned weight above 1.0, sets val
 | :--- | :--- |
 | Responsibility | A small set of competitive broadcast slots; a slot that crosses an ignition threshold is broadcast to subscribed columns and held for a persistence window. |
 | Source | `crates/cortex-workspace/src/lib.rs` |
-| Public API | `GlobalWorkspaceSlot::IGNITION_THRESHOLD` (1.5), `step_ignition(&mut self, bottom_up_evidence: i32) -> bool` |
-| Status | Layout: Implemented · Threshold rule: Implemented · Lateral competition and decay: Specified (§8.8) |
+| Public API | `GlobalWorkspaceSlot::IGNITION_THRESHOLD` (1.5), `PERSISTENCE_TICKS` (300), `step_ignition(&mut self, bottom_up_evidence: i32) -> bool`, `step_ignition_at(&mut self, evidence, sigma_q16) -> bool`, `update_attention_schema(&mut self) -> u32`; `Q16_ONE` |
+| Status | Layout: Implemented · Threshold rule, criticality-gated threshold and the attention schema: Implemented ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)) · Lateral competition and decay: Specified (§8.8) |
 
 **`GlobalWorkspaceSlot`** — 64 B, align 64.
 
@@ -705,11 +705,14 @@ Implemented rule: a shock above 2.0, or a conditioned weight above 1.0, sets val
 | `[20..24)` | `broadcast_channel_mask` | `u32` | bitmask | Recipient columns. |
 | `[24..28)` | `p300_wave_phase` | `u32` | phase | Ignition oscillation phase. |
 | `[28..32)` | `is_ignited` | `u32` | 0 / 1 | Ignited this tick. |
-| `[32..64)` | `_reserved` | `[u8; 32]` | — | Reserved; MUST be zero. |
+| `[32..36)` | `attention_schema_meta_hash` | `u32` | hash | The slot's model of its own broadcast: a hash of slot, binding, ignition, persistence and mask, recomputed after every step ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
+| `[36..40)` | `criticality_distance_q16` | `u32` | Q16.16 | $\min(\lvert\sigma - 1\rvert, 1)$ the last gated step used; 0 after a plain step ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
+| `[40..64)` | `_reserved` | `[u8; 24]` | — | Reserved; MUST be zero. |
 
-Implemented rule: evidence accumulates; at or above 1.5 the slot ignites and is held for 300 ticks. The accumulator has no decay and no competition term yet.
+Implemented rules: evidence accumulates; at or above 1.5 the slot ignites and is held for 300 ticks; the accumulator has no decay and no competition term yet. `step_ignition_at(evidence, σ)` scales the threshold by $1 + \min(\lvert\sigma - 1\rvert, 1)$ with $\sigma$ the branching ratio of `cortex-homeostasis`, so ignition is cheapest at criticality and needs up to twice the evidence away from it. After every step the attention schema is recomputed: a hash a second-order consumer can compare to detect a change of broadcast without reading the fields. Six tests.
 
 <!-- @assert-count target="crates/cortex-workspace" symbol="GlobalWorkspaceSlot" min="1" word="true" -->
+<!-- @assert-count target="crates/cortex-workspace" symbol="step_ignition_at" min="1" word="true" reason="ADR-0020: criticality-gated ignition" -->
 
 #### 5.2.9 `cortex-symbolic` — vector-symbolic bridge
 
@@ -717,8 +720,8 @@ Implemented rule: evidence accumulates; at or above 1.5 the slot ignites and is 
 | :--- | :--- |
 | Responsibility | Metadata for 10 000-dimensional bipolar hypervectors that bind spiking activity to discrete symbols (roles, fillers, tokens) with a clean-up codebook. |
 | Source | `crates/cortex-symbolic/src/lib.rs` |
-| Public API | `SymbolicHypervectorHeader::DIMENSIONS` (10 000), `bind(&mut self, role_id, filler_id)` |
-| Status | Header layout: Implemented · Binding, bundling, permutation and codebook: Specified (§8.8) |
+| Public API | `SymbolicHypervectorHeader::DIMENSIONS` (10 000), `bind(&mut self, role_id, filler_id)`, `blend(&mut self, target_id, source_id, domain_mask, cross_domain_shift) -> bool`, `is_blend`; flags `FLAG_BOUND` (bit 0), `FLAG_BLENDED` (bit 2) |
+| Status | Header layout: Implemented · Binding and the blend header: Implemented ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · Bundling, permutation, unbinding, the codebook and the vector arithmetic of a blend: Specified (§8.8, §8.13) |
 
 **`SymbolicHypervectorHeader`** — 64 B, align 64. The vector body (1 250 bytes at 10 000 bits) lives in a separate arena addressed by `vector_id`.
 
@@ -731,11 +734,16 @@ Implemented rule: evidence accumulates; at or above 1.5 the slot ignites and is 
 | `[16..20)` | `token_vocab_id` | `u32` | Grounded token. |
 | `[20..24)` | `hamming_distance_cache` | `u32` | Distance to nearest codebook entry. |
 | `[24..26)` | `permutation_shift` | `u16` | Cyclic shift $\Pi^k$ for sequence position. |
-| `[26..28)` | `flags` | `u16` | bit 0 bound; further bits reserved. |
+| `[26..28)` | `flags` | `u16` | bit 0 bound · bit 2 blended; further bits reserved. |
 | `[28..32)` | `confidence_score` | `u32` | Q16.16 decode confidence. |
-| `[32..64)` | `_reserved` | `[u8; 32]` | Reserved; MUST be zero. |
+| `[32..36)` | `blend_source_id` | `u32` | The source concept a blend draws its structure from ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
+| `[36..38)` | `blending_domain_mask` | `u16` | Source domains blended in, one bit each; `cortex-affect`'s `DOMAIN_*` bits when the source is the body. |
+| `[38..39)` | `blend_depth` | `u8` | Blends applied to this vector; saturating. |
+| `[39..40)` | `_pad` | `u8` | Explicit padding; MUST be zero. |
+| `[40..64)` | `_reserved` | `[u8; 24]` | Reserved; MUST be zero. |
 
 <!-- @assert-count target="crates/cortex-symbolic" symbol="SymbolicHypervectorHeader" min="1" word="true" -->
+<!-- @assert-count target="crates/cortex-symbolic" symbol="fn blend" min="1" reason="ADR-0021: the blend header is implemented" -->
 
 #### 5.2.10 `cortex-executive` — planning
 
@@ -875,8 +883,8 @@ Implemented rule: evidence accumulates; at or above 1.5 the slot ignites and is 
 | :--- | :--- |
 | Responsibility | Metabolic drive pools, a circadian phase counter that gates sleep, and the self-organised-criticality branching-ratio controller. |
 | Source | `crates/cortex-homeostasis/src/lib.rs` |
-| Public API | `HomeostaticDrivePool::update_circadian_tick(&mut self, dt_ticks: u32)` |
-| Status | Layout: Implemented · Circadian gate: Implemented · Synaptic scaling: Specified (§8.8) |
+| Public API | `HomeostaticDrivePool::update_circadian_tick(&mut self, dt_ticks: u32)`, `update_branching_ratio(&mut self, descendants: u32, ancestors: u32) -> u32` |
+| Status | Layout: Implemented · Circadian gate and the branching ratio: Implemented ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)) · Synaptic scaling and the spike tally that feeds $\sigma$: Specified (§8.8) |
 
 **`HomeostaticDrivePool`** — 64 B, align 64.
 
@@ -892,9 +900,10 @@ Implemented rule: evidence accumulates; at or above 1.5 the slot ignites and is 
 | `[28..32)` | `target_threshold_bias` | `i32` | Q16.16 | Global threshold correction. |
 | `[32..64)` | `_reserved` | `[u8; 32]` | — | Reserved; MUST be zero. |
 
-Implemented rule: `circadian_phase` advances by `dt_ticks` modulo $2^{16}$; sleep is active when fatigue exceeds `0x8000_0000` or the phase exceeds `0xC000` (the last quarter of the cycle).
+Implemented rules: `circadian_phase` advances by `dt_ticks` modulo $2^{16}$; sleep is active when fatigue exceeds `0x8000_0000` or the phase exceeds `0xC000` (the last quarter of the cycle). `update_branching_ratio(descendants, ancestors)` sets $\sigma = \text{descendants} / \text{ancestors}$ in Q16.16, saturating, and leaves $\sigma$ unchanged when nothing was measured; `cortex-workspace` gates ignition on it (§5.2.8).
 
 <!-- @assert-count target="crates/cortex-homeostasis" symbol="HomeostaticDrivePool" min="1" word="true" -->
+<!-- @assert-count target="crates/cortex-homeostasis" symbol="update_branching_ratio" min="1" word="true" reason="ADR-0020: the branching ratio is measured here, once" -->
 
 #### 5.2.17 `cortex-fabric` — scale-out transport
 
@@ -980,7 +989,7 @@ Implemented rule: `relay(input)` returns `input × gain` (widened, clamped) in t
 | :--- | :--- |
 | Responsibility | The record of the engine's three-layer language pipeline, entirely inside the engine: **Layer 1**, semantic grounding, unbinds a hypervector by role, $\text{Concept} \approx S \otimes \text{Role}^{-1}$ (`cortex-symbolic`, Specified); **Layer 2**, syntactic framing, fills construction-grammar templates with strict role slots and fixes the order a lexicon emits them in (this crate, Implemented); **Layer 3**, temporal flow and prosody, runs a linear recurrent cell in saturating Q16.16, $s_{t+1} = \alpha\, s_t + k_t v_t$, whose energy band selects the particle class that fills the frame's particle slot (this crate, Implemented for the scalar cell; the fixed-dimension state vector is an arena, Specified). No external language model, transformer runtime or heap is part of the system. |
 | Source | `crates/cortex-linguistic/src/lib.rs` |
-| Public API | `LinguisticFrameSlot::{new, bind_role, filled_roles, is_complete, seal, is_sealed, realisation_order, advance_prosody}`, `required_roles(template)`, `role_order(template)`; roles `ROLE_SUBJECT`, `ROLE_ACTION`, `ROLE_OBJECT`, `ROLE_AFFECT` (bits 0–3); templates `TEMPLATE_STATE` (0), `TEMPLATE_REQUEST` (1), `TEMPLATE_NEED` (2), `TEMPLATE_CAUSATIVE` (3), `TEMPLATE_EPISTEMIC` (4); speech acts `SPEECH_ACT_ASSERTIVE` (0), `SPEECH_ACT_DIRECTIVE` (1), `SPEECH_ACT_COMMISSIVE` (2), `SPEECH_ACT_EXPRESSIVE` (3); markers `PROSODY_NONE` (0), `PROSODY_SOFTEN` (1), `PROSODY_SUGGEST` (2), `PROSODY_REFLECT` (3), `PROSODY_TOPIC_SHIFT` (4); gate bits `GATE_PARTICLE_OPEN`, `GATE_SEALED`, `GATE_ROLES_SHIFT` (4); `Q16_ONE` |
+| Public API | `LinguisticFrameSlot::{new, bind_role, bind_child, set_parent, attach_metaphor, has_metaphor, filled_roles, is_complete, seal, is_sealed, realisation_order, advance_prosody}`, `required_roles(template)`, `requires_child(template)`, `role_order(template)`; `ROLE_CHILD` (a realisation position, not a role bit); templates `TEMPLATE_RELATIVE` (5), `TEMPLATE_CAUSAL` (6) and gate bits `GATE_CHILD_BOUND`, `GATE_METAPHOR` ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)); roles `ROLE_SUBJECT`, `ROLE_ACTION`, `ROLE_OBJECT`, `ROLE_AFFECT` (bits 0–3); templates `TEMPLATE_STATE` (0), `TEMPLATE_REQUEST` (1), `TEMPLATE_NEED` (2), `TEMPLATE_CAUSATIVE` (3), `TEMPLATE_EPISTEMIC` (4); speech acts `SPEECH_ACT_ASSERTIVE` (0), `SPEECH_ACT_DIRECTIVE` (1), `SPEECH_ACT_COMMISSIVE` (2), `SPEECH_ACT_EXPRESSIVE` (3); markers `PROSODY_NONE` (0), `PROSODY_SOFTEN` (1), `PROSODY_SUGGEST` (2), `PROSODY_REFLECT` (3), `PROSODY_TOPIC_SHIFT` (4); gate bits `GATE_PARTICLE_OPEN`, `GATE_SEALED`, `GATE_ROLES_SHIFT` (4); `Q16_ONE` |
 | Status | Layout: Implemented · Layer 2 (binding, completeness, sealing, realisation order): Implemented · Layer 3 scalar cell, marker bands and trajectory hash: Implemented · Layer 1 unbinding in `cortex-symbolic`, the state-vector arena, the lexicon (Chinese and English) and the placement of the marker bands: Specified (§6.9, §8.8) |
 
 **`LinguisticFrameSlot`** — 64 B, align 64. One frame per utterance under assembly. The layout is the proposal's, byte for byte.
@@ -995,17 +1004,21 @@ Implemented rule: `relay(input)` returns `input × gain` (widened, clamped) in t
 | `[12..16)` | `object_concept_id` | `u32` | index | Concept unbound into the object role. |
 | `[16..18)` | `affect_modifier_id` | `u16` | index | Concept unbound into the affect role. |
 | `[18..19)` | `prosody_tone_marker` | `u8` | enum | `PROSODY_*`, selected by the cell's energy band. |
-| `[19..20)` | `syntax_gate_flags` | `u8` | bitfield | Bit 0 particle slot open · bit 1 sealed · bits 4–7 the `ROLE_*` bits bound so far. |
+| `[19..20)` | `syntax_gate_flags` | `u8` | bitfield | Bit 0 particle slot open · bit 1 sealed · bit 2 child bound · bit 3 metaphor attached · bits 4–7 the `ROLE_*` bits bound so far. |
 | `[20..24)` | `confidence_q16` | `u32` | Q16.16 | Frame confidence: the weakest binding, clamped to 1.0. |
 | `[24..28)` | `recurrent_state_hash` | `u32` | hash | Running hash of the cell's trajectory, mixed on every step. |
 | `[28..32)` | `surface_token_id` | `u32` | index | Surface token the lexicon last realised. |
 | `[32..36)` | `linear_attention_energy_q16` | `i32` | Q16.16 | The cell's scalar energy $s_t$. |
-| `[36..64)` | `_reserved` | `[u8; 28]` | — | Reserved; MUST be zero. |
+| `[36..38)` | `parent_frame_idx` | `u16` | index | The frame this one is nested in; 0 for a root ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
+| `[38..40)` | `child_frame_idx` | `u16` | index | The frame realised in this one's child slot. |
+| `[40..44)` | `blended_metaphor_id` | `u32` | index | `SymbolicHypervectorHeader::vector_id` of an attached blend. |
+| `[44..64)` | `_reserved` | `[u8; 20]` | — | Reserved; MUST be zero. |
 
-Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly one role (refused for a mask, an affect concept wider than sixteen bits, or a sealed frame) and lowers the frame's confidence to the weakest binding; `is_complete` holds when the roles the template requires are bound, never for an unknown template; `seal` closes a complete frame; `realisation_order` is the template's order restricted to the bound roles: subject–action–object with the affect as a trailing tag, except the epistemic template, where the affect is the hedge that opens the utterance. Layer 3: `advance_prosody(α, k, v)` computes $s \leftarrow \alpha s + k v$ with every product widened to `i64` and clamped, mixes $s$ into the trajectory hash, and selects the marker from the energy's band ($|s| < \tfrac14$ none; $s \ge 1$ suggest, $s \ge \tfrac14$ soften; $s \le -1$ topic shift, $s \le -\tfrac14$ reflect), opening the particle slot when a marker is selected. Nine tests, including the truth of every template, the hedge-first epistemic order, the decay by $\alpha$, the clamp at both `i32` extremes and the determinism of the hash.
+Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly one role (refused for a mask, an affect concept wider than sixteen bits, or a sealed frame) and lowers the frame's confidence to the weakest binding; `is_complete` holds when the roles the template requires are bound, never for an unknown template; `seal` closes a complete frame; `realisation_order` is the template's order restricted to the bound roles: subject–action–object with the affect as a trailing tag, except the epistemic template, where the affect is the hedge that opens the utterance. Layer 3: `advance_prosody(α, k, v)` computes $s \leftarrow \alpha s + k v$ with every product widened to `i64` and clamped, mixes $s$ into the trajectory hash, and selects the marker from the energy's band ($|s| < \tfrac14$ none; $s \ge 1$ suggest, $s \ge \tfrac14$ soften; $s \le -1$ topic shift, $s \le -\tfrac14$ reflect), opening the particle slot when a marker is selected. Nested constructions ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)): `bind_child(child, self)` binds a frame of the caller's arena into the child slot (refused for self-nesting or a sealed frame), `TEMPLATE_RELATIVE` realises the child in the object position and `TEMPLATE_CAUSAL` after the core, `is_complete` requires the child for those templates, and `ROLE_CHILD` in the realisation order is where the runtime descends, bounded by the arena; `attach_metaphor(blend)` names a `cortex-symbolic` blend the lexicon realises the affect slot through. Eleven tests, including the truth of every template, the hedge-first epistemic order, the two nesting templates, the decay by $\alpha$, the clamp at both `i32` extremes and the determinism of the hash.
 
 <!-- @assert-count target="crates/cortex-linguistic" symbol="LinguisticFrameSlot" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-linguistic" symbol="advance_prosody" min="1" word="true" reason="ADR-0016: the recurrent cell of the tri-hybrid pipeline is implemented" -->
+<!-- @assert-count target="crates/cortex-linguistic" symbol="bind_child" min="1" word="true" reason="ADR-0021: constructions nest" -->
 
 #### 5.2.21 `cortex-tools` — brokered digital actuation
 
@@ -1069,10 +1082,10 @@ Implemented rule: `begin_saccade` is refused while in flight or for a zero-lengt
 
 | | |
 | :--- | :--- |
-| Responsibility | What the body feels like: pain, strain and recovery integrated into an allostatic load, a comfort signal in $[-1, 1]$ and a slow mood baseline. `cortex-homeostasis` keeps the metabolic drives and the circadian gate; `cortex-salience` keeps the aversive input itself. |
+| Responsibility | The condition of the body: pain, strain and recovery integrated into an allostatic load, a comfort signal in $[-1, 1]$ and a slow mood baseline. `cortex-homeostasis` keeps the metabolic drives and the circadian gate; `cortex-salience` keeps the aversive input itself. |
 | Source | `crates/cortex-affect/src/lib.rs` |
-| Public API | `InteroceptiveState::integrate(&mut self, pain_burst_q16, thermal_strain_q16, recovery_q16) -> i32`; constants `Q16_ONE`, `MOOD_SHIFT` (6) |
-| Status | Layout: Implemented · Integration rule: Implemented · Mood bias on `cortex-neuromod`: Specified (§8.8) |
+| Public API | `InteroceptiveState::integrate(&mut self, pain_burst_q16, thermal_strain_q16, recovery_q16) -> i32`, `update_valence(&mut self, free_energy_q16) -> i32`, `metaphor_source_domain(&self) -> u16`; constants `Q16_ONE`, `MOOD_SHIFT` (6), `STAKE_SHIFT` (4), domains `DOMAIN_HEAT`, `DOMAIN_WEIGHT`, `DOMAIN_DUSK`, `DOMAIN_CALM` |
+| Status | Layout: Implemented · Integration, valence, existential stake and the metaphor domain: Implemented ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md), [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · The free energy itself (`cortex-predictive`), the mood bias on `cortex-neuromod` and the preemption of executive bandwidth by the stake: Specified (§8.8, §8.12) |
 
 **`InteroceptiveState`** — 64 B, align 64. One per interoceptive region.
 
@@ -1084,11 +1097,15 @@ Implemented rule: `begin_saccade` is refused while in flight or for a zero-lengt
 | `[12..16)` | `energy_resilience_q16` | `u32` | Q16.16 | Reserve to absorb load (Specified). |
 | `[16..20)` | `mood_baseline_q16` | `i32` | Q16.16 | Slow average of comfort. |
 | `[20..24)` | `pain_signal_burst` | `u32` | Q16.16 | Last pain input. |
-| `[24..64)` | `_reserved` | `[u8; 40]` | — | Reserved; MUST be zero. |
+| `[24..28)` | `free_energy_prev_q16` | `u32` | Q16.16 | Free energy at the previous valence update ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
+| `[28..32)` | `valence_df_dt_q16` | `i32` | Q16.16 | Valence: $F_{\text{prev}} - F_{\text{now}}$, the negative change of free energy per update. |
+| `[32..36)` | `existential_stake_q16` | `u32` | Q16.16 | Slow average of $\lvert dF/dt \rvert$: how much the body's predictions fail. |
+| `[36..64)` | `_reserved` | `[u8; 28]` | — | Reserved; MUST be zero. |
 
-Implemented rule: load $\leftarrow$ saturating $(\text{load} + \text{pain} + \text{strain}) - \text{recovery}$, never below zero; comfort as above; mood $\leftarrow$ mood $+ (\text{comfort} - \text{mood}) \gg 6$. Five tests, including convergence of the mood to within one step of a held comfort.
+Implemented rules: load $\leftarrow$ saturating $(\text{load} + \text{pain} + \text{strain}) - \text{recovery}$, never below zero; comfort as above; mood $\leftarrow$ mood $+ (\text{comfort} - \text{mood}) \gg 6$. `update_valence(F)` sets the valence to $F_{\text{prev}} - F_{\text{now}}$, clamped, and moves the existential stake toward $\lvert F_{\text{now}} - F_{\text{prev}} \rvert$ by $2^{-4}$ of the gap and at least one LSB, so a steady body's stake reaches zero. `metaphor_source_domain` is calm when comfort is at least 0.5 and neither strain exceeds 0.25, otherwise the largest of thermal strain, allostatic load and the energy deficit, ties in that order. Eight tests, including convergence of the mood and of the stake.
 
 <!-- @assert-count target="crates/cortex-affect" symbol="InteroceptiveState" min="1" word="true" reason="ADR-0016" -->
+<!-- @assert-count target="crates/cortex-affect" symbol="update_valence" min="1" word="true" reason="ADR-0020: valence is minus the change of free energy" -->
 
 #### 5.2.24 `cortex-autonomic` — hardware vitals
 
@@ -1175,8 +1192,8 @@ Implemented rule: `new(hash)` starts at full novelty; `visit(error, entropy)` de
 | :--- | :--- |
 | Responsibility | One record per *other* agent: the intention and belief attributed to it, the trust placed in it, and the affective resonance it evokes through an empathy gain. `cortex-agency` keeps the self/other attribution of a sensory change. |
 | Source | `crates/cortex-social/src/lib.rs` |
-| Public API | `SocialPerspectiveNode::{resonate, update_trust}`; constants `Q16_ONE`, `TRUST_GAIN_SHIFT` (4), `TRUST_LOSS_SHIFT` (3) |
-| Status | Layout: Implemented · Resonance and trust rules: Implemented · Intention inference and false-belief tracking: Specified (§8.8) |
+| Public API | `SocialPerspectiveNode::{resonate, update_trust, take_turn, yield_turn, request_repair, ground, close_exchange, register}`; constants `Q16_ONE`, `TRUST_GAIN_SHIFT` (4), `TRUST_LOSS_SHIFT` (3); turn states `TURN_IDLE`, `TURN_SELF`, `TURN_OTHER`, `TURN_REPAIR`; registers `REGISTER_FAMILIAR`, `REGISTER_COURTEOUS`, `REGISTER_FORMAL` |
+| Status | Layout: Implemented · Resonance, trust, the turn-taking machine, common ground and the register: Implemented ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · Intention inference, false-belief tracking and the conversational policy: Specified (§8.8, §8.13) |
 
 **`SocialPerspectiveNode`** — 64 B, align 64.
 
@@ -1191,11 +1208,15 @@ Implemented rule: `new(hash)` starts at full novelty; `visit(error, entropy)` de
 | `[24..28)` | `empathy_gain_q16` | `u32` | Q16.16 | Fraction of the agent's valence mirrored. |
 | `[28..32)` | `resonance_q16` | `i32` | Q16.16 | Mirrored valence from the last `resonate`. |
 | `[32..33)` | `false_belief_flag` | `u8` | 0 / 1 | The agent's belief is known to be false (Specified). |
-| `[33..64)` | `_reserved` | `[u8; 31]` | — | Reserved; MUST be zero. |
+| `[33..34)` | `turn_repair_count` | `u8` | count | Repairs requested in this exchange; saturating ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
+| `[34..36)` | `dialogue_turn_state` | `u16` | enum | 0 idle · 1 self · 2 other · 3 repair pending. |
+| `[36..40)` | `shared_intentionality_hash` | `u32` | hash | Common ground: every grounded referent mixed in, in order. |
+| `[40..64)` | `_reserved` | `[u8; 24]` | — | Reserved; MUST be zero. |
 
-Implemented rule: `resonate(v)` stores $v$ and returns $v \times \text{gain}$ (widened, clamped); `update_trust(confirmed)` closes $1/16$ of the distance to 1.0 on a confirmation and removes $1/8$ of the trust on a disconfirmation, so trust breaks faster than it builds and stays in $[0, 1]$. Five tests.
+Implemented rules: `resonate(v)` stores $v$ and returns $v \times \text{gain}$ (widened, clamped); `update_trust(confirmed)` closes $1/16$ of the distance to 1.0 on a confirmation and removes $1/8$ of the trust on a disconfirmation, so trust breaks faster than it builds and stays in $[0, 1]$. The floor passes by `take_turn` (from idle or the other's turn), `yield_turn`, `request_repair` (from the other's turn, counted) and is closed by `close_exchange`; `ground(referent)` mixes a shared referent into the common ground, in order, only inside an exchange, and resolves a pending repair; `register` maps trust to the politeness level `cortex-linguistic` realises: familiar at or above 0.75, courteous at or above 0.25, formal below. Eight tests.
 
 <!-- @assert-count target="crates/cortex-social" symbol="SocialPerspectiveNode" min="1" word="true" reason="ADR-0016" -->
+<!-- @assert-count target="crates/cortex-social" symbol="take_turn" min="1" word="true" reason="ADR-0021: dialogue grounding is a state machine" -->
 
 #### 5.2.28 `cortex-ethics` — veto gate
 
@@ -1317,8 +1338,8 @@ Implemented rule: `execute` performs the opcode with `i128` checked arithmetic; 
 | :--- | :--- |
 | Responsibility | One frame of an offline rollout with no goal, only a hypothetical action and where it leads; sandboxed by construction, since a frame whose `motor_release_flag` is set is invalid and refuses to step. `cortex-executive` keeps goal-directed plan trees. |
 | Source | `crates/cortex-imagination/src/lib.rs` |
-| Public API | `MentalCanvasFrame::{is_sandboxed, step, has_diverged}` |
-| Status | Layout: Implemented · Step and divergence rules: Implemented · The generative model that supplies the deltas: Specified (§8.8) |
+| Public API | `MentalCanvasFrame::{is_sandboxed, step, has_diverged, reflect, wander}` |
+| Status | Layout: Implemented · Step, divergence, the self-model's fixed point and default-mode wandering: Implemented ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md), [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · The generative model that supplies the deltas and when the organism wanders: Specified (§8.8, §8.12, §8.13) |
 
 **`MentalCanvasFrame`** — 64 B, align 64.
 
@@ -1331,11 +1352,17 @@ Implemented rule: `execute` performs the opcode with `i128` checked arithmetic; 
 | `[20..24)` | `canvas_epoch_ticks` | `u32` | ticks | Imagined time elapsed. |
 | `[24..26)` | `rollout_depth` | `u16` | count | Steps taken. |
 | `[26..27)` | `motor_release_flag` | `u8` | 0 | MUST be zero: the frame never reaches the egress. |
-| `[27..64)` | `_reserved` | `[u8; 37]` | — | Reserved; MUST be zero. |
+| `[27..28)` | `reflection_converged` | `u8` | 0 / 1 | The last `reflect` found the self-model's fixed point ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
+| `[28..32)` | `strange_loop_fixed_point_hash` | `u32` | hash | The self the rollout last observed itself to be. |
+| `[32..36)` | `dmn_wander_temperature_q16` | `u32` | Q16.16 | Amplitude of the default mode's wandering ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
+| `[36..40)` | `wander_state` | `u32` | seed | State of the deterministic generator behind `wander`; seeded from the rollout on first use. |
+| `[40..64)` | `_reserved` | `[u8; 24]` | — | Reserved; MUST be zero. |
 
-Implemented rule: `step` accumulates valence, uncertainty, time and depth, all saturating, and is refused for a frame that is not sandboxed; `has_diverged(limit)` is true once the uncertainty reaches the limit. Four tests.
+Implemented rules: `step` accumulates valence, uncertainty, time and depth, all saturating, and is refused for a frame that is not sandboxed; `has_diverged(limit)` is true once the uncertainty reaches the limit. `reflect(observed_self)` is the strange loop: the rollout observes the self doing the imagining and is at its fixed point when the self observed now equals the one observed before. `wander()` advances a generator seeded from the rollout, drifts the hypothetical action, and takes a one-tick step whose valence perturbation is bounded by the wandering temperature and whose uncertainty growth is the temperature; a zero temperature moves the action but not the valence, and two frames with the same seed wander identically. Six tests.
 
 <!-- @assert-count target="crates/cortex-imagination" symbol="MentalCanvasFrame" min="1" word="true" reason="ADR-0016" -->
+<!-- @assert-count target="crates/cortex-imagination" symbol="fn reflect" min="1" reason="ADR-0020: the self-model has a fixed point" -->
+<!-- @assert-count target="crates/cortex-imagination" symbol="fn wander" min="1" reason="ADR-0021: the default mode wanders deterministically" -->
 
 ---
 
@@ -1455,6 +1482,26 @@ For any structured, long-form text (a clinical trial, a protocol RFC or a code t
 
 The exit test is milestone M8's: a document whose stated figure does not follow from its own table, and whose conclusion contradicts a premise, audited end to end through the broker.
 
+### 6.12 Scenario R-12: criticality-gated ignition and valence dynamics (Specified)
+
+1. The executor tallies, per window, the spikes a window's spikes caused and the spikes that caused them (Specified) and calls `HomeostaticDrivePool::update_branching_ratio`, which sets $\sigma$ (Implemented).
+2. Bottom-up evidence for a workspace slot is stepped with `step_ignition_at(evidence, σ)` (Implemented): at criticality the threshold is 1.5; at $\lvert\sigma - 1\rvert \ge 1$ it is 3.0. A slot that crosses it ignites, broadcasts to its mask for 300 ticks, and its attention schema is recomputed.
+3. `cortex-attention` compares the schema hash with the one it saw last and re-targets when the broadcast changed (the comparison Specified); `cortex-imagination` reflects the schema into its self-model (`reflect`, Implemented) and reports whether the self it observes has reached its fixed point.
+4. `cortex-predictive` sums its precision-weighted errors into a free energy (Specified); `cortex-affect` differentiates it (`update_valence`, Implemented): a collapse of uncertainty is positive valence, a growing error negative, and the volatility of free energy is the existential stake.
+5. When the stake crosses a threshold, the executor reallocates bandwidth toward survival: the veto gate's harm threshold tightens and the tool ring is paused (Specified); `cortex-neuromod` reads the valence into the dopamine prediction error (Specified).
+
+What is Implemented is the arithmetic at every step; what is Specified is the tally, the free energy and the reallocation. The word "experience" does not appear in this scenario; see §8.12.
+
+### 6.13 Scenario R-13: metaphorical blending and conversational turn-taking (Specified)
+
+1. The body offers a source domain: `InteroceptiveState::metaphor_source_domain` (Implemented) says whether the dominant condition is heat, weight, dusk or calm.
+2. `cortex-symbolic` blends the target concept with the body: `blend(target, source, domain_mask, shift)` records the header (Implemented); the vector arithmetic $\text{target} \otimes M \oplus \text{source}$ runs over the bodies in their arena (Specified).
+3. `cortex-linguistic` assembles the utterance: a `TEMPLATE_CAUSAL` frame with its reason as a child frame (`bind_child`, Implemented), the blend attached as the metaphor (`attach_metaphor`, Implemented), the politeness level taken from `SocialPerspectiveNode::register` (Implemented), the particle from the recurrent cell (§5.2.20).
+4. The exchange: `take_turn`, the utterance is realised by the lexicon (Specified), `yield_turn`; the other's reply is grounded (`ground`, Implemented) or repaired (`request_repair`); trust moves with each confirmed or disconfirmed prediction about the other (`update_trust`), and with it the register of the next turn.
+5. Between exchanges, with the organism quiescent (`cortex-homeostasis`, Specified), `cortex-imagination` wanders (`wander`, Implemented): a musing is a rollout with a temperature, and one that reaches a low divergence with a positive valence is offered to the workspace as a candidate broadcast (Specified).
+
+Every id, order, bit and hash in this scenario is produced by a tested rule; every word is the lexicon's.
+
 ---
 
 ## 7. Deployment view
@@ -1543,7 +1590,7 @@ No heap allocation occurs after initialisation (TC-5). Arenas are allocated once
 
 ### 8.7 Persistence and serialisation
 
-The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 4; the version history is in §5.2.2. Layout (Specified except the header):
+The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 5; the version history is in §5.2.2. Layout (Specified except the header):
 
 ```text
 [0..64)         CortexFileHeader
@@ -1580,6 +1627,14 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | Self-organised criticality | `cortex-homeostasis` | Rescale weights by $1 - \kappa(\sigma - 1)$ during sleep to hold the branching ratio at 1. | Specified |
 | Glymphatic clearance | `cortex-immune` | Sleep-phase reclamation, compaction and checksum audit. | Specified |
 | Layer-5 burst to torque (push–pull rate code) | `cortex-embodiment` · `TorqueFrame::from_burst_counts` | Per joint, the net burst count of an agonist–antagonist pair over the period times a gain, saturating; a population-vector decode over more than two pools is the next step. | Partial: the push–pull decode Implemented; the burst tally and population vectors Specified |
+| Valence as the free-energy derivative (Friston; Seth) | `cortex-affect` · `valence_df_dt_q16`, `existential_stake_q16` | $\text{valence} = -\,dF/dt$ as $F_{\text{prev}} - F_{\text{now}}$, clamped; stake $\leftarrow$ stake $+ (\lvert\Delta F\rvert - \text{stake}) \gg 4$, at least one LSB. | Partial: the derivative and the stake Implemented; $F$ from `cortex-predictive` Specified |
+| Attention schema and higher-order thought (Graziano; Rosenthal) | `cortex-workspace` · `attention_schema_meta_hash` | A hash of the broadcast state after every step: the slot's representation of its own attention, for a second-order reader. | Partial: the schema Implemented; its reader in `cortex-attention` Specified |
+| Self-organised criticality gating ignition (Beggs–Plenz) | `cortex-homeostasis` · `branching_ratio_q16`; `cortex-workspace` · `criticality_distance_q16` | $\sigma = \text{descendants}/\text{ancestors}$; threshold $\theta \,(1 + \min(\lvert\sigma - 1\rvert, 1))$. | Partial: $\sigma$ and the gate Implemented; the spike tally Specified |
+| Strange loop: a self-model at a fixed point (Hofstadter) | `cortex-imagination` · `strange_loop_fixed_point_hash`, `reflection_converged` | $\text{self}_{t+1} = \text{observe}(\text{self}_t)$; the fixed point holds when two successive observations agree. | Implemented |
+| Conceptual blending in vector-symbolic form (Fauconnier–Turner; Plate) | `cortex-symbolic` · `blend_source_id`, `blending_domain_mask`, `permutation_shift`; `cortex-affect` · `metaphor_source_domain` | $\text{blend} = \text{target} \otimes M \oplus \text{source}$ with $M$ a cyclic permutation; the body's dominant condition names the source domain. | Partial: the header and the domain map Implemented; the vector arithmetic Specified |
+| Recursive constructions (Goldberg; Steels) | `cortex-linguistic` · `parent_frame_idx`, `child_frame_idx` | A child frame fills a clause slot; the runtime descends at `ROLE_CHILD`, bounded by the arena. | Partial: binding, completeness and order Implemented; the descent and the lexicon Specified |
+| Default-mode wandering | `cortex-imagination` · `dmn_wander_temperature_q16`, `wander_state` | A seeded generator perturbs valence by up to the temperature per tick and drifts the hypothetical action. | Partial: the wander Implemented; when the organism wanders Specified |
+| Dialogue grounding and register (Clark; Tomasello) | `cortex-social` · `dialogue_turn_state`, `shared_intentionality_hash`, `turn_repair_count` | The floor as a four-state machine with repair; common ground as an ordered hash of grounded referents; the register a step function of trust. | Partial: the machine and the register Implemented; the conversational policy Specified |
 | Thalamic relay and gating (Sherman–Guillery) | `cortex-thalamus` · `gating_mode`, `sensory_gain_q16`, `oscillation_phase_q16` | Tonic relay scaled by gain; burst mode as a decimating gate; closed during sleep; 40 Hz corticothalamic phase. | Partial: gate Implemented; burst waveform and synchrony Specified |
 | Native language: vector-symbolic grounding, construction grammar, linear recurrence (Plate; Goldberg) | `cortex-linguistic` · `frame_template_id`, `syntax_gate_flags`, `linear_attention_energy_q16`, `prosody_tone_marker` | Layer 1: $\text{Concept} \approx S \otimes \text{Role}^{-1}$. Layer 2: a frame is complete when the roles its template requires are bound; the template fixes the emission order. Layer 3: $s_{t+1} = \alpha s_t + k_t v_t$ in saturating Q16.16, the leaky-integrator form that linear-attention and RWKV-style models share, whose energy band selects the particle class. | Partial: Layers 2 and 3 (scalar) Implemented; Layer 1, the state-vector arena and the lexicon Specified |
 | Tool incorporation into the body schema | `cortex-tools` · `execution_status`, `authorization_level` | A tool call is a motor act with a result: pending → running → completed / failed, or denied by the gate. | Partial: state machine Implemented; broker Specified |
@@ -1642,6 +1697,18 @@ Inside the tick loop there are no recoverable errors: a violated invariant is a 
 
 Workers write `LfpSamplePacket` records into a per-worker SPSC ring with a single release-store; a consumer core synthesises band powers and streams rasters. Kernel-side eBPF tracepoints observe cache-miss and scheduling counters without instrumenting the worker (Specified). The observability path MUST NOT add a branch, a lock or a syscall to the tick loop; its cost budget is one 64-byte store per sample.
 
+### 8.12 Computational phenomenology: the variables the theories name, and what is not claimed
+
+Several theories of experience name state variables a control system can compute: a higher-order representation of what is being broadcast (higher-order thought, the attention schema), affect as the rate at which prediction error is resolved (the free-energy principle), a self-model that contains a model of itself (the strange loop), and access that is cheapest at the critical point of the tissue (self-organised criticality). [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) implements those variables as integer rules: `update_attention_schema`, `update_valence` and the existential stake, `reflect`, `update_branching_ratio` and `step_ignition_at`, each $O(1)$, saturating, with a fixed point a test reaches exactly (§5.2.8, §5.2.16, §5.2.23, §5.2.32; R-12). Two of the seven tiers the proposal named have no $O(1)$ integer form and got no field: a topological invariant of an attractor manifold, and a mutual-information measure of closure; the gate of `cortex-thalamus` is the mechanism the latter describes, and both stay Specified.
+
+**What is not claimed.** The rules are mechanisms. Whether any of them constitutes experience is hypothesis H-3 (§11.1): no test in this repository can decide it, so the document does not assert it, and it does not use "feels", "experiences" or "conscious" for a record. §2.3 stands: a biological name is descriptive. What the document does say is checkable: the valence of a free-energy trace, the schema hash of a broadcast, the tick at which a rollout's self-model stops changing, and the evidence a slot needs at a given $\sigma$ are all numbers a reader can compute from the rules and the tests pin.
+
+### 8.13 Native cognitive language: nested constructions, conceptual blending, wandering and dialogue
+
+Language stays inside the engine ([ADR-0016](adr/0016-thirty-two-crate-architecture.md)); [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) adds four mechanisms to the three-layer pipeline of §5.2.20, each an integer rule over ids, bits, orders and hashes, with the words the runtime's. **Nested constructions**: a frame's object or reason slot is another frame, bound by index and realised where `ROLE_CHILD` appears in the template's order; the runtime descends, bounded by the arena, so a clause inside a clause costs no allocation and no recursion in a state crate. **Conceptual blending**: a target concept is blended with a source the body offers, $\text{target} \otimes M \oplus \text{source}$, the header recording the source, the map and the domain, and `cortex-affect` naming the domain from the dominant bodily condition (heat, weight, dusk, calm), so that a thermal strain and a low energy reserve reach the utterance as different figures of speech through the same rule. **Wandering**: between exchanges the canvas advances a seeded generator, drifting its hypothetical action and perturbing its valence by up to a temperature, reproducibly (§8.3). **Dialogue grounding**: the floor is a four-state machine with repair, common ground is an ordered hash of what both parties grounded, and the register of the next turn is a step function of trust (R-13).
+
+None of this produces text. It produces the structure a lexicon renders, and the lexicon is a runtime concern; the document does not call the output poetry, only says which structure it will have and which rule decided each part of it.
+
 ---
 
 ## 9. Architecture decisions
@@ -1669,6 +1736,8 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0017](adr/0017-mailbox-and-gate-protocol.md) | Mailbox and gate protocol: an index stack drained whole, no ABA tag, four sequentially consistent operations (amends ADR-0006) |
 | [ADR-0018](adr/0018-membrane-integration.md) | Membrane integration: shift leaks with a one-LSB floor, difference coupling, a 2 ms refractory window, apical-gated plateaus, adaptive threshold |
 | [ADR-0019](adr/0019-short-term-plasticity.md) | Short-term plasticity: event-driven Tsodyks–Markram on the Q0.8 fields, exponentials by binary exponentiation |
+| [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) | Computational phenomenology: the state variables the theories name, as integer rules, and what the document does not claim for them |
+| [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) | Native cognitive language: nested constructions, conceptual blending, default-mode wandering and dialogue grounding, without a language model |
 
 ---
 
@@ -1721,7 +1790,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-3 | `SynapseBlock::weights_q16` was `[i16; 4]` but commented as Q16.16, which needs 32 bits. | `cortex-core` | **Resolved** (brief 003, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)): Q1.15, renamed `weights_q1_15`; the widening arithmetic is `synaptic_efficacy_q16` with seven tests; image format version 2. |
 | F-4 | `compute_gating`, `step_forward_model`, `step_ignition` and `update_circadian_tick` used plain `+`/`-` on Q16.16 fields; `evaluate_threat` performs no arithmetic. | five crates | **Resolved** (brief 001): saturating operations in the first three, `wrapping_add` for the circadian phase counter, each with a boundary test that fails under plain arithmetic in a debug build. |
 | F-5 | All crates declare `edition = "2021"` and no `rust-version`; the README badge claims "Rust 2024/2026". There is no 2026 edition. | workspace | **Resolved** ([ADR-0009](adr/0009-rust-edition-and-msrv.md) accepted): edition 2024 and `rust-version = "1.85"` are inherited by all nineteen manifests, the toolchain is pinned in `rust-toolchain.toml` (1.97.1), a CI job builds and tests on the MSRV, and the badge says 1.85+. |
-| F-6 | Only 4 of 18 crates were `#![no_std]` (TC-6). | 14 crates | **Resolved** (brief 002): all eighteen are `#![no_std]`; an executable assertion in §2.2 holds the count at 18. |
+| F-6 | Only 4 of 18 crates were `#![no_std]` (TC-6). | 14 crates | **Resolved** (brief 002): all eighteen were made `#![no_std]`; the executable assertion in §2.2 holds the count, 32 since [ADR-0016](adr/0016-thirty-two-crate-architecture.md). |
 | F-7 | Only 4 of 18 crates derived `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | **Resolved** (brief 002): every record without atomics derives the five; the two control records and `FlatTimingWheel` derive `Debug` only, with a comment citing L-5. |
 | F-8 | `CerebellarMicrozone::step_forward_model` computed its error from the sample it predicted from, so the error was constant. | `cortex-cerebellum` | **Resolved** (brief 004): a seven-slot delay line in the former reserved bytes; the error compares the prediction made $d$ steps ago with the observation now; a convergence test on a linear plant; image format version 3. |
 | F-9 | Crate metadata (`authors`, `description`, `license`) was present on 4 crates and absent on 14. | 14 crates | **Resolved**: `version`, `edition`, `authors`, `license` and `repository` are inherited from `[workspace.package]`; each crate keeps only its `name` and `description`. |
@@ -1729,7 +1798,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-11 | `FlatTimingWheel` slots were 64-bit event masks, not `SynapseBlock` offset lists; ring length 200 was not a power of two; nothing drained the wheel. | `cortex-core` | **Resolved** (brief 005, [ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 × 256 slots of fixed-capacity 28-bit tokens, `schedule` with explicit rejections, `advance` with the coarse-to-fine cascade, eight tests. |
 | F-12 | `AgentPerspectiveState::intention_vector_ptr` was an index but named as a pointer (L-3). | `cortex-agency` | **Resolved** (brief 003): renamed `intention_vector_idx`; image format version 2. |
 | F-13 | No benchmark existed; every performance figure is a Target (§10). | workspace | **Narrowed** (brief 006, [ADR-0014](adr/0014-benchmark-harness.md)): `benches/cortex-bench` measures the existing components of T-3 and a protocol defines an admissible run; no run on the reference platform exists, so every figure remains a Target. |
-| F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Resolved** (briefs 001, 005 and 007): every public function and associated constant has at least one unit test and every state crate carries a test module, held by eighteen executable assertions in §1.6; the per-item rule is a review rule in `CONTRIBUTING.md`. |
+| F-14 | No unit test exercised any update function; only four layout tests existed. | five crates | **Resolved** (briefs 001, 005 and 007): every public function and associated constant has at least one unit test and every state crate carries a test module, held by one executable assertion per crate in §1.6; the per-item rule is a review rule in `CONTRIBUTING.md`. |
 | F-15 | 2.8.0 cited a `spec-guard` binary at an absolute path on one developer's machine. | README | **Resolved**: pinned as a dev dependency in `package.json`; run via `npx`. |
 | F-16 | `GlobalWorkspaceSlot` code comments say slots `0..7`; 2.8.0 said four slots. | `cortex-workspace` | **Resolved**: slot count declared a configuration parameter (§5.2.8). |
 | F-17 | `EmbodimentRingBuffer` was a control block alone; the payload rings and the torque decoder did not exist. | `cortex-embodiment` | **Narrowed** (brief 008, [ADR-0015](adr/0015-embodiment-frame-abi.md); then the decoder): the frame ABI and the SPSC protocol exist with eight tests, and `TorqueFrame::from_burst_counts` decodes layer-5 burst counts by a push–pull rate code with four tests. The shared-memory mapping and the 1 ms loop remain Specified (milestone M6). |
@@ -1743,6 +1812,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 
 - [ ] **H-1 (condensation ratio).** The reference capacity model assumes that 43 M two-compartment records reproduce the functional behaviour of a point-neuron population roughly 2 000× larger. No experiment supports a specific ratio. Until one does, any "whole-brain" statement is a hypothesis, and this document makes none.
 - [ ] **H-2 (predictive-coding traffic reduction).** The claim that top-down cancellation removes more than 85 % of ascending spike traffic is plausible from the literature but unmeasured in this engine.
+- [ ] **H-3 (experience).** That the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) (valence as the free-energy derivative, the attention schema, the self-model's fixed point, criticality-gated ignition) constitute experience rather than model it. No test in this repository can decide this; the document therefore asserts nothing about it (§8.12) and no claim may depend on it.
+- [ ] **H-4 (blends as metaphor).** That a blend a listener recognises as a metaphor follows from the header of [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) and the vector arithmetic it names. Unmeasured; a test would need a lexicon and readers.
 - [x] Should `FlatTimingWheel` rings be power-of-two length (256 / 64) so that slot selection is a mask? The cost is a 2.56 ms / 6.4 ms horizon instead of 2 ms / 8 ms.
       **Resolved (2026-09-10):** 256 fine and 256 coarse slots, 2.56 ms / 25.6 ms; [ADR-0013](adr/0013-timing-wheel-geometry.md).
 - [~] Should tick sizes be recorded in `CortexFileHeader` so that an image is self-describing (§8.4)?
@@ -1786,6 +1857,10 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Unit | A `DendriticSuperNeuron` record; the engine's neural entity. |
 | Veto gate | `EthicalEvaluationGate`: the in-engine check a proposed action passes before dispatch (§5.2.28); it stands in front of the watchdog, not in place of it. |
 | Worker | A core-pinned, stateless thread that executes units (A2). |
+| Attention schema | A slot's model of its own broadcast: `attention_schema_meta_hash` ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
+| Conceptual blend | A hypervector formed as $\text{target} \otimes M \oplus \text{source}$; its header is a `SymbolicHypervectorHeader` with `FLAG_BLENDED` ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
+| Free energy (variational) | A bound on surprise; here the quantity whose negative change is the valence ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
+| Strange loop | A self-model that contains a model of itself; at its fixed point when two successive observations of the self agree ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
 
 ---
 
@@ -1922,6 +1997,14 @@ Work is handed out as **briefs**: numbered, self-contained prompts in [`briefs/`
 27. Frith, C. D., Frith, U. *The neural basis of mentalizing.* Neuron 50, 2006.
 28. Rizzolatti, G., Craighero, L. *The mirror-neuron system.* Annual Review of Neuroscience 27, 2004.
 29. Goldberg, A. E. *Constructions: A Construction Grammar Approach to Argument Structure.* University of Chicago Press, 1995.
+30. Graziano, M. S. A. *Consciousness and the Social Brain.* Oxford University Press, 2013.
+31. Rosenthal, D. M. *Two concepts of consciousness.* Philosophical Studies 49, 1986.
+32. Seth, A. K. *Interoceptive inference, emotion, and the embodied self.* Trends in Cognitive Sciences 17, 2013.
+33. Hofstadter, D. R. *I Am a Strange Loop.* Basic Books, 2007.
+34. Fauconnier, G., Turner, M. *The Way We Think: Conceptual Blending and the Mind's Hidden Complexities.* Basic Books, 2002.
+35. Steels, L. (ed.) *Design Patterns in Fluid Construction Grammar.* John Benjamins, 2011.
+36. Clark, H. H. *Using Language.* Cambridge University Press, 1996.
+37. Tomasello, M., Carpenter, M., Call, J., Behne, T., Moll, H. *Understanding and sharing intentions: the origins of cultural cognition.* Behavioral and Brain Sciences 28, 2005.
 
 ---
 
