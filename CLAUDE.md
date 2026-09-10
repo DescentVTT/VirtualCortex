@@ -14,7 +14,7 @@ core-pinned workers. Thirty-two crates, one per subsystem, no dependencies betwe
 fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
 It is past the **state-model stage**: the records, their compile-time layout assertions, small
-update rules in twenty-two crates, synaptic fan-out with STDP, and the executor that runs them
+update rules in twenty-four crates, synaptic fan-out with STDP, and the executor that runs them
 on a pool of workers (`runtime/cortex-runtime`, ADR-0023), the `.cortex` image writer and
 loader and the clock sweep (ADR-0024) exist; the `mmap` path, the shared-memory mappings,
 core pinning, the tool broker and every subsystem's real dynamics do not. The whitepaper's
@@ -63,7 +63,7 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 - No `f32` or `f64` anywhere under `crates/`. Q16.16 in `i32`/`u32`; widen to `i64` to multiply;
   saturating arithmetic on state fields (whitepaper §8.1). Sixteen-bit synaptic weights are Q1.15
   and eight-bit plasticity factors are Q0.8 ([ADR-0012](docs/adr/0012-synaptic-weight-q1-15.md)).
-- Every crate is `#![no_std]`. No `Box`, `Vec`, `String`, thread spawning or heap allocation in
+- Every state crate is `#![no_std]`. No `Box`, `Vec`, `String`, thread spawning or heap allocation in
   state crates; no syscalls on the hot path once a hot path exists.
 - A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a record with atomics is a
   control record and derives `Debug` only (whitepaper §8.2, L-5).
@@ -100,13 +100,13 @@ Run all of these before pushing. CI runs exactly the same set; a check here and 
 gate nobody enforces, and the reverse is a green local run and a red push.
 
 ```bash
-cargo check --workspace --all-targets
-cargo test --workspace
+cargo check --workspace --all-targets --locked
+cargo test --workspace --locked
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo bench -p cortex-bench --bench hot_path -- --test
-cargo +1.85 check --workspace --all-targets   # the MSRV floor; `rustup toolchain install 1.85` once
-cargo +1.85 test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo bench -p cortex-bench --bench hot_path --locked -- --test
+cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor; `rustup toolchain install 1.85` once
+cargo +1.85 test --workspace --locked
 npm ci
 npm run spec
 ```
