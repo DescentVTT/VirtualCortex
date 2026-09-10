@@ -200,6 +200,7 @@ version = "0.1.0"
 name = "cortex-runtime"
 version = "0.1.0"
 dependencies = [
+ "cortex-connectome",
  "cortex-core",
 ]
 

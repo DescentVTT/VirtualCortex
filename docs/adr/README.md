@@ -29,3 +29,4 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0021](0021-native-cognitive-language-and-conceptual-blending.md) | Native cognitive language: nested constructions, conceptual blending, default-mode wandering and dialogue grounding, without a language model | accepted |
 | [ADR-0022](0022-synapse-fan-out-and-stdp.md) | Synaptic fan-out and STDP: index + 1 chains, synapse tokens, stored releases, spike messages, the nearest-neighbour pair rule at the presynaptic spike; image format 6 | accepted |
 | [ADR-0023](0023-executor.md) | The executor: a runtime crate, in-house work-stealing deques, three barrier-separated phases per tick, and the one `unsafe` in the workspace | accepted |
+| [ADR-0024](0024-cortex-image-and-clock-sweep.md) | The `.cortex` image: section directory, table-free CRC-64/XZ, a read-into-arenas loader and writer, a write-ahead log for the clock sweep, and the Tier-2 delta record; format version 7 | accepted |

@@ -14,3 +14,4 @@ repository.workspace = true
 # (ADR-0023).
 [dependencies]
 cortex-core = { path = "../../crates/cortex-core" }
+cortex-connectome = { path = "../../crates/cortex-connectome" }

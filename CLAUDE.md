@@ -15,9 +15,9 @@ fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture
 
 It is past the **state-model stage**: the records, their compile-time layout assertions, small
 update rules in twenty-two crates, synaptic fan-out with STDP, and the executor that runs them
-on a pool of workers (`runtime/cortex-runtime`, ADR-0023) exist; the image loader, the
-shared-memory mappings, core pinning, the tool broker and every subsystem's real dynamics do
-not. The whitepaper's
+on a pool of workers (`runtime/cortex-runtime`, ADR-0023), the `.cortex` image writer and
+loader and the clock sweep (ADR-0024) exist; the `mmap` path, the shared-memory mappings,
+core pinning, the tool broker and every subsystem's real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.
 
