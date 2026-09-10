@@ -4,14 +4,18 @@
 //! the committed amendments; and every way the loop refuses.
 
 use cortex_connectome::{SECTION_AMENDMENT, SectionEntry, crc64};
-use cortex_core::{STP_MAX, STP_U, spike_message, synaptic_efficacy_q16};
+use cortex_core::{STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16};
 use cortex_ethics::{EthicalEvaluationGate, Q16_ONE};
 use cortex_executive::{
-    AMENDMENT_ADMITTED, AMENDMENT_COMMITTED, AMENDMENT_PROPOSED, AMENDMENT_REJECTED, GATES_ALL,
-    OBJECTIVE_REHYDRATIONS, OBJECTIVE_RESIDENT_UNITS, PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS,
-    PolicyAmendment, REJECT_NO_GAIN, REJECT_UNKNOWN_PARAMETER, REJECT_VETOED,
+    AMENDMENT_ADMITTED, AMENDMENT_COMMITTED, AMENDMENT_PROPOSED, AMENDMENT_REJECTED,
+    AMENDMENT_TRIALLED, GATES_ALL, OBJECTIVE_REHYDRATIONS, OBJECTIVE_RESIDENT_UNITS,
+    PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS, REJECT_EMPTY_TRIAL, REJECT_NO_GAIN,
+    REJECT_UNKNOWN_PARAMETER, REJECT_VETOED,
 };
-use cortex_runtime::{AmendError, Config, Executor, Image, ImageError, Policy, Trial, run_trial};
+use cortex_runtime::{
+    ACTIVATE, AmendError, Config, Executor, Image, ImageError, InjectError, Policy, Trial,
+    run_trial,
+};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
@@ -39,7 +43,15 @@ fn config() -> Config {
     }
 }
 
-/// A pseudo-random network of 96 units, one block each.
+/// The forks' configuration: no room for proposals of their own.
+fn fork_config() -> Config {
+    Config {
+        amendments: 0,
+        ..config()
+    }
+}
+
+/// A pseudo-random network of 96 units, one block each, every unit armed to fire.
 fn wire(exec: &mut Executor<64>) {
     let mut x = 0x2545_F491u32;
     let mut next = || {
@@ -59,30 +71,41 @@ fn wire(exec: &mut Executor<64>) {
             assert!(block.set_synapse(slot, target, weight, delay, next() % 4 == 0));
         }
     }
-    let units = exec.units_mut();
-    for (i, unit) in units.iter_mut().enumerate() {
-        unit.synapse_slab_idx = i as u32 + 1;
+    for (i, unit) in exec.units_mut().iter_mut().enumerate() {
+        assert!(unit.set_first_block(i as u32));
+        unit.v_thresh = THRESHOLD_BASE;
+        unit.stp_u_rel = STP_U;
+        unit.stp_r_ves = STP_MAX;
     }
 }
 
-/// Fourteen strong basal messages fire a unit at rest ten ticks later.
-fn kick(exec: &Executor<64>, unit: u32) {
-    let inject = exec.injector();
-    let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
-    for _ in 0..14 {
-        inject.inject(unit, strong).unwrap();
-    }
-}
-
-/// A wired network run to a quiescent point, and its image.
+/// A wired network that has ticked but never spiked, so every unit is at rest with its
+/// threshold at its base, and its image at that quiescent point.
 fn quiescent_network() -> (Executor<64>, Vec<u8>) {
     let mut exec = Executor::<64>::new(config()).unwrap();
     wire(&mut exec);
-    kick(&exec, 3);
     exec.run(3_000);
-    assert!(exec.is_quiescent(), "the network rang down");
+    assert!(exec.is_quiescent(), "nothing is in flight");
     let image = Image::encode(&exec).unwrap();
     (exec, image)
+}
+
+/// One strong basal message: fourteen in one tick fire a unit at rest ten ticks later.
+fn strong() -> u32 {
+    spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false)
+}
+
+/// Kicks on a cadence that outlasts every sweep, each round a different unit, plus a bare
+/// activation of another (a turn without a message); the network is quiet again by 3 000.
+fn active_injections() -> Vec<(u64, u32, u32)> {
+    let mut injections = Vec::new();
+    for round in 0..8u64 {
+        for _ in 0..14 {
+            injections.push((round * 200 + 50, 3 + round as u32, strong()));
+        }
+        injections.push((round * 200 + 60, 20 + round as u32, ACTIVATE));
+    }
+    injections
 }
 
 /// A gate that permits `id`.
@@ -96,6 +119,26 @@ fn permitting(id: u32) -> EthicalEvaluationGate {
     assert!(!gate.evaluate(0, 1));
     assert!(gate.is_permitted());
     gate
+}
+
+/// Proposes and admits a change; the arena index.
+fn admitted(live: &mut Executor<64>, parameter: u16, value: i32, objective: u8) -> usize {
+    let i = live.propose(parameter, value, objective, 0).unwrap();
+    let id = live.amendments()[i].amendment_id;
+    assert_eq!(live.admit(i, &permitting(id)), Ok(true));
+    i
+}
+
+/// A trial with no injections that sweeps every 500 ticks for 2 000.
+fn quiet_trial<'a>(image: &'a [u8], dir: &'a PathBuf) -> Trial<'a> {
+    Trial {
+        image,
+        config: fork_config(),
+        injections: &[],
+        ticks: 2_000,
+        sweep_every: 500,
+        log_dir: dir,
+    }
 }
 
 #[test]
@@ -165,15 +208,16 @@ fn a_proposal_takes_a_slot_with_the_live_value_and_the_tick_and_the_arena_fills(
     assert_eq!(exec.amendment_room(), 0);
     assert_eq!(
         exec.propose(PARAM_SWEEP_BUDGET, 3, OBJECTIVE_REHYDRATIONS, 1),
-        Err(AmendError::ArenaFull)
+        Err(AmendError::ArenaFull),
+        "the configured room, not the allocation's"
     );
     assert_eq!(exec.amendments().len(), 4);
-    let none = Executor::<64>::new(Config {
+    let mut none = Executor::<64>::new(Config {
         amendments: 0,
         ..config()
     })
     .unwrap();
-    let mut none = none;
+    assert_eq!(none.amendment_room(), 0);
     assert_eq!(
         none.propose(PARAM_SWEEP_BUDGET, 3, OBJECTIVE_REHYDRATIONS, 1),
         Err(AmendError::ArenaFull),
@@ -182,7 +226,7 @@ fn a_proposal_takes_a_slot_with_the_live_value_and_the_tick_and_the_arena_fills(
 }
 
 #[test]
-fn the_veto_gate_admits_by_id_only_and_a_closed_gate_admits_nothing() {
+fn the_veto_gate_admits_a_proposed_amendment_by_id_only_and_a_closed_gate_admits_nothing() {
     let mut exec = Executor::<64>::new(config()).unwrap();
     let i = exec
         .propose(PARAM_SWEEP_QUIET_TICKS, 100, OBJECTIVE_RESIDENT_UNITS, 0)
@@ -201,17 +245,23 @@ fn the_veto_gate_admits_by_id_only_and_a_closed_gate_admits_nothing() {
     );
     assert_eq!(exec.amendments()[i].status, AMENDMENT_REJECTED);
     assert_eq!(exec.amendments()[i].reason, REJECT_VETOED);
+    assert_eq!(
+        exec.admit(i, &permitting(1)),
+        Err(AmendError::NotProposed),
+        "a rejected amendment is not proposed"
+    );
     let j = exec
         .propose(PARAM_SWEEP_QUIET_TICKS, 100, OBJECTIVE_RESIDENT_UNITS, 0)
         .unwrap();
     assert_eq!(exec.admit(j, &permitting(2)), Ok(true));
     assert_eq!(exec.amendments()[j].status, AMENDMENT_ADMITTED);
     assert_eq!(
-        exec.admit(9, &permitting(10)),
-        Err(AmendError::NoSuchAmendment)
+        exec.admit(j, &permitting(2)),
+        Err(AmendError::NotProposed),
+        "an admitted amendment is not proposed"
     );
     assert_eq!(
-        exec.record_trial(9, 1, 1, 1, 1, 0),
+        exec.admit(9, &permitting(10)),
         Err(AmendError::NoSuchAmendment)
     );
     assert_eq!(exec.commit(9), Err(AmendError::NoSuchAmendment));
@@ -225,24 +275,14 @@ fn the_veto_gate_admits_by_id_only_and_a_closed_gate_admits_nothing() {
 #[test]
 fn a_shorter_quiet_bound_frees_memory_without_changing_behaviour_and_is_committed() {
     let (mut live, image) = quiescent_network();
-    let i = live
-        .propose(PARAM_SWEEP_QUIET_TICKS, 100, OBJECTIVE_RESIDENT_UNITS, 0)
-        .unwrap();
-    assert_eq!(live.admit(i, &permitting(1)), Ok(true));
-    let mut amendment = live.amendments()[i];
+    let i = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
     let dir = log_dir("shorter");
-    let trial = Trial {
-        image: &image,
-        config: Config {
-            amendments: 0,
-            ..config()
-        },
-        injections: &[],
-        ticks: 2_000,
-        sweep_every: 500,
-        log_dir: &dir,
-    };
-    let report = run_trial::<64>(&trial, &mut amendment).unwrap();
+    let report = run_trial(&mut live, i, &quiet_trial(&image, &dir)).unwrap();
     assert!(report.may_commit, "{report:?}");
     assert_eq!(
         report.baseline.behaviour_hash, report.candidate.behaviour_hash,
@@ -257,31 +297,32 @@ fn a_shorter_quiet_bound_frees_memory_without_changing_behaviour_and_is_committe
         "quiet for 100 ticks: units evicted"
     );
     assert_eq!(
-        report.candidate.evictions as u32,
+        report.candidate.evictions,
         96 - report.candidate.resident_units
     );
     assert_eq!(
         (report.baseline.rehydrations, report.candidate.rehydrations),
         (0, 0)
     );
-    assert_eq!(amendment.gates, GATES_ALL);
+    assert_eq!((report.baseline.spikes, report.candidate.spikes), (0, 0));
+    let amendment = live.amendments()[i];
+    assert_eq!(
+        (amendment.status, amendment.gates),
+        (AMENDMENT_TRIALLED, GATES_ALL)
+    );
     assert_eq!(amendment.trial_ticks, 2_000);
     assert_eq!(
         (amendment.baseline_cost, amendment.candidate_cost),
         (96, report.candidate.resident_units)
     );
-    // The live executor learns the result and commits between ticks.
     assert_eq!(
-        live.record_trial(
-            i,
-            amendment.trial_ticks,
-            amendment.baseline_hash,
-            amendment.candidate_hash,
-            amendment.baseline_cost,
-            amendment.candidate_cost
-        ),
-        Ok(true)
+        (amendment.baseline_hash, amendment.candidate_hash),
+        (
+            report.baseline.behaviour_hash,
+            report.candidate.behaviour_hash
+        )
     );
+    // The live executor commits between ticks.
     live.run(5);
     assert_eq!(live.commit(i), Ok(()));
     let committed = live.amendments()[i];
@@ -296,46 +337,34 @@ fn a_shorter_quiet_bound_frees_memory_without_changing_behaviour_and_is_committe
     assert_eq!(live.commit(i), Err(AmendError::NotCommittable), "once");
     // The live sweep now runs under the amended policy.
     live.attach_log(&scratch("live.wal")).unwrap();
-    // Every unit at rest is quiet for more than 100 ticks; the kicked unit's threshold is
-    // still decaying toward its base, so it is not at rest and stays.
     let swept = live.sweep_by_policy().unwrap();
-    assert_eq!(swept, 95, "every unit at rest");
-    assert_eq!(live.evictions(), 95);
-    assert!(
-        !live.is_evicted(3),
-        "the kicked unit is the one still settling"
+    assert_eq!(
+        swept, 96,
+        "every unit is at rest and quiet for more than 100 ticks"
     );
+    assert_eq!(live.evictions(), 96);
 }
 
 #[test]
 fn a_bound_that_evicts_active_tissue_costs_rehydrations_and_is_rejected_for_no_gain() {
     let (mut live, image) = quiescent_network();
-    let i = live
-        .propose(PARAM_SWEEP_QUIET_TICKS, 0, OBJECTIVE_REHYDRATIONS, 0)
-        .unwrap();
-    assert_eq!(live.admit(i, &permitting(1)), Ok(true));
-    let mut amendment = live.amendments()[i];
-    let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
-    // Kicks on a cadence that outlasts every sweep: evicted units get messages.
-    let mut injections = Vec::new();
-    for round in 0..8u64 {
-        for _ in 0..14 {
-            injections.push((round * 200 + 50, 3 + round as u32, strong));
-        }
-    }
+    let i = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        0,
+        OBJECTIVE_REHYDRATIONS,
+    );
+    let injections = active_injections();
     let dir = log_dir("active");
     let trial = Trial {
         image: &image,
-        config: Config {
-            amendments: 0,
-            ..config()
-        },
+        config: fork_config(),
         injections: &injections,
-        ticks: 2_000,
+        ticks: 3_000,
         sweep_every: 100,
         log_dir: &dir,
     };
-    let report = run_trial::<64>(&trial, &mut amendment).unwrap();
+    let report = run_trial(&mut live, i, &trial).unwrap();
     assert!(!report.may_commit);
     assert_eq!(
         report.baseline.behaviour_hash, report.candidate.behaviour_hash,
@@ -343,133 +372,445 @@ fn a_bound_that_evicts_active_tissue_costs_rehydrations_and_is_rejected_for_no_g
     );
     assert_eq!(
         report.baseline.rehydrations, 0,
-        "the baseline never evicts within 2 000 ticks"
+        "the baseline never evicts within 3 000 ticks"
     );
     assert!(report.candidate.rehydrations > 0, "{report:?}");
+    assert!(report.baseline.spikes > 0, "the kicks fire: {report:?}");
+    assert_eq!(report.baseline.spikes, report.candidate.spikes);
+    let amendment = live.amendments()[i];
     assert_eq!(amendment.status, AMENDMENT_REJECTED);
     assert_eq!(amendment.reason, REJECT_NO_GAIN);
     assert_eq!(
-        live.record_trial(
-            i,
-            amendment.trial_ticks,
-            amendment.baseline_hash,
-            amendment.candidate_hash,
-            amendment.baseline_cost,
-            amendment.candidate_cost
-        ),
-        Ok(false)
+        (amendment.baseline_cost, amendment.candidate_cost),
+        (report.baseline.rehydrations, report.candidate.rehydrations),
+        "the objective's cost is the re-hydration count"
     );
     assert_eq!(live.commit(i), Err(AmendError::NotCommittable));
     assert_eq!(live.policy(), Policy::default(), "nothing moved");
 }
 
 #[test]
-fn a_trial_needs_an_admitted_amendment_and_an_empty_trial_shows_nothing() {
-    let (_, image) = quiescent_network();
-    let dir = log_dir("unadmitted");
-    let trial = Trial {
-        image: &image,
-        config: config(),
-        injections: &[],
-        ticks: 10,
-        sweep_every: 0,
-        log_dir: &dir,
-    };
-    let mut proposed = PolicyAmendment::propose(
-        1,
-        0,
+fn a_fork_sweeps_after_every_sweep_every_ticks_and_never_with_a_zero_cadence() {
+    let (mut live, image) = quiescent_network();
+    // No cadence: no sweep, whatever the bound.
+    let never = log_dir("never");
+    let a = admitted(
+        &mut live,
         PARAM_SWEEP_QUIET_TICKS,
-        10_000,
         100,
         OBJECTIVE_RESIDENT_UNITS,
-        0,
     );
-    let before = proposed;
-    let report = run_trial::<64>(&trial, &mut proposed).unwrap();
+    let report = run_trial(
+        &mut live,
+        a,
+        &Trial {
+            ticks: 600,
+            sweep_every: 0,
+            ..quiet_trial(&image, &never)
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (report.candidate.evictions, report.candidate.resident_units),
+        (0, 96)
+    );
     assert!(!report.may_commit);
-    assert_eq!(proposed, before, "not admitted: nothing recorded");
-    let mut admitted = before;
-    admitted.admit(true);
-    let empty = Trial {
-        ticks: 0,
+    assert_eq!(live.amendments()[a].reason, REJECT_NO_GAIN);
+    // One tick short of the cadence: no sweep yet.
+    let short = log_dir("short");
+    let b = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let report = run_trial(
+        &mut live,
+        b,
+        &Trial {
+            ticks: 499,
+            ..quiet_trial(&image, &short)
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (report.candidate.evictions, report.candidate.resident_units),
+        (0, 96)
+    );
+    assert_eq!(live.amendments()[b].reason, REJECT_NO_GAIN);
+    // Exactly the cadence: the one sweep runs on the last tick.
+    let exact = log_dir("exact");
+    let c = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let report = run_trial(
+        &mut live,
+        c,
+        &Trial {
+            ticks: 500,
+            ..quiet_trial(&image, &exact)
+        },
+    )
+    .unwrap();
+    assert!(report.candidate.evictions > 0, "{report:?}");
+    assert_eq!(
+        report.baseline.evictions, 0,
+        "the baseline's bound is 10 000 ticks"
+    );
+    assert!(report.may_commit);
+}
+
+#[test]
+fn a_trial_is_refused_before_it_runs_and_a_refused_trial_leaves_the_amendment_unchanged() {
+    let (mut live, image) = quiescent_network();
+    let dir = log_dir("refused");
+    let trial = quiet_trial(&image, &dir);
+    // Not admitted.
+    let proposed = live
+        .propose(PARAM_SWEEP_QUIET_TICKS, 100, OBJECTIVE_RESIDENT_UNITS, 0)
+        .unwrap();
+    assert!(matches!(
+        run_trial(&mut live, proposed, &trial),
+        Err(ImageError::Amendment(AmendError::NotAdmitted))
+    ));
+    assert_eq!(live.amendments()[proposed].status, AMENDMENT_PROPOSED);
+    assert!(matches!(
+        run_trial(&mut live, 9, &trial),
+        Err(ImageError::Amendment(AmendError::NoSuchAmendment))
+    ));
+    // No trace: the spike train would not be hashed.
+    let i = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let untraced = Trial {
+        config: Config {
+            trace_capacity: 0,
+            ..fork_config()
+        },
         ..trial.clone()
     };
-    let report = run_trial::<64>(&empty, &mut admitted).unwrap();
-    assert!(!report.may_commit);
-    assert_eq!(admitted.status, AMENDMENT_REJECTED);
-    assert_eq!(
-        report.baseline.behaviour_hash, report.candidate.behaviour_hash,
-        "two forks of one image that ran nothing"
-    );
-    // A trial cannot set a value the policy refuses; the amendment is left as it was.
-    let mut forged = PolicyAmendment::propose(
-        1,
-        0,
-        PARAM_SWEEP_QUIET_TICKS,
-        10_000,
-        100,
-        OBJECTIVE_RESIDENT_UNITS,
-        0,
-    );
-    forged.admit(true);
-    forged.parameter = 9;
-    let before = forged;
-    let report = run_trial::<64>(&trial, &mut forged).unwrap();
-    assert!(!report.may_commit);
-    assert_eq!(forged, before);
+    assert!(matches!(
+        run_trial(&mut live, i, &untraced),
+        Err(ImageError::NoTrace)
+    ));
+    assert_eq!(live.amendments()[i].status, AMENDMENT_ADMITTED, "unchanged");
+    // A trace too small for the spikes: a dropped spike is a hash that does not cover them.
+    let injections = active_injections();
+    let small = Trial {
+        config: Config {
+            trace_capacity: 2,
+            ..fork_config()
+        },
+        injections: &injections,
+        ticks: 3_000,
+        sweep_every: 100,
+        ..trial.clone()
+    };
+    assert!(matches!(
+        run_trial(&mut live, i, &small),
+        Err(ImageError::NoTrace)
+    ));
+    assert_eq!(live.amendments()[i].status, AMENDMENT_ADMITTED);
+    // A fork that ends with tokens in flight is not at a quiescent point.
+    let kicks: Vec<(u64, u32, u32)> = (0..14).map(|_| (0u64, 3u32, strong())).collect();
+    let mid_flight = Trial {
+        injections: &kicks,
+        ticks: 30,
+        sweep_every: 0,
+        ..trial.clone()
+    };
+    assert!(matches!(
+        run_trial(&mut live, i, &mid_flight),
+        Err(ImageError::NotQuiescent)
+    ));
+    assert_eq!(live.amendments()[i].status, AMENDMENT_ADMITTED);
+    // An injection the fork refuses: a unit outside the arena, then a full ring.
+    let outside = [(0u64, 96u32, strong())];
+    let refused = Trial {
+        injections: &outside,
+        ..trial.clone()
+    };
+    assert!(matches!(
+        run_trial(&mut live, i, &refused),
+        Err(ImageError::Injection(InjectError::NoSuchUnit))
+    ));
+    let too_many: Vec<(u64, u32, u32)> = (0..2_000).map(|_| (0u64, 3u32, strong())).collect();
+    let full = Trial {
+        injections: &too_many,
+        ..trial.clone()
+    };
+    assert!(matches!(
+        run_trial(&mut live, i, &full),
+        Err(ImageError::Injection(InjectError::Full))
+    ));
     // A corrupt image is refused before any fork runs.
     let mut bad = image.clone();
     bad[100] ^= 1;
-    let mut fresh = before;
-    fresh.parameter = PARAM_SWEEP_QUIET_TICKS;
     let corrupt = Trial {
         image: &bad,
         ..trial.clone()
     };
-    assert!(run_trial::<64>(&corrupt, &mut fresh).is_err());
+    assert!(run_trial(&mut live, i, &corrupt).is_err());
+    assert_eq!(live.amendments()[i].status, AMENDMENT_ADMITTED);
+    // An empty trial is recorded and rejected.
+    let empty = Trial {
+        ticks: 0,
+        ..trial.clone()
+    };
+    let report = run_trial(&mut live, i, &empty).unwrap();
+    assert!(!report.may_commit);
+    assert_eq!(
+        report.baseline.behaviour_hash, report.candidate.behaviour_hash,
+        "two forks of one image that ran nothing"
+    );
+    assert_eq!(live.amendments()[i].status, AMENDMENT_REJECTED);
+    assert_eq!(live.amendments()[i].reason, REJECT_EMPTY_TRIAL);
 }
 
 #[test]
-fn a_commit_is_refused_when_the_live_value_moved_since_the_trial() {
-    let mut exec = Executor::<64>::new(config()).unwrap();
-    let a = exec
-        .propose(PARAM_SWEEP_BUDGET, 10, OBJECTIVE_RESIDENT_UNITS, 0)
-        .unwrap();
-    let b = exec
-        .propose(PARAM_SWEEP_BUDGET, 20, OBJECTIVE_RESIDENT_UNITS, 0)
-        .unwrap();
-    assert_eq!(exec.admit(a, &permitting(1)), Ok(true));
-    assert_eq!(exec.admit(b, &permitting(2)), Ok(true));
-    assert_eq!(exec.record_trial(a, 10, 5, 5, 96, 90), Ok(true));
-    assert_eq!(exec.record_trial(b, 10, 5, 5, 96, 80), Ok(true));
-    assert_eq!(exec.commit(a), Ok(()));
-    assert_eq!(exec.policy().sweep_budget, 10);
+fn a_trial_needs_the_image_written_after_the_last_commit_to_its_parameter() {
+    let (mut live, before) = quiescent_network();
+    let a = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir = log_dir("stale-a");
+    assert!(
+        run_trial(&mut live, a, &quiet_trial(&before, &dir))
+            .unwrap()
+            .may_commit
+    );
+    assert_eq!(live.commit(a), Ok(()));
+    let after = Image::encode(&live).unwrap();
+    // The next amendment starts from 100; the image written before the commit says 10 000.
+    let b = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        99,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let stale = log_dir("stale-b");
+    assert!(matches!(
+        run_trial(&mut live, b, &quiet_trial(&before, &stale)),
+        Err(ImageError::StaleBaseline(PARAM_SWEEP_QUIET_TICKS))
+    ));
+    assert_eq!(live.amendments()[b].status, AMENDMENT_ADMITTED, "unchanged");
+    // On the image written after the commit, 100 to 99 frees nothing more: no gain.
+    let fresh = log_dir("stale-c");
+    let report = run_trial(&mut live, b, &quiet_trial(&after, &fresh)).unwrap();
+    assert!(!report.may_commit);
     assert_eq!(
-        exec.commit(b),
+        report.baseline.resident_units, report.candidate.resident_units,
+        "the baseline is the live policy"
+    );
+    assert_eq!(live.amendments()[b].reason, REJECT_NO_GAIN);
+    // A parameter the image does hold at its starting value is trialled: the budget.
+    let c = admitted(&mut live, PARAM_SWEEP_BUDGET, 8, OBJECTIVE_RESIDENT_UNITS);
+    let budget = log_dir("stale-d");
+    let report = run_trial(&mut live, c, &quiet_trial(&after, &budget)).unwrap();
+    assert!(!report.may_commit, "a smaller budget frees less");
+    assert!(report.candidate.resident_units > report.baseline.resident_units);
+}
+
+#[test]
+fn commits_to_one_parameter_keep_the_arena_s_order_and_a_stale_or_superseded_one_is_refused() {
+    let (mut live, image) = quiescent_network();
+    let a = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let b = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        50,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir_a = log_dir("order-a");
+    let dir_b = log_dir("order-b");
+    assert!(
+        run_trial(&mut live, a, &quiet_trial(&image, &dir_a))
+            .unwrap()
+            .may_commit
+    );
+    assert!(
+        run_trial(&mut live, b, &quiet_trial(&image, &dir_b))
+            .unwrap()
+            .may_commit
+    );
+    // Both were trialled from 10 000; b is committed first.
+    assert_eq!(live.commit(b), Ok(()));
+    assert_eq!(live.policy().sweep_quiet_ticks, 50);
+    assert_eq!(
+        live.commit(a),
+        Err(AmendError::Superseded),
+        "a later proposal for the same parameter was committed first"
+    );
+    assert_eq!(live.amendments()[a].status, AMENDMENT_TRIALLED);
+    // Back to 10 000 under the re-hydration objective on active tissue, from an image
+    // written after b's commit: c is committed, and a is still superseded although the live
+    // value is again the one it started from.
+    let after_b = Image::encode(&live).unwrap();
+    let c = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        10_000,
+        OBJECTIVE_REHYDRATIONS,
+    );
+    let injections = active_injections();
+    let dir_c = log_dir("order-c");
+    let report = run_trial(
+        &mut live,
+        c,
+        &Trial {
+            image: &after_b,
+            config: fork_config(),
+            injections: &injections,
+            ticks: 3_000,
+            sweep_every: 100,
+            log_dir: &dir_c,
+        },
+    )
+    .unwrap();
+    assert!(report.may_commit, "{report:?}");
+    assert!(report.baseline.rehydrations > report.candidate.rehydrations);
+    assert_eq!(live.commit(c), Ok(()));
+    assert_eq!(live.policy().sweep_quiet_ticks, 10_000);
+    assert_eq!(live.commit(a), Err(AmendError::Superseded));
+    // A trialled amendment whose starting value moved is stale: d starts from 10 000 and is
+    // trialled; the policy is then moved by hand through a fresh arena? No: the only way the
+    // live value moves is a commit, so d is stale exactly when a later commit landed, which
+    // is `Superseded` first. Staleness alone is reachable through the loader: an image whose
+    // committed records leave the policy elsewhere than a trialled record started from.
+    let after_c = Image::encode(&live).unwrap();
+    let d = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir_d = log_dir("order-d");
+    assert!(
+        run_trial(&mut live, d, &quiet_trial(&after_c, &dir_d))
+            .unwrap()
+            .may_commit
+    );
+    assert_eq!(
+        live.propose(PARAM_SWEEP_QUIET_TICKS, 25, OBJECTIVE_RESIDENT_UNITS, 0),
+        Err(AmendError::ArenaFull),
+        "four slots: a, b, c, d"
+    );
+    // The image of this arena loads, in order, to the same policy.
+    let loaded = Image::decode::<64>(&after_c, fork_config()).unwrap();
+    assert_eq!(loaded.policy().sweep_quiet_ticks, 10_000);
+    assert_eq!(loaded.amendments().len(), 3);
+    let mut loaded = Image::decode::<64>(&Image::encode(&live).unwrap(), fork_config()).unwrap();
+    assert_eq!(loaded.amendments(), live.amendments());
+    assert_eq!(loaded.policy(), live.policy());
+    assert_eq!(
+        loaded.commit(d),
+        Ok(()),
+        "the trialled record commits after the reload"
+    );
+    assert_eq!(loaded.policy().sweep_quiet_ticks, 100);
+}
+
+#[test]
+fn a_trialled_amendment_whose_starting_value_moved_is_stale() {
+    // A stale record reaches a live executor through the loader: an image whose committed
+    // records leave the policy at 50 and a trialled record that started from 10 000. The
+    // writer never writes one (a commit in between is `Superseded` first), so it is forged.
+    let (mut live, image) = quiescent_network();
+    let a = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        50,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let b = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        100,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir_a = log_dir("moved-a");
+    let dir_b = log_dir("moved-b");
+    assert!(
+        run_trial(&mut live, a, &quiet_trial(&image, &dir_a))
+            .unwrap()
+            .may_commit
+    );
+    assert!(
+        run_trial(&mut live, b, &quiet_trial(&image, &dir_b))
+            .unwrap()
+            .may_commit
+    );
+    assert_eq!(live.commit(a), Ok(()));
+    assert_eq!(
+        live.commit(b),
         Err(AmendError::Stale),
-        "b was trialled from 1 024, and the live value is 10"
+        "b started from 10 000, and the live value is 50"
     );
-    assert_eq!(exec.policy().sweep_budget, 10, "nothing moved");
-    assert_eq!(
-        exec.amendments()[b].status,
-        cortex_executive::AMENDMENT_TRIALLED
-    );
+    assert_eq!(live.policy().sweep_quiet_ticks, 50, "nothing moved");
+    assert_eq!(live.amendments()[b].status, AMENDMENT_TRIALLED);
+    let reloaded = Image::decode::<64>(&Image::encode(&live).unwrap(), config()).unwrap();
+    assert_eq!(reloaded.amendments(), live.amendments());
+    let mut reloaded = reloaded;
+    assert_eq!(reloaded.commit(b), Err(AmendError::Stale));
 }
 
 #[test]
 fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy() {
-    let (mut live, _) = quiescent_network();
-    let a = live
-        .propose(PARAM_SWEEP_QUIET_TICKS, 100, OBJECTIVE_RESIDENT_UNITS, 0)
-        .unwrap();
-    assert_eq!(live.admit(a, &permitting(1)), Ok(true));
-    assert_eq!(live.record_trial(a, 2_000, 7, 7, 96, 10), Ok(true));
+    let (mut live, image) = quiescent_network();
+    // 10 000 to 700: nothing is evicted at the sweep on tick 500, everything at 1 000.
+    let a = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        700,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir_a = log_dir("persist-a");
+    assert!(
+        run_trial(&mut live, a, &quiet_trial(&image, &dir_a))
+            .unwrap()
+            .may_commit
+    );
     assert_eq!(live.commit(a), Ok(()));
-    let b = live
-        .propose(PARAM_SWEEP_QUIET_TICKS, 50, OBJECTIVE_RESIDENT_UNITS, 0)
-        .unwrap();
-    assert_eq!(live.admit(b, &permitting(2)), Ok(true));
-    assert_eq!(live.record_trial(b, 2_000, 7, 7, 10, 5), Ok(true));
+    let after_a = Image::encode(&live).unwrap();
+    // 700 to 300 over 600 ticks: the one sweep, on tick 500, evicts under 300 and not under 700.
+    let b = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        300,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir_b = log_dir("persist-b");
+    let report = run_trial(
+        &mut live,
+        b,
+        &Trial {
+            ticks: 600,
+            ..quiet_trial(&after_a, &dir_b)
+        },
+    )
+    .unwrap();
+    assert!(report.may_commit, "{report:?}");
+    assert_eq!(
+        (
+            report.baseline.resident_units,
+            report.candidate.resident_units
+        ),
+        (96, 0)
+    );
     assert_eq!(live.commit(b), Ok(()));
     let vetoed = live
         .propose(PARAM_SWEEP_BUDGET, 7, OBJECTIVE_RESIDENT_UNITS, 0)
@@ -486,7 +827,7 @@ fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy()
     let pending = live
         .propose(PARAM_SWEEP_BUDGET, 8, OBJECTIVE_REHYDRATIONS, 3)
         .unwrap();
-    assert_eq!(live.policy().sweep_quiet_ticks, 50);
+    assert_eq!(live.policy().sweep_quiet_ticks, 300);
     let image = Image::encode(&live).unwrap();
     let loaded = Image::decode::<64>(
         &image,
@@ -498,7 +839,7 @@ fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy()
     .unwrap();
     assert_eq!(
         loaded.policy().sweep_quiet_ticks,
-        50,
+        300,
         "derived from the committed amendments"
     );
     assert_eq!(loaded.policy().sweep_budget, 1_024);
@@ -558,18 +899,42 @@ fn tamper(image: &[u8], mutate: impl FnOnce(&mut [u8])) -> Vec<u8> {
 
 #[test]
 fn the_loader_refuses_an_amendment_it_could_not_have_written() {
-    let (mut live, _) = quiescent_network();
-    let a = live
-        .propose(PARAM_SWEEP_QUIET_TICKS, 100, OBJECTIVE_RESIDENT_UNITS, 0)
-        .unwrap();
-    assert_eq!(live.admit(a, &permitting(1)), Ok(true));
-    assert_eq!(live.record_trial(a, 2_000, 7, 7, 96, 10), Ok(true));
+    let (mut live, image) = quiescent_network();
+    // 10 000 to 700: nothing is evicted at the sweep on tick 500, everything at 1 000.
+    let a = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        700,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir_a = log_dir("forged-a");
+    assert!(
+        run_trial(&mut live, a, &quiet_trial(&image, &dir_a))
+            .unwrap()
+            .may_commit
+    );
     assert_eq!(live.commit(a), Ok(()));
-    let b = live
-        .propose(PARAM_SWEEP_QUIET_TICKS, 50, OBJECTIVE_RESIDENT_UNITS, 0)
-        .unwrap();
-    assert_eq!(live.admit(b, &permitting(2)), Ok(true));
-    assert_eq!(live.record_trial(b, 2_000, 7, 7, 10, 5), Ok(true));
+    let after_a = Image::encode(&live).unwrap();
+    // 700 to 300 over 600 ticks: the one sweep, on tick 500, evicts under 300 and not under 700.
+    let b = admitted(
+        &mut live,
+        PARAM_SWEEP_QUIET_TICKS,
+        300,
+        OBJECTIVE_RESIDENT_UNITS,
+    );
+    let dir_b = log_dir("forged-b");
+    assert!(
+        run_trial(
+            &mut live,
+            b,
+            &Trial {
+                ticks: 600,
+                ..quiet_trial(&after_a, &dir_b)
+            },
+        )
+        .unwrap()
+        .may_commit
+    );
     assert_eq!(live.commit(b), Ok(()));
     let image = Image::encode(&live).unwrap();
     assert!(Image::decode::<64>(&image, config()).is_ok());
@@ -592,12 +957,14 @@ fn the_loader_refuses_an_amendment_it_could_not_have_written() {
     // Out of order: the second record's id.
     let order = tamper(&image, |s| s[64 + 16] = 9);
     assert_eq!(refused(&order, "order"), 1);
-    // A commit that does not follow the one before it: the second started from 10, the
+    // A zero id where a record should be.
+    let zero_id = tamper(&image, |s| s[16..20].fill(0));
+    assert_eq!(refused(&zero_id, "zero id"), 0);
+    // A commit that does not follow the one before it: the second started from 700, the
     // first's proposed value; make it start from 20.
     let stale = tamper(&image, |s| s[64 + 28] = 20);
     assert_eq!(refused(&stale, "stale"), 1);
-    // Two commits with the same starting value: the second's start is right, the first's is
-    // not the default.
+    // The first's start is not the default.
     let first = tamper(&image, |s| {
         s[28..32].copy_from_slice(&5_000i32.to_le_bytes())
     });
@@ -618,14 +985,7 @@ fn the_loader_refuses_an_amendment_it_could_not_have_written() {
         Err(ImageError::Directory(SECTION_AMENDMENT))
     ));
     // No room: the image's two records fit, and the configured room is added on top.
-    let tight = Image::decode::<64>(
-        &image,
-        Config {
-            amendments: 0,
-            ..config()
-        },
-    )
-    .unwrap();
+    let tight = Image::decode::<64>(&image, fork_config()).unwrap();
     assert_eq!(tight.amendment_room(), 0);
     assert_eq!(tight.amendments().len(), 2);
 }

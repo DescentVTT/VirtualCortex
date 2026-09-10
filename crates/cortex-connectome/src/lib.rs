@@ -412,5 +412,16 @@ mod tests {
             (2, 3, 37),
             "Appendix A row numbers"
         );
+        assert_eq!(
+            (
+                SECTION_MACRO_COLUMN,
+                SECTION_LAMINAR,
+                SECTION_ROUTING,
+                SECTION_TERM,
+                SECTION_AMENDMENT
+            ),
+            (1, 38, 39, 40, 41),
+            "the Specified kinds and the amendment arena (ADR-0031)"
+        );
     }
 }

@@ -9,7 +9,7 @@
 //! cannot hold. An image is written at a quiescent point: every mailbox empty, no token in
 //! flight; a scheduled unit with an empty mailbox is written idle and woken again on load.
 
-use crate::executor::{Config, ConfigError, Executor};
+use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_connectome::{
     CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_NEURON, SECTION_PLASTIC_DELTA,
     SECTION_SYNAPSE, SectionEntry, crc64,
@@ -63,6 +63,17 @@ pub enum ImageError {
     /// An amendment record (ADR-0031) is one its state machine could not have produced, is
     /// out of order, or claims a commit that does not follow from the ones before it.
     MalformedAmendment(u32),
+    /// A trial (ADR-0031) was asked for an amendment the arena does not hold or has not
+    /// admitted.
+    Amendment(AmendError),
+    /// The image a trial forks does not carry the value the amendment started from: it was
+    /// written before a later commit to that parameter, so its baseline is not the live one.
+    StaleBaseline(u16),
+    /// A fork's spike train is not wholly traced (`Config::trace_capacity` is zero, or a spike
+    /// was dropped), so its behaviour hash would not cover it.
+    NoTrace,
+    /// An injection into a fork was refused.
+    Injection(InjectError),
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no

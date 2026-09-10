@@ -65,6 +65,8 @@ pub const REJECT_EMPTY_TRIAL: u8 = 6;
 pub const REJECT_BEHAVIOUR_CHANGED: u8 = 7;
 /// `reason`: the cost did not fall by `min_gain`, or by one.
 pub const REJECT_NO_GAIN: u8 = 8;
+/// `reason`: the id is zero, which names an empty slot; checked before the bounds gate.
+pub const REJECT_NO_ID: u8 = 9;
 
 /// `gates`: both values are within the parameter's bounds and differ.
 pub const GATE_BOUNDS: u8 = 1;
@@ -192,9 +194,10 @@ pub struct PolicyAmendment {
 
 impl PolicyAmendment {
     /// A proposal at `tick`: change `parameter` from `current_value` to `proposed_value`, to
-    /// be judged by `objective` with a gain of at least `min_gain`. The bounds gate runs here
-    /// ([`bounds_reason`]): the record is proposed when it passes and rejected with the first
-    /// reason that fails otherwise. Every proposal leaves a record.
+    /// be judged by `objective` with a gain of at least `min_gain`. A zero `id` names an empty
+    /// slot and is rejected first; then the bounds gate runs ([`bounds_reason`]): the record
+    /// is proposed when it passes and rejected with the first reason that fails otherwise.
+    /// Every proposal leaves a record.
     pub fn propose(
         id: u32,
         tick: u32,
@@ -214,7 +217,11 @@ impl PolicyAmendment {
             objective,
             ..Default::default()
         };
-        let reason = bounds_reason(parameter, current_value, proposed_value, objective);
+        let reason = if id == 0 {
+            REJECT_NO_ID
+        } else {
+            bounds_reason(parameter, current_value, proposed_value, objective)
+        };
         if reason == REJECT_NONE {
             a.status = AMENDMENT_PROPOSED;
             a.gates = GATE_BOUNDS;
@@ -369,8 +376,18 @@ impl PolicyAmendment {
         if self._reserved != [0; 8] {
             return false;
         }
+        if self.status == AMENDMENT_EMPTY {
+            return *self == Self::default();
+        }
+        if self.amendment_id == 0 {
+            // The one record a zero id can be: its own rejection.
+            return self.status == AMENDMENT_REJECTED
+                && self.reason == REJECT_NO_ID
+                && self.gates == 0
+                && self.no_trial()
+                && self.committed_tick == 0;
+        }
         match self.status {
-            AMENDMENT_EMPTY => *self == Self::default(),
             AMENDMENT_PROPOSED => {
                 self.gates == GATE_BOUNDS && self.reason == REJECT_NONE && self.untried()
             }
@@ -392,10 +409,11 @@ impl PolicyAmendment {
     }
 
     /// A rejected record's gates and values agree with its reason: it failed exactly the gate
-    /// the reason names, having passed the ones before it.
+    /// the reason names, having passed the ones before it. The id is not zero here.
     fn rejection_is_consistent(&self) -> bool {
         let passed_bounds = self.own_bounds_reason() == REJECT_NONE;
         match self.reason {
+            REJECT_NO_ID => false,
             REJECT_UNKNOWN_PARAMETER
             | REJECT_OUT_OF_BOUNDS
             | REJECT_NO_CHANGE
@@ -681,6 +699,64 @@ mod tests {
             assert!(!r.may_commit());
             assert_eq!(r.gates, 0, "no gate passed");
         }
+    }
+
+    #[test]
+    fn a_zero_id_is_an_empty_slot_s_and_is_rejected_before_the_bounds_gate() {
+        let zero = PolicyAmendment::propose(
+            0,
+            5,
+            PARAM_SWEEP_QUIET_TICKS,
+            10_000,
+            100,
+            OBJECTIVE_RESIDENT_UNITS,
+            0,
+        );
+        assert_eq!(
+            (zero.status, zero.reason, zero.gates),
+            (AMENDMENT_REJECTED, REJECT_NO_ID, 0)
+        );
+        assert!(zero.is_well_formed() && zero.is_terminal() && !zero.may_commit());
+        let mut every_fault = PolicyAmendment::propose(0, 0, 7, -1, -1, 0, 0);
+        assert_eq!(
+            every_fault.reason, REJECT_NO_ID,
+            "the id before every other gate"
+        );
+        assert!(!every_fault.admit(true));
+        assert!(!every_fault.record_trial(1, 1, 1, 9, 0));
+        assert!(!every_fault.commit(1));
+        let mut live_zero = proposed();
+        live_zero.amendment_id = 0;
+        assert!(
+            !live_zero.is_well_formed(),
+            "a live record with a zero id is malformed"
+        );
+        let mut committed_zero = committed();
+        committed_zero.amendment_id = 0;
+        assert!(!committed_zero.is_well_formed());
+        let mut rejected_zero =
+            PolicyAmendment::propose(1, 0, 7, 0, 1, OBJECTIVE_RESIDENT_UNITS, 0);
+        rejected_zero.amendment_id = 0;
+        assert!(
+            !rejected_zero.is_well_formed(),
+            "a zero id is rejected as such, not for its parameter"
+        );
+        let mut with_id = zero;
+        with_id.amendment_id = 5;
+        assert!(
+            !with_id.is_well_formed(),
+            "a no-id rejection with an id is malformed"
+        );
+        let mut gated = zero;
+        gated.gates = GATE_BOUNDS;
+        assert!(!gated.is_well_formed());
+        let mut tried = zero;
+        tried.trial_ticks = 1;
+        assert!(!tried.is_well_formed());
+        let mut ticked = zero;
+        ticked.committed_tick = 1;
+        assert!(!ticked.is_well_formed());
+        assert_eq!(PolicyAmendment::decode(&zero.encode()), zero);
     }
 
     #[test]
@@ -1170,11 +1246,13 @@ mod prop {
             for &current in &I32_LATTICE {
                 for &proposed in &I32_LATTICE {
                     for &objective in &objectives {
+                        let id = (current as u32).wrapping_add(proposed as u32) & 1;
                         let a = PolicyAmendment::propose(
-                            1, 0, parameter, current, proposed, objective, 0,
+                            id, 0, parameter, current, proposed, objective, 0,
                         );
-                        let expected = spec_of(parameter)
-                            .is_some_and(|s| s.holds(current) && s.holds(proposed))
+                        let expected = id != 0
+                            && spec_of(parameter)
+                                .is_some_and(|s| s.holds(current) && s.holds(proposed))
                             && current != proposed
                             && is_known_objective(objective);
                         assert_eq!(
@@ -1214,7 +1292,7 @@ mod prop {
             let objective = g.pick(&[OBJECTIVE_RESIDENT_UNITS, OBJECTIVE_REHYDRATIONS, 0]);
             let min_gain = g.pick(&[0u16, 1, 2, 100, u16::MAX]);
             let mut a = PolicyAmendment::propose(
-                g.next_u32(),
+                g.pick(&[0, 1, 2, 7, u32::MAX]),
                 g.next_u32(),
                 parameter,
                 current,
