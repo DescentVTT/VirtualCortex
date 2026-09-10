@@ -4,6 +4,8 @@
 //! under short-term plasticity, which that harness holds at rest, so the ring rings down
 //! rather than oscillating) and a random network of 128 units with STDP at work.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use cortex_connectome::Crc64;
 use cortex_core::{
     DendriticSuperNeuron, GateState, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, spike_message,
@@ -82,25 +84,27 @@ fn wire_ring(exec: &mut Executor<64>) {
     let delays = [300u16, 500, 700];
     {
         let blocks = exec.blocks_mut();
-        for i in 0..3 {
-            let target = ((i + 1) % 3) as u32;
+        for (i, &delay) in delays.iter().enumerate() {
+            let target = (i.wrapping_add(1) % 3) as u32;
+            let base = i.wrapping_mul(4);
             for k in 0..HOP {
-                assert!(blocks[4 * i + k / 4].set_synapse(
+                assert!(blocks[base.wrapping_add(k / 4)].set_synapse(
                     k % 4,
                     target,
                     i16::MAX,
-                    delays[i],
+                    delay,
                     false
                 ));
             }
             for j in 0..3 {
-                assert!(blocks[4 * i + j].link((4 * i + j + 1) as u32));
+                let block = base.wrapping_add(j);
+                assert!(blocks[block].link(block.wrapping_add(1) as u32));
             }
         }
     }
     for (i, unit) in exec.units_mut().iter_mut().enumerate() {
         unit.v_thresh = THRESHOLD_BASE;
-        assert!(unit.set_first_block((4 * i) as u32));
+        assert!(unit.set_first_block(i.wrapping_mul(4) as u32));
     }
     let inject = exec.injector();
     let one = synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX);
@@ -160,13 +164,15 @@ fn wire_random(exec: &mut Executor<64>) {
         let blocks = exec.blocks_mut();
         for (i, block) in blocks.iter_mut().enumerate().take(UNITS) {
             for slot in 0..4 {
-                let target = (next() >> 8) % UNITS as u32;
+                let target = (next() >> 8)
+                    .checked_rem(UNITS as u32)
+                    .expect("UNITS is not zero");
                 let delay = match next() % 8 {
                     0 => 0,
                     1 => 2559,
-                    _ => 1 + (next() >> 8) % 400,
+                    _ => ((next() >> 8) % 400).wrapping_add(1),
                 } as u16;
-                let weight = ((next() >> 8) % 24_000) as i16 + 8_000;
+                let weight = (((next() >> 8) % 24_000) as i16).wrapping_add(8_000);
                 let apical = next() % 5 == 0;
                 assert!(block.set_synapse(slot, target, weight, delay, apical));
             }
@@ -181,7 +187,9 @@ fn wire_random(exec: &mut Executor<64>) {
     }
     let inject = exec.injector();
     for _ in 0..48 {
-        let unit = (next() >> 8) % UNITS as u32;
+        let unit = (next() >> 8)
+            .checked_rem(UNITS as u32)
+            .expect("UNITS is not zero");
         for _ in 0..8 {
             inject.inject(unit, spike_message(0x7000, false)).unwrap();
         }

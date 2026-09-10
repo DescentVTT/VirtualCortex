@@ -18,20 +18,28 @@ pub struct Pools {
 impl Pools {
     /// `workers` pools of `per_worker` nodes each, every node free.
     pub fn new(workers: usize, per_worker: usize) -> Self {
-        let total = workers * per_worker;
+        // A pool that would not fit the address space saturates, and the allocation of its
+        // nodes refuses it (a capacity overflow); every sum below is then within `total`.
+        let total = workers.saturating_mul(per_worker);
         let nodes: Box<[MailboxNode]> = (0..total).map(|_| MailboxNode::new()).collect();
         let heads: Box<[AtomicU32]> = (0..workers)
             .map(|w| {
-                let first = w * per_worker;
-                for i in first..first + per_worker {
-                    let next = if i + 1 < first + per_worker {
-                        i as u32 + 2
+                let first = w.wrapping_mul(per_worker);
+                let end = first.wrapping_add(per_worker);
+                for i in first..end {
+                    // Index + 1 encoded (ADR-0017): the node after `i` is `i + 2` on the wire.
+                    let next = if i.wrapping_add(1) < end {
+                        (i as u32).wrapping_add(2)
                     } else {
                         MAILBOX_NIL
                     };
                     nodes[i].next.store(next, Ordering::Relaxed);
                 }
-                AtomicU32::new(if per_worker > 0 { first as u32 + 1 } else { 0 })
+                AtomicU32::new(if per_worker > 0 {
+                    (first as u32).wrapping_add(1)
+                } else {
+                    0
+                })
             })
             .collect();
         Self {
@@ -53,7 +61,9 @@ impl Pools {
 
     /// The owner of a node.
     pub fn owner(&self, node: u32) -> usize {
-        node as usize / self.per_worker
+        // `per_worker` is zero only for a pool of no nodes, which owns none: the node index
+        // that follows every owner lookup refuses `node` there, as the division did.
+        (node as usize).checked_div(self.per_worker).unwrap_or(0)
     }
 
     /// Owner only: takes a free node of pool `worker`, or `None` when the pool is exhausted.
@@ -64,7 +74,7 @@ impl Pools {
             if encoded == 0 {
                 return None;
             }
-            let node = encoded - 1;
+            let node = encoded.wrapping_sub(1); // `encoded` is not 0: checked above
             let next = self.nodes[node as usize].next.load(Ordering::Relaxed);
             match head.compare_exchange_weak(encoded, next, Ordering::AcqRel, Ordering::Acquire) {
                 Ok(_) => return Some(node),
@@ -76,7 +86,7 @@ impl Pools {
     /// Any worker: returns a drained node to its owner's pool.
     pub fn free(&self, node: u32) {
         let head = &self.heads[self.owner(node)];
-        let encoded = node + 1;
+        let encoded = node.wrapping_add(1); // index + 1 encoded (ADR-0017)
         let mut current = head.load(Ordering::Relaxed);
         loop {
             self.nodes[node as usize]
@@ -92,11 +102,12 @@ impl Pools {
 
     /// Free nodes in pool `worker` (a walk; for tests and reports).
     pub fn free_count(&self, worker: usize) -> usize {
-        let mut n = 0;
+        let mut n = 0usize;
         let mut encoded = self.heads[worker].load(Ordering::Acquire);
         while encoded != 0 && n <= self.per_worker {
-            n += 1;
-            encoded = self.nodes[encoded as usize - 1]
+            n = n.saturating_add(1);
+            // `encoded` is not 0: the loop's guard.
+            encoded = self.nodes[(encoded as usize).wrapping_sub(1)]
                 .next
                 .load(Ordering::Relaxed);
         }

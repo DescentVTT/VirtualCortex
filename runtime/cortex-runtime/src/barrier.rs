@@ -31,7 +31,8 @@ impl SpinBarrier {
     /// on the participant that arrived last.
     pub fn wait(&self) -> bool {
         let generation = self.generation.load(Ordering::Acquire);
-        if self.count.fetch_add(1, Ordering::AcqRel) + 1 == self.parties {
+        // The count before this arrival is below `parties`, so the increment cannot wrap.
+        if self.count.fetch_add(1, Ordering::AcqRel).wrapping_add(1) == self.parties {
             self.count.store(0, Ordering::Relaxed);
             self.generation.fetch_add(1, Ordering::Release);
             return true;
@@ -39,7 +40,7 @@ impl SpinBarrier {
         let mut spins = 0u32;
         while self.generation.load(Ordering::Acquire) == generation {
             if spins < SPINS_BEFORE_YIELD {
-                spins += 1;
+                spins = spins.wrapping_add(1);
                 spin_loop();
             } else {
                 thread::yield_now();
