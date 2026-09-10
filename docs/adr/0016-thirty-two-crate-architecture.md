@@ -48,7 +48,7 @@ Option 3.
 | `cortex-social` (§5.2.27) | `SocialPerspectiveNode` | One record per other agent: intention, belief, trust, resonance. | `cortex-agency`: self/other attribution of a sensory change. |
 | `cortex-ethics` (§5.2.28) | `EthicalEvaluationGate` | The veto gate: imperative, harm, authorization; benefit never overrides. | `cortex-basal-ganglia`: the hyperdirect stop, a motor brake, not a moral one. §8.9: the watchdog stays the last line. |
 | `cortex-knowledge` (§5.2.29) | `SemanticOntologyNode` | Consolidated concepts in a category tree with affordances and hazard. | `cortex-symbolic`: transient bindings. `cortex-hippocampus`: the episodes. |
-| `cortex-reasoning` (§5.2.30) | `SymbolicRuleNode` | Rule nodes with AND, OR, NOT, IMPLIES over a condition and a parent. | `cortex-executive`: goal-directed plan trees. |
+| `cortex-reasoning` (§5.2.30) | `SymbolicRuleNode` | Rule nodes with AND, OR, NOT, IMPLIES, EQUIV over a condition and a parent, and Robinson's resolution on two-literal clauses to the empty clause. | `cortex-executive`: goal-directed plan trees. |
 | `cortex-arithmetic` (§5.2.31) | `ArithmeticScratchpadSlot` | Checked 128-bit and Q16.16 arithmetic with error flags. | Every state crate: its own saturating field arithmetic, which is not a scratchpad. |
 | `cortex-imagination` (§5.2.32) | `MentalCanvasFrame` | Sandboxed rollout frames that can never release motor output. | `cortex-executive`: plan trees with regret. |
 
@@ -74,6 +74,10 @@ Appendix A gains fourteen arena rows with stated placeholder counts, as the exis
 ### Image format
 
 `CortexFileHeader::FORMAT_VERSION` stays at 3. No existing record changed; the new arenas become sections of the `.cortex` image when the loader exists (milestone M4), under the section directory of §8.7.
+
+### The count is locked
+
+Thirty-two is the count until an ADR passes the test below. Capabilities that arrive after this record are added to the interaction protocols of these crates, as constants, rules and runtime scenarios, never as a thirty-third crate: the theorem-proving and document-auditing pipelines of whitepaper §6.10 and §6.11 are the first two, carried by `cortex-reasoning` (resolution), `cortex-tools` (two brokered categories and their opcodes), `cortex-knowledge` (certified theorems) and `cortex-attention` (document foveation) without a new record type. A capability that needs a record no crate has is a second record in the crate that owns it, which is the open question §11.1 records, not a crate.
 
 ### Admission test for the next crate
 

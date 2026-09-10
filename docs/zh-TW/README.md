@@ -51,7 +51,7 @@ VirtualCortex 是一個以 Rust 撰寫的**單機神經擬態虛擬 Actor 引擎
 | [§8 Cross-cutting concepts](../WHITEPAPER.md#8-cross-cutting-concepts) | Q16.16 數值模型、記錄佈局規則 L-1 至 L-6、確定性、時間、並行、記憶體、序列化、**生物機制對照表與參考方程式**、安全、可觀測性。 |
 | [§9 Architecture decisions](../WHITEPAPER.md#9-architecture-decisions) | ADR 索引；決策本體在 [`docs/adr/`](../adr/README.md)。 |
 | [§10 Quality requirements](../WHITEPAPER.md#10-quality-requirements) | 品質樹與 T-1 至 T-8 目標情境，每列都有量測協定與空白的「Measured」欄。 |
-| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding F-1 至 F-18、假設 H-1 與 H-2、開放問題。 |
+| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding F-1 至 F-22、假設 H-1 與 H-2、開放問題。 |
 | [§12 Glossary](../WHITEPAPER.md#12-glossary) | 術語表。 |
 | [附錄 A](../WHITEPAPER.md#appendix-a-capacity-model) | 容量模型（是計畫，不是量測）。 |
 | [附錄 B](../WHITEPAPER.md#appendix-b-verification-and-conformance) | 三層驗證：編譯期佈局斷言、spec-guard（文件對程式碼）、spec-graph（文件對文件）。 |

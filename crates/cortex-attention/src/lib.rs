@@ -10,6 +10,10 @@
 
 /// `attention_mode_flags` bit: the focus follows a moving target between saccades.
 pub const MODE_SMOOTH_PURSUIT: u16 = 0x0001;
+/// `attention_mode_flags` bit: the field is a document, not a sensory field; the target is
+/// (section index, span offset) in the integer parts of the Q16.16 coordinates, and a landing
+/// is a foveal query to the document engine (whitepaper §6.11).
+pub const MODE_DOCUMENT_FOVEATION: u16 = 0x0002;
 
 /// 64-byte attention focus (whitepaper §5.2.22).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +86,15 @@ impl FovealAttentionFocus {
         }
     }
 
+    /// In document mode, the (section index, span offset) the focus targets: the integer parts
+    /// of the coordinates. `None` in a sensory field.
+    pub const fn document_target(&self) -> Option<(i32, i32)> {
+        if self.attention_mode_flags & MODE_DOCUMENT_FOVEATION == 0 {
+            return None;
+        }
+        Some((self.gaze_target_x_q16 >> 16, self.gaze_target_y_q16 >> 16))
+    }
+
     /// True while the field is not being sampled.
     #[inline]
     pub const fn is_in_flight(&self) -> bool {
@@ -135,6 +148,29 @@ mod tests {
         let mut f = FovealAttentionFocus::default();
         assert!(!f.begin_saccade(1, 1, 0, 1));
         assert!(!f.is_in_flight());
+    }
+
+    #[test]
+    fn document_mode_reads_the_target_as_section_and_span() {
+        let mut f = FovealAttentionFocus::default();
+        assert!(f.begin_saccade(3 << 16 | 0x8000, 1200 << 16, 1, 0));
+        assert_eq!(
+            f.document_target(),
+            None,
+            "a sensory field has no document target"
+        );
+        f.attention_mode_flags |= MODE_DOCUMENT_FOVEATION;
+        assert_eq!(
+            f.document_target(),
+            Some((3, 1200)),
+            "the fraction is dropped"
+        );
+        f.gaze_target_x_q16 = -1;
+        assert_eq!(
+            f.document_target(),
+            Some((-1, 1200)),
+            "the shift is arithmetic"
+        );
     }
 
     #[test]

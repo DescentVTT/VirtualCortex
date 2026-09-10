@@ -23,6 +23,37 @@ pub const STATUS_DENIED: u32 = 4;
 /// Bytes of result a frame can carry in place.
 pub const PAYLOAD_BYTES: usize = 32;
 
+/// Tool category: a formal prover the broker runs on a conjecture (whitepaper §6.10). Categories
+/// 0x0001 to 0x0003 are reserved for the broker's basic services (Specified).
+pub const TOOL_CATEGORY_FORMAL_PROVER: u16 = 0x0004;
+/// `TOOL_CATEGORY_FORMAL_PROVER`: check a proof term with Lean 4.
+pub const ACTION_VERIFY_LEAN4: u16 = 0x0001;
+/// `TOOL_CATEGORY_FORMAL_PROVER`: decide a formula with the Z3 SMT solver.
+pub const ACTION_SOLVE_SMT_Z3: u16 = 0x0002;
+/// Tool category: the document engine the broker runs over a structured text (whitepaper §6.11).
+pub const TOOL_CATEGORY_DOC_ENGINE: u16 = 0x0005;
+/// `TOOL_CATEGORY_DOC_ENGINE`: extract the hierarchy, section dependencies and cross-references.
+pub const ACTION_PARSE_STRUCTURE: u16 = 0x0001;
+/// `TOOL_CATEGORY_DOC_ENGINE`: extract tables, units, metrics and formal claims as triples.
+pub const ACTION_EXTRACT_ENTITIES: u16 = 0x0002;
+/// `TOOL_CATEGORY_DOC_ENGINE`: search for premise–conclusion contradictions and citation validity.
+pub const ACTION_SEARCH_CROSS_REF: u16 = 0x0003;
+
+/// True for a (category, opcode) pair this crate defines. Opcodes are per category: 0x0001 is
+/// a Lean 4 check under the prover and a structure parse under the document engine. The
+/// broker keeps its own allow-list; this is the engine's mirror of it, so that a frame the
+/// engine cannot name is never written.
+pub const fn is_known_action(category: u16, opcode: u16) -> bool {
+    match category {
+        TOOL_CATEGORY_FORMAL_PROVER => matches!(opcode, ACTION_VERIFY_LEAN4 | ACTION_SOLVE_SMT_Z3),
+        TOOL_CATEGORY_DOC_ENGINE => matches!(
+            opcode,
+            ACTION_PARSE_STRUCTURE | ACTION_EXTRACT_ENTITIES | ACTION_SEARCH_CROSS_REF
+        ),
+        _ => false,
+    }
+}
+
 /// 64-byte tool-invocation frame (whitepaper §5.2.21).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C, align(64))]
@@ -39,6 +70,29 @@ pub struct ToolInvocationFrame {
 }
 
 impl ToolInvocationFrame {
+    /// Engine: a pending frame for a known action, carrying the authorization level the veto
+    /// gate assigned. `None` for a (category, opcode) pair this crate does not define, so that
+    /// an unknown action never reaches the ring.
+    pub fn new_call(
+        call_id: u64,
+        category: u16,
+        opcode: u16,
+        param_hash: u32,
+        authorization_level: u8,
+    ) -> Option<Self> {
+        if !is_known_action(category, opcode) {
+            return None;
+        }
+        Some(Self {
+            call_id,
+            tool_category: category,
+            action_opcode: opcode,
+            param_hash,
+            authorization_level,
+            ..Default::default()
+        })
+    }
+
     /// Broker: claims a pending frame. Refused from any other state.
     pub fn start(&mut self) -> bool {
         self.transition(STATUS_PENDING, STATUS_RUNNING)
@@ -150,6 +204,60 @@ mod tests {
         g.payload_len = 3;
         assert!(g.fail());
         assert_eq!((g.execution_status, g.payload_len), (STATUS_FAILED, 0));
+    }
+
+    #[test]
+    fn the_defined_actions_are_known_per_category_and_nothing_else_is() {
+        assert!(is_known_action(
+            TOOL_CATEGORY_FORMAL_PROVER,
+            ACTION_VERIFY_LEAN4
+        ));
+        assert!(is_known_action(
+            TOOL_CATEGORY_FORMAL_PROVER,
+            ACTION_SOLVE_SMT_Z3
+        ));
+        assert!(is_known_action(
+            TOOL_CATEGORY_DOC_ENGINE,
+            ACTION_PARSE_STRUCTURE
+        ));
+        assert!(is_known_action(
+            TOOL_CATEGORY_DOC_ENGINE,
+            ACTION_EXTRACT_ENTITIES
+        ));
+        assert!(is_known_action(
+            TOOL_CATEGORY_DOC_ENGINE,
+            ACTION_SEARCH_CROSS_REF
+        ));
+        assert!(
+            !is_known_action(TOOL_CATEGORY_FORMAL_PROVER, ACTION_SEARCH_CROSS_REF),
+            "opcodes are per category"
+        );
+        assert!(!is_known_action(TOOL_CATEGORY_DOC_ENGINE, 0));
+        assert!(
+            !is_known_action(0x0001, 0x0001),
+            "reserved categories name nothing yet"
+        );
+        assert_ne!(TOOL_CATEGORY_FORMAL_PROVER, TOOL_CATEGORY_DOC_ENGINE);
+    }
+
+    #[test]
+    fn new_call_builds_a_pending_frame_for_a_known_action_only() {
+        let f = ToolInvocationFrame::new_call(
+            9,
+            TOOL_CATEGORY_FORMAL_PROVER,
+            ACTION_SOLVE_SMT_Z3,
+            0xABCD,
+            2,
+        )
+        .expect("known");
+        assert_eq!(
+            (f.call_id, f.tool_category, f.action_opcode),
+            (9, TOOL_CATEGORY_FORMAL_PROVER, ACTION_SOLVE_SMT_Z3)
+        );
+        assert_eq!((f.param_hash, f.authorization_level), (0xABCD, 2));
+        assert_eq!(f.execution_status, STATUS_PENDING);
+        assert!(f.payload().is_empty());
+        assert!(ToolInvocationFrame::new_call(9, TOOL_CATEGORY_DOC_ENGINE, 0x0009, 0, 0).is_none());
     }
 
     #[test]

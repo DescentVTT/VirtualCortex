@@ -9,6 +9,10 @@
 
 #![no_std]
 
+/// `affordance_action_mask` bit: the node is a certified theorem; `property_vector_hash` is the
+/// hash of its statement, and the certificate came through the brokered prover (§6.10).
+pub const AFFORDANCE_CERTIFIED_THEOREM: u32 = 1 << 31;
+
 /// 64-byte ontology node (whitepaper §5.2.29).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
@@ -51,6 +55,20 @@ impl SemanticOntologyNode {
     #[inline]
     pub const fn is_root(&self) -> bool {
         self.parent_category_id == self.concept_node_id
+    }
+
+    /// Consolidates a theorem the brokered prover certified: the statement hash is stored, the
+    /// theorem bit is set and the replay is counted. A theorem is never hazardous; the hazard
+    /// level is left as it was. Returns the count.
+    pub fn certify(&mut self, statement_hash: u32) -> u32 {
+        self.property_vector_hash = statement_hash;
+        self.consolidate(AFFORDANCE_CERTIFIED_THEOREM, 0)
+    }
+
+    /// True for a node that holds a certified theorem.
+    #[inline]
+    pub const fn is_certified_theorem(&self) -> bool {
+        self.affords(AFFORDANCE_CERTIFIED_THEOREM)
     }
 
     /// One consolidation replay: affordances accumulate, the hazard level keeps its maximum,
@@ -110,6 +128,26 @@ mod tests {
             n.safety_hazard_level, 3,
             "a later, milder replay does not lower the hazard"
         );
+    }
+
+    #[test]
+    fn certifying_a_theorem_stores_its_statement_and_keeps_the_hazard() {
+        let mut n = SemanticOntologyNode {
+            concept_node_id: 8,
+            parent_category_id: 1,
+            safety_hazard_level: 2,
+            ..Default::default()
+        };
+        assert!(!n.is_certified_theorem());
+        assert_eq!(n.certify(0xC0FFEE), 1);
+        assert!(n.is_certified_theorem());
+        assert_eq!(n.property_vector_hash, 0xC0FFEE);
+        assert_eq!(
+            n.safety_hazard_level, 2,
+            "a theorem does not lower or raise a hazard"
+        );
+        assert!(n.affords(AFFORDANCE_CERTIFIED_THEOREM));
+        assert!(!n.affords(AFFORDANCE_CERTIFIED_THEOREM | 0b1));
     }
 
     #[test]
