@@ -149,6 +149,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_anomaly_moves_by_an_eighth_of_the_gap_each_way_and_marks_stale_at_a_half() {
+        assert_eq!(ANOMALY_THRESHOLD_Q16, Q16_ONE / 2);
+        let mut n = SemanticOntologyNode::default();
+        assert!(
+            !n.note_anomaly(Q16_ONE / 2),
+            "one step is not the threshold"
+        );
+        assert_eq!(n.anomaly_q16, Q16_ONE / 16, "an eighth of the half");
+        assert!(!n.note_anomaly(Q16_ONE / 2));
+        assert_eq!(
+            n.anomaly_q16,
+            Q16_ONE / 16 + (Q16_ONE / 2 - Q16_ONE / 16) / 8
+        );
+        let mut down = SemanticOntologyNode {
+            anomaly_q16: Q16_ONE / 2,
+            ..Default::default()
+        };
+        assert!(
+            !down.note_anomaly(0),
+            "already at the threshold, so not the crossing"
+        );
+        assert_eq!(
+            down.anomaly_q16,
+            Q16_ONE / 2 - Q16_ONE / 16,
+            "and it falls by an eighth"
+        );
+        let mut edge = SemanticOntologyNode {
+            anomaly_q16: Q16_ONE / 2 - 1,
+            ..Default::default()
+        };
+        assert!(
+            edge.note_anomaly(Q16_ONE),
+            "one LSB below, then at least one LSB up: the crossing"
+        );
+        assert!(edge.is_stale());
+    }
+
+    #[test]
     fn record_is_one_cache_line_and_default_is_an_unconsolidated_root() {
         assert_eq!(core::mem::size_of::<SemanticOntologyNode>(), 64);
         assert_eq!(core::mem::align_of::<SemanticOntologyNode>(), 64);

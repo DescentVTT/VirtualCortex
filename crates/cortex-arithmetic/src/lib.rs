@@ -244,3 +244,73 @@ mod tests {
         assert_eq!((s.result(), s.error_flags), (3, 0));
     }
 }
+
+/// Property tests (ADR-0030): every opcode agrees with a checked `i128` reference over the
+/// lattice of extremes and a seeded walk, and the flag is the one the reference names.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    /// The specification of §5.2.31 restated in `checked_*` calls: a re-derivation, not an
+    /// independent oracle, which is enough to hold every operator and flag against the
+    /// mutants the tool makes.
+    fn reference(op: u8, a: i128, b: i128) -> Result<i128, u16> {
+        match op {
+            OP_NOP => Ok(0),
+            OP_ADD => a.checked_add(b).ok_or(ERR_OVERFLOW),
+            OP_SUB => a.checked_sub(b).ok_or(ERR_OVERFLOW),
+            OP_MUL => a.checked_mul(b).ok_or(ERR_OVERFLOW),
+            OP_DIV if b == 0 => Err(ERR_DIVIDE_BY_ZERO),
+            OP_DIV => a.checked_div(b).ok_or(ERR_OVERFLOW),
+            OP_REM if b == 0 => Err(ERR_DIVIDE_BY_ZERO),
+            OP_REM => Ok(a.wrapping_rem(b)),
+            OP_MUL_Q16 => a.checked_mul(b).map(|p| p >> 16).ok_or(ERR_OVERFLOW),
+            OP_DIV_Q16 => match a.checked_mul(1 << 16) {
+                Some(_) if b == 0 => Err(ERR_DIVIDE_BY_ZERO),
+                Some(s) => s.checked_div(b).ok_or(ERR_OVERFLOW),
+                None => Err(ERR_OVERFLOW),
+            },
+            _ => Err(ERR_UNKNOWN_OP),
+        }
+    }
+
+    fn agree(op: u8, a: i128, b: i128) {
+        let mut s = ArithmeticScratchpadSlot {
+            opcode: op,
+            ..Default::default()
+        };
+        s.set_operands(a, b);
+        let ok = s.execute();
+        let got = if ok {
+            Ok(s.result())
+        } else {
+            Err(s.error_flags)
+        };
+        assert_eq!(got, reference(op, a, b), "op {op} on {a} and {b}");
+        if !ok {
+            assert_eq!(s.result(), 0, "a failure leaves a zero result");
+        } else {
+            assert_eq!(s.error_flags, 0);
+        }
+    }
+
+    #[test]
+    fn every_opcode_agrees_with_the_reference_over_the_lattice_and_a_walk() {
+        for op in 0..=8u8 {
+            for &a in I128_LATTICE.iter() {
+                for &b in I128_LATTICE.iter() {
+                    agree(op, a, b);
+                }
+            }
+        }
+        let mut rng = Lcg::new(29);
+        for _ in 0..100_000 {
+            let op = rng.below(9) as u8;
+            agree(op, rng.i128_edge_biased(), rng.i128_edge_biased());
+        }
+    }
+}

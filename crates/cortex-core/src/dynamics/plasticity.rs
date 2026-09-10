@@ -87,6 +87,38 @@ mod tests {
     use super::super::synaptic_efficacy_q16;
     use super::*;
 
+    #[test]
+    fn relaxation_rounds_to_nearest_moves_at_least_one_lsb_and_stops_at_the_target() {
+        assert_eq!(
+            relax_q0_8(0, 255, Q16_ONE as u32 / 2),
+            127,
+            "half the gap survives, rounded"
+        );
+        assert_eq!(relax_q0_8(255, 0, Q16_ONE as u32 / 2), 128);
+        assert_eq!(
+            relax_q0_8(0, 255, Q16_ONE as u32 / 4),
+            191,
+            "a quarter survives"
+        );
+        assert_eq!(
+            relax_q0_8(0, 255, Q16_ONE as u32 - 1),
+            1,
+            "almost nothing vanishes: one LSB"
+        );
+        assert_eq!(
+            relax_q0_8(254, 255, 1),
+            255,
+            "a small gap reaches the target exactly"
+        );
+        assert_eq!(relax_q0_8(0, 255, 0), 255, "everything vanished");
+        assert_eq!(
+            relax_q0_8(0, 255, Q16_ONE as u32),
+            0,
+            "no time, nothing moves"
+        );
+        assert_eq!(relax_q0_8(51, 51, 0), 51);
+    }
+
     const TICKS_20_MS: u32 = 2_000;
 
     fn rested() -> DendriticSuperNeuron {
@@ -219,6 +251,94 @@ mod tests {
             let elapsed = x >> 18;
             assert_eq!(a.step_stp(elapsed), b.step_stp(elapsed));
             assert_eq!((a.stp_u_rel, a.stp_r_ves), (b.stp_u_rel, b.stp_r_ves));
+        }
+    }
+}
+
+/// Property tests (ADR-0030): the decay factor is monotone and bounded, a release after a long
+/// rest is the same from any state, the pool only depletes at a spike, and the efficacy is
+/// bounded by 1.0 over the whole lattice.
+#[cfg(test)]
+mod prop {
+    use super::super::synaptic_efficacy_q16;
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    #[test]
+    fn the_decay_factor_is_bounded_and_monotone_in_the_interval_and_in_the_time_constant() {
+        let mut rng = Lcg::new(7);
+        for _ in 0..20_000 {
+            let (a, b) = (rng.u32_edge_biased(), rng.u32_edge_biased());
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            let tau = rng.below(20);
+            let (f_lo, f_hi) = (stp_decay_factor_q16(lo, tau), stp_decay_factor_q16(hi, tau));
+            assert!(f_lo <= 0x0001_0000 && f_hi <= 0x0001_0000);
+            assert!(f_lo >= f_hi, "more time, less survives: {lo} {hi} {tau}");
+            let slower = stp_decay_factor_q16(lo, tau.saturating_add(1));
+            assert!(slower >= f_lo, "a longer time constant keeps more");
+        }
+        for &tau in [0u32, 1, 11, 14, 15, 16, 31, 63, u32::MAX].iter() {
+            assert_eq!(stp_decay_factor_q16(0, tau), 0x0001_0000);
+            assert_eq!(stp_decay_factor_q16(u32::MAX, tau), 0);
+        }
+    }
+
+    #[test]
+    fn a_spike_after_a_long_rest_releases_the_same_from_any_state_and_the_pool_only_depletes() {
+        let mut rng = Lcg::new(11);
+        for _ in 0..50_000 {
+            let mut u = DendriticSuperNeuron::new(1);
+            u.stp_u_rel = rng.next_u8();
+            u.stp_r_ves = rng.next_u8();
+            let (uu, r) = u.step_stp(u32::MAX);
+            assert_eq!((uu, r), (92, 255), "the rested release is one value");
+            assert_eq!(u.stp_r_ves, 255 - 92);
+            let elapsed = rng.u32_edge_biased();
+            let r_before = u.stp_r_ves;
+            let (_, r2) = u.step_stp(elapsed);
+            assert!(r2 >= r_before, "recovery before the release");
+            assert!(u.stp_r_ves <= r2, "then depletion");
+        }
+    }
+
+    #[test]
+    fn the_efficacy_is_bounded_by_one_over_the_lattice_and_a_walk() {
+        for &w in I16_LATTICE.iter() {
+            for &uu in U8_LATTICE.iter() {
+                for &r in U8_LATTICE.iter() {
+                    let e = synaptic_efficacy_q16(w, uu, r);
+                    assert!(
+                        (-0x0001_0000..=0x0001_0000).contains(&e),
+                        "{w} {uu} {r} -> {e}"
+                    );
+                }
+            }
+        }
+        let mut rng = Lcg::new(13);
+        for _ in 0..200_000 {
+            let e = synaptic_efficacy_q16(rng.next_i16(), rng.next_u8(), rng.next_u8());
+            assert!((-0x0001_0000..=0x0001_0000).contains(&e));
+        }
+    }
+
+    /// The whole domain, $2^{32}$ inputs: run with `cargo test --release -p cortex-core --
+    /// --ignored exhaustive` (a few seconds in release; ADR-0030).
+    #[test]
+    #[ignore]
+    fn exhaustive_the_efficacy_is_bounded_by_one_for_every_input() {
+        for w in i16::MIN..=i16::MAX {
+            for uu in u8::MIN..=u8::MAX {
+                for r in u8::MIN..=u8::MAX {
+                    let e = synaptic_efficacy_q16(w, uu, r);
+                    assert!(
+                        (-0x0001_0000..=0x0001_0000).contains(&e),
+                        "{w} {uu} {r} -> {e}"
+                    );
+                }
+            }
         }
     }
 }

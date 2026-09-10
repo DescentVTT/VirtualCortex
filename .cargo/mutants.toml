@@ -1,0 +1,71 @@
+# cargo-mutants configuration (ADR-0030). The tool is an external, pinned binary; nothing in a
+# manifest changes for it. CI runs it on the lines a pull request changes (`--in-diff`), and a
+# mutant that survives in those lines fails the check: the test that constrains a new rule must
+# exist, and must fail when the rule is wrong. The whole tree is run by hand from time to time
+# (`cargo mutants --workspace`); its survivors are listed in whitepaper §11 or become tests.
+
+# The benchmark crate is measurement, not logic.
+exclude_globs = ["benches/**"]
+
+# Every test binary is built with the lock the rest of CI uses.
+additional_cargo_test_args = ["--locked"]
+
+# Mutants that are equivalent to the original by construction, each with the reason. A pattern
+# here matches the mutant's description ("replace X with Y in f"); keep the function name in it,
+# so that the exclusion never hides a real defect elsewhere.
+exclude_re = [
+    # `a | b` on disjoint bit fields is `a ^ b`: a packed word or a token whose fields never
+    # overlap (the shift moved them apart, or the mask cleared the bit first).
+    "cortex-arithmetic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in join",
+    "wheel\\.rs:\\d+:\\d+: replace \\| with \\^ in FlatTimingWheel<CAP>::schedule",
+    "cortex-cerebellum/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in CerebellarMicrozone::step_forward_model",
+    "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in synapse_token",
+    "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in spike_message",
+    # A clamp compared at its own bound: `if v > MAX { MAX } else { v }` and `>=` agree at
+    # `v == MAX`, and likewise `<` and `<=` at `MIN`.
+    "cortex-cerebellum/src/lib\\.rs:\\d+:\\d+: replace > with >= in CerebellarMicrozone::plant_delay",
+    "cortex-cerebellum/src/lib\\.rs:\\d+:\\d+: replace < with <= in mul_q16",
+    "membrane\\.rs:\\d+:\\d+: replace > with >= in add",
+    "membrane\\.rs:\\d+:\\d+: replace < with <= in add",
+    "synapse\\.rs:\\d+:\\d+: replace > with >= in spike_message",
+    "synapse\\.rs:\\d+:\\d+: replace < with <= in spike_message",
+    "cortex-linguistic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in required_roles",
+    "term\\.rs:\\d+:\\d+: replace \\| with \\^ in literal_of_term",
+    # `leak(v)` at `v == 0`: the `> 0` and `< 0` arms both yield 0 there (`.min(v)` is 0), so
+    # `>=` and `<=` agree with them.
+    "membrane\\.rs:\\d+:\\d+: replace > with >= in leak",
+    "membrane\\.rs:\\d+:\\d+: replace < with <= in leak",
+    # `-MAX / 1` moves the lower clamp test by one to a value the clamp maps to the same result.
+    "synapse\\.rs:\\d+:\\d+: replace - with / in spike_message",
+    # A bound the domain cannot reach: a mailbox head above `u32::MAX` needs an arena of
+    # 2^32 nodes; `>` and `>=` (or `==`) differ only at a head no test can build. Likewise
+    # more synapse blocks than a token can name (2^26 of them).
+    "neuron\\.rs:\\d+:\\d+: replace > with >= in DendriticSuperNeuron::mailbox_push",
+    "neuron\\.rs:\\d+:\\d+: replace > with == in DendriticSuperNeuron::mailbox_push",
+    "image\\.rs:\\d+:\\d+: replace > with (==|>=) in Image::decode",
+    "image\\.rs:\\d+:\\d+: replace \\+ with (-|\\*) in Image::decode",
+    # Scheduling and sizing hints with no observable result: how many times a barrier spins
+    # before it yields, and a worker thread's stack reserve.
+    "barrier\\.rs:\\d+:\\d+: replace << with >>",
+    "barrier\\.rs:\\d+:\\d+: replace < with (==|>|<=) in SpinBarrier::wait",
+    "barrier\\.rs:\\d+:\\d+: replace \\+= with \\*= in SpinBarrier::wait",
+    "executor\\.rs:\\d+:\\d+: replace \\* with (\\+|/) in build_wheels",
+    # The platform-conditional I/O loops: a 72-byte log entry is one write, so the loop's
+    # offset step is never exercised, and on Linux the Windows form is not even compiled.
+    "image\\.rs:\\d+:\\d+: replace \\+= with \\*= in (read_at|write_at)",
+    # Dropping the executor stops its workers; a mutant that leaks them is hidden by the end
+    # of the test process.
+    "executor\\.rs:\\d+:\\d+: replace <impl Drop for Executor<CAP>>::drop with \\(\\)",
+    # `difference < 0` after the `== 0` arm has been taken: `<=` cannot see a zero there.
+    "injector\\.rs:\\d+:\\d+: replace < with <= in Injector::(push|pop)",
+    # A gap clamped at 1.0: `> ONE` and `>= ONE` agree at the bound.
+    "cortex-social/src/lib\\.rs:\\d+:\\d+: replace > with >= in SocialPerspectiveNode::assess_sincerity",
+    # The child-role branch of the realisation order runs only for a complete frame, and a
+    # template with a child role is complete only with the child bound: the bit is always set
+    # there, so `&` and `|` agree.
+    "cortex-linguistic/src/lib\\.rs:\\d+:\\d+: replace & with \\| in LinguisticFrameSlot::realisation_order",
+    # The directory bound before the allocation: the per-entry read bounds the directory too,
+    # so `len - 64` and `len + 64` refuse the same images; the check exists to size the
+    # allocation, which either form keeps small.
+    "image\\.rs:\\d+:\\d+: replace - with \\+ in Image::decode",
+]

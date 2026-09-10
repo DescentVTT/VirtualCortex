@@ -4,6 +4,7 @@
 //! under short-term plasticity, which that harness holds at rest, so the ring rings down
 //! rather than oscillating) and a random network of 128 units with STDP at work.
 
+use cortex_connectome::Crc64;
 use cortex_core::{
     DendriticSuperNeuron, GateState, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, spike_message,
     synaptic_efficacy_q16,
@@ -40,6 +41,9 @@ fn snapshot(units: &[DendriticSuperNeuron]) -> Vec<UnitSnapshot> {
 
 struct Outcome {
     units: Vec<UnitSnapshot>,
+    /// Every unit's 64 image bytes, atomics as plain values (`flags` and the delta head
+    /// included, which the snapshot does not carry).
+    unit_bytes: Vec<[u8; 64]>,
     blocks: Vec<SynapseBlock>,
     spikes: Vec<(u32, u32)>,
 }
@@ -55,6 +59,7 @@ fn run<F: Fn(&mut Executor<64>)>(workers: usize, config: Config, wire: F, ticks:
         "no turn is open between ticks"
     );
     let units = snapshot(exec.units());
+    let unit_bytes = exec.units().iter().map(|u| u.encode()).collect();
     let blocks = exec.blocks().to_vec();
     let reports = exec.shutdown();
     assert_eq!(reports.iter().map(|r| r.dropped).sum::<u64>(), 0);
@@ -65,6 +70,7 @@ fn run<F: Fn(&mut Executor<64>)>(workers: usize, config: Config, wire: F, ticks:
     spikes.sort_unstable();
     Outcome {
         units,
+        unit_bytes,
         blocks,
         spikes: spikes.into_iter().map(|(t, u)| (u, t)).collect(),
     }
@@ -263,4 +269,51 @@ fn a_delayed_synapse_arrives_delay_ticks_after_the_spike_and_a_zero_delay_one_th
     );
     let reports = exec.shutdown();
     assert_eq!(reports[0].spikes, vec![(0, spike)]);
+}
+
+/// The pin for target T-1 (ADR-0030): the random network's arenas and spike train after
+/// 20 000 ticks on one worker hash to one value, and CI runs this on x86-64 and AArch64. A
+/// deliberate change to the dynamics moves the pin; the change that moves it says why.
+const PINNED_ARENA_HASH: u64 = 0x7603c27186e59994;
+/// The spike count that goes with the hash: a moved hash with the same count is a change to
+/// the state, a moved count a change to the dynamics.
+const PINNED_SPIKE_COUNT: usize = 95;
+
+#[test]
+fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
+    let outcome = run(
+        1,
+        Config {
+            units: 128,
+            blocks: 128,
+            nodes_per_worker: 4096,
+            injector_capacity: 1024,
+            trace_capacity: 1 << 16,
+            ..Config::default()
+        },
+        wire_random,
+        20_000,
+    );
+    let mut crc = Crc64::new();
+    for bytes in &outcome.unit_bytes {
+        crc.update(bytes);
+    }
+    for b in &outcome.blocks {
+        crc.update(&b.encode());
+    }
+    for &(unit, tick) in &outcome.spikes {
+        crc.update(&unit.to_le_bytes());
+        crc.update(&tick.to_le_bytes());
+    }
+    let hash = crc.finish();
+    assert_eq!(
+        outcome.spikes.len(),
+        PINNED_SPIKE_COUNT,
+        "T-1: the spike count is {}",
+        outcome.spikes.len()
+    );
+    assert_eq!(
+        hash, PINNED_ARENA_HASH,
+        "T-1: the arena hash is {hash:#018x}; a deliberate change to the dynamics restates the pin and says why"
+    );
 }

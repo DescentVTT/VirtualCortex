@@ -144,6 +144,49 @@ mod tests {
     const ONE: u32 = 0x0001_0000;
 
     #[test]
+    fn a_wander_from_a_known_seed_is_pinned_step_by_step() {
+        let mut f = MentalCanvasFrame {
+            simulation_id: 0x0000_00AB_0000_00CD,
+            dmn_wander_temperature_q16: ONE,
+            ..Default::default()
+        };
+        let mut states = [0u32; 3];
+        let mut hashes = [0u32; 3];
+        let mut steps = [0i32; 3];
+        for i in 0..3 {
+            steps[i] = f.wander().unwrap();
+            states[i] = f.wander_state;
+            hashes[i] = f.hypothetical_action_hash;
+        }
+        // The seed is the two halves of the id folded and made odd: 0xCD ^ 0xAB | 1 = 0x67.
+        let mut x = 0x67u32;
+        for i in 0..3 {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            assert_eq!(states[i], x, "step {i}");
+            assert_eq!(
+                steps[i],
+                ((((x >> 16) as i32 - 0x8000) as i64 * ONE as i64) >> 15) as i32
+            );
+        }
+        let mut h = 0u32;
+        for (i, &s) in states.iter().enumerate() {
+            h = (h ^ s).wrapping_mul(0x0100_0193);
+            assert_eq!(hashes[i], h, "the action hash folds every draw");
+        }
+        // A fold that is already odd is kept, not flipped: 0xCC ^ 0xAB = 0x67.
+        let mut odd = MentalCanvasFrame {
+            simulation_id: 0x0000_00AB_0000_00CC,
+            dmn_wander_temperature_q16: ONE,
+            ..Default::default()
+        };
+        odd.wander().unwrap();
+        assert_eq!(
+            odd.wander_state,
+            0x67u32.wrapping_mul(1_664_525).wrapping_add(1_013_904_223)
+        );
+    }
+
+    #[test]
     fn record_is_one_cache_line_and_default_is_a_sandboxed_empty_rollout() {
         assert_eq!(core::mem::size_of::<MentalCanvasFrame>(), 64);
         assert_eq!(core::mem::align_of::<MentalCanvasFrame>(), 64);

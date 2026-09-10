@@ -22,7 +22,7 @@ lacks one.
 | `## Deliverables` | A checkbox list. `spec-graph` reads each box as an obligation with real state. |
 | `## Not empowered` | The cheap wrong moves this round must not make. |
 | `## Architectural empowerment` | The licence to override the brief's *instructions* with a better decision, recorded as an ADR. It never reaches the whitepaper's invariants or the constraints in `CLAUDE.md`. |
-| `## Verification` | The commands and the expected results. |
+| `## Verification` | The commands and the expected results, the mutation gate on the diff among them ([ADR-0030](../docs/adr/0030-verification-governance.md)). |
 | `## Report` | What the closing message must state, always including what was not done. |
 
 A live brief may also carry `<!-- @assert-* -->` directives that state its **precondition** (the

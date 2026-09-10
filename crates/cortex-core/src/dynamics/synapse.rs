@@ -442,6 +442,32 @@ mod tests {
     use super::super::plasticity::{STP_MAX, STP_U};
     use super::*;
 
+    #[test]
+    fn the_walk_reports_each_slot_s_compartment() {
+        let mut block = SynapseBlock::new();
+        assert!(block.set_synapse(0, 10, 100, 1, false));
+        assert!(block.set_synapse(1, 11, 100, 1, true));
+        assert!(block.set_synapse(3, 13, 100, 1, false));
+        let blocks = [block];
+        let mut seen = [None; 4];
+        // The head is the block's index + 1 (ADR-0022): zero would be no fan-out.
+        for s in SynapseBlock::fan_out(&blocks, 1) {
+            seen[s.slot as usize] = Some((s.target, s.apical));
+        }
+        assert_eq!(
+            seen,
+            [Some((10, false)), Some((11, true)), None, Some((13, false))],
+            "only the apical slot is apical, and the empty slot is skipped"
+        );
+        let mut every = SynapseBlock::new();
+        every.apical_mask = 0xFF;
+        assert!(every.is_apical(3));
+        assert!(
+            !every.is_apical(4),
+            "a slot that does not exist is never apical"
+        );
+    }
+
     fn full_block(first_target: u32, delay: u16) -> SynapseBlock {
         let mut b = SynapseBlock::new();
         for slot in 0..SYNAPSES_PER_BLOCK {
@@ -758,6 +784,85 @@ mod tests {
             assert_eq!(a.step_stdp_all(now, posts), b.step_stdp_all(now, posts));
             assert_eq!(a.release_all(STP_U, STP_MAX), b.release_all(STP_U, STP_MAX));
             assert_eq!(a, b);
+        }
+    }
+}
+
+/// Property tests (ADR-0030): every encoding round-trips over its whole range, a plasticity step
+/// moves a weight by at most one window, and the tick wrap changes nothing.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    #[test]
+    fn every_message_round_trips_and_a_wider_efficacy_clamps() {
+        for e in -(1i32 << 17)..(1i32 << 17) {
+            for apical in [false, true] {
+                let m = spike_message(e, apical);
+                assert_eq!(message_efficacy_q16(m), e);
+                assert_eq!(message_is_apical(m), apical);
+                assert_eq!(m >> 19, 0, "bits 19..32 are zero");
+            }
+        }
+        for &e in I32_LATTICE.iter() {
+            let m = message_efficacy_q16(spike_message(e, false));
+            assert_eq!(m, e.clamp(-(1 << 17), (1 << 17) - 1));
+        }
+    }
+
+    #[test]
+    fn every_token_round_trips_over_the_lattice_and_a_walk_and_the_limits_are_refused() {
+        let mut rng = Lcg::new(17);
+        for i in 0..200_000u32 {
+            let block = if i < U32_LATTICE.len() as u32 {
+                U32_LATTICE[i as usize]
+            } else {
+                rng.next_u32() & MAX_TOKEN_BLOCK
+            };
+            for slot in 0..SYNAPSES_PER_BLOCK as u8 {
+                match synapse_token(block, slot) {
+                    Some(t) => {
+                        assert!(block <= MAX_TOKEN_BLOCK);
+                        assert_eq!((token_block(t), token_slot(t)), (block, slot));
+                    }
+                    None => assert!(
+                        block > MAX_TOKEN_BLOCK,
+                        "only a block past the limit is refused"
+                    ),
+                }
+            }
+            assert_eq!(synapse_token(block, SYNAPSES_PER_BLOCK as u8), None);
+        }
+    }
+
+    #[test]
+    fn a_plasticity_step_moves_a_weight_by_at_most_one_window_across_the_tick_wrap() {
+        let mut rng = Lcg::new(19);
+        let bound = STDP_A_PLUS_Q1_15 as i32 + STDP_A_MINUS_Q1_15 as i32;
+        for start in [0u32, u32::MAX - 4_000, u32::MAX - 1, 1 << 31] {
+            let mut block = SynapseBlock::new();
+            assert!(block.set_synapse(0, 1, rng.next_i16(), 3, false));
+            let mut now = start;
+            let mut post = NO_SPIKE_ON_RECORD;
+            for _ in 0..20_000 {
+                now = now.wrapping_add(1 + rng.below(3_000));
+                if rng.below(3) == 0 {
+                    post = now.wrapping_sub(rng.below(2_500));
+                }
+                let before = block.weights_q1_15[0];
+                let after = block.step_stdp(0, now, post);
+                assert_eq!(after, block.weights_q1_15[0]);
+                let moved = (after as i32).saturating_sub(before as i32).abs();
+                assert!(
+                    moved <= bound,
+                    "one window each way at most: {before} -> {after}"
+                );
+                block.stamp_presynaptic(now);
+            }
         }
     }
 }

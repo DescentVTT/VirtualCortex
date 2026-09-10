@@ -131,6 +131,16 @@ mod tests {
     use std::thread;
 
     #[test]
+    fn empty_is_a_snapshot_of_the_two_ends() {
+        let (local, stealer) = new(4);
+        assert!(local.is_empty());
+        assert!(local.push(3).is_ok());
+        assert!(!local.is_empty(), "one index queued");
+        assert_eq!(stealer.steal(), Steal::Success(3));
+        assert!(local.is_empty(), "and taken");
+    }
+
+    #[test]
     fn the_owner_pops_in_lifo_order_and_a_thief_steals_in_fifo_order() {
         let (local, stealer) = new(4);
         assert_eq!(local.capacity(), 4);

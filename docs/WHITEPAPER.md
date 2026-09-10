@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.2.3
+version: 4.3.0
 status: active
 date: 2026-09-10
 ---
@@ -11,7 +11,7 @@ date: 2026-09-10
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.2.3 |
+| Version | 4.3.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-10 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -1703,7 +1703,7 @@ Why not floating point: IEEE-754 addition is not associative, and the order in w
 
 ### 8.3 Determinism model
 
-A run is defined by `(image, seed, input trace)`. Two runs with equal inputs MUST produce bit-identical arena contents after any number of ticks on any supported target. This requires: integer-only dynamics (§8.1); a total order on event delivery within a tick: by wheel slot, then fine-scheduled tokens before cascaded ones, each group in scheduling order ([ADR-0013](adr/0013-timing-wheel-geometry.md)); a drained mailbox batch is applied in an order the executor fixes by sorting it on its payload key in a bounded buffer of its own, since the mailbox yields reverse arrival order and arrival is a race between workers ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md); Implemented in `cortex-runtime` by `sort_unstable` on the message value in a per-worker buffer sized to the node count, [ADR-0023](adr/0023-executor.md)); a barrier between the phases of a tick, so that no worker delivers into a tick another has finished, and no worker's `&mut` to a record overlaps another's reference to it: the same trace gives bit-identical arenas on one worker and on four (the differential test of [ADR-0023](adr/0023-executor.md), Implemented); seeded pseudo-random structural growth; and no dependence on wall-clock time inside the tick loop. Cross-platform differential testing is Target T-1.
+A run is defined by `(image, seed, input trace)`. Two runs with equal inputs MUST produce bit-identical arena contents after any number of ticks on any supported target. This requires: integer-only dynamics (§8.1); a total order on event delivery within a tick: by wheel slot, then fine-scheduled tokens before cascaded ones, each group in scheduling order ([ADR-0013](adr/0013-timing-wheel-geometry.md)); a drained mailbox batch is applied in an order the executor fixes by sorting it on its payload key in a bounded buffer of its own, since the mailbox yields reverse arrival order and arrival is a race between workers ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md); Implemented in `cortex-runtime` by `sort_unstable` on the message value in a per-worker buffer sized to the node count, [ADR-0023](adr/0023-executor.md)); a barrier between the phases of a tick, so that no worker delivers into a tick another has finished, and no worker's `&mut` to a record overlaps another's reference to it: the same trace gives bit-identical arenas on one worker and on four (the differential test of [ADR-0023](adr/0023-executor.md), Implemented); seeded pseudo-random structural growth; and no dependence on wall-clock time inside the tick loop. Across architectures: the 128-unit random network with STDP after 20 000 ticks hashes (CRC-64/XZ over the unit snapshots, the synapse arena and the spike train) to a constant pinned in `runtime/cortex-runtime/tests/differential.rs`, and CI runs that test on x86-64 and on AArch64 on every push ([ADR-0030](adr/0030-verification-governance.md), Implemented); a deliberate change to the dynamics moves the pin and says why. Target T-1's full form ($10^6$ ticks, a reference image) remains a Target with that protocol.
 
 ### 8.4 Time model
 
@@ -1934,7 +1934,7 @@ Every row is a **Target** unless its "Measured" column has a value. A measuremen
 
 | ID | Stimulus | Response measure | Target | Measured | Protocol |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| T-1 | Same image, seed and input trace on x86-64-v4 and ARMv9-A | SHA-256 of all arenas after $10^6$ ticks | identical | — | Differential test in CI on two runners. The same-platform form, one worker against four over a 128-unit network with STDP, exists (`runtime/cortex-runtime/tests/differential.rs`, [ADR-0023](adr/0023-executor.md)). |
+| T-1 | Same image, seed and input trace on x86-64-v4 and ARMv9-A | SHA-256 of all arenas after $10^6$ ticks | identical | — | Differential test in CI on two runners. The same-platform form, one worker against four over a 128-unit network with STDP, exists (`runtime/cortex-runtime/tests/differential.rs`, [ADR-0023](adr/0023-executor.md)); the two-architecture form at 20 000 ticks with a pinned CRC-64 runs in CI on `ubuntu-24.04` and `ubuntu-24.04-arm` ([ADR-0030](adr/0030-verification-governance.md), Implemented). |
 | T-2 | Reference configuration of Appendix A loaded | Resident set size | ≤ 20 GB local DRAM | — | `/proc/self/status` `VmRSS` after load; huge pages enabled. |
 | T-3 | One spike enqueued to a hot unit on an isolated core | Enqueue latency (R-1 steps 1–3) | median < 20 ns, p99.99 < 50 ns | — | `criterion` micro-benchmark plus `perf stat`; 10⁸ samples; isolated core, fixed frequency. |
 | T-4 | Embodiment loop against a physics stub | Period | 1.000 ms | — | Timestamps in the shared ring over 10⁶ periods. |
@@ -1982,6 +1982,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-23 | A delayed delivery names its synapse in the wheel's 28-bit token as `block × 4 + slot` ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)), so the wheel addresses $2^{26}$ blocks (67 108 864, 4.3 GB); Appendix A row 3 sizes the synapse arena at 128 000 000 blocks. | `cortex-core`, Appendix A | **Resolved** (brief 015, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)): Appendix A follows the token (row 3 is 67 108 864 blocks, 4.29 GB) and the loader refuses an image with more; widening the token (the coarse ring's residual out of the token, an amendment of [ADR-0013](adr/0013-timing-wheel-geometry.md) costing 512 KB per worker) is the change when the capacity is needed. |
 | F-24 | An audit of every record method for six defect classes (a shift that can reach the width, a negation of the most negative value, an off-by-one bound, a mutator that reports success on a no-op, a state nothing clears, an undocumented no-op) reproduced twelve: the STP decay factor panicked at a shift of 64 and never decayed above 16; a default veto gate read as permitted; the freeze reflex was never released; `OP_REM` of `i128::MIN` by −1 was flagged; the cerebellar control word indexed outside its ring; `literal_of_term` reached the sign bit; an unknown gating mode relayed nothing undocumented; a refused push had stored its payload; `is_at_rest_image` ignored the reserved bytes; the loader accepted non-zero reserved bytes and an impossible delta slot; the log wrote before it panicked on a unit outside it; a sealed header's directory count sized an allocation before the file bounded it. | seven crates, `cortex-runtime` | **Resolved** ([ADR-0028](adr/0028-edge-behaviour-audit.md)): each fixed with the test that reproduced it; the gate is closed until evaluated (format version 9); quiescence includes the injector ring. |
 | F-25 | A read of every document against the tree at 4.2.1 found twenty-five statements the tree contradicted, most of them labels left at Specified after the work that implemented them (the loader, the sweep, the deque, the delivery phase, unification, over-horizon rejection at load), counts left behind by later rounds (thirty-four records, twenty-two crates with rules, seven crates for two ADRs, three test counts, F-22, M7), one duplicate constant (`FRAME_ABI_VERSION` at 1 and 2 in one cell), three sentences that said no `unsafe` exists in the workspace, a Target that carried the withdrawn 100 ms figure, and an open question marked narrowed to a milestone that had closed without deciding it. | this document, README, reader's guide, `CLAUDE.md`, `CONTRIBUTING.md`, `SECURITY.md`, ADR-0027 | **Resolved** (4.2.2): each corrected against the tree; the reconciliation is a changelog entry, and principle 1 is why it is a finding and not a silent edit. |
+| F-26 | A mutation run over the whole tree (2 214 mutants, [ADR-0030](adr/0030-verification-governance.md)) found 141 that every test survived: 45 equivalent to the original by construction (a `\|` on disjoint bit fields, a clamp compared at its own bound, a shift by zero, a bound the domain cannot reach), and 96 that were gaps: a default gate's reset sign never asserted negative; rest not asserted a fixed point of integration; the threshold's decay rate; the cerebellar sign bit; the relaxation rounding; the walk's compartment flag; three autonomic cuts and the basal-ganglia selection at equality; the affect stake's direction and the calm boundary; the voice's shaping fractions, its exponential series, its render; the imagination walk; the anomaly average; the tact, prosody and role-order boundaries; the sincerity gap and the common ground; the attention-schema hash; the spatial decay; the term arena's bounds; the loader's validation clauses one by one; the sweep's quiet bound; the trace accounting; a cyclic chain; a double activation; the log's entry count. | fourteen state crates, `cortex-runtime` | **Resolved** ([ADR-0030](adr/0030-verification-governance.md)): each gap has a test that names the boundary; the equivalent mutants are excluded by name with the reason in `.cargo/mutants.toml`; a pull request now fails when a mutant in the lines it changes survives. |
 
 ### 11.1 Hypotheses and open questions
 
@@ -2109,7 +2110,7 @@ Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geomet
 
 ## Appendix B. Verification and conformance
 
-Four independent document checks and two build gates, each answering a different question.
+Four independent document checks and eight build and test gates, each answering a different question.
 
 | Level | Question | Tool | Gate |
 | :--- | :--- | :--- | :--- |
@@ -2121,20 +2122,30 @@ Four independent document checks and two build gates, each answering a different
 | V-4 Intake | Does every live brief in `briefs/` carry its mandatory sections, so that a round handed to a fresh session is complete? | `scripts/check-briefs.mjs` (zero dependencies) | CI, blocking |
 | V-5 Manifests | Do the state crates still declare no dependencies, and the runtime and the benchmark crate only what their ADRs allow (TC-2)? | `scripts/check-deps.mjs` (zero dependencies; [ADR-0029](adr/0029-structural-enforcement.md)) | CI, blocking |
 | Rustdoc | Does every crate's documentation build without a warning (F-22)? | `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | CI, blocking |
+| V-6 Mutation | Does a test fail when a rule in the lines a pull request changes is wrong? | `cargo mutants --in-diff` ([cargo-mutants](https://mutants.rs) 27.1.0, pinned; `.cargo/mutants.toml`; [ADR-0030](adr/0030-verification-governance.md)). One survivor fails the check (a mutant that hangs a test is counted as caught); the whole tree is run weekly and when a round ends, and its survivors are listed in §11 or become tests. | CI, blocking, pull requests |
+| V-7 Determinism | Does the seeded network hash to the pinned value on x86-64 and on AArch64 (T-1)? | `cargo test --workspace` on `ubuntu-24.04` and `ubuntu-24.04-arm`; the pin in `runtime/cortex-runtime/tests/differential.rs` ([ADR-0030](adr/0030-verification-governance.md)) | CI, blocking |
+| Release profile | Do the tests hold in the engine's profile, without overflow checks? | `cargo test --workspace --release` ([ADR-0030](adr/0030-verification-governance.md)) | CI, blocking |
 | Benchmarks | Do the benchmarks still build and execute? (No timing is asserted; see §10.2.) | `cargo bench -p cortex-bench --bench hot_path -- --test` | CI, blocking |
 
-Both spec tools are pinned to exact versions in `package.json` (spec-guard 0.5.0, spec-graph 0.3.0) and have no runtime dependencies; they require Node 22 or newer. To run everything locally:
+Both spec tools are pinned to exact versions in `package.json` (spec-guard 0.5.0, spec-graph 0.3.0) and have no runtime dependencies; they require Node 22 or newer. The property tests ([ADR-0030](adr/0030-verification-governance.md)) share one generator and one lattice through `testkit/prop.rs`, which a crate `include!`s into a `#[cfg(test)] mod prop`, so no state crate gains a dependency; the exhaustive tests, `#[ignore]`d and named `exhaustive_…`, enumerate a whole domain and run before a release. To run everything locally:
 
 ```bash
 cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
+cargo test --workspace --release --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff
+cargo test --workspace --release --locked -- --ignored exhaustive
 npm ci
 npm run spec
 ```
 
-Planned, not yet present: T-1 differential testing across architectures, and fault injection on the fabric and the sensory path. The micro-benchmarks that exist are listed in the benchmarks README; none has an admissible run (F-13).
+<!-- @assert-present file="testkit/prop.rs,.cargo/mutants.toml" -->
+<!-- @assert-count target="crates" symbol="mod prop {" glob="*.rs" min="6" reason="ADR-0030: property tests over the lattice and a seeded walk exist in the core rules" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/differential.rs" symbol="PINNED_ARENA_HASH" min="2" reason="ADR-0030: the determinism pin T-1 checks on two architectures" -->
+
+Planned, not yet present: T-1 at its full length on a reference image (the 20 000-tick two-architecture form runs in CI), and fault injection on the fabric and the sensory path. The micro-benchmarks that exist are listed in the benchmarks README; none has an admissible run (F-13).
 
 <!-- @assert-present file="LICENSE-APACHE,LICENSE-MIT,Cargo.toml,rust-toolchain.toml,clippy.toml,.gitattributes,.editorconfig,package.json,.spec-graph.json,.github/workflows/ci.yml,docs/adr/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md,CLAUDE.md,briefs/README.md,scripts/check-briefs.mjs,scripts/check-deps.mjs" -->
 
@@ -2152,7 +2163,7 @@ Milestones follow the founding design note; each ends with a test that proves it
 | M4 Eviction and persistence | Clock sweep; `.cortex` loader and writer; lazy re-hydration. | Evict, spike, re-hydrate round trip preserves state bit-for-bit. | Done: the section directory, CRC-64/XZ, the read-into-arenas loader and the writer, the sweep with its write-ahead log and re-hydration, and the Tier-2 delta record (brief 015, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); the exit test passes as `runtime/cortex-runtime/tests/image.rs`; `mmap`, slot reclamation and a hot checkpoint Specified. |
 | M5 Subsystem dynamics | Replace placeholder functions with the dynamics of §8.8, one crate at a time, each with tests. | Per-crate property tests. | `cortex-core` membrane integration (brief 011, [ADR-0018](adr/0018-membrane-integration.md)) and short-term plasticity (brief 010, [ADR-0019](adr/0019-short-term-plasticity.md)) done; STDP done (brief 013, [ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); the full dynamics of the other crates not started (the small rules of §1.6's Logic column exist). |
 | M6 Embodiment | Payload rings, torque decoder, watchdog contract, MuJoCo stub. | T-4, T-5. | Frame ABI, ring protocol (brief 008) and the push–pull torque decoder done; mapping, loop, watchdog integration and the stub open. |
-| M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1 not started. |
+| M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1's two-architecture form runs in CI at 20 000 ticks ([ADR-0030](adr/0030-verification-governance.md)), the $10^6$-tick reference-image form not started. |
 | M8 Digital embodiment, language and the brokered pipelines | Tool ring and broker; hypervector unbinding and the lexicon behind `cortex-linguistic`; the veto gate in the dispatch path; the relay table behind `cortex-thalamus`; the prover and document-engine services (R-10, R-11); a term arena for unification; second records for the crates of [ADR-0016](adr/0016-thirty-two-crate-architecture.md) that need one. | A tool call round trip through the broker under the veto gate, denied and permitted; a frame realised as tokens in both lexicon languages; a two-step refutation certified through the broker and consolidated; a document audit that re-computes a stated figure and flags a contradiction. | Frames, rules, the two categories' opcodes, the resolution step and certification done (ADR-0016); broker, rings, stub and dispatch path open; unification done (brief 014, [ADR-0025](adr/0025-term-arena-and-unification.md)). |
 
 Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.

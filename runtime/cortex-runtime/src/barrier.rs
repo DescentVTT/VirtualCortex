@@ -61,6 +61,12 @@ mod tests {
     use std::sync::atomic::AtomicU64;
 
     #[test]
+    fn the_party_count_is_at_least_one_and_reported() {
+        assert_eq!(SpinBarrier::new(0).parties(), 1);
+        assert_eq!(SpinBarrier::new(4).parties(), 4);
+    }
+
+    #[test]
     fn a_barrier_of_one_never_waits() {
         let b = SpinBarrier::new(1);
         assert_eq!(b.parties(), 1);

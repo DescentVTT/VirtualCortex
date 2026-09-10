@@ -101,6 +101,21 @@ const _: () = {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_attention_schema_hash_is_pinned_and_sees_every_word() {
+        let mut s = slot(0);
+        s.slot_id = 1;
+        s.binding_hash = 2;
+        assert_eq!(s.update_attention_schema(), 0x6bc2_066e);
+        assert_eq!(s.attention_schema_meta_hash, 0x6bc2_066e);
+        s.is_ignited = 1;
+        assert_eq!(
+            s.update_attention_schema(),
+            0xaaa8_b9b9,
+            "the ignition bit changes the hash"
+        );
+    }
+
     const ONE: i32 = 0x0001_0000;
     const HALF: i32 = 0x0000_8000;
 

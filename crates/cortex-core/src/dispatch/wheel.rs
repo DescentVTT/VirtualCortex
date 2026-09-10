@@ -289,3 +289,94 @@ mod tests {
         assert_eq!(w.tick(), 0);
     }
 }
+
+/// Property tests (ADR-0030): every token comes out exactly once, exactly `delay` advances after
+/// it went in, never earlier and never later, over a seeded walk that fills both rings; two
+/// wheels fed the same walk return identical slices.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    const TOKENS: usize = 4_096;
+
+    #[test]
+    fn every_token_is_due_exactly_once_at_exactly_its_tick_and_two_wheels_agree() {
+        let mut rng = Lcg::new(23);
+        let mut a = FlatTimingWheel::<64>::new();
+        let mut b = FlatTimingWheel::<64>::new();
+        // due[token] = the tick it must come out at; u64::MAX = not scheduled or refused.
+        let mut due = [u64::MAX; TOKENS];
+        let mut seen = [false; TOKENS];
+        let mut next_token = 0usize;
+        let horizon = FlatTimingWheel::<64>::horizon_ticks();
+        let mut refused_full = 0u32;
+        // A burst into one slot: sixty-four fit, the rest are refused unchanged.
+        for _ in 0..70 {
+            let token = next_token as u32;
+            match (a.schedule(100, token), b.schedule(100, token)) {
+                (Ok(()), Ok(())) => {
+                    due[next_token] = 100;
+                    next_token += 1;
+                }
+                (Err(ScheduleError::SlotFull), Err(ScheduleError::SlotFull)) => refused_full += 1,
+                other => panic!("{other:?}"),
+            }
+        }
+        assert_eq!(refused_full, 6);
+        for step in 0..(3 * horizon + 2) {
+            let scheduling = if step < 2 * horizon { rng.below(3) } else { 0 };
+            for _ in 0..scheduling {
+                if next_token == TOKENS {
+                    break;
+                }
+                let delay = if rng.below(4) == 0 {
+                    rng.pick(&[1u32, 2, 255, 256, 257, 2_559, 2_560, u32::MAX])
+                } else {
+                    1 + rng.below(2_559)
+                };
+                let token = next_token as u32;
+                let ra = a.schedule(delay, token);
+                let rb = b.schedule(delay, token);
+                assert_eq!(ra, rb, "two wheels agree on every refusal");
+                match ra {
+                    Ok(()) => {
+                        assert!(delay > 0 && (delay as u64) < horizon);
+                        due[next_token] = a.tick().wrapping_add(delay as u64);
+                        next_token += 1;
+                    }
+                    Err(ScheduleError::ZeroDelay) => assert_eq!(delay, 0),
+                    Err(ScheduleError::BeyondHorizon) => assert!(delay as u64 >= horizon),
+                    Err(ScheduleError::SlotFull) => {}
+                    Err(ScheduleError::TokenTooLarge) => panic!("tokens are small here"),
+                }
+            }
+            let out_a = a.advance();
+            let out_b = b.advance();
+            assert_eq!(out_a, out_b, "identical slices");
+            let mut due_now = [0u32; 64];
+            let n = out_b.len();
+            due_now[..n].copy_from_slice(out_b);
+            for &t in &due_now[..n] {
+                let t = t as usize;
+                assert!(!seen[t], "token {t} came out twice");
+                seen[t] = true;
+                assert_eq!(
+                    due[t],
+                    b.tick(),
+                    "token {t} is due at its tick, not before or after"
+                );
+            }
+        }
+        let scheduled = due.iter().filter(|&&d| d != u64::MAX).count();
+        let delivered = seen.iter().filter(|&&s| s).count();
+        assert!(scheduled > 2_000, "the walk schedules: {scheduled}");
+        assert_eq!(scheduled, delivered, "nothing lost, nothing invented");
+        for t in 0..TOKENS {
+            assert_eq!(seen[t], due[t] != u64::MAX);
+        }
+    }
+}

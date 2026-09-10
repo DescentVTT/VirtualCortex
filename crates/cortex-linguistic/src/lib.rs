@@ -412,6 +412,85 @@ const _: () = {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_boundaries_of_the_frame_rules_hold_at_equality() {
+        // An affect concept exactly at the sixteen-bit limit binds; one past does not.
+        let mut f = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert!(f.bind_role(ROLE_AFFECT, u16::MAX as u32, Q16_ONE));
+        assert!(!f.bind_role(ROLE_AFFECT, u16::MAX as u32 + 1, Q16_ONE));
+        // A parent is refused only for a bound child, whatever other gate bits are set.
+        let mut g = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        g.syntax_gate_flags |= GATE_PARTICLE_OPEN | GATE_METAPHOR;
+        assert_eq!(g.child_frame_idx, 0);
+        assert!(
+            g.set_parent(0),
+            "no child is bound, so index 0 is not a child"
+        );
+        // Tact softens only bad news: a valence of exactly zero leaves the frame.
+        let mut h = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 1);
+        assert_eq!(h.apply_face(1, 0), PROSODY_NONE);
+        assert_eq!(h.politeness_level, 1);
+        assert_eq!(
+            h.apply_face(1, -1),
+            PROSODY_SOFTEN,
+            "one LSB below zero is bad news"
+        );
+        // The realisation order carries only the roles that are filled: the affect tag is in
+        // the template's order but not required, so a complete frame without it omits it.
+        let mut k = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert!(k.bind_role(ROLE_SUBJECT, 1, Q16_ONE));
+        assert_eq!(k.realisation_order(), None, "incomplete");
+        assert!(k.bind_role(ROLE_ACTION, 2, Q16_ONE));
+        assert_eq!(
+            k.realisation_order(),
+            Some([ROLE_SUBJECT, ROLE_ACTION, 0, 0, 0])
+        );
+        assert!(k.bind_role(ROLE_AFFECT, 3, Q16_ONE));
+        assert_eq!(
+            k.realisation_order(),
+            Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_AFFECT, 0, 0])
+        );
+        // Every template names its order; the two two-role ones are not the default.
+        assert_eq!(
+            role_order(TEMPLATE_STATE),
+            Some([ROLE_SUBJECT, ROLE_ACTION, ROLE_AFFECT, 0, 0])
+        );
+        assert_eq!(
+            role_order(TEMPLATE_NEED),
+            Some([ROLE_SUBJECT, ROLE_OBJECT, ROLE_AFFECT, 0, 0])
+        );
+        assert_eq!(role_order(0xFFFF), None);
+    }
+
+    #[test]
+    fn the_recurrent_cell_folds_its_energy_into_the_hash_and_reflects_at_exactly_minus_a_quarter() {
+        let one = Q16_ONE as i32;
+        let mut f = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert_eq!(f.advance_prosody(0, one, one), PROSODY_SUGGEST);
+        assert_eq!(
+            f.recurrent_state_hash, 0x0193_0000,
+            "(0 ^ 1.0) × the FNV prime"
+        );
+        assert_eq!(f.advance_prosody(0, one, one), PROSODY_SUGGEST);
+        assert_eq!(
+            f.recurrent_state_hash,
+            (0x0193_0000u32 ^ 0x0001_0000).wrapping_mul(0x0100_0193),
+            "the second fold clears bit 16"
+        );
+        let mut g = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert_eq!(
+            g.advance_prosody(0, -(one / 4), one),
+            PROSODY_REFLECT,
+            "exactly minus a quarter reflects"
+        );
+        let mut h = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert_eq!(
+            h.advance_prosody(0, -(one / 4) + 1, one),
+            PROSODY_NONE,
+            "one LSB above is nothing"
+        );
+    }
+
     const ONE: i32 = Q16_ONE as i32;
     const HALF: u32 = Q16_ONE / 2;
 
