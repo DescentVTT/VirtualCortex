@@ -282,10 +282,10 @@ fn a_delayed_synapse_arrives_delay_ticks_after_the_spike_and_a_zero_delay_one_th
 /// The pin for target T-1 (ADR-0030): the random network's arenas and spike train after
 /// 20 000 ticks on one worker hash to one value, and CI runs this on x86-64 and AArch64. A
 /// deliberate change to the dynamics moves the pin; the change that moves it says why.
-/// Moved once, by ADR-0032 (from `0x7603c27186e59994`): the block's bytes changed (the apical
-/// mask into the chain word, the eligibility trace at `[56..64)`), and at a weight at the rail
-/// a pairing's two terms now sum in the trace before the weight saturates, where ADR-0022
-/// clipped the gain and kept the loss. The spike count did not move.
+/// Moved once, by ADR-0032 (from `0x7603c27186e59994`), for the block's bytes: the apical mask
+/// into the chain word, the eligibility trace at `[56..64)`. The dynamics of this network did
+/// not change: its weights stay within [8 180, 31 986] and never pair at a rail, which is the
+/// one place ADR-0032's rule differs from ADR-0022's. The spike count did not move.
 const PINNED_ARENA_HASH: u64 = 0x1724f3486c1d674e;
 /// The spike count that goes with the hash: a moved hash with the same count is a change to
 /// the state, a moved count a change to the dynamics.

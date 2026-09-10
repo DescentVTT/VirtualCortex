@@ -10,7 +10,8 @@
 //! quiescent point: every mailbox empty, no token in flight; a scheduled unit with an empty
 //! mailbox is written idle and woken again on load; the executor's clock is written with it
 //! and resumed by the loader, so the stamps keep their meaning (ADR-0033). The engine's
-//! modulator (ADR-0032) is a section of its own, written when it is not at rest.
+//! modulation state (ADR-0032: the modulator record and the baseline) is a section of its
+//! own, always written, so that the image defines the run (§8.3).
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_connectome::{
@@ -39,7 +40,7 @@ pub enum ImageError {
     /// A directory entry is malformed: unaligned, a partial record, or an unknown record size
     /// for its kind.
     Directory(u32),
-    /// A required section (neurons, synapses) is missing.
+    /// A required section (neurons, synapses, the modulation state) is missing.
     MissingSection(u32),
     /// A section's bytes do not match its checksum.
     SectionCrc(u32),
@@ -307,13 +308,13 @@ impl Image {
             }
             sections.push((SECTION_AMENDMENT, 64, amendment_bytes));
         }
-        let modulator = exec.modulator();
-        if !modulator.is_at_rest() {
-            // One 64-byte record: the 16 bytes of the record, then 48 reserved bytes.
-            let mut modulator_bytes = vec![0u8; 64];
-            modulator_bytes[0..16].copy_from_slice(&modulator.encode());
-            sections.push((SECTION_MODULATOR, 64, modulator_bytes));
-        }
+        // The engine's modulation state, always: one 64-byte record holding the modulator's 16
+        // bytes, the baseline at `[16..20)` and 44 reserved bytes. The baseline changes what a
+        // run does, so it is in the image, not in a configuration (§8.3).
+        let mut modulator_bytes = vec![0u8; 64];
+        modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
+        modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
+        sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The offsets of an image held in memory: each fits, and saturating says so by name.
         let directory_len = (sections.len() as u64).saturating_mul(64);
         let mut offset = directory_len.saturating_add(64);
@@ -415,7 +416,8 @@ impl Image {
         let synapse = find(SECTION_SYNAPSE).ok_or(ImageError::MissingSection(SECTION_SYNAPSE))?;
         let delta = find(SECTION_PLASTIC_DELTA);
         let amendment = find(SECTION_AMENDMENT);
-        let modulator = find(SECTION_MODULATOR);
+        let modulator =
+            find(SECTION_MODULATOR).ok_or(ImageError::MissingSection(SECTION_MODULATOR))?;
         if neuron.record_count() != header.num_neurons
             || synapse.record_count() != header.num_synapses
         {
@@ -441,6 +443,16 @@ impl Image {
             for (i, record) in section_of(bytes, &synapse)?.chunks_exact(64).enumerate() {
                 let block = SynapseBlock::decode(record.try_into().unwrap_or(&[0; 64]));
                 for slot in 0..4 {
+                    // An empty slot carries nothing: a trace or a compartment on one is a
+                    // record the writer never produces (ADR-0028's rule for reserved bytes).
+                    if block.target(slot).is_none()
+                        && (block.eligibility_q1_15[slot] != 0 || block.is_apical(slot))
+                    {
+                        return Err(ImageError::ReservedNotZero {
+                            section: SECTION_SYNAPSE,
+                            index: i as u32,
+                        });
+                    }
                     if let Some(target) = block.target(slot) {
                         if target as usize >= units {
                             return Err(ImageError::DanglingIndex {
@@ -520,17 +532,22 @@ impl Image {
                 }
             }
         }
-        if let Some(section) = modulator {
-            // One record, the engine's: the 16 bytes of the record, then 48 reserved bytes.
-            if section.record_count() != 1 {
+        {
+            // One record, the engine's: the modulator's 16 bytes, the baseline at `[16..20)`
+            // (within its bounds, as `Executor::new` would have demanded), 44 reserved bytes.
+            if modulator.record_count() != 1 {
                 return Err(ImageError::Directory(SECTION_MODULATOR));
             }
-            let record = section_of(bytes, &section)?;
-            if record[16..64].iter().any(|&b| b != 0) {
+            let record = section_of(bytes, &modulator)?;
+            if record[20..64].iter().any(|&b| b != 0) {
                 return Err(ImageError::ReservedNotZero {
                     section: SECTION_MODULATOR,
                     index: 0,
                 });
+            }
+            let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));
+            if !exec.set_modulation_baseline(baseline) {
+                return Err(ImageError::Config(ConfigError::ModulationOutOfRange));
             }
             exec.set_modulator(NeuromodulatorState::decode(
                 record[0..16].try_into().unwrap_or(&[0; 16]),

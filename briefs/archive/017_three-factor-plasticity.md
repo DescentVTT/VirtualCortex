@@ -5,11 +5,14 @@ date: 2026-09-10
 
 > **Executed 2026-09-10 in pull request #44.** Writes ADR-0032 (three-factor plasticity) and
 > ADR-0033 (the tick in the header); closes the tick-duration question of whitepaper §11.1;
-> image format 11; the determinism pin moved once, with its reason. Every deliverable landed as
-> written, and deliverable 5 grew: the exit test found that a loaded image's clock restarted at
-> zero, so the header also carries the tick at which the image was written and the loader
-> resumes it. The report is in the pull request and in `CHANGELOG.md`. The body below describes
-> the tree before execution and is not maintained; its relative links gained one `../`.
+> image format 11; the determinism pin moved once, for the block's bytes. Every deliverable is
+> done; three notes under the boxes say where the tree departs from the text. Deliverable 5
+> grew: the exit test found that a loaded image's clock restarted at zero, so the header also
+> carries the tick at which the image was written and the loader resumes it. One line of the
+> context below is wrong: `tests/differential.rs` pins `wire_random`, whose weights stay far
+> from the rails; the ring at `i16::MAX` is the same file's un-pinned test. The report is in the
+> pull request and in `CHANGELOG.md`. The body below describes the tree before execution and is
+> not maintained; its relative links gained one `../`.
 
 # Brief 017 — Three-factor plasticity: an eligibility trace per synapse, consolidated by the modulator; the tick duration in the header
 
@@ -126,6 +129,7 @@ Re-derived on 2026-09-10 against `main` at `400dbae`.
    pairing's two terms sum in the trace before the weight saturates: this is the one result that
    differs from ADR-0022, and only at the rail; the ADR states it, a test shows both values, and
    the pins move with that reason.
+   **Departure:** `step_stdp_all` decays a block with no stamp on record by the ticks since tick 0 (as `ticks_since_spike` counts), not "no decay without a stamp"; and the pin moved for the block's bytes, not for the rail, which the pinned network never reaches (ADR-0032).
 3. [x] **The modulator** (`cortex-neuromod`): `modulation(&self, baseline_q16) -> i32` =
    `clamp(baseline + dopamine_rpe, 0, 1.0)`; `DOPAMINE_TAU_SHIFT` (14, about 164 ms) as the
    recommended per-tick decay; `encode`/`decode` of the 16 bytes, little-endian, field by field.
@@ -141,6 +145,7 @@ Re-derived on 2026-09-10 against `main` at `400dbae`.
    when the modulator is not at rest, refused when malformed (count, reserved bytes); a fork of
    the trial ([ADR-0031](../../docs/adr/0031-policy-amendment.md)) decodes it like everything else,
    and the trial carries no rewards (Specified; say so).
+   **Departure:** the section is always written and required, and carries the baseline at `[16..20)` as well, so that the image defines the run and a trial's forks run under the live baseline (a review found the baseline changing results while in neither the image nor the trace); the loader also refuses a trace or a compartment bit on an empty slot.
 5. [x] **The tick in the header** (one ADR): `cortex-core` gains `TICK_NS` (10 000); the header's
    `[60..64)` becomes `tick_ns: u32`, taken by `CortexFileHeader::new`, refused by `validate` when
    zero, and refused by the loader when it differs from `TICK_NS` (a new `ImageError` variant).

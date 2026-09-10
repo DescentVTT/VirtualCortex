@@ -13,7 +13,7 @@ use cortex_connectome::{
 use cortex_core::{
     PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
 };
-use cortex_runtime::{Config, Executor, Image, ImageError, WriteAheadLog};
+use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, WriteAheadLog};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
@@ -146,7 +146,9 @@ fn a_corrupted_truncated_or_foreign_image_fails_closed() {
     let bytes = std::fs::read(&path).unwrap();
 
     let mut flipped = bytes.clone();
-    flipped[64 * 4 + 30] ^= 0x01; // inside the neuron section
+    // The header, four directory entries (neurons, synapses, deltas, the modulation state),
+    // then the neuron section.
+    flipped[64 * 5 + 30] ^= 0x01;
     assert!(matches!(
         Image::decode::<64>(&flipped, config()),
         Err(ImageError::SectionCrc(SECTION_NEURON))
@@ -302,7 +304,7 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
         })
     ));
     let mut img = small_image_with_modulator();
-    patch_section(&mut img, SECTION_MODULATOR, |s| s[16] = 1);
+    patch_section(&mut img, SECTION_MODULATOR, |s| s[20] = 1);
     assert!(matches!(
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::ReservedNotZero {
@@ -317,6 +319,34 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
         0x1234,
         "the record's own bytes are read"
     );
+    // A trace or a compartment on an empty slot: bytes the writer never produces.
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_SYNAPSE, |s| s[58] = 7);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::ReservedNotZero {
+            section: SECTION_SYNAPSE,
+            index: 0
+        })
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_SYNAPSE, |s| s[35] |= 0x20);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::ReservedNotZero {
+            section: SECTION_SYNAPSE,
+            index: 0
+        })
+    ));
+    // The same bytes on the filled slot are state, and load.
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_SYNAPSE, |s| {
+        s[56] = 7;
+        s[35] |= 0x10;
+    });
+    let loaded = Image::decode::<8>(&img, Config::default()).unwrap();
+    assert_eq!(loaded.blocks()[0].eligibility_q1_15[0], 7);
+    assert!(loaded.blocks()[0].is_apical(0));
 }
 
 /// Re-seals the header after `patch` edited its decoded fields.
@@ -454,6 +484,41 @@ fn every_clause_of_the_loader_s_checks_refuses_on_its_own() {
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::Directory(SECTION_MODULATOR))
     ));
+    // The modulation state is required: an image without it does not define its run.
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_MODULATOR, |e| e.kind = SECTION_NEURON);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::MissingSection(SECTION_MODULATOR))
+    ));
+    // A baseline outside [0, 1.0] is refused as the configuration's would be.
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_MODULATOR, |s| {
+        s[16..20].copy_from_slice(&0x0001_0001i32.to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Config(ConfigError::ModulationOutOfRange))
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_MODULATOR, |s| {
+        s[16..20].copy_from_slice(&(-1i32).to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Config(ConfigError::ModulationOutOfRange))
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_MODULATOR, |s| {
+        s[16..20].copy_from_slice(&0x8000i32.to_le_bytes())
+    });
+    assert_eq!(
+        Image::decode::<8>(&img, Config::default())
+            .unwrap()
+            .modulation_baseline_q16(),
+        0x8000,
+        "the image's baseline is the engine's"
+    );
 }
 
 #[test]
