@@ -1,10 +1,11 @@
 # CI for VirtualCortex.
 #
-# Three jobs, four questions:
+# Six jobs (one on pull requests only, one weekly), seven questions:
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
 #           is it formatted and lint-clean (the workspace lints of ADR-0029 included),
-#           does rustdoc build without a warning, and do the benchmarks still execute?
-#           All six steps are blocking; the benchmark step asserts no timing
+#           does rustdoc build without a warning, do the tests also hold in the release
+#           profile (the engine's, without overflow checks), and do the benchmarks still
+#           execute? All seven steps are blocking; the benchmark step asserts no timing
 #           (ADR-0014): a shared runner cannot hold a latency threshold. The
 #           toolchain is the one pinned in rust-toolchain.toml (ADR-0009).
 #   msrv  - does the workspace still build and test on the minimum supported
@@ -15,8 +16,13 @@
 #           (spec-graph), does every live brief carry its mandatory sections
 #           (scripts/check-briefs.mjs), and do the manifests keep TC-2, state crates
 #           without dependencies (scripts/check-deps.mjs)? All blocking. Actions are
-#           pinned to commits and the runner image to a release (ADR-0029). Whitepaper Appendix B
-#           describes the levels.
+#           pinned to commits and the runner image to a release (ADR-0029).
+#   arm64 - do the tests hold on AArch64, and does the seeded network hash to the value
+#           pinned on x86-64 (target T-1; ADR-0030)?
+#   mutants - on a pull request: is every mutant cargo-mutants can make in the lines the
+#           request changes caught by a test (ADR-0030)? A rule without a test that fails
+#           when the rule is wrong does not merge. Pinned tool, no manifest change.
+#           Whitepaper Appendix B describes the levels.
 
 name: CI
 
@@ -24,6 +30,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly, Monday 03:00 UTC: the whole-domain tests and the whole-tree mutation run
+    # (ADR-0030). Nothing to block; the survivors are the next round's list.
+    - cron: "0 3 * * 1"
 
 permissions:
   contents: read
@@ -51,6 +61,9 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --locked
+
+      - name: Test in the release profile (the engine's; no overflow checks) (ADR-0030)
+        run: cargo test --workspace --release --locked
 
       - name: Format
         run: cargo fmt --all -- --check
@@ -87,6 +100,92 @@ jobs:
 
       - name: Test on the MSRV
         run: cargo test --workspace --locked
+
+  arm64:
+    name: Rust (AArch64 determinism, T-1)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Test on AArch64, the pinned arena hash included
+        run: cargo test --workspace --locked
+
+  mutants:
+    name: Mutation gate on the changed lines (ADR-0030)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install cargo-mutants at its pin (cached by rust-cache once built)
+        run: cargo install cargo-mutants --locked --version 27.1.0
+
+      - name: The lines this pull request changes
+        run: git diff "origin/${{ github.base_ref }}...HEAD" > "${{ runner.temp }}/pr.diff"
+
+      - name: Every mutant in those lines is caught (.cargo/mutants.toml)
+        # Exit 2 is a survivor, 3 a timeout: a mutant that hangs a test is a mutant the tests
+        # detected, so the step fails on survivors (missed.txt) and on the tool's own errors, not
+        # on timeouts. Every other exit code is the tool's failure and fails the step.
+        run: |
+          set +e
+          cargo mutants --workspace --in-diff "${{ runner.temp }}/pr.diff" --jobs 2 --annotations github
+          rc=$?
+          set -e
+          case "$rc" in
+            0|2|3) ;;
+            *) echo "cargo-mutants failed with exit code $rc"; exit "$rc" ;;
+          esac
+          if [ -s mutants.out/missed.txt ]; then
+            echo "Mutants that survived in the changed lines:"; cat mutants.out/missed.txt; exit 2
+          fi
+          echo "no survivor; timeouts, if any, are listed in mutants.out/timeout.txt"
+
+  weekly:
+    name: Weekly (exhaustive tests, whole-tree mutation run)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: The whole-domain tests, in the release profile
+        run: cargo test --workspace --release --locked -- --ignored exhaustive
+
+      - name: Install cargo-mutants at its pin
+        run: cargo install cargo-mutants --locked --version 27.1.0
+
+      - name: The whole tree under mutation (survivors are listed, nothing is blocked)
+        run: |
+          set +e
+          cargo mutants --workspace --jobs 2
+          echo "cargo-mutants exit code $?"
+          set -e
+          echo "== survivors"; cat mutants.out/missed.txt || true
+          echo "== timeouts"; cat mutants.out/timeout.txt || true
 
   specs:
     name: Documentation (spec-guard, spec-graph)

@@ -47,6 +47,19 @@ const _: () = {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_net_output_of_exactly_zero_is_not_a_selection_and_one_lsb_below_is() {
+        let mut even = channel(ONE, ONE / 2, ONE / 2);
+        assert!(
+            !even.compute_gating(),
+            "direct equals indirect plus hyperdirect"
+        );
+        assert_eq!((even.gpi_snr_inhibition, even.selected_flag), (0, 0));
+        let mut go = channel(ONE.saturating_add(1), ONE / 2, ONE / 2);
+        assert!(go.compute_gating());
+        assert_eq!((go.gpi_snr_inhibition, go.selected_flag), (-1, 1));
+    }
+
     const ONE: i32 = 0x0001_0000;
 
     fn channel(d1: i32, d2: i32, stn: i32) -> BasalGangliaChannelState {

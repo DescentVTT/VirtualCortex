@@ -169,6 +169,67 @@ const _: () = {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_stake_falls_from_above_the_change_by_a_sixteenth_and_rests_at_zero() {
+        let mut s = InteroceptiveState {
+            existential_stake_q16: 1_000,
+            free_energy_prev_q16: ONE,
+            ..Default::default()
+        };
+        s.update_valence(ONE);
+        assert_eq!(
+            s.existential_stake_q16,
+            1_000 - (1_000 >> STAKE_SHIFT),
+            "no change: the stake falls by a sixteenth of itself"
+        );
+        let mut below = InteroceptiveState {
+            existential_stake_q16: 1_000,
+            free_energy_prev_q16: ONE,
+            ..Default::default()
+        };
+        below.update_valence(ONE - 100);
+        assert_eq!(
+            below.existential_stake_q16,
+            1_000 - ((1_000 - 100) >> STAKE_SHIFT),
+            "a change smaller than the stake: it falls by a sixteenth of the gap"
+        );
+        let mut t = InteroceptiveState {
+            existential_stake_q16: 1,
+            free_energy_prev_q16: ONE,
+            ..Default::default()
+        };
+        t.update_valence(ONE);
+        assert_eq!(t.existential_stake_q16, 0, "one LSB, then rest");
+        t.update_valence(ONE);
+        assert_eq!(t.existential_stake_q16, 0, "rest is a fixed point");
+    }
+
+    #[test]
+    fn calm_holds_exactly_at_a_quarter_of_strain_and_ends_one_lsb_above_it() {
+        let at = InteroceptiveState {
+            somatic_comfort_q16: ONE as i32 / 2,
+            thermal_strain_q16: ONE / 4,
+            allostatic_load_q16: ONE / 4,
+            energy_resilience_q16: ONE - ONE / 4,
+            ..Default::default()
+        };
+        assert_eq!(
+            at.metaphor_source_domain(),
+            DOMAIN_CALM,
+            "every strain at the quarter, comfort at the half"
+        );
+        let hot = InteroceptiveState {
+            thermal_strain_q16: ONE / 4 + 1,
+            ..at
+        };
+        assert_eq!(hot.metaphor_source_domain(), DOMAIN_HEAT);
+        let cool = InteroceptiveState {
+            somatic_comfort_q16: ONE as i32 / 2 - 1,
+            ..at
+        };
+        assert_ne!(cool.metaphor_source_domain(), DOMAIN_CALM);
+    }
+
     const ONE: u32 = Q16_ONE;
 
     #[test]

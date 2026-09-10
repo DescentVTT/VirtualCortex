@@ -74,6 +74,7 @@ All of these must pass before a change is called done.
 ```bash
 cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
+cargo test --workspace --release --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
@@ -82,6 +83,8 @@ cargo +1.85 check --workspace --all-targets   # the MSRV floor (ADR-0009); rustu
 cargo +1.85 test --workspace
 npm ci
 npm run spec                        # spec-guard + spec-graph + check-briefs + check-deps
+git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0
+cargo test --workspace --release --locked -- --ignored exhaustive   # before a release: the whole-domain tests
 ```
 
 `npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks; `npm run spec:briefs` alone checks the live briefs; `npm run spec:deps` alone checks the manifests (TC-2). All exit non-zero with a file and line number when something is wrong.
@@ -91,7 +94,8 @@ npm run spec                        # spec-guard + spec-graph + check-briefs + c
 A change is done when all of the following hold:
 
 - code compiles on the pinned toolchain and on the MSRV ([ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)) with no new warnings;
-- layout assertions and tests pass;
+- layout assertions and tests pass, in the debug and the release profile;
+- a new or changed rule carries a test over the lattice ([ADR-0030](docs/adr/0030-verification-governance.md): `testkit/prop.rs`, `include!`d into the crate's `mod prop`), and the mutation gate on the lines the change touches passes (`cargo mutants --in-diff`; a survivor is a test that does not constrain the rule);
 - whitepaper tables and status labels reflect the change;
 - an ADR is added or amended if a rule changed;
 - there is a changelog entry under `Unreleased`;

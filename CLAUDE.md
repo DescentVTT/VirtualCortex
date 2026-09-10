@@ -104,6 +104,7 @@ gate nobody enforces, and the reverse is a green local run and a red push.
 ```bash
 cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
+cargo test --workspace --release --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
@@ -112,7 +113,13 @@ cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor; `rustup
 cargo +1.85 test --workspace --locked
 npm ci
 npm run spec
+git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0
 ```
+
+The mutation line is the gate a pull request meets: every mutant `cargo-mutants` can make in the
+lines the change touches must be caught by a test ([ADR-0030](docs/adr/0030-verification-governance.md));
+a new rule carries a test over the lattice of `testkit/prop.rs`. `cargo test --workspace --release
+--locked -- --ignored exhaustive` runs the whole-domain tests before a release.
 
 The `cargo bench ... -- --test` line executes each benchmark once and asserts no timing. A number
 becomes Measured only through the protocol in `docs/benchmarks/README.md`; a developer-machine

@@ -92,6 +92,24 @@ const _: () = {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_reading_exactly_at_a_limit_is_within_it_and_one_past_is_a_cut() {
+        let mut v = vitals();
+        assert_eq!(
+            v.sample(11_400, 85_000, 250_000),
+            0,
+            "at every limit at once"
+        );
+        assert_eq!(v.sample(11_399, 85_000, 250_000), CUT_UNDER_VOLTAGE);
+        assert_eq!(v.sample(11_400, 85_001, 250_000), CUT_OVER_TEMPERATURE);
+        assert_eq!(v.sample(11_400, 85_000, 250_001), CUT_OVER_POWER);
+        assert_eq!(
+            v.sample(0, i32::MAX, u32::MAX),
+            CUT_UNDER_VOLTAGE | CUT_OVER_TEMPERATURE | CUT_OVER_POWER
+        );
+        assert_eq!(v.sample(u32::MAX, i32::MIN, 0), 0);
+    }
+
     fn vitals() -> AutonomicVitalsState {
         AutonomicVitalsState::with_limits(85_000, 250_000, 11_400)
     }

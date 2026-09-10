@@ -235,6 +235,68 @@ const _: () = {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_sincerity_gap_is_the_distance_its_average_moves_by_an_eighth_and_a_half_is_a_break() {
+        let mut n = node(Q16_ONE);
+        assert_eq!(
+            n.assess_sincerity(Q16_ONE as i32 / 2, Q16_ONE as i32 / 4),
+            Q16_ONE / 4
+        );
+        assert_eq!(n.insincerity_q16, Q16_ONE / 32, "an eighth of the quarter");
+        assert_eq!(
+            n.assess_sincerity(Q16_ONE as i32 / 4, Q16_ONE as i32 / 2),
+            Q16_ONE / 4
+        );
+        assert_eq!(
+            n.insincerity_q16,
+            Q16_ONE / 32 + (Q16_ONE / 4 - Q16_ONE / 32) / 8,
+            "an eighth of what remains"
+        );
+        assert_eq!(n.assess_sincerity(0, 0), 0);
+        assert_eq!(
+            n.insincerity_q16,
+            3_840 - (3_840 >> INSINCERITY_SHIFT),
+            "a closed gap: it falls by an eighth"
+        );
+        let mut trusted = node(Q16_ONE);
+        trusted.trust_score_q16 = Q16_ONE / 2;
+        assert_eq!(trusted.assess_sincerity(Q16_ONE as i32 / 2, 0), Q16_ONE / 2);
+        assert_eq!(
+            trusted.trust_score_q16,
+            Q16_ONE / 2 - ((Q16_ONE / 2) >> TRUST_LOSS_SHIFT),
+            "a gap of exactly a half is a disconfirmed prediction"
+        );
+        let mut kept = node(Q16_ONE);
+        kept.trust_score_q16 = Q16_ONE / 2;
+        assert_eq!(
+            kept.assess_sincerity(Q16_ONE as i32 / 2 - 1, 0),
+            Q16_ONE / 2 - 1
+        );
+        assert!(
+            kept.trust_score_q16 > Q16_ONE / 2,
+            "one LSB less is confirmed"
+        );
+        let mut far = node(Q16_ONE);
+        assert_eq!(
+            far.assess_sincerity(i32::MAX, i32::MIN),
+            Q16_ONE,
+            "clamped to 1.0"
+        );
+    }
+
+    #[test]
+    fn the_common_ground_folds_each_referent_and_is_pinned() {
+        let mut n = node(Q16_ONE);
+        assert!(n.listen());
+        assert_eq!(n.ground(0x1234), Some(0x341c_a7dc));
+        assert_eq!(
+            n.ground(0x1234),
+            Some(0xf132_5c38),
+            "the same referent twice is not once"
+        );
+        assert_eq!(n.shared_intentionality_hash, 0xf132_5c38);
+    }
+
     fn node(gain: u32) -> SocialPerspectiveNode {
         SocialPerspectiveNode {
             target_agent_id: 7,

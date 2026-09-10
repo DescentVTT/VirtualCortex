@@ -338,6 +338,84 @@ mod tests {
     const FS: u16 = VOCAL_SAMPLE_RATE_HZ;
 
     #[test]
+    fn shape_moves_the_fundamental_and_the_amplitude_by_the_documented_fractions() {
+        let mut f = VocalFrame::new(1);
+        assert!(f.shape(TONE_SUGGEST, false, Q16_ONE as i32));
+        assert_eq!(
+            f.f0_hz_q16,
+            120 * (65_536 + 4_096 + 16_384),
+            "120 Hz × (1 + 1/16 + 1/4)"
+        );
+        assert_eq!(
+            f.amplitude_q1_15, 0x4000,
+            "a positive valence leaves the amplitude"
+        );
+        let mut r = VocalFrame::new(1);
+        assert!(r.shape(TONE_REFLECT, false, 0));
+        assert_eq!(
+            r.f0_hz_q16,
+            120 * (65_536 - 8_192),
+            "reflect lowers by an eighth"
+        );
+        assert_eq!(
+            r.amplitude_q1_15,
+            0x4000 - 0x800,
+            "and quietens by an eighth"
+        );
+        let mut sad = VocalFrame::new(1);
+        assert!(sad.shape(TONE_NEUTRAL, false, -(Q16_ONE as i32)));
+        assert_eq!(
+            sad.f0_hz_q16,
+            120 * (65_536 - 16_384),
+            "a full negative valence: a quarter down"
+        );
+        assert_eq!(sad.amplitude_q1_15, 0x3000, "and a quarter quieter");
+        assert_eq!(
+            sad.aspiration_q0_8, 64,
+            "and breathier by a quarter of the scale"
+        );
+        let mut soft = VocalFrame::new(1);
+        assert!(soft.shape(TONE_SOFTEN, false, 0));
+        assert_eq!(soft.f0_hz_q16, 120 * (65_536 - 4_096));
+        assert_eq!(soft.aspiration_q0_8, 32);
+        let mut up = VocalFrame::new(1);
+        assert!(up.shape(TONE_TOPIC_SHIFT, false, 0));
+        assert_eq!(
+            (up.f0_hz_q16, up.amplitude_q1_15),
+            (120 * (65_536 + 8_192), 0x4000 + 0x800)
+        );
+        let mut play = VocalFrame::new(1);
+        assert!(play.shape(TONE_PLAYFUL, false, 0));
+        assert_eq!((play.jitter_q0_8, play.shimmer_q0_8), (16, 16));
+        let mut formal = VocalFrame::new(1);
+        assert!(formal.shape(TONE_PLAYFUL, true, 0));
+        assert_eq!(
+            (formal.jitter_q0_8, formal.shimmer_q0_8),
+            (8, 8),
+            "a formal register halves both"
+        );
+    }
+
+    #[test]
+    fn the_exponential_series_is_pinned_and_a_silent_frame_renders() {
+        assert_eq!(exp_neg_q16(0), Q16_ONE);
+        assert_eq!(
+            exp_neg_q16(16_384),
+            51_030,
+            "e^-0.25 by the cubic: 1 - 1/4 + 1/32 - 1/384"
+        );
+        assert_eq!(exp_neg_q16(6_554), 59_299, "e^-0.1");
+        let mut silent = frame(120);
+        silent.amplitude_q1_15 = 0;
+        assert!(
+            VocalSynth::from_frame(&silent).is_some(),
+            "zero amplitude is silence, not a refusal"
+        );
+        silent.amplitude_q1_15 = -1;
+        assert!(VocalSynth::from_frame(&silent).is_none());
+    }
+
+    #[test]
     fn the_frame_is_one_cache_line_and_a_new_frame_is_the_neutral_voice() {
         assert_eq!(core::mem::size_of::<VocalFrame>(), 64);
         assert_eq!(core::mem::align_of::<VocalFrame>(), 64);
@@ -609,6 +687,37 @@ mod tests {
         assert!(
             VocalSynth::from_frame(&ceiling).is_some(),
             "every shaped voice renders"
+        );
+    }
+}
+
+/// Property tests (ADR-0030): the rendered voice is pinned in one number, so every term of the
+/// source and the filter is held; a moved pin is a changed rule.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    const PINNED_RENDER_HASH: u64 = 0x773449275627bf2b;
+
+    #[test]
+    fn a_shaped_frame_renders_to_the_pinned_sequence() {
+        let mut f = VocalFrame::new(7);
+        f.seed = 0x1234_5678;
+        assert!(f.shape(TONE_PLAYFUL, false, -(Q16_ONE as i32) / 2));
+        assert!(f.shape(TONE_SOFTEN, false, Q16_ONE as i32 / 4));
+        f.aspiration_q0_8 = 40;
+        let mut synth = VocalSynth::from_frame(&f).unwrap();
+        let mut out = [0i32; 512];
+        synth.render(&mut out);
+        let hash = fnv1a_64(&out);
+        assert!(out.iter().any(|&s| s != 0));
+        assert_eq!(
+            hash, PINNED_RENDER_HASH,
+            "the render hash is {hash:#018x}; a deliberate change to the voice restates the pin and says why"
         );
     }
 }

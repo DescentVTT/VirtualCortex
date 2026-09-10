@@ -34,7 +34,6 @@ impl CerebellarMicrozone {
     const HALF_STEP: i32 = 1 << (Self::LEARNING_SHIFT - 1);
 
     const RING: u32 = 7;
-    const HEAD_SHIFT: u32 = 0;
     const DELAY_SHIFT: u32 = 8;
     const FILLED_SHIFT: u32 = 16;
     const SIGN_SHIFT: u32 = 24;
@@ -80,7 +79,8 @@ impl CerebellarMicrozone {
 
     #[inline]
     const fn head(&self) -> u32 {
-        ((self.delay_ctl >> Self::HEAD_SHIFT) & Self::BYTE) % Self::RING
+        // The head lives in bits 0-7: no shift.
+        (self.delay_ctl & Self::BYTE) % Self::RING
     }
 
     #[inline]
@@ -129,10 +129,13 @@ impl CerebellarMicrozone {
         // Push the new prediction into the delay line.
         self.pred_ring[head as usize] = prediction;
         let sign_bit = 1 << (Self::SIGN_SHIFT + head);
+        // The slot's old sign is cleared first, then set for a negative command: the fields
+        // of the word never overlap, so the assembly below is a disjoint union.
+        let others = self.delay_ctl & (0x7F << Self::SIGN_SHIFT) & !sign_bit;
         let signs = if motor_command < 0 {
-            (self.delay_ctl & (0x7F << Self::SIGN_SHIFT)) | sign_bit
+            others | sign_bit
         } else {
-            (self.delay_ctl & (0x7F << Self::SIGN_SHIFT)) & !sign_bit
+            others
         };
         let new_head = (head + 1) % Self::RING;
         let new_filled = if filled < Self::RING {
@@ -140,10 +143,8 @@ impl CerebellarMicrozone {
         } else {
             filled
         };
-        self.delay_ctl = (new_head << Self::HEAD_SHIFT)
-            | (d << Self::DELAY_SHIFT)
-            | (new_filled << Self::FILLED_SHIFT)
-            | signs;
+        self.delay_ctl =
+            new_head | (d << Self::DELAY_SHIFT) | (new_filled << Self::FILLED_SHIFT) | signs;
 
         self.purkinje_output_rate
     }
@@ -170,6 +171,43 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sign_of_each_command_is_kept_in_its_slot_of_the_control_word() {
+        let mut z = zone(1);
+        z.step_forward_model(0, -HALF);
+        assert_ne!(
+            z.delay_ctl & (1 << 24),
+            0,
+            "slot 0 remembers a negative command"
+        );
+        z.step_forward_model(0, HALF);
+        assert_eq!(z.delay_ctl & (1 << 25), 0, "slot 1 a positive one");
+        assert_ne!(z.delay_ctl & (1 << 24), 0, "and slot 0 is untouched");
+        for _ in 0..7 {
+            z.step_forward_model(0, HALF);
+        }
+        assert_eq!(
+            z.delay_ctl & (1 << 24),
+            0,
+            "the ring wrapped: a positive rewrite clears it"
+        );
+        assert_eq!(z.delay_ctl >> 31, 0);
+        let mut again = zone(1);
+        for _ in 0..8 {
+            again.step_forward_model(0, -HALF);
+        }
+        assert_ne!(
+            again.delay_ctl & (1 << 24),
+            0,
+            "a negative command on a slot already negative keeps the bit"
+        );
+        assert_eq!(
+            again.delay_ctl & (0x7F << 24),
+            0x7F << 24,
+            "every slot negative"
+        );
+    }
 
     const ONE: i32 = 0x0001_0000;
     const HALF: i32 = 0x0000_8000;
@@ -311,5 +349,71 @@ mod tests {
         // The next prediction from a large gain and a maximal command saturates again.
         z.step_forward_model(i32::MAX, i32::MAX);
         assert_eq!(z.forward_model_pred, i32::MAX);
+    }
+}
+
+/// Property tests (ADR-0030): the Q16.16 product saturates exactly where a wider reference
+/// says, and a step never panics or leaves the ring's bounds for any observation, command or
+/// control word.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    #[test]
+    fn the_product_saturates_exactly_where_the_reference_does() {
+        let reference = |a: i32, b: i32| {
+            ((a as i64 * b as i64) >> 16).clamp(i32::MIN as i64, i32::MAX as i64) as i32
+        };
+        for &a in I32_LATTICE.iter() {
+            for &b in I32_LATTICE.iter() {
+                assert_eq!(mul_q16(a, b), reference(a, b), "{a} * {b}");
+            }
+        }
+        let mut rng = Lcg::new(31);
+        for _ in 0..200_000 {
+            let (a, b) = (rng.i32_edge_biased(), rng.i32_edge_biased());
+            assert_eq!(mul_q16(a, b), reference(a, b), "{a} * {b}");
+        }
+    }
+
+    #[test]
+    fn a_step_keeps_the_ring_in_bounds_for_every_input_and_control_word() {
+        let mut rng = Lcg::new(37);
+        for _ in 0..50_000 {
+            let mut z = CerebellarMicrozone {
+                microzone_id: 0,
+                purkinje_output_rate: rng.i32_edge_biased(),
+                mossy_fiber_input: 0,
+                granule_expansion_code: 0,
+                climbing_fiber_error: 0,
+                ltd_synaptic_weight: rng.i32_edge_biased(),
+                forward_model_pred: 0,
+                lead_compensation_q16: 0,
+                pred_ring: core::array::from_fn(|_| rng.i32_edge_biased()),
+                delay_ctl: if rng.below(2) == 0 {
+                    rng.next_u32()
+                } else {
+                    (rng.below(8) << 8) | rng.below(8)
+                },
+            };
+            for _ in 0..16 {
+                z.step_forward_model(rng.i32_edge_biased(), rng.i32_edge_biased());
+                // The raw fields of the written-back word, not the clamping accessors.
+                assert!(
+                    (z.delay_ctl >> 8) & 0xFF <= 7,
+                    "the stored delay is clamped"
+                );
+                assert!(
+                    (z.delay_ctl >> 16) & 0xFF <= 7,
+                    "the stored fill count is clamped"
+                );
+                assert!((z.delay_ctl & 0xFF) < 7, "the head stays in the ring");
+                assert_eq!(z.delay_ctl >> 31, 0, "bit 31 stays zero");
+            }
+        }
     }
 }

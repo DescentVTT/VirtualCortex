@@ -302,8 +302,10 @@ mod tests {
     #[test]
     fn empty_ring_has_nothing_to_read_and_a_slot_to_write() {
         let b = EmbodimentRingBuffer::new();
+        assert!(!b.is_full());
         assert_eq!(b.consumer_peek(), None);
         assert_eq!(b.producer_claim(), Some(0));
+        assert!(!b.is_full(), "one claim does not fill it");
     }
 
     #[test]

@@ -16,3 +16,7 @@ Thumbs.db
 # Node (documentation tooling)
 node_modules/
 npm-debug.log*
+
+# cargo-mutants output (ADR-0030); the CI job and a local run write it here
+mutants.out/
+mutants.out.old/

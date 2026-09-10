@@ -286,6 +286,167 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
     ));
 }
 
+/// Re-seals the header after `patch` edited its decoded fields.
+fn patch_header(img: &mut [u8], patch: impl Fn(&mut CortexFileHeader)) {
+    let mut header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    patch(&mut header);
+    let sealed = CortexFileHeader::new(
+        header.num_columns,
+        header.num_neurons,
+        header.num_synapses,
+        header.section_count,
+    );
+    img[0..64].copy_from_slice(&sealed.encode());
+}
+
+/// Edits directory entry `kind` in place (the directory is not sealed).
+fn patch_entry(img: &mut [u8], kind: u32, patch: impl Fn(&mut SectionEntry)) {
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for i in 0..header.section_count as usize {
+        let at = 64 + 64 * i;
+        let mut entry = SectionEntry::decode(img[at..at + 64].try_into().unwrap());
+        if entry.kind == kind {
+            patch(&mut entry);
+            img[at..at + 64].copy_from_slice(&entry.encode());
+            return;
+        }
+    }
+    panic!("no section {kind}");
+}
+
+#[test]
+fn every_clause_of_the_loader_s_checks_refuses_on_its_own() {
+    // The directory: a well-formed entry with the wrong record size, and a malformed one with
+    // the right size.
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_NEURON, |e| e.record_size = 16);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_NEURON))
+    ));
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_NEURON, |e| e._reserved[0] = 1);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_NEURON))
+    ));
+    // The counts: each of the header's two record counts against its section.
+    let mut img = small_image();
+    patch_header(&mut img, |h| h.num_neurons += 1);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_NEURON))
+    ));
+    let mut img = small_image();
+    patch_header(&mut img, |h| h.num_synapses += 1);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_NEURON))
+    ));
+    // A delta: its block index, then its next index, each outside the arena on its own.
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_PLASTIC_DELTA, |s| {
+        s[0..4].copy_from_slice(&5u32.to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::DanglingIndex { block: 0, slot: 5 })
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_PLASTIC_DELTA, |s| {
+        s[12..16].copy_from_slice(&5u32.to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::DanglingIndex { block: 0, slot: 5 })
+    ));
+    // A unit: its first block, then its delta head, each outside its arena on its own.
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_NEURON, |s| {
+        s[48..52].copy_from_slice(&9u32.to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::DanglingIndex { block: 0, slot: 6 })
+    ));
+    let mut img = small_image();
+    patch_section(&mut img, SECTION_NEURON, |s| {
+        s[60..64].copy_from_slice(&9u32.to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::DanglingIndex { block: 0, slot: 6 })
+    ));
+}
+
+#[test]
+fn a_unit_the_writer_left_awake_is_woken_by_the_loader_and_fires() {
+    let mut img = small_image();
+    // Unit 1 above threshold with a threshold set: image-ready (idle, empty mailbox) but not
+    // at rest, so the loader wakes it and the first tick integrates it.
+    patch_section(&mut img, SECTION_NEURON, |s| {
+        s[64 + 24..64 + 28].copy_from_slice(&(2 * THRESHOLD_BASE).to_le_bytes());
+        s[64 + 36..64 + 40].copy_from_slice(&THRESHOLD_BASE.to_le_bytes());
+    });
+    let mut exec = Image::decode::<8>(
+        &img,
+        Config {
+            trace_capacity: 64,
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    exec.run(2);
+    let reports = exec.shutdown();
+    let spikes: Vec<(u32, u32)> = reports
+        .iter()
+        .flat_map(|r| r.spikes.iter().copied())
+        .collect();
+    assert_eq!(
+        spikes,
+        vec![(1, 0)],
+        "unit 1 fired on the first tick after the load"
+    );
+}
+
+#[test]
+fn the_sweep_evicts_at_exactly_the_quiet_bound_and_leaves_a_unit_with_a_message() {
+    let log_path = scratch("bound.wal");
+    let mut exec = Executor::<64>::new(config()).unwrap();
+    wire(&mut exec);
+    exec.attach_log(&log_path).expect("a log");
+    assert_eq!((exec.evictions(), exec.rehydrations()), (0, 0));
+    exec.run(100);
+    assert_eq!(
+        exec.sweep(101, 96).unwrap(),
+        0,
+        "quiet for 100 ticks is not quiet for 101"
+    );
+    assert_eq!(
+        exec.sweep(100, 96).unwrap(),
+        96,
+        "quiet for exactly the bound is swept"
+    );
+    assert_eq!(exec.evictions(), 96);
+    let mut busy = Executor::<64>::new(config()).unwrap();
+    wire(&mut busy);
+    busy.attach_log(&scratch("busy.wal")).expect("a log");
+    busy.run(100);
+    kick(&busy, 7, 1);
+    busy.tick();
+    assert!(
+        !busy.units()[7].mailbox_is_empty(),
+        "the message waits in the mailbox"
+    );
+    let swept = busy.sweep(0, 96).unwrap();
+    assert!(
+        !busy.is_evicted(7),
+        "a unit holding a message is not at rest"
+    );
+    assert_eq!(swept, 95);
+    assert_eq!(busy.log().unwrap().entries(), 95);
+}
+
 #[test]
 fn a_sealed_header_claiming_more_directory_than_the_file_holds_is_truncated_not_an_allocation() {
     let header = CortexFileHeader::new(0, 1, 0, u32::MAX);
@@ -317,6 +478,10 @@ fn the_log_refuses_a_unit_outside_it_before_writing() {
     assert!(matches!(log.read(5), Err(ImageError::LogCorrupt(5))));
     assert!(log.append(1, &[7; 64]).is_ok());
     assert_eq!(log.read(1).unwrap(), [7; 64]);
+    assert_eq!(log.entries(), 1);
+    assert!(log.append(0, &[8; 64]).is_ok());
+    assert_eq!(log.entries(), 2, "one entry per append");
+    assert_eq!(log.read(0).unwrap(), [8; 64]);
 }
 
 #[test]

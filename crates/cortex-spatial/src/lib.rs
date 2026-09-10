@@ -86,6 +86,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn confidence_decays_by_two_to_the_minus_eight_of_itself_each_step_and_reaches_zero() {
+        let mut g = SpatialGridCoordinate::default();
+        g.fix(0, 0, 0, 0);
+        let one = g.path_integration_confidence_q16;
+        assert!(one > 0, "a fix restores confidence");
+        g.integrate(0, 0, 0, 0);
+        assert_eq!(
+            g.path_integration_confidence_q16,
+            one - (one >> CONFIDENCE_DECAY_SHIFT),
+            "one step takes 2^-8 of it"
+        );
+        for _ in 0..10_000 {
+            g.integrate(0, 0, 0, 0);
+        }
+        assert_eq!(
+            g.path_integration_confidence_q16, 0,
+            "and it reaches zero exactly"
+        );
+    }
+
+    #[test]
     fn record_is_one_cache_line_and_default_is_the_origin_with_no_confidence() {
         assert_eq!(core::mem::size_of::<SpatialGridCoordinate>(), 64);
         assert_eq!(core::mem::align_of::<SpatialGridCoordinate>(), 64);

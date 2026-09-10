@@ -142,6 +142,30 @@ impl DendriticSuperNeuron {
 mod tests {
     use super::*;
 
+    #[test]
+    fn rest_is_a_fixed_point_and_a_spike_leaves_the_soma_below_rest() {
+        let mut u = unit();
+        for t in 0..1_000u32 {
+            assert!(!u.integrate(0, 0, t));
+            assert_eq!(
+                (u.v_soma, u.v_basal, u.v_apical, u.v_thresh),
+                (0, 0, 0, THRESHOLD_BASE),
+                "nothing moves at rest"
+            );
+        }
+        let mut v = unit();
+        let mut spiked = false;
+        for t in 0..2_000u32 {
+            if v.integrate(2 * THRESHOLD_BASE, 0, t) {
+                spiked = true;
+                break;
+            }
+        }
+        assert!(spiked, "a strong drive fires");
+        assert!(v.v_soma < 0, "the reset is below rest: {}", v.v_soma);
+        assert_eq!(v.v_soma, V_RESET);
+    }
+
     fn unit() -> DendriticSuperNeuron {
         let mut u = DendriticSuperNeuron::new(1);
         u.v_thresh = THRESHOLD_BASE;
@@ -372,6 +396,22 @@ mod tests {
             t += 1;
         }
         assert_eq!(u.v_thresh, THRESHOLD_BASE, "reaches the base exactly");
+        let mut raised = unit();
+        raised.v_thresh = THRESHOLD_BASE + 0x2000;
+        raised.integrate(0, 0, 0);
+        assert_eq!(
+            raised.v_thresh,
+            THRESHOLD_BASE + 0x2000 - (0x2000 >> THRESHOLD_DECAY_SHIFT),
+            "one tick takes 2^-12 of the excess"
+        );
+        let mut raised = unit();
+        raised.v_thresh = THRESHOLD_BASE + 0x2000;
+        raised.integrate(0, 0, 0);
+        assert_eq!(
+            raised.v_thresh,
+            THRESHOLD_BASE + 0x2000 - (0x2000 >> THRESHOLD_DECAY_SHIFT),
+            "one tick takes 2^-12 of the excess"
+        );
         let mut low = unit();
         low.v_thresh = THRESHOLD_BASE / 2;
         low.integrate(0, 0, 0);
@@ -380,5 +420,116 @@ mod tests {
             THRESHOLD_BASE / 2,
             "a threshold below the base is left alone"
         );
+    }
+}
+
+/// Property tests (ADR-0030): the invariants of integration over the lattice and a seeded walk.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    fn check(u: &DendriticSuperNeuron) {
+        assert!(
+            u.v_thresh >= THRESHOLD_BASE,
+            "the threshold never falls below its base"
+        );
+        assert!(u.refractory_ticks <= REFRACTORY_TICKS);
+        assert!(u.bac_plateau_ticks <= BAC_PLATEAU_TICKS);
+        assert_eq!(
+            u.flags & FLAG_BURST_MODE != 0,
+            u.bac_plateau_ticks > 0,
+            "the burst flag is the plateau's"
+        );
+    }
+
+    #[test]
+    fn a_million_edge_biased_ticks_keep_every_invariant_and_never_panic() {
+        let mut rng = Lcg::new(0x9E37_79B9_7F4A_7C15);
+        let mut u = DendriticSuperNeuron::new(1);
+        u.v_thresh = THRESHOLD_BASE;
+        let mut fired = 0u32;
+        for t in 0..1_000_000u32 {
+            let (basal, apical) = (rng.i32_edge_biased(), rng.i32_edge_biased());
+            let refractory_before = u.refractory_ticks;
+            let spiked = u.integrate(basal, apical, t);
+            check(&u);
+            if spiked {
+                assert_eq!(refractory_before, 0, "a spike only outside the window");
+                assert_eq!(u.v_soma, V_RESET);
+                assert_eq!(u.last_soma_spike_tick, t);
+                assert!(u.v_thresh > THRESHOLD_BASE, "the threshold stepped up");
+                assert!(u.refractory_ticks > 0);
+                fired = fired.saturating_add(1);
+            } else if refractory_before > 0 {
+                assert_eq!(u.refractory_ticks, refractory_before.saturating_sub(1));
+            }
+        }
+        assert!(fired > 1_000, "the walk fires: {fired}");
+    }
+
+    #[test]
+    fn every_lattice_pair_drives_a_unit_for_a_thousand_ticks_without_a_panic() {
+        for &basal in I32_LATTICE.iter() {
+            for &apical in I32_LATTICE.iter() {
+                let mut u = DendriticSuperNeuron::new(1);
+                u.v_thresh = THRESHOLD_BASE;
+                for t in 0..1_000u32 {
+                    u.integrate(basal, apical, t);
+                    check(&u);
+                }
+                // Every field at an extreme: the invariants hold and nothing panics, whether
+                // or not the unit fires (a threshold at the top is reachable by inputs at the top).
+                let mut extreme = DendriticSuperNeuron::new(2);
+                extreme.v_thresh = i32::MAX;
+                extreme.v_soma = i32::MAX;
+                extreme.v_basal = i32::MIN;
+                extreme.v_apical = i32::MIN;
+                for t in 0..64u32 {
+                    extreme.integrate(basal, apical, t);
+                    check(&extreme);
+                }
+                let mut unconfigured = DendriticSuperNeuron::new(3);
+                unconfigured.v_thresh = i32::MIN;
+                for t in 0..64u32 {
+                    assert!(
+                        !unconfigured.integrate(basal, apical, t),
+                        "a non-positive threshold never fires"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ticks_since_spike_counts_forward_across_the_wrap_and_never_backward() {
+        for (last, now, expected) in [
+            (0u32, 0u32, 0u32),
+            (5, 5, 0),
+            (5, 6, 1),
+            (u32::MAX, 0, 1),
+            (u32::MAX - 1, 1, 3),
+            (0, u32::MAX, u32::MAX),
+            (1 << 31, 0, 1 << 31),
+        ] {
+            let mut u = DendriticSuperNeuron::new(1);
+            u.last_soma_spike_tick = last;
+            assert_eq!(u.ticks_since_spike(now), expected, "{last} -> {now}");
+        }
+        for &last in U32_LATTICE.iter() {
+            for &now in U32_LATTICE.iter() {
+                let mut u = DendriticSuperNeuron::new(1);
+                u.last_soma_spike_tick = last;
+                let since = u.ticks_since_spike(now);
+                assert_eq!(
+                    last.wrapping_add(since),
+                    now,
+                    "the stamp plus the count is now"
+                );
+            }
+        }
     }
 }

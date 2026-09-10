@@ -372,6 +372,119 @@ mod tests {
     use super::*;
     use crate::{EMPTY_CLAUSE, SymbolicRuleNode};
 
+    #[test]
+    fn an_empty_slot_below_the_arity_is_none_and_three_argument_pairs_fit_six_slots() {
+        let mut node = TermNode::compound(9, &[1, 2]).unwrap();
+        node.children[1] = TERM_NONE;
+        assert_eq!(node.child(0), Some(1), "the argument is term 1");
+        assert_eq!(node.child(1), None, "an empty slot, not an index minus one");
+        let mut arena = Arena::<16>::new();
+        let x = arena.var(0);
+        let s = arena.constant(S);
+        let gx = arena.compound(G, &[x, s, s]);
+        let gs = arena.compound(G, &[s, s, s]);
+        let mut bindings = [Binding::default(); 4];
+        let mut trail = [0u32; 4];
+        let mut six = [0u32; 6];
+        assert_eq!(
+            unify(gx, gs, &arena.nodes, &mut bindings, &mut trail, &mut six).0,
+            UnifyResult::Unified,
+            "three pairs are pushed after the one they replace was popped"
+        );
+        let mut bindings = [Binding::default(); 4];
+        let mut five = [0u32; 5];
+        assert_eq!(
+            unify(gx, gs, &arena.nodes, &mut bindings, &mut trail, &mut five).0,
+            UnifyResult::BoundExceeded
+        );
+    }
+
+    #[test]
+    fn resolution_reports_the_first_failure_that_is_not_a_clash() {
+        let mut arena = Arena::<16>::new();
+        let (x, y) = (arena.var(0), arena.var(1));
+        let (s, t) = (arena.constant(S), arena.constant(T));
+        let fst = arena.compound(F, &[s, t]);
+        let gs = arena.compound(G, &[s]);
+        let fxy = arena.compound(F, &[x, y]);
+        let a: Clause = (literal_of_term(fst, false).unwrap(), LITERAL_NONE);
+        let b: Clause = (
+            literal_of_term(gs, true).unwrap(),
+            literal_of_term(fxy, true).unwrap(),
+        );
+        let mut bindings = [Binding::default(); 4];
+        let mut trail = [0u32; 4];
+        // Two slots: the first pair clashes on the functor before it pushes anything; the second
+        // has room for one argument pair, not two.
+        let mut two = [0u32; 2];
+        assert_eq!(
+            resolve_first_order(a, b, &arena.nodes, &mut bindings, &mut trail, &mut two),
+            Err(UnifyResult::BoundExceeded),
+            "the bound, not the clash, is what stopped the proof"
+        );
+        let mut four = [0u32; 4];
+        assert_eq!(
+            resolve_first_order(a, b, &arena.nodes, &mut bindings, &mut trail, &mut four),
+            Ok((LITERAL_NONE, literal_of_term(gs, true).unwrap())),
+            "with room, the second pair resolves"
+        );
+    }
+
+    #[test]
+    fn a_child_past_the_arity_is_none_even_when_the_slot_holds_a_value() {
+        let mut node = TermNode::compound(9, &[1]).unwrap();
+        node.children[1] = 5;
+        assert_eq!(node.child(0), Some(1));
+        assert_eq!(
+            node.child(1),
+            None,
+            "the arity bounds the children, not the array"
+        );
+        assert_eq!(node.child(MAX_ARITY), None);
+    }
+
+    #[test]
+    fn a_stack_of_exactly_two_unifies_flat_terms_and_a_compound_needs_room_for_its_arguments() {
+        let mut arena = Arena::<8>::new();
+        let x = arena.var(0);
+        let c = arena.constant(S);
+        let mut bindings = [Binding::default(); 4];
+        let mut trail = [0u32; 4];
+        let mut two = [0u32; 2];
+        assert_eq!(
+            unify(x, c, &arena.nodes, &mut bindings, &mut trail, &mut two),
+            (UnifyResult::Unified, 1),
+            "two slots hold the one pair"
+        );
+        let mut one = [0u32; 1];
+        assert_eq!(
+            unify(x, c, &arena.nodes, &mut bindings, &mut trail, &mut one).0,
+            UnifyResult::BoundExceeded
+        );
+        let fx = arena.compound(F, &[x]);
+        let fc = arena.compound(F, &[c]);
+        let mut bindings = [Binding::default(); 4];
+        assert_eq!(
+            unify(fx, fc, &arena.nodes, &mut bindings, &mut trail, &mut two).0,
+            UnifyResult::Unified,
+            "the pair is popped before its one argument pair is pushed: two slots suffice"
+        );
+        let gx = arena.compound(G, &[x, c]);
+        let gc = arena.compound(G, &[c, c]);
+        let mut bindings = [Binding::default(); 4];
+        let mut three = [0u32; 3];
+        assert_eq!(
+            unify(gx, gc, &arena.nodes, &mut bindings, &mut trail, &mut three).0,
+            UnifyResult::BoundExceeded,
+            "two argument pairs need four slots"
+        );
+        let mut four = [0u32; 4];
+        assert_eq!(
+            unify(gx, gc, &arena.nodes, &mut bindings, &mut trail, &mut four).0,
+            UnifyResult::Unified
+        );
+    }
+
     const F: u32 = 100;
     const G: u32 = 101;
     const HUMAN: u32 = 200;
