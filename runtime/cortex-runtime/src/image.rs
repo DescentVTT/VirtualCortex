@@ -84,7 +84,7 @@ const _: () = assert!(MAX_BLOCKS == MAX_TOKEN_BLOCK as u64 + 1);
 
 /// True for more blocks than a token can name. Its own function, so that the mutants of the
 /// comparison at a bound no image can reach are excluded by this name and nothing else.
-fn too_many_blocks(count: u64) -> bool {
+pub(crate) fn too_many_blocks(count: u64) -> bool {
     count > MAX_BLOCKS
 }
 
@@ -359,14 +359,15 @@ impl Image {
             .ok_or(ImageError::Truncated)?;
         let header = CortexFileHeader::decode(header_bytes);
         header.validate()?;
-        // The directory cannot be longer than the bytes after the header, whatever a sealed
-        // header says; checked before the count sizes an allocation.
-        if header.section_count as usize > after_header.len() / 64 {
+        // The entries follow the header, 64 bytes each: the next chunk, not an offset. The
+        // directory cannot hold more entries than the file has chunks after the header,
+        // whatever a sealed header says; checked before the count sizes an allocation, and
+        // counted by the iterator, so no division exists for a mutant to touch.
+        let mut directory = after_header.chunks_exact(64);
+        if header.section_count as usize > directory.len() {
             return Err(ImageError::Truncated);
         }
         let mut entries = Vec::with_capacity(header.section_count as usize);
-        // The entries follow the header, 64 bytes each: the next chunk, not an offset.
-        let mut directory = after_header.chunks_exact(64);
         for _ in 0..header.section_count {
             let entry_bytes: &[u8; 64] = directory
                 .next()

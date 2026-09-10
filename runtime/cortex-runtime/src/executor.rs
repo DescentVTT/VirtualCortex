@@ -188,10 +188,6 @@ pub enum InjectError {
 /// The injector payload that asks for a turn without a message.
 pub const ACTIVATE: u32 = u32::MAX;
 
-/// Blocks a synapse token can name: `MAX_TOKEN_BLOCK + 1` (finding F-23), formed at compile
-/// time, where an overflow is a compile error rather than an operation.
-const MAX_BLOCKS: usize = cortex_core::MAX_TOKEN_BLOCK as usize + 1;
-
 /// Aborts the process: inside the tick loop a violated invariant is a bug (whitepaper §8.9).
 #[cold]
 fn abort(message: &str) -> ! {
@@ -332,7 +328,8 @@ impl<const CAP: usize> Executor<CAP> {
         if config.units >= u32::MAX as usize {
             return Err(ConfigError::TooManyUnits);
         }
-        if config.blocks > MAX_BLOCKS {
+        // The loader's bound, one function unit-tested at its edge (finding F-23).
+        if crate::image::too_many_blocks(config.blocks as u64) {
             return Err(ConfigError::TooManyBlocks);
         }
         let workers = config.workers;

@@ -48,6 +48,13 @@ exclude_re = [
     # since brief 016, so they have no arithmetic mutant to exclude.)
     "barrier\\.rs:\\d+:\\d+: replace << with >>$",
     "barrier\\.rs:\\d+:\\d+: replace < with (==|>|<=) in SpinBarrier::wait",
+    # Work stealing balances load and changes no result: a worker that never steals still runs
+    # every unit it owns, exactly once (the contention test), and the shares are reported, not
+    # asserted (ADR-0030).
+    "executor\\.rs:\\d+:\\d+: replace Worker<CAP>::steal -> Option<u32> with None",
+    # The platform-conditional log I/O: `read_at` and `write_at` each have a Unix and a Windows
+    # form, and the form a platform does not compile has no test on that platform.
+    "image\\.rs:\\d+:\\d+: replace (read_at|write_at) -> io::Result<\\(\\)> with Ok\\(\\(\\)\\)",
     # Dropping the executor stops its workers; a mutant that leaks them is hidden by the end
     # of the test process.
     "executor\\.rs:\\d+:\\d+: replace <impl Drop for Executor<CAP>>::drop with \\(\\)",

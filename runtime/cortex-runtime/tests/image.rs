@@ -478,6 +478,12 @@ fn a_sealed_header_claiming_more_directory_than_the_file_holds_is_truncated_not_
         Image::decode::<8>(&two, Config::default()),
         Err(ImageError::Truncated)
     ));
+    // A header with no sections and nothing after it is not truncated: it lacks its sections.
+    let none = CortexFileHeader::new(0, 1, 0, 0);
+    assert!(matches!(
+        Image::decode::<8>(&none.encode(), Config::default()),
+        Err(ImageError::MissingSection(SECTION_NEURON))
+    ));
 }
 
 #[test]
