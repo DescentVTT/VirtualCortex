@@ -14,7 +14,7 @@
     "spec:briefs": "node scripts/check-briefs.mjs"
   },
   "devDependencies": {
-    "@descent-vtt/spec-graph": "0.2.1",
-    "@descent-vtt/spec-guard": "0.4.0"
+    "@descent-vtt/spec-graph": "0.3.0",
+    "@descent-vtt/spec-guard": "0.5.0"
   }
 }
