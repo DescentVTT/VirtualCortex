@@ -47,7 +47,8 @@ pub struct InteroceptiveState {
 impl InteroceptiveState {
     /// One integration step. Load gains the pain and strain inputs and loses `recovery`, all
     /// saturating and never below zero; comfort is `1 - 2·min(load, 1)`; mood moves toward
-    /// comfort by a 2^-MOOD_SHIFT fraction of the difference. Returns the comfort.
+    /// comfort by a 2^-MOOD_SHIFT fraction of the difference and by at least one LSB, so a
+    /// held comfort is reached exactly. Returns the comfort.
     pub fn integrate(
         &mut self,
         pain_burst_q16: u32,
@@ -64,7 +65,10 @@ impl InteroceptiveState {
         let bounded = self.allostatic_load_q16.min(Q16_ONE) as i32;
         self.somatic_comfort_q16 = Q16_ONE as i32 - 2 * bounded;
         let gap = self.somatic_comfort_q16 as i64 - self.mood_baseline_q16 as i64;
-        self.mood_baseline_q16 = (self.mood_baseline_q16 as i64 + (gap >> MOOD_SHIFT)) as i32;
+        // At least one LSB toward comfort, never past it: an arithmetic shift floors only
+        // negatives, so without the floor the mood would stall 2^MOOD_SHIFT - 1 below +1.0.
+        let step = (gap.abs() >> MOOD_SHIFT).max(1).min(gap.abs());
+        self.mood_baseline_q16 = (self.mood_baseline_q16 as i64 + gap.signum() * step) as i32;
         self.somatic_comfort_q16
     }
 
@@ -92,18 +96,19 @@ impl InteroceptiveState {
     }
 
     /// The metaphor source domain the body currently offers (ADR-0021, whitepaper §8.13):
-    /// `DOMAIN_CALM` when comfort is at least 0.5 and neither strain exceeds 0.25; otherwise
-    /// the largest of thermal strain, allostatic load and the energy deficit `1 - resilience`,
-    /// ties broken in that order. Deterministic; the lexicon turns the domain into words.
+    /// `DOMAIN_CALM` when comfort is at least 0.5 and none of thermal strain, allostatic load
+    /// and the energy deficit `1 - resilience` exceeds 0.25; otherwise the largest of the
+    /// three, ties broken in that order. Deterministic; the lexicon turns the domain into words.
     pub const fn metaphor_source_domain(&self) -> u16 {
         let quarter = Q16_ONE / 4;
+        let deficit = Q16_ONE.saturating_sub(self.energy_resilience_q16);
         if self.somatic_comfort_q16 >= (Q16_ONE / 2) as i32
             && self.thermal_strain_q16 <= quarter
             && self.allostatic_load_q16 <= quarter
+            && deficit <= quarter
         {
             return DOMAIN_CALM;
         }
-        let deficit = Q16_ONE.saturating_sub(self.energy_resilience_q16);
         if self.thermal_strain_q16 >= self.allostatic_load_q16 && self.thermal_strain_q16 >= deficit
         {
             DOMAIN_HEAT
@@ -183,14 +188,14 @@ mod tests {
         for _ in 0..2000 {
             s.integrate(0, 0, 0);
         }
-        assert!(
-            (s.mood_baseline_q16 - ONE as i32).abs() <= (1 << MOOD_SHIFT),
-            "within one step of comfort"
+        assert_eq!(
+            s.mood_baseline_q16, ONE as i32,
+            "a held comfort is reached exactly, not 63 LSB short"
         );
         for _ in 0..2000 {
             s.integrate(ONE, 0, 0);
         }
-        assert!((s.mood_baseline_q16 + ONE as i32).abs() <= (1 << MOOD_SHIFT));
+        assert_eq!(s.mood_baseline_q16, -(ONE as i32));
     }
 
     #[test]
@@ -256,6 +261,16 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(calm.metaphor_source_domain(), DOMAIN_CALM);
+        let starved = InteroceptiveState {
+            somatic_comfort_q16: ONE as i32,
+            energy_resilience_q16: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            starved.metaphor_source_domain(),
+            DOMAIN_DUSK,
+            "comfort with an empty reserve is not calm"
+        );
         let hot = InteroceptiveState {
             thermal_strain_q16: ONE / 2,
             allostatic_load_q16: ONE / 4,

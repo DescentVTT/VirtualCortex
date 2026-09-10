@@ -90,6 +90,12 @@ impl SocialPerspectiveNode {
         self.transition(&[TURN_SELF], TURN_OTHER)
     }
 
+    /// The other opens the exchange and the self listens: from idle to the other's turn.
+    /// Refused once an exchange is under way, where the floor passes by `yield_turn`.
+    pub fn listen(&mut self) -> bool {
+        self.transition(&[TURN_IDLE], TURN_OTHER)
+    }
+
     /// The self asks the other to repair its last turn (a clarification request). Refused
     /// unless the other holds the floor; counted, saturating.
     pub fn request_repair(&mut self) -> bool {
@@ -226,10 +232,26 @@ mod tests {
     }
 
     #[test]
+    fn trust_above_one_is_clamped_back_to_one_by_a_confirmation() {
+        let mut n = node(0);
+        n.trust_score_q16 = Q16_ONE + 5;
+        assert_eq!(n.update_trust(true), Q16_ONE);
+        let mut m = node(0);
+        m.trust_score_q16 = u32::MAX;
+        assert_eq!(m.update_trust(true), Q16_ONE, "no wrap on a corrupt value");
+    }
+
+    #[test]
     fn the_floor_passes_by_the_rules_and_refuses_the_rest() {
         let mut n = node(0);
         assert!(!n.yield_turn(), "nothing to yield while idle");
         assert!(!n.request_repair(), "nothing to repair while idle");
+        assert!(n.listen(), "the other may open the exchange");
+        assert_eq!(n.dialogue_turn_state, TURN_OTHER);
+        assert!(!n.listen(), "but only from idle");
+        assert!(n.take_turn());
+        assert!(!n.listen(), "not while the self holds the floor");
+        n.close_exchange();
         assert!(n.take_turn());
         assert!(!n.take_turn(), "already holding the floor");
         assert!(n.yield_turn());
