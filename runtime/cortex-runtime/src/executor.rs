@@ -36,7 +36,9 @@ use cortex_core::{
     spike_message, synapse_token, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
-use cortex_executive::{PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS, PolicyAmendment, spec_of};
+use cortex_executive::{
+    AMENDMENT_PROPOSED, PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS, PolicyAmendment, spec_of,
+};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
@@ -143,8 +145,15 @@ pub enum AmendError {
     /// The veto gate was evaluated on another proposal: its `proposal_action_id` is not this
     /// amendment's id.
     WrongProposal,
+    /// The amendment is not proposed, so the veto gate has nothing to admit.
+    NotProposed,
+    /// The amendment is not admitted, so there is nothing to trial.
+    NotAdmitted,
     /// The amendment is not trialled with every gate passed.
     NotCommittable,
+    /// A later proposal for the same parameter was committed first: the arena is the log the
+    /// loader replays in order, so commits to one parameter happen in index order.
+    Superseded,
     /// The live value is no longer the one the trial started from: another commit came
     /// between, and the trial did not test this one on top of it.
     Stale,
@@ -290,6 +299,9 @@ pub struct Executor<const CAP: usize> {
     rehydrations: u64,
     policy: Policy,
     amendments: Vec<PolicyAmendment>,
+    /// `Config::amendments` plus what an image held: the arena's size, which `Vec::capacity`
+    /// only bounds from below.
+    amendment_capacity: usize,
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -386,6 +398,7 @@ impl<const CAP: usize> Executor<CAP> {
             rehydrations: 0,
             policy: Policy::default(),
             amendments: Vec::with_capacity(config.amendments),
+            amendment_capacity: config.amendments,
         })
     }
 
@@ -564,7 +577,7 @@ impl<const CAP: usize> Executor<CAP> {
 
     /// Slots left for proposals.
     pub fn amendment_room(&self) -> usize {
-        self.amendments.capacity() - self.amendments.len()
+        self.amendment_capacity - self.amendments.len()
     }
 
     /// Proposes, at this tick, to change `parameter` from its live value to `proposed_value`,
@@ -578,7 +591,7 @@ impl<const CAP: usize> Executor<CAP> {
         objective: u8,
         min_gain: u16,
     ) -> Result<usize, AmendError> {
-        if self.amendments.len() == self.amendments.capacity() {
+        if self.amendments.len() >= self.amendment_capacity {
             return Err(AmendError::ArenaFull);
         }
         let index = self.amendments.len();
@@ -598,7 +611,7 @@ impl<const CAP: usize> Executor<CAP> {
     /// The veto gate's verdict on the proposal at `index`: the gate must have been evaluated on
     /// this amendment (`proposal_action_id` is its id), and the amendment is admitted only by
     /// a permitting verdict; a gate not yet evaluated is closed (ADR-0028). Returns whether
-    /// the amendment is now admitted.
+    /// the amendment is now admitted; refused for an amendment that is not proposed.
     pub fn admit(
         &mut self,
         index: usize,
@@ -611,12 +624,16 @@ impl<const CAP: usize> Executor<CAP> {
         if gate.proposal_action_id != a.amendment_id {
             return Err(AmendError::WrongProposal);
         }
+        if a.status != AMENDMENT_PROPOSED {
+            return Err(AmendError::NotProposed);
+        }
         Ok(a.admit(gate.is_permitted()))
     }
 
-    /// Records a trial's result on the amendment at `index` (`PolicyAmendment::record_trial`;
-    /// the trial itself is [`crate::trial::run`]). Returns whether it may now be committed.
-    pub fn record_trial(
+    /// The trial's way in: records a trial's result on the amendment at `index`
+    /// (`PolicyAmendment::record_trial`). Crate-private, so that a verdict enters the arena
+    /// only through a trial the runtime ran ([`crate::trial::run`]).
+    pub(crate) fn record_trial(
         &mut self,
         index: usize,
         ticks: u32,
@@ -624,36 +641,43 @@ impl<const CAP: usize> Executor<CAP> {
         candidate_hash: u64,
         baseline_cost: u32,
         candidate_cost: u32,
-    ) -> Result<bool, AmendError> {
-        let a = self
-            .amendments
-            .get_mut(index)
-            .ok_or(AmendError::NoSuchAmendment)?;
-        Ok(a.record_trial(
-            ticks,
-            baseline_hash,
-            candidate_hash,
-            baseline_cost,
-            candidate_cost,
-        ))
+    ) -> bool {
+        self.amendments.get_mut(index).is_some_and(|a| {
+            a.record_trial(
+                ticks,
+                baseline_hash,
+                candidate_hash,
+                baseline_cost,
+                candidate_cost,
+            )
+        })
     }
 
     /// Commits the trialled amendment at `index` into the live policy, between ticks. Refused
-    /// when the amendment is not committable, or when the live value is no longer the one the
-    /// trial started from (another commit came between: the trial did not test this change
-    /// on top of that one).
+    /// when the amendment is not committable; when a later proposal for the same parameter was
+    /// committed first (the arena is the log the loader replays in index order, so commits to
+    /// one parameter keep that order); or when the live value is no longer the one the trial
+    /// started from (another commit came between: the trial did not test this change on top
+    /// of that one).
     pub fn commit(&mut self, index: usize) -> Result<(), AmendError> {
         let tick = self.tick as u32;
-        let a = self
+        let a = *self
             .amendments
-            .get_mut(index)
+            .get(index)
             .ok_or(AmendError::NoSuchAmendment)?;
         if !a.may_commit() {
             return Err(AmendError::NotCommittable);
         }
+        if self.amendments[index.saturating_add(1)..]
+            .iter()
+            .any(|later| later.is_committed() && later.parameter == a.parameter)
+        {
+            return Err(AmendError::Superseded);
+        }
         if self.policy.value(a.parameter) != Some(a.current_value) {
             return Err(AmendError::Stale);
         }
+        let a = &mut self.amendments[index];
         if !self.policy.set(a.parameter, a.proposed_value) {
             return Err(AmendError::NotCommittable);
         }
@@ -671,7 +695,7 @@ impl<const CAP: usize> Executor<CAP> {
     /// in the image's order; a committed one is replayed into the policy, and is refused when
     /// its starting value is not the policy's at that point in the replay.
     pub(crate) fn load_amendment(&mut self, a: PolicyAmendment) -> bool {
-        if self.amendments.len() == self.amendments.capacity() {
+        if self.amendments.len() >= self.amendment_capacity {
             return false;
         }
         if a.is_committed() {
