@@ -14,8 +14,8 @@ This repository is at the **state-model stage**. Read the labels before reading 
 
 | Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates, 35 `#[repr(C)]` records with compile-time size and alignment assertions, small deterministic update rules with boundary tests in 22 crates, zero dependencies, zero `unsafe`. |
-| **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, mailboxes, delivery from the wheel into mailboxes, image loader, the shared-memory mappings of the embodiment and tool rings, the tool broker, the lexicon behind the language frames, reclamation, fabric transport, subsystem dynamics beyond the rules in §5. |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates, 35 `#[repr(C)]` records with compile-time size and alignment assertions, small deterministic update rules with boundary tests in 22 crates, the turn gate and lock-free mailbox of axiom A3 under a four-thread test, zero dependencies, zero `unsafe`. |
+| **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, delivery from the wheel into mailboxes, image loader, the shared-memory mappings of the embodiment and tool rings, the tool broker, the lexicon behind the language frames, reclamation, fabric transport, subsystem dynamics beyond the rules in §5. |
 | **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. A benchmark harness exists; no admissible run on the reference platform does. |
 | **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. |
 

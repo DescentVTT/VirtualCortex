@@ -30,7 +30,10 @@ impl CortexFileHeader {
     ///   unchanged; the meaning of the weight bytes changed.
     /// - 3: `CerebellarMicrozone`'s reserved bytes became `pred_ring` and `delay_ctl`
     ///   (brief 004); a version-2 image has them zero, which reads as an empty delay line.
-    pub const FORMAT_VERSION: u32 = 3;
+    /// - 4: `DendriticSuperNeuron::mailbox_tag` became `mailbox_reserved` and the mailbox head
+    ///   encodes `node index + 1`, zero when empty (ADR-0017). A version-3 image at rest has
+    ///   both zero, which reads correctly; the meaning of the head changed, hence the bump.
+    pub const FORMAT_VERSION: u32 = 4;
 }
 
 const _: () = {
@@ -49,6 +52,6 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 3);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 4);
     }
 }
