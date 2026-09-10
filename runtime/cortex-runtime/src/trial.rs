@@ -153,8 +153,9 @@ fn run_fork<const CAP: usize>(
             }
         }
         exec.tick();
-        // `tick + 1` is at most `trial.ticks`; the cadence was just checked non-zero.
-        if trial.sweep_every > 0 && tick.wrapping_add(1).checked_rem(trial.sweep_every) == Some(0) {
+        // `tick + 1` is at most `trial.ticks`; a zero cadence has no remainder, so it never
+        // sweeps, and no guard exists for a mutant to move.
+        if tick.wrapping_add(1).checked_rem(trial.sweep_every) == Some(0) {
             exec.sweep_by_policy()?;
         }
     }
