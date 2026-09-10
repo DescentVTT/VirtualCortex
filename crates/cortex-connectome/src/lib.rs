@@ -74,6 +74,9 @@ pub const SECTION_LAMINAR: u32 = 38;
 pub const SECTION_ROUTING: u32 = 39;
 /// `TermNode` arena of `cortex-reasoning` (ADR-0025; the loader's support is Specified).
 pub const SECTION_TERM: u32 = 40;
+/// `PolicyAmendment` arena of `cortex-executive` (ADR-0031): the engine's amendments to its own
+/// policy, committed and rejected, so that the policy an image runs under is in the image.
+pub const SECTION_AMENDMENT: u32 = 41;
 
 /// Why a header is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,7 +148,11 @@ impl CortexFileHeader {
     /// - 9: `EthicalEvaluationGate::veto_decision_flag` is `DECISION_*` (0 not yet evaluated,
     ///   1 vetoed, 2 permitted; ADR-0028). A version-8 image's zero reads as not yet evaluated,
     ///   which fails closed; nothing else moved.
-    pub const FORMAT_VERSION: u32 = 9;
+    /// - 10: the amendment section (`SECTION_AMENDMENT`, 41) holds `PolicyAmendment` records
+    ///   (ADR-0031), and a loader derives the sweep policy from the committed ones; a
+    ///   version-9 image has no such section and no record moved, but a version-9 loader
+    ///   would refuse the section, so the version moves.
+    pub const FORMAT_VERSION: u32 = 10;
 
     /// A header for an image of these counts, sealed.
     pub fn new(num_columns: u64, num_neurons: u64, num_synapses: u64, section_count: u32) -> Self {
@@ -310,7 +317,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 9);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 10);
     }
 
     #[test]

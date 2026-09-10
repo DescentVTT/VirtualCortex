@@ -22,6 +22,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         deque_capacity: 0,
         injector_capacity: 1 << 16,
         trace_capacity: total as usize,
+        amendments: 0,
     })
     .expect("a valid configuration");
     let inject = exec.injector();
@@ -116,6 +117,7 @@ fn a_unit_that_keeps_receiving_is_served_on_every_tick_and_is_never_starved() {
         nodes_per_worker: 64,
         injector_capacity: 16,
         trace_capacity: 4096,
+        amendments: 0,
         ..Config::default()
     })
     .unwrap();

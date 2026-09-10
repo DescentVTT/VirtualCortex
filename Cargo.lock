@@ -203,6 +203,8 @@ version = "0.1.0"
 dependencies = [
  "cortex-connectome",
  "cortex-core",
+ "cortex-ethics",
+ "cortex-executive",
 ]
 
 [[package]]

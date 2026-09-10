@@ -6,7 +6,9 @@
 //! its own allow-list, reads the frame, checks the `authorization_level` the ethics gate
 //! (`cortex-ethics`) wrote into it, performs the action, and writes the result back into the
 //! same frame. The worker's seccomp filter is unchanged. The frame's state machine is
-//! Implemented; the broker and the ring mapping are the runtime's (Specified).
+//! Implemented; the broker and the ring mapping are the runtime's (Specified). Since ADR-0031
+//! a third category names the amendment register: the channel for what the engine may not
+//! change about itself and the audit trail of what it did (whitepaper §8.18).
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -46,6 +48,20 @@ pub const ACTION_PARSE_STRUCTURE: u16 = 0x0001;
 pub const ACTION_EXTRACT_ENTITIES: u16 = 0x0002;
 /// `TOOL_CATEGORY_DOC_ENGINE`: search for premise–conclusion contradictions and citation validity.
 pub const ACTION_SEARCH_CROSS_REF: u16 = 0x0003;
+/// Tool category: the amendment register outside the engine (whitepaper §8.18; ADR-0031). The
+/// engine amends a parameter of its own policy by itself, through the gates of
+/// `cortex-executive`'s `PolicyAmendment`; it never amends its own code. What it cannot commit
+/// leaves through this category as a frame, and what it did commit is recorded outside it.
+/// Whether the register is a file, an issue tracker or a pull request is the broker's
+/// configuration, never named here.
+pub const TOOL_CATEGORY_AMENDMENT_REGISTER: u16 = 0x0006;
+/// `TOOL_CATEGORY_AMENDMENT_REGISTER`: file an amendment the engine may not commit itself, a
+/// change to a rule rather than to a registered parameter, for the repository's gates
+/// (ADR-0029, ADR-0030) and its maintainers; `param_hash` names the amendment record.
+pub const ACTION_FILE_PROPOSAL: u16 = 0x0001;
+/// `TOOL_CATEGORY_AMENDMENT_REGISTER`: record a committed parameter amendment in the
+/// operator's register, an audit trail the engine cannot rewrite; `param_hash` names the record.
+pub const ACTION_RECORD_COMMIT: u16 = 0x0002;
 
 /// True for a (category, opcode) pair this crate defines. Opcodes are per category: 0x0001 is
 /// a proof check under the prover and a structure parse under the document engine. The
@@ -61,6 +77,9 @@ pub const fn is_known_action(category: u16, opcode: u16) -> bool {
             opcode,
             ACTION_PARSE_STRUCTURE | ACTION_EXTRACT_ENTITIES | ACTION_SEARCH_CROSS_REF
         ),
+        TOOL_CATEGORY_AMENDMENT_REGISTER => {
+            matches!(opcode, ACTION_FILE_PROPOSAL | ACTION_RECORD_COMMIT)
+        }
         _ => false,
     }
 }
@@ -252,6 +271,21 @@ mod tests {
             "an opcode means nothing outside its category"
         );
         assert!(!is_known_action(TOOL_CATEGORY_DOC_ENGINE, 0));
+        assert!(is_known_action(
+            TOOL_CATEGORY_AMENDMENT_REGISTER,
+            ACTION_FILE_PROPOSAL
+        ));
+        assert!(is_known_action(
+            TOOL_CATEGORY_AMENDMENT_REGISTER,
+            ACTION_RECORD_COMMIT
+        ));
+        assert!(
+            !is_known_action(TOOL_CATEGORY_AMENDMENT_REGISTER, 0x0003),
+            "the register has two actions"
+        );
+        assert!(!is_known_action(TOOL_CATEGORY_AMENDMENT_REGISTER, 0));
+        assert_ne!(TOOL_CATEGORY_AMENDMENT_REGISTER, TOOL_CATEGORY_DOC_ENGINE);
+        assert_eq!(TOOL_CATEGORY_AMENDMENT_REGISTER, 0x0006);
         assert!(
             !is_known_action(0x0001, 0x0001),
             "reserved categories name nothing yet"

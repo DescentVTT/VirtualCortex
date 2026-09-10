@@ -14,10 +14,11 @@ core-pinned workers. Thirty-two crates, one per subsystem, no dependencies betwe
 fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
 It is past the **state-model stage**: the records, their compile-time layout assertions, small
-update rules in twenty-four crates, synaptic fan-out with STDP, and the executor that runs them
+update rules in twenty-five crates, synaptic fan-out with STDP, and the executor that runs them
 on a pool of workers (`runtime/cortex-runtime`, ADR-0023), the `.cortex` image writer and
-loader and the clock sweep (ADR-0024) exist; the `mmap` path, the shared-memory mappings,
-core pinning, the tool broker and every subsystem's real dynamics do not. The whitepaper's
+loader and the clock sweep (ADR-0024), and the policy amendment's trial in two forks of the image
+and its commit (ADR-0031) exist; the `mmap` path, the shared-memory mappings, core pinning, the
+tool broker and every subsystem's real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.
 
@@ -75,6 +76,10 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
   that ADR's invariant: a `&mut` to a record never overlaps another reference to it.
 - Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version`,
   updates the record's table in whitepaper §5.2, and gets a changelog entry.
+- The engine never amends its own code. What it may amend by itself is a parameter in
+  `cortex-executive`'s `REGISTRY`, through the four gates of `PolicyAmendment` and a trial in two
+  forks of the image whose behaviour hashes must be equal ([ADR-0031](docs/adr/0031-policy-amendment.md));
+  a registry entry is an ADR, and the veto gate's parameters are never one.
 - Edition 2024 and MSRV 1.85 are decided by [ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)
   and inherited from `[workspace.package]`; the toolchain CI builds with is pinned in
   `rust-toolchain.toml`. Moving any of the three is its own pull request, never a passing edit.
