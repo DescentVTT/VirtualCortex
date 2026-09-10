@@ -1,6 +1,6 @@
 [package]
 name = "cortex-immune"
-description = "Glymphatic Memory Compaction, Neuro-Immune Self-Healing, and SDC/ECC Scrubbing for VirtualCortex"
+description = "Per-segment memory scrub and health record for VirtualCortex"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

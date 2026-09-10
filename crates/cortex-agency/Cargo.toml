@@ -1,6 +1,6 @@
 [package]
 name = "cortex-agency"
-description = "Intersubjective Agency, Self/Other Discrimination, and Theory of Mind (ToM) for VirtualCortex"
+description = "Self/other attribution of sensory change by efference copy for VirtualCortex"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

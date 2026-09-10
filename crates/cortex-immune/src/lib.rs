@@ -1,12 +1,9 @@
-//! # cortex-immune
-//!
-//! Glymphatic Memory Compaction, Neuro-Immune Self-Healing, and SDC/ECC Scrubbing.
-//! Continuous zero-downtime memory defragmentation and degenerate synapse phagocytosis.
-//! Engineered to 2026+ Systems Best Practice (`Latest != Newest`).
+//! Memory hygiene: the per-segment scrub record (whitepaper §5.2.13). The scrub daemon,
+//! compaction and the checksum audit are Specified (§6.6, §8.6).
 
 #![no_std]
 
-/// 64-byte POD cache-line aligned immune memory scrub and health monitoring node.
+/// 64-byte record: one arena segment's scrub state (whitepaper §5.2.13).
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImmuneScrubNode {

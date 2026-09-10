@@ -1,4 +1,6 @@
-//! Amygdalar Threat Valuation, 12ms Subcortical Low-Road & Emotional Tagging
+//! Salience: threat valuation, the fast subcortical route and emotional tagging (whitepaper
+//! §5.2.7). Contextual suppression is Specified; the target that a peak selects is
+//! `cortex-attention`'s.
 
 #![no_std]
 

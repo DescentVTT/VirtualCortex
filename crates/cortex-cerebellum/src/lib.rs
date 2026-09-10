@@ -1,4 +1,4 @@
-//! Cerebellar Internal Forward Models & Microsecond Motor Coordination
+//! Cerebellum: a per-microzone forward model with an in-record delay line (whitepaper §5.2.6).
 
 #![no_std]
 

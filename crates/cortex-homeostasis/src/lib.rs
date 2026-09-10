@@ -1,4 +1,6 @@
-//! Autonomic Homeostatic Drive Pools & Circadian Sleep-Wake Engine
+//! Homeostasis: metabolic drive pools, the circadian sleep gate and criticality control
+//! (whitepaper §5.2.16). Interoception is `cortex-affect`'s and hardware vitals are
+//! `cortex-autonomic`'s (ADR-0016).
 
 #![no_std]
 

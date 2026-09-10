@@ -1,4 +1,5 @@
-//! Hot-Pluggable Sensory Ingestion & Thalamic HAL
+//! Sensory ingestion: the 8-byte address-event record and the peripheral driver trait
+//! (whitepaper §5.2.3). Hot-plug is Specified (§6.3); the relay gate is `cortex-thalamus`.
 
 #![no_std]
 

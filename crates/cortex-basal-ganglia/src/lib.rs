@@ -1,4 +1,5 @@
-//! Basal Ganglia Action Selection, Striatal Dual-Pathway & STN Gating
+//! Basal ganglia: action-channel gating through the direct, indirect and hyperdirect
+//! pathways (whitepaper §5.2.5). Lateral competition and dopamine modulation are Specified.
 
 #![no_std]
 
