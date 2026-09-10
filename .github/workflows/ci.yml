@@ -22,6 +22,9 @@
 #   mutants - on a pull request: is every mutant cargo-mutants can make in the lines the
 #           request changes caught by a test (ADR-0030)? A rule without a test that fails
 #           when the rule is wrong does not pass it. Pinned tool, no manifest change.
+#           The ruleset "Main Protect" requires the rust, msrv and specs checks by name
+#           before a merge; the other jobs are not required, so a rename of those three
+#           is a change to the ruleset first.
 #   weekly - on a schedule (or by hand): do the whole-domain tests still hold, and which
 #           mutants survive over the whole tree? Nothing is blocked; the survivors are the
 #           next round's list (ADR-0030). Whitepaper Appendix B describes the levels.
@@ -49,7 +52,9 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust (check, tests in both profiles, fmt, clippy, rustdoc, bench)
+    # The name is a required status check of the repository's ruleset; the header above
+    # says what the job runs.
+    name: Rust (check, test, fmt, clippy)
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
@@ -212,7 +217,8 @@ jobs:
           retention-days: 90
 
   specs:
-    name: Documentation (spec-guard, spec-graph, briefs, deps)
+    # The name is a required status check of the repository's ruleset.
+    name: Documentation (spec-guard, spec-graph)
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:

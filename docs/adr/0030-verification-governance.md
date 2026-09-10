@@ -42,7 +42,7 @@ Option 1.
 
 ### Consequences
 
-- Good: a change to a rule does not pass the gate unless a test catches every mutant the tool can make in the lines it changed; the tests hold in the profile the engine runs in; quality goal 1 is checked, not asserted; the boundary tests are the lattice's, not the reviewer's memory.
+- Good: a change to a rule does not pass the gate unless a test catches every mutant the tool can make in the lines it changed (the gate is not among the ruleset's required checks; the three that are, the Rust, MSRV and documentation jobs, block a merge by name); the tests hold in the profile the engine runs in; quality goal 1 is checked, not asserted; the boundary tests are the lattice's, not the reviewer's memory.
 - Good: no manifest changed; the state crates are still free of dependencies; the mutation tool is one pinned binary CI builds once and caches.
 - Bad: the mutation job adds two to five minutes to a pull request that changes many lines; a docs-only request finds no mutants and passes in the time it takes to build.
 - Bad: an equivalent mutant needs an exclusion by name; the list in `.cargo/mutants.toml` is a maintenance item, and a wrong entry would hide a defect, which is why every entry names its function and its reason.
