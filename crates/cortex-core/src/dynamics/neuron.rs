@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicU64, AtomicU8};
+use core::sync::atomic::{AtomicU8, AtomicU64};
 
 /// 64-Byte POD Cache-Line Aligned Matthew Larkum BAC Dendritic Super-Neuron
 // Control record (whitepaper §8.2, rule L-5): holds atomics, so it is Sync but not Copy.

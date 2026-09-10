@@ -3,6 +3,7 @@ name = "cortex-neuromod"
 description = "Neuromodulator state (dopamine, norepinephrine, serotonin, acetylcholine) gating three-factor plasticity in VirtualCortex"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

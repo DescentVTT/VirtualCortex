@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/DescentVTT/VirtualCortex/actions/workflows/ci.yml/badge.svg)](https://github.com/DescentVTT/VirtualCortex/actions/workflows/ci.yml)
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
-[![Rust: stable](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
+[![Rust: 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](docs/adr/0009-rust-edition-and-msrv.md)
 
 VirtualCortex builds a spiking neural network on the virtual-actor model and constrains it to one physical server. Neural units are passive 64-byte records that occupy memory only while active; a fixed pool of core-pinned workers services them; ownership per tick is decided by a single atomic gate; axonal delay is an index into a timing wheel; and inactive tissue is evicted to local storage. Every quantity is Q16.16 fixed point, so a run is bit-identical on x86-64 and AArch64. The founding rule is **"Latest ≠ Newest"**: only technologies with a stable specification, years of production use and known failure modes are admitted to the hot path.
 
@@ -67,7 +67,7 @@ Exact field layouts, the numeric model, the concurrency rules and the status of 
 
 ## Build and verify
 
-Requires stable Rust and, for the documentation checks, Node 22 or newer.
+Requires Rust 1.85 or newer (edition 2024, [ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)); `rust-toolchain.toml` names the toolchain CI builds with, and rustup selects it in this checkout. The documentation checks need Node 22 or newer.
 
 ```bash
 cargo check --workspace --all-targets

@@ -3,6 +3,7 @@ name = "cortex-workspace"
 description = "Global workspace competitive broadcast slots with threshold ignition for VirtualCortex"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

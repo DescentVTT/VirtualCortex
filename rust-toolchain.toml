@@ -1,0 +1,9 @@
+# The toolchain CI and contributors build with (ADR-0009). rustup reads this file and
+# installs the channel on first use. It is a pin, not a floor: the floor is
+# `rust-version` in Cargo.toml, which a second CI job builds and tests on. Move this pin
+# deliberately, in its own pull request, after the whitepaper's "Toolchain verified
+# against" line has been re-verified.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

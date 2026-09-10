@@ -6,7 +6,7 @@
 //! thread spawning and heap types, which whitepaper TC-5 forbids in state crates.
 
 use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
-use cortex_embodiment::{EmbodimentRingBuffer, CAPACITY, DOF};
+use cortex_embodiment::{CAPACITY, DOF, EmbodimentRingBuffer};
 use std::sync::Arc;
 use std::thread;
 
