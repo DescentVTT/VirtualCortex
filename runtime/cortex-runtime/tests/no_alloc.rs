@@ -3,6 +3,8 @@
 //! global allocator (the `unsafe` the `GlobalAlloc` trait requires) counts every allocation
 //! while a flag is set; the flag is set only around `run`.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use cortex_core::{STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16};
 use cortex_runtime::{Config, Executor};
 use std::alloc::{GlobalAlloc, Layout, System};

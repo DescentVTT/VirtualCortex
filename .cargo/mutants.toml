@@ -43,22 +43,14 @@ exclude_re = [
     # can build. (The block bound, `too_many_blocks`, is a function a unit test holds at its
     # edge, so it needs no entry here.)
     "neuron\\.rs:\\d+:\\d+: replace > with >= in DendriticSuperNeuron::mailbox_push",
-    # Scheduling and sizing hints with no observable result: how many times a barrier spins
-    # before it yields, and a worker thread's stack reserve.
+    # Scheduling hints with no observable result: how many times a barrier spins before it
+    # yields. (The stack reserve's product and the I/O loops' offset steps are named operations
+    # since brief 016, so they have no arithmetic mutant to exclude.)
     "barrier\\.rs:\\d+:\\d+: replace << with >>$",
     "barrier\\.rs:\\d+:\\d+: replace < with (==|>|<=) in SpinBarrier::wait",
-    "barrier\\.rs:\\d+:\\d+: replace \\+= with \\*= in SpinBarrier::wait",
-    "executor\\.rs:\\d+:\\d+: replace \\* with (\\+|/) in build_wheels",
-    # The platform-conditional I/O loops: a 72-byte log entry is one write, so the loop's
-    # offset step is never exercised, and on Linux the Windows form is not even compiled.
-    "image\\.rs:\\d+:\\d+: replace \\+= with \\*= in (read_at|write_at)",
     # Dropping the executor stops its workers; a mutant that leaks them is hidden by the end
     # of the test process.
     "executor\\.rs:\\d+:\\d+: replace <impl Drop for Executor<CAP>>::drop with \\(\\)",
     # `difference < 0` after the `== 0` arm has been taken: `<=` cannot see a zero there.
     "injector\\.rs:\\d+:\\d+: replace < with <= in Injector::(push|pop)",
-    # The directory bound before the allocation: the per-entry read bounds the directory too,
-    # so `len - 64` and `len + 64` refuse the same images; the check exists to size the
-    # allocation, which either form keeps small.
-    "image\\.rs:\\d+:\\d+: replace - with \\+ in Image::decode",
 ]

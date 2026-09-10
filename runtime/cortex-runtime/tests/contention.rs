@@ -4,6 +4,8 @@
 //! workers drain the mailboxes; the report of every worker is joined and checked. The units'
 //! threshold is zero, so they never fire and every event is a plain delivery.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use cortex_runtime::{Config, Executor, InjectError};
 use std::thread;
 
@@ -31,8 +33,10 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
             let inject = inject.clone();
             thread::spawn(move || {
                 for i in 0..PER_PRODUCER {
-                    let payload = p * PER_PRODUCER + i;
-                    let unit = (payload.wrapping_mul(2_654_435_761) >> 8) % UNITS as u32;
+                    let payload = p.wrapping_mul(PER_PRODUCER).wrapping_add(i);
+                    let unit = (payload.wrapping_mul(2_654_435_761) >> 8)
+                        .checked_rem(UNITS as u32)
+                        .expect("UNITS is not zero");
                     loop {
                         match inject.inject(unit, payload) {
                             Ok(()) => break,
@@ -47,7 +51,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
     let mut ticks = 0u64;
     while exec.delivered() < total as u64 {
         exec.tick();
-        ticks += 1;
+        ticks = ticks.wrapping_add(1);
         assert!(
             ticks < 5_000_000,
             "no progress: {} delivered",
@@ -74,7 +78,10 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
     all.sort_unstable();
     all.dedup();
     assert_eq!(all.len(), total as usize, "no event delivered twice");
-    assert_eq!((all[0], all[total as usize - 1]), (0, total - 1));
+    assert_eq!(
+        (all[0], all[(total as usize).wrapping_sub(1)]),
+        (0, total - 1)
+    );
     assert!(
         reports.iter().all(|r| r.spikes.is_empty()),
         "an unconfigured unit never fires"

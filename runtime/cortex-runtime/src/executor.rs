@@ -188,6 +188,10 @@ pub enum InjectError {
 /// The injector payload that asks for a turn without a message.
 pub const ACTIVATE: u32 = u32::MAX;
 
+/// Blocks a synapse token can name: `MAX_TOKEN_BLOCK + 1` (finding F-23), formed at compile
+/// time, where an overflow is a compile error rather than an operation.
+const MAX_BLOCKS: usize = cortex_core::MAX_TOKEN_BLOCK as usize + 1;
+
 /// Aborts the process: inside the tick loop a violated invariant is a bug (whitepaper §8.9).
 #[cold]
 fn abort(message: &str) -> ! {
@@ -202,6 +206,14 @@ fn push_bounded<T>(v: &mut Vec<T>, x: T, what: &str) {
         abort(what);
     }
     v.push(x);
+}
+
+/// The slot after `i` on a ring of `n` slots: `(i + 1) % n` by name. `i` is below `n`, so the
+/// sum cannot wrap; `n` is at least one wherever a ring is walked (a worker count or a unit
+/// count, both refused at zero by [`Executor::new`]), so the fallback is never taken.
+#[inline]
+fn next_in_ring(i: usize, n: usize) -> usize {
+    i.wrapping_add(1).checked_rem(n).unwrap_or(0)
 }
 
 struct Shared {
@@ -320,7 +332,7 @@ impl<const CAP: usize> Executor<CAP> {
         if config.units >= u32::MAX as usize {
             return Err(ConfigError::TooManyUnits);
         }
-        if config.blocks > cortex_core::MAX_TOKEN_BLOCK as usize + 1 {
+        if config.blocks > MAX_BLOCKS {
             return Err(ConfigError::TooManyBlocks);
         }
         let workers = config.workers;
@@ -351,7 +363,9 @@ impl<const CAP: usize> Executor<CAP> {
             now: AtomicU32::new(0),
             stop: AtomicBool::new(false),
         });
-        let total_nodes = workers * config.nodes_per_worker;
+        // Saturates for a pool that would not fit the address space; `Pools::new` refused that
+        // above (a capacity overflow) before this sizes a buffer.
+        let total_nodes = workers.saturating_mul(config.nodes_per_worker);
         let mut wheels = build_wheels::<CAP>(workers);
         let mut states: Vec<Worker<CAP>> = locals
             .into_iter()
@@ -360,7 +374,7 @@ impl<const CAP: usize> Executor<CAP> {
                 id,
                 local,
                 wheel: wheels.remove(0),
-                steal_from: (id + 1) % workers,
+                steal_from: next_in_ring(id, workers),
                 batch: Vec::with_capacity(total_nodes),
                 due: Vec::with_capacity(CAP),
                 spiked: Vec::with_capacity(config.units),
@@ -528,13 +542,13 @@ impl<const CAP: usize> Executor<CAP> {
         let len = self.shared.units.len();
         // SAFETY: `&mut self` between ticks; every worker is parked at the barrier.
         let units = unsafe { self.shared.units.as_mut_slice() };
-        let mut evicted = 0;
+        let mut evicted = 0usize;
         for _ in 0..len {
             if evicted >= budget {
                 break;
             }
             let i = self.hand;
-            self.hand = (self.hand + 1) % len;
+            self.hand = next_in_ring(i, len);
             if self.shared.evicted[i].load(Ordering::Relaxed) {
                 continue;
             }
@@ -550,9 +564,9 @@ impl<const CAP: usize> Executor<CAP> {
             empty.last_soma_spike_tick = unit.last_soma_spike_tick;
             *unit = empty;
             self.shared.evicted[i].store(true, Ordering::Relaxed);
-            evicted += 1;
+            evicted = evicted.saturating_add(1);
         }
-        self.evictions += evicted as u64;
+        self.evictions = self.evictions.saturating_add(evicted as u64);
         Ok(evicted)
     }
 
@@ -577,7 +591,9 @@ impl<const CAP: usize> Executor<CAP> {
 
     /// Slots left for proposals.
     pub fn amendment_room(&self) -> usize {
-        self.amendment_capacity - self.amendments.len()
+        // The arena never holds more than its capacity (`propose`, `load_amendment`).
+        self.amendment_capacity
+            .saturating_sub(self.amendments.len())
     }
 
     /// Proposes, at this tick, to change `parameter` from its live value to `proposed_value`,
@@ -595,9 +611,12 @@ impl<const CAP: usize> Executor<CAP> {
             return Err(AmendError::ArenaFull);
         }
         let index = self.amendments.len();
+        // The id is the index plus one (zero is no record, ADR-0031); an index the id width
+        // cannot name above is a proposal the arena cannot hold.
+        let id = (index as u32).checked_add(1).ok_or(AmendError::ArenaFull)?;
         let current = self.policy.value(parameter).unwrap_or(0);
         self.amendments.push(PolicyAmendment::propose(
-            index as u32 + 1,
+            id,
             self.tick as u32,
             parameter,
             current,
@@ -731,7 +750,7 @@ impl<const CAP: usize> Executor<CAP> {
             let cold = DendriticSuperNeuron::decode(&record);
             units[i].restore_plain_fields(&cold);
             self.shared.evicted[i].store(false, Ordering::Relaxed);
-            self.rehydrations += 1;
+            self.rehydrations = self.rehydrations.saturating_add(1);
         }
     }
 
@@ -754,7 +773,8 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.barrier.wait();
         self.worker0.phase_deliveries(&self.shared);
         self.shared.barrier.wait();
-        self.tick += 1;
+        // A clock wraps by name (§8.1): the dynamics already see it as `tick as u32`.
+        self.tick = self.tick.wrapping_add(1);
         self.rehydrate_pending();
     }
 
@@ -798,7 +818,7 @@ impl<const CAP: usize> Drop for Executor<CAP> {
 fn build_wheels<const CAP: usize>(count: usize) -> Vec<Box<FlatTimingWheel<CAP>>> {
     let bytes = std::mem::size_of::<FlatTimingWheel<CAP>>();
     thread::Builder::new()
-        .stack_size((bytes * 2).max(1 << 20))
+        .stack_size(bytes.saturating_mul(2).max(1 << 20))
         .spawn(move || {
             (0..count)
                 .map(|_| Box::new(FlatTimingWheel::<CAP>::new()))
@@ -866,7 +886,7 @@ impl<const CAP: usize> Worker<CAP> {
         let n = shared.stealers.len();
         for _ in 0..n {
             let victim = self.steal_from;
-            self.steal_from = (victim + 1) % n;
+            self.steal_from = next_in_ring(victim, n);
             if victim == self.id {
                 continue;
             }
@@ -899,11 +919,11 @@ impl<const CAP: usize> Worker<CAP> {
                 "a mailbox held more nodes than exist",
             );
             shared.pools.free(node);
-            self.delivered += 1;
+            self.delivered = self.delivered.saturating_add(1);
             if self.trace.len() < self.trace.capacity() {
                 self.trace.push(payload);
             } else if self.trace.capacity() > 0 {
-                self.trace_dropped += 1;
+                self.trace_dropped = self.trace_dropped.saturating_add(1);
             }
         }
         // §8.3: the batch is applied in message order, never in arrival order.
@@ -933,7 +953,7 @@ impl<const CAP: usize> Worker<CAP> {
             if self.spike_trace.len() < self.spike_trace.capacity() {
                 self.spike_trace.push((unit, now));
             } else if self.spike_trace.capacity() > 0 {
-                self.trace_dropped += 1;
+                self.trace_dropped = self.trace_dropped.saturating_add(1);
             }
         }
         if u.end_turn() {
@@ -960,8 +980,9 @@ impl<const CAP: usize> Worker<CAP> {
             let mut next = pre.synapse_slab_idx;
             let mut remaining = shared.blocks.len();
             while next != CHAIN_END && remaining > 0 {
-                let block_idx = (next - 1) as usize;
-                remaining -= 1;
+                // Index + 1 encoded: `next` is not `CHAIN_END` (0), and `remaining` is not 0.
+                let block_idx = next.wrapping_sub(1) as usize;
+                remaining = remaining.wrapping_sub(1);
                 // SAFETY (phase 2): block `block_idx` is in the chain of `unit`, whose spike
                 // this worker alone runs (a unit fires at most once per tick and lands in one
                 // worker's list), so this is the only reference to the block: no other worker
@@ -993,7 +1014,7 @@ impl<const CAP: usize> Worker<CAP> {
                         if self.wheel.schedule(delay as u32, token).is_err() {
                             abort("a delay the loader should have rejected, or a full wheel slot");
                         }
-                        self.in_flight += 1;
+                        self.in_flight = self.in_flight.saturating_add(1);
                     }
                 }
                 next = block.next_block_idx;
@@ -1007,7 +1028,7 @@ impl<const CAP: usize> Worker<CAP> {
     fn phase_deliveries(&mut self, shared: &Shared) {
         self.due.clear();
         self.due.extend_from_slice(self.wheel.advance());
-        self.in_flight -= self.due.len() as i64;
+        self.in_flight = self.in_flight.saturating_sub(self.due.len() as i64);
         for i in 0..self.due.len() {
             let token = self.due[i];
             let slot = token_slot(token) as usize;
@@ -1030,7 +1051,7 @@ impl<const CAP: usize> Worker<CAP> {
                 let Some((unit, payload)) = shared.injector.pop() else {
                     break;
                 };
-                budget -= 1;
+                budget = budget.wrapping_sub(1); // not 0: the loop's guard
                 if payload == ACTIVATE {
                     self.wake(shared, unit);
                 } else {

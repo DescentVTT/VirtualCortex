@@ -45,7 +45,7 @@ pub fn new(capacity: usize) -> (Local, Stealer) {
         top: AtomicIsize::new(0),
         bottom: AtomicIsize::new(0),
         slots: (0..size).map(|_| AtomicU32::new(0)).collect(),
-        mask: size - 1,
+        mask: size.wrapping_sub(1), // `size` is at least 2
     });
     (Local(Arc::clone(&inner)), Stealer(inner))
 }
@@ -82,14 +82,14 @@ impl Local {
                 let won = self
                     .0
                     .top
-                    .compare_exchange(t, t + 1, Ordering::SeqCst, Ordering::Relaxed)
+                    .compare_exchange(t, t.wrapping_add(1), Ordering::SeqCst, Ordering::Relaxed)
                     .is_ok();
-                self.0.bottom.store(b + 1, Ordering::Relaxed);
+                self.0.bottom.store(b.wrapping_add(1), Ordering::Relaxed);
                 return won.then_some(unit);
             }
             Some(unit)
         } else {
-            self.0.bottom.store(b + 1, Ordering::Relaxed);
+            self.0.bottom.store(b.wrapping_add(1), Ordering::Relaxed);
             None
         }
     }
@@ -113,7 +113,7 @@ impl Stealer {
             if self
                 .0
                 .top
-                .compare_exchange(t, t + 1, Ordering::SeqCst, Ordering::Relaxed)
+                .compare_exchange(t, t.wrapping_add(1), Ordering::SeqCst, Ordering::Relaxed)
                 .is_err()
             {
                 return Steal::Retry;

@@ -140,11 +140,9 @@ fn run_fork<const CAP: usize>(
         );
     }
     let inject = exec.injector();
-    let mut next = 0;
+    let mut pending = trial.injections.iter().peekable();
     for tick in 0..trial.ticks {
-        while next < trial.injections.len() && trial.injections[next].0 <= tick {
-            let (_, unit, payload) = trial.injections[next];
-            next += 1;
+        while let Some(&(_, unit, payload)) = pending.next_if(|&&(at, _, _)| at <= tick) {
             let queued = if payload == ACTIVATE {
                 inject.activate(unit)
             } else {
@@ -155,7 +153,8 @@ fn run_fork<const CAP: usize>(
             }
         }
         exec.tick();
-        if trial.sweep_every > 0 && (tick + 1) % trial.sweep_every == 0 {
+        // `tick + 1` is at most `trial.ticks`; the cadence was just checked non-zero.
+        if trial.sweep_every > 0 && tick.wrapping_add(1).checked_rem(trial.sweep_every) == Some(0) {
             exec.sweep_by_policy()?;
         }
     }

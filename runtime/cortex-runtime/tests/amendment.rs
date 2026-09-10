@@ -3,6 +3,8 @@
 //! behaved alike and the cost fell, persist in the image, reload with the policy derived from
 //! the committed amendments; and every way the loop refuses.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use cortex_connectome::{SECTION_AMENDMENT, SectionEntry, crc64};
 use cortex_core::{STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16};
 use cortex_ethics::{EthicalEvaluationGate, Q16_ONE};
@@ -62,12 +64,14 @@ fn wire(exec: &mut Executor<64>) {
     let blocks = exec.blocks_mut();
     for block in blocks.iter_mut() {
         for slot in 0..4 {
-            let target = (next() >> 8) % units as u32;
+            let target = (next() >> 8)
+                .checked_rem(units as u32)
+                .expect("the arena holds a unit");
             let delay = match next() % 6 {
                 0 => 0,
-                _ => 1 + (next() >> 8) % 300,
+                _ => ((next() >> 8) % 300).wrapping_add(1),
             } as u16;
-            let weight = ((next() >> 8) % 20_000) as i16 + 10_000;
+            let weight = (((next() >> 8) % 20_000) as i16).wrapping_add(10_000);
             assert!(block.set_synapse(slot, target, weight, delay, next() % 4 == 0));
         }
     }
@@ -100,10 +104,19 @@ fn strong() -> u32 {
 fn active_injections() -> Vec<(u64, u32, u32)> {
     let mut injections = Vec::new();
     for round in 0..8u64 {
+        let at = round.wrapping_mul(200);
         for _ in 0..14 {
-            injections.push((round * 200 + 50, 3 + round as u32, strong()));
+            injections.push((
+                at.wrapping_add(50),
+                (round as u32).wrapping_add(3),
+                strong(),
+            ));
         }
-        injections.push((round * 200 + 60, 20 + round as u32, ACTIVATE));
+        injections.push((
+            at.wrapping_add(60),
+            (round as u32).wrapping_add(20),
+            ACTIVATE,
+        ));
     }
     injections
 }
@@ -870,9 +883,9 @@ fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy()
 /// The image's amendment section entry and the offset of its bytes.
 fn amendment_section(image: &[u8]) -> (usize, SectionEntry) {
     let count = u32::from_le_bytes(image[56..60].try_into().unwrap()) as usize;
-    for i in 0..count {
-        let start = 64 + 64 * i;
-        let entry = SectionEntry::decode(image[start..start + 64].try_into().unwrap());
+    // The entries start at 64 and are 64 bytes each: an iterator, not a counter.
+    for start in (64..).step_by(64).take(count) {
+        let entry = SectionEntry::decode(image[start..][..64].try_into().unwrap());
         if entry.kind == SECTION_AMENDMENT {
             return (start, entry);
         }
@@ -885,15 +898,15 @@ fn tamper(image: &[u8], mutate: impl FnOnce(&mut [u8])) -> Vec<u8> {
     let mut bytes = image.to_vec();
     let (entry_at, entry) = amendment_section(&bytes);
     let (offset, length) = (entry.offset as usize, entry.length as usize);
-    mutate(&mut bytes[offset..offset + length]);
+    mutate(&mut bytes[offset..][..length]);
     let resealed = SectionEntry::new(
         entry.kind,
         entry.record_size,
         entry.offset,
         entry.length,
-        crc64(&bytes[offset..offset + length]),
+        crc64(&bytes[offset..][..length]),
     );
-    bytes[entry_at..entry_at + 64].copy_from_slice(&resealed.encode());
+    bytes[entry_at..][..64].copy_from_slice(&resealed.encode());
     bytes
 }
 

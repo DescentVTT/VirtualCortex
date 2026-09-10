@@ -106,13 +106,16 @@ impl From<ConfigError> for ImageError {
     }
 }
 
-/// Rounds up to the next multiple of 64.
+/// Rounds up to the next multiple of 64; saturates above `u64::MAX - 63`, which no length held
+/// in memory reaches.
 fn align64(n: u64) -> u64 {
-    n.div_ceil(64) * 64
+    n.div_ceil(64).saturating_mul(64)
 }
 
 /// The bytes of one entry of the write-ahead log: the unit index, then the record.
 const LOG_ENTRY: usize = 8 + 64;
+/// The same as a file length: a constant divisor for [`WriteAheadLog::entries`].
+const LOG_ENTRY_BYTES: u64 = LOG_ENTRY as u64;
 
 /// The write-ahead log the clock sweep evicts unit records into (§8.6): append-only, one entry
 /// per eviction, the newest entry of a unit the one re-hydration reads. Positional reads and
@@ -154,7 +157,7 @@ impl WriteAheadLog {
         entry[8..].copy_from_slice(record);
         write_at(&self.file, self.len, &entry)?;
         self.offsets[unit as usize] = self.len;
-        self.len += LOG_ENTRY as u64;
+        self.len = self.len.saturating_add(LOG_ENTRY_BYTES);
         Ok(())
     }
 
@@ -185,7 +188,7 @@ impl WriteAheadLog {
 
     /// Entries appended so far.
     pub fn entries(&self) -> u64 {
-        self.len / LOG_ENTRY as u64
+        self.len / LOG_ENTRY_BYTES
     }
 }
 
@@ -212,7 +215,7 @@ fn read_at(file: &File, mut offset: u64, mut buf: &mut [u8]) -> io::Result<()> {
                 "the log ends early",
             ));
         }
-        offset += n as u64;
+        offset = offset.saturating_add(n as u64);
         buf = &mut buf[n..];
     }
     Ok(())
@@ -226,10 +229,22 @@ fn write_at(file: &File, mut offset: u64, mut buf: &[u8]) -> io::Result<()> {
         if n == 0 {
             return Err(io::Error::new(io::ErrorKind::WriteZero, "nothing written"));
         }
-        offset += n as u64;
+        offset = offset.saturating_add(n as u64);
         buf = &buf[n..];
     }
     Ok(())
+}
+
+/// A section's bytes by its directory entry: the end is a checked sum, so an entry forged to
+/// wrap is refused as truncated, like one that runs past the file.
+fn section_of<'a>(bytes: &'a [u8], entry: &SectionEntry) -> Result<&'a [u8], ImageError> {
+    let end = entry
+        .offset
+        .checked_add(entry.length)
+        .ok_or(ImageError::Truncated)?;
+    bytes
+        .get(entry.offset as usize..end as usize)
+        .ok_or(ImageError::Truncated)
 }
 
 /// The `.cortex` writer and loader.
@@ -247,7 +262,7 @@ impl Image {
         let units = exec.units();
         let blocks = exec.blocks();
         let deltas = exec.deltas();
-        let mut neuron_bytes = Vec::with_capacity(units.len() * 64);
+        let mut neuron_bytes = Vec::with_capacity(units.len().saturating_mul(64));
         for (i, unit) in units.iter().enumerate() {
             let record = if exec.is_evicted(i as u32) {
                 exec.log().ok_or(ImageError::NoLog)?.read(i as u32)?
@@ -261,11 +276,11 @@ impl Image {
             };
             neuron_bytes.extend_from_slice(&record);
         }
-        let mut synapse_bytes = Vec::with_capacity(blocks.len() * 64);
+        let mut synapse_bytes = Vec::with_capacity(blocks.len().saturating_mul(64));
         for block in blocks {
             synapse_bytes.extend_from_slice(&block.encode());
         }
-        let mut delta_bytes = Vec::with_capacity(deltas.len() * 16);
+        let mut delta_bytes = Vec::with_capacity(deltas.len().saturating_mul(16));
         for delta in deltas {
             delta_bytes.extend_from_slice(&delta.encode());
         }
@@ -278,14 +293,15 @@ impl Image {
         }
         let amendments = exec.amendments();
         if !amendments.is_empty() {
-            let mut amendment_bytes = Vec::with_capacity(amendments.len() * 64);
+            let mut amendment_bytes = Vec::with_capacity(amendments.len().saturating_mul(64));
             for a in amendments {
                 amendment_bytes.extend_from_slice(&a.encode());
             }
             sections.push((SECTION_AMENDMENT, 64, amendment_bytes));
         }
-        let directory_len = 64 * sections.len() as u64;
-        let mut offset = 64 + directory_len;
+        // The offsets of an image held in memory: each fits, and saturating says so by name.
+        let directory_len = (sections.len() as u64).saturating_mul(64);
+        let mut offset = directory_len.saturating_add(64);
         let mut entries = Vec::with_capacity(sections.len());
         for (kind, record_size, bytes) in &sections {
             entries.push(SectionEntry::new(
@@ -295,7 +311,7 @@ impl Image {
                 bytes.len() as u64,
                 crc64(bytes),
             ));
-            offset += align64(bytes.len() as u64);
+            offset = offset.saturating_add(align64(bytes.len() as u64));
         }
         let header = CortexFileHeader::new(
             0,
@@ -338,22 +354,22 @@ impl Image {
         bytes: &[u8],
         config: Config,
     ) -> Result<Executor<CAP>, ImageError> {
-        let header_bytes: &[u8; 64] = bytes
-            .get(0..64)
-            .and_then(|b| b.try_into().ok())
+        let (header_bytes, after_header) = bytes
+            .split_first_chunk::<64>()
             .ok_or(ImageError::Truncated)?;
         let header = CortexFileHeader::decode(header_bytes);
         header.validate()?;
         // The directory cannot be longer than the bytes after the header, whatever a sealed
         // header says; checked before the count sizes an allocation.
-        if header.section_count as usize > (bytes.len() - 64) / 64 {
+        if header.section_count as usize > after_header.len() / 64 {
             return Err(ImageError::Truncated);
         }
         let mut entries = Vec::with_capacity(header.section_count as usize);
-        for i in 0..header.section_count as usize {
-            let start = 64 + 64 * i;
-            let entry_bytes: &[u8; 64] = bytes
-                .get(start..start + 64)
+        // The entries follow the header, 64 bytes each: the next chunk, not an offset.
+        let mut directory = after_header.chunks_exact(64);
+        for _ in 0..header.section_count {
+            let entry_bytes: &[u8; 64] = directory
+                .next()
                 .and_then(|b| b.try_into().ok())
                 .ok_or(ImageError::Truncated)?;
             let entry = SectionEntry::decode(entry_bytes);
@@ -365,13 +381,7 @@ impl Image {
             if !entry.is_well_formed() || entry.record_size != expected_size {
                 return Err(ImageError::Directory(entry.kind));
             }
-            let end = entry
-                .offset
-                .checked_add(entry.length)
-                .ok_or(ImageError::Truncated)?;
-            let section = bytes
-                .get(entry.offset as usize..end as usize)
-                .ok_or(ImageError::Truncated)?;
+            let section = section_of(bytes, &entry)?;
             let mut crc = Crc64::new();
             crc.update(section);
             if crc.finish() != entry.crc64 {
@@ -406,11 +416,7 @@ impl Image {
         let horizon = WorkerWheel::horizon_ticks();
         {
             let arena = exec.blocks_mut();
-            for (i, record) in bytes
-                [synapse.offset as usize..(synapse.offset + synapse.length) as usize]
-                .chunks_exact(64)
-                .enumerate()
-            {
+            for (i, record) in section_of(bytes, &synapse)?.chunks_exact(64).enumerate() {
                 let block = SynapseBlock::decode(record.try_into().unwrap_or(&[0; 64]));
                 for slot in 0..4 {
                     if let Some(target) = block.target(slot) {
@@ -445,10 +451,7 @@ impl Image {
         }
         if let Some(delta) = delta {
             let arena = exec.deltas_mut();
-            for (i, record) in bytes[delta.offset as usize..(delta.offset + delta.length) as usize]
-                .chunks_exact(16)
-                .enumerate()
-            {
+            for (i, record) in section_of(bytes, &delta)?.chunks_exact(16).enumerate() {
                 let d = PlasticDelta::decode(record.try_into().unwrap_or(&[0; 16]));
                 if d.block().is_some_and(|b| b as usize >= blocks)
                     || d.next_delta().is_some_and(|n| n as usize >= deltas)
@@ -471,11 +474,7 @@ impl Image {
         let mut wake = Vec::new();
         {
             let arena = exec.units_mut();
-            for (i, record) in bytes
-                [neuron.offset as usize..(neuron.offset + neuron.length) as usize]
-                .chunks_exact(64)
-                .enumerate()
-            {
+            for (i, record) in section_of(bytes, &neuron)?.chunks_exact(64).enumerate() {
                 let unit = DendriticSuperNeuron::decode(record.try_into().unwrap_or(&[0; 64]));
                 if !unit.is_at_rest_image() {
                     return Err(ImageError::NotAtRest(i as u32));
@@ -495,14 +494,12 @@ impl Image {
             }
         }
         if let Some(section) = amendment {
-            for (i, record) in bytes
-                [section.offset as usize..(section.offset + section.length) as usize]
-                .chunks_exact(64)
-                .enumerate()
-            {
+            for (i, record) in section_of(bytes, &section)?.chunks_exact(64).enumerate() {
                 let a = PolicyAmendment::decode(record.try_into().unwrap_or(&[0; 64]));
-                if !a.is_well_formed() || a.amendment_id != i as u32 + 1 || !exec.load_amendment(a)
-                {
+                // The id is the position plus one; a position the id width cannot name above
+                // is a record the writer could not have written.
+                let id = (i as u32).checked_add(1);
+                if !a.is_well_formed() || Some(a.amendment_id) != id || !exec.load_amendment(a) {
                     return Err(ImageError::MalformedAmendment(i as u32));
                 }
             }

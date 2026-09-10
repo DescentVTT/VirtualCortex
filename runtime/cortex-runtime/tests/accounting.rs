@@ -2,6 +2,8 @@
 //! cycles ends within the arena's length, a unit activated more than once before a tick takes
 //! one turn, and the accessors say what the executor holds.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use cortex_core::{STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16};
 use cortex_runtime::{Config, Executor};
 

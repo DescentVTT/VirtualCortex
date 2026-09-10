@@ -36,7 +36,7 @@ impl Injector {
                     payload: AtomicU32::new(0),
                 })
                 .collect(),
-            mask: size - 1,
+            mask: size.wrapping_sub(1), // `size` is at least 2
             enqueue_pos: AtomicUsize::new(0),
             dequeue_pos: AtomicUsize::new(0),
         }
@@ -59,16 +59,22 @@ impl Injector {
         loop {
             let slot = &self.slots[pos & self.mask];
             let sequence = slot.sequence.load(Ordering::Acquire);
-            let difference = sequence as isize - pos as isize;
+            // The cursors and the sequence numbers wrap by design (Vyukov, 2011).
+            let difference = (sequence as isize).wrapping_sub(pos as isize);
             if difference == 0 {
                 if self
                     .enqueue_pos
-                    .compare_exchange_weak(pos, pos + 1, Ordering::Relaxed, Ordering::Relaxed)
+                    .compare_exchange_weak(
+                        pos,
+                        pos.wrapping_add(1),
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
                     .is_ok()
                 {
                     slot.unit.store(unit, Ordering::Relaxed);
                     slot.payload.store(payload, Ordering::Relaxed);
-                    slot.sequence.store(pos + 1, Ordering::Release);
+                    slot.sequence.store(pos.wrapping_add(1), Ordering::Release);
                     return Ok(());
                 }
                 pos = self.enqueue_pos.load(Ordering::Relaxed);
@@ -86,18 +92,26 @@ impl Injector {
         loop {
             let slot = &self.slots[pos & self.mask];
             let sequence = slot.sequence.load(Ordering::Acquire);
-            let difference = sequence as isize - (pos + 1) as isize;
+            let difference = (sequence as isize).wrapping_sub(pos.wrapping_add(1) as isize);
             if difference == 0 {
                 if self
                     .dequeue_pos
-                    .compare_exchange_weak(pos, pos + 1, Ordering::Relaxed, Ordering::Relaxed)
+                    .compare_exchange_weak(
+                        pos,
+                        pos.wrapping_add(1),
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
                     .is_ok()
                 {
                     let pair = (
                         slot.unit.load(Ordering::Relaxed),
                         slot.payload.load(Ordering::Relaxed),
                     );
-                    slot.sequence.store(pos + self.mask + 1, Ordering::Release);
+                    slot.sequence.store(
+                        pos.wrapping_add(self.mask).wrapping_add(1),
+                        Ordering::Release,
+                    );
                     return Some(pair);
                 }
                 pos = self.dequeue_pos.load(Ordering::Relaxed);

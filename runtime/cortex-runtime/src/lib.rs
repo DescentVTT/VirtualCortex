@@ -8,6 +8,10 @@
 //! loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
 
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// in the runtime too, the last crate to pass the lint (brief 016, 2026-09-10; ADR-0029).
+#![deny(clippy::arithmetic_side_effects)]
+
 pub mod arena;
 pub mod barrier;
 pub mod deque;

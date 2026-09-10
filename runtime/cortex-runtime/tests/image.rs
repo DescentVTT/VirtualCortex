@@ -4,6 +4,8 @@
 //! cannot hold is refused at load; and evict, spike, re-hydrate preserves a unit bit for bit:
 //! a run that sweeps and re-hydrates ends in the same image as one that never evicts.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use cortex_connectome::{
     CortexFileHeader, HeaderError, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE,
     SectionEntry, crc64,
@@ -45,12 +47,14 @@ fn wire(exec: &mut Executor<64>) {
         let blocks = exec.blocks_mut();
         for block in blocks.iter_mut() {
             for slot in 0..4 {
-                let target = (next() >> 8) % units as u32;
+                let target = (next() >> 8)
+                    .checked_rem(units as u32)
+                    .expect("the arena holds a unit");
                 let delay = match next() % 6 {
                     0 => 0,
-                    _ => 1 + (next() >> 8) % 300,
+                    _ => ((next() >> 8) % 300).wrapping_add(1),
                 } as u16;
-                let weight = ((next() >> 8) % 20_000) as i16 + 10_000;
+                let weight = (((next() >> 8) % 20_000) as i16).wrapping_add(10_000);
                 assert!(block.set_synapse(slot, target, weight, delay, next() % 4 == 0));
             }
         }
@@ -58,7 +62,8 @@ fn wire(exec: &mut Executor<64>) {
     {
         let deltas = exec.deltas_mut();
         for (i, d) in deltas.iter_mut().enumerate() {
-            *d = PlasticDelta::new(i as u32, (i % 4) as u8, -100 * i as i16, 7).unwrap();
+            *d = PlasticDelta::new(i as u32, (i % 4) as u8, (i as i16).wrapping_mul(-100), 7)
+                .unwrap();
         }
     }
     for (i, unit) in exec.units_mut().iter_mut().enumerate() {
@@ -234,14 +239,14 @@ fn small_image() -> Vec<u8> {
 /// refuse the image.
 fn patch_section(img: &mut [u8], kind: u32, patch: impl Fn(&mut [u8])) {
     let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
-    for i in 0..header.section_count as usize {
-        let at = 64 + 64 * i;
-        let mut entry = SectionEntry::decode(img[at..at + 64].try_into().unwrap());
+    // The entries start at 64 and are 64 bytes each: an iterator, not a counter.
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
         if entry.kind == kind {
             let (offset, length) = (entry.offset as usize, entry.length as usize);
-            patch(&mut img[offset..offset + length]);
-            entry.crc64 = crc64(&img[offset..offset + length]);
-            img[at..at + 64].copy_from_slice(&entry.encode());
+            patch(&mut img[offset..][..length]);
+            entry.crc64 = crc64(&img[offset..][..length]);
+            img[at..][..64].copy_from_slice(&entry.encode());
             return;
         }
     }
@@ -302,12 +307,12 @@ fn patch_header(img: &mut [u8], patch: impl Fn(&mut CortexFileHeader)) {
 /// Edits directory entry `kind` in place (the directory is not sealed).
 fn patch_entry(img: &mut [u8], kind: u32, patch: impl Fn(&mut SectionEntry)) {
     let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
-    for i in 0..header.section_count as usize {
-        let at = 64 + 64 * i;
-        let mut entry = SectionEntry::decode(img[at..at + 64].try_into().unwrap());
+    // The entries start at 64 and are 64 bytes each: an iterator, not a counter.
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
         if entry.kind == kind {
             patch(&mut entry);
-            img[at..at + 64].copy_from_slice(&entry.encode());
+            img[at..][..64].copy_from_slice(&entry.encode());
             return;
         }
     }

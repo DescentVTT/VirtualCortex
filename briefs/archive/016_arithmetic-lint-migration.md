@@ -1,7 +1,16 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull requests #40, #41 and #42.** Closes finding F-4: every crate of the
+> workspace and every integration-test crate root deny `clippy::arithmetic_side_effects`; 376 sites
+> converted to the named operation with every pinned value held; one result changed for an input
+> the domain cannot reach, named in F-4 rather than in an ADR (no test can build the arena that
+> reaches it). Deliverables 1 to 3 landed in two requests instead of six (the mutation gate scales
+> with the diff; one request per group of crates kept each run short), 4 and 5 as written. The
+> report is in the pull requests and in `CHANGELOG.md`. The body below describes the tree before
+> execution and is not maintained; it carries no relative links.
 
 # Brief 016 — Migrate the remaining crates to `clippy::arithmetic_side_effects`
 
@@ -66,20 +75,20 @@ bulk of the runtime's count.
 
 ## Deliverables
 
-1. The nine crates with at most three sites converted and denied, in one pull request: each
+1. **Done (#40, with deliverable 2 and `cortex-embodiment`: sixteen crates in one request).** The nine crates with at most three sites converted and denied, in one pull request: each
    site converted to the named operation the table suggests (or a better one, with the reason),
    the boundary test that fails under the plain operation where one is missing, and
    `#![deny(clippy::arithmetic_side_effects)]` in the crate's `lib.rs`.
-2. The five crates with four to sixteen sites, one pull request each or two per request, the
+2. **Done (#40; six crates, since `cortex-connectome` has four sites too).** The five crates with four to sixteen sites, one pull request each or two per request, the
    same way; `cortex-reasoning`'s index arithmetic may use `checked_*` with `Malformed` as the
    fallback where an index is data.
-3. `cortex-embodiment` and `cortex-core`, one pull request each; the voice's series keep their
+3. **Done (`cortex-embodiment` in #40, `cortex-core` in #41; every pin held).** `cortex-embodiment` and `cortex-core`, one pull request each; the voice's series keep their
    pinned values (the render pin of `vocal.rs` and the coefficient pins must not move unless a
    result was wrong, in which case the change says so).
-4. The runtime last: index arithmetic on `usize` by `wrapping_*` where the bound is asserted a
+4. **Done (#42; the pins unchanged).** The runtime last: index arithmetic on `usize` by `wrapping_*` where the bound is asserted a
    line above, `checked_*` where it is data, with the differential and contention tests and the
    arena pin unchanged.
-5. Whitepaper: the F-4 row closes ("Resolved: the lint is denied in every crate"); the
+5. **Done (#40 to #42; the directive ends at `min="35"` under `crates/`, three of them test crate roots, plus a second directive for the runtime).** Whitepaper: the F-4 row closes ("Resolved: the lint is denied in every crate"); the
    directive's `min` rises with each request and ends at `expected="32"` plus the runtime;
    `CONTRIBUTING.md`'s row names the lint alone; the changelog entry per request lists the sites.
 
