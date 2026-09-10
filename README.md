@@ -14,7 +14,7 @@ This repository is at the **state-model stage**. Read the labels before reading 
 
 | Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates, 36 `#[repr(C)]` records with compile-time size and alignment assertions, small deterministic update rules with boundary tests in 22 crates (membrane integration, short-term plasticity, synaptic fan-out and STDP in the neuron; valence, an attention schema, criticality-gated ignition, a self-model fixed point, nested constructions, conceptual blends, dialogue grounding, first-order unification over a term arena, a sincerity gap, tact, an anomaly that marks a framework stale, an integer source–filter voice and the benign-violation appraisal among them), the turn gate and lock-free mailbox of axiom A3 under a four-thread test, the executor (`runtime/cortex-runtime`: worker threads, work-stealing deques, three barrier-separated phases per tick; 10⁶ events delivered exactly once on four workers; bit-identical arenas on one and four), the `.cortex` image (a sealed section directory, a loader that fails closed, a writer) and the clock sweep with its write-ahead log (evict, spike, re-hydrate bit for bit), zero dependencies, `unsafe` only in the executor's arena under ADR-0023. |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates, 36 `#[repr(C)]` records with compile-time size and alignment assertions, small deterministic update rules with boundary tests in 24 crates (membrane integration, short-term plasticity, synaptic fan-out and STDP in the neuron; valence, an attention schema, criticality-gated ignition, a self-model fixed point, nested constructions, conceptual blends, dialogue grounding, first-order unification over a term arena, a sincerity gap, tact, an anomaly that marks a framework stale, an integer source–filter voice and the benign-violation appraisal among them), the turn gate and lock-free mailbox of axiom A3 under a four-thread test, the executor (`runtime/cortex-runtime`: worker threads, work-stealing deques, three barrier-separated phases per tick; 10⁶ events delivered exactly once on four workers; bit-identical arenas on one and four), the `.cortex` image (a sealed section directory, a loader that fails closed, a writer) and the clock sweep with its write-ahead log (evict, spike, re-hydrate bit for bit), zero dependencies, `unsafe` only in the executor's arena under ADR-0023. |
 | **Specified** | Designed in the whitepaper or an ADR; no code yet. | Core pinning, the `mmap` path of the image loader, slot reclamation, the shared-memory mappings of the embodiment and tool rings, the tool broker, the lexicon behind the language frames, reclamation, fabric transport, subsystem dynamics beyond the rules in §5. |
 | **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. A benchmark harness exists; no admissible run on the reference platform does. |
 | **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. |
@@ -27,11 +27,11 @@ Thirty-two crates, one per subsystem, with no dependencies between them ([ADR-00
 
 | Layer | Crate | Primary record | Size |
 | :--- | :--- | :--- | ---: |
-| Foundation | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` (`WorkerWheel`) | 64 B, 64 B, 4.2 MB |
-| Structure | `cortex-connectome` | `CortexFileHeader` | 64 B |
+| Foundation | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `PlasticDelta`, `FlatTimingWheel` (`WorkerWheel`) | 64 B, 64 B, 16 B, 4.2 MB |
+| Structure | `cortex-connectome` | `CortexFileHeader`, `SectionEntry` | 64 B each |
 | Periphery | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B |
 | Periphery | `cortex-thalamus` | `ThalamicRelayNode` | 64 B |
-| Periphery | `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame` | 64 B each |
+| Periphery | `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame`, `VocalFrame` | 64 B each |
 | Periphery | `cortex-linguistic` | `LinguisticFrameSlot` | 64 B |
 | Periphery | `cortex-tools` | `ToolInvocationFrame` | 64 B |
 | Subcortical | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B |
@@ -53,7 +53,7 @@ Thirty-two crates, one per subsystem, with no dependencies between them ([ADR-00
 | Cognitive | `cortex-social` | `SocialPerspectiveNode` | 64 B |
 | Cognitive | `cortex-ethics` | `EthicalEvaluationGate` | 64 B |
 | Cognitive | `cortex-knowledge` | `SemanticOntologyNode` | 64 B |
-| Cognitive | `cortex-reasoning` | `SymbolicRuleNode` | 64 B |
+| Cognitive | `cortex-reasoning` | `SymbolicRuleNode`, `TermNode` | 64 B each |
 | Cognitive | `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B |
 | Cognitive | `cortex-imagination` | `MentalCanvasFrame` | 64 B |
 | Systems | `cortex-immune` | `ImmuneScrubNode` | 64 B |

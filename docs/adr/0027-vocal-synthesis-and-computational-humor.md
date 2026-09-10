@@ -43,7 +43,7 @@ Option 2. Image format version 8 (shared with [ADR-0026](0026-social-acumen-and-
 ### Consequences
 
 - Good: the renderer is a hundred and fifty lines of integer arithmetic with pinned coefficients and a ringing test; a whole epoch of samples is sixteen resonator steps per formant.
-- Good: eleven new tests; no crate, no dependency, no `unsafe`, no float.
+- Good: ten new tests, and a share of an eleventh (play yielding to tact) that ADR-0026 counts; no crate, no dependency, no `unsafe`, no float.
 - Bad: three formants and an impulse source are a vowel-and-breath voice, not speech: consonants, the lexicon's phoneme sequence and the actuator's driver are Specified.
 - Bad: the cosine series covers a quarter of the sample rate; a fourth formant at 16 kHz would need a longer series or a higher rate.
 - Bad: the appraisal reads surprise and threat as numbers; the semantics of what was violated are the lexicon's, so the marker can fall on a turn nobody finds funny (H-6).

@@ -25,4 +25,4 @@ Out of scope: vulnerabilities in third-party physics engines, robot controllers 
 
 ## Design commitments
 
-The engine never trusts a byte it has not verified (checksums on images and packets), contains no `unsafe` code today and requires an ADR to introduce any, and is designed so that an external hardware watchdog, not the engine, is the last line of defence for a physical body. See the whitepaper, §8.9 and §8.10.
+The engine never trusts a byte it has not verified (checksums on images and packets), confines `unsafe` to the runtime's arena access under [ADR-0023](docs/adr/0023-executor.md) and requires an ADR to introduce any more, and is designed so that an external hardware watchdog, not the engine, is the last line of defence for a physical body. See the whitepaper, §8.9 and §8.10.
