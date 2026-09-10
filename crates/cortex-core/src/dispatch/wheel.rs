@@ -11,6 +11,10 @@
 //! deterministic: the tokens already in a fine slot come first, then the tokens cascaded into it,
 //! each group in scheduling order; two wheels fed the same sequence produce identical slots.
 
+/// The fine tick, in nanoseconds: 10 µs (ADR-0013). Every `*_ticks` field of every record
+/// counts these, so an image carries this value in its header and the loader refuses another
+/// (ADR-0033).
+pub const TICK_NS: u32 = 10_000;
 /// Fine slots: 256 × 10 µs = 2.56 ms.
 pub const FINE_SLOTS: usize = 256;
 /// Coarse slots: 256 × 100 µs = 25.6 ms.

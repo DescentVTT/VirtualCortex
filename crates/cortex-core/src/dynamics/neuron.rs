@@ -270,11 +270,10 @@ pub struct SynapseBlock {
     pub target_neuron_ids: [u32; 4], // [0..16] Post-synaptic unit index + 1 per slot; 0 = empty slot
     pub weights_q1_15: [i16; 4], // [16..24] Base weights, Q1.15 (ADR-0012), moved by STDP (ADR-0022)
     pub delays_ticks: [u16; 4], // [24..32] Conduction delay per slot; 0 = mailbox now, else the wheel
-    pub next_block_idx: u32,    // [32..36] Next block index + 1; 0 = end of chain
-    pub last_spike_tick: u32,   // [36..40] Last presynaptic spike; 0 = none on record (STDP)
+    pub chain: u32, // [32..36] Bits 0–27: next block index + 1, 0 = end of chain; bits 28–31: bit 28 + k set when slot k lands in the apical compartment (ADR-0032)
+    pub last_spike_tick: u32, // [36..40] Last presynaptic spike; 0 = none on record (STDP)
     pub last_release_q16: [i32; 4], // [40..56] Efficacy released by the last presynaptic spike per slot (Q16.16), read at delayed delivery
-    pub apical_mask: u8, // [56] Bit k: slot k lands in the apical compartment; clear, the basal one
-    pub _reserved: [u8; 7], // [57..64] Reserved; MUST be zero
+    pub eligibility_q1_15: [i16; 4], // [56..64] Eligibility trace per slot (Q1.15): the pairing amounts not yet consolidated into the weight (ADR-0032)
 }
 
 /// Synaptic efficacy in Q16.16 from a Q1.15 base weight and the two Q0.8 short-term

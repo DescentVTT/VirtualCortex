@@ -784,11 +784,13 @@ fn a_trialled_amendment_whose_starting_value_moved_is_stale() {
 #[test]
 fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy() {
     let (mut live, image) = quiescent_network();
-    // 10 000 to 700: nothing is evicted at the sweep on tick 500, everything at 1 000.
+    // 10 000 to 3 700: the image was written at tick 3 000 and a fork's clock resumes there
+    // (ADR-0033), so a unit that never spiked has been quiet for 3 501 ticks at the sweep on
+    // the fork's tick 500 (nothing is evicted) and 4 001 at tick 1 000 (everything is).
     let a = admitted(
         &mut live,
         PARAM_SWEEP_QUIET_TICKS,
-        700,
+        3_700,
         OBJECTIVE_RESIDENT_UNITS,
     );
     let dir_a = log_dir("persist-a");
@@ -799,11 +801,12 @@ fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy()
     );
     assert_eq!(live.commit(a), Ok(()));
     let after_a = Image::encode(&live).unwrap();
-    // 700 to 300 over 600 ticks: the one sweep, on tick 500, evicts under 300 and not under 700.
+    // 3 700 to 3 300 over 600 ticks: the one sweep, on the fork's tick 500 (3 501 quiet ticks),
+    // evicts under 3 300 and not under 3 700.
     let b = admitted(
         &mut live,
         PARAM_SWEEP_QUIET_TICKS,
-        300,
+        3_300,
         OBJECTIVE_RESIDENT_UNITS,
     );
     let dir_b = log_dir("persist-b");
@@ -840,7 +843,7 @@ fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy()
     let pending = live
         .propose(PARAM_SWEEP_BUDGET, 8, OBJECTIVE_REHYDRATIONS, 3)
         .unwrap();
-    assert_eq!(live.policy().sweep_quiet_ticks, 300);
+    assert_eq!(live.policy().sweep_quiet_ticks, 3_300);
     let image = Image::encode(&live).unwrap();
     let loaded = Image::decode::<64>(
         &image,
@@ -852,7 +855,7 @@ fn committed_amendments_persist_in_the_image_and_the_loader_derives_the_policy()
     .unwrap();
     assert_eq!(
         loaded.policy().sweep_quiet_ticks,
-        300,
+        3_300,
         "derived from the committed amendments"
     );
     assert_eq!(loaded.policy().sweep_budget, 1_024);
@@ -913,11 +916,13 @@ fn tamper(image: &[u8], mutate: impl FnOnce(&mut [u8])) -> Vec<u8> {
 #[test]
 fn the_loader_refuses_an_amendment_it_could_not_have_written() {
     let (mut live, image) = quiescent_network();
-    // 10 000 to 700: nothing is evicted at the sweep on tick 500, everything at 1 000.
+    // 10 000 to 3 700: the image was written at tick 3 000 and a fork's clock resumes there
+    // (ADR-0033), so a unit that never spiked has been quiet for 3 501 ticks at the sweep on
+    // the fork's tick 500 (nothing is evicted) and 4 001 at tick 1 000 (everything is).
     let a = admitted(
         &mut live,
         PARAM_SWEEP_QUIET_TICKS,
-        700,
+        3_700,
         OBJECTIVE_RESIDENT_UNITS,
     );
     let dir_a = log_dir("forged-a");
@@ -928,11 +933,12 @@ fn the_loader_refuses_an_amendment_it_could_not_have_written() {
     );
     assert_eq!(live.commit(a), Ok(()));
     let after_a = Image::encode(&live).unwrap();
-    // 700 to 300 over 600 ticks: the one sweep, on tick 500, evicts under 300 and not under 700.
+    // 3 700 to 3 300 over 600 ticks: the one sweep, on the fork's tick 500 (3 501 quiet ticks),
+    // evicts under 3 300 and not under 3 700.
     let b = admitted(
         &mut live,
         PARAM_SWEEP_QUIET_TICKS,
-        300,
+        3_300,
         OBJECTIVE_RESIDENT_UNITS,
     );
     let dir_b = log_dir("forged-b");
@@ -973,8 +979,8 @@ fn the_loader_refuses_an_amendment_it_could_not_have_written() {
     // A zero id where a record should be.
     let zero_id = tamper(&image, |s| s[16..20].fill(0));
     assert_eq!(refused(&zero_id, "zero id"), 0);
-    // A commit that does not follow the one before it: the second started from 700, the
-    // first's proposed value; make it start from 20.
+    // A commit that does not follow the one before it: the second started from 3 700, the
+    // first's proposed value; make its low byte 20.
     let stale = tamper(&image, |s| s[64 + 28] = 20);
     assert_eq!(refused(&stale, "stale"), 1);
     // The first's start is not the default.

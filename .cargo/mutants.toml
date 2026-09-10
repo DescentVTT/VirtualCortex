@@ -23,6 +23,9 @@ exclude_re = [
     "wheel\\.rs:\\d+:\\d+: replace \\| with \\^ in FlatTimingWheel<CAP>::schedule",
     "cortex-cerebellum/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in CerebellarMicrozone::step_forward_model",
     "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in synapse_token",
+    # The chain word's low 28 bits are cleared before the index + 1 is written into them
+    # (ADR-0032).
+    "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in SynapseBlock::link",
     "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in spike_message",
     # A clamp compared at its own bound: `if v > MAX { MAX } else { v }` and `>=` agree at
     # `v == MAX`, and likewise `<` and `<=` at `MIN`.

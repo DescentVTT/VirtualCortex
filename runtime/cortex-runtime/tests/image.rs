@@ -7,11 +7,11 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_connectome::{
-    CortexFileHeader, HeaderError, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE,
-    SectionEntry, crc64,
+    CortexFileHeader, HeaderError, SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA,
+    SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
-    PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
+    PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
 };
 use cortex_runtime::{Config, Executor, Image, ImageError, WriteAheadLog};
 use std::path::PathBuf;
@@ -235,6 +235,18 @@ fn small_image() -> Vec<u8> {
     Image::encode(&exec).unwrap()
 }
 
+/// `small_image` with the dopamine signal off rest, so the modulator section is written.
+fn small_image_with_modulator() -> Vec<u8> {
+    let mut exec = Executor::<8>::new(Config {
+        units: 2,
+        blocks: 1,
+        ..Config::default()
+    })
+    .unwrap();
+    assert_eq!(exec.reward(0x1234), 0x1234);
+    Image::encode(&exec).unwrap()
+}
+
 /// Edits section `kind` in place and re-seals its checksum, so only the record check can
 /// refuse the image.
 fn patch_section(img: &mut [u8], kind: u32, patch: impl Fn(&mut [u8])) {
@@ -280,15 +292,31 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::NotAtRest(0))
     ));
-    let mut img = small_image();
-    patch_section(&mut img, SECTION_SYNAPSE, |s| s[63] = 7);
+    let mut img = small_image_with_modulator();
+    patch_section(&mut img, SECTION_MODULATOR, |s| s[63] = 7);
     assert!(matches!(
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::ReservedNotZero {
-            section: SECTION_SYNAPSE,
+            section: SECTION_MODULATOR,
             index: 0
         })
     ));
+    let mut img = small_image_with_modulator();
+    patch_section(&mut img, SECTION_MODULATOR, |s| s[16] = 1);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0
+        })
+    ));
+    let img = small_image_with_modulator();
+    let loaded = Image::decode::<8>(&img, Config::default()).unwrap();
+    assert_eq!(
+        loaded.modulator().dopamine_rpe,
+        0x1234,
+        "the record's own bytes are read"
+    );
 }
 
 /// Re-seals the header after `patch` edited its decoded fields.
@@ -300,6 +328,8 @@ fn patch_header(img: &mut [u8], patch: impl Fn(&mut CortexFileHeader)) {
         header.num_neurons,
         header.num_synapses,
         header.section_count,
+        header.tick_ns,
+        header.written_tick,
     );
     img[0..64].copy_from_slice(&sealed.encode());
 }
@@ -394,6 +424,36 @@ fn every_clause_of_the_loader_s_checks_refuses_on_its_own() {
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::DanglingIndex { block: 0, slot: 6 })
     ));
+    // The tick (ADR-0033): a header sealed with another duration, and one with none.
+    let mut img = small_image();
+    patch_header(&mut img, |h| h.tick_ns = 20_000);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::TickMismatch(20_000))
+    ));
+    let mut img = small_image();
+    patch_header(&mut img, |h| h.tick_ns = 0);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Header(HeaderError::ZeroTick))
+    ));
+    assert_eq!(TICK_NS, 10_000, "the fine tick of §8.4");
+    // The modulator section (ADR-0032): exactly one record.
+    let mut img = small_image_with_modulator();
+    patch_entry(&mut img, SECTION_MODULATOR, |e| {
+        e.length = 0;
+        e.crc64 = 0;
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_MODULATOR))
+    ));
+    let mut img = small_image_with_modulator();
+    patch_entry(&mut img, SECTION_MODULATOR, |e| e.record_size = 16);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_MODULATOR))
+    ));
 }
 
 #[test]
@@ -466,7 +526,7 @@ fn the_sweep_evicts_at_exactly_the_quiet_bound_and_leaves_a_unit_with_a_message(
 
 #[test]
 fn a_sealed_header_claiming_more_directory_than_the_file_holds_is_truncated_not_an_allocation() {
-    let header = CortexFileHeader::new(0, 1, 0, u32::MAX);
+    let header = CortexFileHeader::new(0, 1, 0, u32::MAX, TICK_NS, 0);
     assert_eq!(header.validate(), Ok(()));
     assert!(matches!(
         Image::decode::<8>(&header.encode(), Config::default()),
@@ -479,7 +539,7 @@ fn a_sealed_header_claiming_more_directory_than_the_file_holds_is_truncated_not_
         Err(ImageError::Truncated)
     ));
     // A header with no sections and nothing after it is not truncated: it lacks its sections.
-    let none = CortexFileHeader::new(0, 1, 0, 0);
+    let none = CortexFileHeader::new(0, 1, 0, 0, TICK_NS, 0);
     assert!(matches!(
         Image::decode::<8>(&none.encode(), Config::default()),
         Err(ImageError::MissingSection(SECTION_NEURON))
