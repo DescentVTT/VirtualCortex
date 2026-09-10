@@ -3,7 +3,7 @@ status: archived
 date: 2026-09-10
 ---
 
-> **Executed 2026-09-10 in pull request #29.** Writes
+> **Executed 2026-09-10 in pull request #30.** Writes
 > [ADR-0025](../../docs/adr/0025-term-arena-and-unification.md); `TermNode` is the second
 > record of `cortex-reasoning`, first-order unification and the first-order resolution step are
 > Implemented, Socrates is mortal in two steps, and whitepaper §11.1's open question is resolved.
