@@ -11,6 +11,7 @@ use cortex_core::{
     DendriticSuperNeuron, MailboxNode, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, WorkerWheel,
     synaptic_efficacy_q16,
 };
+use cortex_runtime::{Config, Executor};
 use cortex_workspace::GlobalWorkspaceSlot;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -298,7 +299,37 @@ fn synapse(c: &mut Criterion) {
     group.finish();
 }
 
+/// R-1 steps 2 to 5 end to end on one worker (ADR-0023): one injected message, the tick that
+/// delivers it into the mailbox, and the tick that claims the turn, drains, orders the batch
+/// and integrates. Two ticks per event, eight barrier waits of one party each.
+fn executor(c: &mut Criterion) {
+    let mut group = c.benchmark_group("executor");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("push_to_turn", |b| {
+        let mut exec = Executor::<64>::new(Config {
+            workers: 1,
+            units: 1,
+            nodes_per_worker: 64,
+            injector_capacity: 64,
+            ..Config::default()
+        })
+        .expect("a valid configuration");
+        let inject = exec.injector();
+        let mut rng = Lcg(Lcg::SEED);
+        b.iter(|| {
+            let message = rng.next_u32() & 0xFFFF;
+            inject
+                .inject(0, black_box(message))
+                .expect("room in the ring");
+            exec.tick();
+            exec.tick();
+            black_box(exec.delivered())
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
-    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp, synapse
+    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp, synapse, executor
 );
 criterion_main!(benches);

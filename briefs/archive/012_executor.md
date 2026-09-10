@@ -1,7 +1,15 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #27.** Writes
+> [ADR-0023](../../docs/adr/0023-executor.md); `runtime/cortex-runtime` exists, milestone M2's
+> exit test passes as `runtime/cortex-runtime/tests/contention.rs`, the first differential test
+> toward T-1 passes, and core pinning stays Specified with the syscall named. The report is in
+> the pull request and in `CHANGELOG.md`. The body below describes the tree before execution and
+> is not maintained, apart from relative links, which gained one `../` so that they still resolve
+> from `archive/`.
 
 # Brief 012 — The executor: a runtime crate, core-pinned workers, work stealing, batch draining (milestone M2)
 
@@ -13,7 +21,7 @@ own `WorkerWheel`; a turn is `begin_turn`, drain the mailbox whole, order the ba
 deterministically (whitepaper §8.3), integrate (`integrate`, `step_stp`), `end_turn` and
 re-enqueue when it says so; each fine tick drains the worker's wheel into mailboxes. An ADR
 decides the crate's shape, the deque (in-house and index-only without `unsafe`, or a vetted
-dependency added to [ADR-0005](../docs/adr/0005-crate-per-subsystem.md)'s allow-list), the batch
+dependency added to [ADR-0005](../../docs/adr/0005-crate-per-subsystem.md)'s allow-list), the batch
 order, and core pinning. Milestone M2's exit test passes: 10⁶ events delivered under contention
 with no loss and no deadlock. Whitepaper R-1 steps 2 to 5 are Implemented end to end.
 
@@ -35,46 +43,45 @@ with no loss and no deadlock. Whitepaper R-1 steps 2 to 5 are Implemented end to
 Re-derived against `main` (`20c6243`) on 2026-09-10.
 
 - `Cargo.toml` lists thirty-two state crates under `crates/` and `benches/cortex-bench`; no
-  runtime crate exists. Whitepaper [§4.3](../docs/WHITEPAPER.md#43-decomposition-principle):
+  runtime crate exists. Whitepaper [§4.3](../../docs/WHITEPAPER.md#43-decomposition-principle):
   "When a runtime crate is introduced it will compose them"; ADR-0005: dependencies flow only from
   a runtime crate downward, on an allow-list (initially `crossbeam-epoch`, `rustix` or `nix`,
   `bytemuck`), each addition recorded in the changelog.
 - `crates/cortex-core`: `DendriticSuperNeuron::{try_schedule, begin_turn, end_turn, mailbox_push,
-  mailbox_drain}` ([ADR-0017](../docs/adr/0017-mailbox-and-gate-protocol.md)): a pusher pushes
+  mailbox_drain}` ([ADR-0017](../../docs/adr/0017-mailbox-and-gate-protocol.md)): a pusher pushes
   then schedules; `end_turn` returns `true` when the caller must enqueue the unit again; a drain
   yields reverse arrival order and the executor is to sort a batch in a bounded buffer of its own
   (whitepaper §8.3, Specified). `integrate(basal, apical, now_tick)` and
-  `step_stp(elapsed_ticks)` ([ADR-0018](../docs/adr/0018-membrane-integration.md),
-  [ADR-0019](../docs/adr/0019-short-term-plasticity.md)). `WorkerWheel::{schedule, advance}`
-  ([ADR-0013](../docs/adr/0013-timing-wheel-geometry.md)): `advance` returns the due tokens in a
+  `step_stp(elapsed_ticks)` ([ADR-0018](../../docs/adr/0018-membrane-integration.md),
+  [ADR-0019](../../docs/adr/0019-short-term-plasticity.md)). `WorkerWheel::{schedule, advance}`
+  ([ADR-0013](../../docs/adr/0013-timing-wheel-geometry.md)): `advance` returns the due tokens in a
   deterministic order; a token is 28 bits, a `synapse_token(block, slot)` for a delivery (opaque to the wheel).
-- Whitepaper [§6.1](../docs/WHITEPAPER.md#61-scenario-r-1-lifecycle-of-one-spike): step 1 wheel
+- Whitepaper [§6.1](../../docs/WHITEPAPER.md#61-scenario-r-1-lifecycle-of-one-spike): step 1 wheel
   (Implemented), steps 2 to 5 Implemented as record methods, "the deque is the executor's
-  (Specified)"; [§7.3](../docs/WHITEPAPER.md#73-process-and-thread-model-specified): one process,
+  (Specified)"; [§7.3](../../docs/WHITEPAPER.md#73-process-and-thread-model-specified): one process,
   workers pinned one per isolated core, telemetry and scrub threads on non-isolated cores, a
   seccomp filter after initialisation (Specified); §8.5: nodes come from a per-worker pool.
 - Whitepaper TC-5: no allocation, blocking or syscalls on the hot path after initialisation. The
   `spec-guard` directives that hold TC-5 target `crates/`; a crate under `runtime/` is outside
   them, which is where its threads, its arenas and its start-up allocation belong.
-- Whitepaper [§8.3](../docs/WHITEPAPER.md#83-determinism-model): a run is `(image, seed, input
+- Whitepaper [§8.3](../../docs/WHITEPAPER.md#83-determinism-model): a run is `(image, seed, input
   trace)`; two runs MUST produce bit-identical arenas. A batch's order must not depend on which
   worker pushed first: sort by the payload key.
 - `benches/cortex-bench` shows a non-state workspace member with `publish = false` and a
   dev-dependency; `crates/cortex-core/tests/mailbox.rs` models the deque with one flag and four
   producers; that model is the shape of M2's test at scale.
 - Fan-out through `SynapseBlock` chains landed with brief 013
-  ([ADR-0022](../docs/adr/0022-synapse-fan-out-and-stdp.md)): the sequence at a spike is
+  ([ADR-0022](../../docs/adr/0022-synapse-fan-out-and-stdp.md)): the sequence at a spike is
   `step_stp`, then per block `step_stdp_all` and `release_all`, then per synapse
   `synapse_token` into the wheel or `spike_message` into the mailbox; a token's delivery reads
   the block's stored release. `crates/cortex-core/tests/oscillator.rs` runs it single-threaded
   and is the shape of the worker loop. STDP reads a target's `last_soma_spike_tick` from
   another record: the ADR names the barrier that makes that read safe under workers.
 
-<!-- @assert-absence target="Cargo.toml" symbol="cortex-runtime" reason="precondition: no runtime crate exists; archive this brief when it does" -->
 
 ## Deliverables
 
-- [ ] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR: the
+- [x] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR: the
       runtime crate's name and path (`runtime/cortex-runtime`, `publish = false` until 1.0), its
       dependency decisions against the allow-list (the deque: an in-house index-only Chase–Lev
       over a fixed array without `unsafe`, or `crossbeam-deque` with its stability record and an
@@ -82,17 +89,17 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
       named), the batch order (sort by payload key in a per-worker fixed buffer; capacity and the
       overflow rule), how a worker's wheel tokens become mailbox pushes, and what happens to a
       unit whose turn cannot be claimed. Committed `accepted` per `docs/adr/README.md`.
-- [ ] `runtime/cortex-runtime`: `Executor::new(config)` allocating every arena and pool once;
+- [x] `runtime/cortex-runtime`: `Executor::new(config)` allocating every arena and pool once;
       `enqueue(unit)`; the worker loop as above; `tick()` advancing every wheel and delivering
       due tokens; `shutdown()`; no allocation after `new` (asserted by a counting allocator in a
       test, or by a reviewed invariant if the test is not possible without `unsafe`).
-- [ ] Tests: 10⁶ events from N producers into M units across W workers, every event delivered
+- [x] Tests: 10⁶ events from N producers into M units across W workers, every event delivered
       exactly once, no deadlock, run for W in {1, 2, 4}; bit-identical arena contents after the
       same input trace on W = 1 and W = 4 (the first differential test toward T-1); a unit that
       keeps receiving is never starved; `end_turn`'s re-enqueue is exercised under contention.
-- [ ] `benches/cortex-bench` gains `executor/push_to_turn` (R-1 steps 2 to 4 end to end on one
+- [x] `benches/cortex-bench` gains `executor/push_to_turn` (R-1 steps 2 to 4 end to end on one
       worker); `docs/benchmarks/README.md` follows.
-- [ ] Whitepaper §5.1 (a runtime layer above the state crates, with its dependency edges now
+- [x] Whitepaper §5.1 (a runtime layer above the state crates, with its dependency edges now
       real), §6.1 (the deque and the batch order Implemented), §7.3, §8.3 (the batch order as
       built), §8.5, Appendix C M2; TC-2's directive text if the allow-list grew;
       `CHANGELOG.md`; archive this brief.

@@ -33,6 +33,9 @@ members = [
     "crates/cortex-reasoning",
     "crates/cortex-arithmetic",
     "crates/cortex-imagination",
+    # Not a state crate: the executor, never published (ADR-0023). Outside `crates/`, so the
+    # TC-4, TC-5 and TC-9 directives that hold the state crates do not reach it; ADR-0023 holds it.
+    "runtime/cortex-runtime",
     # Not a state crate: benchmarks only, never published (ADR-0014).
     "benches/cortex-bench",
 ]

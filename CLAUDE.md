@@ -13,10 +13,11 @@ neural computation on 64-byte cache-line records, Q16.16 fixed point, and a fixe
 core-pinned workers. Thirty-two crates, one per subsystem, no dependencies between them;
 fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
-It is at the **state-model stage**. The records, their compile-time layout assertions and small
-update rules in twenty-two crates exist; the executor, the delivery path from the wheel into
-mailboxes, the image loader, the shared-memory mappings, the tool broker and every subsystem's
-real dynamics do not. The whitepaper's
+It is past the **state-model stage**: the records, their compile-time layout assertions, small
+update rules in twenty-two crates, synaptic fan-out with STDP, and the executor that runs them
+on a pool of workers (`runtime/cortex-runtime`, ADR-0023) exist; the image loader, the
+shared-memory mappings, core pinning, the tool broker and every subsystem's real dynamics do
+not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.
 
@@ -67,7 +68,9 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 - A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a record with atomics is a
   control record and derives `Debug` only (whitepaper §8.2, L-5).
 - No `unsafe` without an ADR naming the invariant and the test.
-- State crates declare no dependencies. A future runtime crate composes them.
+- State crates declare no dependencies. The runtime crate `runtime/cortex-runtime` composes
+  them ([ADR-0023](docs/adr/0023-executor.md)) and is the only place `unsafe` is allowed, under
+  that ADR's invariant: a `&mut` to a record never overlaps another reference to it.
 - Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version`,
   updates the record's table in whitepaper §5.2, and gets a changelog entry.
 - Edition 2024 and MSRV 1.85 are decided by [ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)
