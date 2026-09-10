@@ -33,6 +33,31 @@ pub struct TorqueFrame {
     pub _reserved: [u8; 8],      // [56..64] Reserved; MUST be zero
 }
 
+impl TorqueFrame {
+    /// Decodes one period's layer-5 activity into torques by a push-pull rate code (whitepaper
+    /// section 6.4 step 2): for each joint, `(agonist - antagonist) x gain_q16`, widened to `i64`
+    /// and clamped to the `i32` range, so an agonist and its antagonist cancel, an empty period
+    /// is the zero frame, and a runaway count saturates instead of wrapping. `gain_q16` is the
+    /// torque one net burst is worth. Population-vector and learned decoders are Specified.
+    pub fn from_burst_counts(
+        epoch: u64,
+        agonist: &[u32; DOF],
+        antagonist: &[u32; DOF],
+        gain_q16: i32,
+    ) -> Self {
+        let mut torques_q16 = [0i32; DOF];
+        for (j, torque) in torques_q16.iter_mut().enumerate() {
+            let net = agonist[j] as i64 - antagonist[j] as i64;
+            *torque = (net * gain_q16 as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        }
+        Self {
+            epoch,
+            torques_q16,
+            _reserved: [0; 8],
+        }
+    }
+}
+
 /// One period's observation, plant → engine. 64 B, align 64. Velocities are not carried: at a
 /// fixed period they are the finite difference of consecutive positions (ADR-0015).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -208,6 +233,64 @@ mod tests {
         assert_eq!(TorqueFrame::default().torques_q16, [0; DOF]);
         assert_eq!(JointStateFrame::default().positions_q16, [0; DOF]);
         assert_eq!(TorqueFrame::default()._reserved, [0; 8]);
+    }
+
+    #[test]
+    fn an_empty_period_decodes_to_the_zero_frame_with_its_epoch() {
+        let f = TorqueFrame::from_burst_counts(9, &[0; DOF], &[0; DOF], 0x0001_0000);
+        assert_eq!(f.epoch, 9);
+        assert_eq!(f.torques_q16, [0; DOF]);
+        assert_eq!(f._reserved, [0; 8]);
+    }
+
+    #[test]
+    fn balanced_bursts_cancel_and_the_sign_follows_the_dominant_side() {
+        let mut agonist = [3u32; DOF];
+        let mut antagonist = [3u32; DOF];
+        agonist[0] = 5;
+        antagonist[1] = 7;
+        let f = TorqueFrame::from_burst_counts(1, &agonist, &antagonist, 0x0000_8000);
+        assert_eq!(
+            f.torques_q16[0],
+            2 * 0x0000_8000,
+            "two net agonist bursts at 0.5 each"
+        );
+        assert_eq!(
+            f.torques_q16[1],
+            -4 * 0x0000_8000,
+            "four net antagonist bursts"
+        );
+        assert!(
+            f.torques_q16[2..].iter().all(|&t| t == 0),
+            "balanced joints are still"
+        );
+    }
+
+    #[test]
+    fn the_gain_scales_linearly_and_the_extremes_clamp() {
+        let one = [1u32; DOF];
+        let zero = [0u32; DOF];
+        let a = TorqueFrame::from_burst_counts(0, &one, &zero, 0x0000_1000);
+        let b = TorqueFrame::from_burst_counts(0, &one, &zero, 0x0000_2000);
+        assert_eq!(b.torques_q16[0], 2 * a.torques_q16[0]);
+        let hi = TorqueFrame::from_burst_counts(0, &[u32::MAX; DOF], &zero, i32::MAX);
+        assert_eq!(hi.torques_q16, [i32::MAX; DOF], "clamps rather than wraps");
+        let lo = TorqueFrame::from_burst_counts(0, &zero, &[u32::MAX; DOF], i32::MAX);
+        assert_eq!(lo.torques_q16, [i32::MIN; DOF]);
+        let neg = TorqueFrame::from_burst_counts(0, &one, &zero, -0x0001_0000);
+        assert_eq!(
+            neg.torques_q16[0], -0x0001_0000,
+            "a negative gain inverts the joint"
+        );
+    }
+
+    #[test]
+    fn two_frames_from_the_same_counts_are_equal() {
+        let agonist: [u32; DOF] = core::array::from_fn(|j| (j * 7 % 5) as u32);
+        let antagonist: [u32; DOF] = core::array::from_fn(|j| (j * 3 % 4) as u32);
+        let a = TorqueFrame::from_burst_counts(4, &agonist, &antagonist, 0x0000_C000);
+        let b = TorqueFrame::from_burst_counts(4, &agonist, &antagonist, 0x0000_C000);
+        assert_eq!(a, b);
     }
 
     #[test]

@@ -17,7 +17,7 @@ Thank you for considering a contribution. This file is the map; the reasoning be
 
 ### Commit messages
 
-[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): summary`, where `type` is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci` and `scope` is a crate name without the `cortex-` prefix (`core`, `hippocampus`), or `whitepaper`, `adr`, `workspace`.
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): summary`, where `type` is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci` and `scope` is a crate name without the `cortex-` prefix (`core`, `hippocampus`), or `whitepaper`, `adr`, `briefs`, `workspace`, `specs`, `ci`.
 
 ```text
 docs(whitepaper): transcribe SynapseBlock layout from source
