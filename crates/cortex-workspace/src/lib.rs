@@ -1,4 +1,5 @@
-//! Global Neuronal Workspace (GNWT), Non-Linear Ignition & Metacognition
+//! Global workspace: competitive broadcast slots with threshold ignition (whitepaper §5.2.8).
+//! Decay and competition are Specified.
 
 #![no_std]
 

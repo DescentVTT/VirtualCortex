@@ -1,11 +1,10 @@
-//! # cortex-executive
-//!
-//! Prefrontal Executive Planning, Counterfactual Mental Simulation, and Multi-Step Lookahead Rollouts.
-//! Engineered to 2026+ Systems Best Practice (`Latest != Newest`).
+//! Executive planning: nodes of a goal-directed lookahead tree (whitepaper §5.2.10). Search
+//! and regret evaluation are Specified (§8.8); goal-free rehearsal is `cortex-imagination`
+//! (ADR-0016).
 
 #![no_std]
 
-/// 64-byte POD cache-line aligned executive planning node.
+/// 64-byte record: one node of a lookahead tree (whitepaper §5.2.10).
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExecutivePlanNode {

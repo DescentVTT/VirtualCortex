@@ -1,4 +1,6 @@
-//! Vector Symbolic Architecture (VSA / HDC) & Broca/Wernicke Language Bridge
+//! Vector-symbolic architecture: hypervector headers and role binding (whitepaper §5.2.9).
+//! Bundling, permutation, unbinding and the codebook are Specified; the frames that unbound
+//! roles fill are `cortex-linguistic`'s (ADR-0016).
 
 #![no_std]
 

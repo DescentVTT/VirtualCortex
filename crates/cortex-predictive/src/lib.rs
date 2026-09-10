@@ -1,12 +1,10 @@
-//! # cortex-predictive
-//!
-//! Hierarchical Predictive Coding (HPC) and Active Inference Engine.
-//! Top-down predictive cancellation eliminating >85% of redundant sensory event traffic.
-//! Engineered to 2026+ Systems Best Practice (`Latest != Newest`).
+//! Predictive coding: the per-level residual record (whitepaper §5.2.11). Error propagation is
+//! Specified (§8.8); the reduction in ascending traffic it may bring is hypothesis H-2 and is
+//! unmeasured.
 
 #![no_std]
 
-/// 64-byte POD cache-line aligned predictive coding state.
+/// 64-byte record: one level's residual (whitepaper §5.2.11).
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PredictiveErrorState {
