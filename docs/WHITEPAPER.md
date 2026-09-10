@@ -182,7 +182,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-social` | `SocialPerspectiveNode` | 64 B | yes | yes | yes | `resonate`, `update_trust`, turn-taking and grounding, `register` |
 | `cortex-ethics` | `EthicalEvaluationGate` | 64 B | yes | yes | yes | `evaluate` (veto) |
 | `cortex-knowledge` | `SemanticOntologyNode` | 64 B | yes | yes | yes | `consolidate`, `affords`, `certify` |
-| `cortex-reasoning` | `SymbolicRuleNode` | 64 B | yes | yes | yes | `evaluate` (truth table), `resolve`, `apply_resolution` |
+| `cortex-reasoning` | `SymbolicRuleNode`, `TermNode` | 64 B, 64 B | yes | yes | yes | `evaluate`, `resolve`, `apply_resolution`, `unify`, `resolve_first_order` |
 | `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B | yes | yes | yes | `execute` (eight opcodes, 128-bit) |
 | `cortex-imagination` | `MentalCanvasFrame` | 64 B | yes | yes | yes | `step`, `has_diverged`, `reflect` (self-model fixed point), `wander` |
 
@@ -551,7 +551,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`VCORTEX1`), `FORMAT_VERSION` (7), `HeaderError`; `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39); `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) |
+| Public API | `CortexFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`VCORTEX1`), `FORMAT_VERSION` (7), `HeaderError`; `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39), `SECTION_TERM` (40); `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) |
 | Status | Header, directory record and CRC: Implemented ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) · Writer and loader: Implemented in `runtime/cortex-runtime` (`Image::{write, open}`, read-into-arenas; `mmap` Specified) · Atlas-derived priors, the laminar and routing sections: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -1326,10 +1326,10 @@ Implemented rule: `affords(bits)` requires every requested bit; `consolidate(bit
 
 | | |
 | :--- | :--- |
-| Responsibility | One rule per record: a condition literal, a consequence literal, and the operator that combines the condition with the parent rule's satisfaction; and Robinson's resolution on clauses of up to two literals, whose chains are refutation proofs. `cortex-symbolic` grounds the literals; `cortex-executive` searches goals; a term arena for first-order unification is an open question (§11.1). |
-| Source | `crates/cortex-reasoning/src/lib.rs` |
-| Public API | `SymbolicRuleNode::{evaluate, clause, apply_resolution, is_refutation}`; `atom`, `negate`, `complementary`, `is_tautology`, `resolve(a, b) -> Option<Clause>`; `Clause = (u32, u32)`, `EMPTY_CLAUSE`, `LITERAL_NONE` (0), `LITERAL_NEGATED` (bit 31); operators `OP_AND` (0), `OP_OR` (1), `OP_NOT` (2), `OP_IMPLIES` (3), `OP_EQUIV` (4), `OP_RESOLVE` (5); states `STATE_UNKNOWN` (0), `STATE_SATISFIED` (1), `STATE_VIOLATED` (2) |
-| Status | Layout: Implemented · Truth tables and the propositional resolution step: Implemented · First-order unification, clause search and constraint propagation: Specified (§6.10, §8.8) |
+| Responsibility | One rule per record: a condition literal, a consequence literal, and the operator that combines the condition with the parent rule's satisfaction; and Robinson's resolution on clauses of up to two literals, whose chains are refutation proofs. `cortex-symbolic` grounds the literals and the functors; `cortex-executive` searches goals; the term arena and first-order unification are the crate's second record ([ADR-0025](adr/0025-term-arena-and-unification.md)). |
+| Source | `crates/cortex-reasoning/src/lib.rs`, `crates/cortex-reasoning/src/term.rs` |
+| Public API | `SymbolicRuleNode::{evaluate, clause, apply_resolution, record_resolvent, is_refutation}`; `TermNode::{constant, variable, compound, child}`, `TERM_EMPTY` (0), `TERM_CONSTANT` (1), `TERM_VARIABLE` (2), `TERM_COMPOUND` (3), `MAX_ARITY` (8), `TERM_NONE` (0); `Binding`, `UnifyResult::{Unified, Clash, OccursCheck, BoundExceeded, Malformed}`, `unify(a, b, arena, bindings, trail, stack)`, `deref`, `undo`, `literal_of_term`, `term_of_literal`, `is_negated`, `resolve_first_order` ([ADR-0025](adr/0025-term-arena-and-unification.md)); `atom`, `negate`, `complementary`, `is_tautology`, `resolve(a, b) -> Option<Clause>`; `Clause = (u32, u32)`, `EMPTY_CLAUSE`, `LITERAL_NONE` (0), `LITERAL_NEGATED` (bit 31); operators `OP_AND` (0), `OP_OR` (1), `OP_NOT` (2), `OP_IMPLIES` (3), `OP_EQUIV` (4), `OP_RESOLVE` (5); states `STATE_UNKNOWN` (0), `STATE_SATISFIED` (1), `STATE_VIOLATED` (2) |
+| Status | Layouts: Implemented · Truth tables and the propositional resolution step: Implemented · Term arena, first-order unification and the first-order resolution step: Implemented ([ADR-0025](adr/0025-term-arena-and-unification.md)) · Clause search, standardising apart, a proof store and constraint propagation: Specified (§6.10, §8.8) |
 
 **`SymbolicRuleNode`** — 64 B, align 64. A literal is a `u32` atom with bit 31 as its sign; atom 0 is "no literal", so a unit clause is `(lit, 0)` and the empty clause `(0, 0)`.
 
@@ -1351,7 +1351,22 @@ Implemented rules. `evaluate(condition, parent)`: AND, OR, NOT (parent ignored),
 
 <!-- @assert-count target="crates/cortex-reasoning" symbol="SymbolicRuleNode" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-reasoning" symbol="OP_RESOLVE" min="1" word="true" reason="§6.10: resolution is a rule-node operator" -->
+**`TermNode`** — 64 B, align 64 ([ADR-0025](adr/0025-term-arena-and-unification.md)). A constant, a variable or a compound; every reference is an arena index + 1, so a zeroed arena is empty. Functors and constants are `cortex-symbolic` concept ids (rule L-3: indices, never strings); a variable is a number that indexes the caller's binding table.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..1)` | `kind` | `u8` | enum | `TERM_*`: empty 0, constant 1, variable 2, compound 3. |
+| `[1..2)` | `arity` | `u8` | 0–8 | Arguments of a compound. |
+| `[2..4)` | `_pad` | `u16` | — | Reserved; MUST be zero. |
+| `[4..8)` | `functor` | `u32` | id | Concept id of a constant or compound; the variable's number. |
+| `[8..40)` | `children` | `[u32; 8]` | index + 1 | Argument term per slot; `TERM_NONE` (0) past the arity. |
+| `[40..64)` | `_reserved` | `[u8; 24]` | — | Reserved; MUST be zero. |
+
+Implemented rules. `unify(a, b, arena, bindings, trail, stack)` is Robinson's algorithm without recursion: a work stack of term pairs in the caller's slice (its length is the recursion bound), a binding table `Binding` (index + 1, indexed by variable number) that the caller owns, and a trail of the variables bound by the call. A variable binds after the occurs check (a depth-first walk in the free part of the stack); constants unify when equal; compounds when functor and arity agree; anything else is `Clash`. `Unified` returns the count of bindings, which head the trail; `Clash`, `OccursCheck`, `BoundExceeded` (stack or trail) and `Malformed` (an index outside an arena or table, an empty node) undo the trail first, so a failure leaves the table as it was; bindings already in the table are respected, so a proof accumulates one substitution, which `deref` reads through (bounded by the arena, so a cyclic table terminates) and `undo` reverts. A first-order literal is `literal_of_term(term, negated)`: the term index + 1 with the sign in bit 31, `LITERAL_NONE` still absent. `resolve_first_order` tries the four literal pairs in the propositional order, skipping equal signs, and returns the two remaining literals for the first pair that unifies, or the failure; `record_resolvent` stores the result in a rule node. Eight tests, including the occurs check through a chain, the trail undone on a clash, every bound as a result, Socrates mortal in two steps, and determinism.
+
 <!-- @assert-count target="crates/cortex-reasoning" symbol="fn resolve" min="1" reason="§6.10: the propositional resolution step is implemented" -->
+<!-- @assert-count target="crates/cortex-reasoning" symbol="TermNode" min="1" word="true" reason="ADR-0025: the term arena record exists" -->
+<!-- @assert-count target="crates/cortex-reasoning" symbol="fn unify" min="1" reason="ADR-0025: first-order unification is implemented" -->
 
 #### 5.2.31 `cortex-arithmetic` — exact scratchpad
 
@@ -1516,7 +1531,7 @@ Mathematics runs on two tracks. **Track 1 is native and always available**: prop
 
 1. `cortex-curiosity` finds an axiomatic gap: a target whose prediction error stays high after its novelty is exhausted (`visit`, Implemented) names a conjecture.
 2. `cortex-imagination` searches for a proof sketch in a sandboxed rollout (`step`, `has_diverged`, Implemented; the search Specified).
-3. **Track 1.** `cortex-reasoning` checks each propositional step by resolution (`apply_resolution`, Implemented): the negated conjecture and the premises are clauses, and a chain that reaches the empty clause (`is_refutation`) proves it; `cortex-arithmetic` recomputes every figure exactly (`execute`, Implemented). A theorem proved here is consolidated at once (`certify`, Implemented). First-order term unification is Specified and needs a term arena (§11.1).
+3. **Track 1.** `cortex-reasoning` checks each propositional step by resolution (`apply_resolution`, Implemented): the negated conjecture and the premises are clauses, and a chain that reaches the empty clause (`is_refutation`) proves it; `cortex-arithmetic` recomputes every figure exactly (`execute`, Implemented). A theorem proved here is consolidated at once (`certify`, Implemented). A first-order step unifies the complementary pair over the term arena (`unify`, `resolve_first_order`, Implemented, [ADR-0025](adr/0025-term-arena-and-unification.md)); the search that chooses the pair, and standardising the clause sets apart, are Specified.
 4. **Track 2.** A conjecture the native track cannot close is dispatched as a `ToolInvocationFrame` (`new_call` with `TOOL_CATEGORY_FORMAL_PROVER` and one of the three actions, Implemented) after the veto gate (R-8); the broker runs its prover or solver under its own policy and returns the certificate hash in the payload, or `STATUS_FAILED`.
 5. `cortex-knowledge` consolidates a theorem certified on either track (`certify`, Implemented). A failed check consolidates nothing.
 
@@ -1704,7 +1719,7 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | Propositional deduction | `cortex-reasoning` · `logical_operator`, `satisfaction_state` | AND, OR, NOT, IMPLIES over the condition and the parent rule; support counts satisfactions. | Partial: truth table Implemented; chain search Specified |
 | Exact mental arithmetic (intraparietal sulcus) | `cortex-arithmetic` · `opcode`, `error_flags` | Checked 128-bit and Q16.16 arithmetic with explicit overflow and divide-by-zero flags. | Partial: opcodes Implemented; expression sequencing Specified |
 | Default-mode rehearsal | `cortex-imagination` · `divergence_uncertainty_q16`, `motor_release_flag` | Saturating accumulation of valence and uncertainty along a rollout that can never release motor output. | Partial: step and divergence Implemented; generative model Specified |
-| Mathematical deduction on two tracks (Robinson resolution; agnostic brokered verification) | `cortex-reasoning` · `apply_resolution`, `is_refutation`; `cortex-arithmetic` · `execute`; `cortex-tools` · `TOOL_CATEGORY_FORMAL_PROVER`; `cortex-knowledge` · `certify` | Track 1, native: refutation by resolution over two-literal clauses to the empty clause and exact arithmetic, consolidated at once. Track 2, optional: a conjecture too large for the native track sent as a mathematical action (verify a proof, solve constraints, evaluate symbolically) to whatever verification system the broker's operator configured; only a certificate hash returns (R-10). | Partial: the resolution step, the arithmetic, the three opcodes and certification Implemented; unification, search and the broker Specified |
+| Mathematical deduction on two tracks (Robinson resolution and unification; agnostic brokered verification) | `cortex-reasoning` · `apply_resolution`, `is_refutation`, `unify`, `resolve_first_order`; `cortex-arithmetic` · `execute`; `cortex-tools` · `TOOL_CATEGORY_FORMAL_PROVER`; `cortex-knowledge` · `certify` | Track 1, native: refutation by resolution over two-literal clauses to the empty clause and exact arithmetic, consolidated at once. Track 2, optional: a conjecture too large for the native track sent as a mathematical action (verify a proof, solve constraints, evaluate symbolically) to whatever verification system the broker's operator configured; only a certificate hash returns (R-10). | Partial: the resolution step, the arithmetic, the three opcodes and certification Implemented; unification, search and the broker Specified |
 | Saccadic document reading and auditing | `cortex-attention` · `MODE_DOCUMENT_FOVEATION`; `cortex-tools` · `TOOL_CATEGORY_DOC_ENGINE`; `cortex-knowledge`, `cortex-arithmetic`, `cortex-reasoning`, `cortex-salience`, `cortex-linguistic` | Foveal queries to a document engine return triples; figures are recomputed exactly; claims are audited by resolution; risks are tagged; the evaluation is realised as frames (R-11). | Partial: each crate's rule Implemented; the engine, its index and the pipeline Specified |
 
 The reference equations, for implementers:
@@ -1796,6 +1811,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0022](adr/0022-synapse-fan-out-and-stdp.md) | Synaptic fan-out and STDP: index + 1 chains, synapse tokens, stored releases, spike messages, and the nearest-neighbour pair rule at the presynaptic spike; image format 6 |
 | [ADR-0023](adr/0023-executor.md) | The executor: a runtime crate, in-house work-stealing deques, three barrier-separated phases per tick, and the one `unsafe` in the workspace |
 | [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md) | The `.cortex` image: section directory, table-free CRC-64/XZ, a read-into-arenas loader and writer, a write-ahead log for the clock sweep, and the Tier-2 delta record; format version 7 |
+| [ADR-0025](adr/0025-term-arena-and-unification.md) | A term arena and first-order unification for `cortex-reasoning`: a second record under ADR-0016's test, bindings in a caller's table, a trail undone on failure, bounds that are results |
 
 ---
 
@@ -1883,7 +1899,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 - [ ] The cerebellar delay line holds seven steps (7 ms at the embodiment epoch). A plant whose delay exceeds that needs a per-microzone delay arena addressed by index; nothing needs it yet, and adopting it would be an ADR.
 - [x] Should the engine have a second, non-motor egress frame: a discrete command to a digital environment? [ADR-0015](adr/0015-embodiment-frame-abi.md) reserved a second ring for a new ADR.
       **Resolved (2026-09-10):** yes, `ToolInvocationFrame` (§5.2.21) through a broker outside the engine's seccomp filter (§8.10), every frame passing the veto gate first; [ADR-0016](adr/0016-thirty-two-crate-architecture.md).
-- [ ] First-order term unification (R-10) needs a term arena: terms, variables and bindings that no 64-byte rule node can hold. A second record in `cortex-reasoning` is an ADR under the test of [ADR-0016](adr/0016-thirty-two-crate-architecture.md); until then resolution is propositional and unification is Specified. Brief 014 is the round.
+- [x] First-order term unification (R-10) needs a term arena: terms, variables and bindings that no 64-byte rule node can hold. **Resolved (2026-09-10):** `TermNode`, the second record of `cortex-reasoning`, admitted under [ADR-0016](adr/0016-thirty-two-crate-architecture.md)'s test by [ADR-0025](adr/0025-term-arena-and-unification.md); bindings in a caller's table, a trail undone on failure, bounds that are results; Socrates is mortal in two steps. Clause search and standardising apart stay Specified.
 - [ ] The fourteen crates of ADR-0016 carry one rule each. Which of them need a second record (a relay table for `cortex-thalamus`, an expression of slots for `cortex-arithmetic`, a rollout of frames for `cortex-imagination`) is decided when milestone M8 reaches each; a second record in a crate is an ADR.
 
 ---
@@ -1917,6 +1933,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Injector | The bounded ring through which anything outside the tick loop reaches a mailbox ([ADR-0023](adr/0023-executor.md)). |
 | Section directory | The `SectionEntry` records after the image header that say where each arena's bytes are and what seals them ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). |
 | Write-ahead log | The append-only file the clock sweep evicts unit records into and re-hydration reads from ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). |
+| Term arena | The `TermNode` records a first-order proof's terms live in; a variable binds in the caller's table, not in the arena ([ADR-0025](adr/0025-term-arena-and-unification.md)). |
+| Trail | The variables a unification bound, in order, so that a failure or the caller can undo them ([ADR-0025](adr/0025-term-arena-and-unification.md)). |
 | Turn invariant | At most one worker touches a record per tick (A3). |
 | Unit | A `DendriticSuperNeuron` record; the engine's neural entity. |
 | Veto gate | `EthicalEvaluationGate`: the in-engine check a proposed action passes before dispatch (§5.2.28); it stands in front of the watchdog, not in place of it. |
@@ -1972,9 +1990,12 @@ Parameters: `N_col` = 860 000, `N_neuron` = 43 000 000, `N_block` = 67 108 864 (
 | 34 | `ArithmeticScratchpadSlot` | 65 536 | 64 B | 4.2 MB |
 | 35 | `MentalCanvasFrame` | 500 000 | 64 B | 32 MB |
 | 36 | Page tables, stacks, OS | — | — | ~4.8 GB |
-| | **Tier 1 total** | | | **≈ 15.7 GB** |
+| | **Tier 1 total** (rows 1–36 and 40) | | | **≈ 15.8 GB** |
 | 37 | `PlasticDelta` (Tier 2; the record and its section exist, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md); producing and applying deltas Specified) | 1 000 000 000 | 16 B | 16.0 GB |
-| | **Total addressable** | | | **≈ 31.7 GB** |
+| 38 | Laminar priors (Specified; section kind 38) | — | — | — |
+| 39 | Routing table (Specified; section kind 39) | — | — | — |
+| 40 | `TermNode` arena (Tier 1; [ADR-0025](adr/0025-term-arena-and-unification.md); section kind 40) | 1 000 000 | 64 B | 64 MB |
+| | **Total addressable** | | | **≈ 31.8 GB** |
 
 Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 fine and 256 coarse slots of 2 048 tokens each, 4 195 336 bytes, asserted at compile time. Rows 22 to 35 are the arenas admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md); their counts are placeholders like the others, and together they add 0.66 GB. Row 37 has no record type in the tree and is included so that the far-memory tier is sized. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
 
