@@ -3,6 +3,7 @@ name = "cortex-connectome"
 description = "The .cortex memory-mappable image header and anatomical connectome priors for VirtualCortex"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

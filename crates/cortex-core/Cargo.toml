@@ -3,6 +3,7 @@ name = "cortex-core"
 description = "Neural state and dispatch: 64-byte DendriticSuperNeuron and SynapseBlock records and the two-tier FlatTimingWheel for VirtualCortex"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

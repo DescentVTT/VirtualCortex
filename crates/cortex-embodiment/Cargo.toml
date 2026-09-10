@@ -3,6 +3,7 @@ name = "cortex-embodiment"
 description = "Shared-memory sensorimotor ring control block for 1 ms closed-loop embodiment in VirtualCortex"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

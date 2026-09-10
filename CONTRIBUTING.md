@@ -31,7 +31,7 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 
 | Rule | How it is checked |
 | :--- | :--- |
-| Stable Rust only; no nightly features. | CI builds on `stable`. |
+| Stable Rust, edition 2024, minimum supported version 1.85 ([ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)); no nightly features. | `rust-toolchain.toml` pins the toolchain CI and contributors build with; a second CI job builds and tests on the `rust-version` in `Cargo.toml`; `spec-guard` holds the edition, the floor and the eighteen inheriting manifests. |
 | State crates declare no dependencies. The benchmark crate may carry the harness as a dev-dependency and nothing else ([ADR-0014](docs/adr/0014-benchmark-harness.md)). | `Cargo.toml` review; `cargo tree -e normal -p <crate>`; CI builds `--locked`. |
 | Performance figures are Measured only from an admissible run recorded under `docs/benchmarks/results/` ([ADR-0010](docs/adr/0010-measured-or-target.md)). | Review; the results file's `admissible:` line. |
 | Every public function and associated constant has at least one unit test, and every state crate carries a `#[cfg(test)]` module. | The module: `spec-guard`, one directive per crate in whitepaper §1.6. The per-item rule: review; no tool checks it yet, so a PR that adds a public item without a test is rejected on review. |
@@ -76,6 +76,8 @@ cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo bench -p cortex-bench --bench hot_path -- --test   # benchmarks execute; no timing asserted
+cargo +1.85 check --workspace --all-targets   # the MSRV floor (ADR-0009); rustup toolchain install 1.85 once
+cargo +1.85 test --workspace
 npm ci
 npm run spec                        # spec-guard + spec-graph + check-briefs
 ```
@@ -86,7 +88,7 @@ npm run spec                        # spec-guard + spec-graph + check-briefs
 
 A change is done when all of the following hold:
 
-- code compiles on stable with no new warnings;
+- code compiles on the pinned toolchain and on the MSRV ([ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)) with no new warnings;
 - layout assertions and tests pass;
 - whitepaper tables and status labels reflect the change;
 - an ADR is added or amended if a rule changed;

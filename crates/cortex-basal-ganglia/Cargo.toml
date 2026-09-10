@@ -3,6 +3,7 @@ name = "cortex-basal-ganglia"
 description = "Basal ganglia action selection: striatal D1/D2 and STN hyperdirect channel gating for VirtualCortex"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

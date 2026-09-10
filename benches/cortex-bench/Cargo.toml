@@ -4,6 +4,7 @@ description = "Benchmarks for the VirtualCortex state crates (ADR-0014). Not a s
 publish = false
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

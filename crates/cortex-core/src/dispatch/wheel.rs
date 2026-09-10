@@ -113,8 +113,8 @@ impl<const CAP: usize> FlatTimingWheel<CAP> {
         let consumed = (self.tick & FINE_MASK) as usize;
         self.fine_len[consumed] = 0;
         self.tick += 1;
-        // `%` rather than `is_multiple_of` (Rust 1.87+): ADR-0009 proposes an MSRV of 1.85.
-        #[allow(clippy::manual_is_multiple_of)]
+        // `%` rather than `is_multiple_of` (Rust 1.87+): the MSRV is 1.85 (ADR-0009). Clippy
+        // reads `rust-version` from the manifest and does not suggest the newer method.
         if self.tick % FINE_PER_COARSE == 0 {
             self.cascade();
         }

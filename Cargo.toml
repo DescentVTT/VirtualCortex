@@ -21,14 +21,18 @@ members = [
     # Not a state crate: benchmarks only, never published (ADR-0014).
     "benches/cortex-bench",
 ]
-resolver = "2"
+# Resolver 3 (Rust 1.84+) is MSRV-aware: it prefers dependency versions whose rust-version
+# is within the workspace's (ADR-0009).
+resolver = "3"
 
 # Shared package metadata, inherited by every crate (whitepaper finding F-9).
-# Edition and rust-version are governed by ADR-0009 (proposed); change them here
-# only when that decision is accepted.
+# Edition and rust-version are decided by ADR-0009 (accepted); changing either is a new
+# ADR, not a passing edit. The toolchain CI and contributors build with is pinned in
+# rust-toolchain.toml; rust-version is the floor a second CI job builds and tests on.
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 authors = ["VirtualCortex maintainers"]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/DescentVTT/VirtualCortex"

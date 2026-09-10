@@ -7,9 +7,9 @@
 
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_bench::Lcg;
-use cortex_core::{synaptic_efficacy_q16, WorkerWheel};
+use cortex_core::{WorkerWheel, synaptic_efficacy_q16};
 use cortex_workspace::GlobalWorkspaceSlot;
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 /// A production-geometry wheel (4 MB) built on a thread with a large stack and moved to the

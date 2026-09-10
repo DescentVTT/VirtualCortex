@@ -68,8 +68,9 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 - State crates declare no dependencies. A future runtime crate composes them.
 - Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version`,
   updates the record's table in whitepaper §5.2, and gets a changelog entry.
-- Edition and MSRV are decided by [ADR-0009](docs/adr/0009-rust-edition-and-msrv.md), which is
-  `proposed`; do not change `[workspace.package]` edition in passing.
+- Edition 2024 and MSRV 1.85 are decided by [ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)
+  and inherited from `[workspace.package]`; the toolchain CI builds with is pinned in
+  `rust-toolchain.toml`. Moving any of the three is its own pull request, never a passing edit.
 
 ## Where to read
 
@@ -93,6 +94,8 @@ cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo bench -p cortex-bench --bench hot_path -- --test
+cargo +1.85 check --workspace --all-targets   # the MSRV floor; `rustup toolchain install 1.85` once
+cargo +1.85 test --workspace
 npm ci
 npm run spec
 ```

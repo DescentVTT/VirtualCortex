@@ -14,7 +14,7 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0006](0006-virtual-actor-turn-invariant.md) | Virtual-actor turn invariant enforced by an atomic gate | accepted |
 | [ADR-0007](0007-cortex-image-format.md) | The `.cortex` memory-mappable image format | accepted |
 | [ADR-0008](0008-documentation-governance.md) | Documentation governance: arc42, MADR, BCP 14, executable assertions | accepted |
-| [ADR-0009](0009-rust-edition-and-msrv.md) | Rust edition 2024 and a pinned MSRV | proposed |
+| [ADR-0009](0009-rust-edition-and-msrv.md) | Rust edition 2024 and a pinned MSRV | accepted |
 | [ADR-0010](0010-measured-or-target.md) | Every performance figure is Measured or Target, never asserted | accepted |
 | [ADR-0011](0011-epoch-based-reclamation.md) | Epoch-based reclamation for structural plasticity | accepted |
 | [ADR-0012](0012-synaptic-weight-q1-15.md) | Sixteen-bit synaptic base weights are Q1.15 | accepted |

@@ -1,10 +1,14 @@
 # CI for VirtualCortex.
 #
-# Two jobs, three questions:
+# Three jobs, four questions:
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
 #           is it formatted and lint-clean, and do the benchmarks still execute?
 #           All five steps are blocking; the benchmark step asserts no timing
-#           (ADR-0014): a shared runner cannot hold a latency threshold.
+#           (ADR-0014): a shared runner cannot hold a latency threshold. The
+#           toolchain is the one pinned in rust-toolchain.toml (ADR-0009).
+#   msrv  - does the workspace still build and test on the minimum supported
+#           Rust version declared in Cargo.toml? The floor is read from the
+#           manifest, so it lives in one place.
 #   specs - does the source tree still contain what the documents say it contains
 #           (spec-guard), are the documents consistent with one another
 #           (spec-graph), and does every live brief carry its mandatory sections
@@ -32,9 +36,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
 
       - uses: Swatinem/rust-cache@v2
 
@@ -52,6 +57,28 @@ jobs:
 
       - name: Benchmarks execute (one iteration each, no timing asserted)
         run: cargo bench -p cortex-bench --bench hot_path --locked -- --test
+
+  msrv:
+    name: Rust (minimum supported version)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select the rust-version declared in Cargo.toml (an override outranks rust-toolchain.toml)
+        run: |
+          msrv="$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)"
+          test -n "$msrv"
+          rustup toolchain install "$msrv" --profile minimal
+          rustup override set "$msrv"
+          rustc -V
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check on the MSRV
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Test on the MSRV
+        run: cargo test --workspace --locked
 
   specs:
     name: Documentation (spec-guard, spec-graph)
