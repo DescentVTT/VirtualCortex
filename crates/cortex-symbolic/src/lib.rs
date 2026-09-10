@@ -9,6 +9,8 @@
 pub const FLAG_BOUND: u16 = 0x0001;
 /// `flags` bit: the header is a conceptual blend of a target with a source domain (ADR-0021).
 pub const FLAG_BLENDED: u16 = 0x0004;
+/// `flags` bit: the vector's basis has been rotated at least once (ADR-0026).
+pub const FLAG_REBASED: u16 = 0x0008;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
@@ -25,7 +27,7 @@ pub struct SymbolicHypervectorHeader {
     pub blend_source_id: u32, // [32..36] The source concept a blend draws its structure from (ADR-0021)
     pub blending_domain_mask: u16, // [36..38] Source domains blended in, one bit each (ADR-0021)
     pub blend_depth: u8,      // [38] Blends applied to this vector, saturating (ADR-0021)
-    pub _pad: u8,             // [39] Explicit padding; MUST be zero
+    pub rebase_count: u8,     // [39] Basis rotations applied, saturating (ADR-0026)
     pub _reserved: [u8; 24],  // [40..64] Strict 64-byte cache-line alignment padding
 }
 
@@ -65,6 +67,28 @@ impl SymbolicHypervectorHeader {
         true
     }
 
+    /// A basis rotation (ADR-0026, whitepaper §8.15): the cyclic permutation the vector is
+    /// read through advances by `shift` modulo the dimensionality, composing with any earlier
+    /// rotation (a permutation of a bipolar hypervector is an orthogonal change of basis, so
+    /// two rotations are one). Refused, with nothing changed, for a zero shift, a zero
+    /// dimensionality, or one the sixteen-bit shift cannot index. Returns the new shift.
+    pub fn rebase(&mut self, shift: u16) -> Option<u16> {
+        if shift == 0 || self.dimensionality == 0 || self.dimensionality > u16::MAX as u32 + 1 {
+            return None;
+        }
+        let composed = (self.permutation_shift as u32 + shift as u32) % self.dimensionality;
+        self.permutation_shift = composed as u16;
+        self.rebase_count = self.rebase_count.saturating_add(1);
+        self.flags |= FLAG_REBASED;
+        Some(self.permutation_shift)
+    }
+
+    /// True for a vector whose basis has been rotated.
+    #[inline]
+    pub const fn is_rebased(&self) -> bool {
+        self.flags & FLAG_REBASED != 0
+    }
+
     /// True for the header of a blend.
     #[inline]
     pub const fn is_blend(&self) -> bool {
@@ -95,7 +119,7 @@ mod tests {
             blend_source_id: 0,
             blending_domain_mask: 0,
             blend_depth: 0,
-            _pad: 0,
+            rebase_count: 0,
             _reserved: [0; 24],
         }
     }
@@ -168,5 +192,35 @@ mod tests {
         let before = h;
         assert!(!h.blend(1, 2, 0, 5));
         assert_eq!(h, before);
+    }
+
+    #[test]
+    fn rotations_compose_modulo_the_dimensionality_and_the_refusals_change_nothing() {
+        let mut h = header();
+        assert_eq!(h.rebase(0), None, "no rotation");
+        let before = h;
+        assert_eq!(h.rebase(9_995), Some(9_995));
+        assert!(h.is_rebased());
+        assert_eq!(h.rebase(10), Some(5), "wraps at 10 000");
+        assert_eq!((h.permutation_shift, h.rebase_count), (5, 2));
+        assert_eq!(h.flags, FLAG_REBASED);
+        let mut flat = header();
+        flat.dimensionality = 0;
+        assert_eq!(flat.rebase(1), None);
+        let mut wide = header();
+        wide.dimensionality = 65_537;
+        assert_eq!(wide.rebase(1), None, "a shift the field cannot index");
+        let mut widest = header();
+        widest.dimensionality = 65_536;
+        widest.permutation_shift = 65_535;
+        assert_eq!(
+            widest.rebase(1),
+            Some(0),
+            "65 536 dimensions still index with sixteen bits"
+        );
+        assert!(!before.is_rebased());
+        h.rebase_count = u8::MAX;
+        assert!(h.rebase(1).is_some());
+        assert_eq!(h.rebase_count, u8::MAX, "the count saturates");
     }
 }

@@ -85,6 +85,17 @@ impl MentalCanvasFrame {
         converged
     }
 
+    /// `wander` at a given temperature (ADR-0026, ADR-0027): the divergent rollout of a
+    /// re-representation runs at the concept's anomaly, the comedic one at the mirth. Sets the
+    /// temperature, then wanders once.
+    pub fn wander_at(&mut self, temperature_q16: u32) -> Option<i32> {
+        if !self.is_sandboxed() {
+            return None;
+        }
+        self.dmn_wander_temperature_q16 = temperature_q16;
+        self.wander()
+    }
+
     /// One wandering step of the default mode (ADR-0021, whitepaper §8.13): a deterministic
     /// generator seeded from the rollout advances, the hypothetical action becomes a mix of the
     /// previous one and the draw, and a valence perturbation of magnitude up to the wandering
@@ -288,5 +299,20 @@ mod tests {
             seen_positive |= p > 0;
         }
         assert!(seen_negative && seen_positive, "wandering goes both ways");
+    }
+
+    #[test]
+    fn wandering_at_a_temperature_sets_it_and_takes_one_step() {
+        let mut f = MentalCanvasFrame::default();
+        assert_eq!(f.wander_at(0), Some(0));
+        assert_eq!(f.rollout_depth, 1);
+        let p = f.wander_at(ONE).expect("sandboxed");
+        assert!(p.unsigned_abs() <= ONE);
+        assert_eq!((f.dmn_wander_temperature_q16, f.rollout_depth), (ONE, 2));
+        let mut sealed = MentalCanvasFrame {
+            motor_release_flag: 1,
+            ..Default::default()
+        };
+        assert_eq!(sealed.wander_at(ONE), None);
     }
 }

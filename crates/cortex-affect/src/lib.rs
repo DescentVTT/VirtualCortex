@@ -28,6 +28,13 @@ pub const DOMAIN_DUSK: u16 = 0x0004;
 /// Comfort is high and nothing strains: calm, still water, warmth without heat.
 pub const DOMAIN_CALM: u16 = 0x0008;
 
+/// `mirth_q16` moves by $2^{-2}$ of its gap to the latest benign incongruity, at least one LSB.
+pub const MIRTH_SHIFT: u32 = 2;
+/// A threat above 0.25 is not benign: the incongruity it comes with is not funny (ADR-0027).
+pub const BENIGN_THREAT_MAX_Q16: u32 = Q16_ONE / 4;
+/// A mirth at or above 0.25 reads as amusement.
+pub const MIRTH_THRESHOLD_Q16: u32 = Q16_ONE / 4;
+
 /// 64-byte interoceptive state (whitepaper §5.2.23).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C, align(64))]
@@ -41,7 +48,9 @@ pub struct InteroceptiveState {
     pub free_energy_prev_q16: u32, // [24..28] Free energy at the previous valence update (Q16.16)
     pub valence_df_dt_q16: i32, // [28..32] Valence: minus the change of free energy per update (Q16.16)
     pub existential_stake_q16: u32, // [32..36] Slow average of |dF/dt|: how much the body's predictions fail (Q16.16)
-    pub _reserved: [u8; 28],        // [36..64] Reserved; MUST be zero
+    pub benign_incongruity_q16: u32, // [36..40] The last surprise that carried no threat (Q16.16, ADR-0027)
+    pub mirth_q16: u32, // [40..44] Slow average of benign incongruity: the appraisal that reads as amusement (Q16.16, ADR-0027)
+    pub _reserved: [u8; 20], // [44..64] Reserved; MUST be zero
 }
 
 impl InteroceptiveState {
@@ -93,6 +102,37 @@ impl InteroceptiveState {
         };
         self.free_energy_prev_q16 = free_energy_q16;
         self.valence_df_dt_q16
+    }
+
+    /// The benign-violation appraisal (ADR-0027, whitepaper §8.17): `surprise_q16` is the
+    /// prediction error of the moment and `threat_q16` the salience threat that came with it.
+    /// The incongruity is benign when the threat is at most 0.25, and is then the surprise;
+    /// otherwise zero. Mirth moves toward it by $2^{-2}$ of the gap and at least one LSB, so
+    /// it reaches zero exactly when nothing incongruous has happened for a while. Returns the
+    /// benign incongruity.
+    pub fn appraise_incongruity(&mut self, surprise_q16: u32, threat_q16: u32) -> u32 {
+        let benign = if threat_q16 > BENIGN_THREAT_MAX_Q16 {
+            0
+        } else {
+            surprise_q16
+        };
+        self.benign_incongruity_q16 = benign;
+        let current = self.mirth_q16;
+        self.mirth_q16 = if benign > current {
+            current.saturating_add(((benign - current) >> MIRTH_SHIFT).max(1))
+        } else if benign < current {
+            current - ((current - benign) >> MIRTH_SHIFT).max(1)
+        } else {
+            current
+        };
+        benign
+    }
+
+    /// True while the mirth reads as amusement: `cortex-neuromod` takes a quarter of it as
+    /// reward, `cortex-imagination` wanders at it, `cortex-linguistic` may mark play.
+    #[inline]
+    pub const fn is_amused(&self) -> bool {
+        self.mirth_q16 >= MIRTH_THRESHOLD_Q16
     }
 
     /// The metaphor source domain the body currently offers (ADR-0021, whitepaper §8.13):
@@ -305,5 +345,51 @@ mod tests {
             DOMAIN_HEAT,
             "ties go to heat, then weight, then dusk"
         );
+    }
+
+    #[test]
+    fn a_surprise_without_threat_is_benign_and_raises_mirth_and_a_threat_makes_it_nothing() {
+        let mut s = InteroceptiveState::default();
+        assert_eq!(
+            s.appraise_incongruity(ONE / 2, 0),
+            ONE / 2,
+            "a half surprise, no threat"
+        );
+        assert_eq!(s.mirth_q16, ONE >> (MIRTH_SHIFT + 1));
+        assert!(!s.is_amused(), "one half surprise is not yet amusement");
+        assert_eq!(
+            s.appraise_incongruity(ONE, ONE / 4),
+            ONE,
+            "a threat of exactly a quarter is still benign"
+        );
+        assert!(s.is_amused());
+        assert_eq!(
+            s.appraise_incongruity(ONE, ONE / 4 + 1),
+            0,
+            "just above it is not"
+        );
+        assert_eq!(s.benign_incongruity_q16, 0);
+        assert!(s.mirth_q16 < ONE >> 1, "mirth falls toward zero");
+        for _ in 0..100 {
+            s.appraise_incongruity(0, 0);
+        }
+        assert_eq!(s.mirth_q16, 0, "exactly zero after a quiet while");
+        assert!(!s.is_amused());
+    }
+
+    #[test]
+    fn mirth_saturates_toward_the_surprise_and_two_bodies_appraise_alike() {
+        let mut a = InteroceptiveState::default();
+        let mut b = InteroceptiveState::default();
+        for i in 0..64u32 {
+            let surprise = (i * 1000) % ONE;
+            let threat = if i % 5 == 0 { ONE } else { 0 };
+            assert_eq!(
+                a.appraise_incongruity(surprise, threat),
+                b.appraise_incongruity(surprise, threat)
+            );
+            assert!(a.mirth_q16 <= ONE);
+        }
+        assert_eq!(a, b);
     }
 }

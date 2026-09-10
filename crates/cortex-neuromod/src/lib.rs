@@ -1,5 +1,6 @@
-//! Neuromodulation: the 16-byte modulator vector, one per macro-column (whitepaper §5.2.14).
-//! The three-factor rule is Specified (§8.8).
+//! Neuromodulation: the 16-byte modulator vector, one per macro-column (whitepaper §5.2.14),
+//! and the reward that moves its dopamine (ADR-0027). The three-factor rule is Specified
+//! (§8.8).
 
 #![no_std]
 
@@ -10,6 +11,28 @@ pub struct NeuromodulatorState {
     pub norepinephrine: u32, // NE (Arousal/Surprise, Q16.16)
     pub serotonin: u32,      // 5-HT (Discount factor, Q16.16)
     pub acetylcholine: u32,  // ACh (Sensory precision, Q16.16)
+}
+
+impl NeuromodulatorState {
+    /// Adds a reward-prediction error to the dopamine signal, saturating (ADR-0027): the
+    /// mirth of `cortex-affect` arrives here as a quarter of itself, a confirmed prediction as
+    /// its own value, a disappointment as a negative one. Returns the dopamine signal.
+    pub fn reward(&mut self, reward_prediction_error_q16: i32) -> i32 {
+        self.dopamine_rpe = self
+            .dopamine_rpe
+            .saturating_add(reward_prediction_error_q16);
+        self.dopamine_rpe
+    }
+
+    /// Moves the dopamine signal toward zero by $2^{-\text{shift}}$ of itself and at least one
+    /// LSB, so a signal decays to rest exactly (a shift past the width is one LSB per call).
+    /// Returns it.
+    pub fn decay_dopamine(&mut self, shift: u32) -> i32 {
+        let d = self.dopamine_rpe as i64;
+        let step = (d.abs() >> shift.min(62)).max(1).min(d.abs());
+        self.dopamine_rpe = (d - d.signum() * step) as i32;
+        self.dopamine_rpe
+    }
 }
 
 const _: () = {
@@ -41,5 +64,47 @@ mod tests {
         );
         let copy = m;
         assert_eq!(copy, m, "the record is Copy and Eq");
+    }
+
+    #[test]
+    fn reward_adds_saturating_and_decay_reaches_rest_exactly_from_both_sides() {
+        let mut m = NeuromodulatorState {
+            dopamine_rpe: 0,
+            norepinephrine: 0,
+            serotonin: 0,
+            acetylcholine: 0,
+        };
+        assert_eq!(m.reward(0x4000), 0x4000);
+        assert_eq!(m.reward(-0x8000), -0x4000);
+        m.dopamine_rpe = i32::MAX - 1;
+        assert_eq!(m.reward(10), i32::MAX, "saturates");
+        m.dopamine_rpe = i32::MIN + 1;
+        assert_eq!(m.reward(-10), i32::MIN);
+        m.dopamine_rpe = 1000;
+        for _ in 0..100 {
+            m.decay_dopamine(3);
+        }
+        assert_eq!(m.dopamine_rpe, 0);
+        m.dopamine_rpe = -1000;
+        for _ in 0..100 {
+            m.decay_dopamine(3);
+        }
+        assert_eq!(m.dopamine_rpe, 0, "from below too");
+        assert_eq!(m.decay_dopamine(3), 0);
+        m.dopamine_rpe = 1000;
+        assert_eq!(
+            m.decay_dopamine(32),
+            999,
+            "a shift past the width is one LSB"
+        );
+        assert_eq!(m.decay_dopamine(u32::MAX), 998);
+        m.dopamine_rpe = i32::MIN;
+        assert_eq!(
+            m.decay_dopamine(0),
+            0,
+            "the most negative signal decays to rest in one step"
+        );
+        m.dopamine_rpe = i32::MAX;
+        assert_eq!(m.decay_dopamine(0), 0);
     }
 }

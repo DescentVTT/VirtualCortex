@@ -13,8 +13,19 @@
 /// hash of its statement, and the certificate came through the brokered prover (§6.10).
 pub const AFFORDANCE_CERTIFIED_THEOREM: u32 = 1 << 31;
 
+/// 1.0 in Q16.16.
+pub const Q16_ONE: u32 = 0x0001_0000;
+/// `anomaly_q16` moves by $2^{-3}$ of its gap to the latest error, and by at least one LSB.
+pub const ANOMALY_SHIFT: u32 = 3;
+/// An anomaly at or above 0.5 marks the concept's representation stale (ADR-0026).
+pub const ANOMALY_THRESHOLD_Q16: u32 = Q16_ONE / 2;
+/// `representation_flags` bit: the anomaly crossed the threshold since the last re-representation.
+pub const REPRESENTATION_STALE: u16 = 0x0001;
+/// `representation_flags` bit: the last re-representation rotated the concept's hypervector basis.
+pub const REPRESENTATION_REBASED: u16 = 0x0002;
+
 /// 64-byte ontology node (whitepaper §5.2.29).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct SemanticOntologyNode {
     pub concept_node_id: u32,        // [0..4] This concept (an arena index)
@@ -24,24 +35,12 @@ pub struct SemanticOntologyNode {
     pub typical_mass_grams_q16: u32, // [16..20] Typical mass in grams (Q16.16)
     pub consolidation_count: u32,  // [20..24] Replays that reinforced this node
     pub safety_hazard_level: u8,   // [24] 0 none; higher is more hazardous
-    pub _reserved: [u8; 39],       // [25..64] Reserved; MUST be zero
-}
-
-// Arrays longer than 32 elements do not implement Default, so the all-zero record is
-// spelled out; every field of a default record is zero.
-impl Default for SemanticOntologyNode {
-    fn default() -> Self {
-        Self {
-            concept_node_id: 0,
-            parent_category_id: 0,
-            property_vector_hash: 0,
-            affordance_action_mask: 0,
-            typical_mass_grams_q16: 0,
-            consolidation_count: 0,
-            safety_hazard_level: 0,
-            _reserved: [0; 39],
-        }
-    }
+    pub _pad: [u8; 3],             // [25..28] Reserved; MUST be zero
+    pub anomaly_q16: u32, // [28..32] Slow average of the prediction error the concept leaves unexplained (Q16.16, ADR-0026)
+    pub paradigm_epoch: u32, // [32..36] Epoch of the last re-representation; 0 = never (ADR-0026)
+    pub representation_flags: u16, // [36..38] REPRESENTATION_* bits (ADR-0026)
+    pub re_representations: u8, // [38] Re-representations so far, saturating (ADR-0026)
+    pub _reserved: [u8; 25], // [39..64] Reserved; MUST be zero
 }
 
 impl SemanticOntologyNode {
@@ -69,6 +68,63 @@ impl SemanticOntologyNode {
     #[inline]
     pub const fn is_certified_theorem(&self) -> bool {
         self.affords(AFFORDANCE_CERTIFIED_THEOREM)
+    }
+
+    /// The premise check (ADR-0026, whitepaper §8.15): `error_q16` is the prediction error the
+    /// concept left unexplained this epoch. The anomaly moves toward it by $2^{-3}$ of the gap
+    /// and at least one LSB, so it reaches zero exactly when the concept explains everything.
+    /// Returns `true` on the update at which the anomaly reaches the threshold while the
+    /// representation is not already marked stale: the moment the concept's framework has
+    /// stopped explaining and a re-representation is due.
+    pub fn note_anomaly(&mut self, error_q16: u32) -> bool {
+        let current = self.anomaly_q16;
+        self.anomaly_q16 = if error_q16 > current {
+            current.saturating_add(((error_q16 - current) >> ANOMALY_SHIFT).max(1))
+        } else if error_q16 < current {
+            current - ((current - error_q16) >> ANOMALY_SHIFT).max(1)
+        } else {
+            current
+        };
+        if self.anomaly_q16 >= ANOMALY_THRESHOLD_Q16 && !self.is_stale() {
+            self.representation_flags |= REPRESENTATION_STALE;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// True while a re-representation is due.
+    #[inline]
+    pub const fn is_stale(&self) -> bool {
+        self.representation_flags & REPRESENTATION_STALE != 0
+    }
+
+    /// The re-representation (ADR-0026): the concept moves under `new_parent` (its category
+    /// changes; its affordances, mass and hazard are its own and stay), the epoch is stamped,
+    /// the stale mark is cleared, the anomaly halves (the new framework is on trial), the count
+    /// grows; `rebase_shift` is the cyclic rotation the runtime applies to the concept's
+    /// hypervector (`SymbolicHypervectorHeader::rebase`), recorded as `REPRESENTATION_REBASED`
+    /// when non-zero. Refused, with nothing changed, unless the representation is stale, for
+    /// an epoch of zero (which means never), or when nothing would change (the same category
+    /// and no rotation).
+    pub fn re_represent(&mut self, epoch: u32, new_parent: u32, rebase_shift: u16) -> bool {
+        if !self.is_stale()
+            || epoch == 0
+            || (new_parent == self.parent_category_id && rebase_shift == 0)
+        {
+            return false;
+        }
+        self.parent_category_id = new_parent;
+        self.paradigm_epoch = epoch;
+        self.representation_flags &= !REPRESENTATION_STALE;
+        if rebase_shift != 0 {
+            self.representation_flags |= REPRESENTATION_REBASED;
+        } else {
+            self.representation_flags &= !REPRESENTATION_REBASED;
+        }
+        self.anomaly_q16 >>= 1;
+        self.re_representations = self.re_representations.saturating_add(1);
+        true
     }
 
     /// One consolidation replay: affordances accumulate, the hazard level keeps its maximum,
@@ -157,5 +213,82 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(n.consolidate(0, 0), u32::MAX);
+    }
+
+    #[test]
+    fn a_persistent_unexplained_error_marks_the_representation_stale_once() {
+        let mut n = SemanticOntologyNode::default();
+        assert!(!n.is_stale());
+        let mut fired_at = None;
+        for i in 0..40 {
+            if n.note_anomaly(Q16_ONE) {
+                assert!(fired_at.is_none(), "fires once");
+                fired_at = Some(i);
+            }
+        }
+        assert!(fired_at.is_some() && n.is_stale());
+        assert!(n.anomaly_q16 >= ANOMALY_THRESHOLD_Q16);
+        assert!(!n.note_anomaly(Q16_ONE), "stale already: no second firing");
+        // Everything explained: the anomaly reaches zero exactly, but the mark stays until a
+        // re-representation clears it.
+        for _ in 0..400 {
+            n.note_anomaly(0);
+        }
+        assert_eq!(n.anomaly_q16, 0);
+        assert!(n.is_stale());
+    }
+
+    #[test]
+    fn a_re_representation_moves_the_concept_keeps_its_affordances_and_needs_staleness() {
+        let mut n = SemanticOntologyNode {
+            concept_node_id: 5,
+            parent_category_id: 2,
+            affordance_action_mask: 0b1010,
+            typical_mass_grams_q16: 99,
+            safety_hazard_level: 3,
+            ..Default::default()
+        };
+        assert!(!n.re_represent(10, 7, 3), "not stale");
+        for _ in 0..40 {
+            n.note_anomaly(Q16_ONE);
+        }
+        let anomaly = n.anomaly_q16;
+        assert!(!n.re_represent(0, 7, 3), "epoch zero means never");
+        assert!(
+            !n.re_represent(10, 2, 0),
+            "the same category and no rotation change nothing"
+        );
+        assert!(n.is_stale(), "and the mark stays");
+        assert!(n.re_represent(10, 7, 3));
+        assert_eq!(
+            (n.parent_category_id, n.paradigm_epoch, n.re_representations),
+            (7, 10, 1)
+        );
+        assert_eq!(n.anomaly_q16, anomaly >> 1, "the new framework is on trial");
+        assert!(!n.is_stale());
+        assert_eq!(
+            n.representation_flags & REPRESENTATION_REBASED,
+            REPRESENTATION_REBASED
+        );
+        assert_eq!(
+            (
+                n.affordance_action_mask,
+                n.typical_mass_grams_q16,
+                n.safety_hazard_level
+            ),
+            (0b1010, 99, 3),
+            "what is the concept's stays"
+        );
+        assert!(!n.re_represent(11, 8, 0), "stale no longer");
+        for _ in 0..40 {
+            n.note_anomaly(Q16_ONE);
+        }
+        assert!(n.re_represent(11, 8, 0));
+        assert_eq!(
+            n.representation_flags & REPRESENTATION_REBASED,
+            0,
+            "no rotation this time"
+        );
+        assert_eq!(n.re_representations, 2);
     }
 }

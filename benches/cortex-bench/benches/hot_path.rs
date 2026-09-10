@@ -11,6 +11,7 @@ use cortex_core::{
     DendriticSuperNeuron, MailboxNode, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, WorkerWheel,
     synaptic_efficacy_q16,
 };
+use cortex_embodiment::{VocalFrame, VocalSynth};
 use cortex_runtime::{Config, Executor};
 use cortex_workspace::GlobalWorkspaceSlot;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -329,7 +330,28 @@ fn executor(c: &mut Criterion) {
     group.finish();
 }
 
+/// One epoch of voice (ADR-0027): sixteen samples at 16 kHz through the source and the three
+/// resonators, from a neutral frame with jitter, shimmer and aspiration (divide by 16).
+fn vocal(c: &mut Criterion) {
+    let mut group = c.benchmark_group("vocal");
+    group.throughput(Throughput::Elements(16));
+    group.bench_function("render_x16", |b| {
+        let mut frame = VocalFrame::new(1);
+        frame.jitter_q0_8 = 16;
+        frame.shimmer_q0_8 = 16;
+        frame.aspiration_q0_8 = 32;
+        let mut synth = VocalSynth::from_frame(&frame).expect("a renderable frame");
+        let mut out = [0i32; 16];
+        b.iter(|| {
+            synth.render(black_box(&mut out));
+            black_box(out[15])
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
-    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp, synapse, executor
+    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp, synapse, executor,
+    vocal
 );
 criterion_main!(benches);

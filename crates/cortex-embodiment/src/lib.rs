@@ -6,10 +6,16 @@
 //! This crate defines the records and the cursor protocol only. The shared-memory mapping, the
 //! frame storage it contains and the 1 ms loop are the runtime's; the protocol here is index-only
 //! and contains no `unsafe`, so it can be exercised over any storage a caller provides. The
-//! two-thread exchange test lives in `tests/spsc.rs`.
+//! two-thread exchange test lives in `tests/spsc.rs`. The vocal frame and its renderer are in
+//! [`vocal`] (ADR-0027).
 
 #![no_std]
+pub mod vocal;
 use core::sync::atomic::{AtomicU64, Ordering};
+pub use vocal::{
+    F0_MAX_HZ, F0_MIN_HZ, FORMANTS, PI_Q16, Resonator, TONE_NEUTRAL, TONE_PLAYFUL, TONE_REFLECT,
+    TONE_SOFTEN, TONE_SUGGEST, TONE_TOPIC_SHIFT, VOCAL_SAMPLE_RATE_HZ, VocalFrame, VocalSynth,
+};
 
 /// Degrees of freedom carried by one frame. Unused entries are zero.
 pub const DOF: usize = 12;
@@ -18,9 +24,9 @@ pub const DOF: usize = 12;
 /// three times the watchdog's five-period window.
 pub const CAPACITY: u64 = 16;
 
-/// Version of the frame ABI (the two frame records, the control block and this protocol).
-/// Bumped on any change to any of them.
-pub const FRAME_ABI_VERSION: u32 = 1;
+/// Version of the frame ABI (the three frame records, the control block and this protocol).
+/// Bumped on any change to any of them: 2 added `VocalFrame` (ADR-0027).
+pub const FRAME_ABI_VERSION: u32 = 2;
 
 const INDEX_MASK: u64 = CAPACITY - 1;
 
@@ -224,7 +230,7 @@ mod tests {
             assert!(b.is_empty());
         }
         let mut foreign = EmbodimentRingBuffer::new();
-        foreign.abi_version = 2;
+        foreign.abi_version = FRAME_ABI_VERSION + 1;
         assert!(!foreign.is_compatible());
     }
 

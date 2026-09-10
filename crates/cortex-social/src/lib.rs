@@ -33,6 +33,14 @@ pub const REGISTER_COURTEOUS: u8 = 1;
 /// Trust below 0.25: formal, hedged.
 pub const REGISTER_FORMAL: u8 = 2;
 
+/// `insincerity_q16` moves by $2^{-3}$ of its gap to the latest stated-versus-outcome gap, and by
+/// at least one LSB (ADR-0026).
+pub const INSINCERITY_SHIFT: u32 = 3;
+/// A stated-versus-outcome gap at or above 0.5 disconfirms the agent's stated intent.
+pub const SINCERITY_GAP_THRESHOLD_Q16: u32 = Q16_ONE / 2;
+/// An insincerity average at or above 0.25 makes the agent suspect.
+pub const SUSPICION_THRESHOLD_Q16: u32 = Q16_ONE / 4;
+
 /// 64-byte social perspective node (whitepaper §5.2.27).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C, align(64))]
@@ -49,7 +57,9 @@ pub struct SocialPerspectiveNode {
     pub turn_repair_count: u8, // [33] Repairs the self has requested in this exchange, saturating (ADR-0021)
     pub dialogue_turn_state: u16, // [34..36] TURN_* (ADR-0021)
     pub shared_intentionality_hash: u32, // [36..40] Common ground: a hash accumulating every grounded referent (ADR-0021)
-    pub _reserved: [u8; 24],             // [40..64] Reserved; MUST be zero
+    pub expected_of_self_hash: u32, // [40..44] What the agent expects the self to do next: the self's model of the agent's model of the self; 0 = none (ADR-0026)
+    pub insincerity_q16: u32, // [44..48] Slow average of the gap between what the agent stated and what followed (Q16.16, ADR-0026)
+    pub _reserved: [u8; 16],  // [48..64] Reserved; MUST be zero
 }
 
 impl SocialPerspectiveNode {
@@ -122,11 +132,13 @@ impl SocialPerspectiveNode {
         Some(self.shared_intentionality_hash)
     }
 
-    /// Ends the exchange: the floor is idle, the repair count is cleared, the common ground is
-    /// kept, since it was earned.
+    /// Ends the exchange: the floor is idle, the repair count and the agent's expectation of the
+    /// self are cleared (both belong to the exchange), the common ground is kept, since it was
+    /// earned.
     pub fn close_exchange(&mut self) {
         self.dialogue_turn_state = TURN_IDLE;
         self.turn_repair_count = 0;
+        self.expected_of_self_hash = 0;
     }
 
     /// The register the trust selects (ADR-0021): familiar at or above 0.75, courteous at or
@@ -140,6 +152,69 @@ impl SocialPerspectiveNode {
         } else {
             REGISTER_FORMAL
         }
+    }
+
+    /// Records what the agent expects the self to do next, the second level of the model
+    /// (the self's model of the agent's model of the self; ADR-0026): read from a directive
+    /// the agent addressed to the self, or from the agent's stated prediction. Refused for
+    /// zero, which means no expectation.
+    pub fn expect_of_self(&mut self, action_hash: u32) -> bool {
+        if action_hash == 0 {
+            return false;
+        }
+        self.expected_of_self_hash = action_hash;
+        true
+    }
+
+    /// Whether `planned_action_hash` departs from what the agent expects of the self; `None`
+    /// when nothing is expected.
+    pub const fn would_surprise(&self, planned_action_hash: u32) -> Option<bool> {
+        if self.expected_of_self_hash == 0 {
+            None
+        } else {
+            Some(self.expected_of_self_hash != planned_action_hash)
+        }
+    }
+
+    /// The deepest level of the agent's mind the record holds: 2 when the agent's expectation of
+    /// the self is held (`expected_of_self_hash`), else 1 when a belief is attributed
+    /// (`belief_state_hash`), else 0.
+    pub const fn tom_depth(&self) -> u8 {
+        if self.expected_of_self_hash != 0 {
+            2
+        } else if self.belief_state_hash != 0 {
+            1
+        } else {
+            0
+        }
+    }
+
+    /// The sincerity check (ADR-0026): the agent stated a valence for what it would do (praise,
+    /// a promise, a threat) and `outcome_valence_q16` is what followed. The gap, clamped to 1.0,
+    /// moves `insincerity_q16` by $2^{-3}$ of its distance and at least one LSB; a gap at or
+    /// above 0.5 is a disconfirmed prediction about the agent (`update_trust(false)`), a smaller
+    /// one a confirmed one. Returns the gap.
+    pub fn assess_sincerity(&mut self, stated_valence_q16: i32, outcome_valence_q16: i32) -> u32 {
+        let gap = (stated_valence_q16 as i64 - outcome_valence_q16 as i64)
+            .unsigned_abs()
+            .min(Q16_ONE as u64) as u32;
+        let current = self.insincerity_q16;
+        self.insincerity_q16 = if gap > current {
+            current.saturating_add(((gap - current) >> INSINCERITY_SHIFT).max(1))
+        } else if gap < current {
+            current - ((current - gap) >> INSINCERITY_SHIFT).max(1)
+        } else {
+            current
+        };
+        self.update_trust(gap < SINCERITY_GAP_THRESHOLD_Q16);
+        gap
+    }
+
+    /// True when the agent's stated intents have diverged from its outcomes often enough: the
+    /// register goes formal with the trust it costs, and the runtime weighs what the agent
+    /// asks for as a harm risk in the veto gate (Specified).
+    pub const fn is_suspect(&self) -> bool {
+        self.insincerity_q16 >= SUSPICION_THRESHOLD_Q16
     }
 
     fn transition(&mut self, from: &[u16], to: u16) -> bool {
@@ -315,5 +390,53 @@ mod tests {
         assert_eq!(n.register(), REGISTER_COURTEOUS);
         n.trust_score_q16 = 3 * (Q16_ONE / 4);
         assert_eq!(n.register(), REGISTER_FAMILIAR);
+    }
+
+    #[test]
+    fn the_sincerity_gap_moves_insincerity_and_trust_and_reaches_zero_when_words_match_deeds() {
+        let mut n = node(0);
+        n.trust_score_q16 = Q16_ONE / 2;
+        assert!(!n.is_suspect());
+        // Praise that ended badly: a gap of 1.0 (clamped), a disconfirmation.
+        assert_eq!(
+            n.assess_sincerity(Q16_ONE as i32, -(Q16_ONE as i32)),
+            Q16_ONE
+        );
+        assert_eq!(n.insincerity_q16, Q16_ONE >> INSINCERITY_SHIFT);
+        assert!(n.trust_score_q16 < Q16_ONE / 2, "trust broke");
+        for _ in 0..3 {
+            n.assess_sincerity(Q16_ONE as i32, -(Q16_ONE as i32));
+        }
+        assert!(n.is_suspect(), "four broken promises");
+        // A small gap confirms; insincerity decays to exactly zero.
+        let before = n.trust_score_q16;
+        assert_eq!(n.assess_sincerity(1000, 900), 100);
+        assert!(n.trust_score_q16 > before, "a kept word rebuilds");
+        for _ in 0..200 {
+            n.assess_sincerity(0, 0);
+        }
+        assert_eq!(n.insincerity_q16, 0);
+        assert!(!n.is_suspect());
+    }
+
+    #[test]
+    fn the_second_level_of_the_model_says_what_the_agent_expects_of_the_self() {
+        let mut n = node(0);
+        assert_eq!(n.tom_depth(), 0);
+        assert_eq!(n.would_surprise(7), None, "nothing expected");
+        n.belief_state_hash = 0xB1;
+        assert_eq!(n.tom_depth(), 1);
+        assert!(!n.expect_of_self(0));
+        assert!(n.expect_of_self(0xA1));
+        assert_eq!(n.tom_depth(), 2);
+        assert_eq!(n.would_surprise(0xA1), Some(false), "doing the expected");
+        assert_eq!(n.would_surprise(0xA2), Some(true), "doing otherwise");
+        n.close_exchange();
+        assert_eq!(
+            n.would_surprise(0xA1),
+            None,
+            "an expectation belongs to the exchange"
+        );
+        assert_eq!(n.tom_depth(), 1, "the belief outlives it");
     }
 }

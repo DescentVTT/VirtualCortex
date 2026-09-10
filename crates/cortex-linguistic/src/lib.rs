@@ -60,6 +60,14 @@ pub const PROSODY_SUGGEST: u8 = 2;
 pub const PROSODY_REFLECT: u8 = 3;
 /// A topic-shift opener (for example 話說回來).
 pub const PROSODY_TOPIC_SHIFT: u8 = 4;
+/// Play: the lexicon realises irony, teasing or a comic turn (ADR-0027).
+pub const PROSODY_PLAYFUL: u8 = 5;
+
+/// The politeness level of a formal register (the value `cortex-social`'s `REGISTER_FORMAL`
+/// carries), at which play is refused (ADR-0027).
+pub const POLITENESS_FORMAL: u8 = 2;
+/// The mirth at or above which a frame may be marked playful (`cortex-affect`'s threshold).
+pub const PLAY_THRESHOLD_Q16: u32 = Q16_ONE / 4;
 
 /// `syntax_gate_flags` bit: the particle slot is open; the lexicon may emit the marker.
 pub const GATE_PARTICLE_OPEN: u8 = 0x01;
@@ -136,7 +144,8 @@ pub struct LinguisticFrameSlot {
     pub parent_frame_idx: u16, // [36..38] The frame this one is nested in, as index + 1; 0 for a root (ADR-0021)
     pub child_frame_idx: u16,  // [38..40] The frame realised in this one's child slot (ADR-0021)
     pub blended_metaphor_id: u32, // [40..44] SymbolicHypervectorHeader::vector_id of an attached blend (ADR-0021)
-    pub _reserved: [u8; 20],      // [44..64] Reserved; MUST be zero
+    pub intended_speech_act: u8, // [44] The act the frame means, as SPEECH_ACT_* + 1, when it differs from the surface act; 0 = direct (ADR-0026)
+    pub _reserved: [u8; 19],     // [45..64] Reserved; MUST be zero
 }
 
 impl LinguisticFrameSlot {
@@ -250,6 +259,70 @@ impl LinguisticFrameSlot {
     #[inline]
     pub const fn has_metaphor(&self) -> bool {
         self.syntax_gate_flags & GATE_METAPHOR != 0
+    }
+
+    /// Marks the frame indirect (ADR-0026, whitepaper §8.14): its surface act is one thing
+    /// (an assertive "it is cold in here") and what it means another (a directive). The lexicon
+    /// realises the surface; `cortex-social` reads the intent. Refused, with nothing changed,
+    /// for a sealed frame, an act the surface already is, or an unknown act.
+    pub fn mark_indirect(&mut self, intended_act: u8) -> bool {
+        if self.is_sealed()
+            || intended_act == self.speech_act_type
+            || intended_act > SPEECH_ACT_EXPRESSIVE
+        {
+            return false;
+        }
+        self.intended_speech_act = intended_act + 1;
+        true
+    }
+
+    /// The act the frame means: the intended one when it is indirect, else the surface act.
+    #[inline]
+    pub const fn intended_act(&self) -> u8 {
+        if self.intended_speech_act == 0 {
+            self.speech_act_type
+        } else {
+            self.intended_speech_act - 1
+        }
+    }
+
+    /// True for a frame whose meaning is not its surface act.
+    #[inline]
+    pub const fn is_indirect(&self) -> bool {
+        self.intended_speech_act != 0
+    }
+
+    /// Tact (ADR-0026, whitepaper §8.14): when what the frame conveys has a negative valence
+    /// and the register is not familiar, the prosody marker is set to soften, the particle slot
+    /// opens and the politeness level rises by one (saturating), whatever the recurrent cell
+    /// chose; a familiar register, a non-negative valence or a sealed frame leaves the frame as
+    /// it is. Applied after `advance_prosody` and `mark_play`, so tact has the last word. Returns
+    /// the marker.
+    pub fn apply_face(&mut self, register_politeness: u8, valence_q16: i32) -> u8 {
+        if valence_q16 < 0 && register_politeness > 0 && !self.is_sealed() {
+            self.prosody_tone_marker = PROSODY_SOFTEN;
+            self.syntax_gate_flags |= GATE_PARTICLE_OPEN;
+            self.politeness_level = self.politeness_level.saturating_add(1);
+        }
+        self.prosody_tone_marker
+    }
+
+    /// Play (ADR-0027, whitepaper §8.17): with `cortex-affect`'s mirth at or above the
+    /// threshold the marker becomes playful and the particle slot opens, so the lexicon
+    /// realises a comic turn. Refused, with nothing changed, for a sealed frame, a mirth below
+    /// the threshold, or a formal register: humor is gated by the relationship, not by the
+    /// context. Applied after `advance_prosody`, whose band would otherwise overwrite the
+    /// marker, and before `apply_face`. Returns whether the frame was marked.
+    pub fn mark_play(&mut self, mirth_q16: u32) -> bool {
+        if self.is_sealed()
+            || mirth_q16 < PLAY_THRESHOLD_Q16
+            || self.politeness_level >= POLITENESS_FORMAL
+        {
+            return false;
+        }
+        self.prosody_tone_marker = PROSODY_PLAYFUL;
+        self.syntax_gate_flags |= GATE_PARTICLE_OPEN;
+        true
     }
 
     /// True once `seal` has closed the frame to further binding.
@@ -604,6 +677,106 @@ mod tests {
         assert_eq!(
             g.recurrent_state_hash, h.recurrent_state_hash,
             "the hash is deterministic"
+        );
+    }
+
+    #[test]
+    fn an_indirect_frame_keeps_its_surface_act_and_says_what_it_means() {
+        let mut f = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert!(!f.is_indirect());
+        assert_eq!(f.intended_act(), SPEECH_ACT_ASSERTIVE);
+        assert!(
+            !f.mark_indirect(SPEECH_ACT_ASSERTIVE),
+            "not indirect: the same act"
+        );
+        assert!(!f.mark_indirect(7), "unknown act");
+        assert!(f.mark_indirect(SPEECH_ACT_DIRECTIVE));
+        assert!(f.is_indirect());
+        assert_eq!(
+            (f.speech_act_type, f.intended_act()),
+            (SPEECH_ACT_ASSERTIVE, SPEECH_ACT_DIRECTIVE)
+        );
+        assert!(f.bind_role(ROLE_SUBJECT, 1, Q16_ONE) && f.bind_role(ROLE_ACTION, 2, Q16_ONE));
+        assert!(f.seal());
+        assert!(!f.mark_indirect(SPEECH_ACT_EXPRESSIVE), "sealed");
+    }
+
+    #[test]
+    fn tact_softens_bad_news_in_a_courteous_or_formal_register_only() {
+        let mut f = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 1);
+        f.advance_prosody(0, Q16_ONE as i32, 2 * ONE); // suggest
+        assert_eq!(f.prosody_tone_marker, PROSODY_SUGGEST);
+        assert_eq!(
+            f.apply_face(2, -ONE),
+            PROSODY_SOFTEN,
+            "bad news, formal register"
+        );
+        assert_eq!(f.politeness_level, 2);
+        assert_ne!(f.syntax_gate_flags & GATE_PARTICLE_OPEN, 0);
+        let mut frank = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert_eq!(
+            frank.apply_face(0, -ONE),
+            PROSODY_NONE,
+            "familiar: said plainly"
+        );
+        assert_eq!(frank.politeness_level, 0);
+        let mut good = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 1);
+        assert_eq!(
+            good.apply_face(2, ONE),
+            PROSODY_NONE,
+            "good news needs no softening"
+        );
+        let mut capped = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, u8::MAX);
+        capped.apply_face(2, -ONE);
+        assert_eq!(capped.politeness_level, u8::MAX);
+    }
+
+    #[test]
+    fn play_needs_mirth_and_a_register_below_formal_and_tact_has_the_last_word() {
+        let mut f = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert!(!f.mark_play(PLAY_THRESHOLD_Q16 - 1), "not amused enough");
+        assert!(f.mark_play(PLAY_THRESHOLD_Q16));
+        assert_eq!(f.prosody_tone_marker, PROSODY_PLAYFUL);
+        assert_ne!(f.syntax_gate_flags & GATE_PARTICLE_OPEN, 0);
+        let mut formal =
+            LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, POLITENESS_FORMAL);
+        assert!(
+            !formal.mark_play(Q16_ONE),
+            "no teasing in a formal register"
+        );
+        assert_eq!(formal.prosody_tone_marker, PROSODY_NONE);
+        // Play, then bad news to a courteous listener: tact overrides.
+        let mut mixed = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 1);
+        assert!(mixed.mark_play(Q16_ONE));
+        assert_eq!(mixed.apply_face(1, -ONE), PROSODY_SOFTEN);
+        assert!(
+            mixed.bind_role(ROLE_SUBJECT, 1, Q16_ONE) && mixed.bind_role(ROLE_ACTION, 2, Q16_ONE)
+        );
+        assert!(mixed.seal());
+        assert!(!mixed.mark_play(Q16_ONE), "sealed");
+        assert_eq!(
+            mixed.apply_face(2, -ONE),
+            PROSODY_SOFTEN,
+            "sealed: the marker stays"
+        );
+        assert_eq!(
+            mixed.politeness_level, 2,
+            "and the politeness level does not move"
+        );
+        // The order: the recurrent cell first, then play, then tact.
+        let mut ordered = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 0);
+        assert!(ordered.mark_play(Q16_ONE));
+        assert_eq!(
+            ordered.advance_prosody(0, 0, 0),
+            PROSODY_NONE,
+            "the cell overwrites a marker set before it"
+        );
+        assert!(ordered.mark_play(Q16_ONE), "so play comes after the cell");
+        assert_eq!(ordered.prosody_tone_marker, PROSODY_PLAYFUL);
+        assert_eq!(
+            ordered.apply_face(0, ONE),
+            PROSODY_PLAYFUL,
+            "good news to a friend keeps the play"
         );
     }
 }

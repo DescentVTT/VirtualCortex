@@ -135,7 +135,14 @@ impl CortexFileHeader {
     ///   `DendriticSuperNeuron::plastic_delta_head` is 32 bits at `[60..64)` as `index + 1`
     ///   (`[52..54)` reserved), resolving finding F-20; `PlasticDelta` is a new 16-byte record
     ///   and `num_synapses` counts blocks (ADR-0024).
-    pub const FORMAT_VERSION: u32 = 7;
+    /// - 8: reserved bytes became fields in five records (ADR-0026, ADR-0027):
+    ///   `SocialPerspectiveNode` (the agent's expectation of the self, insincerity),
+    ///   `SemanticOntologyNode` (anomaly, paradigm epoch, representation flags, count),
+    ///   `SymbolicHypervectorHeader` (the padding byte became the rebase count),
+    ///   `InteroceptiveState` (benign incongruity, mirth), `LinguisticFrameSlot` (the intended
+    ///   speech act); `VocalFrame` is a new embodiment frame outside the image. A version-7
+    ///   image has them zero, which every rule reads as "not yet".
+    pub const FORMAT_VERSION: u32 = 8;
 
     /// A header for an image of these counts, sealed.
     pub fn new(num_columns: u64, num_neurons: u64, num_synapses: u64, section_count: u32) -> Self {
@@ -300,7 +307,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 7);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 8);
     }
 
     #[test]

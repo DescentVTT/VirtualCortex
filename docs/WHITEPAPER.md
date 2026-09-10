@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.1.0
+version: 4.2.0
 status: active
 date: 2026-09-10
 ---
@@ -11,7 +11,7 @@ date: 2026-09-10
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.1.0 |
+| Version | 4.2.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-10 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -69,7 +69,7 @@ VirtualCortex is a Rust workspace for building a **spiking neural network (SNN) 
 
 The engine therefore rests on five axioms (§4): neural units exist virtually and are materialised on demand; state and compute are decoupled, so that a fixed pool of worker threads services tens of millions of passive records; each record is owned by at most one worker per tick, enforced by an atomic gate; axonal conduction delay is a constant-time index into a timing wheel, never an operating-system timer; and inactive tissue is evicted to local storage by a metabolic sweep. Around this core, the workspace defines subsystems that mirror the functional anatomy of the mammalian brain: sensory ingestion, embodiment, basal-ganglia action selection, cerebellar forward models, amygdalar salience, a global workspace, a vector-symbolic bridge, prefrontal planning, predictive coding, agency attribution, neuromodulation, hippocampal memory, homeostasis, an immune scrubber, a scale-out fabric and telemetry; and, admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md) on 2026-09-10, a thalamic relay, native construction-grammar frames, brokered tool invocation, foveal attention, interoception, autonomic vitals, a metric cognitive map, epistemic curiosity, social perspective, an ethical veto gate, a semantic ontology, symbolic rules, an exact arithmetic scratchpad and a counterfactual canvas.
 
-**What exists today (Implemented).** Thirty-two `#![no_std]` crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: thirty 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Twenty-two crates carry small, deterministic, integer-only update rules with boundary tests (the Logic column of §1.6), and every crate carries a test module. A runtime crate outside `crates/`, `runtime/cortex-runtime`, composes them: a fixed pool of worker threads, a work-stealing deque and a timing wheel per worker, three barrier-separated phases per fine tick (turns, fan-out, deliveries), mailbox delivery and synaptic fan-out, allocating nothing after start-up ([ADR-0023](adr/0023-executor.md)); milestone M2's exit test (10⁶ events from four producers delivered exactly once on one, two and four workers) and the first differential test (bit-identical arenas on one and four workers) pass. The `.cortex` image is written and read (a section directory sealed by CRC-64/XZ, a read-into-arenas loader that fails closed), the clock sweep evicts quiet units into a write-ahead log and re-hydrates them on the next message bit for bit (milestone M4's exit test), and the Tier-2 delta record exists ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
+**What exists today (Implemented).** Thirty-two `#![no_std]` crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: thirty-four 64-byte cache-line records, two 16-byte records (the neuromodulator vector and the plastic delta) and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Twenty-two crates carry small, deterministic, integer-only update rules with boundary tests (the Logic column of §1.6), and every crate carries a test module. A runtime crate outside `crates/`, `runtime/cortex-runtime`, composes them: a fixed pool of worker threads, a work-stealing deque and a timing wheel per worker, three barrier-separated phases per fine tick (turns, fan-out, deliveries), mailbox delivery and synaptic fan-out, allocating nothing after start-up ([ADR-0023](adr/0023-executor.md)); milestone M2's exit test (10⁶ events from four producers delivered exactly once on one, two and four workers) and the first differential test (bit-identical arenas on one and four workers) pass. The `.cortex` image is written and read (a section directory sealed by CRC-64/XZ, a read-into-arenas loader that fails closed), the clock sweep evicts quiet units into a write-ahead log and re-hydrates them on the next message bit for bit (milestone M4's exit test), and the Tier-2 delta record exists ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). Seven crates carry the rules of [ADR-0026](adr/0026-social-acumen-and-re-representation.md) and [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md): a sincerity gap and a second-level expectation of the self, tact and an intended act, an anomaly that marks a concept's framework stale and a re-representation, a basis rotation, a vocal frame with an integer source–filter renderer, the benign-violation appraisal, reward and a playful marker. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
 
 **What is designed but not built (Specified).** Core pinning and the seccomp filter of the worker threads, the `mmap` path of the `.cortex` loader and a hot checkpoint with tokens in flight, the shared-memory mappings of the embodiment and tool rings and the broker process behind the tool ring, the lexicon that realises linguistic frames as tokens, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the rules noted in §5.
 
@@ -156,35 +156,35 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `MailboxNode`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 8 B, 4.2 MB | yes | yes | yes | membrane integration, short-term plasticity, turn gate and mailbox, wheel schedule and drain, efficacy, fan-out and STDP |
 | `cortex-connectome` | `CortexFileHeader`, `SectionEntry` | 64 B, 64 B | yes | yes | yes | `crc64`, `Crc64`, `validate`, `new`, `encode`, `decode` |
 | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | yes | — |
-| `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame` | 64 B each | yes | yes | yes | SPSC ring protocol |
+| `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame`, `VocalFrame` | 64 B each | yes | yes | yes | SPSC ring protocol, `from_burst_counts`, `VocalSynth` (source–filter renderer), `shape` |
 | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B | yes | yes | yes | `compute_gating` |
 | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B | yes | yes | yes | `step_forward_model` |
 | `cortex-salience` | `SalienceNodeState` | 64 B | yes | yes | yes | `evaluate_threat` |
 | `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | yes | yes | yes | `step_ignition`, `step_ignition_at` (criticality-gated), `update_attention_schema` |
-| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | yes | `bind`, `blend` |
+| `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | yes | `bind`, `blend`, `rebase` |
 | `cortex-executive` | `ExecutivePlanNode` | 64 B | yes | yes | yes | — |
 | `cortex-predictive` | `PredictiveErrorState` | 64 B | yes | yes | yes | — |
 | `cortex-agency` | `AgentPerspectiveState` | 64 B | yes | yes | yes | — |
 | `cortex-immune` | `ImmuneScrubNode` | 64 B | yes | yes | yes | — |
-| `cortex-neuromod` | `NeuromodulatorState` | 16 B | yes | yes | yes | — |
+| `cortex-neuromod` | `NeuromodulatorState` | 16 B | yes | yes | yes | `reward`, `decay_dopamine` |
 | `cortex-hippocampus` | `HippocampalAttractorState` | 64 B | yes | yes | yes | — |
 | `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B | yes | yes | yes | `update_circadian_tick`, `update_branching_ratio` |
 | `cortex-fabric` | `FabricPacketHeader` | 64 B | yes | yes | yes | — |
 | `cortex-telemetry` | `LfpSamplePacket` | 64 B | yes | yes | yes | — |
 | `cortex-thalamus` | `ThalamicRelayNode` | 64 B | yes | yes | yes | `relay` gate (tonic / burst / closed) |
-| `cortex-linguistic` | `LinguisticFrameSlot` | 64 B | yes | yes | yes | `bind_role`, `bind_child` (nesting), `attach_metaphor`, `realisation_order`, `advance_prosody` (recurrent cell) |
+| `cortex-linguistic` | `LinguisticFrameSlot` | 64 B | yes | yes | yes | `bind_role`, `bind_child` (nesting), `attach_metaphor`, `realisation_order`, `advance_prosody` (recurrent cell), `apply_face`, `mark_play`, `mark_indirect` |
 | `cortex-tools` | `ToolInvocationFrame` | 64 B | yes | yes | yes | frame state machine, `is_known_action`, `new_call` |
 | `cortex-attention` | `FovealAttentionFocus` | 64 B | yes | yes | yes | saccade state machine, `document_target` |
-| `cortex-affect` | `InteroceptiveState` | 64 B | yes | yes | yes | `integrate`, `update_valence`, `metaphor_source_domain` |
+| `cortex-affect` | `InteroceptiveState` | 64 B | yes | yes | yes | `integrate`, `update_valence`, `metaphor_source_domain`, `appraise_incongruity` |
 | `cortex-autonomic` | `AutonomicVitalsState` | 64 B | yes | yes | yes | `sample` limit check |
 | `cortex-spatial` | `SpatialGridCoordinate` | 64 B | yes | yes | yes | `integrate`, `fix` |
 | `cortex-curiosity` | `CuriosityExplorationVector` | 64 B | yes | yes | yes | `visit` |
-| `cortex-social` | `SocialPerspectiveNode` | 64 B | yes | yes | yes | `resonate`, `update_trust`, turn-taking and grounding, `register` |
+| `cortex-social` | `SocialPerspectiveNode` | 64 B | yes | yes | yes | `resonate`, `update_trust`, turn-taking and grounding, `register`, `assess_sincerity`, `expect_of_self` |
 | `cortex-ethics` | `EthicalEvaluationGate` | 64 B | yes | yes | yes | `evaluate` (veto) |
-| `cortex-knowledge` | `SemanticOntologyNode` | 64 B | yes | yes | yes | `consolidate`, `affords`, `certify` |
+| `cortex-knowledge` | `SemanticOntologyNode` | 64 B | yes | yes | yes | `consolidate`, `affords`, `certify`, `note_anomaly`, `re_represent` |
 | `cortex-reasoning` | `SymbolicRuleNode`, `TermNode` | 64 B, 64 B | yes | yes | yes | `evaluate`, `resolve`, `apply_resolution`, `unify`, `resolve_first_order` |
 | `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B | yes | yes | yes | `execute` (eight opcodes, 128-bit) |
-| `cortex-imagination` | `MentalCanvasFrame` | 64 B | yes | yes | yes | `step`, `has_diverged`, `reflect` (self-model fixed point), `wander` |
+| `cortex-imagination` | `MentalCanvasFrame` | 64 B | yes | yes | yes | `step`, `has_diverged`, `reflect` (self-model fixed point), `wander`, `wander_at` |
 
 The workspace manifest lists exactly thirty-two state crates under `crates/` (eighteen from the founding decomposition and fourteen admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md)), plus the benchmark crate `benches/cortex-bench` ([ADR-0014](adr/0014-benchmark-harness.md)), which is not a state crate and is never published. Every state crate declares an empty dependency list, inherits its version, edition (2024), minimum supported Rust version (1.85), authors, license and repository from `[workspace.package]`, carries a compile-time layout assertion block, and carries a unit-test module; every public function and associated constant has at least one test (brief 007).
 
@@ -551,7 +551,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`VCORTEX1`), `FORMAT_VERSION` (7), `HeaderError`; `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39), `SECTION_TERM` (40); `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) |
+| Public API | `CortexFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`VCORTEX1`), `FORMAT_VERSION` (8), `HeaderError`; `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39), `SECTION_TERM` (40); `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) |
 | Status | Header, directory record and CRC: Implemented ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) · Writer and loader: Implemented in `runtime/cortex-runtime` (`Image::{write, open}`, read-into-arenas; `mmap` Specified) · Atlas-derived priors, the laminar and routing sections: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -559,7 +559,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
 | `[0..8)` | `magic` | `[u8; 8]` | ASCII `VCORTEX1` (big-endian `0x5643_4F52_5445_5831`). |
-| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 7. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); 5 carved fields from the reserved bytes of six records for the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) and [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) (§5.2.8, §5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.32); a version-4 image has them zero, which every rule reads as "not yet"; 6 re-encoded every `SynapseBlock` index and `synapse_slab_idx` as index + 1 and carved `last_release_q16` and `apical_mask` from the block's reserved bytes ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); a version-5 image's indices moved by one, so it MUST NOT be read as version 6; 7 gave the header `section_count` and a checksum over all 64 bytes, widened the unit's delta head to 32 bits at `[60..64)`, added `PlasticDelta`, and made `num_synapses` count blocks ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). |
+| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 8. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); 5 carved fields from the reserved bytes of six records for the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) and [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) (§5.2.8, §5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.32); a version-4 image has them zero, which every rule reads as "not yet"; 6 re-encoded every `SynapseBlock` index and `synapse_slab_idx` as index + 1 and carved `last_release_q16` and `apical_mask` from the block's reserved bytes ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); a version-5 image's indices moved by one, so it MUST NOT be read as version 6; 7 gave the header `section_count` and a checksum over all 64 bytes, widened the unit's delta head to 32 bits at `[60..64)`, added `PlasticDelta`, and made `num_synapses` count blocks ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); 8 carved fields from the reserved bytes of five records for the rules of [ADR-0026](adr/0026-social-acumen-and-re-representation.md) and [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md) (§5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.29); a version-7 image has them zero, which every rule reads as "not yet". |
 | `[12..16)` | `reserved_flags` | `u32` | Feature flags; MUST be zero. |
 | `[16..24)` | `num_columns` | `u64` | Cortical hyper-column count. |
 | `[24..32)` | `num_neurons` | `u64` | `DendriticSuperNeuron` record count. |
@@ -585,7 +585,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 **CRC-64/XZ.** The ECMA-182 polynomial `0x42F0E1EBA9EA3693` in reflected form, initial and final value all ones, computed bitwise with no table (one shift and conditional xor per bit); `Crc64` streams over chunks. Check value: `crc64(b"123456789")` = `0x995DC9BBDF1939FA`; the empty string gives 0. Eight operations per byte is a T-7 subject; a sliced table in the runtime is Specified.
 
 <!-- @assert-count target="crates/cortex-connectome" symbol="CortexFileHeader" min="1" word="true" -->
-<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 7" min="1" reason="§5.2.2 states the current image format version; update both together" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 8" min="1" reason="§5.2.2 states the current image format version; update both together" -->
 <!-- @assert-count target="crates/cortex-connectome" symbol="SectionEntry" min="1" word="true" reason="ADR-0024: the section directory record exists" -->
 <!-- @assert-count target="crates/cortex-connectome" symbol="fn crc64" min="1" reason="ADR-0024: the checksum is computed by the state crate" -->
 <!-- @assert-count target="runtime/cortex-runtime/src" symbol="fn sweep" min="1" reason="ADR-0024: the clock sweep is implemented" -->
@@ -619,8 +619,8 @@ Drivers fill a caller-provided slice through `poll_batch(&mut self, &mut [Sensor
 | :--- | :--- |
 | Responsibility | The control block of the shared-memory ring that couples layer-5 motor output to a physics engine or robot at a fixed 1 ms period. |
 | Source | `crates/cortex-embodiment/src/lib.rs` |
-| Public API | `TorqueFrame` (`Copy + Default + Eq`) and `TorqueFrame::from_burst_counts(epoch, agonist, antagonist, gain_q16)`, `JointStateFrame` (`Copy + Default + Eq`); `EmbodimentRingBuffer::{new, is_compatible, len, is_empty, is_full, producer_claim, producer_publish, consumer_peek, consumer_release}` and `Default`; constants `DOF` (12), `CAPACITY` (16), `FRAME_ABI_VERSION` (1) |
-| Status | Frame records and SPSC protocol: Implemented ([ADR-0015](adr/0015-embodiment-frame-abi.md)) · Torque decoder (push–pull rate code): Implemented · Shared-memory mapping, 1 ms loop, watchdog integration, population-vector decoding: Specified (§6.4, §8.9) |
+| Public API | `TorqueFrame` (`Copy + Default + Eq`) and `TorqueFrame::from_burst_counts(epoch, agonist, antagonist, gain_q16)`, `JointStateFrame` (`Copy + Default + Eq`); `VocalFrame::{new, shape}` (`Copy + Default + Eq`), `Resonator::{new, coefficients, step, reset}`, `VocalSynth::{from_frame, next_source, next_sample, render, period}`, `TONE_NEUTRAL` (0) to `TONE_PLAYFUL` (5), `VOCAL_SAMPLE_RATE_HZ` (16 000), `FORMANTS` (3), `PI_Q16`, `F0_MIN_HZ` (50), `F0_MAX_HZ` (500), `FRAME_ABI_VERSION` (2) ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)); `EmbodimentRingBuffer::{new, is_compatible, len, is_empty, is_full, producer_claim, producer_publish, consumer_peek, consumer_release}` and `Default`; constants `DOF` (12), `CAPACITY` (16), `FRAME_ABI_VERSION` (1) |
+| Status | Frame records and SPSC protocol: Implemented ([ADR-0015](adr/0015-embodiment-frame-abi.md)) · Torque decoder (push–pull rate code): Implemented · Vocal frame, its shaping and the integer source–filter renderer: Implemented ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)) · Shared-memory mapping, 1 ms loop, watchdog integration, population-vector decoding: Specified (§6.4, §8.9) |
 
 **`TorqueFrame`** (engine → plant) and **`JointStateFrame`** (plant → engine) — 64 B, align 64 each; one of each per 1 ms period.
 
@@ -629,6 +629,25 @@ Drivers fill a caller-provided slice through `poll_batch(&mut self, &mut [Sensor
 | `[0..8)` | `epoch` | `u64` | epoch | Simulation epoch (torque) or plant epoch (joint state). |
 | `[8..56)` | `torques_q16` / `positions_q16` | `[i32; 12]` | Q16.16 | Twelve joints in joint order; unused entries zero. Velocities are the consumer's finite difference of consecutive positions at the fixed period. |
 | `[56..64)` | `_reserved` | `[u8; 8]` | — | Reserved; MUST be zero. |
+
+**`VocalFrame`** — 64 B, align 64 ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)). One epoch's vocal command, engine → audio actuator: the parameters of a source–filter voice, the way `TorqueFrame` carries joint torques; the actuator is behind the ring like a joint (Specified).
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..8)` | `epoch` | `u64` | epoch | The epoch this command belongs to. |
+| `[8..12)` | `f0_hz_q16` | `u32` | Q16.16 Hz | Fundamental frequency. |
+| `[12..18)` | `formant_hz` | `[u16; 3]` | Hz | F1, F2, F3. |
+| `[18..24)` | `bandwidth_hz` | `[u16; 3]` | Hz | Their bandwidths; never zero when rendered. |
+| `[24..26)` | `amplitude_q1_15` | `i16` | Q1.15 | Glottal pulse amplitude in $[0, 1)$. |
+| `[26..27)` | `jitter_q0_8` | `u8` | Q0.8 | Period perturbation as a fraction of the period. |
+| `[27..28)` | `shimmer_q0_8` | `u8` | Q0.8 | Pulse amplitude perturbation. |
+| `[28..29)` | `aspiration_q0_8` | `u8` | Q0.8 | Noise mixed in, as a fraction of the amplitude. |
+| `[29..30)` | `voicing` | `u8` | 0 / 1 | Unvoiced (noise only) or voiced (pulses). |
+| `[30..32)` | `sample_rate_hz` | `u16` | Hz | Samples per second the frame is rendered at. |
+| `[32..36)` | `seed` | `u32` | seed | Seed of the perturbation generator. |
+| `[36..64)` | `_reserved` | `[u8; 28]` | — | Reserved; MUST be zero. |
+
+**Vocal synthesis** ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md), Implemented). `new(epoch)` is the neutral voice (120 Hz; formants 500 / 1 500 / 2 500 Hz with bandwidths 60 / 90 / 120 Hz; amplitude 0.5; voiced; 16 kHz; seeded from the epoch). `shape(tone, formal, valence)` moves it in fixed fractions: the fundamental by a quarter of the valence and by the tone's step (soften −1/16, suggest +1/16, reflect −1/8, topic shift +1/8, play +1/8), clamped to [50, 500] Hz; a negative valence adds breath and takes amplitude; play adds jitter and shimmer; a formal register halves both; an unknown tone is refused. `Resonator` is $y_n = x_n + B y_{n-1} + C y_{n-2}$ with $B = 2 e^{-\pi\,\text{bw}/f_s}\cos(2\pi f/f_s)$ and $C = -e^{-2\pi\,\text{bw}/f_s}$, $e^{-x}$ by a cubic and $\cos\theta$ by the series to $\theta^8$ in Q16.16 (within $3 \times 10^{-5}$ of the real functions for a formant below a quarter of the rate and a bandwidth below a thirty-second of it; refused above either, for a zero bandwidth or a zero rate); at 500 Hz and 50 Hz bandwidth $B$ = 127 298 and $C$ = −64 262. `VocalSynth::from_frame` refuses a negative amplitude and a voiced frame without a fundamental or with a period beyond 65 535 samples; `next_source` is a pulse per period, the next period perturbed by jitter and the pulse by shimmer from the seeded generator, plus aspiration noise; `next_sample` runs it through the three resonators; `render` fills a caller's slice, sixteen samples per epoch at 16 kHz. Seven tests, including the coefficients against the real formulas, an impulse ringing about a hundred times in 0.1 s at 500 Hz and decaying, pulses every 160 samples at 100 Hz, jitter and shimmer within their bounds, silence when unvoiced without aspiration, determinism per seed, saturation without wrap, and the shaping's clamps; one benchmark. Consonants, the phoneme sequence and the actuator's driver are Specified.
 
 **`EmbodimentRingBuffer`** — 64 B, align 64. The control block of one ring of 16 frames; the frame storage follows it in the shared mapping and is the runtime's.
 
@@ -647,6 +666,8 @@ The decoder: `from_burst_counts(epoch, agonist, antagonist, gain)` gives each jo
 <!-- @assert-count target="crates/cortex-embodiment" symbol="EmbodimentRingBuffer" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-embodiment" symbol="TorqueFrame" min="1" word="true" reason="ADR-0015: the frame ABI exists" -->
 <!-- @assert-count target="crates/cortex-embodiment" symbol="JointStateFrame" min="1" word="true" reason="ADR-0015: the frame ABI exists" -->
+<!-- @assert-count target="crates/cortex-embodiment" symbol="VocalFrame" min="1" word="true" reason="ADR-0027: the vocal frame exists" -->
+<!-- @assert-count target="crates/cortex-embodiment" symbol="fn next_sample" min="1" reason="ADR-0027: the source-filter renderer is implemented" -->
 <!-- @assert-count target="crates/cortex-embodiment" symbol="producer_claim" min="1" word="true" reason="ADR-0015: the SPSC protocol exists" -->
 <!-- @assert-count target="crates/cortex-embodiment" symbol="from_burst_counts" min="1" word="true" reason="§6.4 step 2: the torque decoder exists (F-17 narrowed)" -->
 
@@ -769,8 +790,8 @@ Implemented rules: evidence accumulates; at or above 1.5 the slot ignites and is
 | :--- | :--- |
 | Responsibility | Metadata for 10 000-dimensional bipolar hypervectors that bind spiking activity to discrete symbols (roles, fillers, tokens) with a clean-up codebook. |
 | Source | `crates/cortex-symbolic/src/lib.rs` |
-| Public API | `SymbolicHypervectorHeader::DIMENSIONS` (10 000), `bind(&mut self, role_id, filler_id)`, `blend(&mut self, target_id, source_id, domain_mask, cross_domain_shift) -> bool`, `is_blend`; flags `FLAG_BOUND` (bit 0), `FLAG_BLENDED` (bit 2) |
-| Status | Header layout: Implemented · Binding and the blend header: Implemented ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · Bundling, permutation, unbinding, the codebook and the vector arithmetic of a blend: Specified (§8.8, §8.13) |
+| Public API | `SymbolicHypervectorHeader::DIMENSIONS` (10 000), `bind(&mut self, role_id, filler_id)`, `blend(&mut self, target_id, source_id, domain_mask, cross_domain_shift) -> bool`, `is_blend`, `rebase(&mut self, shift) -> Option<u16>`, `is_rebased`; flags `FLAG_BOUND` (bit 0), `FLAG_BLENDED` (bit 2), `FLAG_REBASED` (bit 3) |
+| Status | Header layout: Implemented · Binding and the blend header: Implemented ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · Basis rotation: Implemented ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)) · Bundling, permutation, unbinding, the codebook and the vector arithmetic of a blend: Specified (§8.8, §8.13) |
 
 **`SymbolicHypervectorHeader`** — 64 B, align 64. The vector body (1 250 bytes at 10 000 bits) lives in a separate arena addressed by `vector_id`.
 
@@ -783,16 +804,19 @@ Implemented rules: evidence accumulates; at or above 1.5 the slot ignites and is
 | `[16..20)` | `token_vocab_id` | `u32` | Grounded token. |
 | `[20..24)` | `hamming_distance_cache` | `u32` | Distance to nearest codebook entry. |
 | `[24..26)` | `permutation_shift` | `u16` | Cyclic shift $\Pi^k$ for sequence position. |
-| `[26..28)` | `flags` | `u16` | bit 0 bound · bit 2 blended; further bits reserved. |
+| `[26..28)` | `flags` | `u16` | bit 0 bound · bit 2 blended · bit 3 rebased; further bits reserved. |
 | `[28..32)` | `confidence_score` | `u32` | Q16.16 decode confidence. |
 | `[32..36)` | `blend_source_id` | `u32` | The source concept a blend draws its structure from ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
 | `[36..38)` | `blending_domain_mask` | `u16` | Source domains blended in, one bit each; `cortex-affect`'s `DOMAIN_*` bits when the source is the body. |
 | `[38..39)` | `blend_depth` | `u8` | Blends applied to this vector; saturating. |
-| `[39..40)` | `_pad` | `u8` | Explicit padding; MUST be zero. |
+| `[39..40)` | `rebase_count` | `u8` | Basis rotations applied, saturating ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)). |
 | `[40..64)` | `_reserved` | `[u8; 24]` | Reserved; MUST be zero. |
+
+**Basis rotation** ([ADR-0026](adr/0026-social-acumen-and-re-representation.md), Implemented). `rebase(shift)` advances the cyclic permutation the vector is read through by `shift` modulo the dimensionality, composing with earlier rotations (a permutation of a bipolar hypervector is an orthogonal change of basis, so two rotations are one), counts it and sets `FLAG_REBASED`; refused for a zero shift, a zero dimensionality, or one the sixteen-bit shift cannot index. One test. Whether a rotation yields a synthesis a reader would call novel is hypothesis H-5.
 
 <!-- @assert-count target="crates/cortex-symbolic" symbol="SymbolicHypervectorHeader" min="1" word="true" -->
 <!-- @assert-count target="crates/cortex-symbolic" symbol="fn blend" min="1" reason="ADR-0021: the blend header is implemented" -->
+<!-- @assert-count target="crates/cortex-symbolic" symbol="fn rebase" min="1" reason="ADR-0026: the basis rotation is implemented" -->
 
 #### 5.2.10 `cortex-executive` — planning
 
@@ -889,8 +913,8 @@ Implemented rules: evidence accumulates; at or above 1.5 the slot ignites and is
 | :--- | :--- |
 | Responsibility | The global modulator vector that gates three-factor plasticity. One record per macro-column. |
 | Source | `crates/cortex-neuromod/src/lib.rs` |
-| Public API | `NeuromodulatorState` |
-| Status | Layout: Implemented · Three-factor rule: Specified (§8.8) |
+| Public API | `NeuromodulatorState::{reward, decay_dopamine}` ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)) |
+| Status | Layout: Implemented · Reward and decay of the dopamine signal: Implemented ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)) · Three-factor rule: Specified (§8.8) |
 
 **`NeuromodulatorState`** — 16 B, align 16.
 
@@ -900,6 +924,10 @@ Implemented rules: evidence accumulates; at or above 1.5 the slot ignites and is
 | `[4..8)` | `norepinephrine` | `u32` | Q16.16 | Arousal / unexpected uncertainty. |
 | `[8..12)` | `serotonin` | `u32` | Q16.16 | Discounting / harm aversion. |
 | `[12..16)` | `acetylcholine` | `u32` | Q16.16 | Sensory precision / learning-rate gate. |
+
+**Reward** ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md), Implemented). `reward(rpe)` adds a reward-prediction error to the dopamine signal, saturating: a quarter of `cortex-affect`'s mirth arrives here (R-15), a confirmed prediction as its value, a disappointment as a negative one; `decay_dopamine(shift)` moves the signal toward zero by $2^{-\text{shift}}$ of itself and at least one LSB, so it reaches rest exactly from either side. One test.
+
+<!-- @assert-count target="crates/cortex-neuromod" symbol="fn reward" min="1" reason="ADR-0027: the reward rule is implemented" -->
 
 <!-- @assert-count target="crates/cortex-neuromod" symbol="NeuromodulatorState" min="1" word="true" -->
 
@@ -1038,8 +1066,8 @@ Implemented rule: `relay(input)` returns `input × gain` (widened, clamped) in t
 | :--- | :--- |
 | Responsibility | The record of the engine's three-layer language pipeline, entirely inside the engine: **Layer 1**, semantic grounding, unbinds a hypervector by role, $\text{Concept} \approx S \otimes \text{Role}^{-1}$ (`cortex-symbolic`, Specified); **Layer 2**, syntactic framing, fills construction-grammar templates with strict role slots and fixes the order a lexicon emits them in (this crate, Implemented); **Layer 3**, temporal flow and prosody, runs a linear recurrent cell in saturating Q16.16, $s_{t+1} = \alpha\, s_t + k_t v_t$, whose energy band selects the particle class that fills the frame's particle slot (this crate, Implemented for the scalar cell; the fixed-dimension state vector is an arena, Specified). No external language model, transformer runtime or heap is part of the system. |
 | Source | `crates/cortex-linguistic/src/lib.rs` |
-| Public API | `LinguisticFrameSlot::{new, bind_role, bind_child, set_parent, parent, attach_metaphor, has_metaphor, filled_roles, is_complete, seal, is_sealed, realisation_order, advance_prosody}`, `required_roles(template)`, `requires_child(template)`, `role_order(template)`; `ROLE_CHILD` (a realisation position, not a role bit); templates `TEMPLATE_RELATIVE` (5), `TEMPLATE_CAUSAL` (6) and gate bits `GATE_CHILD_BOUND`, `GATE_METAPHOR` ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)); roles `ROLE_SUBJECT`, `ROLE_ACTION`, `ROLE_OBJECT`, `ROLE_AFFECT` (bits 0–3); templates `TEMPLATE_STATE` (0), `TEMPLATE_REQUEST` (1), `TEMPLATE_NEED` (2), `TEMPLATE_CAUSATIVE` (3), `TEMPLATE_EPISTEMIC` (4); speech acts `SPEECH_ACT_ASSERTIVE` (0), `SPEECH_ACT_DIRECTIVE` (1), `SPEECH_ACT_COMMISSIVE` (2), `SPEECH_ACT_EXPRESSIVE` (3); markers `PROSODY_NONE` (0), `PROSODY_SOFTEN` (1), `PROSODY_SUGGEST` (2), `PROSODY_REFLECT` (3), `PROSODY_TOPIC_SHIFT` (4); gate bits `GATE_PARTICLE_OPEN`, `GATE_SEALED`, `GATE_ROLES_SHIFT` (4); `Q16_ONE` |
-| Status | Layout: Implemented · Layer 2 (binding, completeness, sealing, realisation order): Implemented · Layer 3 scalar cell, marker bands and trajectory hash: Implemented · Layer 1 unbinding in `cortex-symbolic`, the state-vector arena, the lexicon (Chinese and English) and the placement of the marker bands: Specified (§6.9, §8.8) |
+| Public API | `LinguisticFrameSlot::{new, bind_role, bind_child, set_parent, parent, attach_metaphor, has_metaphor, filled_roles, is_complete, seal, is_sealed, realisation_order, advance_prosody, mark_indirect, intended_act, is_indirect, apply_face, mark_play}`, `PROSODY_PLAYFUL` (5), `POLITENESS_FORMAL` (2), `PLAY_THRESHOLD_Q16` (0.25) ([ADR-0026](adr/0026-social-acumen-and-re-representation.md), [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)), `required_roles(template)`, `requires_child(template)`, `role_order(template)`; `ROLE_CHILD` (a realisation position, not a role bit); templates `TEMPLATE_RELATIVE` (5), `TEMPLATE_CAUSAL` (6) and gate bits `GATE_CHILD_BOUND`, `GATE_METAPHOR` ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)); roles `ROLE_SUBJECT`, `ROLE_ACTION`, `ROLE_OBJECT`, `ROLE_AFFECT` (bits 0–3); templates `TEMPLATE_STATE` (0), `TEMPLATE_REQUEST` (1), `TEMPLATE_NEED` (2), `TEMPLATE_CAUSATIVE` (3), `TEMPLATE_EPISTEMIC` (4); speech acts `SPEECH_ACT_ASSERTIVE` (0), `SPEECH_ACT_DIRECTIVE` (1), `SPEECH_ACT_COMMISSIVE` (2), `SPEECH_ACT_EXPRESSIVE` (3); markers `PROSODY_NONE` (0), `PROSODY_SOFTEN` (1), `PROSODY_SUGGEST` (2), `PROSODY_REFLECT` (3), `PROSODY_TOPIC_SHIFT` (4); gate bits `GATE_PARTICLE_OPEN`, `GATE_SEALED`, `GATE_ROLES_SHIFT` (4); `Q16_ONE` |
+| Status | Layout: Implemented · Layer 2 (binding, completeness, sealing, realisation order): Implemented · Layer 3 scalar cell, marker bands and trajectory hash: Implemented · Indirectness, tact and play: Implemented ([ADR-0026](adr/0026-social-acumen-and-re-representation.md), [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)) · Layer 1 unbinding in `cortex-symbolic`, the state-vector arena, the lexicon (Chinese and English) and the placement of the marker bands: Specified (§6.9, §8.8) |
 
 **`LinguisticFrameSlot`** — 64 B, align 64. One frame per utterance under assembly. The layout is the proposal's, byte for byte.
 
@@ -1061,13 +1089,16 @@ Implemented rule: `relay(input)` returns `input × gain` (widened, clamped) in t
 | `[36..38)` | `parent_frame_idx` | `u16` | index + 1 | The frame this one is nested in, as index + 1 so that frame 0 can be a parent; 0 for a root ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
 | `[38..40)` | `child_frame_idx` | `u16` | index | The frame realised in this one's child slot. |
 | `[40..44)` | `blended_metaphor_id` | `u32` | index | `SymbolicHypervectorHeader::vector_id` of an attached blend. |
-| `[44..64)` | `_reserved` | `[u8; 20]` | — | Reserved; MUST be zero. |
+| `[44..45)` | `intended_speech_act` | `u8` | act + 1 | The act the frame means when it differs from the surface act; 0 = direct ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)). |
+| `[45..64)` | `_reserved` | `[u8; 19]` | — | Reserved; MUST be zero. |
 
-Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly one role (refused for a mask, an affect concept wider than sixteen bits, or a sealed frame) and lowers the frame's confidence to the weakest binding; `is_complete` holds when the roles the template requires are bound, never for an unknown template; `seal` closes a complete frame; `realisation_order` is the template's order restricted to the bound roles: subject–action–object with the affect as a trailing tag, except the epistemic template, where the affect is the hedge that opens the utterance. Layer 3: `advance_prosody(α, k, v)` computes $s \leftarrow \alpha s + k v$ with every product widened to `i64` and clamped, mixes $s$ into the trajectory hash, and selects the marker from the energy's band ($|s| < \tfrac14$ none; $s \ge 1$ suggest, $s \ge \tfrac14$ soften; $s \le -1$ topic shift, $s \le -\tfrac14$ reflect), opening the particle slot when a marker is selected. Nested constructions ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)): `bind_child(child, self)` binds a frame of the caller's arena into the child slot (refused for self-nesting, for nesting its own parent, or for a sealed frame), `TEMPLATE_RELATIVE` realises the child in the object position and `TEMPLATE_CAUSAL` after the core, the affect tag last in both, `is_complete` requires the child for those templates, and `ROLE_CHILD` in the realisation order is where the runtime descends, bounded by the arena; `attach_metaphor(blend)` names a `cortex-symbolic` blend the lexicon realises the affect slot through. Eleven tests, including the truth of every template, the hedge-first epistemic order, the two nesting templates, the decay by $\alpha$, the clamp at both `i32` extremes and the determinism of the hash.
+Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly one role (refused for a mask, an affect concept wider than sixteen bits, or a sealed frame) and lowers the frame's confidence to the weakest binding; `is_complete` holds when the roles the template requires are bound, never for an unknown template; `seal` closes a complete frame; `realisation_order` is the template's order restricted to the bound roles: subject–action–object with the affect as a trailing tag, except the epistemic template, where the affect is the hedge that opens the utterance. Layer 3: `advance_prosody(α, k, v)` computes $s \leftarrow \alpha s + k v$ with every product widened to `i64` and clamped, mixes $s$ into the trajectory hash, and selects the marker from the energy's band ($|s| < \tfrac14$ none; $s \ge 1$ suggest, $s \ge \tfrac14$ soften; $s \le -1$ topic shift, $s \le -\tfrac14$ reflect), opening the particle slot when a marker is selected. Nested constructions ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)): `bind_child(child, self)` binds a frame of the caller's arena into the child slot (refused for self-nesting, for nesting its own parent, or for a sealed frame), `TEMPLATE_RELATIVE` realises the child in the object position and `TEMPLATE_CAUSAL` after the core, the affect tag last in both, `is_complete` requires the child for those templates, and `ROLE_CHILD` in the realisation order is where the runtime descends, bounded by the arena; `attach_metaphor(blend)` names a `cortex-symbolic` blend the lexicon realises the affect slot through. Indirectness, tact and play ([ADR-0026](adr/0026-social-acumen-and-re-representation.md), [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)): `mark_indirect(act)` keeps the surface act and records the act the frame means (the lexicon realises the surface; `cortex-social` reads the intent); `apply_face(register, valence)` forces the soften marker, opens the particle slot and raises the politeness level when a negative valence goes to a courteous or formal listener, and leaves a familiar exchange frank; `mark_play(mirth)` sets `PROSODY_PLAYFUL` and opens the particle slot at or above the mirth threshold, refused in a formal register (humor is gated by the relationship, not the context) and overridden by tact, which is applied last. Fourteen tests, including the truth of every template, the hedge-first epistemic order, the two nesting templates, the decay by $\alpha$, the clamp at both `i32` extremes and the determinism of the hash.
 
 <!-- @assert-count target="crates/cortex-linguistic" symbol="LinguisticFrameSlot" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-linguistic" symbol="advance_prosody" min="1" word="true" reason="ADR-0016: the recurrent cell of the tri-hybrid pipeline is implemented" -->
 <!-- @assert-count target="crates/cortex-linguistic" symbol="bind_child" min="1" word="true" reason="ADR-0021: constructions nest" -->
+<!-- @assert-count target="crates/cortex-linguistic" symbol="mark_indirect" min="1" word="true" reason="ADR-0026: an indirect act is recorded beside the surface act" -->
+<!-- @assert-count target="crates/cortex-linguistic" symbol="mark_play" min="1" word="true" reason="ADR-0027: the playful marker is a rule over mirth and the register" -->
 
 #### 5.2.21 `cortex-tools` — brokered digital actuation
 
@@ -1133,8 +1164,8 @@ Implemented rule: `begin_saccade` is refused while in flight or for a zero-lengt
 | :--- | :--- |
 | Responsibility | The condition of the body: pain, strain and recovery integrated into an allostatic load, a comfort signal in $[-1, 1]$ and a slow mood baseline. `cortex-homeostasis` keeps the metabolic drives and the circadian gate; `cortex-salience` keeps the aversive input itself. |
 | Source | `crates/cortex-affect/src/lib.rs` |
-| Public API | `InteroceptiveState::integrate(&mut self, pain_burst_q16, thermal_strain_q16, recovery_q16) -> i32`, `update_valence(&mut self, free_energy_q16) -> i32`, `metaphor_source_domain(&self) -> u16`; constants `Q16_ONE`, `MOOD_SHIFT` (6), `STAKE_SHIFT` (4), domains `DOMAIN_HEAT`, `DOMAIN_WEIGHT`, `DOMAIN_DUSK`, `DOMAIN_CALM` |
-| Status | Layout: Implemented · Integration, valence, existential stake and the metaphor domain: Implemented ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md), [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · The free energy itself (`cortex-predictive`), the mood bias on `cortex-neuromod` and the preemption of executive bandwidth by the stake: Specified (§8.8, §8.12) |
+| Public API | `InteroceptiveState::integrate(&mut self, pain_burst_q16, thermal_strain_q16, recovery_q16) -> i32`, `update_valence(&mut self, free_energy_q16) -> i32`, `metaphor_source_domain(&self) -> u16`, `appraise_incongruity(&mut self, surprise_q16, threat_q16) -> u32`, `is_amused`; `MIRTH_SHIFT` (2), `BENIGN_THREAT_MAX_Q16` (0.25), `MIRTH_THRESHOLD_Q16` (0.25) ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)); constants `Q16_ONE`, `MOOD_SHIFT` (6), `STAKE_SHIFT` (4), domains `DOMAIN_HEAT`, `DOMAIN_WEIGHT`, `DOMAIN_DUSK`, `DOMAIN_CALM` |
+| Status | Layout: Implemented · Integration, valence, existential stake, the metaphor domain and the benign-violation appraisal: Implemented ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md), [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md), [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · The free energy itself (`cortex-predictive`), the mood bias on `cortex-neuromod` and the preemption of executive bandwidth by the stake: Specified (§8.8, §8.12) |
 
 **`InteroceptiveState`** — 64 B, align 64. One per interoceptive region.
 
@@ -1149,12 +1180,15 @@ Implemented rule: `begin_saccade` is refused while in flight or for a zero-lengt
 | `[24..28)` | `free_energy_prev_q16` | `u32` | Q16.16 | Free energy at the previous valence update ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
 | `[28..32)` | `valence_df_dt_q16` | `i32` | Q16.16 | Valence: $F_{\text{prev}} - F_{\text{now}}$, the negative change of free energy per update. |
 | `[32..36)` | `existential_stake_q16` | `u32` | Q16.16 | Slow average of $\lvert dF/dt \rvert$: how much the body's predictions fail. |
-| `[36..64)` | `_reserved` | `[u8; 28]` | — | Reserved; MUST be zero. |
+| `[36..40)` | `benign_incongruity_q16` | `u32` | Q16.16 | The last surprise that carried no threat ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)). |
+| `[40..44)` | `mirth_q16` | `u32` | Q16.16 | Slow average of benign incongruity: the appraisal that reads as amusement. |
+| `[44..64)` | `_reserved` | `[u8; 20]` | — | Reserved; MUST be zero. |
 
-Implemented rules: load $\leftarrow$ saturating $(\text{load} + \text{pain} + \text{strain}) - \text{recovery}$, never below zero; comfort as above; mood moves toward comfort by $2^{-6}$ of the gap and by at least one LSB, so a held comfort is reached exactly. `update_valence(F)` sets the valence to $F_{\text{prev}} - F_{\text{now}}$, clamped, and moves the existential stake toward $\lvert F_{\text{now}} - F_{\text{prev}} \rvert$ by $2^{-4}$ of the gap and at least one LSB, so a steady body's stake reaches zero. `metaphor_source_domain` is calm when comfort is at least 0.5 and none of thermal strain, allostatic load and the energy deficit exceeds 0.25, otherwise the largest of the three, ties in that order. Eight tests, including convergence of the mood and of the stake.
+Implemented rules: load $\leftarrow$ saturating $(\text{load} + \text{pain} + \text{strain}) - \text{recovery}$, never below zero; comfort as above; mood moves toward comfort by $2^{-6}$ of the gap and by at least one LSB, so a held comfort is reached exactly. `update_valence(F)` sets the valence to $F_{\text{prev}} - F_{\text{now}}$, clamped, and moves the existential stake toward $\lvert F_{\text{now}} - F_{\text{prev}} \rvert$ by $2^{-4}$ of the gap and at least one LSB, so a steady body's stake reaches zero. `metaphor_source_domain` is calm when comfort is at least 0.5 and none of thermal strain, allostatic load and the energy deficit exceeds 0.25, otherwise the largest of the three, ties in that order. `appraise_incongruity(surprise, threat)` is the benign-violation appraisal ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)): the incongruity is benign when the threat is at most 0.25 and is then the surprise, else zero; mirth moves toward it by $2^{-2}$ of the gap and at least one LSB, so it reaches zero exactly after a quiet while; `is_amused` at 0.25. Ten tests, including convergence of the mood, of the stake and of the mirth.
 
 <!-- @assert-count target="crates/cortex-affect" symbol="InteroceptiveState" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-affect" symbol="update_valence" min="1" word="true" reason="ADR-0020: valence is minus the change of free energy" -->
+<!-- @assert-count target="crates/cortex-affect" symbol="appraise_incongruity" min="1" word="true" reason="ADR-0027: the benign-violation appraisal is implemented" -->
 
 #### 5.2.24 `cortex-autonomic` — hardware vitals
 
@@ -1241,8 +1275,8 @@ Implemented rule: `new(hash)` starts at full novelty; `visit(error, entropy)` de
 | :--- | :--- |
 | Responsibility | One record per *other* agent: the intention and belief attributed to it, the trust placed in it, and the affective resonance it evokes through an empathy gain. `cortex-agency` keeps the self/other attribution of a sensory change. |
 | Source | `crates/cortex-social/src/lib.rs` |
-| Public API | `SocialPerspectiveNode::{resonate, update_trust, take_turn, listen, yield_turn, request_repair, ground, close_exchange, register}`; constants `Q16_ONE`, `TRUST_GAIN_SHIFT` (4), `TRUST_LOSS_SHIFT` (3); turn states `TURN_IDLE`, `TURN_SELF`, `TURN_OTHER`, `TURN_REPAIR`; registers `REGISTER_FAMILIAR`, `REGISTER_COURTEOUS`, `REGISTER_FORMAL` |
-| Status | Layout: Implemented · Resonance, trust, the turn-taking machine, common ground and the register: Implemented ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · Intention inference, false-belief tracking and the conversational policy: Specified (§8.8, §8.13) |
+| Public API | `SocialPerspectiveNode::{resonate, update_trust, take_turn, listen, yield_turn, request_repair, ground, close_exchange, register, assess_sincerity, is_suspect, expect_of_self, would_surprise, tom_depth}`; `INSINCERITY_SHIFT` (3), `SINCERITY_GAP_THRESHOLD_Q16` (0.5), `SUSPICION_THRESHOLD_Q16` (0.25) ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)); constants `Q16_ONE`, `TRUST_GAIN_SHIFT` (4), `TRUST_LOSS_SHIFT` (3); turn states `TURN_IDLE`, `TURN_SELF`, `TURN_OTHER`, `TURN_REPAIR`; registers `REGISTER_FAMILIAR`, `REGISTER_COURTEOUS`, `REGISTER_FORMAL` |
+| Status | Layout: Implemented · Resonance, trust, the turn-taking machine, common ground, the register, the sincerity gap and the second-level expectation: Implemented ([ADR-0026](adr/0026-social-acumen-and-re-representation.md), [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · Intention inference, false-belief tracking and the conversational policy: Specified (§8.8, §8.13) |
 
 **`SocialPerspectiveNode`** — 64 B, align 64.
 
@@ -1260,12 +1294,15 @@ Implemented rule: `new(hash)` starts at full novelty; `visit(error, entropy)` de
 | `[33..34)` | `turn_repair_count` | `u8` | count | Repairs requested in this exchange; saturating ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
 | `[34..36)` | `dialogue_turn_state` | `u16` | enum | 0 idle · 1 self · 2 other · 3 repair pending. |
 | `[36..40)` | `shared_intentionality_hash` | `u32` | hash | Common ground: every grounded referent mixed in, in order. |
-| `[40..64)` | `_reserved` | `[u8; 24]` | — | Reserved; MUST be zero. |
+| `[40..44)` | `expected_of_self_hash` | `u32` | hash | What the agent expects the self to do next: the self's model of the agent's model of the self; 0 none ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)). |
+| `[44..48)` | `insincerity_q16` | `u32` | Q16.16 | Slow average of the gap between what the agent stated and what followed. |
+| `[48..64)` | `_reserved` | `[u8; 16]` | — | Reserved; MUST be zero. |
 
-Implemented rules: `resonate(v)` stores $v$ and returns $v \times \text{gain}$ (widened, clamped); `update_trust(confirmed)` closes $1/16$ of the distance to 1.0 on a confirmation and removes $1/8$ of the trust on a disconfirmation, so trust breaks faster than it builds and stays in $[0, 1]$. The floor passes by `take_turn` (from idle or the other's turn), `listen` (the other opens the exchange, from idle), `yield_turn`, `request_repair` (from the other's turn, counted) and is closed by `close_exchange`; `ground(referent)` mixes a shared referent into the common ground, in order, only inside an exchange, and resolves a pending repair; `register` maps trust to the politeness level `cortex-linguistic` realises: familiar at or above 0.75, courteous at or above 0.25, formal below. Nine tests.
+Implemented rules: `resonate(v)` stores $v$ and returns $v \times \text{gain}$ (widened, clamped); `update_trust(confirmed)` closes $1/16$ of the distance to 1.0 on a confirmation and removes $1/8$ of the trust on a disconfirmation, so trust breaks faster than it builds and stays in $[0, 1]$. The floor passes by `take_turn` (from idle or the other's turn), `listen` (the other opens the exchange, from idle), `yield_turn`, `request_repair` (from the other's turn, counted) and is closed by `close_exchange`; `ground(referent)` mixes a shared referent into the common ground, in order, only inside an exchange, and resolves a pending repair; `register` maps trust to the politeness level `cortex-linguistic` realises: familiar at or above 0.75, courteous at or above 0.25, formal below. The sincerity check ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)): `assess_sincerity(stated, outcome)` takes the gap between the valence the agent stated for what it would do and what followed, clamped to 1.0, moves `insincerity_q16` toward it by $2^{-3}$ and at least one LSB, and counts a gap at or above 0.5 as a disconfirmed prediction (`update_trust(false)`), a smaller one as confirmed; `is_suspect` at an average of 0.25, which the register follows through the trust it cost. The second level (`expect_of_self`, `would_surprise`, `tom_depth`): what the agent expects the self to do, read from a directive it addressed to the self or a prediction it stated, and whether a planned action departs from it; the depth is derived from what is stored, never stored itself, and `close_exchange` clears the expectation with the exchange. Eleven tests.
 
 <!-- @assert-count target="crates/cortex-social" symbol="SocialPerspectiveNode" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-social" symbol="take_turn" min="1" word="true" reason="ADR-0021: dialogue grounding is a state machine" -->
+<!-- @assert-count target="crates/cortex-social" symbol="assess_sincerity" min="1" word="true" reason="ADR-0026: the sincerity gap is implemented" -->
 
 #### 5.2.28 `cortex-ethics` — veto gate
 
@@ -1301,8 +1338,8 @@ Implemented rule: `evaluate(forbidden_mask, required_authorization)` applies the
 | :--- | :--- |
 | Responsibility | What survives consolidation: one concept per record with its category, affordances, typical mass and hazard, in a tree by `parent_category_id`. `cortex-symbolic` keeps transient bindings and `cortex-hippocampus` the episodes they came from. |
 | Source | `crates/cortex-knowledge/src/lib.rs` |
-| Public API | `SemanticOntologyNode::{affords, is_root, consolidate, certify, is_certified_theorem}`; constant `AFFORDANCE_CERTIFIED_THEOREM` (bit 31) |
-| Status | Layout: Implemented · Consolidation and affordance rules: Implemented · The replay that drives consolidation (§6.6): Specified |
+| Public API | `SemanticOntologyNode::{affords, is_root, consolidate, certify, is_certified_theorem, note_anomaly, is_stale, re_represent}`; constants `AFFORDANCE_CERTIFIED_THEOREM` (bit 31), `ANOMALY_SHIFT` (3), `ANOMALY_THRESHOLD_Q16` (0.5), `REPRESENTATION_STALE` (bit 0), `REPRESENTATION_REBASED` (bit 1) ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)) |
+| Status | Layout: Implemented · Consolidation and affordance rules: Implemented · The premise check and re-representation: Implemented ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)) · The replay that drives consolidation (§6.6) and the choice of a new category: Specified |
 
 **`SemanticOntologyNode`** — 64 B, align 64.
 
@@ -1315,10 +1352,18 @@ Implemented rule: `evaluate(forbidden_mask, required_authorization)` applies the
 | `[16..20)` | `typical_mass_grams_q16` | `u32` | Q16.16 | Typical mass in grams. |
 | `[20..24)` | `consolidation_count` | `u32` | count | Replays that reinforced the node; saturating. |
 | `[24..25)` | `safety_hazard_level` | `u8` | level | 0 none; higher is more hazardous. |
-| `[25..64)` | `_reserved` | `[u8; 39]` | — | Reserved; MUST be zero. |
+| `[25..28)` | `_pad` | `[u8; 3]` | — | Reserved; MUST be zero. |
+| `[28..32)` | `anomaly_q16` | `u32` | Q16.16 | Slow average of the prediction error the concept leaves unexplained ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)). |
+| `[32..36)` | `paradigm_epoch` | `u32` | epoch | Epoch of the last re-representation; 0 never. |
+| `[36..38)` | `representation_flags` | `u16` | bitfield | Bit 0 stale (a re-representation is due) · bit 1 rebased (the last one rotated the basis). |
+| `[38..39)` | `re_representations` | `u8` | count | Re-representations so far; saturating. |
+| `[39..64)` | `_reserved` | `[u8; 25]` | — | Reserved; MUST be zero. |
 
 Implemented rule: `affords(bits)` requires every requested bit; `consolidate(bits, hazard)` accumulates affordances, keeps the maximum hazard and counts the replay; `certify(statement_hash)` stores the statement and consolidates with the theorem bit, leaving the hazard alone. Five tests.
 
+**Premise check and re-representation** ([ADR-0026](adr/0026-social-acumen-and-re-representation.md), Implemented). `note_anomaly(error)` moves the anomaly toward the prediction error the concept left unexplained by $2^{-3}$ of the gap and at least one LSB, so it reaches zero exactly when the concept explains everything; when it reaches 0.5 while the representation is not marked stale, the mark is set and the call returns `true`, once: the framework has stopped explaining. `re_represent(epoch, new_parent, rebase_shift)` is allowed only then: the concept moves under a new category, its affordances, mass and hazard stay, the epoch is stamped, the mark is cleared, the anomaly halves (the new framework is on trial), the count grows, and a non-zero rotation (applied to the concept's hypervector by `SymbolicHypervectorHeader::rebase`) is recorded as rebased; a call that would change nothing (the same category, no rotation) is refused. Which error is the concept's, and which category is new, are R-14's. Seven tests.
+
+<!-- @assert-count target="crates/cortex-knowledge" symbol="note_anomaly" min="1" word="true" reason="ADR-0026: the premise check is implemented" -->
 <!-- @assert-count target="crates/cortex-knowledge" symbol="SemanticOntologyNode" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-knowledge" symbol="certify" min="1" word="true" reason="§6.10: certified theorems are consolidated" -->
 
@@ -1402,7 +1447,7 @@ Implemented rule: `execute` performs the opcode with `i128` checked arithmetic; 
 | :--- | :--- |
 | Responsibility | One frame of an offline rollout with no goal, only a hypothetical action and where it leads; sandboxed by construction, since a frame whose `motor_release_flag` is set is invalid and refuses to step. `cortex-executive` keeps goal-directed plan trees. |
 | Source | `crates/cortex-imagination/src/lib.rs` |
-| Public API | `MentalCanvasFrame::{is_sandboxed, step, has_diverged, reflect, wander}` |
+| Public API | `MentalCanvasFrame::{is_sandboxed, step, has_diverged, reflect, wander, wander_at}` |
 | Status | Layout: Implemented · Step, divergence, the self-model's fixed point and default-mode wandering: Implemented ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md), [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)) · The generative model that supplies the deltas and when the organism wanders: Specified (§8.8, §8.12, §8.13) |
 
 **`MentalCanvasFrame`** — 64 B, align 64.
@@ -1423,7 +1468,7 @@ Implemented rule: `execute` performs the opcode with `i128` checked arithmetic; 
 | `[40..41)` | `reflection_count` | `u8` | count | Reflections so far, saturating; a fresh frame has no previous self to agree with ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
 | `[41..64)` | `_reserved` | `[u8; 23]` | — | Reserved; MUST be zero. |
 
-Implemented rules: `step` accumulates valence, uncertainty, time and depth, all saturating, and is refused for a frame that is not sandboxed; `has_diverged(limit)` is true once the uncertainty reaches the limit. `reflect(observed_self)` is the strange loop: the rollout observes the self doing the imagining and is at its fixed point when the self observed now equals the one observed before; a fresh frame, having observed nothing, is not at it. `wander()` advances a generator seeded from the rollout, drifts the hypothetical action, and takes a one-tick step whose valence perturbation is bounded by the wandering temperature and whose uncertainty growth is the temperature; a zero temperature moves the action but not the valence, and two frames with the same seed wander identically; the one generator state that maps to zero steps to 1 instead of reseeding. Seven tests.
+Implemented rules: `step` accumulates valence, uncertainty, time and depth, all saturating, and is refused for a frame that is not sandboxed; `has_diverged(limit)` is true once the uncertainty reaches the limit. `reflect(observed_self)` is the strange loop: the rollout observes the self doing the imagining and is at its fixed point when the self observed now equals the one observed before; a fresh frame, having observed nothing, is not at it. `wander()` advances a generator seeded from the rollout, drifts the hypothetical action, and takes a one-tick step whose valence perturbation is bounded by the wandering temperature and whose uncertainty growth is the temperature; a zero temperature moves the action but not the valence, and two frames with the same seed wander identically; the one generator state that maps to zero steps to 1 instead of reseeding; `wander_at(temperature)` sets the temperature and wanders once, the divergent rollout of a re-representation at the concept's anomaly and the comedic one at the mirth ([ADR-0026](adr/0026-social-acumen-and-re-representation.md), [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)). Eight tests.
 
 <!-- @assert-count target="crates/cortex-imagination" symbol="MentalCanvasFrame" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-imagination" symbol="fn reflect" min="1" reason="ADR-0020: the self-model has a fixed point" -->
@@ -1571,6 +1616,26 @@ What is Implemented is the arithmetic at every step; what is Specified is the ta
 
 Every id, order, bit and hash in this scenario is produced by a tested rule; every word is the lexicon's.
 
+### 6.14 Scenario R-14: premise reframing and re-representation (Specified)
+
+1. `cortex-curiosity` names a target whose prediction error stays high after its novelty is exhausted (`visit`, Implemented); the runtime names the concept the target grounds to (Specified).
+2. Each epoch the concept's unexplained error is noted: `SemanticOntologyNode::note_anomaly` (Implemented). When the anomaly reaches 0.5 the representation is marked stale, once.
+3. The divergent rollout: `MentalCanvasFrame::wander_at(anomaly)` (Implemented) perturbs the hypothetical action at the anomaly's temperature; the rollout with the lowest divergence and a positive valence names a candidate category (the search, Specified).
+4. The re-representation: `re_represent(epoch, new_parent, shift)` moves the concept under the candidate and records the rotation; `SymbolicHypervectorHeader::rebase(shift)` rotates the concept's basis (both Implemented); the vector arithmetic over the bodies (Specified).
+5. The new framework is on trial: the anomaly halved, the next epochs' errors decide whether it stays; a concept whose anomaly returns to 0.5 is stale again and step 3 runs again.
+
+What is Implemented is every rule; what is Specified is the join of a target to a concept and the search for a category. Whether the result is a synthesis a reader would call novel is hypothesis H-5.
+
+### 6.15 Scenario R-15: an expressive exchange with a suspect, a joke and a voice (Specified)
+
+1. The other says something warm and does something else: the runtime feeds the stated valence (the affect role of the frame it parsed, Specified) and the outcome valence to `SocialPerspectiveNode::assess_sincerity` (Implemented); the gap moves insincerity and breaks trust; at 0.25 the agent is suspect, its register goes formal with the trust it cost, and what it asks for is weighed as a harm risk at the veto gate of `cortex-ethics` (the weighing, Specified; the gate, Implemented).
+2. The other addresses a directive to the self: `mark_indirect` records what the frame means beside what it says (Implemented); `expect_of_self` records what the other now expects (Implemented); a planned action is checked with `would_surprise`.
+3. Something absurd but harmless happens: `cortex-predictive`'s error and `cortex-salience`'s threat reach `InteroceptiveState::appraise_incongruity` (Implemented); with the threat at most 0.25 the surprise is benign and mirth rises; `NeuromodulatorState::reward(mirth / 4)` (Implemented); `wander_at(mirth)` (Implemented) rolls out a comic turn.
+4. The reply: the frame is built (§5.2.20), `mark_play(mirth)` marks it playful unless the register is formal (Implemented), `apply_face(register, valence)` softens bad news to a courteous listener and has the last word (Implemented); the lexicon realises the words (Specified).
+5. The voice: `VocalFrame::new(epoch)` shaped by the marker, the register and the valence (`shape`, Implemented), rendered by `VocalSynth` sixteen samples per epoch (Implemented), delivered through the embodiment ring to the audio actuator (Specified); the frame passed the veto gate before dispatch like any motor command (§8.9).
+
+Nothing in this scenario is confined to a game or a role: the only gates are the register (a formal relationship refuses play) and the veto gate (harm). Whether the marked turn is funny or the shaped voice reads as intended is hypothesis H-6.
+
 ---
 
 ## 7. Deployment view
@@ -1659,7 +1724,7 @@ No heap allocation occurs after initialisation (TC-5). Arenas are allocated once
 
 ### 8.7 Persistence and serialisation
 
-The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 7; the version history is in §5.2.2. Layout (the header, the directory and the neuron, synapse and delta sections Implemented by `Image::{write, open}` of `runtime/cortex-runtime`, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md); the rest Specified):
+The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 8; the version history is in §5.2.2. Layout (the header, the directory and the neuron, synapse and delta sections Implemented by `Image::{write, open}` of `runtime/cortex-runtime`, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md); the rest Specified):
 
 ```text
 [0..64)         CortexFileHeader
@@ -1705,6 +1770,11 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | Recursive constructions (Goldberg; Steels) | `cortex-linguistic` · `parent_frame_idx`, `child_frame_idx` | A child frame fills a clause slot; the runtime descends at `ROLE_CHILD`, bounded by the arena. | Partial: binding, completeness and order Implemented; the descent and the lexicon Specified |
 | Default-mode wandering | `cortex-imagination` · `dmn_wander_temperature_q16`, `wander_state` | A seeded generator perturbs valence by up to the temperature per tick and drifts the hypothetical action. | Partial: the wander Implemented; when the organism wanders Specified |
 | Dialogue grounding and register (Clark; Tomasello) | `cortex-social` · `dialogue_turn_state`, `shared_intentionality_hash`, `turn_repair_count` | The floor as a four-state machine with repair; common ground as an ordered hash of grounded referents; the register a step function of trust. | Partial: the machine and the register Implemented; the conversational policy Specified |
+| Sincerity and trust (Grice; Brown–Levinson) | `cortex-social` · `insincerity_q16`, `expected_of_self_hash` | Insincerity $\leftarrow$ insincerity $+ (\lvert\text{stated} - \text{outcome}\rvert - \text{insincerity}) \gg 3$, at least one LSB; a gap $\ge 0.5$ disconfirms; suspect at 0.25. | Implemented ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)); the weighing at the veto gate Specified |
+| Tact and indirect speech acts (Brown–Levinson; Searle) | `cortex-linguistic` · `apply_face`, `intended_speech_act` | Negative valence to a courteous or formal listener forces the soften marker and raises politeness; the intended act is stored beside the surface act. | Implemented ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)); the lexicon Specified |
+| Anomaly and re-representation (Kuhn; Karmiloff-Smith) | `cortex-knowledge` · `anomaly_q16`, `representation_flags`; `cortex-symbolic` · `rebase` | Anomaly $\leftarrow$ anomaly $+ (\text{error} - \text{anomaly}) \gg 3$, at least one LSB; stale at 0.5, once; a re-representation moves the concept and rotates its basis by a composed cyclic shift. | Implemented ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)); the category search Specified; the synthesis H-5 |
+| Source–filter voice (Fant; Klatt) | `cortex-embodiment` · `VocalFrame`, `Resonator`, `VocalSynth` | $y_n = x_n + B y_{n-1} + C y_{n-2}$, $B = 2 e^{-\pi\,\text{bw}/f_s}\cos(2\pi f/f_s)$, $C = -e^{-2\pi\,\text{bw}/f_s}$, three in cascade over an impulse train with jitter, shimmer and aspiration noise. | Implemented ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)); consonants and the actuator Specified |
+| Benign violation (McGraw–Warren) | `cortex-affect` · `mirth_q16`; `cortex-neuromod` · `reward`; `cortex-linguistic` · `PROSODY_PLAYFUL` | Benign $= \text{surprise}$ if threat $\le 0.25$ else 0; mirth $\leftarrow$ mirth $+ (\text{benign} - \text{mirth}) \gg 2$, at least one LSB; dopamine $+$ mirth$/4$; the playful marker at 0.25 unless the register is formal. | Implemented ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)); whether it is funny H-6 |
 | Thalamic relay and gating (Sherman–Guillery) | `cortex-thalamus` · `gating_mode`, `sensory_gain_q16`, `oscillation_phase_q16` | Tonic relay scaled by gain; burst mode as a decimating gate; closed during sleep; 40 Hz corticothalamic phase. | Partial: gate Implemented; burst waveform and synchrony Specified |
 | Native language: vector-symbolic grounding, construction grammar, linear recurrence (Plate; Goldberg) | `cortex-linguistic` · `frame_template_id`, `syntax_gate_flags`, `linear_attention_energy_q16`, `prosody_tone_marker` | Layer 1: $\text{Concept} \approx S \otimes \text{Role}^{-1}$. Layer 2: a frame is complete when the roles its template requires are bound; the template fixes the emission order. Layer 3: $s_{t+1} = \alpha s_t + k_t v_t$ in saturating Q16.16, the leaky-integrator form that linear-attention and RWKV-style models share, whose energy band selects the particle class. | Partial: Layers 2 and 3 (scalar) Implemented; Layer 1, the state-vector arena and the lexicon Specified |
 | Tool incorporation into the body schema | `cortex-tools` · `execution_status`, `authorization_level` | A tool call is a motor act with a result: pending → running → completed / failed, or denied by the gate. | Partial: state machine Implemented; broker Specified |
@@ -1779,6 +1849,24 @@ Language stays inside the engine ([ADR-0016](adr/0016-thirty-two-crate-architect
 
 None of this produces text. It produces the structure a lexicon renders, and the lexicon is a runtime concern; the document does not call the output poetry, only says which structure it will have and which rule decided each part of it.
 
+### 8.14 Social acumen: the sincerity gap, the second-level expectation, tact and indirectness
+
+A directive asked for a "cognitive immune shield" that sees through manipulation, recursive theory of mind, and compassionate tact. What a record can do is compare what it recorded: [ADR-0026](adr/0026-social-acumen-and-re-representation.md) implements the comparisons. **Sincerity**: the valence an agent stated for what it would do against what followed; the gap, clamped, is averaged with a one-LSB floor into `insincerity_q16`, a gap at or above 0.5 is a disconfirmed prediction and breaks trust at the rate of §5.2.27, and an average of 0.25 makes the agent suspect, which the register follows. **The second level**: `expected_of_self_hash` is what the agent expects the self to do, read from a directive it addressed to the self or a prediction it stated; `would_surprise` says whether a plan departs from it; the depth of the model (none, a belief, an expectation of the self) is derived from what is stored. **Tact**: a negative valence to a courteous or formal listener forces the soften marker, opens the particle slot and raises the politeness level, whatever the recurrent cell chose; a familiar exchange is frank. **Indirectness**: a frame keeps its surface act and records the act it means.
+
+**What is not claimed.** The engine detects a gap between words and deeds in the valences it was given; an agent whose deeds match its words while it misleads through omission is not detected, and the document does not say the engine sees through anyone. The veto gate of `cortex-ethics` is untouched: a suspect agent changes what its requests are worth at the gate through the runtime's weighing (Specified), never what the gate refuses.
+
+### 8.15 Re-representation: anomaly, a stale framework, a new category and a rotated basis
+
+Kuhn's anomaly and Karmiloff-Smith's representational redescription name a mechanism a record can hold: a concept accumulates the prediction error it fails to explain (`note_anomaly`, a slow average with a one-LSB floor), and when the average reaches 0.5 the representation is marked stale, once. A re-representation (`re_represent`) is allowed only then: the concept moves under a new category, keeps what is its own (affordances, mass, hazard), and its hypervector basis is rotated by a composed cyclic shift (`rebase`, an orthogonal change of basis); the anomaly halves and the new framework is on trial (R-14). `cortex-imagination` wanders at the anomaly's temperature to propose the category (the search, Specified). **What is not claimed**: that the result is original, or a synthesis across fields; that is hypothesis H-5, and the document says which rule moved which field.
+
+### 8.16 Vocal synthesis as motor output
+
+A voice is an actuator. [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md) adds a `VocalFrame` beside `TorqueFrame`: per 1 ms epoch, a fundamental, three formants with bandwidths, an amplitude, jitter, shimmer, aspiration and voicing, and an integer renderer, `VocalSynth`, that turns the frame into sixteen Q16.16 samples per epoch at 16 kHz through a source–filter model: an impulse train at the fundamental, its periods and pulses perturbed by a seeded generator, mixed with aspiration noise, through three second-order resonators whose coefficients are $e^{-x}$ and $\cos\theta$ series in Q16.16 (§5.2.4). `shape` moves the voice by the prosody marker, the register and the valence in fixed fractions, so a soft turn is lower and breathier, a topic shift louder, play more jittery, a formal register steadier; any context may shape it, and the inputs are the only gate. **What is not claimed**: that this is speech; three formants and a pulse are a vowel-and-breath voice, and consonants, the phoneme sequence and the actuator's driver are Specified. Whether the shaped voice reads as the intended tone is part of H-6.
+
+### 8.17 Computational humor: the benign-violation appraisal, reward and the playful marker
+
+McGraw and Warren's condition, a violation that is benign, is a comparison of two numbers the engine has: `cortex-predictive`'s surprise and `cortex-salience`'s threat. [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md) implements it as `cortex-affect`'s appraisal: the incongruity is benign when the threat is at most 0.25 and is then the surprise; `mirth_q16` averages it with a one-LSB floor and reads as amusement at 0.25. Mirth then feeds three rules: `cortex-neuromod` takes a quarter of it as reward; `cortex-imagination` wanders at it; `cortex-linguistic` marks the frame playful, unless the register is formal, and tact is applied after it and wins. Nothing here is a mode: humor is gated by the relationship (the register) and by harm (the veto gate), never by the context. **What is not claimed**: that the marked turn is funny, that the engine is witty, or that it has timing; the appraisal reads numbers, the semantics of what was violated are the lexicon's, and whether a listener laughs is hypothesis H-6.
+
 ---
 
 ## 9. Architecture decisions
@@ -1812,6 +1900,8 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0023](adr/0023-executor.md) | The executor: a runtime crate, in-house work-stealing deques, three barrier-separated phases per tick, and the one `unsafe` in the workspace |
 | [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md) | The `.cortex` image: section directory, table-free CRC-64/XZ, a read-into-arenas loader and writer, a write-ahead log for the clock sweep, and the Tier-2 delta record; format version 7 |
 | [ADR-0025](adr/0025-term-arena-and-unification.md) | A term arena and first-order unification for `cortex-reasoning`: a second record under ADR-0016's test, bindings in a caller's table, a trail undone on failure, bounds that are results |
+| [ADR-0026](adr/0026-social-acumen-and-re-representation.md) | Social acumen and re-representation: a sincerity gap and a second-level expectation, tact and indirectness, an anomaly that marks a framework stale and a re-representation, a basis rotation; what is not claimed |
+| [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md) | Vocal synthesis as motor output and computational humor: a `VocalFrame` with an integer source–filter renderer, the benign-violation appraisal, reward and the playful marker; what is not claimed |
 
 ---
 
@@ -1889,6 +1979,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 - [ ] **H-2 (predictive-coding traffic reduction).** The claim that top-down cancellation removes more than 85 % of ascending spike traffic is plausible from the literature but unmeasured in this engine.
 - [ ] **H-3 (experience).** That the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) (valence as the free-energy derivative, the attention schema, the self-model's fixed point, criticality-gated ignition) constitute experience rather than model it. No test in this repository can decide this; the document therefore asserts nothing about it (§8.12) and no claim may depend on it.
 - [ ] **H-4 (blends as metaphor).** That a blend a listener recognises as a metaphor follows from the header of [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) and the vector arithmetic it names. Unmeasured; a test would need a lexicon and readers.
+- [ ] **H-5 (re-representation as synthesis).** That a re-categorisation with a rotated basis ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)) produces what a reader would call a novel synthesis or an original perspective. Unmeasured; no test in this repository can decide it, and the document asserts only which rule moved which field.
+- [ ] **H-6 (mirth as humor; the shaped voice as tone).** That a turn marked playful by the benign-violation appraisal ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)) is one a listener finds funny, and that a voice shaped by a marker reads as that tone. Unmeasured; a test would need listeners.
 - [x] Should `FlatTimingWheel` rings be power-of-two length (256 / 64) so that slot selection is a mask? The cost is a 2.56 ms / 6.4 ms horizon instead of 2 ms / 8 ms.
       **Resolved (2026-09-10):** 256 fine and 256 coarse slots, 2.56 ms / 25.6 ms; [ADR-0013](adr/0013-timing-wheel-geometry.md).
 - [~] Should tick sizes be recorded in `CortexFileHeader` so that an image is self-describing (§8.4)?
@@ -1935,6 +2027,10 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Write-ahead log | The append-only file the clock sweep evicts unit records into and re-hydration reads from ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). |
 | Term arena | The `TermNode` records a first-order proof's terms live in; a variable binds in the caller's table, not in the arena ([ADR-0025](adr/0025-term-arena-and-unification.md)). |
 | Trail | The variables a unification bound, in order, so that a failure or the caller can undo them ([ADR-0025](adr/0025-term-arena-and-unification.md)). |
+| Sincerity gap | The clamped difference between the valence an agent stated for what it would do and what followed; its slow average is `insincerity_q16` ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)). |
+| Re-representation | A concept moved under a new category with its basis rotated, allowed only while its anomaly has marked its framework stale ([ADR-0026](adr/0026-social-acumen-and-re-representation.md)). |
+| Benign violation | A surprise that carries a salience threat of at most 0.25; its slow average is `mirth_q16` ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)). |
+| Vocal frame | The per-epoch parameters of a source–filter voice, rendered by `VocalSynth` ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)). |
 | Turn invariant | At most one worker touches a record per tick (A3). |
 | Unit | A `DendriticSuperNeuron` record; the engine's neural entity. |
 | Veto gate | `EthicalEvaluationGate`: the in-engine check a proposed action passes before dispatch (§5.2.28); it stands in front of the watchdog, not in place of it. |
@@ -2090,6 +2186,13 @@ Work is handed out as **briefs**: numbered, self-contained prompts in [`briefs/`
 35. Steels, L. (ed.) *Design Patterns in Fluid Construction Grammar.* John Benjamins, 2011.
 36. Clark, H. H. *Using Language.* Cambridge University Press, 1996.
 37. Tomasello, M., Carpenter, M., Call, J., Behne, T., Moll, H. *Understanding and sharing intentions: the origins of cultural cognition.* Behavioral and Brain Sciences 28, 2005.
+38. Grice, H. P. *Logic and conversation.* In Syntax and Semantics 3, 1975.
+39. Brown, P., Levinson, S. C. *Politeness: Some Universals in Language Usage.* Cambridge University Press, 1987.
+40. Kuhn, T. S. *The Structure of Scientific Revolutions.* University of Chicago Press, 1962.
+41. Karmiloff-Smith, A. *Beyond Modularity: A Developmental Perspective on Cognitive Science.* MIT Press, 1992.
+42. Fant, G. *Acoustic Theory of Speech Production.* Mouton, 1960.
+43. Klatt, D. H. *Software for a cascade/parallel formant synthesizer.* Journal of the Acoustical Society of America 67, 1980.
+44. McGraw, A. P., Warren, C. *Benign violations: making immoral behavior funny.* Psychological Science 21, 2010.
 
 ---
 
