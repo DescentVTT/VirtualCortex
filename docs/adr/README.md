@@ -28,3 +28,4 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0020](0020-computational-phenomenology-and-synthetic-qualia.md) | Computational phenomenology: the state variables the theories name, as integer rules, and what the document does not claim for them | accepted |
 | [ADR-0021](0021-native-cognitive-language-and-conceptual-blending.md) | Native cognitive language: nested constructions, conceptual blending, default-mode wandering and dialogue grounding, without a language model | accepted |
 | [ADR-0022](0022-synapse-fan-out-and-stdp.md) | Synaptic fan-out and STDP: index + 1 chains, synapse tokens, stored releases, spike messages, the nearest-neighbour pair rule at the presynaptic spike; image format 6 | accepted |
+| [ADR-0023](0023-executor.md) | The executor: a runtime crate, in-house work-stealing deques, three barrier-separated phases per tick, and the one `unsafe` in the workspace | accepted |

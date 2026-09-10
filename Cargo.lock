@@ -123,6 +123,7 @@ version = "0.1.0"
 dependencies = [
  "cortex-basal-ganglia",
  "cortex-core",
+ "cortex-runtime",
  "cortex-workspace",
  "criterion",
 ]
@@ -194,6 +195,13 @@ version = "0.1.0"
 [[package]]
 name = "cortex-reasoning"
 version = "0.1.0"
+
+[[package]]
+name = "cortex-runtime"
+version = "0.1.0"
+dependencies = [
+ "cortex-core",
+]
 
 [[package]]
 name = "cortex-salience"

@@ -1,0 +1,16 @@
+[package]
+name = "cortex-runtime"
+description = "The VirtualCortex executor: worker threads, work-stealing deques, barrier-separated ticks, mailbox delivery and synaptic fan-out over the state crates (whitepaper §6.1; ADR-0023). Not a state crate; never published."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Dependencies flow from the runtime downward to the state crates, never the other way
+# (ADR-0005). No third-party dependency: the deque, the barrier and the injector are in-house
+# (ADR-0023).
+[dependencies]
+cortex-core = { path = "../../crates/cortex-core" }

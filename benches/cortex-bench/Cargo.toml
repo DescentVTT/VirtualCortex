@@ -16,6 +16,7 @@ path = "src/lib.rs"
 # never the other way (ADR-0005).
 [dependencies]
 cortex-core = { path = "../../crates/cortex-core" }
+cortex-runtime = { path = "../../runtime/cortex-runtime" }
 cortex-basal-ganglia = { path = "../../crates/cortex-basal-ganglia" }
 cortex-workspace = { path = "../../crates/cortex-workspace" }
 
