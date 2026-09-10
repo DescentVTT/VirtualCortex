@@ -47,7 +47,7 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
   `step_stp(elapsed_ticks)` ([ADR-0018](../docs/adr/0018-membrane-integration.md),
   [ADR-0019](../docs/adr/0019-short-term-plasticity.md)). `WorkerWheel::{schedule, advance}`
   ([ADR-0013](../docs/adr/0013-timing-wheel-geometry.md)): `advance` returns the due tokens in a
-  deterministic order; a token is a 28-bit unit index or `SynapseBlock` offset (opaque to the wheel).
+  deterministic order; a token is 28 bits, a `synapse_token(block, slot)` for a delivery (opaque to the wheel).
 - Whitepaper [§6.1](../docs/WHITEPAPER.md#61-scenario-r-1-lifecycle-of-one-spike): step 1 wheel
   (Implemented), steps 2 to 5 Implemented as record methods, "the deque is the executor's
   (Specified)"; [§7.3](../docs/WHITEPAPER.md#73-process-and-thread-model-specified): one process,
@@ -62,8 +62,13 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
 - `benches/cortex-bench` shows a non-state workspace member with `publish = false` and a
   dev-dependency; `crates/cortex-core/tests/mailbox.rs` models the deque with one flag and four
   producers; that model is the shape of M2's test at scale.
-- Fan-out through `SynapseBlock` chains is brief 013's; until it lands, the executor delivers
-  tokens the test enqueues, and a token's payload is a unit index.
+- Fan-out through `SynapseBlock` chains landed with brief 013
+  ([ADR-0022](../docs/adr/0022-synapse-fan-out-and-stdp.md)): the sequence at a spike is
+  `step_stp`, then per block `step_stdp_all` and `release_all`, then per synapse
+  `synapse_token` into the wheel or `spike_message` into the mailbox; a token's delivery reads
+  the block's stored release. `crates/cortex-core/tests/oscillator.rs` runs it single-threaded
+  and is the shape of the worker loop. STDP reads a target's `last_soma_spike_tick` from
+  another record: the ADR names the barrier that makes that read safe under workers.
 
 <!-- @assert-absence target="Cargo.toml" symbol="cortex-runtime" reason="precondition: no runtime crate exists; archive this brief when it does" -->
 

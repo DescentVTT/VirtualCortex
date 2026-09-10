@@ -31,7 +31,9 @@ pub const MAILBOX_EMPTY: u64 = 0;
 /// A node's `next` when it is the last of its list.
 pub const MAILBOX_NIL: u32 = 0;
 
-/// One mailbox node, 8 bytes, in an arena the caller owns (a per-worker pool, §8.5). Both
+/// One mailbox node, 8 bytes, in an arena the caller owns (a per-worker pool, §8.5). The
+/// payload is a spike message (`spike_message`, ADR-0022) for a delivery; the executor may put
+/// any token there. Both
 /// fields are atomics so that a producer can write them through a shared reference; their
 /// stores are relaxed and are ordered by the compare-exchange on the mailbox head.
 // Holds atomics: `Debug` only (whitepaper §8.2, rule L-5).
@@ -39,7 +41,7 @@ pub const MAILBOX_NIL: u32 = 0;
 #[derive(Debug)]
 pub struct MailboxNode {
     pub next: AtomicU32,    // [0..4] Next node + 1, or MAILBOX_NIL
-    pub payload: AtomicU32, // [4..8] The message: an opaque token (a SynapseBlock offset or a unit index)
+    pub payload: AtomicU32, // [4..8] The message: a spike message, efficacy and compartment (ADR-0022)
 }
 
 impl MailboxNode {
@@ -104,7 +106,7 @@ pub struct DendriticSuperNeuron {
     pub bac_plateau_ticks: u16, // [40..42] Larkum BAC calcium burst countdown
     pub refractory_ticks: u16, // [42..44] Absolute refractory countdown
     pub last_soma_spike_tick: u32, // [44..48] Somatic action potential timestamp
-    pub synapse_slab_idx: u32, // [48..52] Index into SynapseBlock arena
+    pub synapse_slab_idx: u32, // [48..52] First SynapseBlock of the fan-out, as index + 1; 0 = no fan-out (ADR-0022)
     pub plastic_delta_head: u16, // [52..54] Index into the far-memory delta table (finding F-20: too narrow for Appendix A; Specified)
     pub spatial_voxel_morton: u16, // [54..56] 16-bit Morton spatial voxel code
     pub gate_state: AtomicU8,    // [56] Turn gate: a GateState byte
@@ -253,16 +255,21 @@ impl Default for DendriticSuperNeuron {
     }
 }
 
-/// Strict 64-byte synaptic connection block
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Four outgoing synapses of one unit, 64 bytes; blocks chain by index (whitepaper §5.2.1,
+/// ADR-0022). Every index stored here is `index + 1`, so zero is an empty slot or the end of
+/// the chain and a zeroed block is a valid empty one. The walk, the plasticity rule and the
+/// delivery encodings are in `dynamics/synapse.rs`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct SynapseBlock {
-    pub target_neuron_ids: [u32; 4], // [0..16] 4 target neuron indices
-    pub weights_q1_15: [i16; 4],     // [16..24] 4 base weights, Q1.15 (ADR-0012)
-    pub delays_ticks: [u16; 4],      // [24..32] Axonal transmission delays
-    pub next_block_idx: u32,         // [32..36] Index to chained overflow block
-    pub last_spike_tick: u32,        // [36..40] Synapse timestamp for STDP
-    pub _reserved: [u8; 24],         // [40..64] Cache-line alignment padding
+    pub target_neuron_ids: [u32; 4], // [0..16] Post-synaptic unit index + 1 per slot; 0 = empty slot
+    pub weights_q1_15: [i16; 4], // [16..24] Base weights, Q1.15 (ADR-0012), moved by STDP (ADR-0022)
+    pub delays_ticks: [u16; 4], // [24..32] Conduction delay per slot; 0 = mailbox now, else the wheel
+    pub next_block_idx: u32,    // [32..36] Next block index + 1; 0 = end of chain
+    pub last_spike_tick: u32,   // [36..40] Last presynaptic spike; 0 = none on record (STDP)
+    pub last_release_q16: [i32; 4], // [40..56] Efficacy released by the last presynaptic spike per slot (Q16.16), read at delayed delivery
+    pub apical_mask: u8, // [56] Bit k: slot k lands in the apical compartment; clear, the basal one
+    pub _reserved: [u8; 7], // [57..64] Reserved; MUST be zero
 }
 
 /// Synaptic efficacy in Q16.16 from a Q1.15 base weight and the two Q0.8 short-term

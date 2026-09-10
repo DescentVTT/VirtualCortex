@@ -14,7 +14,7 @@ itself. The runtime crate (brief 012) writes an image from its arenas and opens 
 arenas with `mmap` left Specified; the clock sweep of axiom A5 evicts a quiet unit's 64 bytes and
 re-hydrates them on the next spike. Finding **F-20** is resolved by the Tier-2 plastic-delta
 record and a 32-bit head in the unit. Milestone M4's exit test passes: evict, spike, re-hydrate
-preserves state bit for bit. Format version 5.
+preserves state bit for bit. The format version moves once more (6 at the time of writing, ADR-0022).
 
 ## Standing directives
 
@@ -35,8 +35,8 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
 
 - `crates/cortex-connectome/src/lib.rs`: `CortexFileHeader { magic, version, reserved_flags,
   num_columns, num_neurons, num_synapses, layers_offset, crc64, _padding }`, `MAGIC`,
-  `FORMAT_VERSION = 5` (4 at the commit above; ADR-0020 and ADR-0021 carved fields from six
-  records); no validation, no CRC, no section record. Whitepaper
+  `FORMAT_VERSION = 6` (4 at the commit above; ADR-0020 and ADR-0021 carved fields from six
+  records, ADR-0022 re-encoded the synapse indices); no validation, no CRC, no section record. Whitepaper
   [§8.7](../docs/WHITEPAPER.md#87-persistence-and-serialisation): a section directory of
   `(kind: u32, offset: u64, length: u64, crc64: u64)` entries padded to 64 B, then sections
   whose bytes are the arenas; an image with a foreign version MUST fail closed; atomics are
@@ -74,19 +74,19 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
       strategy (`mmap` with its invariant and test, or read-into-arenas with `mmap` Specified),
       the writer, the sweep's quiet threshold and its clock hand, the write-ahead log or its
       absence, the Tier-2 delta record (16 B: synapse block and slot, delta in Q1.15, epoch)
-      and the 32-bit head in the unit resolving F-20, and format version 5. Committed
+      and the 32-bit head in the unit resolving F-20, and the format bump. Committed
       `accepted` per `docs/adr/README.md`.
 - [ ] `cortex-connectome`: `SectionEntry` (64 B, asserted), `SectionKind` constants,
       `crc64(bytes) -> u64` (`no_std`, table-free or `const` table), `CortexFileHeader::{validate,
       new}`; tests with published CRC vectors, a header round trip, and refusal of a foreign
       version and a bad CRC.
 - [ ] `cortex-core`: `PlasticDelta` (16 B, asserted, per the ADR) and `plastic_delta_head: u32`
-      (F-20 resolved), format version 5, §5.2.1 table updated.
+      (F-20 resolved), the format bump, §5.2.1 table updated.
 - [ ] `runtime/cortex-runtime`: `Image::write(&arenas, path)` and `Image::open(path)` per the
       ADR; `ClockSweep::step()` evicting one quiet unit per call and `rehydrate(id)`; tests: an
       image written from arenas and re-opened is byte-identical; evict, spike, re-hydrate
       preserves a unit bit for bit (M4 exit); a truncated or corrupted image fails closed.
-- [ ] Whitepaper §5.2.1, §5.2.2 (directory record, version 5), §6.7 (which steps are
+- [ ] Whitepaper §5.2.1, §5.2.2 (directory record, the next version), §6.7 (which steps are
       Implemented), §8.6, §8.7, §11 F-20 resolved, Appendix A row 37 with its record, Appendix
       C M4; `docs/benchmarks/README.md` if a T-7 measurement subject now exists; `CHANGELOG.md`;
       archive this brief.

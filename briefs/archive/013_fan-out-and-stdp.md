@@ -1,7 +1,15 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #26.** Writes
+> [ADR-0022](../../docs/adr/0022-synapse-fan-out-and-stdp.md); R-1 step 6 is Implemented,
+> milestone M3's exit test passes as `crates/cortex-core/tests/oscillator.rs`, the image format
+> is version 6 and finding F-23 (the token width against Appendix A) is opened. The report is in
+> the pull request and in `CHANGELOG.md`. The body below describes the tree before execution and
+> is not maintained, apart from relative links, which gained one `../` so that they still resolve
+> from `archive/`.
 
 # Brief 013 — Fan-out through `SynapseBlock` chains and pair-based STDP (milestone M3)
 
@@ -12,7 +20,7 @@ and without allocation, yielding each target with its weight and delay, so that 
 schedule each into the wheel (delay > 0) or push it into a mailbox (delay = 0); and the synaptic
 weights learn: a pair-based STDP rule on `SynapseBlock::last_spike_tick` and the unit's
 `last_soma_spike_tick`, with exponential windows by the binary exponentiation of
-[ADR-0019](../docs/adr/0019-short-term-plasticity.md), in saturating Q1.15. An ADR fixes the
+[ADR-0019](../../docs/adr/0019-short-term-plasticity.md), in saturating Q1.15. An ADR fixes the
 walk's termination, the token encoding for a delayed delivery, the STDP window, amplitudes and
 pairing rule. Milestone M3's exit test passes: a three-neuron delayed oscillator whose period is
 exact to the tick. Whitepaper R-1 step 6 is Implemented.
@@ -24,8 +32,8 @@ exact to the tick. Whitepaper R-1 step 6 is Implemented.
 - **Verify before asserting.** Read the file; run the command.
 - **Label every claim** Implemented, Specified, Target or Hypothesis.
 - **Latest ≠ Newest.** Stable Rust only; no dependencies
-  ([ADR-0005](../docs/adr/0005-crate-per-subsystem.md)); no `unsafe`; no floating point
-  ([ADR-0002](../docs/adr/0002-q16-16-fixed-point.md)).
+  ([ADR-0005](../../docs/adr/0005-crate-per-subsystem.md)); no `unsafe`; no floating point
+  ([ADR-0002](../../docs/adr/0002-q16-16-fixed-point.md)).
 - **Say what you did not do** in the closing report.
 - Branch and pull request; Conventional Commits with a real body; run every command in
   `CLAUDE.md` before pushing.
@@ -39,16 +47,16 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
   _reserved: [u8; 24] }`; `DendriticSuperNeuron::synapse_slab_idx` is the first block. Whitepaper
   §5.2.1: "blocks chain by index; sentinel for end", the sentinel unnamed. Nothing walks a chain.
 - `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8)` and `step_stp` give the release per spike
-  ([ADR-0012](../docs/adr/0012-synaptic-weight-q1-15.md), ADR-0019); `integrate` stamps
-  `last_soma_spike_tick` ([ADR-0018](../docs/adr/0018-membrane-integration.md));
+  ([ADR-0012](../../docs/adr/0012-synaptic-weight-q1-15.md), ADR-0019); `integrate` stamps
+  `last_soma_spike_tick` ([ADR-0018](../../docs/adr/0018-membrane-integration.md));
   `ticks_since_spike` is the wrap-safe difference (§8.4).
 - `FlatTimingWheel::schedule(delay_ticks, token)` takes a 28-bit token and refuses
   `ZeroDelay`, `BeyondHorizon` (2 560 ticks) and `TokenTooLarge`
-  ([ADR-0013](../docs/adr/0013-timing-wheel-geometry.md)); §6.2: the connectome loader MUST
+  ([ADR-0013](../../docs/adr/0013-timing-wheel-geometry.md)); §6.2: the connectome loader MUST
   reject a delay beyond the horizon at load. A delayed delivery must carry enough to deliver:
   the target unit and the synapse's efficacy or its block and slot; 28 bits hold a unit index
   or a block offset, not both.
-- Whitepaper [§8.8](../docs/WHITEPAPER.md#88-biological-model-mapping): STDP "pre-before-post
+- Whitepaper [§8.8](../../docs/WHITEPAPER.md#88-biological-model-mapping): STDP "pre-before-post
   potentiates; post-before-pre depresses; windowed by tick difference" (Specified); three-factor
   plasticity (`cortex-neuromod`) multiplies an eligibility trace by a modulator (Specified, out
   of this round). Whitepaper §8.1: weights are Q1.15 in $[-1, 1)$, arithmetic saturating.
@@ -59,11 +67,10 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
   latencies, exact to the tick and reproducible. The harness is single-threaded and lives in
   `crates/cortex-core/tests/`, as `mailbox.rs` does; the executor (brief 012) is not needed.
 
-<!-- @assert-absence target="crates/cortex-core" symbol="step_stdp" word="true" reason="precondition: no STDP update and no fan-out walk exist; archive this brief when they do" -->
 
 ## Deliverables
 
-- [ ] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR: the chain
+- [x] A new ADR at the next free number (`ls docs/adr`), `status: proposed` in the PR: the chain
       sentinel (`u32::MAX` or 0 with the `+ 1` encoding of ADR-0017, decided against the image
       at rest of §8.7); the walk's bound (the arena length, so a cycle terminates); the token
       encoding for a delayed delivery (block offset and slot, with the efficacy re-read at
@@ -73,22 +80,22 @@ Re-derived against `main` (`20c6243`) on 2026-09-10.
       (depression against the last postsynaptic spike) and on a postsynaptic spike
       (potentiation against `SynapseBlock::last_spike_tick`), saturation at $[-1, 1)$, and the
       wrap rule for both stamps. Committed `accepted` per `docs/adr/README.md`.
-- [ ] `SynapseBlock::{is_end, SENTINEL}` and a `FanOut` iterator over `&[SynapseBlock]` from a
+- [x] `SynapseBlock::{is_end, SENTINEL}` and a `FanOut` iterator over `&[SynapseBlock]` from a
       first index, yielding `(target, weight_q1_15, delay_ticks, block_idx, slot)`, bounded by
       the arena, refusing an index outside it; `DendriticSuperNeuron::fan_out(&self, blocks)`.
-- [ ] `SynapseBlock::step_stdp(&mut self, slot, pre_tick, post_tick)` (or the pair of
+- [x] `SynapseBlock::step_stdp(&mut self, slot, pre_tick, post_tick)` (or the pair of
       pre/post methods the ADR decides), saturating, with the window from
       `stp_decay_factor_q16`; `SynapseBlock::last_spike_tick` stamped on a presynaptic spike.
-- [ ] Tests: the walk yields every synapse of a three-block chain once and stops at the
+- [x] Tests: the walk yields every synapse of a three-block chain once and stops at the
       sentinel; a cyclic or out-of-arena chain terminates; delays beyond the horizon are the
       loader's problem and the walk yields them unchanged; STDP: pre-before-post potentiates
       and post-before-pre depresses by the window's amounts at 0, 5, 20 and 100 ms; a weight
       saturates at both ends; the stamps compare correctly across the tick wrap; determinism.
-- [ ] `crates/cortex-core/tests/oscillator.rs`: the three-neuron delayed oscillator, single
+- [x] `crates/cortex-core/tests/oscillator.rs`: the three-neuron delayed oscillator, single
       thread, wheel plus mailboxes plus `integrate`, period exact to the tick over a hundred
       cycles for three delay triples; the period is asserted, not printed.
-- [ ] `benches/cortex-bench`: `synapse/fan_out_x4` and `synapse/step_stdp`; the README follows.
-- [ ] Whitepaper §5.2.1 (API, the sentinel in the layout table, the rules), §6.1 step 6 and
+- [x] `benches/cortex-bench`: `synapse/fan_out_x4` and `synapse/step_stdp`; the README follows.
+- [x] Whitepaper §5.2.1 (API, the sentinel in the layout table, the rules), §6.1 step 6 and
       §6.2 (the token as encoded), §8.8 (STDP row Implemented), §8.4 if the wrap rule gains a
       second consumer, Appendix C M3; `CHANGELOG.md`; archive this brief.
 

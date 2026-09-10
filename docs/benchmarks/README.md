@@ -16,8 +16,10 @@
 | `gate/schedule_begin_end` | `try_schedule`, `begin_turn`, `end_turn` on an idle unit with an empty mailbox | R-1 step 3, ADR-0017 |
 | `neuron/integrate` | one `integrate` tick under a pseudo-random drive that fires the unit now and then | R-1 step 5, ADR-0018 |
 | `stp/step_stp` | one `step_stp` per presynaptic spike with a pseudo-random interval, both exponentiations included | §8.8, ADR-0019 |
+| `synapse/fan_out_x8` | one walk of a two-block chain of eight synapses (divide by 8) | R-1 step 6, ADR-0022 |
+| `synapse/step_stdp` | one `step_stdp_all` on a full block with pseudo-random postsynaptic stamps, four window exponentiations included | §8.8, ADR-0022 |
 
-Inputs come from `cortex_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: fan-out (R-1 step 6), which does not exist; T-8 throughput, which has no subject yet.
+Inputs come from `cortex_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: the delivery loop across workers (milestone M2), which does not exist; T-8 throughput, which has no subject yet.
 
 ## Running
 
