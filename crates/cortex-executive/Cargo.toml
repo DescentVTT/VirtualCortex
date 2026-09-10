@@ -1,6 +1,6 @@
 [package]
 name = "cortex-executive"
-description = "Prefrontal Executive Planning, Counterfactual Mental Simulation, and Multi-Step Lookahead Rollouts for VirtualCortex"
+description = "Goal-directed lookahead plan-tree nodes for VirtualCortex"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

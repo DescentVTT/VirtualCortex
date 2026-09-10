@@ -1,6 +1,8 @@
 use core::sync::atomic::{AtomicU8, AtomicU64};
 
-/// 64-Byte POD Cache-Line Aligned Matthew Larkum BAC Dendritic Super-Neuron
+/// The neural unit: a two-compartment record (basal, apical, soma) with short-term-plasticity
+/// state and the virtual-actor control fields (whitepaper §5.2.1). Not plain old data: it
+/// holds atomics and is a control record (rule L-5).
 // Control record (whitepaper §8.2, rule L-5): holds atomics, so it is Sync but not Copy.
 #[derive(Debug)]
 #[repr(C, align(64))]

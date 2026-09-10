@@ -1,11 +1,10 @@
-//! # cortex-agency
-//!
-//! Intersubjective Agency, Self/Other Motor Cancellation, and Theory of Mind (ToM).
-//! Engineered to 2026+ Systems Best Practice (`Latest != Newest`).
+//! Agency: self/other attribution of a sensory change by efference copy (whitepaper §5.2.12).
+//! Cancellation and intention decoding are Specified (§8.8); models of other agents are
+//! `cortex-social`'s (ADR-0016).
 
 #![no_std]
 
-/// 64-byte POD cache-line aligned agent perspective and theory-of-mind state.
+/// 64-byte record: one agent's perspective (whitepaper §5.2.12).
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgentPerspectiveState {

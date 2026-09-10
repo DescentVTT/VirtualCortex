@@ -1,4 +1,5 @@
-//! Neuromodulatory Dynamics & Three-Factor Plasticity
+//! Neuromodulation: the 16-byte modulator vector, one per macro-column (whitepaper §5.2.14).
+//! The three-factor rule is Specified (§8.8).
 
 #![no_std]
 

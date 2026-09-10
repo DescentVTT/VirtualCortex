@@ -1,4 +1,5 @@
-//! Distributed Scale-Out Cluster Mesh, Kernel-Bypass RDMA & CXL Fabric
+//! Fabric: the 64-byte packet header every inter-node message carries (whitepaper §5.2.17).
+//! The transport and the barrier protocol are Specified.
 
 #![no_std]
 

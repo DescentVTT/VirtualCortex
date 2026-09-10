@@ -1,4 +1,5 @@
-//! Connectome Priors and Laminar Microcolumn Specifications
+//! Connectome: the `.cortex` image header (whitepaper §5.2.2). Sections, the CRC, the loader
+//! and the laminar priors are Specified (§8.7).
 
 #![no_std]
 

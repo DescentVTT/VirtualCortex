@@ -1,4 +1,4 @@
-//! Sub-Millisecond Closed-Loop Physical Embodiment Bridge
+//! Embodiment: the frame ABI and the ring protocol between the engine and a plant.
 //!
 //! The frame ABI and the single-producer single-consumer ring protocol that couple the engine to
 //! a physics engine or robot controller over shared memory (whitepaper §5.2.4, §6.4, ADR-0015).

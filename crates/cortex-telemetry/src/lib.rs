@@ -1,4 +1,5 @@
-//! Zero-Overhead Kernel-Bypass Observability & LFP/EEG Synthesizer
+//! Telemetry: the 64-byte local-field-potential sample record (whitepaper §5.2.18). The ring,
+//! band synthesis and streaming are Specified (§8.11).
 
 #![no_std]
 

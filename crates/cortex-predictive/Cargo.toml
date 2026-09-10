@@ -1,6 +1,6 @@
 [package]
 name = "cortex-predictive"
-description = "Hierarchical Predictive Coding (HPC) and Active Inference Engine for VirtualCortex"
+description = "Per-level predictive-coding residual record for VirtualCortex"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

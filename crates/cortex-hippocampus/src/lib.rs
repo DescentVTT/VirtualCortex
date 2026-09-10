@@ -1,4 +1,5 @@
-//! Hippocampal Attractor & Episodic Memory Engine
+//! Hippocampus: attractor, replay scheduling and place-field state (whitepaper §5.2.15). The
+//! dynamics are Specified (§8.8); the metric map is `cortex-spatial`'s (ADR-0016).
 
 #![no_std]
 
