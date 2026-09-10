@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.2.2
+version: 4.2.3
 status: active
 date: 2026-09-10
 ---
@@ -11,7 +11,7 @@ date: 2026-09-10
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.2.2 |
+| Version | 4.2.3 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-10 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -257,14 +257,14 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 | ID | Constraint | Maturity |
 | :--- | :--- | :--- |
 | TC-1 | The engine is written in Rust and builds on stable `rustc`. Nightly features MUST NOT be required. | Implemented |
-| TC-2 | State crates MUST declare no external dependencies. Runtime crates MAY depend on a vetted allow-list ([ADR-0005](adr/0005-crate-per-subsystem.md)). | Implemented (all 32 state crates; the only third-party dependency in the workspace is the benchmark harness, a dev-dependency of `benches/cortex-bench`, [ADR-0014](adr/0014-benchmark-harness.md)) |
+| TC-2 | State crates MUST declare no external dependencies. Runtime crates MAY depend on a vetted allow-list ([ADR-0005](adr/0005-crate-per-subsystem.md)). | Implemented (all 32 state crates; the only third-party dependency in the workspace is the benchmark harness, a dev-dependency of `benches/cortex-bench`, [ADR-0014](adr/0014-benchmark-harness.md)); held in CI by `scripts/check-deps.mjs` ([ADR-0029](adr/0029-structural-enforcement.md)) |
 | TC-3 | Every primary state record MUST be `#[repr(C)]`, and its size and alignment MUST be asserted at compile time. | Implemented (§5.2) |
-| TC-4 | `f32` and `f64` MUST NOT appear in any crate under `crates/`. Dynamics use Q16.16 (§8.1). | Implemented |
+| TC-4 | `f32` and `f64` MUST NOT appear in any crate of the workspace. Dynamics use Q16.16 (§8.1). | Implemented: `clippy::disallowed_types` over both, denied by `[workspace.lints]` and inherited by every crate ([ADR-0029](adr/0029-structural-enforcement.md)); the directives below hold the document's side for `crates/` |
 | TC-5 | The simulation hot path MUST NOT allocate, MUST NOT block, and MUST NOT make system calls after initialisation. | Implemented for the executor's loop ([ADR-0023](adr/0023-executor.md)): no allocation after `Executor::new` (a counting allocator over 20 000 ticks), no blocking but a spin barrier, no system call but the barrier's yield, which pinning (§7.3, Specified) removes |
 | TC-6 | State crates MUST be `#![no_std]`. | Implemented (32 of 32; brief 002, ADR-0016) |
 | TC-7 | The runtime target is Linux on x86-64-v4 or ARMv9-A; state crates MUST remain portable to any target with 64-bit atomics. | Specified |
 | TC-8 | Crates MUST declare `edition = "2024"` and `rust-version = "1.85"` by inheritance from `[workspace.package]`; the toolchain CI builds with MUST be pinned in `rust-toolchain.toml` and moved only deliberately. | Implemented ([ADR-0009](adr/0009-rust-edition-and-msrv.md); finding F-5 closed; a CI job builds and tests on the MSRV) |
-| TC-9 | `unsafe` MUST NOT be introduced without an ADR that names the invariant it upholds and the test that checks it. | Implemented: zero `unsafe` under `crates/`; the runtime's arena access is the one `unsafe`, under [ADR-0023](adr/0023-executor.md) (the phase discipline; the differential and contention tests) |
+| TC-9 | `unsafe` MUST NOT be introduced without an ADR that names the invariant it upholds and the test that checks it. | Implemented: zero `unsafe` under `crates/`; the runtime's arena access is the one `unsafe`, under [ADR-0023](adr/0023-executor.md) (the phase discipline; the differential and contention tests); `unsafe_code` is forbidden by `[workspace.lints]` in every state crate and the benchmark crate ([ADR-0029](adr/0029-structural-enforcement.md)) |
 
 <!-- @assert-absence target="crates" symbol="f32" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
 <!-- @assert-absence target="crates" symbol="f64" word="true" glob="*.rs" reason="TC-4: no IEEE-754 in any crate" -->
@@ -276,6 +276,10 @@ What the rule excludes: language features gated on nightly, crates below 1.0 wit
 <!-- @assert-count target="Cargo.toml" symbol='edition = "2024"' expected="1" reason="TC-8: the workspace edition is 2024 (ADR-0009)" -->
 <!-- @assert-count target="Cargo.toml" symbol='rust-version = "1.85"' expected="1" reason="TC-8: the minimum supported Rust version is 1.85 (ADR-0009)" -->
 <!-- @assert-count target="crates" symbol="rust-version.workspace = true" expected="32" glob="Cargo.toml" reason="TC-8: every state crate inherits the MSRV (ADR-0009)" -->
+<!-- @assert-count target="Cargo.toml" symbol='unsafe_code = "forbid"' expected="1" reason="ADR-0029: the workspace forbids unsafe_code in every crate that inherits its lints" -->
+<!-- @assert-count target="crates" symbol="[lints]" glob="Cargo.toml" expected="32" reason="ADR-0029: every state crate inherits the workspace lints (TC-4, TC-9)" -->
+<!-- @assert-count target="clippy.toml" symbol='path = "f32"' expected="1" reason="ADR-0029: TC-4 is a Clippy error" -->
+<!-- @assert-count target="crates" symbol="deny(clippy::arithmetic_side_effects)" glob="*.rs" min="12" reason="ADR-0029: the arithmetic lint is denied in every crate that passes it; the count only grows" -->
 
 ### 2.3 Conventions
 
@@ -1956,7 +1960,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-1 | Specification 2.8.0 reproduced struct definitions for 15 of 19 types that did not match the source (field names, widths, and in one case a 72-byte record described as 64 bytes). | this document | **Resolved** in 3.0.0: layouts transcribed from source; executable assertions added. |
 | F-2 | Every LaTeX expression in 2.8.0 (both languages) contained control characters where `\t`, `\f`, `\r`, `\a`, `\b`, `\v` and `\n` escapes had been interpreted, so no equation rendered. | this document | **Resolved** in 3.0.0. |
 | F-3 | `SynapseBlock::weights_q16` was `[i16; 4]` but commented as Q16.16, which needs 32 bits. | `cortex-core` | **Resolved** (brief 003, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)): Q1.15, renamed `weights_q1_15`; the widening arithmetic is `synaptic_efficacy_q16` with seven tests; image format version 2. |
-| F-4 | `compute_gating`, `step_forward_model`, `step_ignition` and `update_circadian_tick` used plain `+`/`-` on Q16.16 fields; `evaluate_threat` performs no arithmetic. | five crates | **Resolved** (brief 001): saturating operations in the first three, `wrapping_add` for the circadian phase counter, each with a boundary test that fails under plain arithmetic in a debug build. |
+| F-4 | `compute_gating`, `step_forward_model`, `step_ignition` and `update_circadian_tick` used plain `+`/`-` on Q16.16 fields; `evaluate_threat` performs no arithmetic. | five crates | **Resolved** (brief 001): saturating operations in the first three, `wrapping_add` for the circadian phase counter, each with a boundary test that fails under plain arithmetic in a debug build. Narrowed further (2026-09-10): `clippy::arithmetic_side_effects` is denied in the twelve crates that pass it ([ADR-0029](adr/0029-structural-enforcement.md)); the other twenty and the runtime migrate crate by crate, each change naming the sites that are meant to wrap. |
 | F-5 | All crates declare `edition = "2021"` and no `rust-version`; the README badge claims "Rust 2024/2026". There is no 2026 edition. | workspace | **Resolved** ([ADR-0009](adr/0009-rust-edition-and-msrv.md) accepted): edition 2024 and `rust-version = "1.85"` are inherited by all nineteen manifests, the toolchain is pinned in `rust-toolchain.toml` (1.97.1), a CI job builds and tests on the MSRV, and the badge says 1.85+. |
 | F-6 | Only 4 of 18 crates were `#![no_std]` (TC-6). | 14 crates | **Resolved** (brief 002): all eighteen were made `#![no_std]`; the executable assertion in §2.2 holds the count, 32 since [ADR-0016](adr/0016-thirty-two-crate-architecture.md). |
 | F-7 | Only 4 of 18 crates derived `Clone, Copy, Debug, PartialEq, Eq` on their records (L-5). | 12 crates | **Resolved** (brief 002): every record without atomics derives the five; the two control records and `FlatTimingWheel` derive `Debug` only, with a comment citing L-5. |
@@ -2105,7 +2109,7 @@ Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geomet
 
 ## Appendix B. Verification and conformance
 
-Three independent checks, each answering a different question.
+Four independent document checks and two build gates, each answering a different question.
 
 | Level | Question | Tool | Gate |
 | :--- | :--- | :--- | :--- |
@@ -2115,20 +2119,24 @@ Three independent checks, each answering a different question.
 | Hygiene | Formatting and lints | `cargo fmt --check`, `cargo clippy -D warnings` | CI, blocking |
 | MSRV | Does the workspace still build and test on the minimum supported Rust version it declares? | `cargo check --all-targets` and `cargo test` on the `rust-version` read from `Cargo.toml` (1.85), selected with `rustup override` so that the pin in `rust-toolchain.toml` does not apply ([ADR-0009](adr/0009-rust-edition-and-msrv.md)) | CI, blocking |
 | V-4 Intake | Does every live brief in `briefs/` carry its mandatory sections, so that a round handed to a fresh session is complete? | `scripts/check-briefs.mjs` (zero dependencies) | CI, blocking |
+| V-5 Manifests | Do the state crates still declare no dependencies, and the runtime and the benchmark crate only what their ADRs allow (TC-2)? | `scripts/check-deps.mjs` (zero dependencies; [ADR-0029](adr/0029-structural-enforcement.md)) | CI, blocking |
+| Rustdoc | Does every crate's documentation build without a warning (F-22)? | `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | CI, blocking |
 | Benchmarks | Do the benchmarks still build and execute? (No timing is asserted; see §10.2.) | `cargo bench -p cortex-bench --bench hot_path -- --test` | CI, blocking |
 
 Both spec tools are pinned to exact versions in `package.json` (spec-guard 0.5.0, spec-graph 0.3.0) and have no runtime dependencies; they require Node 22 or newer. To run everything locally:
 
 ```bash
-cargo check --workspace --all-targets
-cargo test --workspace
+cargo check --workspace --all-targets --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 npm ci
 npm run spec
 ```
 
 Planned, not yet present: T-1 differential testing across architectures, and fault injection on the fabric and the sensory path. The micro-benchmarks that exist are listed in the benchmarks README; none has an admissible run (F-13).
 
-<!-- @assert-present file="LICENSE-APACHE,LICENSE-MIT,Cargo.toml,rust-toolchain.toml,package.json,.spec-graph.json,.github/workflows/ci.yml,docs/adr/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md,CLAUDE.md,briefs/README.md,scripts/check-briefs.mjs" -->
+<!-- @assert-present file="LICENSE-APACHE,LICENSE-MIT,Cargo.toml,rust-toolchain.toml,clippy.toml,.gitattributes,.editorconfig,package.json,.spec-graph.json,.github/workflows/ci.yml,docs/adr/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md,CLAUDE.md,briefs/README.md,scripts/check-briefs.mjs,scripts/check-deps.mjs" -->
 
 ---
 

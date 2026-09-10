@@ -2,6 +2,9 @@
 //! compaction and the checksum audit are Specified (§6.6, §8.6).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here, one of the crates that passed the lint when it was adopted (ADR-0029).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 64-byte record: one arena segment's scrub state (whitepaper §5.2.13).
 #[repr(C, align(64))]

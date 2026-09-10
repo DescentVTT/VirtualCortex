@@ -32,15 +32,15 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 | Rule | How it is checked |
 | :--- | :--- |
 | Stable Rust, edition 2024, minimum supported version 1.85 ([ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)); no nightly features. | `rust-toolchain.toml` pins the toolchain CI and contributors build with; a second CI job builds and tests on the `rust-version` in `Cargo.toml`; `spec-guard` holds the edition, the floor and the thirty-two inheriting manifests. |
-| State crates declare no dependencies. The benchmark crate may carry the harness as a dev-dependency and nothing else ([ADR-0014](docs/adr/0014-benchmark-harness.md)). | `Cargo.toml` review; `cargo tree -e normal -p <crate>`; CI builds `--locked`. |
+| State crates declare no dependencies. The benchmark crate may carry the harness as a dev-dependency and nothing else ([ADR-0014](docs/adr/0014-benchmark-harness.md)). | `scripts/check-deps.mjs` (`npm run spec:deps`, CI, blocking; [ADR-0029](docs/adr/0029-structural-enforcement.md)); `cargo tree -e normal -p <crate>` to look. |
 | A new state crate passes the admission test of [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md): an ADR names the gap, no existing record owns the quantity, the mechanism is in whitepaper §8.8 with the layout, every Q-format fits its width, and §1.5 and §8.10 are intact or moved by that ADR first. | `spec-guard` holds the member count at 32 in the whitepaper and the README; the pull request that adds a crate moves them and carries the ADR that admits it. |
 | Performance figures are Measured only from an admissible run recorded under `docs/benchmarks/results/` ([ADR-0010](docs/adr/0010-measured-or-target.md)). | Review; the results file's `admissible:` line. |
 | Every public function and associated constant has at least one unit test, and every state crate carries a `#[cfg(test)]` module. | The module: `spec-guard`, one directive per crate in whitepaper §1.6. The per-item rule: review; no tool checks it yet, so a PR that adds a public item without a test is rejected on review. |
 | Every primary record is `#[repr(C)]`; arena records are `align(64)` and exactly 64 bytes; size and alignment are asserted in a `const _: () = { ... }` block. | `cargo check` fails otherwise. |
-| No `f32` or `f64` anywhere under `crates/`. Use Q16.16 (whitepaper §8.1). | `spec-guard` directive in the whitepaper. |
+| No `f32` or `f64` anywhere in the workspace. Use Q16.16 (whitepaper §8.1). | `clippy::disallowed_types` under `[workspace.lints]`, a build error (ADR-0029); `spec-guard` directives in the whitepaper. |
 | Every state crate is `#![no_std]`; no `Box`, `Vec`, `String` or thread spawning in state crates. | `spec-guard` directives (the `no_std` count is asserted at 32). |
 | A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a control record derives `Debug` only. | Review; whitepaper §8.2 rule L-5. |
-| No `unsafe` without an ADR naming the invariant and the test. | `spec-guard` directive; review. |
+| No `unsafe` without an ADR naming the invariant and the test. | `unsafe_code = "forbid"` under `[workspace.lints]` in every state crate and the benchmark crate (ADR-0029); `spec-guard` directives for the runtime's one `unsafe`; review. |
 | Arithmetic on Q16.16 state fields is saturating, or explicitly wrapping for phase counters. | Review, until a lint exists (finding F-4). |
 | Trailing padding is an explicit `_reserved` or `padding` byte array. | Review. |
 | Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version` and gets a changelog entry. | Review. |
@@ -76,14 +76,15 @@ cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 cargo bench -p cortex-bench --bench hot_path --locked -- --test   # benchmarks execute; no timing asserted
 cargo +1.85 check --workspace --all-targets   # the MSRV floor (ADR-0009); rustup toolchain install 1.85 once
 cargo +1.85 test --workspace
 npm ci
-npm run spec                        # spec-guard + spec-graph + check-briefs
+npm run spec                        # spec-guard + spec-graph + check-briefs + check-deps
 ```
 
-`npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks; `npm run spec:briefs` alone checks the live briefs. All exit non-zero with a file and line number when something is wrong.
+`npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks; `npm run spec:briefs` alone checks the live briefs; `npm run spec:deps` alone checks the manifests (TC-2). All exit non-zero with a file and line number when something is wrong.
 
 ## Definition of done
 

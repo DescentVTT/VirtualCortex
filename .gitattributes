@@ -1,0 +1,4 @@
+# Every text file is stored and checked out with LF, on every platform (ADR-0029). Git
+# detects binaries itself; the index already held LF everywhere, so this changes what the
+# working copy sees, not what is committed.
+* text=auto eol=lf

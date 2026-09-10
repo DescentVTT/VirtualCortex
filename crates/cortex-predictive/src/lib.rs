@@ -3,6 +3,9 @@
 //! unmeasured.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here, one of the crates that passed the lint when it was adopted (ADR-0029).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 64-byte record: one level's residual (whitepaper §5.2.11).
 #[repr(C, align(64))]

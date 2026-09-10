@@ -7,6 +7,9 @@
 //! and the foveal gating of `cortex-thalamus` relay gains are Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here, one of the crates that passed the lint when it was adopted (ADR-0029).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// `attention_mode_flags` bit: the focus follows a moving target between saccades.
 pub const MODE_SMOOTH_PURSUIT: u16 = 0x0001;

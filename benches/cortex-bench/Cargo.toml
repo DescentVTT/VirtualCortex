@@ -30,3 +30,7 @@ criterion = { version = "=0.7.0", default-features = false, features = ["cargo_b
 [[bench]]
 name = "hot_path"
 harness = false
+
+# Inherited from [workspace.lints]: no `unsafe`, no `f32`/`f64` (ADR-0029).
+[lints]
+workspace = true

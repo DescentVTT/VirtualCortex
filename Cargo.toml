@@ -43,6 +43,16 @@ members = [
 # is within the workspace's (ADR-0009).
 resolver = "3"
 
+# Lints every state crate and the benchmark crate inherit with `[lints] workspace = true`
+# (ADR-0029). TC-9: no `unsafe` in a state crate, a compiler error rather than a directive; the
+# runtime crate, which holds the workspace's one `unsafe` (ADR-0023), carries its own `[lints]`
+# table without this line. TC-4: no `f32` or `f64` anywhere, the types named in clippy.toml.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+disallowed_types = "deny"
+
 # Shared package metadata, inherited by every crate (whitepaper finding F-9).
 # Edition and rust-version are decided by ADR-0009 (accepted); changing either is a new
 # ADR, not a passing edit. The toolchain CI and contributors build with is pinned in

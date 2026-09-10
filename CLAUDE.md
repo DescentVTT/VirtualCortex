@@ -60,15 +60,17 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 
 - Every primary record is `#[repr(C)]`; arena records are `align(64)` and exactly 64 bytes; size
   and alignment are asserted in a `const _: () = { ... }` block in the defining crate.
-- No `f32` or `f64` anywhere under `crates/`. Q16.16 in `i32`/`u32`; widen to `i64` to multiply;
+- No `f32` or `f64` anywhere in the workspace: a Clippy error under `[workspace.lints]`
+  ([ADR-0029](docs/adr/0029-structural-enforcement.md)). Q16.16 in `i32`/`u32`; widen to `i64` to multiply;
   saturating arithmetic on state fields (whitepaper §8.1). Sixteen-bit synaptic weights are Q1.15
   and eight-bit plasticity factors are Q0.8 ([ADR-0012](docs/adr/0012-synaptic-weight-q1-15.md)).
 - Every state crate is `#![no_std]`. No `Box`, `Vec`, `String`, thread spawning or heap allocation in
   state crates; no syscalls on the hot path once a hot path exists.
 - A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a record with atomics is a
   control record and derives `Debug` only (whitepaper §8.2, L-5).
-- No `unsafe` without an ADR naming the invariant and the test.
-- State crates declare no dependencies. The runtime crate `runtime/cortex-runtime` composes
+- No `unsafe` without an ADR naming the invariant and the test; `unsafe_code` is forbidden by
+  `[workspace.lints]` in every state crate and the benchmark crate (ADR-0029).
+- State crates declare no dependencies (`npm run spec:deps` holds it). The runtime crate `runtime/cortex-runtime` composes
   them ([ADR-0023](docs/adr/0023-executor.md)) and is the only place `unsafe` is allowed, under
   that ADR's invariant: a `&mut` to a record never overlaps another reference to it.
 - Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version`,
@@ -104,6 +106,7 @@ cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 cargo bench -p cortex-bench --bench hot_path --locked -- --test
 cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor; `rustup toolchain install 1.85` once
 cargo +1.85 test --workspace --locked
@@ -117,7 +120,8 @@ figure is recorded there as not admissible and is never written into the whitepa
 
 `npm run spec` is `spec:guard` (executable assertions in the documents against `crates/`),
 `spec:graph` (cross-document consistency: links, ADR lifecycle, open obligations) and
-`spec:briefs` (every live brief carries its mandatory sections). Each fails with a file and line.
+`spec:briefs` (every live brief carries its mandatory sections) and `spec:deps` (state crates declare
+no dependencies, TC-2). Each fails with a file and line.
 
 ## Workflow
 
