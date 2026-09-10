@@ -41,7 +41,7 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 | Every state crate is `#![no_std]`; no `Box`, `Vec`, `String` or thread spawning in state crates. | `spec-guard` directives (the `no_std` count is asserted at 32). |
 | A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a control record derives `Debug` only. | Review; whitepaper §8.2 rule L-5. |
 | No `unsafe` without an ADR naming the invariant and the test. | `unsafe_code = "forbid"` under `[workspace.lints]` in every state crate and the benchmark crate (ADR-0029); `spec-guard` directives for the runtime's one `unsafe`; review. |
-| Arithmetic on Q16.16 state fields is saturating, or explicitly wrapping for phase counters. | Review, until a lint exists (finding F-4). |
+| Arithmetic on Q16.16 state fields is saturating, or explicitly wrapping for phase counters. | `#![deny(clippy::arithmetic_side_effects)]` in the twelve crates that carry it ([ADR-0029](docs/adr/0029-structural-enforcement.md)); review in the other twenty and the runtime until they migrate (finding F-4). |
 | Trailing padding is an explicit `_reserved` or `padding` byte array. | Review. |
 | Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version` and gets a changelog entry. | Review. |
 
@@ -79,8 +79,8 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 cargo bench -p cortex-bench --bench hot_path --locked -- --test   # benchmarks execute; no timing asserted
-cargo +1.85 check --workspace --all-targets   # the MSRV floor (ADR-0009); rustup toolchain install 1.85 once
-cargo +1.85 test --workspace
+cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor (ADR-0009); rustup toolchain install 1.85 once
+cargo +1.85 test --workspace --locked
 npm ci
 npm run spec                        # spec-guard + spec-graph + check-briefs + check-deps
 git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0

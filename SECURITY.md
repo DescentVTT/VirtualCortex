@@ -16,7 +16,7 @@ You can expect an acknowledgement within seven days and a decision on severity a
 
 In scope:
 
-- Memory-safety or determinism defects in any crate under `crates/`.
+- Memory-safety or determinism defects in any crate under `crates/` or `runtime/` (the executor's arena holds the workspace's one `unsafe`, and the `.cortex` loader lives there).
 - Parsing of untrusted input: `.cortex` images, fabric packets, sensory event batches.
 - The embodiment interface, where a defect could produce an unsafe actuator command.
 - The CI and documentation tooling configuration in this repository.

@@ -407,10 +407,12 @@ mod tests {
         assert_eq!(exp_neg_q16(6_554), 59_299, "e^-0.1");
         let mut silent = frame(120);
         silent.amplitude_q1_15 = 0;
-        assert!(
-            VocalSynth::from_frame(&silent).is_some(),
-            "zero amplitude is silence, not a refusal"
-        );
+        silent.aspiration_q0_8 = 0;
+        let mut synth =
+            VocalSynth::from_frame(&silent).expect("zero amplitude is silence, not a refusal");
+        let mut out = [1i32; 64];
+        synth.render(&mut out);
+        assert!(out.iter().all(|&s| s == 0), "and it renders as silence");
         silent.amplitude_q1_15 = -1;
         assert!(VocalSynth::from_frame(&silent).is_none());
     }

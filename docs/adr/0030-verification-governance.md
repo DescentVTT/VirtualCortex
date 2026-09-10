@@ -42,7 +42,7 @@ Option 1.
 
 ### Consequences
 
-- Good: a rule cannot merge without a test that fails when the rule is wrong; the tests hold in the profile the engine runs in; quality goal 1 is checked, not asserted; the boundary tests are the lattice's, not the reviewer's memory.
+- Good: a change to a rule does not pass the gate unless a test catches every mutant the tool can make in the lines it changed; the tests hold in the profile the engine runs in; quality goal 1 is checked, not asserted; the boundary tests are the lattice's, not the reviewer's memory.
 - Good: no manifest changed; the state crates are still free of dependencies; the mutation tool is one pinned binary CI builds once and caches.
 - Bad: the mutation job adds two to five minutes to a pull request that changes many lines; a docs-only request finds no mutants and passes in the time it takes to build.
 - Bad: an equivalent mutant needs an exclusion by name; the list in `.cargo/mutants.toml` is a maintenance item, and a wrong entry would hide a defect, which is why every entry names its function and its reason.
@@ -59,6 +59,6 @@ Option 1.
 ## Confirmation
 
 - `.github/workflows/ci.yml`: the `mutants` job on pull requests, the `arm64` job, the release-profile step; `.cargo/mutants.toml` with the named exclusions.
-- `testkit/prop.rs`, and `mod prop` in `cortex-core` (membrane, plasticity, synapse, wheel), `cortex-arithmetic` and `cortex-cerebellum`; `exhaustive_the_efficacy_is_bounded_by_one_for_every_input`.
+- `testkit/prop.rs`, and `mod prop` in `cortex-core` (membrane, plasticity, synapse, wheel), `cortex-arithmetic`, `cortex-cerebellum` and `cortex-embodiment` (the voice); `exhaustive_the_efficacy_is_bounded_by_one_for_every_input`.
 - `the_random_network_hashes_to_the_pinned_value_on_every_architecture` in the runtime's differential tests; the pin.
 - Whitepaper Appendix B rows V-6 (mutation), V-7 (determinism on two architectures) and the release-profile row; §10 T-1 and Appendix C M7 say what runs; §11 finding F-26 lists the survivors that became tests.

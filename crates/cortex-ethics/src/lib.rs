@@ -109,6 +109,22 @@ const _: () = {
 mod tests {
     use super::*;
 
+    #[test]
+    fn with_every_fault_at_once_the_imperative_names_the_veto_then_the_harm_then_the_level() {
+        let mut all = proposal(Q16_ONE, 0b0001, 0);
+        assert!(all.evaluate(0b0001, 9));
+        assert_eq!(
+            all.veto_reason, VETO_IMPERATIVE,
+            "the imperative, whatever else is wrong"
+        );
+        let mut harm_and_level = proposal(Q16_ONE, 0, 0);
+        assert!(harm_and_level.evaluate(0b0001, 9));
+        assert_eq!(harm_and_level.veto_reason, VETO_HARM, "then the harm");
+        let mut level = proposal(0, 0, 0);
+        assert!(level.evaluate(0b0001, 9));
+        assert_eq!(level.veto_reason, VETO_AUTHORIZATION, "then the level");
+    }
+
     fn proposal(harm: u32, mask: u32, authorization: u8) -> EthicalEvaluationGate {
         EthicalEvaluationGate {
             proposal_action_id: 1,

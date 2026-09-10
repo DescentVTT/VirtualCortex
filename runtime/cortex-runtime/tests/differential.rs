@@ -283,13 +283,16 @@ const PINNED_SPIKE_COUNT: usize = 95;
 fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
     let outcome = run(
         1,
+        // Every field spelled out: a change to `Config::default()` must not move the pin.
         Config {
+            workers: 1,
             units: 128,
             blocks: 128,
+            deltas: 0,
             nodes_per_worker: 4096,
+            deque_capacity: 0,
             injector_capacity: 1024,
             trace_capacity: 1 << 16,
-            ..Config::default()
         },
         wire_random,
         20_000,

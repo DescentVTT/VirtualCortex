@@ -1,6 +1,6 @@
 # CI for VirtualCortex.
 #
-# Six jobs (one on pull requests only, one weekly), seven questions:
+# Six jobs (one on pull requests only, one weekly or by hand), seven questions:
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
 #           is it formatted and lint-clean (the workspace lints of ADR-0029 included),
 #           does rustdoc build without a warning, do the tests also hold in the release
@@ -21,8 +21,10 @@
 #           pinned on x86-64 (target T-1; ADR-0030)?
 #   mutants - on a pull request: is every mutant cargo-mutants can make in the lines the
 #           request changes caught by a test (ADR-0030)? A rule without a test that fails
-#           when the rule is wrong does not merge. Pinned tool, no manifest change.
-#           Whitepaper Appendix B describes the levels.
+#           when the rule is wrong does not pass it. Pinned tool, no manifest change.
+#   weekly - on a schedule (or by hand): do the whole-domain tests still hold, and which
+#           mutants survive over the whole tree? Nothing is blocked; the survivors are the
+#           next round's list (ADR-0030). Whitepaper Appendix B describes the levels.
 
 name: CI
 
@@ -34,17 +36,21 @@ on:
     # Weekly, Monday 03:00 UTC: the whole-domain tests and the whole-tree mutation run
     # (ADR-0030). Nothing to block; the survivors are the next round's list.
     - cron: "0 3 * * 1"
+  # The weekly job by hand: `gh workflow run ci.yml`.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # The event is part of the group, so a push to main does not cancel a running weekly job.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   rust:
-    name: Rust (check, test, fmt, clippy)
+    name: Rust (check, tests in both profiles, fmt, clippy, rustdoc, bench)
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -81,6 +87,7 @@ jobs:
 
   msrv:
     name: Rust (minimum supported version)
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -103,6 +110,7 @@ jobs:
 
   arm64:
     name: Rust (AArch64 determinism, T-1)
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -132,6 +140,12 @@ jobs:
           rustup show active-toolchain
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # One cache for the mutation jobs, saved by the weekly run on main, so a new pull
+          # request restores the built tool instead of compiling it; saved even when the gate
+          # fails, so a red run still pays for the next.
+          shared-key: mutants
+          cache-on-failure: true
 
       - name: Install cargo-mutants at its pin (cached by rust-cache once built)
         run: cargo install cargo-mutants --locked --version 27.1.0
@@ -159,7 +173,7 @@ jobs:
 
   weekly:
     name: Weekly (exhaustive tests, whole-tree mutation run)
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
@@ -171,6 +185,8 @@ jobs:
           rustup show active-toolchain
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: mutants
 
       - name: The whole-domain tests, in the release profile
         run: cargo test --workspace --release --locked -- --ignored exhaustive
@@ -187,8 +203,17 @@ jobs:
           echo "== survivors"; cat mutants.out/missed.txt || true
           echo "== timeouts"; cat mutants.out/timeout.txt || true
 
+      - name: Keep the run's outcome (survivors, timeouts, the log) for the round that reads it
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutants-out
+          path: mutants.out
+          retention-days: 90
+
   specs:
-    name: Documentation (spec-guard, spec-graph)
+    name: Documentation (spec-guard, spec-graph, briefs, deps)
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

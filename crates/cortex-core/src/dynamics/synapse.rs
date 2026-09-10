@@ -43,6 +43,10 @@ pub const MESSAGE_APICAL: u32 = 1 << 18;
 const MESSAGE_EFFICACY_BITS: u32 = 18;
 const MESSAGE_EFFICACY_MASK: u32 = (1 << MESSAGE_EFFICACY_BITS) - 1;
 const MESSAGE_EFFICACY_MAX: i32 = (1 << (MESSAGE_EFFICACY_BITS - 1)) - 1;
+/// The lowest efficacy a message carries, $-2^{17}$: a literal, so that the clamp's arithmetic is
+/// nothing a mutant can touch; the assertion ties it to the width.
+const MESSAGE_EFFICACY_MIN: i32 = -131_072;
+const _: () = assert!(MESSAGE_EFFICACY_MIN == -MESSAGE_EFFICACY_MAX - 1);
 
 /// The wheel token of one synapse: `block_idx << 2 | slot`, 28 bits. `None` when the block
 /// index exceeds [`MAX_TOKEN_BLOCK`] or the slot is not one of four.
@@ -72,8 +76,8 @@ pub const fn token_slot(token: u32) -> u8 {
 pub const fn spike_message(efficacy_q16: i32, apical: bool) -> u32 {
     let e = if efficacy_q16 > MESSAGE_EFFICACY_MAX {
         MESSAGE_EFFICACY_MAX
-    } else if efficacy_q16 < -MESSAGE_EFFICACY_MAX - 1 {
-        -MESSAGE_EFFICACY_MAX - 1
+    } else if efficacy_q16 < MESSAGE_EFFICACY_MIN {
+        MESSAGE_EFFICACY_MIN
     } else {
         efficacy_q16
     };

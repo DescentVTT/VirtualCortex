@@ -61,6 +61,18 @@ pub enum ImageError {
     LogCorrupt(u32),
 }
 
+/// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
+/// arithmetic in the loader's bound exists for a mutant to touch; the assertion ties it to the
+/// token's constant.
+const MAX_BLOCKS: u64 = 67_108_864;
+const _: () = assert!(MAX_BLOCKS == MAX_TOKEN_BLOCK as u64 + 1);
+
+/// True for more blocks than a token can name. Its own function, so that the mutants of the
+/// comparison at a bound no image can reach are excluded by this name and nothing else.
+fn too_many_blocks(count: u64) -> bool {
+    count > MAX_BLOCKS
+}
+
 impl From<io::Error> for ImageError {
     fn from(e: io::Error) -> Self {
         Self::Io(e)
@@ -352,7 +364,7 @@ impl Image {
         {
             return Err(ImageError::Directory(SECTION_NEURON));
         }
-        if synapse.record_count() > MAX_TOKEN_BLOCK as u64 + 1 {
+        if too_many_blocks(synapse.record_count()) {
             return Err(ImageError::TooManyBlocks(synapse.record_count()));
         }
         let units = neuron.record_count() as usize;
@@ -457,5 +469,21 @@ impl Image {
         }
         exec.wake_now(&wake);
         Ok(exec)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_block_bound_is_the_token_s_and_is_tested_at_its_edge() {
+        assert_eq!(MAX_BLOCKS, MAX_TOKEN_BLOCK as u64 + 1);
+        assert!(!too_many_blocks(0));
+        assert!(
+            !too_many_blocks(MAX_BLOCKS),
+            "exactly as many as a token can name"
+        );
+        assert!(too_many_blocks(MAX_BLOCKS + 1), "one more is refused");
     }
 }

@@ -455,6 +455,7 @@ mod prop {
         for t in 0..1_000_000u32 {
             let (basal, apical) = (rng.i32_edge_biased(), rng.i32_edge_biased());
             let refractory_before = u.refractory_ticks;
+            let (basal_before, apical_before) = (u.v_basal, u.v_apical);
             let spiked = u.integrate(basal, apical, t);
             check(&u);
             if spiked {
@@ -462,10 +463,20 @@ mod prop {
                 assert_eq!(u.v_soma, V_RESET);
                 assert_eq!(u.last_soma_spike_tick, t);
                 assert!(u.v_thresh > THRESHOLD_BASE, "the threshold stepped up");
-                assert!(u.refractory_ticks > 0);
+                if u.v_apical >= BAC_APICAL_THRESHOLD {
+                    assert_eq!(u.bac_plateau_ticks, BAC_PLATEAU_TICKS, "a plateau begins");
+                    assert_eq!(u.refractory_ticks, BURST_REFRACTORY_TICKS);
+                } else {
+                    assert_eq!(u.refractory_ticks, REFRACTORY_TICKS);
+                }
                 fired = fired.saturating_add(1);
             } else if refractory_before > 0 {
                 assert_eq!(u.refractory_ticks, refractory_before.saturating_sub(1));
+                assert!(
+                    u.v_basal.unsigned_abs() <= basal_before.unsigned_abs()
+                        && u.v_apical.unsigned_abs() <= apical_before.unsigned_abs(),
+                    "inputs are dropped in the window: the compartments only leak"
+                );
             }
         }
         assert!(fired > 1_000, "the walk fires: {fired}");

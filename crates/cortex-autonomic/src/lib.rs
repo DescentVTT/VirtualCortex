@@ -9,6 +9,9 @@
 //! whitepaper §8.9 remains the last line of defence; these flags are the first.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here, one of the crates that passed the lint when it was adopted (ADR-0029; this one 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// `emergency_cut_flags` bit: core temperature above `thermal_limit_milli_c`.
 pub const CUT_OVER_TEMPERATURE: u16 = 0x0001;

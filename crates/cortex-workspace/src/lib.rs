@@ -114,6 +114,41 @@ mod tests {
             0xaaa8_b9b9,
             "the ignition bit changes the hash"
         );
+        let mut previous = s.attention_schema_meta_hash;
+        s.slot_id = 2;
+        assert_ne!(
+            s.update_attention_schema(),
+            previous,
+            "the slot id is folded"
+        );
+        previous = s.attention_schema_meta_hash;
+        s.binding_hash = 3;
+        assert_ne!(
+            s.update_attention_schema(),
+            previous,
+            "the binding is folded"
+        );
+        previous = s.attention_schema_meta_hash;
+        s.persistence_ticks = 4;
+        assert_ne!(
+            s.update_attention_schema(),
+            previous,
+            "the persistence is folded"
+        );
+        previous = s.attention_schema_meta_hash;
+        s.broadcast_channel_mask = 5;
+        assert_ne!(
+            s.update_attention_schema(),
+            previous,
+            "the channel mask is folded"
+        );
+        previous = s.attention_schema_meta_hash;
+        s.ignition_potential = 6;
+        assert_eq!(
+            s.update_attention_schema(),
+            previous,
+            "the potential is not a word of the schema"
+        );
     }
 
     const ONE: i32 = 0x0001_0000;

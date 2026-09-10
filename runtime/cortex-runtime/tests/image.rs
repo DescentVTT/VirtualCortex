@@ -325,6 +325,18 @@ fn every_clause_of_the_loader_s_checks_refuses_on_its_own() {
         Err(ImageError::Directory(SECTION_NEURON))
     ));
     let mut img = small_image();
+    patch_entry(&mut img, SECTION_SYNAPSE, |e| e.kind = 99);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(99))
+    ));
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_SYNAPSE, |e| e.kind = SECTION_NEURON);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::MissingSection(SECTION_SYNAPSE))
+    ));
+    let mut img = small_image();
     patch_entry(&mut img, SECTION_NEURON, |e| e._reserved[0] = 1);
     assert!(matches!(
         Image::decode::<8>(&img, Config::default()),

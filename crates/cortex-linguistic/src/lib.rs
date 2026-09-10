@@ -354,8 +354,10 @@ impl LinguisticFrameSlot {
         let mut i = 0;
         while i < template_order.len() {
             let role = template_order[i];
+            // A complete frame whose template has a child role has its child bound
+            // (`is_complete` requires it), so the child position is always present here.
             let present = if role == ROLE_CHILD {
-                self.syntax_gate_flags & GATE_CHILD_BOUND != 0
+                true
             } else {
                 role != 0 && self.filled_roles() & role != 0
             };

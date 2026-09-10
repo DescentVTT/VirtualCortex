@@ -14,7 +14,7 @@ VirtualCortex 是一個以 Rust 撰寫的**單機神經擬態虛擬 Actor 引擎
 
 | 標籤 | 意義 |
 | :--- | :--- |
-| **Implemented（已實作）** | 今天就存在於 `crates/`，且由編譯器、單元測試或文件內的可執行斷言檢查。 |
+| **Implemented（已實作）** | 今天就存在於 `crates/` 或 `runtime/`，且由編譯器、單元測試或文件內的可執行斷言檢查。 |
 | **Specified（已規範）** | 設計已在白皮書或 ADR 中定案（介面、格式、不變量），但尚無程式碼。 |
 | **Target（目標）** | 可量測的品質目標，附有量測方法；**尚未量測**。 |
 | **Hypothesis（假設）** | 架構所依賴的研究假設；驗證之前，依賴它的任何敘述都不能升級為 Target。 |
@@ -51,10 +51,10 @@ VirtualCortex 是一個以 Rust 撰寫的**單機神經擬態虛擬 Actor 引擎
 | [§8 Cross-cutting concepts](../WHITEPAPER.md#8-cross-cutting-concepts) | Q16.16 數值模型、記錄佈局規則 L-1 至 L-6、確定性、時間、並行、記憶體、序列化、**生物機制對照表與參考方程式**、安全、可觀測性、計算現象學（§8.12：把理論命名的狀態變數做成整數規則，並明說不宣稱「經驗」）、原生語言（§8.13：巢狀構式、概念混成、漫遊、對話立地）、社交分寸（§8.14：言行落差、二階期望、分寸、間接言語行為）、再表徵（§8.15：異常、框架失效、換類別、基底旋轉）、聲學合成（§8.16：整數源-濾波嗓音）、計算幽默（§8.17：良性違反、獎賞、玩笑標記，並明說不宣稱「好笑」）。 |
 | [§9 Architecture decisions](../WHITEPAPER.md#9-architecture-decisions) | ADR 索引；決策本體在 [`docs/adr/`](../adr/README.md)。 |
 | [§10 Quality requirements](../WHITEPAPER.md#10-quality-requirements) | 品質樹與 T-1 至 T-8 目標情境，每列都有量測協定與空白的「Measured」欄。 |
-| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding F-1 至 F-25、假設 H-1 至 H-6（H-3 是「這些規則是否構成經驗」、H-5 是「再表徵是否算原創綜合」、H-6 是「標了玩笑的話是否真的好笑」，倉庫裡沒有任何測試能判定，文件因此不主張）、開放問題。 |
+| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding F-1 至 F-27、假設 H-1 至 H-6（H-3 是「這些規則是否構成經驗」、H-5 是「再表徵是否算原創綜合」、H-6 是「標了玩笑的話是否真的好笑」，倉庫裡沒有任何測試能判定，文件因此不主張）、開放問題。 |
 | [§12 Glossary](../WHITEPAPER.md#12-glossary) | 術語表。 |
 | [附錄 A](../WHITEPAPER.md#appendix-a-capacity-model) | 容量模型（是計畫，不是量測）。 |
-| [附錄 B](../WHITEPAPER.md#appendix-b-verification-and-conformance) | 三層驗證：編譯期佈局斷言、spec-guard（文件對程式碼）、spec-graph（文件對文件）。 |
+| [附錄 B](../WHITEPAPER.md#appendix-b-verification-and-conformance) | 七層驗證 V-1 至 V-7（編譯期佈局斷言、spec-guard 文件對程式碼、spec-graph 文件對文件、brief 章節、manifest 依賴、PR 改動行的 mutation gate、兩種架構上的判定 pin）加上建置閘門（release profile 測試、rustdoc、MSRV、benchmark 冒煙）。 |
 | [附錄 C](../WHITEPAPER.md#appendix-c-roadmap) | 里程碑 M1 至 M8，每個都有退出測試。 |
 | [附錄 D](../WHITEPAPER.md#appendix-d-references) | 參考文獻。 |
 

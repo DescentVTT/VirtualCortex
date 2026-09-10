@@ -388,7 +388,7 @@ mod prop {
     }
 
     #[test]
-    fn a_step_keeps_the_ring_in_bounds_for_every_input_and_control_word() {
+    fn a_step_keeps_the_ring_in_bounds_over_a_walk_of_inputs_and_control_words() {
         let mut rng = Lcg::new(37);
         for _ in 0..50_000 {
             let mut z = CerebellarMicrozone {
