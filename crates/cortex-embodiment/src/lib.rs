@@ -10,6 +10,9 @@
 //! [`vocal`] (ADR-0027).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 pub mod vocal;
 use core::sync::atomic::{AtomicU64, Ordering};
 pub use vocal::{
@@ -53,8 +56,10 @@ impl TorqueFrame {
     ) -> Self {
         let mut torques_q16 = [0i32; DOF];
         for (j, torque) in torques_q16.iter_mut().enumerate() {
-            let net = agonist[j] as i64 - antagonist[j] as i64;
-            *torque = (net * gain_q16 as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            let net = (agonist[j] as i64).saturating_sub(antagonist[j] as i64);
+            *torque = net
+                .saturating_mul(gain_q16 as i64)
+                .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         }
         Self {
             epoch,
@@ -77,8 +82,9 @@ pub struct JointStateFrame {
 /// The control block of one ring: two cursors, the last published epoch, the producer's
 /// heartbeat, and the ABI parameters the consumer checks before trusting the mapping.
 ///
-/// Cursors are monotonic 64-bit counters; the slot of a cursor value is `cursor & (CAPACITY - 1)`.
-/// The ring is empty when the cursors are equal and full when they differ by `CAPACITY`.
+/// Cursors are monotonic 64-bit counters, advanced and compared by wrapping arithmetic (§8.1);
+/// the slot of a cursor value is `cursor & (CAPACITY - 1)`. The ring is empty when the cursors
+/// are equal and full when they differ by `CAPACITY`.
 ///
 /// Ordering: the producer writes a frame's bytes, then release-stores the write cursor; the
 /// consumer acquire-loads the write cursor, then reads the frame. The release/acquire pair on the
@@ -123,7 +129,9 @@ impl EmbodimentRingBuffer {
     /// Frames published and not yet released.
     #[inline]
     pub fn len(&self) -> u64 {
-        self.write_cursor.load(Ordering::Acquire) - self.read_cursor.load(Ordering::Acquire)
+        self.write_cursor
+            .load(Ordering::Acquire)
+            .wrapping_sub(self.read_cursor.load(Ordering::Acquire))
     }
 
     #[inline]
@@ -143,7 +151,7 @@ impl EmbodimentRingBuffer {
     pub fn producer_claim(&self) -> Option<usize> {
         let w = self.write_cursor.load(Ordering::Relaxed);
         let r = self.read_cursor.load(Ordering::Acquire);
-        if w - r >= CAPACITY {
+        if w.wrapping_sub(r) >= CAPACITY {
             None
         } else {
             Some((w & INDEX_MASK) as usize)
@@ -160,7 +168,8 @@ impl EmbodimentRingBuffer {
         self.epoch_id.store(epoch, Ordering::Relaxed);
         self.heartbeat_ms.store(now_ms, Ordering::Relaxed);
         let w = self.write_cursor.load(Ordering::Relaxed);
-        self.write_cursor.store(w + 1, Ordering::Release);
+        self.write_cursor
+            .store(w.wrapping_add(1), Ordering::Release);
     }
 
     /// Consumer: the slot of the oldest unreleased frame, or `None` when the ring is empty. The
@@ -182,7 +191,7 @@ impl EmbodimentRingBuffer {
     #[inline]
     pub fn consumer_release(&self) {
         let r = self.read_cursor.load(Ordering::Relaxed);
-        self.read_cursor.store(r + 1, Ordering::Release);
+        self.read_cursor.store(r.wrapping_add(1), Ordering::Release);
     }
 }
 

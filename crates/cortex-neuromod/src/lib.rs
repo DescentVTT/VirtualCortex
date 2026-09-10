@@ -3,6 +3,9 @@
 //! (§8.8).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(16))]
@@ -30,7 +33,9 @@ impl NeuromodulatorState {
     pub fn decay_dopamine(&mut self, shift: u32) -> i32 {
         let d = self.dopamine_rpe as i64;
         let step = (d.abs() >> shift.min(62)).max(1).min(d.abs());
-        self.dopamine_rpe = (d - d.signum() * step) as i32;
+        // In `i64` with `step <= |d|` neither operation can reach the width; the signal is a
+        // Q16.16 state field, so both saturate by name (§8.1).
+        self.dopamine_rpe = d.saturating_sub(d.signum().saturating_mul(step)) as i32;
         self.dopamine_rpe
     }
 }

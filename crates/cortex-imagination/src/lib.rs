@@ -10,6 +10,9 @@
 //! and the wander are Implemented; the generative model that supplies the deltas is Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 64-byte canvas frame (whitepaper §5.2.32).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -123,10 +126,12 @@ impl MentalCanvasFrame {
         let draw = self.wander_state;
         self.hypothetical_action_hash =
             (self.hypothetical_action_hash ^ draw).wrapping_mul(0x0100_0193);
-        // A signed fraction in [-1, 1) from the high bits, scaled by the temperature.
-        let fraction = (draw >> 16) as i32 - 0x8000;
-        let perturbation = ((fraction as i64 * self.dmn_wander_temperature_q16 as i64) >> 15)
-            .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        // A signed fraction in [-1, 1) from the high bits, scaled by the temperature: sixteen
+        // bits less 0x8000 cannot leave the `i32`, and the product is widened and clamped.
+        let fraction = ((draw >> 16) as i32).wrapping_sub(0x8000);
+        let perturbation =
+            ((fraction as i64).saturating_mul(self.dmn_wander_temperature_q16 as i64) >> 15)
+                .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         self.step(perturbation, self.dmn_wander_temperature_q16, 1);
         Some(perturbation)
     }

@@ -9,6 +9,9 @@
 //! waveform and corticothalamic synchrony are Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// Every input is relayed, scaled by the gain.
 pub const GATING_TONIC: u8 = 0;
@@ -88,7 +91,7 @@ impl ThalamicRelayNode {
 
     #[inline(always)]
     fn scale(&self, input_q16: i32) -> i32 {
-        let product = (input_q16 as i64 * self.sensory_gain_q16 as i64) >> 16;
+        let product = (input_q16 as i64).saturating_mul(self.sensory_gain_q16 as i64) >> 16;
         product.clamp(i32::MIN as i64, i32::MAX as i64) as i32
     }
 }

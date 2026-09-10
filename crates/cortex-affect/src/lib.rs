@@ -9,6 +9,9 @@
 //! biases `cortex-neuromod` and how the stake preempts executive bandwidth are Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 1.0 in Q16.16.
 pub const Q16_ONE: u32 = 0x0001_0000;
@@ -72,12 +75,14 @@ impl InteroceptiveState {
             .saturating_add(thermal_strain_q16)
             .saturating_sub(recovery_q16);
         let bounded = self.allostatic_load_q16.min(Q16_ONE) as i32;
-        self.somatic_comfort_q16 = Q16_ONE as i32 - 2 * bounded;
-        let gap = self.somatic_comfort_q16 as i64 - self.mood_baseline_q16 as i64;
+        self.somatic_comfort_q16 = (Q16_ONE as i32).saturating_sub(bounded.saturating_mul(2));
+        let gap = (self.somatic_comfort_q16 as i64).saturating_sub(self.mood_baseline_q16 as i64);
         // At least one LSB toward comfort, never past it: an arithmetic shift floors only
         // negatives, so without the floor the mood would stall 2^MOOD_SHIFT - 1 below +1.0.
         let step = (gap.abs() >> MOOD_SHIFT).max(1).min(gap.abs());
-        self.mood_baseline_q16 = (self.mood_baseline_q16 as i64 + gap.signum() * step) as i32;
+        self.mood_baseline_q16 = (self.mood_baseline_q16 as i64)
+            .saturating_add(gap.signum().saturating_mul(step))
+            as i32;
         self.somatic_comfort_q16
     }
 
@@ -89,14 +94,14 @@ impl InteroceptiveState {
     /// zero. The first call after rest has no previous value and reads it as zero. Returns the
     /// valence.
     pub fn update_valence(&mut self, free_energy_q16: u32) -> i32 {
-        let delta = self.free_energy_prev_q16 as i64 - free_energy_q16 as i64;
+        let delta = (self.free_energy_prev_q16 as i64).saturating_sub(free_energy_q16 as i64);
         self.valence_df_dt_q16 = delta.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         let magnitude = delta.unsigned_abs().min(u32::MAX as u64) as u32;
         let stake = self.existential_stake_q16;
         self.existential_stake_q16 = if magnitude > stake {
-            stake.saturating_add(((magnitude - stake) >> STAKE_SHIFT).max(1))
+            stake.saturating_add((magnitude.abs_diff(stake) >> STAKE_SHIFT).max(1))
         } else if magnitude < stake {
-            stake - ((stake - magnitude) >> STAKE_SHIFT).max(1)
+            stake.saturating_sub((stake.abs_diff(magnitude) >> STAKE_SHIFT).max(1))
         } else {
             stake
         };
@@ -119,9 +124,9 @@ impl InteroceptiveState {
         self.benign_incongruity_q16 = benign;
         let current = self.mirth_q16;
         self.mirth_q16 = if benign > current {
-            current.saturating_add(((benign - current) >> MIRTH_SHIFT).max(1))
+            current.saturating_add((benign.abs_diff(current) >> MIRTH_SHIFT).max(1))
         } else if benign < current {
-            current - ((current - benign) >> MIRTH_SHIFT).max(1)
+            current.saturating_sub((current.abs_diff(benign) >> MIRTH_SHIFT).max(1))
         } else {
             current
         };

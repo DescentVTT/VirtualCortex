@@ -7,7 +7,7 @@
 //! variables it bound (undone on failure) and a work stack whose bound is the recursion bound;
 //! an exceeded bound is a result, never a panic, and the occurs check refuses `X = f(X)`.
 
-use crate::{Clause, LITERAL_NEGATED, LITERAL_NONE, atom};
+use crate::{Clause, LITERAL_NEGATED, atom};
 
 /// `kind`: an empty node.
 pub const TERM_EMPTY: u8 = 0;
@@ -74,17 +74,19 @@ impl TermNode {
             _reserved: [0; 24],
         };
         for (slot, &arg) in args.iter().enumerate() {
-            node.children[slot] = arg + 1;
+            // `u32::MAX` was refused above, so the encoding cannot wrap.
+            node.children[slot] = arg.wrapping_add(1);
         }
         Some(node)
     }
 
     /// The argument in `slot`, decoded, or `None` past the arity or for an empty slot.
     pub const fn child(&self, slot: usize) -> Option<u32> {
-        if slot >= self.arity as usize || slot >= MAX_ARITY || self.children[slot] == TERM_NONE {
+        if slot >= self.arity as usize || slot >= MAX_ARITY {
             None
         } else {
-            Some(self.children[slot] - 1)
+            // `TERM_NONE` is zero, the one value the decoding refuses.
+            self.children[slot].checked_sub(1)
         }
     }
 }
@@ -100,11 +102,8 @@ impl Binding {
 
     /// The bound term, decoded.
     pub const fn term(self) -> Option<u32> {
-        if self.0 == TERM_NONE {
-            None
-        } else {
-            Some(self.0 - 1)
-        }
+        // `TERM_NONE` is zero, the one value the decoding refuses.
+        self.0.checked_sub(1)
     }
 }
 
@@ -160,12 +159,14 @@ fn occurs(
     bindings: &[Binding],
     scratch: &mut [u32],
 ) -> Option<bool> {
-    let mut top = 0;
+    let mut top = 0usize;
     let first = deref(term, arena, bindings)?;
     *scratch.first_mut()? = first;
-    top += 1;
+    // `top` never exceeds `scratch.len()`: every push checks the room first, and the loop
+    // pops only while it is positive.
+    top = top.wrapping_add(1);
     while top > 0 {
-        top -= 1;
+        top = top.wrapping_sub(1);
         let current = scratch[top];
         let node = arena.get(current as usize)?;
         match node.kind {
@@ -181,7 +182,7 @@ fn occurs(
                         return None;
                     }
                     scratch[top] = child;
-                    top += 1;
+                    top = top.wrapping_add(1);
                 }
             }
             TERM_CONSTANT => {}
@@ -229,10 +230,12 @@ fn unify_inner(
     }
     stack[0] = a;
     stack[1] = b;
-    let mut top = 2;
+    let mut top = 2usize;
     while top > 0 {
-        top -= 2;
-        let (x, y) = (stack[top], stack[top + 1]);
+        // `top` moves by pairs, so a positive `top` is at least 2, and a pair's second entry
+        // is inside the stack: every push checked the room for both.
+        top = top.wrapping_sub(2);
+        let (x, y) = (stack[top], stack[top.wrapping_add(1)]);
         let (Some(x), Some(y)) = (deref(x, arena, bindings), deref(y, arena, bindings)) else {
             return UnifyResult::Malformed;
         };
@@ -260,9 +263,14 @@ fn unify_inner(
                 if *bound >= trail.len() {
                     return UnifyResult::BoundExceeded;
                 }
-                *slot = Binding(term + 1);
+                // `term` is an arena index; one the encoding cannot hold is malformed.
+                let Some(encoded) = term.checked_add(1) else {
+                    return UnifyResult::Malformed;
+                };
+                *slot = Binding(encoded);
                 trail[*bound] = var;
-                *bound += 1;
+                // Below `trail.len()` after the check above.
+                *bound = bound.wrapping_add(1);
             }
             (TERM_CONSTANT, TERM_CONSTANT) => {
                 if nx.functor != ny.functor {
@@ -277,12 +285,13 @@ fn unify_inner(
                     let (Some(cx), Some(cy)) = (nx.child(slot), ny.child(slot)) else {
                         return UnifyResult::Malformed;
                     };
-                    if top + 2 > stack.len() {
+                    // Past the end of the stack is the bound, so the room check saturates.
+                    if top.saturating_add(2) > stack.len() {
                         return UnifyResult::BoundExceeded;
                     }
                     stack[top] = cx;
-                    stack[top + 1] = cy;
-                    top += 2;
+                    stack[top.wrapping_add(1)] = cy;
+                    top = top.wrapping_add(2);
                 }
             }
             (TERM_CONSTANT, TERM_COMPOUND) | (TERM_COMPOUND, TERM_CONSTANT) => {
@@ -301,7 +310,8 @@ pub const fn literal_of_term(term: u32, negated: bool) -> Option<u32> {
     if term >= LITERAL_NEGATED - 1 {
         return None;
     }
-    let atom = term + 1;
+    // Below `LITERAL_NEGATED - 1` after the check above.
+    let atom = term.wrapping_add(1);
     Some(if negated {
         atom | LITERAL_NEGATED
     } else {
@@ -311,8 +321,8 @@ pub const fn literal_of_term(term: u32, negated: bool) -> Option<u32> {
 
 /// The term a first-order literal names, or `None` for `LITERAL_NONE`.
 pub const fn term_of_literal(literal: u32) -> Option<u32> {
-    let a = atom(literal);
-    if a == LITERAL_NONE { None } else { Some(a - 1) }
+    // `LITERAL_NONE` is zero, the one atom the decoding refuses.
+    atom(literal).checked_sub(1)
 }
 
 /// True when the literal is negated.
@@ -370,7 +380,7 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EMPTY_CLAUSE, SymbolicRuleNode};
+    use crate::{EMPTY_CLAUSE, LITERAL_NONE, SymbolicRuleNode};
 
     #[test]
     fn an_empty_slot_below_the_arity_is_none_and_three_argument_pairs_fit_six_slots() {
@@ -509,7 +519,8 @@ mod tests {
         fn push(&mut self, node: TermNode) -> u32 {
             let i = self.len;
             self.nodes[i] = node;
-            self.len += 1;
+            // Bounded by `N` through the index above.
+            self.len = self.len.wrapping_add(1);
             i as u32
         }
 

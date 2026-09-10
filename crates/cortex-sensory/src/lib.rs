@@ -2,6 +2,9 @@
 //! (whitepaper §5.2.3). Hot-plug is Specified (§6.3); the relay gate is `cortex-thalamus`.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C, align(8))]
@@ -36,7 +39,8 @@ mod tests {
         fn poll_batch(&mut self, output: &mut [SensoryEvent]) -> usize {
             let n = output.len().min(3);
             for (i, slot) in output.iter_mut().take(n).enumerate() {
-                self.produced += 1;
+                // A stub's counter: three events per poll, a handful of polls.
+                self.produced = self.produced.wrapping_add(1);
                 *slot = SensoryEvent {
                     timestamp_us: self.produced,
                     address: i as u16,

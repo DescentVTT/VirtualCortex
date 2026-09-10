@@ -9,6 +9,9 @@
 //! expression is Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// Opcodes.
 pub const OP_NOP: u8 = 0;
@@ -85,7 +88,7 @@ impl ArithmeticScratchpadSlot {
             OP_SUB => a.checked_sub(b).ok_or(ERR_OVERFLOW),
             OP_MUL => a.checked_mul(b).ok_or(ERR_OVERFLOW),
             OP_DIV => Self::divide(a, b, i128::checked_div),
-            OP_REM => Self::divide(a, b, |a, b| Some(a.wrapping_rem(b))),
+            OP_REM => Self::divide(a, b, |a, b| Some(a.checked_rem(b).unwrap_or(0))),
             OP_MUL_Q16 => a.checked_mul(b).map(|p| p >> 16).ok_or(ERR_OVERFLOW),
             OP_DIV_Q16 => match a.checked_mul(1 << 16) {
                 Some(scaled) => Self::divide(scaled, b, i128::checked_div),
@@ -109,7 +112,8 @@ impl ArithmeticScratchpadSlot {
 
     /// Division and remainder share a zero divisor as a failure; `i128::MIN / -1` fails the
     /// division (`checked_div` reports `None`) and not the remainder, which is exactly 0 and
-    /// fits, so `OP_REM` wraps after the zero check (ADR-0028).
+    /// fits, so `OP_REM` takes the checked remainder with 0 for that one case after the zero
+    /// check (ADR-0028).
     fn divide(a: i128, b: i128, op: fn(i128, i128) -> Option<i128>) -> Result<i128, u16> {
         if b == 0 {
             return Err(ERR_DIVIDE_BY_ZERO);
@@ -267,7 +271,7 @@ mod prop {
             OP_DIV if b == 0 => Err(ERR_DIVIDE_BY_ZERO),
             OP_DIV => a.checked_div(b).ok_or(ERR_OVERFLOW),
             OP_REM if b == 0 => Err(ERR_DIVIDE_BY_ZERO),
-            OP_REM => Ok(a.wrapping_rem(b)),
+            OP_REM => Ok(a.checked_rem(b).unwrap_or(0)),
             OP_MUL_Q16 => a.checked_mul(b).map(|p| p >> 16).ok_or(ERR_OVERFLOW),
             OP_DIV_Q16 => match a.checked_mul(1 << 16) {
                 Some(_) if b == 0 => Err(ERR_DIVIDE_BY_ZERO),

@@ -4,6 +4,9 @@
 //! competition are Specified.
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 
 /// 1.0 in Q16.16.
 pub const Q16_ONE: u32 = 0x0001_0000;
@@ -47,12 +50,12 @@ impl GlobalWorkspaceSlot {
     /// subcritical or supercritical tissue needs up to twice the evidence. The distance used is
     /// stored. Returns whether the slot ignited.
     pub fn step_ignition_at(&mut self, bottom_up_evidence: i32, sigma_q16: u32) -> bool {
-        let distance = (sigma_q16 as i64 - Q16_ONE as i64)
-            .unsigned_abs()
-            .min(Q16_ONE as u64);
-        self.criticality_distance_q16 = distance as u32;
-        let scaled = Self::IGNITION_THRESHOLD as i64
-            + ((Self::IGNITION_THRESHOLD as i64 * distance as i64) >> 16);
+        let distance = sigma_q16.abs_diff(Q16_ONE).min(Q16_ONE);
+        self.criticality_distance_q16 = distance;
+        // At most twice the threshold, formed in `i64` and clamped on the way back (§8.1).
+        let scaled = (Self::IGNITION_THRESHOLD as i64).saturating_add(
+            (Self::IGNITION_THRESHOLD as i64).saturating_mul(distance as i64) >> 16,
+        );
         self.ignite_at(bottom_up_evidence, scaled.min(i32::MAX as i64) as i32)
     }
 
@@ -82,7 +85,7 @@ impl GlobalWorkspaceSlot {
         } else if self.persistence_ticks > 0 {
             // Within the hold of an earlier crossing: the slot stays ignited and the window
             // counts down one tick per step.
-            self.persistence_ticks -= 1;
+            self.persistence_ticks = self.persistence_ticks.saturating_sub(1);
             self.is_ignited = 1;
         } else {
             self.is_ignited = 0;
