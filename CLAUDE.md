@@ -14,10 +14,12 @@ core-pinned workers. Thirty-two crates, one per subsystem, no dependencies betwe
 fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
 It is past the **state-model stage**: the records, their compile-time layout assertions, small
-update rules in twenty-five crates, synaptic fan-out with STDP, and the executor that runs them
+update rules in twenty-five crates, synaptic fan-out with three-factor STDP (an eligibility
+trace per synapse, consolidated by the modulator; ADR-0032), and the executor that runs them
 on a pool of workers (`runtime/cortex-runtime`, ADR-0023), the `.cortex` image writer and
-loader and the clock sweep (ADR-0024), and the policy amendment's trial in two forks of the image
-and its commit (ADR-0031) exist; the `mmap` path, the shared-memory mappings, core pinning, the
+loader and the clock sweep (ADR-0024), the policy amendment's trial in two forks of the image
+and its commit (ADR-0031), and an image that says what a tick is and at which tick it was
+written (ADR-0033) exist; the `mmap` path, the shared-memory mappings, core pinning, the
 tool broker and every subsystem's real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.

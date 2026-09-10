@@ -1,7 +1,15 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-10
 ---
+
+> **Executed 2026-09-10 in pull request #44.** Writes ADR-0032 (three-factor plasticity) and
+> ADR-0033 (the tick in the header); closes the tick-duration question of whitepaper §11.1;
+> image format 11; the determinism pin moved once, with its reason. Every deliverable landed as
+> written, and deliverable 5 grew: the exit test found that a loaded image's clock restarted at
+> zero, so the header also carries the tick at which the image was written and the loader
+> resumes it. The report is in the pull request and in `CHANGELOG.md`. The body below describes
+> the tree before execution and is not maintained; its relative links gained one `../`.
 
 # Brief 017 — Three-factor plasticity: an eligibility trace per synapse, consolidated by the modulator; the tick duration in the header
 
@@ -12,7 +20,7 @@ date: 2026-09-10
 ## Mission
 
 Replace the Specified row "Three-factor plasticity" of whitepaper §8.8 with an implemented
-integer rule: at a presynaptic spike, the STDP pairing amount of [ADR-0022](../docs/adr/0022-synapse-fan-out-and-stdp.md)
+integer rule: at a presynaptic spike, the STDP pairing amount of [ADR-0022](../../docs/adr/0022-synapse-fan-out-and-stdp.md)
 enters an **eligibility trace** per synapse instead of the weight, the trace decays with its own
 time constant, and a **modulator** derived from the dopamine signal of `cortex-neuromod` decides
 what fraction of the trace is **consolidated** into the weight. With the modulator at 1.0 the rule
@@ -22,9 +30,9 @@ later consolidates it (the distal-reward problem, Izhikevich 2007). The executor
 modulator: one `NeuromodulatorState` per engine, a reward input between ticks, a decay per tick,
 the modulation published to the workers before the fan-out phase, and the record persisted in
 the image. In the same format bump, the header carries the tick duration, closing the open
-question of §11.1 that [ADR-0013](../docs/adr/0013-timing-wheel-geometry.md) and
-[ADR-0024](../docs/adr/0024-cortex-image-and-clock-sweep.md) left to "the round that changes the
-header next".
+question of §11.1 that [ADR-0013](../../docs/adr/0013-timing-wheel-geometry.md) and
+[ADR-0024](../../docs/adr/0024-cortex-image-and-clock-sweep.md) reserved for "the round that changes
+the header next".
 
 ## Standing directives
 
@@ -33,7 +41,7 @@ header next".
 - No `f32`/`f64`, no heap types, no `unsafe` in a state crate; no dependency in a state crate
   (TC-2); plain `+ - * / %` is a build error everywhere (`clippy::arithmetic_side_effects`).
 - A rule is an integer rule with a boundary test and a test over the lattice of
-  `testkit/prop.rs`; the mutation gate on the changed lines ([ADR-0030](../docs/adr/0030-verification-governance.md))
+  `testkit/prop.rs`; the mutation gate on the changed lines ([ADR-0030](../../docs/adr/0030-verification-governance.md))
   must pass in CI; a survivor is a missing boundary test or an equivalent mutant removed by
   restructuring, never an `exclude_re` without a reason.
 - A change to a record bumps `CortexFileHeader::FORMAT_VERSION`, the connectome test that pins
@@ -98,14 +106,14 @@ Re-derived on 2026-09-10 against `main` at `400dbae`.
 
 ## Deliverables
 
-1. [ ] **The record.** `SynapseBlock` `[56..64)` becomes `eligibility_q1_15: [i16; 4]`, the
+1. [x] **The record.** `SynapseBlock` `[56..64)` becomes `eligibility_q1_15: [i16; 4]`, the
    eligibility trace per slot (Q1.15, signed, saturating). The apical mask moves into bits 28–31
    of the chain word at `[32..36)`, whose bits 0–27 keep the next block index + 1 (0 = end of
    chain); `link` refuses an index the 28 bits cannot hold, `unlink`, `set_synapse` and
    `clear_synapse` preserve the other field, `clear_synapse` zeroes the slot's trace, and
    `encode`/`decode` round-trip both. `FORMAT_VERSION` becomes 11 with the reason in its list; a
    version-10 image MUST NOT be read as version 11 (the mask at byte 56 would read as a trace).
-2. [ ] **The rule** (`cortex-core`, one ADR): `decay_eligibility(elapsed)` multiplies every trace
+2. [x] **The rule** (`cortex-core`, one ADR): `decay_eligibility(elapsed)` multiplies every trace
    by $(1 - 2^{-16})^{\text{elapsed}}$ (`stp_decay_factor_q16` with a new
    `ELIGIBILITY_TAU_SHIFT` of 16, about 655 ms at 10 µs), rounded to nearest, and by at least
    one LSB toward zero when `elapsed > 0`, so a trace reaches zero exactly; `step_stdp` adds the
@@ -118,11 +126,11 @@ Re-derived on 2026-09-10 against `main` at `400dbae`.
    pairing's two terms sum in the trace before the weight saturates: this is the one result that
    differs from ADR-0022, and only at the rail; the ADR states it, a test shows both values, and
    the pins move with that reason.
-3. [ ] **The modulator** (`cortex-neuromod`): `modulation(&self, baseline_q16) -> i32` =
+3. [x] **The modulator** (`cortex-neuromod`): `modulation(&self, baseline_q16) -> i32` =
    `clamp(baseline + dopamine_rpe, 0, 1.0)`; `DOPAMINE_TAU_SHIFT` (14, about 164 ms) as the
    recommended per-tick decay; `encode`/`decode` of the 16 bytes, little-endian, field by field.
    The crate's comment and §5.2.14 stop saying the rule is Specified.
-4. [ ] **The composition** (`cortex-runtime`, depends on `cortex-neuromod` by path): `Config::
+4. [x] **The composition** (`cortex-runtime`, depends on `cortex-neuromod` by path): `Config::
    modulation_baseline_q16` (default `MODULATION_ONE_Q16`, refused outside $[0, 1]$); the
    executor holds one `NeuromodulatorState`, exposes `modulator()` and `reward(rpe_q16)` between
    ticks (an input, like an injection; a run is still `(image, seed, trace)` plus the rewards the
@@ -131,13 +139,13 @@ Re-derived on 2026-09-10 against `main` at `400dbae`.
    after `step_stdp_all` and before `release_all`. The image gains section kind 42
    (`SECTION_MODULATOR`, one 64-byte record: the 16 bytes and 48 reserved zero bytes), written
    when the modulator is not at rest, refused when malformed (count, reserved bytes); a fork of
-   the trial ([ADR-0031](../docs/adr/0031-policy-amendment.md)) decodes it like everything else,
+   the trial ([ADR-0031](../../docs/adr/0031-policy-amendment.md)) decodes it like everything else,
    and the trial carries no rewards (Specified; say so).
-5. [ ] **The tick in the header** (one ADR): `cortex-core` gains `TICK_NS` (10 000); the header's
+5. [x] **The tick in the header** (one ADR): `cortex-core` gains `TICK_NS` (10 000); the header's
    `[60..64)` becomes `tick_ns: u32`, taken by `CortexFileHeader::new`, refused by `validate` when
    zero, and refused by the loader when it differs from `TICK_NS` (a new `ImageError` variant).
    §8.4's sentence and the §11.1 question close.
-6. [ ] **The exit test** (`runtime/cortex-runtime/tests/`): a two-unit network in which unit 0's
+6. [x] **The exit test** (`runtime/cortex-runtime/tests/`): a two-unit network in which unit 0's
    spike makes unit 1 fire, with the baseline at 0: the weight does not move while the trace
    accumulates; a reward of 1.0 delivered between ticks consolidates the pending trace at the
    next presynaptic spike; the same reward delivered before any pairing changes nothing; the
@@ -145,7 +153,7 @@ Re-derived on 2026-09-10 against `main` at `400dbae`.
    delivered at once (the trace decayed); the modulator is written to and read from the image;
    a reward is not consolidated twice. With the baseline at 1.0 and no reward, the differential
    pins are restated and hold on one and four workers.
-7. [ ] **Documents**: whitepaper §5.2.1 (the block's table, its API line and its rule paragraph),
+7. [x] **Documents**: whitepaper §5.2.1 (the block's table, its API line and its rule paragraph),
    §5.2.2 (the header row, the version-11 sentence, the section kind), §5.2.14 (API, status, the
    rule with an executable assertion), §8.4, §8.7 (the section list), §8.8 (the STDP and
    three-factor rows), §11.1 (the tick question), §9 (the two ADRs), Appendix A if a row is
@@ -159,7 +167,7 @@ Re-derived on 2026-09-10 against `main` at `400dbae`.
 - To apply the trace to the weight anywhere but at the presynaptic spike, in phase 2, by the
   worker that owns the block (no reverse index exists; no other phase may hold a `&mut` to a
   block).
-- To make the modulator amendable: a registry entry of [ADR-0031](../docs/adr/0031-policy-amendment.md)
+- To make the modulator amendable: a registry entry of [ADR-0031](../../docs/adr/0031-policy-amendment.md)
   changes what the engine costs, never what it does; the baseline is the caller's argument.
 - To add `#[allow]` for any lint, a dependency, a feature flag, or a nightly attribute.
 - To move a pin without the ADR's reason and the test that shows the boundary.

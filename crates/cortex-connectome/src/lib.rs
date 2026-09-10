@@ -78,6 +78,10 @@ pub const SECTION_TERM: u32 = 40;
 /// `PolicyAmendment` arena of `cortex-executive` (ADR-0031): the engine's amendments to its own
 /// policy, committed and rejected, so that the policy an image runs under is in the image.
 pub const SECTION_AMENDMENT: u32 = 41;
+/// The engine's `NeuromodulatorState` of `cortex-neuromod` (ADR-0032): one 64-byte record (the
+/// 16 bytes of the record and 48 reserved bytes that MUST be zero), written when the signals
+/// are not at rest, so that the modulation a run continues under is in the image.
+pub const SECTION_MODULATOR: u32 = 42;
 
 /// Why a header is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +94,8 @@ pub enum HeaderError {
     BadCrc,
     /// The reserved bytes are not zero.
     BadPadding,
+    /// The tick duration is zero: an image that does not say what a tick is (ADR-0033).
+    ZeroTick,
 }
 
 /// The first 64 bytes of every `.cortex` image (whitepaper §5.2.2).
@@ -102,10 +108,10 @@ pub struct CortexFileHeader {
     pub num_columns: u64,    // [16..24] Cortical hyper-column count
     pub num_neurons: u64,    // [24..32] DendriticSuperNeuron record count
     pub num_synapses: u64,   // [32..40] SynapseBlock record count (ADR-0024: blocks, not slots)
-    pub layers_offset: u64,  // [40..48] Byte offset of the laminar section; 0 for none
-    pub crc64: u64,          // [48..56] CRC-64/XZ of the 64 bytes with this field zero
-    pub section_count: u32,  // [56..60] Directory entries that follow the header (ADR-0024)
-    pub _padding: u32,       // [60..64] Reserved; MUST be zero
+    pub written_tick: u64, // [40..48] The executor's tick at which the image was written; the loader resumes its clock there, so every stamp keeps its meaning (ADR-0033)
+    pub crc64: u64,        // [48..56] CRC-64/XZ of the 64 bytes with this field zero
+    pub section_count: u32, // [56..60] Directory entries that follow the header (ADR-0024)
+    pub tick_ns: u32, // [60..64] The fine tick the *_ticks fields count, in nanoseconds; never zero (ADR-0033)
 }
 
 impl CortexFileHeader {
@@ -153,10 +159,27 @@ impl CortexFileHeader {
     ///   (ADR-0031), and a loader derives the sweep policy from the committed ones; a
     ///   version-9 image has no such section and no record moved, but a version-9 loader
     ///   would refuse the section, so the version moves.
-    pub const FORMAT_VERSION: u32 = 10;
+    /// - 11: `SynapseBlock` `[56..64)` became the eligibility trace per slot and the apical
+    ///   mask moved into bits 28–31 of the chain word at `[32..36)` (ADR-0032); the header's
+    ///   `[60..64)` became `tick_ns` and its `[40..48)` (`layers_offset`, never used: a section
+    ///   is found through the directory) became `written_tick` (ADR-0033); the modulator
+    ///   section (`SECTION_MODULATOR`, 42) holds the engine's `NeuromodulatorState`. A
+    ///   version-10 image's apical mask at byte 56 would read as a trace, so it MUST NOT be
+    ///   read as version 11.
+    pub const FORMAT_VERSION: u32 = 11;
 
-    /// A header for an image of these counts, sealed.
-    pub fn new(num_columns: u64, num_neurons: u64, num_synapses: u64, section_count: u32) -> Self {
+    /// A header for an image of these counts, this tick duration and this clock, sealed. The
+    /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
+    /// stores what it is told and refuses only zero. `written_tick` is the executor's tick at
+    /// the write, which the loader resumes.
+    pub fn new(
+        num_columns: u64,
+        num_neurons: u64,
+        num_synapses: u64,
+        section_count: u32,
+        tick_ns: u32,
+        written_tick: u64,
+    ) -> Self {
         let mut header = Self {
             magic: Self::MAGIC,
             version: Self::FORMAT_VERSION,
@@ -164,10 +187,10 @@ impl CortexFileHeader {
             num_columns,
             num_neurons,
             num_synapses,
-            layers_offset: 0,
+            written_tick,
             crc64: 0,
             section_count,
-            _padding: 0,
+            tick_ns,
         };
         header.crc64 = header.checksum();
         header
@@ -182,10 +205,10 @@ impl CortexFileHeader {
         out[16..24].copy_from_slice(&self.num_columns.to_le_bytes());
         out[24..32].copy_from_slice(&self.num_neurons.to_le_bytes());
         out[32..40].copy_from_slice(&self.num_synapses.to_le_bytes());
-        out[40..48].copy_from_slice(&self.layers_offset.to_le_bytes());
+        out[40..48].copy_from_slice(&self.written_tick.to_le_bytes());
         out[48..56].copy_from_slice(&self.crc64.to_le_bytes());
         out[56..60].copy_from_slice(&self.section_count.to_le_bytes());
-        out[60..64].copy_from_slice(&self._padding.to_le_bytes());
+        out[60..64].copy_from_slice(&self.tick_ns.to_le_bytes());
         out
     }
 
@@ -198,10 +221,10 @@ impl CortexFileHeader {
             num_columns: u64::from_le_bytes(bytes[16..24].try_into().unwrap_or([0; 8])),
             num_neurons: u64::from_le_bytes(bytes[24..32].try_into().unwrap_or([0; 8])),
             num_synapses: u64::from_le_bytes(bytes[32..40].try_into().unwrap_or([0; 8])),
-            layers_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap_or([0; 8])),
+            written_tick: u64::from_le_bytes(bytes[40..48].try_into().unwrap_or([0; 8])),
             crc64: u64::from_le_bytes(bytes[48..56].try_into().unwrap_or([0; 8])),
             section_count: u32::from_le_bytes(bytes[56..60].try_into().unwrap_or([0; 4])),
-            _padding: u32::from_le_bytes(bytes[60..64].try_into().unwrap_or([0; 4])),
+            tick_ns: u32::from_le_bytes(bytes[60..64].try_into().unwrap_or([0; 4])),
         }
     }
 
@@ -212,8 +235,10 @@ impl CortexFileHeader {
         crc64(&bytes)
     }
 
-    /// Magic, version, checksum and padding, in that order; the first failure is reported. A
-    /// header that fails MUST NOT be read further (§8.7).
+    /// Magic, version, checksum, padding and the tick, in that order; the first failure is
+    /// reported. A header that fails MUST NOT be read further (§8.7). Whether the tick is the
+    /// one the reader's rules assume is the reader's check (ADR-0033): this crate does not know
+    /// `cortex-core`'s constant.
     pub fn validate(&self) -> Result<(), HeaderError> {
         if self.magic != Self::MAGIC {
             return Err(HeaderError::BadMagic);
@@ -224,8 +249,11 @@ impl CortexFileHeader {
         if self.crc64 != self.checksum() {
             return Err(HeaderError::BadCrc);
         }
-        if self.reserved_flags != 0 || self._padding != 0 {
+        if self.reserved_flags != 0 {
             return Err(HeaderError::BadPadding);
+        }
+        if self.tick_ns == 0 {
+            return Err(HeaderError::ZeroTick);
         }
         Ok(())
     }
@@ -322,7 +350,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 10);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 11);
     }
 
     #[test]
@@ -340,21 +368,42 @@ mod tests {
 
     #[test]
     fn a_header_round_trips_and_validates() {
-        let h = CortexFileHeader::new(3, 1000, 4000, 3);
+        let h = CortexFileHeader::new(3, 1000, 4000, 3, 10_000, 1 << 40);
         assert_eq!(h.validate(), Ok(()));
         let bytes = h.encode();
         assert_eq!(&bytes[0..8], b"VCORTEX1");
+        assert_eq!(
+            &bytes[60..64],
+            &10_000u32.to_le_bytes(),
+            "the tick at [60..64)"
+        );
+        assert_eq!(
+            &bytes[40..48],
+            &(1u64 << 40).to_le_bytes(),
+            "the clock at [40..48)"
+        );
         assert_eq!(CortexFileHeader::decode(&bytes), h);
         assert_eq!(CortexFileHeader::decode(&bytes).validate(), Ok(()));
         assert_eq!(
-            (h.num_neurons, h.num_synapses, h.section_count),
-            (1000, 4000, 3)
+            (
+                h.num_neurons,
+                h.num_synapses,
+                h.section_count,
+                h.tick_ns,
+                h.written_tick
+            ),
+            (1000, 4000, 3, 10_000, 1 << 40)
+        );
+        assert_eq!(
+            CortexFileHeader::FORMAT_VERSION,
+            11,
+            "ADR-0032 and ADR-0033"
         );
     }
 
     #[test]
-    fn a_foreign_version_a_bad_crc_a_bad_magic_and_padding_are_refused_in_that_order() {
-        let good = CortexFileHeader::new(1, 1, 1, 0);
+    fn a_foreign_version_a_bad_crc_a_bad_magic_padding_and_a_zero_tick_are_refused_in_that_order() {
+        let good = CortexFileHeader::new(1, 1, 1, 0, 1, 0);
         let mut foreign = good;
         foreign.version = CortexFileHeader::FORMAT_VERSION + 1;
         foreign.crc64 = foreign.checksum();
@@ -377,14 +426,23 @@ mod tests {
         let mut magic = good;
         magic.magic[7] = b'2';
         assert_eq!(magic.validate(), Err(HeaderError::BadMagic));
-        let mut padded = good;
-        padded._padding = 1;
-        padded.crc64 = padded.checksum();
-        assert_eq!(padded.validate(), Err(HeaderError::BadPadding));
         let mut flags = good;
         flags.reserved_flags = 1;
         flags.crc64 = flags.checksum();
         assert_eq!(flags.validate(), Err(HeaderError::BadPadding));
+        let mut no_tick = CortexFileHeader::new(1, 1, 1, 0, 0, 0);
+        assert_eq!(
+            no_tick.validate(),
+            Err(HeaderError::ZeroTick),
+            "a sealed header with a zero tick is refused"
+        );
+        no_tick.reserved_flags = 1;
+        no_tick.crc64 = no_tick.checksum();
+        assert_eq!(
+            no_tick.validate(),
+            Err(HeaderError::BadPadding),
+            "the padding is reported before the tick"
+        );
     }
 
     #[test]
@@ -423,10 +481,11 @@ mod tests {
                 SECTION_LAMINAR,
                 SECTION_ROUTING,
                 SECTION_TERM,
-                SECTION_AMENDMENT
+                SECTION_AMENDMENT,
+                SECTION_MODULATOR
             ),
-            (1, 38, 39, 40, 41),
-            "the Specified kinds and the amendment arena (ADR-0031)"
+            (1, 38, 39, 40, 41, 42),
+            "the Specified kinds, the amendment arena (ADR-0031) and the modulator (ADR-0032)"
         );
     }
 }

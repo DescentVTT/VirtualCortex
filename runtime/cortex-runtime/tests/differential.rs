@@ -8,8 +8,8 @@
 
 use cortex_connectome::Crc64;
 use cortex_core::{
-    DendriticSuperNeuron, GateState, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, spike_message,
-    synaptic_efficacy_q16,
+    DendriticSuperNeuron, GateState, MODULATION_ONE_Q16, STP_MAX, STP_U, SynapseBlock,
+    THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
 use cortex_runtime::{Config, Executor};
 
@@ -282,7 +282,11 @@ fn a_delayed_synapse_arrives_delay_ticks_after_the_spike_and_a_zero_delay_one_th
 /// The pin for target T-1 (ADR-0030): the random network's arenas and spike train after
 /// 20 000 ticks on one worker hash to one value, and CI runs this on x86-64 and AArch64. A
 /// deliberate change to the dynamics moves the pin; the change that moves it says why.
-const PINNED_ARENA_HASH: u64 = 0x7603c27186e59994;
+/// Moved once, by ADR-0032 (from `0x7603c27186e59994`): the block's bytes changed (the apical
+/// mask into the chain word, the eligibility trace at `[56..64)`), and at a weight at the rail
+/// a pairing's two terms now sum in the trace before the weight saturates, where ADR-0022
+/// clipped the gain and kept the loss. The spike count did not move.
+const PINNED_ARENA_HASH: u64 = 0x1724f3486c1d674e;
 /// The spike count that goes with the hash: a moved hash with the same count is a change to
 /// the state, a moved count a change to the dynamics.
 const PINNED_SPIKE_COUNT: usize = 95;
@@ -302,6 +306,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             injector_capacity: 1024,
             trace_capacity: 1 << 16,
             amendments: 0,
+            modulation_baseline_q16: MODULATION_ONE_Q16,
         },
         wire_random,
         20_000,

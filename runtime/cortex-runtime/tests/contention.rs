@@ -6,6 +6,7 @@
 
 #![deny(clippy::arithmetic_side_effects)]
 
+use cortex_core::MODULATION_ONE_Q16;
 use cortex_runtime::{Config, Executor, InjectError};
 use std::thread;
 
@@ -25,6 +26,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         injector_capacity: 1 << 16,
         trace_capacity: total as usize,
         amendments: 0,
+        modulation_baseline_q16: MODULATION_ONE_Q16,
     })
     .expect("a valid configuration");
     let inject = exec.injector();

@@ -8,8 +8,8 @@
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_bench::Lcg;
 use cortex_core::{
-    DendriticSuperNeuron, MailboxNode, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, WorkerWheel,
-    synaptic_efficacy_q16,
+    DendriticSuperNeuron, MODULATION_ONE_Q16, MailboxNode, STP_MAX, STP_U, SynapseBlock,
+    THRESHOLD_BASE, WorkerWheel, synaptic_efficacy_q16,
 };
 use cortex_embodiment::{VocalFrame, VocalSynth};
 use cortex_runtime::{Config, Executor};
@@ -250,8 +250,9 @@ fn stp(c: &mut Criterion) {
 }
 
 /// R-1 step 6 (ADR-0022): one walk of a unit's chain of two full blocks (eight synapses;
-/// divide by 8), and one `step_stdp_all` on a block whose four targets last fired at
-/// pseudo-random ticks, the four window exponentiations included.
+/// divide by 8), and one `step_stdp_all` plus its consolidation at a modulation of 1.0
+/// (ADR-0032) on a block whose four targets last fired at pseudo-random ticks, the four
+/// window exponentiations and the trace decay included.
 fn synapse(c: &mut Criterion) {
     let mut group = c.benchmark_group("synapse");
     group.throughput(Throughput::Elements(8));
@@ -294,7 +295,8 @@ fn synapse(c: &mut Criterion) {
         b.iter(|| {
             now = now.wrapping_add(1 + (rng.next_u32() >> 20));
             let posts: [u32; 4] = core::array::from_fn(|_| now.wrapping_sub(rng.next_u32() >> 19));
-            black_box(block.step_stdp_all(black_box(now), posts))
+            black_box(block.step_stdp_all(black_box(now), posts));
+            black_box(block.consolidate_all(black_box(MODULATION_ONE_Q16)))
         });
     });
     group.finish();

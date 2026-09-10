@@ -10,10 +10,11 @@
 //!    ends the turn, and keeps the unit on the active set for the next tick while it is not at
 //!    rest. Only the turn holder references the unit, exclusively.
 //! 2. **Fan-out.** For each unit that fired in phase 1, the worker that ran it walks its chain:
-//!    per block, STDP against the targets' last spikes (settled, since every turn has ended),
-//!    the release under the unit's factors, then each synapse into the target's mailbox now
-//!    (delay 0) or into this worker's wheel (`synapse_token`). Blocks are referenced exclusively
-//!    by the worker that owns the spiking unit; units only shared.
+//!    per block, STDP against the targets' last spikes (settled, since every turn has ended)
+//!    into the eligibility traces, the traces consolidated into the weights under the tick's
+//!    modulation (ADR-0032), the release under the unit's factors, then each synapse into the
+//!    target's mailbox now (delay 0) or into this worker's wheel (`synapse_token`). Blocks are
+//!    referenced exclusively by the worker that owns the spiking unit; units only shared.
 //! 3. **Deliveries.** Each worker advances its wheel and pushes the due tokens' stored releases
 //!    into the targets' mailboxes as spike messages; worker 0 also drains the injector. Blocks
 //!    and units only shared. Units woken by a push are queued for the next tick, as is the
@@ -31,17 +32,20 @@ use crate::image::{ImageError, WriteAheadLog};
 use crate::injector::{self, Injector};
 use crate::pool::Pools;
 use cortex_core::{
-    CHAIN_END, DendriticSuperNeuron, FlatTimingWheel, NO_SPIKE_ON_RECORD, PlasticDelta,
-    SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, message_efficacy_q16, message_is_apical,
-    spike_message, synapse_token, token_block, token_slot,
+    CHAIN_END, DendriticSuperNeuron, FlatTimingWheel, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
+    PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, message_efficacy_q16,
+    message_is_apical, spike_message, synapse_token, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
     AMENDMENT_PROPOSED, PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS, PolicyAmendment, spec_of,
 };
+use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+};
 use std::thread::{self, JoinHandle};
 
 /// How the executor is sized. Every capacity is allocated once in [`Executor::new`].
@@ -69,6 +73,11 @@ pub struct Config {
     /// Room for policy amendments (ADR-0031) beyond those an image holds; 0 leaves the engine
     /// unable to propose one.
     pub amendments: usize,
+    /// The modulation of three-factor plasticity with the dopamine signal at rest (ADR-0032):
+    /// the fraction of each synapse's eligibility trace consolidated into the weight at a
+    /// presynaptic spike, Q16.16 in $[0, 1]$. At 1.0 (the default) the rule is ADR-0022's; a
+    /// lower baseline leaves the pairings pending for a reward to consolidate.
+    pub modulation_baseline_q16: i32,
 }
 
 impl Default for Config {
@@ -83,6 +92,7 @@ impl Default for Config {
             injector_capacity: 64,
             trace_capacity: 0,
             amendments: 0,
+            modulation_baseline_q16: MODULATION_ONE_Q16,
         }
     }
 }
@@ -172,6 +182,8 @@ pub enum ConfigError {
     TooManyUnits,
     /// More blocks than a synapse token can name (`MAX_TOKEN_BLOCK + 1`; finding F-23).
     TooManyBlocks,
+    /// `modulation_baseline_q16` is outside $[0, 1]$ (ADR-0032).
+    ModulationOutOfRange,
 }
 
 /// Why an injection is refused.
@@ -228,6 +240,9 @@ struct Shared {
     injector: Injector,
     delivered: Box<[AtomicU64]>,
     now: AtomicU32,
+    /// The modulation this tick's fan-out consolidates with (ADR-0032): stored by the
+    /// coordinator before the tick's first barrier, read by every worker after it.
+    modulation: AtomicI32,
     stop: AtomicBool,
 }
 
@@ -310,6 +325,9 @@ pub struct Executor<const CAP: usize> {
     /// `Config::amendments` plus what an image held: the arena's size, which `Vec::capacity`
     /// only bounds from below.
     amendment_capacity: usize,
+    /// The engine's modulator record (ADR-0032): one for the engine until macro-columns exist.
+    modulator: NeuromodulatorState,
+    modulation_baseline_q16: i32,
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -331,6 +349,9 @@ impl<const CAP: usize> Executor<CAP> {
         // The loader's bound, one function unit-tested at its edge (finding F-23).
         if crate::image::too_many_blocks(config.blocks as u64) {
             return Err(ConfigError::TooManyBlocks);
+        }
+        if !(0..=MODULATION_ONE_Q16).contains(&config.modulation_baseline_q16) {
+            return Err(ConfigError::ModulationOutOfRange);
         }
         let workers = config.workers;
         let deque_capacity = if config.deque_capacity == 0 {
@@ -358,6 +379,7 @@ impl<const CAP: usize> Executor<CAP> {
             injector: Injector::new(config.injector_capacity),
             delivered: (0..workers).map(|_| AtomicU64::new(0)).collect(),
             now: AtomicU32::new(0),
+            modulation: AtomicI32::new(config.modulation_baseline_q16),
             stop: AtomicBool::new(false),
         });
         // Saturates for a pool that would not fit the address space; `Pools::new` refused that
@@ -410,7 +432,40 @@ impl<const CAP: usize> Executor<CAP> {
             policy: Policy::default(),
             amendments: Vec::with_capacity(config.amendments),
             amendment_capacity: config.amendments,
+            modulator: NeuromodulatorState::new(),
+            modulation_baseline_q16: config.modulation_baseline_q16,
         })
+    }
+
+    /// The engine's modulator record (ADR-0032): one for the engine until macro-columns exist,
+    /// read between ticks.
+    pub fn modulator(&self) -> &NeuromodulatorState {
+        &self.modulator
+    }
+
+    /// The modulation with the dopamine signal at rest, from the configuration (ADR-0032).
+    pub fn modulation_baseline_q16(&self) -> i32 {
+        self.modulation_baseline_q16
+    }
+
+    /// A reward-prediction error into the dopamine signal, between ticks (ADR-0032): an input,
+    /// like an injection, so a run that replays its rewards at the same ticks is the same run.
+    /// The next tick's fan-out consolidates under the raised modulation; the signal then decays
+    /// by `DOPAMINE_TAU_SHIFT` per tick. Returns the signal.
+    pub fn reward(&mut self, reward_prediction_error_q16: i32) -> i32 {
+        self.modulator.reward(reward_prediction_error_q16)
+    }
+
+    /// The loader's: the modulator an image holds.
+    pub(crate) fn set_modulator(&mut self, modulator: NeuromodulatorState) {
+        self.modulator = modulator;
+    }
+
+    /// The loader's: the clock resumes at the tick the image was written (ADR-0033), between
+    /// ticks, before anything reads a stamp against it.
+    pub(crate) fn resume_clock(&mut self, tick: u64) {
+        self.tick = tick;
+        self.shared.now.store(tick as u32, Ordering::Relaxed);
     }
 
     /// Worker threads, including the caller's.
@@ -763,6 +818,14 @@ impl<const CAP: usize> Executor<CAP> {
     pub fn tick(&mut self) {
         let now = self.tick as u32;
         self.shared.now.store(now, Ordering::Relaxed);
+        // The modulation this tick's fan-out consolidates with, from the signal as it stands;
+        // then the signal decays by one tick (ADR-0032). Both before the barrier that starts
+        // the tick, so every worker reads the same value.
+        self.shared.modulation.store(
+            self.modulator.modulation(self.modulation_baseline_q16),
+            Ordering::Relaxed,
+        );
+        self.modulator.decay_dopamine(DOPAMINE_TAU_SHIFT);
         self.shared.barrier.wait();
         self.worker0.phase_turns(&self.shared, now);
         self.shared.barrier.wait();
@@ -967,6 +1030,7 @@ impl<const CAP: usize> Worker<CAP> {
     // ---------------------------------------------------------------- phase 2: fan-out
 
     fn phase_fan_out(&mut self, shared: &Shared, now: u32) {
+        let modulation = shared.modulation.load(Ordering::Relaxed);
         for k in 0..self.spiked.len() {
             let (unit, release_u, release_r) = self.spiked[k];
             // SAFETY (phase 2): every turn ended at the barrier, so no `&mut` to any unit
@@ -995,6 +1059,7 @@ impl<const CAP: usize> Worker<CAP> {
                         .map_or(NO_SPIKE_ON_RECORD, |t| t.last_soma_spike_tick)
                 });
                 block.step_stdp_all(now, posts);
+                block.consolidate_all(modulation);
                 let released = block.release_all(release_u, release_r);
                 for (slot, &efficacy) in released.iter().enumerate() {
                     let Some(target) = block.target(slot) else {
@@ -1014,7 +1079,7 @@ impl<const CAP: usize> Worker<CAP> {
                         self.in_flight = self.in_flight.saturating_add(1);
                     }
                 }
-                next = block.next_block_idx;
+                next = block.next_encoded();
             }
         }
         self.spiked.clear();

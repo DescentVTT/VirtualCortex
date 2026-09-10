@@ -126,13 +126,14 @@ impl SynapseBlock {
         for (dst, d) in out[24..32].chunks_exact_mut(2).zip(&self.delays_ticks) {
             dst.copy_from_slice(&d.to_le_bytes());
         }
-        out[32..36].copy_from_slice(&self.next_block_idx.to_le_bytes());
+        out[32..36].copy_from_slice(&self.chain.to_le_bytes());
         out[36..40].copy_from_slice(&self.last_spike_tick.to_le_bytes());
         for (dst, r) in out[40..56].chunks_exact_mut(4).zip(&self.last_release_q16) {
             dst.copy_from_slice(&r.to_le_bytes());
         }
-        out[56] = self.apical_mask;
-        out[57..64].copy_from_slice(&self._reserved);
+        for (dst, e) in out[56..64].chunks_exact_mut(2).zip(&self.eligibility_q1_15) {
+            dst.copy_from_slice(&e.to_le_bytes());
+        }
         out
     }
 
@@ -163,10 +164,15 @@ impl SynapseBlock {
         {
             *dst = u32_le(src) as i32;
         }
-        b.next_block_idx = u32_le(&bytes[32..36]);
+        for (dst, src) in b
+            .eligibility_q1_15
+            .iter_mut()
+            .zip(bytes[56..64].chunks_exact(2))
+        {
+            *dst = u16_le(src) as i16;
+        }
+        b.chain = u32_le(&bytes[32..36]);
         b.last_spike_tick = u32_le(&bytes[36..40]);
-        b.apical_mask = bytes[56];
-        b._reserved.copy_from_slice(&bytes[57..64]);
         b
     }
 }
@@ -273,9 +279,19 @@ mod tests {
         assert!(b.link(77));
         b.stamp_presynaptic(0xABCD);
         assert_eq!(b.release(0, 255, 255), -65_025);
+        b.eligibility_q1_15 = [-2, 0, 0, 0x0102];
         let bytes = b.encode();
         assert_eq!(&bytes[0..4], &6u32.to_le_bytes(), "target 5 is stored as 6");
-        assert_eq!(bytes[56], 0b0001);
+        assert_eq!(
+            &bytes[32..36],
+            &(78u32 | 1 << 28).to_le_bytes(),
+            "the chain word: block 77 as 78, slot 0's apical bit at bit 28"
+        );
+        assert_eq!(
+            &bytes[56..64],
+            &[0xFE, 0xFF, 0, 0, 0, 0, 0x02, 0x01],
+            "the traces at [56..64), little-endian"
+        );
         assert_eq!(SynapseBlock::decode(&bytes), b);
         assert_eq!(SynapseBlock::decode(&[0; 64]), SynapseBlock::new());
     }

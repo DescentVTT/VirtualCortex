@@ -4,21 +4,25 @@
 //! Layout: the 64-byte header, `section_count` directory entries of 64 bytes, then the sections,
 //! each starting on a 64-byte boundary and sealed by a CRC-64/XZ in its entry. The loader reads
 //! the whole file into memory and decodes every record into the arenas (a copy; `mmap` is
-//! Specified); it fails closed on a foreign version, a bad checksum, a truncated file, a
-//! malformed directory, a record that is not at rest, a dangling index or a delay the wheel
-//! cannot hold. An image is written at a quiescent point: every mailbox empty, no token in
-//! flight; a scheduled unit with an empty mailbox is written idle and woken again on load.
+//! Specified); it fails closed on a foreign version, a tick duration that is not this build's
+//! (ADR-0033), a bad checksum, a truncated file, a malformed directory, a record that is not
+//! at rest, a dangling index or a delay the wheel cannot hold. An image is written at a
+//! quiescent point: every mailbox empty, no token in flight; a scheduled unit with an empty
+//! mailbox is written idle and woken again on load; the executor's clock is written with it
+//! and resumed by the loader, so the stamps keep their meaning (ADR-0033). The engine's
+//! modulator (ADR-0032) is a section of its own, written when it is not at rest.
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_connectome::{
-    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_NEURON, SECTION_PLASTIC_DELTA,
-    SECTION_SYNAPSE, SectionEntry, crc64,
+    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_MODULATOR, SECTION_NEURON,
+    SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
-    DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock,
+    DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, TICK_NS,
     WorkerWheel,
 };
 use cortex_executive::PolicyAmendment;
+use cortex_neuromod::NeuromodulatorState;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
@@ -74,6 +78,10 @@ pub enum ImageError {
     NoTrace,
     /// An injection into a fork was refused.
     Injection(InjectError),
+    /// The header's tick duration is not the one every `*_ticks` field of this build counts
+    /// (`cortex_core::TICK_NS`; ADR-0033): the image's delays and stamps would mean other
+    /// times.
+    TickMismatch(u32),
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -299,6 +307,13 @@ impl Image {
             }
             sections.push((SECTION_AMENDMENT, 64, amendment_bytes));
         }
+        let modulator = exec.modulator();
+        if !modulator.is_at_rest() {
+            // One 64-byte record: the 16 bytes of the record, then 48 reserved bytes.
+            let mut modulator_bytes = vec![0u8; 64];
+            modulator_bytes[0..16].copy_from_slice(&modulator.encode());
+            sections.push((SECTION_MODULATOR, 64, modulator_bytes));
+        }
         // The offsets of an image held in memory: each fits, and saturating says so by name.
         let directory_len = (sections.len() as u64).saturating_mul(64);
         let mut offset = directory_len.saturating_add(64);
@@ -318,6 +333,8 @@ impl Image {
             units.len() as u64,
             blocks.len() as u64,
             sections.len() as u32,
+            TICK_NS,
+            exec.ticks(),
         );
         let mut out = Vec::with_capacity(offset as usize);
         out.extend_from_slice(&header.encode());
@@ -359,6 +376,9 @@ impl Image {
             .ok_or(ImageError::Truncated)?;
         let header = CortexFileHeader::decode(header_bytes);
         header.validate()?;
+        if header.tick_ns != TICK_NS {
+            return Err(ImageError::TickMismatch(header.tick_ns));
+        }
         // The entries follow the header, 64 bytes each: the next chunk, not an offset. The
         // directory cannot hold more entries than the file has chunks after the header,
         // whatever a sealed header says; checked before the count sizes an allocation, and
@@ -375,7 +395,7 @@ impl Image {
                 .ok_or(ImageError::Truncated)?;
             let entry = SectionEntry::decode(entry_bytes);
             let expected_size = match entry.kind {
-                SECTION_NEURON | SECTION_SYNAPSE | SECTION_AMENDMENT => 64,
+                SECTION_NEURON | SECTION_SYNAPSE | SECTION_AMENDMENT | SECTION_MODULATOR => 64,
                 SECTION_PLASTIC_DELTA => 16,
                 other => return Err(ImageError::Directory(other)),
             };
@@ -395,6 +415,7 @@ impl Image {
         let synapse = find(SECTION_SYNAPSE).ok_or(ImageError::MissingSection(SECTION_SYNAPSE))?;
         let delta = find(SECTION_PLASTIC_DELTA);
         let amendment = find(SECTION_AMENDMENT);
+        let modulator = find(SECTION_MODULATOR);
         if neuron.record_count() != header.num_neurons
             || synapse.record_count() != header.num_synapses
         {
@@ -439,12 +460,6 @@ impl Image {
                     return Err(ImageError::DanglingIndex {
                         block: i as u32,
                         slot: 4,
-                    });
-                }
-                if block._reserved != [0; 7] {
-                    return Err(ImageError::ReservedNotZero {
-                        section: SECTION_SYNAPSE,
-                        index: i as u32,
                     });
                 }
                 arena[i] = block;
@@ -505,6 +520,26 @@ impl Image {
                 }
             }
         }
+        if let Some(section) = modulator {
+            // One record, the engine's: the 16 bytes of the record, then 48 reserved bytes.
+            if section.record_count() != 1 {
+                return Err(ImageError::Directory(SECTION_MODULATOR));
+            }
+            let record = section_of(bytes, &section)?;
+            if record[16..64].iter().any(|&b| b != 0) {
+                return Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0,
+                });
+            }
+            exec.set_modulator(NeuromodulatorState::decode(
+                record[0..16].try_into().unwrap_or(&[0; 16]),
+            ));
+        }
+        // The clock resumes where the image was written, so every stamp in it (a unit's last
+        // spike, a block's, the intervals the plasticity rules and the sweep read from them)
+        // keeps its meaning (ADR-0033).
+        exec.resume_clock(header.written_tick);
         exec.wake_now(&wake);
         Ok(exec)
     }
