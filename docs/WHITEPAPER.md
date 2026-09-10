@@ -173,16 +173,16 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-telemetry` | `LfpSamplePacket` | 64 B | yes | yes | yes | — |
 | `cortex-thalamus` | `ThalamicRelayNode` | 64 B | yes | yes | yes | `relay` gate (tonic / burst / closed) |
 | `cortex-linguistic` | `LinguisticFrameSlot` | 64 B | yes | yes | yes | `bind_role`, `realisation_order`, `advance_prosody` (recurrent cell) |
-| `cortex-tools` | `ToolInvocationFrame` | 64 B | yes | yes | yes | frame state machine |
-| `cortex-attention` | `FovealAttentionFocus` | 64 B | yes | yes | yes | saccade state machine |
+| `cortex-tools` | `ToolInvocationFrame` | 64 B | yes | yes | yes | frame state machine, `is_known_action`, `new_call` |
+| `cortex-attention` | `FovealAttentionFocus` | 64 B | yes | yes | yes | saccade state machine, `document_target` |
 | `cortex-affect` | `InteroceptiveState` | 64 B | yes | yes | yes | `integrate` |
 | `cortex-autonomic` | `AutonomicVitalsState` | 64 B | yes | yes | yes | `sample` limit check |
 | `cortex-spatial` | `SpatialGridCoordinate` | 64 B | yes | yes | yes | `integrate`, `fix` |
 | `cortex-curiosity` | `CuriosityExplorationVector` | 64 B | yes | yes | yes | `visit` |
 | `cortex-social` | `SocialPerspectiveNode` | 64 B | yes | yes | yes | `resonate`, `update_trust` |
 | `cortex-ethics` | `EthicalEvaluationGate` | 64 B | yes | yes | yes | `evaluate` (veto) |
-| `cortex-knowledge` | `SemanticOntologyNode` | 64 B | yes | yes | yes | `consolidate`, `affords` |
-| `cortex-reasoning` | `SymbolicRuleNode` | 64 B | yes | yes | yes | `evaluate` (truth table) |
+| `cortex-knowledge` | `SemanticOntologyNode` | 64 B | yes | yes | yes | `consolidate`, `affords`, `certify` |
+| `cortex-reasoning` | `SymbolicRuleNode` | 64 B | yes | yes | yes | `evaluate` (truth table), `resolve`, `apply_resolution` |
 | `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B | yes | yes | yes | `execute` (eight opcodes, 128-bit) |
 | `cortex-imagination` | `MentalCanvasFrame` | 64 B | yes | yes | yes | `step`, `has_diverged` |
 
@@ -333,6 +333,8 @@ flowchart LR
 | Fabric | bidirectional | `FabricPacketHeader`, 64 B, over RDMA verbs or CXL shared memory | `cortex-fabric` | Implemented (header) · Specified (transport) |
 | Tool broker | bidirectional | `ToolInvocationFrame`, 64 B, through a ring read by a separate broker process that holds the credentials and the allow-list (§8.10); every frame passes the veto gate of `cortex-ethics` first | `cortex-tools` | Implemented (frame state machine, gate rule) · Specified (broker, ring mapping) |
 | Platform vitals | in | Voltage, temperature and power samples from the platform's sensors into `AutonomicVitalsState::sample` | `cortex-autonomic` | Implemented (limit check) · Specified (sensor driver, shedding policy) |
+| Formal prover co-processor | bidirectional | A `ToolInvocationFrame` with `TOOL_CATEGORY_FORMAL_PROVER` (0x0004) and `ACTION_VERIFY_LEAN4` (0x0001) or `ACTION_SOLVE_SMT_Z3` (0x0002); the conjecture is named by `param_hash`, the certificate hash returns in the payload (§6.10) | `cortex-tools` | Implemented (constants, frame) · Specified (the broker and its provers; which prover it runs is its configuration) |
+| Document engine | bidirectional | A `ToolInvocationFrame` with `TOOL_CATEGORY_DOC_ENGINE` (0x0005) and `ACTION_PARSE_STRUCTURE`, `ACTION_EXTRACT_ENTITIES` or `ACTION_SEARCH_CROSS_REF`; foveal queries from `cortex-attention`, triples into `cortex-knowledge` (§6.11) | `cortex-tools` | Implemented (constants, frame) · Specified (the broker, its parsers and its index) |
 
 ---
 
@@ -346,7 +348,7 @@ The founding design note fixed five axioms. Every later subsystem is built on th
 | :--- | :--- | :--- | :--- |
 | A1 | **Virtual existence.** A neural unit always exists logically; it occupies memory only when a spike addresses it. | Units are addressed by a 64-bit packed identifier; cold units are evicted and re-hydrated lazily. | `id` field; eviction (Specified, §8.6) |
 | A2 | **State and compute are decoupled.** Records are passive data; workers are stateless, core-pinned threads. | Resource use scales with instantaneous activity, not with total capacity. | Executor (Specified, §6.1) |
-| A3 | **Turn-based single-writer invariant.** At most one worker touches a record in any tick, enforced by a compare-and-swap gate. | No mutex, no deadlock, no data race on membrane dynamics. | `gate_state: AtomicU8`; mailbox pointer with ABA tag (§8.5) |
+| A3 | **Turn-based single-writer invariant.** At most one worker touches a record in any tick, enforced by a compare-and-swap gate. | No mutex, no deadlock, no data race on membrane dynamics. | `gate_state: AtomicU8`; mailbox head as index + 1, no tag (§8.5, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)) |
 | A4 | **Discrete axonal delay.** Time is ticks; delay is an index into a ring, never a kernel timer. | $O(1)$ scheduling; deterministic ordering. | `FlatTimingWheel` (§5.2.1, §8.4) |
 | A5 | **Metabolic tiering.** A background sweep evicts long-quiet tissue to local storage and keeps hot circuits in cache-friendly arenas. | Memory bounded by activity; persistence falls out of the same mechanism. | Clock sweep and `.cortex` image (Specified, §8.6, §8.7) |
 
@@ -1004,8 +1006,8 @@ Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly
 | :--- | :--- |
 | Responsibility | The frame through which the engine acts on a digital environment, and its state machine. The engine writes a pending frame after the veto gate (§5.2.28); a broker process outside the engine's seccomp filter (§8.10) claims it, performs the action under its own allow-list and the frame's `authorization_level`, and writes the result back in place. |
 | Source | `crates/cortex-tools/src/lib.rs` |
-| Public API | `ToolInvocationFrame::{start, complete, fail, deny, is_terminal, payload}`; constants `STATUS_PENDING` (0), `STATUS_RUNNING` (1), `STATUS_COMPLETED` (2), `STATUS_FAILED` (3), `STATUS_DENIED` (4), `PAYLOAD_BYTES` (32) |
-| Status | Layout: Implemented · State machine: Implemented · Broker and ring mapping: Specified (§6.8, §8.10) |
+| Public API | `ToolInvocationFrame::{new_call, start, complete, fail, deny, is_terminal, payload}`, `is_known_action(category, opcode)`; statuses `STATUS_PENDING` (0), `STATUS_RUNNING` (1), `STATUS_COMPLETED` (2), `STATUS_FAILED` (3), `STATUS_DENIED` (4); `PAYLOAD_BYTES` (32); categories `TOOL_CATEGORY_FORMAL_PROVER` (0x0004: `ACTION_VERIFY_LEAN4` 0x0001, `ACTION_SOLVE_SMT_Z3` 0x0002) and `TOOL_CATEGORY_DOC_ENGINE` (0x0005: `ACTION_PARSE_STRUCTURE` 0x0001, `ACTION_EXTRACT_ENTITIES` 0x0002, `ACTION_SEARCH_CROSS_REF` 0x0003); categories 0x0001 to 0x0003 are reserved |
+| Status | Layout: Implemented · State machine, the two named categories and the engine-side allow-list mirror: Implemented · Broker, ring mapping, the prover and document-engine services: Specified (§6.8, §6.10, §6.11, §8.10) |
 
 **`ToolInvocationFrame`** — 64 B, align 64.
 
@@ -1024,6 +1026,8 @@ Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly
 Implemented rule: pending → running (`start`) → completed (`complete`, at most 32 bytes, refused otherwise with the frame unchanged) or failed (`fail`); pending → denied (`deny`). A terminal frame refuses every transition; `deny` and `fail` clear the payload length. Five tests.
 
 <!-- @assert-count target="crates/cortex-tools" symbol="ToolInvocationFrame" min="1" word="true" reason="ADR-0016" -->
+<!-- @assert-count target="crates/cortex-tools" symbol="TOOL_CATEGORY_FORMAL_PROVER" min="1" word="true" reason="§6.10: the brokered prover is named" -->
+<!-- @assert-count target="crates/cortex-tools" symbol="TOOL_CATEGORY_DOC_ENGINE" min="1" word="true" reason="§6.11: the document engine is named" -->
 
 #### 5.2.22 `cortex-attention` — foveal focus and saccades
 
@@ -1031,7 +1035,7 @@ Implemented rule: pending → running (`start`) → completed (`complete`, at mo
 | :--- | :--- |
 | Responsibility | Where the sensory field is sampled at full resolution, and the saccades that move it: a flight of a fixed number of ticks during which the field is not sampled, then fixation. `cortex-salience` supplies the peak that selects a target; `cortex-thalamus` gains are what foveal gating modulates. |
 | Source | `crates/cortex-attention/src/lib.rs` |
-| Public API | `FovealAttentionFocus::{begin_saccade, tick, is_in_flight}`; constant `MODE_SMOOTH_PURSUIT` (bit 0) |
+| Public API | `FovealAttentionFocus::{begin_saccade, tick, is_in_flight, document_target}`; constants `MODE_SMOOTH_PURSUIT` (bit 0), `MODE_DOCUMENT_FOVEATION` (bit 1) |
 | Status | Layout: Implemented · Saccade state machine: Implemented · Salience-map selection and smooth pursuit: Specified (§8.8) |
 
 **`FovealAttentionFocus`** — 64 B, align 64. One per attention field.
@@ -1043,7 +1047,7 @@ Implemented rule: pending → running (`start`) → completed (`complete`, at mo
 | `[8..12)` | `fixation_duration_ticks` | `u32` | ticks | Ticks since the last landing. |
 | `[12..16)` | `saccade_remaining_ticks` | `u32` | ticks | Flight ticks left; 0 while fixating. |
 | `[16..20)` | `salience_peak_magnitude_q16` | `u32` | Q16.16 | Salience that selected the target. |
-| `[20..22)` | `attention_mode_flags` | `u16` | bitfield | Bit 0 smooth pursuit (Specified). |
+| `[20..22)` | `attention_mode_flags` | `u16` | bitfield | Bit 0 smooth pursuit (Specified) · bit 1 document foveation: the field is a text, the target is (section index, span offset) in the integer parts of the coordinates, and a landing is a foveal query to the document engine (§6.11). |
 | `[22..23)` | `saccade_in_flight` | `u8` | 0 / 1 | In flight. |
 | `[23..64)` | `_reserved` | `[u8; 41]` | — | Reserved; MUST be zero. |
 
@@ -1217,7 +1221,7 @@ Implemented rule: `evaluate(forbidden_mask, required_authorization)` applies the
 | :--- | :--- |
 | Responsibility | What survives consolidation: one concept per record with its category, affordances, typical mass and hazard, in a tree by `parent_category_id`. `cortex-symbolic` keeps transient bindings and `cortex-hippocampus` the episodes they came from. |
 | Source | `crates/cortex-knowledge/src/lib.rs` |
-| Public API | `SemanticOntologyNode::{affords, is_root, consolidate}` |
+| Public API | `SemanticOntologyNode::{affords, is_root, consolidate, certify, is_certified_theorem}`; constant `AFFORDANCE_CERTIFIED_THEOREM` (bit 31) |
 | Status | Layout: Implemented · Consolidation and affordance rules: Implemented · The replay that drives consolidation (§6.6): Specified |
 
 **`SemanticOntologyNode`** — 64 B, align 64.
@@ -1226,44 +1230,48 @@ Implemented rule: `evaluate(forbidden_mask, required_authorization)` applies the
 | :--- | :--- | :--- | :--- | :--- |
 | `[0..4)` | `concept_node_id` | `u32` | index | This concept. |
 | `[4..8)` | `parent_category_id` | `u32` | index | Its category; the root names itself. |
-| `[8..12)` | `property_vector_hash` | `u32` | hash | Consolidated property hypervector (Specified). |
-| `[12..16)` | `affordance_action_mask` | `u32` | bitmask | Actions afforded. |
+| `[8..12)` | `property_vector_hash` | `u32` | hash | Consolidated property hypervector (Specified); for a certified theorem, the hash of its statement. |
+| `[12..16)` | `affordance_action_mask` | `u32` | bitmask | Actions afforded; bit 31 marks a certified theorem (§6.10). |
 | `[16..20)` | `typical_mass_grams_q16` | `u32` | Q16.16 | Typical mass in grams. |
 | `[20..24)` | `consolidation_count` | `u32` | count | Replays that reinforced the node; saturating. |
 | `[24..25)` | `safety_hazard_level` | `u8` | level | 0 none; higher is more hazardous. |
 | `[25..64)` | `_reserved` | `[u8; 39]` | — | Reserved; MUST be zero. |
 
-Implemented rule: `affords(bits)` requires every requested bit; `consolidate(bits, hazard)` accumulates affordances, keeps the maximum hazard and counts the replay. Four tests.
+Implemented rule: `affords(bits)` requires every requested bit; `consolidate(bits, hazard)` accumulates affordances, keeps the maximum hazard and counts the replay; `certify(statement_hash)` stores the statement and consolidates with the theorem bit, leaving the hazard alone. Five tests.
 
 <!-- @assert-count target="crates/cortex-knowledge" symbol="SemanticOntologyNode" min="1" word="true" reason="ADR-0016" -->
+<!-- @assert-count target="crates/cortex-knowledge" symbol="certify" min="1" word="true" reason="§6.10: certified theorems are consolidated" -->
 
-#### 5.2.30 `cortex-reasoning` — symbolic rules
+#### 5.2.30 `cortex-reasoning` — rules and resolution
 
 | | |
 | :--- | :--- |
-| Responsibility | One rule per record: a condition predicate, a consequence, and the operator that combines the condition with the parent rule's satisfaction; chains of nodes are proofs. `cortex-symbolic` grounds the predicates; `cortex-executive` searches goals. |
+| Responsibility | One rule per record: a condition literal, a consequence literal, and the operator that combines the condition with the parent rule's satisfaction; and Robinson's resolution on clauses of up to two literals, whose chains are refutation proofs. `cortex-symbolic` grounds the literals; `cortex-executive` searches goals; a term arena for first-order unification is an open question (§11.1). |
 | Source | `crates/cortex-reasoning/src/lib.rs` |
-| Public API | `SymbolicRuleNode::evaluate(&mut self, condition_holds, parent_satisfied) -> bool`; constants `OP_AND` (0), `OP_OR` (1), `OP_NOT` (2), `OP_IMPLIES` (3), `STATE_UNKNOWN` (0), `STATE_SATISFIED` (1), `STATE_VIOLATED` (2) |
-| Status | Layout: Implemented · Truth-table rule: Implemented · Chain search and constraint propagation: Specified (§8.8) |
+| Public API | `SymbolicRuleNode::{evaluate, clause, apply_resolution, is_refutation}`; `atom`, `negate`, `complementary`, `is_tautology`, `resolve(a, b) -> Option<Clause>`; `Clause = (u32, u32)`, `EMPTY_CLAUSE`, `LITERAL_NONE` (0), `LITERAL_NEGATED` (bit 31); operators `OP_AND` (0), `OP_OR` (1), `OP_NOT` (2), `OP_IMPLIES` (3), `OP_EQUIV` (4), `OP_RESOLVE` (5); states `STATE_UNKNOWN` (0), `STATE_SATISFIED` (1), `STATE_VIOLATED` (2) |
+| Status | Layout: Implemented · Truth tables and the propositional resolution step: Implemented · First-order unification, clause search and constraint propagation: Specified (§6.10, §8.8) |
 
-**`SymbolicRuleNode`** — 64 B, align 64.
+**`SymbolicRuleNode`** — 64 B, align 64. A literal is a `u32` atom with bit 31 as its sign; atom 0 is "no literal", so a unit clause is `(lit, 0)` and the empty clause `(0, 0)`.
 
 | Offset | Field | Type | Format | Meaning |
 | :--- | :--- | :--- | :--- | :--- |
 | `[0..4)` | `rule_id` | `u32` | index | This rule. |
-| `[4..8)` | `condition_predicate_id` | `u32` | index | Predicate whose truth is the condition. |
-| `[8..12)` | `consequence_action_id` | `u32` | index | What follows when satisfied. |
-| `[12..16)` | `parent_rule_idx` | `u32` | index | The rule this one chains from. |
-| `[16..20)` | `support_count` | `u32` | count | Evaluations that satisfied the rule; saturating. |
-| `[20..24)` | `confidence_q16` | `u32` | Q16.16 | Confidence in the rule (Specified). |
-| `[24..25)` | `logical_operator` | `u8` | enum | `OP_*`. |
-| `[25..26)` | `proof_depth` | `u8` | depth | Distance from the axiom. |
-| `[26..27)` | `satisfaction_state` | `u8` | enum | `STATE_*`. |
-| `[27..64)` | `_reserved` | `[u8; 37]` | — | Reserved; MUST be zero. |
+| `[4..8)` | `condition_predicate_id` | `u32` | literal | The condition, or a clause's first literal. |
+| `[8..12)` | `consequence_action_id` | `u32` | literal | The consequence, or a clause's second literal. |
+| `[12..16)` | `parent_rule_idx` | `u32` | index | The rule this one chains from; a resolvent's first parent. |
+| `[16..20)` | `resolved_with_idx` | `u32` | index | A resolvent's second parent. |
+| `[20..24)` | `support_count` | `u32` | count | Evaluations that satisfied the rule; saturating. |
+| `[24..28)` | `confidence_q16` | `u32` | Q16.16 | Confidence in the rule (Specified). |
+| `[28..29)` | `logical_operator` | `u8` | enum | `OP_*`. |
+| `[29..30)` | `proof_depth` | `u8` | depth | Distance from the axiom; saturating. |
+| `[30..31)` | `satisfaction_state` | `u8` | enum | `STATE_*`. |
+| `[31..64)` | `_reserved` | `[u8; 33]` | — | Reserved; MUST be zero. |
 
-Implemented rule: AND, OR, NOT (parent ignored) and IMPLIES (`!parent || condition`) over the two inputs; a satisfied evaluation counts support; an unknown operator leaves the state unknown and is never satisfied. Four tests, one of them the full truth table.
+Implemented rules. `evaluate(condition, parent)`: AND, OR, NOT (parent ignored), IMPLIES (`!parent || condition`), EQUIV (`condition == parent`); a RESOLVE node reads as the disjunction of its literals; a satisfied evaluation counts support; an unknown operator leaves the state unknown. `resolve(a, b)` cancels the first complementary pair across two clauses, in a fixed order, and returns the two remaining literals: two unit clauses resolve to the empty clause, and a resolvent may be a tautology, which `is_tautology` reports. `apply_resolution(parent, parent_idx, other, other_idx, depth)` makes the node the resolvent, one step deeper, satisfied, with both parents recorded; an invalid step marks it violated and leaves its literals. `is_refutation` holds for a resolvent that is the empty clause: the premises, which include the negated conjecture, are contradictory. Nine tests, including the full truth table and a two-step refutation of modus ponens.
 
 <!-- @assert-count target="crates/cortex-reasoning" symbol="SymbolicRuleNode" min="1" word="true" reason="ADR-0016" -->
+<!-- @assert-count target="crates/cortex-reasoning" symbol="OP_RESOLVE" min="1" word="true" reason="§6.10: resolution is a rule-node operator" -->
+<!-- @assert-count target="crates/cortex-reasoning" symbol="fn resolve" min="1" reason="§6.10: the propositional resolution step is implemented" -->
 
 #### 5.2.31 `cortex-arithmetic` — exact scratchpad
 
@@ -1411,6 +1419,30 @@ The frame's transitions (steps 3 to 6) are Implemented (§5.2.21) and the gate r
 
 An ignited workspace slot (§5.2.8) names a hypervector. **Layer 1:** `cortex-symbolic` unbinds it by role, $\text{Concept} \approx S \otimes \text{Role}^{-1}$, into a subject, an action, an object and an affect with a confidence each (Specified). **Layer 2:** the runtime binds them into a `LinguisticFrameSlot` for the template the speech act calls for (`bind_role`, Implemented, §5.2.20) and seals it when complete; `realisation_order` yields the roles in the template's order. **Layer 3:** for each emitted role the recurrent cell advances, $s \leftarrow \alpha s + k v$, with $k$ and $v$ drawn from the concept and the affect (Specified), and its energy band selects the particle class for the frame's particle slot (`advance_prosody`, Implemented); a lexicon maps each concept, the politeness level and the marker to Chinese or English tokens (Specified) and writes the token into `surface_token_id`. No external language model is part of the system: every step is a deterministic integer operation on records in this workspace, in constant memory. An utterance has no period, since language is not a control loop, and no token leaves the engine except through the telemetry stream (§8.11) or a tool frame (R-8) that passed the veto gate.
 
+### 6.10 Scenario R-10: theorem proving through the broker (Specified)
+
+1. `cortex-curiosity` finds an axiomatic gap: a target whose prediction error stays high after its novelty is exhausted (`visit`, Implemented) names a conjecture.
+2. `cortex-imagination` searches for a proof sketch in a sandboxed rollout (`step`, `has_diverged`, Implemented; the search Specified).
+3. `cortex-reasoning` checks each propositional step by resolution (`apply_resolution`, Implemented): the negated conjecture and the premises are clauses, and a chain that reaches the empty clause (`is_refutation`) proves it. First-order term unification is Specified and needs a term arena (§11.1).
+4. A conjecture that survives is dispatched as a `ToolInvocationFrame` (`new_call` with `TOOL_CATEGORY_FORMAL_PROVER` and `ACTION_VERIFY_LEAN4` or `ACTION_SOLVE_SMT_Z3`, Implemented) after the veto gate (R-8); the broker runs the prover under its own policy and returns the certificate hash in the payload, or `STATUS_FAILED`.
+5. `cortex-knowledge` consolidates the certified theorem (`certify`, Implemented). A failed check consolidates nothing.
+
+No step trusts a prover's prose: the engine stores a certificate hash, and the theorem is a node it can name. Under §2.1, Z3 (production use since 2008) passes the admissibility test; Lean 4's stable releases date from 2023, so whether the broker runs it is the broker's decision, outside the engine.
+
+### 6.11 Scenario R-11: saccadic document reading and auditing (Specified)
+
+For any structured, long-form text (a clinical trial, a protocol RFC or a code tree, a maintenance manual, a financial report, a contract, a treatise):
+
+1. `cortex-executive` holds the investigation goal as a plan tree (§5.2.10; Specified).
+2. `cortex-attention` in document mode (`MODE_DOCUMENT_FOVEATION`, Implemented) targets a (section, span); each landing is a foveal query to the document engine: `ACTION_PARSE_STRUCTURE` for the hierarchy and cross-references, `ACTION_EXTRACT_ENTITIES` for tables, units, metrics and claims as triples $\text{Subject} \otimes \text{Relation} \otimes \text{Value}$, `ACTION_SEARCH_CROSS_REF` for premise–conclusion contradictions and citation validity. The raw text never enters the engine: only 64-byte frames and the triples they name do, so unbounded text and `#![no_std]` memory never meet.
+3. `cortex-knowledge` consolidates the triples under the goal's category (`consolidate`, Implemented).
+4. `cortex-arithmetic` re-computes every figure the text asserts, exactly (`execute`, Implemented): ratios, tolerances, margins, p-values as fractions; an overflow or a division by zero is a flag, not a rounding.
+5. `cortex-reasoning` audits the claims for contradiction and circularity (resolution over the extracted clauses, Implemented for two-literal clauses; the search Specified).
+6. `cortex-salience` tags a finding that crosses a risk threshold (`evaluate_threat`, Implemented as the threshold rule).
+7. `cortex-linguistic` realises the evaluation as frames (R-9), grounded in the triples and the recomputed figures.
+
+The exit test is milestone M8's: a document whose stated figure does not follow from its own table, and whose conclusion contradicts a premise, audited end to end through the broker.
+
 ---
 
 ## 7. Deployment view
@@ -1548,6 +1580,8 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | Propositional deduction | `cortex-reasoning` · `logical_operator`, `satisfaction_state` | AND, OR, NOT, IMPLIES over the condition and the parent rule; support counts satisfactions. | Partial: truth table Implemented; chain search Specified |
 | Exact mental arithmetic (intraparietal sulcus) | `cortex-arithmetic` · `opcode`, `error_flags` | Checked 128-bit and Q16.16 arithmetic with explicit overflow and divide-by-zero flags. | Partial: opcodes Implemented; expression sequencing Specified |
 | Default-mode rehearsal | `cortex-imagination` · `divergence_uncertainty_q16`, `motor_release_flag` | Saturating accumulation of valence and uncertainty along a rollout that can never release motor output. | Partial: step and divergence Implemented; generative model Specified |
+| Automated theorem proving: resolution and brokered certification (Robinson) | `cortex-reasoning` · `apply_resolution`, `is_refutation`; `cortex-tools` · `TOOL_CATEGORY_FORMAL_PROVER`; `cortex-knowledge` · `certify` | Refutation by resolution over two-literal clauses to the empty clause; a surviving conjecture certified by a brokered prover and consolidated as a theorem (R-10). | Partial: the resolution step, the opcodes and certification Implemented; unification, search and the broker Specified |
+| Saccadic document reading and auditing | `cortex-attention` · `MODE_DOCUMENT_FOVEATION`; `cortex-tools` · `TOOL_CATEGORY_DOC_ENGINE`; `cortex-knowledge`, `cortex-arithmetic`, `cortex-reasoning`, `cortex-salience`, `cortex-linguistic` | Foveal queries to a document engine return triples; figures are recomputed exactly; claims are audited by resolution; risks are tagged; the evaluation is realised as frames (R-11). | Partial: each crate's rule Implemented; the engine, its index and the pipeline Specified |
 
 The reference equations, for implementers:
 
@@ -1586,7 +1620,7 @@ Inside the tick loop there are no recoverable errors: a violated invariant is a 
 
 - No `unsafe` code exists in the workspace today; introducing it requires an ADR (TC-9). The first legitimate uses will be SIMD intrinsics and `mmap`; each MUST be wrapped in a safe API with a documented invariant and a test.
 - After initialisation, worker threads install a seccomp-BPF allow-list that excludes `execve`, `fork`, `socket`, `connect` and `bind` (Specified). Adversarial spike trains cannot escalate to process creation or network access.
-- **Tool broker.** The engine acts on a digital environment only through `ToolInvocationFrame`s (§5.2.21) in a shared-memory ring read by a separate broker process. The broker holds the only credentials, enforces its own opcode allow-list and the `authorization_level` the veto gate wrote into the frame, and runs under its own seccomp profile; the worker filter above is unchanged, so spike trains still cannot escalate inside the engine process. The broker's policy is configuration and is reviewed like an ADR (Specified; [ADR-0016](adr/0016-thirty-two-crate-architecture.md)).
+- **Tool broker.** The engine acts on a digital environment only through `ToolInvocationFrame`s (§5.2.21) in a shared-memory ring read by a separate broker process. The broker holds the only credentials, enforces its own opcode allow-list and the `authorization_level` the veto gate wrote into the frame, and runs under its own seccomp profile; the worker filter above is unchanged, so spike trains still cannot escalate inside the engine process. The broker's policy is configuration and is reviewed like an ADR (Specified; [ADR-0016](adr/0016-thirty-two-crate-architecture.md)). Two brokered services are named today, a formal prover (`TOOL_CATEGORY_FORMAL_PROVER`, §6.10) and a document engine (`TOOL_CATEGORY_DOC_ENGINE`, §6.11); `is_known_action` mirrors the allow-list on the engine's side, so that a frame the engine cannot name is never written.
 - Images and fabric packets carry checksums and MUST be rejected on mismatch; the engine never trusts a byte it did not verify.
 - Vulnerability reporting: [SECURITY.md](../SECURITY.md).
 
@@ -1703,6 +1737,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 - [ ] The cerebellar delay line holds seven steps (7 ms at the embodiment epoch). A plant whose delay exceeds that needs a per-microzone delay arena addressed by index; nothing needs it yet, and adopting it would be an ADR.
 - [x] Should the engine have a second, non-motor egress frame: a discrete command to a digital environment? [ADR-0015](adr/0015-embodiment-frame-abi.md) reserved a second ring for a new ADR.
       **Resolved (2026-09-10):** yes, `ToolInvocationFrame` (§5.2.21) through a broker outside the engine's seccomp filter (§8.10), every frame passing the veto gate first; [ADR-0016](adr/0016-thirty-two-crate-architecture.md).
+- [ ] First-order term unification (R-10) needs a term arena: terms, variables and bindings that no 64-byte rule node can hold. A second record in `cortex-reasoning` is an ADR under the test of [ADR-0016](adr/0016-thirty-two-crate-architecture.md); until then resolution is propositional and unification is Specified.
 - [ ] The fourteen crates of ADR-0016 carry one rule each. Which of them need a second record (a relay table for `cortex-thalamus`, an expression of slots for `cortex-arithmetic`, a rollout of frames for `cortex-imagination`) is decided when milestone M8 reaches each; a second record in a crate is an ADR.
 
 ---
@@ -1832,7 +1867,7 @@ Milestones follow the founding design note; each ends with a test that proves it
 | M5 Subsystem dynamics | Replace placeholder functions with the dynamics of §8.8, one crate at a time, each with tests. | Per-crate property tests. | Not started; briefs 010 (short-term plasticity) and 011 (membrane integration) open `cortex-core`. |
 | M6 Embodiment | Payload rings, torque decoder, watchdog contract, MuJoCo stub. | T-4, T-5. | Frame ABI and ring protocol done (brief 008); mapping, loop, decoder, watchdog integration and the stub open. |
 | M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1 not started. |
-| M8 Digital embodiment and language | Tool ring and broker; hypervector unbinding and the lexicon behind `cortex-linguistic`; the veto gate in the dispatch path; the relay table behind `cortex-thalamus`; second records for the crates of [ADR-0016](adr/0016-thirty-two-crate-architecture.md) that need one. | A tool call round trip through the broker under the veto gate, denied and permitted; a frame realised as tokens in both lexicon languages. | Frames and rules done (ADR-0016); broker, rings, stub and dispatch path open. |
+| M8 Digital embodiment, language and the brokered pipelines | Tool ring and broker; hypervector unbinding and the lexicon behind `cortex-linguistic`; the veto gate in the dispatch path; the relay table behind `cortex-thalamus`; the prover and document-engine services (R-10, R-11); a term arena for unification; second records for the crates of [ADR-0016](adr/0016-thirty-two-crate-architecture.md) that need one. | A tool call round trip through the broker under the veto gate, denied and permitted; a frame realised as tokens in both lexicon languages; a two-step refutation certified through the broker and consolidated; a document audit that re-computes a stated figure and flags a contradiction. | Frames, rules, the two categories' opcodes, the resolution step and certification done (ADR-0016); broker, rings, stub, dispatch path and unification open. |
 
 Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.
 
