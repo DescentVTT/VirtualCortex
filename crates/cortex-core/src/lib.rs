@@ -7,4 +7,7 @@ pub mod dispatch;
 pub mod dynamics;
 
 pub use dispatch::wheel::{FlatTimingWheel, ScheduleError, WorkerWheel};
-pub use dynamics::{DendriticSuperNeuron, SynapseBlock, synaptic_efficacy_q16};
+pub use dynamics::{
+    DendriticSuperNeuron, GateState, MAILBOX_EMPTY, MAILBOX_NIL, MailboxDrain, MailboxNode,
+    SynapseBlock, synaptic_efficacy_q16,
+};

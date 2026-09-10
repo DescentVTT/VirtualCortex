@@ -22,3 +22,4 @@ To add a decision: copy the most recent file, take the next number, set `status:
 | [ADR-0014](0014-benchmark-harness.md) | Benchmark harness: criterion 0.7, confined to a bench-only crate | accepted |
 | [ADR-0015](0015-embodiment-frame-abi.md) | Embodiment frame ABI and single-producer single-consumer ring protocol | accepted |
 | [ADR-0016](0016-thirty-two-crate-architecture.md) | Thirty-two state crates: fourteen subsystems admitted, three boundaries moved, and the admission test for the next one (amends ADR-0005) | proposed |
+| [ADR-0017](0017-mailbox-and-gate-protocol.md) | Mailbox and gate protocol: an index stack drained whole, no ABA tag, four sequentially consistent operations (amends ADR-0006) | proposed |

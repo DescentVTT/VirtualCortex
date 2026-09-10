@@ -12,8 +12,10 @@
 | `efficacy/single`, `efficacy/batch_1024` | `synaptic_efficacy_q16` | §8.1, ADR-0012 |
 | `gating/compute_gating` | `BasalGangliaChannelState::compute_gating` | §5.2.5 |
 | `ignition/step_ignition_x64` | 64 sub-threshold `step_ignition` calls on a fresh slot (divide by 64) | §5.2.8 |
+| `mailbox/push_drain_x16` | sixteen `mailbox_push` calls into one unit then one `mailbox_drain` walking them (divide by 16) | R-1 steps 2–3, ADR-0017 |
+| `gate/schedule_begin_end` | `try_schedule`, `begin_turn`, `end_turn` on an idle unit with an empty mailbox | R-1 step 3, ADR-0017 |
 
-Inputs come from `cortex_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: mailbox push and gate (R-1 steps 2–3), which do not exist; T-8 throughput, which has no subject yet.
+Inputs come from `cortex_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: integration (R-1 step 5), which does not exist; T-8 throughput, which has no subject yet.
 
 ## Running
 

@@ -71,7 +71,7 @@ The engine therefore rests on five axioms (§4): neural units exist virtually an
 
 **What exists today (Implemented).** Thirty-two `#![no_std]` crates with no external dependencies and no `unsafe` code. Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: thirty 64-byte cache-line records, one 16-byte neuromodulator record and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Twenty-two crates carry small, deterministic, integer-only update rules with boundary tests (the Logic column of §1.6), and every crate carries a test module. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
 
-**What is designed but not built (Specified).** The worker executor, mailboxes, the delivery path from the timing wheel into mailboxes, the `.cortex` memory-mapped image loader, the shared-memory mappings of the embodiment and tool rings and the broker process behind the tool ring, the lexicon that realises linguistic frames as tokens, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the rules noted in §5.
+**What is designed but not built (Specified).** The worker executor, the delivery path from the timing wheel into mailboxes, the `.cortex` memory-mapped image loader, the shared-memory mappings of the embodiment and tool rings and the broker process behind the tool ring, the lexicon that realises linguistic frames as tokens, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the rules noted in §5.
 
 **What must be proved (Hypothesis).** That multi-compartment "super-neuron" records can condense the behaviour of point-neuron populations at a ratio that makes whole-brain-scale behaviour reachable within a single 64 GB server. The capacity model in Appendix A is parameterised on that ratio and is a plan, not a measurement.
 
@@ -153,7 +153,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 
 | Crate | Primary public type(s) | Size | `no_std` | Layout | Test | Logic |
 | :--- | :--- | ---: | :---: | :---: | :---: | :---: |
-| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 4.2 MB | yes | yes | yes | wheel schedule and drain, efficacy |
+| `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `MailboxNode`, `FlatTimingWheel` (`WorkerWheel`), `synaptic_efficacy_q16` | 64 B, 64 B, 8 B, 4.2 MB | yes | yes | yes | turn gate and mailbox, wheel schedule and drain, efficacy |
 | `cortex-connectome` | `CortexFileHeader` | 64 B | yes | yes | yes | — |
 | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B | yes | yes | yes | — |
 | `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame` | 64 B each | yes | yes | yes | SPSC ring protocol |
@@ -446,16 +446,16 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | :--- | :--- |
 | Responsibility | The two arena record types every other subsystem indexes into, and the timing wheel that orders delayed delivery. |
 | Source | `crates/cortex-core/src/dynamics/neuron.rs`, `crates/cortex-core/src/dispatch/wheel.rs` |
-| Public API | `DendriticSuperNeuron`, `SynapseBlock`, `FlatTimingWheel<CAP>::{new, schedule, advance, tick, horizon_ticks}` and `Default`, `WorkerWheel` (= `FlatTimingWheel<2048>`), `ScheduleError`, `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8) -> i32` (`const fn`, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)) |
-| Status | Layout: Implemented · Membrane dynamics: Specified (§8.8) · Wheel schedule and drain: Implemented ([ADR-0013](adr/0013-timing-wheel-geometry.md)) · Mailbox delivery: Specified (§6.1) |
+| Public API | `DendriticSuperNeuron::{new, gate, try_schedule, begin_turn, end_turn, mailbox_is_empty, mailbox_push, mailbox_drain}` and `Default`, `GateState`, `MailboxNode::new` and `Default`, `MailboxDrain`, `MAILBOX_EMPTY`, `MAILBOX_NIL` ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); `SynapseBlock`; `FlatTimingWheel<CAP>::{new, schedule, advance, tick, horizon_ticks}` and `Default`, `WorkerWheel` (= `FlatTimingWheel<2048>`), `ScheduleError`; `synaptic_efficacy_q16(w_q1_15, u_q0_8, r_q0_8) -> i32` (`const fn`, [ADR-0012](adr/0012-synaptic-weight-q1-15.md)) |
+| Status | Layout: Implemented · Turn gate and mailbox: Implemented ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)) · Wheel schedule and drain: Implemented ([ADR-0013](adr/0013-timing-wheel-geometry.md)) · Membrane dynamics: Specified (§8.8; brief 011) · Short-term plasticity update: Specified (brief 010) · Delivery from the wheel into mailboxes and the executor: Specified (§6.1) |
 
 **`DendriticSuperNeuron`** — 64 B, align 64. A two-compartment pyramidal model (basal and apical dendrites plus soma) with short-term-plasticity state and the virtual-actor control fields.
 
 | Offset | Field | Type | Format | Meaning |
 | :--- | :--- | :--- | :--- | :--- |
 | `[0..8)` | `id` | `u64` | packed id | Global unit identifier (region · column · unit). |
-| `[8..16)` | `mailbox_head_ptr` | `AtomicU64` | index | Head of the lock-free MPSC mailbox (A3). |
-| `[16..24)` | `mailbox_tag` | `u64` | counter | ABA tag paired with the mailbox head. |
+| `[8..16)` | `mailbox_head_ptr` | `AtomicU64` | index + 1 | Head of the lock-free MPSC mailbox: node index + 1, `MAILBOX_EMPTY` (0) when empty, so an image at rest is empty (A3, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)). An index despite the suffix; rule L-3 reserves `_ptr` for it. |
+| `[16..24)` | `mailbox_reserved` | `u64` | — | Reserved; MUST be zero. The ABA tag of ADR-0006 lived here until [ADR-0017](adr/0017-mailbox-and-gate-protocol.md) showed that a stack pushed and drained whole needs none (finding F-19); image format version 4. |
 | `[24..28)` | `v_soma` | `i32` | Q16.16 | Somatic membrane potential. |
 | `[28..32)` | `v_basal` | `i32` | Q16.16 | Basal (feed-forward) compartment potential. |
 | `[32..36)` | `v_apical` | `i32` | Q16.16 | Apical (context / feedback) compartment potential. |
@@ -464,15 +464,24 @@ Each entry gives the crate's responsibility, its public API as it exists in the 
 | `[42..44)` | `refractory_ticks` | `u16` | ticks | Absolute refractory countdown. |
 | `[44..48)` | `last_soma_spike_tick` | `u32` | tick | Time of the last somatic spike (STDP, BAC coincidence). |
 | `[48..52)` | `synapse_slab_idx` | `u32` | index | First `SynapseBlock` of this unit's fan-out. |
-| `[52..54)` | `plastic_delta_head` | `u16` | index | Head of the far-memory plastic-delta list (Specified). |
+| `[52..54)` | `plastic_delta_head` | `u16` | index | Head of the far-memory plastic-delta list (Specified; finding F-20: sixteen bits cannot address the table Appendix A sizes). |
 | `[54..56)` | `spatial_voxel_morton` | `u16` | Morton code | Spatial voxel for structural growth (Specified). |
-| `[56..57)` | `gate_state` | `AtomicU8` | enum | Turn gate: idle / scheduled / running (A3). |
+| `[56..57)` | `gate_state` | `AtomicU8` | enum | Turn gate, a `GateState` byte: idle 0 · scheduled 1 · running 2 (A3, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)). |
 | `[57..58)` | `flags` | `u8` | bitfield | Burst mode, inhibitory, and similar. |
 | `[58..59)` | `stp_r_ves` | `u8` | Q0.8 | Tsodyks–Markram available resource $R$. |
 | `[59..60)` | `stp_u_rel` | `u8` | Q0.8 | Tsodyks–Markram utilisation $u$. |
 | `[60..64)` | `_reserved` | `[u8; 4]` | — | Reserved; MUST be zero. |
 
-Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it is a *control record* under the rules of §8.2 and derives `Debug` only.
+Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it is a *control record* under the rules of §8.2 and derives `Debug` only. `new(id)` and `Default` give a unit at rest: idle gate, empty mailbox, every other field zero.
+
+**Turn gate and mailbox** ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md), Implemented). A pusher writes its message into a node of a per-worker arena and pushes the node with `mailbox_push` (one compare-exchange on the head; the payload and link are stored before it and ordered by it), then calls `try_schedule` (idle → scheduled) and, when that succeeds, enqueues the unit on a worker deque (the deque is the executor's, Specified). The worker that claims the unit calls `begin_turn` (scheduled → running, acquire), takes the whole mailbox with `mailbox_drain` (one swap; the walk yields the most recently pushed node first), integrates, and calls `end_turn`, which stores idle and then re-reads the head: a message that arrived while the unit was running is caught there and the worker re-schedules the unit itself. The head compare-exchange, the schedule compare-exchange, the idle store and the head load are sequentially consistent; everything else is acquire/release or relaxed (§8.5). No tag is needed: no participant dereferences a node it will later compare against a recycled one. A push refuses a node outside the arena; a drain terminates on a corrupt or cyclic list. Six unit tests and one integration test (four producer threads, one consumer, 100 000 messages delivered exactly once with none left behind) hold this; two benchmarks measure it.
+
+**`MailboxNode`** — 8 B, align 4; in an arena the caller owns. Both fields are atomics so that a producer can write them through a shared reference; it is not a §5.2 arena record and is not part of the `.cortex` image.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..4)` | `next` | `AtomicU32` | index + 1 | The next node of the list; `MAILBOX_NIL` (0) at the end. |
+| `[4..8)` | `payload` | `AtomicU32` | token | The message: an opaque token (a `SynapseBlock` offset or a unit index). |
 
 **`SynapseBlock`** — 64 B, align 64. Four outgoing synapses per block; blocks chain by index.
 
@@ -494,6 +503,9 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 <!-- @assert-count target="crates/cortex-core" symbol="ScheduleError" min="1" word="true" reason="ADR-0013: scheduling failures are explicit" -->
 <!-- @assert-count target="crates/cortex-core" symbol="weights_q1_15" min="1" word="true" reason="ADR-0012: the weight field names its format" -->
 <!-- @assert-count target="crates/cortex-core" symbol="synaptic_efficacy_q16" min="1" word="true" reason="ADR-0012: the widening arithmetic is implemented and tested" -->
+<!-- @assert-count target="crates/cortex-core" symbol="try_schedule" min="1" word="true" reason="ADR-0017: the turn gate is implemented" -->
+<!-- @assert-count target="crates/cortex-core" symbol="MailboxNode" min="1" word="true" reason="ADR-0017: the mailbox is implemented" -->
+<!-- @assert-absence target="crates/cortex-core" symbol="mailbox_tag" word="true" reason="ADR-0017: the ABA tag is gone (finding F-19)" -->
 
 #### 5.2.2 `cortex-connectome` — image format and anatomical priors
 
@@ -501,7 +513,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (3) |
+| Public API | `CortexFileHeader`, `CortexFileHeader::MAGIC` (`VCORTEX1`), `CortexFileHeader::FORMAT_VERSION` (4) |
 | Status | Header layout: Implemented · Sections, CRC, loader: Specified (§8.7) · Atlas-derived priors: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -509,7 +521,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
 | `[0..8)` | `magic` | `[u8; 8]` | ASCII `VCORTEX1` (big-endian `0x5643_4F52_5445_5831`). |
-| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 3. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6). |
+| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 4. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)). |
 | `[12..16)` | `reserved_flags` | `u32` | Feature flags; MUST be zero in version 1. |
 | `[16..24)` | `num_columns` | `u64` | Cortical hyper-column count. |
 | `[24..32)` | `num_neurons` | `u64` | `DendriticSuperNeuron` record count. |
@@ -519,7 +531,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | `[56..64)` | `_padding` | `[u8; 8]` | Reserved; MUST be zero. |
 
 <!-- @assert-count target="crates/cortex-connectome" symbol="CortexFileHeader" min="1" word="true" -->
-<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 3" min="1" reason="§5.2.2 states the current image format version; update both together" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 4" min="1" reason="§5.2.2 states the current image format version; update both together" -->
 
 #### 5.2.3 `cortex-sensory` — peripheral ingestion
 
@@ -1323,16 +1335,16 @@ Scenarios are written against the records of §5. Steps marked *(Specified)* hav
       │                                          │ advance() drains the due slot, cascading coarse → fine (Implemented)
       └── delay == 0 ────────────────────────────┤
                                                  ▼
-[2] mailbox push: CAS on mailbox_head_ptr with mailbox_tag as ABA guard               (Specified)
+[2] mailbox push: mailbox_push, one CAS on mailbox_head_ptr, no tag (ADR-0017)         (Implemented)
                                                  │
-[3] gate check on gate_state (AtomicU8)                                               (Specified)
-      ├── idle      → set scheduled, push unit index to the worker deque
+[3] gate check: try_schedule on gate_state (AtomicU8), sequentially consistent      (Implemented)
+      ├── idle      → set scheduled, push unit index to the worker deque (the deque: Specified)
       └── scheduled → return; the unit is already queued
                                                  ▼
-[4] a worker claims the unit and drains the whole mailbox in one pass                 (Specified)
+[4] a worker claims the unit (begin_turn) and drains the whole mailbox (mailbox_drain) (Implemented)
                                                  ▼
 [5] integrate: v_basal, v_apical, v_soma; refractory; BAC coincidence (§8.8)          (Specified)
-      ├── below v_thresh → reset gate to idle
+      ├── below v_thresh → end_turn: idle, or re-scheduled if a message arrived meanwhile (Implemented)
       └── at/above       → emit, set last_soma_spike_tick, start refractory_ticks
                                                  ▼
 [6] fan-out: walk SynapseBlock chain from synapse_slab_idx; for each target → step 1  (Specified)
@@ -1457,7 +1469,7 @@ Why not floating point: IEEE-754 addition is not associative, and the order in w
 
 ### 8.3 Determinism model
 
-A run is defined by `(image, seed, input trace)`. Two runs with equal inputs MUST produce bit-identical arena contents after any number of ticks on any supported target. This requires: integer-only dynamics (§8.1); a total order on event delivery within a tick: by wheel slot, then fine-scheduled tokens before cascaded ones, each group in scheduling order ([ADR-0013](adr/0013-timing-wheel-geometry.md)); the order in which a drained mailbox batch is applied is decided with the mailbox (brief 009); seeded pseudo-random structural growth; and no dependence on wall-clock time inside the tick loop. Cross-platform differential testing is Target T-1.
+A run is defined by `(image, seed, input trace)`. Two runs with equal inputs MUST produce bit-identical arena contents after any number of ticks on any supported target. This requires: integer-only dynamics (§8.1); a total order on event delivery within a tick: by wheel slot, then fine-scheduled tokens before cascaded ones, each group in scheduling order ([ADR-0013](adr/0013-timing-wheel-geometry.md)); a drained mailbox batch is applied in an order the executor fixes by sorting it on its payload key in a bounded buffer of its own, since the mailbox yields reverse arrival order and arrival is a race between workers ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md); Specified, milestone M2); seeded pseudo-random structural growth; and no dependence on wall-clock time inside the tick loop. Cross-platform differential testing is Target T-1.
 
 ### 8.4 Time model
 
@@ -1474,8 +1486,8 @@ Tick sizes and the wheel geometry are `cortex-core` constants; the record types 
 
 ### 8.5 Concurrency and ownership
 
-- **A3, the turn invariant.** `gate_state` is the only synchronisation point for a unit. A pusher does `compare_exchange(idle → scheduled)`; on success it enqueues the unit; on failure the unit is already queued. A worker sets `running` on claim and `idle` on release with release ordering, so the next claimant sees all of the worker's plain-field writes.
-- **Mailboxes** are lock-free MPSC stacks whose head is `mailbox_head_ptr` and whose ABA guard is `mailbox_tag`. Nodes come from a per-worker pool, never from the allocator (TC-5).
+- **A3, the turn invariant** (Implemented, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)). `gate_state` is the only synchronisation point for a unit. A pusher writes its message into the mailbox first, then `try_schedule` (compare-exchange idle → scheduled); on success it enqueues the unit; on failure the unit is already queued or running. A worker does `begin_turn` (scheduled → running, acquire) on claim, so it sees every plain-field write of the previous turn, drains and integrates, and `end_turn`, which stores idle (releasing this turn's writes) and then re-reads the mailbox head: a message that arrived while the unit was running is caught there and the worker re-schedules the unit itself. The four operations that close that window, the pusher's head and gate compare-exchanges and the worker's idle store and head load, are sequentially consistent: with acquire/release alone each side could store before the other loaded and a message would wait for an unrelated push. This is the one place in the workspace where acquire/release is not enough.
+- **Mailboxes** (Implemented, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)) are lock-free MPSC stacks of node indices, drained whole: the head holds index + 1 so that zero is empty and an image at rest needs no fix-up; a push is one compare-exchange, a drain is one swap; no ABA guard is needed, because no participant compares a node it dereferenced with a node it will reuse. Nodes come from a per-worker pool, never from the allocator (TC-5). A drain yields reverse arrival order; the executor orders a batch before integrating it (§8.3, Specified).
 - **Arenas** are single-writer per record and multi-reader across records. Readers never take a lock.
 - **Structural plasticity** mutates `SynapseBlock` chains under epoch-based reclamation ([ADR-0011](adr/0011-epoch-based-reclamation.md)): a retired block is freed only after every worker has passed the epoch in which it was retired.
 - **Shared-memory rings** (embodiment, telemetry) use acquire/release on their cursors and nothing else.
@@ -1486,7 +1498,7 @@ No heap allocation occurs after initialisation (TC-5). Arenas are allocated once
 
 ### 8.7 Persistence and serialisation
 
-The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 3; the version history is in §5.2.2. Layout (Specified except the header):
+The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 4; the version history is in §5.2.2. Layout (Specified except the header):
 
 ```text
 [0..64)         CortexFileHeader
@@ -1606,6 +1618,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0014](adr/0014-benchmark-harness.md) | Benchmark harness: criterion 0.7, confined to a bench-only crate |
 | [ADR-0015](adr/0015-embodiment-frame-abi.md) | Embodiment frame ABI and single-producer single-consumer ring protocol |
 | [ADR-0016](adr/0016-thirty-two-crate-architecture.md) | Thirty-two state crates: fourteen subsystems admitted, three boundaries moved, and the admission test for the next one (amends ADR-0005) |
+| [ADR-0017](adr/0017-mailbox-and-gate-protocol.md) | Mailbox and gate protocol: an index stack drained whole, no ABA tag, four sequentially consistent operations (amends ADR-0006) |
 
 ---
 
@@ -1671,7 +1684,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-16 | `GlobalWorkspaceSlot` code comments say slots `0..7`; 2.8.0 said four slots. | `cortex-workspace` | **Resolved**: slot count declared a configuration parameter (§5.2.8). |
 | F-17 | `EmbodimentRingBuffer` was a control block alone; the payload rings and the torque decoder did not exist. | `cortex-embodiment` | **Narrowed** (brief 008, [ADR-0015](adr/0015-embodiment-frame-abi.md)): the frame ABI and the SPSC protocol exist with eight tests. The torque decoder (layer-5 bursts to torques), the shared-memory mapping and the 1 ms loop remain Specified (milestone M6). |
 | F-18 | `cortex-sensory` had no compile-time assertion that `SensoryEvent` is 8 bytes with 8-byte alignment; it was the only crate without one. The executable assertion in §1.6 was first written as "18" and failed on this. | `cortex-sensory` | **Resolved**: `const _` block added; the §1.6 directive requires 18 (32 since [ADR-0016](adr/0016-thirty-two-crate-architecture.md)). |
-| F-19 | `DendriticSuperNeuron::mailbox_tag` is a plain `u64` beside the atomic `mailbox_head_ptr`; a tag that is not updated in the same atomic operation as the head cannot guard against ABA, so §8.5's "ABA guard" describes nothing the record can do. A stack that is only pushed and drained whole may need no tag at all. | `cortex-core` | **Open**: brief 009 decides the head encoding in an ADR amending ADR-0006 and implements the gate and the mailbox; a record change bumps the format version. |
+| F-19 | `DendriticSuperNeuron::mailbox_tag` is a plain `u64` beside the atomic `mailbox_head_ptr`; a tag that is not updated in the same atomic operation as the head cannot guard against ABA, so §8.5's "ABA guard" describes nothing the record can do. A stack that is only pushed and drained whole may need no tag at all. | `cortex-core` | **Resolved** (brief 009, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)): the tag is gone (`mailbox_reserved`, MUST be zero), the head encodes index + 1 with zero empty, the gate and the mailbox are Implemented with a lost-wakeup rule in `end_turn`, and the four operations that close the window are sequentially consistent; image format version 4. |
 | F-20 | `DendriticSuperNeuron::plastic_delta_head` is a `u16` index into the far-memory delta table, which Appendix A sizes at 10⁹ entries; sixteen bits address 65 536. A width that cannot hold its index space is a finding of the F-3 class. | `cortex-core` | **Open**: decided with the Tier 2 delta record (milestone M4 / M5); until then the field is Specified and unused. |
 | F-21 | §8.3 defined the delivery order within a tick as "(slot, lane, source index)"; lanes were removed with the wheel geometry of ADR-0013 (brief 005). | this document | **Resolved**: the order is by slot, then fine-scheduled before cascaded tokens, each in scheduling order; the mailbox batch order is brief 009's. |
 | F-22 | Crate-level documentation in eleven crates stated capabilities or figures the crates do not implement (`cortex-predictive` asserted a traffic reduction that hypothesis H-2 calls unmeasured; four crates were "Engineered to 2026+ Systems Best Practice"; `neuron.rs` called a control record plain old data, contrary to rule L-5), and four manifest descriptions named responsibilities that ADR-0016 moved to other crates. `cargo doc` would have published all of it. | eleven crates | **Resolved**: every crate comment states what the crate holds, labels the rest Specified and points to its whitepaper section; the four descriptions are corrected. |
@@ -1812,7 +1825,7 @@ Milestones follow the founding design note; each ends with a test that proves it
 
 | Milestone | Deliverable | Exit test | Status |
 | :--- | :--- | :--- | :--- |
-| M1 Memory and gating core | Packed ids; 64-byte records; layout assertions; lock-free mailbox; CAS gate. | Push → gate → callback unit test. | Records and assertions done; mailbox and gate logic open (brief 009; finding F-19). |
+| M1 Memory and gating core | Packed ids; 64-byte records; layout assertions; lock-free mailbox; CAS gate. | Push → gate → callback unit test. | Records, assertions, mailbox and gate done (brief 009, [ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); the exit test passes as `crates/cortex-core/tests/mailbox.rs`; packed-id helpers open. |
 | M2 Executor | Core-pinned worker pool; work-stealing deque; batch draining. | 10⁶ events delivered with no loss and no deadlock under contention. | Not started. |
 | M3 Wheel and connectome | Wheel drain path; `SynapseBlock` fan-out; three-neuron delayed oscillator. | Oscillator period is exact to the tick. | Wheel insert done; drain and fan-out open. |
 | M4 Eviction and persistence | Clock sweep; `.cortex` loader and writer; lazy re-hydration. | Evict, spike, re-hydrate round trip preserves state bit-for-bit. | Header done; rest open. |

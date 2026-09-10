@@ -7,7 +7,7 @@
 
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_bench::Lcg;
-use cortex_core::{WorkerWheel, synaptic_efficacy_q16};
+use cortex_core::{DendriticSuperNeuron, MailboxNode, WorkerWheel, synaptic_efficacy_q16};
 use cortex_workspace::GlobalWorkspaceSlot;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -165,5 +165,43 @@ fn ignition(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, wheel, efficacy, gating, ignition);
+/// R-1 steps 2 and 3 (ADR-0017): sixteen pushes into one unit's mailbox from a sixteen-node
+/// arena, then one drain that walks them all. Divide by 16 for the per-push cost, which
+/// includes its share of the drain.
+fn mailbox(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mailbox");
+    group.throughput(Throughput::Elements(16));
+    group.bench_function("push_drain_x16", |b| {
+        let unit = DendriticSuperNeuron::new(1);
+        let nodes: [MailboxNode; 16] = core::array::from_fn(|_| MailboxNode::new());
+        let mut rng = Lcg(Lcg::SEED);
+        b.iter(|| {
+            for i in 0..16u32 {
+                unit.mailbox_push(black_box(&nodes[..]), i, rng.next_u32());
+            }
+            black_box(unit.mailbox_drain(&nodes[..]).count())
+        });
+    });
+    group.finish();
+}
+
+/// The turn gate (ADR-0017): schedule, begin and end on an idle unit with an empty mailbox;
+/// three atomic operations on the gate and one load of the head, three of them sequentially
+/// consistent.
+fn gate(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gate");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("schedule_begin_end", |b| {
+        let unit = DendriticSuperNeuron::new(1);
+        b.iter(|| {
+            let scheduled = unit.try_schedule();
+            let claimed = unit.begin_turn();
+            let rescheduled = unit.end_turn();
+            black_box((scheduled, claimed, rescheduled))
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(benches, wheel, efficacy, gating, ignition, mailbox, gate);
 criterion_main!(benches);
