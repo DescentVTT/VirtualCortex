@@ -47,6 +47,12 @@ impl Injector {
         self.slots.len()
     }
 
+    /// True when no pair is queued. Exact only while no producer is pushing, which is the
+    /// case at a quiescent point between ticks (ADR-0028).
+    pub fn is_empty(&self) -> bool {
+        self.enqueue_pos.load(Ordering::Acquire) == self.dequeue_pos.load(Ordering::Acquire)
+    }
+
     /// Any thread: queues a pair. Refused, with nothing changed, when the ring is full.
     pub fn push(&self, unit: u32, payload: u32) -> Result<(), Full> {
         let mut pos = self.enqueue_pos.load(Ordering::Relaxed);
@@ -114,9 +120,11 @@ mod tests {
     fn the_ring_is_fifo_bounded_and_reusable() {
         let q = Injector::new(3);
         assert_eq!(q.capacity(), 4);
+        assert!(q.is_empty());
         assert_eq!(q.pop(), None);
         for i in 0..4 {
             assert_eq!(q.push(i, 100 + i), Ok(()));
+            assert!(!q.is_empty());
         }
         assert_eq!(q.push(9, 9), Err(Full));
         assert_eq!(q.pop(), Some((0, 100)));
@@ -129,6 +137,10 @@ mod tests {
             assert_eq!(q.push(round, round), Ok(()));
             assert_eq!(q.pop(), Some((round, round)));
         }
+        assert!(
+            q.is_empty(),
+            "after every push was popped, the wrap included"
+        );
     }
 
     #[test]

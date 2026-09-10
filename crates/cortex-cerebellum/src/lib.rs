@@ -40,7 +40,7 @@ impl CerebellarMicrozone {
     const SIGN_SHIFT: u32 = 24;
     const BYTE: u32 = 0xFF;
 
-    /// Sets the plant delay `d` in steps, clamped to `1..=MAX_PLANT_DELAY`, and clears the
+    /// Sets the plant delay `d` in steps, clamped to `0..=MAX_PLANT_DELAY`, and clears the
     /// delay line. A delay of 0 disables comparison and learning.
     #[inline]
     pub fn set_plant_delay(&mut self, d: u8) {
@@ -54,21 +54,33 @@ impl CerebellarMicrozone {
         self.climbing_fiber_error = 0;
     }
 
-    /// The plant delay `d` in steps (0 when unset).
+    /// The plant delay `d` in steps (0 when unset). Every field of the packed word is read
+    /// within its bound, so a word set through the public field or read from an image cannot
+    /// index outside the ring (ADR-0028).
     #[inline]
     pub const fn plant_delay(&self) -> u8 {
-        ((self.delay_ctl >> Self::DELAY_SHIFT) & Self::BYTE) as u8
+        let d = ((self.delay_ctl >> Self::DELAY_SHIFT) & Self::BYTE) as u8;
+        if d > Self::MAX_PLANT_DELAY {
+            Self::MAX_PLANT_DELAY
+        } else {
+            d
+        }
     }
 
     /// Number of valid entries in the delay line, saturating at seven.
     #[inline]
     pub const fn filled(&self) -> u8 {
-        ((self.delay_ctl >> Self::FILLED_SHIFT) & Self::BYTE) as u8
+        let filled = (self.delay_ctl >> Self::FILLED_SHIFT) & Self::BYTE;
+        if filled > Self::RING {
+            Self::RING as u8
+        } else {
+            filled as u8
+        }
     }
 
     #[inline]
     const fn head(&self) -> u32 {
-        (self.delay_ctl >> Self::HEAD_SHIFT) & Self::BYTE
+        ((self.delay_ctl >> Self::HEAD_SHIFT) & Self::BYTE) % Self::RING
     }
 
     #[inline]
@@ -248,6 +260,28 @@ mod tests {
         assert_eq!(gain, 0);
         z.set_plant_delay(0);
         assert_eq!(z.plant_delay(), 0);
+    }
+
+    #[test]
+    fn a_control_word_outside_its_bounds_is_read_within_them() {
+        let mut z = zone(1);
+        z.delay_ctl = 7 | (1 << 8) | (7 << 16);
+        assert_eq!(z.plant_delay(), 1);
+        z.step_forward_model(0, 0);
+        assert_eq!(
+            z.delay_ctl & 0xFF,
+            1,
+            "a head of seven is slot zero, then one"
+        );
+        let mut z = zone(1);
+        z.delay_ctl = (8 << 8) | (8 << 16);
+        assert_eq!((z.plant_delay(), z.filled()), (7, 7));
+        z.step_forward_model(HALF, ONE);
+        assert_eq!(z.plant_delay(), 7, "the write-back keeps the clamped delay");
+        let mut z = zone(0);
+        z.delay_ctl = u32::MAX;
+        z.step_forward_model(i32::MAX, i32::MIN);
+        assert_eq!((z.plant_delay(), z.filled()), (7, 7));
     }
 
     #[test]

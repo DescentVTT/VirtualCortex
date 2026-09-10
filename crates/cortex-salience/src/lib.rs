@@ -20,8 +20,10 @@ pub struct SalienceNodeState {
 
 impl SalienceNodeState {
     /// Threshold rule only: a shock strictly above 2.0, or a conditioned weight strictly
-    /// above 1.0, engages the freeze reflex. No arithmetic is performed, so there is nothing
-    /// to saturate (whitepaper §8.1).
+    /// above 1.0, engages the freeze reflex; when neither holds, the reflex, the valence, the
+    /// override and the replay tag are released together, and what persists is the conditioned
+    /// weight (ADR-0028). No arithmetic is performed, so there is nothing to saturate
+    /// (whitepaper §8.1).
     #[inline(always)]
     pub fn evaluate_threat(&mut self, sensory_shock: i32) -> bool {
         self.unconditioned_stimulus = sensory_shock;
@@ -32,7 +34,10 @@ impl SalienceNodeState {
             self.emotional_tag_priority = 255;
             true
         } else {
+            self.threat_valence = 0;
+            self.defense_mode_flags = 0;
             self.override_active = 0;
+            self.emotional_tag_priority = 0;
             false
         }
     }
@@ -97,14 +102,29 @@ mod tests {
     }
 
     #[test]
-    fn override_is_released_when_the_threat_subsides() {
-        let mut n = node(0);
+    fn the_reflex_is_released_with_the_override_and_the_conditioned_weight_persists() {
+        let mut n = node(ONE / 2);
         assert!(n.evaluate_threat(i32::MAX));
+        assert_eq!(
+            (
+                n.defense_mode_flags,
+                n.threat_valence,
+                n.emotional_tag_priority
+            ),
+            (1, ONE, 255)
+        );
         assert!(!n.evaluate_threat(0));
         assert_eq!(n.override_active, 0);
-        // Only the override is released; the mode flag and valence persist until a later
-        // rule clears them. This pins the current behaviour rather than endorsing it.
-        assert_eq!(n.defense_mode_flags, 1);
-        assert_eq!(n.threat_valence, ONE);
+        assert_eq!(
+            (
+                n.defense_mode_flags,
+                n.threat_valence,
+                n.emotional_tag_priority
+            ),
+            (0, 0, 0),
+            "released together"
+        );
+        assert_eq!(n.fear_conditioning_w, ONE / 2, "what was learned stays");
+        assert_eq!(n.unconditioned_stimulus, 0);
     }
 }

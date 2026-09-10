@@ -14,7 +14,10 @@ use cortex_connectome::{
     CortexFileHeader, Crc64, HeaderError, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE,
     SectionEntry, crc64,
 };
-use cortex_core::{DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SynapseBlock, WorkerWheel};
+use cortex_core::{
+    DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock,
+    WorkerWheel,
+};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
@@ -35,18 +38,22 @@ pub enum ImageError {
     MissingSection(u32),
     /// A section's bytes do not match its checksum.
     SectionCrc(u32),
-    /// A unit is not at rest: its gate is not idle or its mailbox is not empty.
+    /// A unit is not at rest: its gate is not idle, its mailbox is not empty, or a reserved
+    /// byte is not zero.
     NotAtRest(u32),
-    /// A synapse targets a unit outside the arena, or a chain or delta list names an index
-    /// outside its arena.
+    /// A synapse targets a unit outside the arena, a chain or delta list names an index
+    /// outside its arena, or a delta names a slot its block does not have (`slot` is 5).
     DanglingIndex { block: u32, slot: u8 },
+    /// A reserved or padding byte of a synapse block or a delta is not zero (ADR-0028).
+    ReservedNotZero { section: u32, index: u32 },
     /// A synapse's delay is at or beyond the wheel's horizon (§6.2).
     DelayBeyondHorizon { block: u32, slot: u8 },
     /// More blocks than a synapse token can name (finding F-23).
     TooManyBlocks(u64),
     /// The executor's configuration was refused.
     Config(ConfigError),
-    /// The executor is not quiescent: a mailbox holds a message or a token is in flight.
+    /// The executor is not quiescent: a mailbox holds a message, a token is in flight, or the
+    /// injector ring holds a pair not yet drained.
     NotQuiescent,
     /// No write-ahead log is attached, so nothing can be evicted or re-hydrated.
     NoLog,
@@ -106,8 +113,15 @@ impl WriteAheadLog {
         })
     }
 
-    /// Appends `unit`'s record and remembers where it is.
+    /// Appends `unit`'s record and remembers where it is. A unit outside the log is refused
+    /// before anything is written (`InvalidInput`).
     pub fn append(&mut self, unit: u32, record: &[u8; 64]) -> io::Result<()> {
+        if unit as usize >= self.offsets.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "unit outside the log",
+            ));
+        }
         let mut entry = [0u8; LOG_ENTRY];
         entry[0..8].copy_from_slice(&(unit as u64).to_le_bytes());
         entry[8..].copy_from_slice(record);
@@ -294,6 +308,11 @@ impl Image {
             .ok_or(ImageError::Truncated)?;
         let header = CortexFileHeader::decode(header_bytes);
         header.validate()?;
+        // The directory cannot be longer than the bytes after the header, whatever a sealed
+        // header says; checked before the count sizes an allocation.
+        if header.section_count as usize > (bytes.len() - 64) / 64 {
+            return Err(ImageError::Truncated);
+        }
         let mut entries = Vec::with_capacity(header.section_count as usize);
         for i in 0..header.section_count as usize {
             let start = 64 + 64 * i;
@@ -376,6 +395,12 @@ impl Image {
                         slot: 4,
                     });
                 }
+                if block._reserved != [0; 7] {
+                    return Err(ImageError::ReservedNotZero {
+                        section: SECTION_SYNAPSE,
+                        index: i as u32,
+                    });
+                }
                 arena[i] = block;
             }
         }
@@ -388,10 +413,17 @@ impl Image {
                 let d = PlasticDelta::decode(record.try_into().unwrap_or(&[0; 16]));
                 if d.block().is_some_and(|b| b as usize >= blocks)
                     || d.next_delta().is_some_and(|n| n as usize >= deltas)
+                    || d.slot as usize >= SYNAPSES_PER_BLOCK
                 {
                     return Err(ImageError::DanglingIndex {
                         block: i as u32,
                         slot: 5,
+                    });
+                }
+                if d._pad != 0 {
+                    return Err(ImageError::ReservedNotZero {
+                        section: SECTION_PLASTIC_DELTA,
+                        index: i as u32,
                     });
                 }
                 arena[i] = d;

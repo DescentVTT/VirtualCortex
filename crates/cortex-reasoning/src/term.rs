@@ -294,14 +294,19 @@ fn unify_inner(
     UnifyResult::Unified
 }
 
-/// A first-order literal: the predicate's term index + 1 with the sign in bit 31.
-pub const fn literal_of_term(term: u32, negated: bool) -> u32 {
+/// A first-order literal: the predicate's term index + 1 with the sign in bit 31. `None` for
+/// an index the encoding cannot hold (at or above $2^{31} - 1$, whose `+ 1` would reach the
+/// sign bit; ADR-0028).
+pub const fn literal_of_term(term: u32, negated: bool) -> Option<u32> {
+    if term >= LITERAL_NEGATED - 1 {
+        return None;
+    }
     let atom = term + 1;
-    if negated {
+    Some(if negated {
         atom | LITERAL_NEGATED
     } else {
         atom
-    }
+    })
 }
 
 /// The term a first-order literal names, or `None` for `LITERAL_NONE`.
@@ -603,18 +608,21 @@ mod tests {
         let mortal_s = arena.compound(MORTAL, &[s]);
         // mortal(X) :- human(X)  is  {¬human(X), mortal(X)}; human(s); the negated conjecture ¬mortal(s).
         let rule: Clause = (
-            literal_of_term(human_x, true),
-            literal_of_term(mortal_x, false),
+            literal_of_term(human_x, true).unwrap(),
+            literal_of_term(mortal_x, false).unwrap(),
         );
-        let fact: Clause = (literal_of_term(human_s, false), LITERAL_NONE);
-        let goal: Clause = (literal_of_term(mortal_s, true), LITERAL_NONE);
+        let fact: Clause = (literal_of_term(human_s, false).unwrap(), LITERAL_NONE);
+        let goal: Clause = (literal_of_term(mortal_s, true).unwrap(), LITERAL_NONE);
         let mut bindings = [Binding::UNBOUND; 1];
         let mut trail = [0u32; 8];
         let mut stack = [0u32; 32];
         let nodes = &arena.nodes[..arena.len];
         let step1 = resolve_first_order(rule, fact, nodes, &mut bindings, &mut trail, &mut stack)
             .expect("human(X) unifies with human(s)");
-        assert_eq!(step1, (literal_of_term(mortal_x, false), LITERAL_NONE));
+        assert_eq!(
+            step1,
+            (literal_of_term(mortal_x, false).unwrap(), LITERAL_NONE)
+        );
         assert_eq!(deref(x, nodes, &bindings), Some(s), "X := s");
         let mut node = SymbolicRuleNode::default();
         assert!(node.record_resolvent(step1, 0, 1, 0));
@@ -632,7 +640,7 @@ mod tests {
         // Wrong constant: no step.
         let t = arena.constant(T);
         let mortal_t = arena.compound(MORTAL, &[t]);
-        let other_goal: Clause = (literal_of_term(mortal_t, true), LITERAL_NONE);
+        let other_goal: Clause = (literal_of_term(mortal_t, true).unwrap(), LITERAL_NONE);
         assert_eq!(
             resolve_first_order(
                 step1,
@@ -657,8 +665,25 @@ mod tests {
             Err(UnifyResult::Clash)
         );
         assert_eq!(term_of_literal(LITERAL_NONE), None);
-        assert_eq!(term_of_literal(literal_of_term(7, true)), Some(7));
-        assert!(is_negated(literal_of_term(7, true)));
+        assert_eq!(term_of_literal(literal_of_term(7, true).unwrap()), Some(7));
+        assert!(is_negated(literal_of_term(7, true).unwrap()));
+    }
+
+    #[test]
+    fn a_literal_the_encoding_cannot_hold_is_refused_and_the_last_one_round_trips() {
+        let last = LITERAL_NEGATED - 2;
+        let lit = literal_of_term(last, false).unwrap();
+        assert_eq!(term_of_literal(lit), Some(last));
+        assert!(!is_negated(lit));
+        let neg = literal_of_term(last, true).unwrap();
+        assert_eq!(term_of_literal(neg), Some(last));
+        assert!(is_negated(neg));
+        assert_eq!(
+            literal_of_term(LITERAL_NEGATED - 1, false),
+            None,
+            "would reach the sign bit"
+        );
+        assert_eq!(literal_of_term(u32::MAX, true), None, "would overflow");
     }
 
     #[test]

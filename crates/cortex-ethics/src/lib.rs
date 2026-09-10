@@ -21,6 +21,13 @@ pub const VETO_HARM: u8 = 2;
 /// `veto_reason`: the proposal's authorization level is below what the action requires.
 pub const VETO_AUTHORIZATION: u8 = 3;
 
+/// `veto_decision_flag`: no evaluation has run; the gate is closed (ADR-0028).
+pub const DECISION_UNEVALUATED: u8 = 0;
+/// `veto_decision_flag`: the last evaluation vetoed the proposal.
+pub const DECISION_VETOED: u8 = 1;
+/// `veto_decision_flag`: the last evaluation permitted the proposal.
+pub const DECISION_PERMITTED: u8 = 2;
+
 /// 64-byte evaluation gate (whitepaper §5.2.28).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
@@ -32,7 +39,7 @@ pub struct EthicalEvaluationGate {
     pub utilitarian_benefit_q16: i32, // [16..20] Predicted benefit (Q16.16); never overrides a veto
     pub deontology_score_q16: u32, // [20..24] 1 - harm for a permitted proposal, 0 for a vetoed one (Q16.16)
     pub authorization_level: u8,   // [24] Level the proposal carries
-    pub veto_decision_flag: u8,    // [25] 1 vetoed, 0 permitted
+    pub veto_decision_flag: u8,    // [25] DECISION_*: 0 not yet evaluated, 1 vetoed, 2 permitted
     pub veto_reason: u8,           // [26] VETO_*
     pub _reserved: [u8; 37],       // [27..64] Reserved; MUST be zero
 }
@@ -49,8 +56,8 @@ impl Default for EthicalEvaluationGate {
             utilitarian_benefit_q16: 0,
             deontology_score_q16: 0,
             authorization_level: 0,
-            veto_decision_flag: 0,
-            veto_reason: 0,
+            veto_decision_flag: DECISION_UNEVALUATED,
+            veto_reason: VETO_NONE,
             _reserved: [0; 37],
         }
     }
@@ -72,20 +79,21 @@ impl EthicalEvaluationGate {
         };
         self.veto_reason = reason;
         if reason == VETO_NONE {
-            self.veto_decision_flag = 0;
+            self.veto_decision_flag = DECISION_PERMITTED;
             self.deontology_score_q16 = Q16_ONE.saturating_sub(self.predicted_harm_risk_q16);
             false
         } else {
-            self.veto_decision_flag = 1;
+            self.veto_decision_flag = DECISION_VETOED;
             self.deontology_score_q16 = 0;
             true
         }
     }
 
-    /// True after an evaluation that permitted the proposal.
+    /// True only after an evaluation that permitted the proposal: a gate that has not been
+    /// evaluated, whatever its bytes, is closed (ADR-0028).
     #[inline]
     pub const fn is_permitted(&self) -> bool {
-        self.veto_decision_flag == 0 && self.veto_reason == VETO_NONE
+        self.veto_decision_flag == DECISION_PERMITTED && self.veto_reason == VETO_NONE
     }
 }
 
@@ -114,11 +122,29 @@ mod tests {
         assert_eq!(core::mem::size_of::<EthicalEvaluationGate>(), 64);
         assert_eq!(core::mem::align_of::<EthicalEvaluationGate>(), 64);
         let mut d = EthicalEvaluationGate::default();
+        assert!(!d.is_permitted(), "not evaluated: closed");
+        assert_eq!(d.veto_decision_flag, DECISION_UNEVALUATED);
         assert!(
             d.evaluate(0, 0),
             "a zero threshold permits nothing: fail closed"
         );
         assert_eq!(d.veto_reason, VETO_HARM);
+        assert_eq!(d.veto_decision_flag, DECISION_VETOED);
+        assert!(!d.is_permitted());
+    }
+
+    #[test]
+    fn a_gate_that_was_never_evaluated_is_closed_whatever_its_reason_byte_says() {
+        let g = EthicalEvaluationGate {
+            veto_reason: VETO_NONE,
+            veto_decision_flag: DECISION_UNEVALUATED,
+            ..proposal(0, 0, 9)
+        };
+        assert!(!g.is_permitted(), "a zero reason is not a verdict");
+        let mut e = g;
+        assert!(!e.evaluate(0, 0));
+        assert!(e.is_permitted(), "the verdict opens it");
+        assert_eq!(e.veto_decision_flag, DECISION_PERMITTED);
     }
 
     #[test]
@@ -161,6 +187,9 @@ mod tests {
         let mut g = proposal(0, 0b0001, 9);
         assert!(g.evaluate(0b0001, 0));
         assert!(!g.evaluate(0b0010, 0));
-        assert_eq!((g.veto_decision_flag, g.veto_reason), (0, VETO_NONE));
+        assert_eq!(
+            (g.veto_decision_flag, g.veto_reason),
+            (DECISION_PERMITTED, VETO_NONE)
+        );
     }
 }

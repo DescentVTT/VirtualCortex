@@ -142,7 +142,10 @@ impl CortexFileHeader {
     ///   `InteroceptiveState` (benign incongruity, mirth), `LinguisticFrameSlot` (the intended
     ///   speech act); `VocalFrame` is a new embodiment frame outside the image. A version-7
     ///   image has them zero, which every rule reads as "not yet".
-    pub const FORMAT_VERSION: u32 = 8;
+    /// - 9: `EthicalEvaluationGate::veto_decision_flag` is `DECISION_*` (0 not yet evaluated,
+    ///   1 vetoed, 2 permitted; ADR-0028). A version-8 image's zero reads as not yet evaluated,
+    ///   which fails closed; nothing else moved.
+    pub const FORMAT_VERSION: u32 = 9;
 
     /// A header for an image of these counts, sealed.
     pub fn new(num_columns: u64, num_neurons: u64, num_synapses: u64, section_count: u32) -> Self {
