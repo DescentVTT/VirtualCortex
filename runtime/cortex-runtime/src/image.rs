@@ -11,13 +11,14 @@
 
 use crate::executor::{Config, ConfigError, Executor};
 use cortex_connectome::{
-    CortexFileHeader, Crc64, HeaderError, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE,
-    SectionEntry, crc64,
+    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_NEURON, SECTION_PLASTIC_DELTA,
+    SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
     DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock,
     WorkerWheel,
 };
+use cortex_executive::PolicyAmendment;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
@@ -59,6 +60,9 @@ pub enum ImageError {
     NoLog,
     /// The log entry for a unit is missing or short.
     LogCorrupt(u32),
+    /// An amendment record (ADR-0031) is one its state machine could not have produced, is
+    /// out of order, or claims a commit that does not follow from the ones before it.
+    MalformedAmendment(u32),
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -222,8 +226,9 @@ pub struct Image;
 
 impl Image {
     /// The image of `exec`'s arenas at a quiescent point, as bytes: header, directory, the
-    /// neuron, synapse and (if the executor has one) delta sections. An evicted unit's record
-    /// is read back from the log. A scheduled unit with an empty mailbox is written idle.
+    /// neuron, synapse and (if the executor has any) delta and amendment sections. An evicted
+    /// unit's record is read back from the log. A scheduled unit with an empty mailbox is
+    /// written idle.
     pub fn encode<const CAP: usize>(exec: &Executor<CAP>) -> Result<Vec<u8>, ImageError> {
         if !exec.is_quiescent() {
             return Err(ImageError::NotQuiescent);
@@ -259,6 +264,14 @@ impl Image {
         ];
         if !deltas.is_empty() {
             sections.push((SECTION_PLASTIC_DELTA, 16, delta_bytes));
+        }
+        let amendments = exec.amendments();
+        if !amendments.is_empty() {
+            let mut amendment_bytes = Vec::with_capacity(amendments.len() * 64);
+            for a in amendments {
+                amendment_bytes.extend_from_slice(&a.encode());
+            }
+            sections.push((SECTION_AMENDMENT, 64, amendment_bytes));
         }
         let directory_len = 64 * sections.len() as u64;
         let mut offset = 64 + directory_len;
@@ -334,7 +347,7 @@ impl Image {
                 .ok_or(ImageError::Truncated)?;
             let entry = SectionEntry::decode(entry_bytes);
             let expected_size = match entry.kind {
-                SECTION_NEURON | SECTION_SYNAPSE => 64,
+                SECTION_NEURON | SECTION_SYNAPSE | SECTION_AMENDMENT => 64,
                 SECTION_PLASTIC_DELTA => 16,
                 other => return Err(ImageError::Directory(other)),
             };
@@ -359,6 +372,7 @@ impl Image {
         let neuron = find(SECTION_NEURON).ok_or(ImageError::MissingSection(SECTION_NEURON))?;
         let synapse = find(SECTION_SYNAPSE).ok_or(ImageError::MissingSection(SECTION_SYNAPSE))?;
         let delta = find(SECTION_PLASTIC_DELTA);
+        let amendment = find(SECTION_AMENDMENT);
         if neuron.record_count() != header.num_neurons
             || synapse.record_count() != header.num_synapses
         {
@@ -370,10 +384,12 @@ impl Image {
         let units = neuron.record_count() as usize;
         let blocks = synapse.record_count() as usize;
         let deltas = delta.map_or(0, |d| d.record_count() as usize);
+        let amendments = amendment.map_or(0, |a| a.record_count() as usize);
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
             deltas,
+            amendments: amendments.saturating_add(config.amendments),
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -465,6 +481,19 @@ impl Image {
                     wake.push(i as u32);
                 }
                 arena[i] = unit;
+            }
+        }
+        if let Some(section) = amendment {
+            for (i, record) in bytes
+                [section.offset as usize..(section.offset + section.length) as usize]
+                .chunks_exact(64)
+                .enumerate()
+            {
+                let a = PolicyAmendment::decode(record.try_into().unwrap_or(&[0; 64]));
+                if !a.is_well_formed() || a.amendment_id != i as u32 + 1 || !exec.load_amendment(a)
+                {
+                    return Err(ImageError::MalformedAmendment(i as u32));
+                }
             }
         }
         exec.wake_now(&wake);

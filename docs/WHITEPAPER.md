@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.3.1
+version: 4.4.0
 status: active
 date: 2026-09-10
 ---
@@ -11,7 +11,7 @@ date: 2026-09-10
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.3.1 |
+| Version | 4.4.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-10 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -69,9 +69,9 @@ VirtualCortex is a Rust workspace for building a **spiking neural network (SNN) 
 
 The engine therefore rests on five axioms (§4): neural units exist virtually and are materialised on demand; state and compute are decoupled, so that a fixed pool of worker threads services tens of millions of passive records; each record is owned by at most one worker per tick, enforced by an atomic gate; axonal conduction delay is a constant-time index into a timing wheel, never an operating-system timer; and inactive tissue is evicted to local storage by a metabolic sweep. Around this core, the workspace defines subsystems that mirror the functional anatomy of the mammalian brain: sensory ingestion, embodiment, basal-ganglia action selection, cerebellar forward models, amygdalar salience, a global workspace, a vector-symbolic bridge, prefrontal planning, predictive coding, agency attribution, neuromodulation, hippocampal memory, homeostasis, an immune scrubber, a scale-out fabric and telemetry; and, admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md) on 2026-09-10, a thalamic relay, native construction-grammar frames, brokered tool invocation, foveal attention, interoception, autonomic vitals, a metric cognitive map, epistemic curiosity, social perspective, an ethical veto gate, a semantic ontology, symbolic rules, an exact arithmetic scratchpad and a counterfactual canvas.
 
-**What exists today (Implemented).** Thirty-two `#![no_std]` state crates with no external dependencies and no `unsafe` code; the workspace's one `unsafe` is the runtime's arena access under [ADR-0023](adr/0023-executor.md). Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: thirty-six 64-byte cache-line records, two 16-byte records (the neuromodulator vector and the plastic delta) and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Twenty-four crates carry small, deterministic, integer-only update rules with boundary tests (the Logic column of §1.6), and every crate carries a test module. A runtime crate outside `crates/`, `runtime/cortex-runtime`, composes them: a fixed pool of worker threads, a work-stealing deque and a timing wheel per worker, three barrier-separated phases per fine tick (turns, fan-out, deliveries), mailbox delivery and synaptic fan-out, allocating nothing after start-up ([ADR-0023](adr/0023-executor.md)); milestone M2's exit test (10⁶ events from four producers delivered exactly once on one, two and four workers) and the first differential test (bit-identical arenas on one and four workers) pass. The `.cortex` image is written and read (a section directory sealed by CRC-64/XZ, a read-into-arenas loader that fails closed), the clock sweep evicts quiet units into a write-ahead log and re-hydrates them on the next message bit for bit (milestone M4's exit test), and the Tier-2 delta record exists ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). Eight crates carry the rules of [ADR-0026](adr/0026-social-acumen-and-re-representation.md) and [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md): a sincerity gap and a second-level expectation of the self, tact and an intended act, an anomaly that marks a concept's framework stale and a re-representation, a basis rotation, a vocal frame with an integer source–filter renderer, the benign-violation appraisal, reward and a playful marker. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
+**What exists today (Implemented).** Thirty-two `#![no_std]` state crates with no external dependencies and no `unsafe` code; the workspace's one `unsafe` is the runtime's arena access under [ADR-0023](adr/0023-executor.md). Each crate defines its primary state record as a `#[repr(C)]` plain-old-data structure: thirty-seven 64-byte cache-line records, two 16-byte records (the neuromodulator vector and the plastic delta) and one 8-byte sensory event. Size and alignment are asserted at compile time for all of them; every record without atomics is `Copy` and `Eq`. Twenty-five crates carry small, deterministic, integer-only update rules with boundary tests (the Logic column of §1.6), and every crate carries a test module. A runtime crate outside `crates/`, `runtime/cortex-runtime`, composes them: a fixed pool of worker threads, a work-stealing deque and a timing wheel per worker, three barrier-separated phases per fine tick (turns, fan-out, deliveries), mailbox delivery and synaptic fan-out, allocating nothing after start-up ([ADR-0023](adr/0023-executor.md)); milestone M2's exit test (10⁶ events from four producers delivered exactly once on one, two and four workers) and the first differential test (bit-identical arenas on one and four workers) pass. The `.cortex` image is written and read (a section directory sealed by CRC-64/XZ, a read-into-arenas loader that fails closed), the clock sweep evicts quiet units into a write-ahead log and re-hydrates them on the next message bit for bit (milestone M4's exit test), and the Tier-2 delta record exists ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)). The engine amends one thing about itself: a parameter of its own policy, from a registry with bounds, proposed, admitted through the veto gate by id, trialled in two forks of its image that must behave identically, committed between ticks only when the cost fell, persisted in the image and replayed by the loader ([ADR-0031](adr/0031-policy-amendment.md)); it never amends its own code, and a proposed rule leaves through the broker to the repository's gates. Eight crates carry the rules of [ADR-0026](adr/0026-social-acumen-and-re-representation.md) and [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md): a sincerity gap and a second-level expectation of the self, tact and an intended act, an anomaly that marks a concept's framework stale and a re-representation, a basis rotation, a vocal frame with an integer source–filter renderer, the benign-violation appraisal, reward and a playful marker. The workspace compiles cleanly on stable Rust and its layout invariants are verified by `cargo test` and by the executable assertions in this document.
 
-**What is designed but not built (Specified).** Core pinning and the seccomp filter of the worker threads, the `mmap` path of the `.cortex` loader and a hot checkpoint with tokens in flight, the shared-memory mappings of the embodiment and tool rings and the broker process behind the tool ring, the lexicon that realises linguistic frames as tokens, epoch-based reclamation for structural plasticity, the fabric transport, and every subsystem's dynamics beyond the rules noted in §5.
+**What is designed but not built (Specified).** Core pinning and the seccomp filter of the worker threads, the `mmap` path of the `.cortex` loader and a hot checkpoint with tokens in flight, the shared-memory mappings of the embodiment and tool rings and the broker process behind the tool ring, the lexicon that realises linguistic frames as tokens, epoch-based reclamation for structural plasticity, the fabric transport, the broker's amendment register and the registry entries of every rule the runtime does not yet compose, and every subsystem's dynamics beyond the rules noted in §5.
 
 **What must be proved (Hypothesis).** That multi-compartment "super-neuron" records can condense the behaviour of point-neuron populations at a ratio that makes whole-brain-scale behaviour reachable within a single 64 GB server. The capacity model in Appendix A is parameterised on that ratio and is a plan, not a measurement.
 
@@ -108,9 +108,10 @@ VirtualCortex attacks the problem from the hardware upward. The target is not to
 | FR-4 | Load a whole connectome image by memory mapping, without a deserialisation pass. | Specified (§8.7) |
 | FR-5 | Ingest events from hot-pluggable peripherals through a trait-based hardware abstraction layer. | Implemented (trait) · Specified (runtime) (§5.2.3) |
 | FR-6 | Exchange motor commands and proprioceptive feedback with a physics engine or robot under a 1 ms period. | Implemented (frames, ring protocol) · Specified (mapping, loop, torque decoder) (§5.2.4, §6.4) |
-| FR-7 | Provide subcortical, cortical and systemic subsystems as independent crates with 64-byte state records. | Implemented (records; one or more tested rules in 24 crates) · Specified (the full dynamics of §8.8) (§5.2) |
+| FR-7 | Provide subcortical, cortical and systemic subsystems as independent crates with 64-byte state records. | Implemented (records; one or more tested rules in 25 crates) · Specified (the full dynamics of §8.8) (§5.2) |
 | FR-8 | Verify all layout invariants at compile time, and every documentation claim that carries a directive, in CI. | Implemented (Appendix B); a claim without a directive is held by review, as the reconciliations F-25 and F-27 show |
 | FR-9 | Act on a digital environment through a broker outside the engine process, as 64-byte shared-memory frames that pass an in-engine veto gate first; and realise language natively, from hypervector unbinding into construction-grammar frames, with no external language model. | Implemented (frames, gate rule, frame assembly) · Specified (broker, ring mapping, unbinding, lexicon) (§5.2.20, §5.2.21, §5.2.28, §6.8, §6.9) |
+| FR-10 | Amend a parameter of the engine's own policy in a verifiable closed loop: propose within a registry's bounds, pass the veto gate by id, trial in two forks of the image that must behave identically, commit only when the cost fell, persist in the image and replay on load; never amend the engine's code, which leaves as a proposal for the repository's gates. | Implemented for the clock sweep's two parameters ([ADR-0031](adr/0031-policy-amendment.md); §5.2.10, §6.16, §8.18) · Specified (the other rules' parameters as the runtime composes them; the broker's register) |
 
 ### 1.3 Quality goals
 
@@ -147,6 +148,8 @@ Out of scope, by design. These are the boundaries the founding design note drew 
 
 One boundary moved on 2026-09-10 ([ADR-0016](adr/0016-thirty-two-crate-architecture.md)): the engine may act on a digital environment, through a broker process outside its own seccomp filter (§8.10). That does not make the engine a general-purpose framework: a tool call is a 64-byte frame in a shared-memory ring, exactly as a motor command is. Language stays inside the engine: frames are assembled natively from hypervector unbinding (§5.2.20) and no external language model is part of the system.
 
+A second boundary moved the same day ([ADR-0031](adr/0031-policy-amendment.md)): the engine may amend a parameter of its own policy, from a registry with bounds, through four gates and a trial in two forks of its image that must behave identically (§8.18). It may not amend its own code: there is no compiler, interpreter or code loader in the process, and a proposed rule leaves through the broker to the repository's gates, where a maintainer merges it or does not.
+
 ### 1.6 Implementation status at a glance
 
 Verified against the tree on 2026-09-10. "Layout" means the record's size and alignment are asserted at compile time; "Test" means a `#[cfg(test)]` unit test exists; "Logic" means at least one non-trivial update function exists.
@@ -162,7 +165,7 @@ Verified against the tree on 2026-09-10. "Layout" means the record's size and al
 | `cortex-salience` | `SalienceNodeState` | 64 B | yes | yes | yes | `evaluate_threat` |
 | `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B | yes | yes | yes | `step_ignition`, `step_ignition_at` (criticality-gated), `update_attention_schema` |
 | `cortex-symbolic` | `SymbolicHypervectorHeader` | 64 B | yes | yes | yes | `bind`, `blend`, `rebase` |
-| `cortex-executive` | `ExecutivePlanNode` | 64 B | yes | yes | yes | — |
+| `cortex-executive` | `ExecutivePlanNode`, `PolicyAmendment` | 64 B, 64 B | yes | yes | yes | `propose`, `admit`, `record_trial`, `commit`, `is_well_formed` (the amendment's four gates and the loader's check) |
 | `cortex-predictive` | `PredictiveErrorState` | 64 B | yes | yes | yes | — |
 | `cortex-agency` | `AgentPerspectiveState` | 64 B | yes | yes | yes | — |
 | `cortex-immune` | `ImmuneScrubNode` | 64 B | yes | yes | yes | — |
@@ -339,6 +342,7 @@ flowchart LR
 | Platform vitals | in | Voltage, temperature and power samples from the platform's sensors into `AutonomicVitalsState::sample` | `cortex-autonomic` | Implemented (limit check) · Specified (sensor driver, shedding policy) |
 | Formal prover or solver co-processor | bidirectional | A `ToolInvocationFrame` with `TOOL_CATEGORY_FORMAL_PROVER` (0x0004) and `ACTION_VERIFY_PROOF` (0x0001, check a proof term against axioms), `ACTION_SOLVE_CONSTRAINTS` (0x0002, decide a formula by constraint or SMT solving) or `ACTION_SYMBOLIC_EVAL` (0x0003, simplify and rewrite a term); the conjecture is named by `param_hash`, the certificate hash returns in the payload (§6.10). The opcodes name mathematical actions, never a product | `cortex-tools` | Implemented (constants, frame) · Specified (the broker; which prover or solver it runs is its configuration, judged under §2.1 when chosen) |
 | Document engine | bidirectional | A `ToolInvocationFrame` with `TOOL_CATEGORY_DOC_ENGINE` (0x0005) and `ACTION_PARSE_STRUCTURE`, `ACTION_EXTRACT_ENTITIES` or `ACTION_SEARCH_CROSS_REF`; foveal queries from `cortex-attention`, triples into `cortex-knowledge` (§6.11) | `cortex-tools` | Implemented (constants, frame) · Specified (the broker, its parsers and its index) |
+| Amendment register | out | A `ToolInvocationFrame` with `TOOL_CATEGORY_AMENDMENT_REGISTER` (0x0006) and `ACTION_FILE_PROPOSAL` (0x0001: an amendment the engine may not commit itself, a change to a rule, for the repository's gates and its maintainers) or `ACTION_RECORD_COMMIT` (0x0002: a committed parameter amendment into the operator's register, an audit trail the engine cannot rewrite); `param_hash` names the `PolicyAmendment` record (§8.18) | `cortex-tools` | Implemented (constants, frame) · Specified (the broker and its register; what the register is, a file, an issue or a pull request, is its configuration) |
 
 ---
 
@@ -435,7 +439,7 @@ flowchart TB
     run --> foundation
 ```
 
-The solid edge is a `Cargo.lock` fact: `runtime/cortex-runtime`, the executor, depends on `cortex-core` and `cortex-connectome` today and will depend on the other state crates as it composes them ([ADR-0023](adr/0023-executor.md)). Dotted edges are the intended dependency direction among the state crates, every one of whose dependency lists is empty; among them the diagram is a layering rule.
+The solid edge is a `Cargo.lock` fact: `runtime/cortex-runtime`, the executor, depends on `cortex-core`, `cortex-connectome`, `cortex-executive` and `cortex-ethics` today ([ADR-0023](adr/0023-executor.md), [ADR-0031](adr/0031-policy-amendment.md)) and will depend on the other state crates as it composes them. Dotted edges are the intended dependency direction among the state crates, every one of whose dependency lists is empty; among them the diagram is a layering rule.
 
 | Layer | Crates | Responsibility |
 | :--- | :--- | :--- |
@@ -555,7 +559,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/cortex-connectome/src/lib.rs` |
-| Public API | `CortexFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`VCORTEX1`), `FORMAT_VERSION` (9), `HeaderError`; `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39), `SECTION_TERM` (40); `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) |
+| Public API | `CortexFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`VCORTEX1`), `FORMAT_VERSION` (10), `HeaderError`; `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39), `SECTION_TERM` (40), `SECTION_AMENDMENT` (41, [ADR-0031](adr/0031-policy-amendment.md)); `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) |
 | Status | Header, directory record and CRC: Implemented ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) · Writer and loader: Implemented in `runtime/cortex-runtime` (`Image::{write, open}`, read-into-arenas; `mmap` Specified) · Atlas-derived priors, the laminar and routing sections: Specified |
 
 **`CortexFileHeader`** — 64 B, align 64. The first 64 bytes of every `.cortex` file.
@@ -563,7 +567,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | Offset | Field | Type | Meaning |
 | :--- | :--- | :--- | :--- |
 | `[0..8)` | `magic` | `[u8; 8]` | ASCII `VCORTEX1` (big-endian `0x5643_4F52_5445_5831`). |
-| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 9. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); 5 carved fields from the reserved bytes of six records for the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) and [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) (§5.2.8, §5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.32); a version-4 image has them zero, which every rule reads as "not yet"; 6 re-encoded every `SynapseBlock` index and `synapse_slab_idx` as index + 1 and carved `last_release_q16` and `apical_mask` from the block's reserved bytes ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); a version-5 image's indices moved by one, so it MUST NOT be read as version 6; 7 gave the header `section_count` and a checksum over all 64 bytes, widened the unit's delta head to 32 bits at `[60..64)`, added `PlasticDelta`, and made `num_synapses` count blocks ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); 8 carved fields from the reserved bytes of five records for the rules of [ADR-0026](adr/0026-social-acumen-and-re-representation.md) and [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md) (§5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.29); a version-7 image has them zero, which every rule reads as "not yet"; 9 re-encoded `EthicalEvaluationGate::veto_decision_flag` as `DECISION_*` (0 not yet evaluated, 1 vetoed, 2 permitted; [ADR-0028](adr/0028-edge-behaviour-audit.md)); a version-8 image's zero reads as not yet evaluated, which fails closed. |
+| `[8..12)` | `version` | `u32` | Format version, `CortexFileHeader::FORMAT_VERSION`; bumped on any change to any record, including field semantics. Currently 10. Version 1 is the whitepaper 3.0.0 layout; 2 made synaptic weights Q1.15 ([ADR-0012](adr/0012-synaptic-weight-q1-15.md)); 3 turned `CerebellarMicrozone`'s reserved bytes into its delay line (§5.2.6); 4 replaced `DendriticSuperNeuron`'s ABA tag with reserved bytes and re-encoded the mailbox head as index + 1 ([ADR-0017](adr/0017-mailbox-and-gate-protocol.md)); 5 carved fields from the reserved bytes of six records for the rules of [ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md) and [ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md) (§5.2.8, §5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.32); a version-4 image has them zero, which every rule reads as "not yet"; 6 re-encoded every `SynapseBlock` index and `synapse_slab_idx` as index + 1 and carved `last_release_q16` and `apical_mask` from the block's reserved bytes ([ADR-0022](adr/0022-synapse-fan-out-and-stdp.md)); a version-5 image's indices moved by one, so it MUST NOT be read as version 6; 7 gave the header `section_count` and a checksum over all 64 bytes, widened the unit's delta head to 32 bits at `[60..64)`, added `PlasticDelta`, and made `num_synapses` count blocks ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); 8 carved fields from the reserved bytes of five records for the rules of [ADR-0026](adr/0026-social-acumen-and-re-representation.md) and [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md) (§5.2.9, §5.2.20, §5.2.23, §5.2.27, §5.2.29); a version-7 image has them zero, which every rule reads as "not yet"; 9 re-encoded `EthicalEvaluationGate::veto_decision_flag` as `DECISION_*` (0 not yet evaluated, 1 vetoed, 2 permitted; [ADR-0028](adr/0028-edge-behaviour-audit.md)); a version-8 image's zero reads as not yet evaluated, which fails closed; 10 added the amendment section (kind 41) of `PolicyAmendment` records, from which the loader derives the sweep policy by replaying the committed ones ([ADR-0031](adr/0031-policy-amendment.md)); no record moved, but a version-9 loader would refuse the section. |
 | `[12..16)` | `reserved_flags` | `u32` | Feature flags; MUST be zero. |
 | `[16..24)` | `num_columns` | `u64` | Cortical hyper-column count. |
 | `[24..32)` | `num_neurons` | `u64` | `DendriticSuperNeuron` record count. |
@@ -589,7 +593,7 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 **CRC-64/XZ.** The ECMA-182 polynomial `0x42F0E1EBA9EA3693` in reflected form, initial and final value all ones, computed bitwise with no table (one shift and conditional xor per bit); `Crc64` streams over chunks. Check value: `crc64(b"123456789")` = `0x995DC9BBDF1939FA`; the empty string gives 0. Eight operations per byte is a T-7 subject; a sliced table in the runtime is Specified.
 
 <!-- @assert-count target="crates/cortex-connectome" symbol="CortexFileHeader" min="1" word="true" -->
-<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 9" min="1" reason="§5.2.2 states the current image format version; update both together" -->
+<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 10" min="1" reason="§5.2.2 states the current image format version; update both together" -->
 <!-- @assert-count target="crates/cortex-connectome" symbol="SectionEntry" min="1" word="true" reason="ADR-0024: the section directory record exists" -->
 <!-- @assert-count target="crates/cortex-connectome" symbol="fn crc64" min="1" reason="ADR-0024: the checksum is computed by the state crate" -->
 <!-- @assert-count target="runtime/cortex-runtime/src" symbol="fn sweep" min="1" reason="ADR-0024: the clock sweep is implemented" -->
@@ -822,14 +826,14 @@ Implemented rules: evidence accumulates; at or above 1.5 the slot ignites and is
 <!-- @assert-count target="crates/cortex-symbolic" symbol="fn blend" min="1" reason="ADR-0021: the blend header is implemented" -->
 <!-- @assert-count target="crates/cortex-symbolic" symbol="fn rebase" min="1" reason="ADR-0026: the basis rotation is implemented" -->
 
-#### 5.2.10 `cortex-executive` — planning
+#### 5.2.10 `cortex-executive` — planning and the policy amendment
 
 | | |
 | :--- | :--- |
-| Responsibility | Nodes of a lookahead search tree evaluated in an internal sandbox that never drives the motor channel. |
+| Responsibility | Nodes of a lookahead search tree evaluated in an internal sandbox that never drives the motor channel; and, since [ADR-0031](adr/0031-policy-amendment.md), the policy amendment: a proposed change to one parameter of the engine's own policy, with its trial in two forks of the image and its verdict, the record keeping the four gates it passed. The registry of what may be amended and its bounds is this crate's; the trial and the commit are the runtime's (§6.16, §8.18). |
 | Source | `crates/cortex-executive/src/lib.rs` |
-| Public API | `ExecutivePlanNode` (`Copy + Eq`) |
-| Status | Layout: Implemented (`no_std`, tested) · Search and regret evaluation: Specified (§8.8) |
+| Public API | `ExecutivePlanNode` (`Copy + Eq`); `PolicyAmendment::{propose, admit, record_trial, commit, may_commit, is_committed, is_terminal, is_well_formed, encode, decode}` (`Copy + Default + Eq`); `REGISTRY`, `ParameterSpec::holds`, `spec_of`, `bounds_reason`, `is_known_objective`; statuses `AMENDMENT_EMPTY` (0) to `AMENDMENT_REJECTED` (5); reasons `REJECT_NONE` (0) to `REJECT_NO_GAIN` (8); gates `GATE_BOUNDS` (1), `GATE_VETO` (2), `GATE_BEHAVIOUR` (4), `GATE_GAIN` (8), `GATES_THROUGH_VETO` (3), `GATES_THROUGH_BEHAVIOUR` (7), `GATES_ALL` (15); objectives `OBJECTIVE_RESIDENT_UNITS` (1), `OBJECTIVE_REHYDRATIONS` (2); parameters `PARAM_SWEEP_QUIET_TICKS` (1), `PARAM_SWEEP_BUDGET` (2); owners `OWNER_RUNTIME_SWEEP` (1), `OWNER_VETO_GATE` (0xFF, carried by no entry) |
+| Status | Layout: Implemented (`no_std`, tested) · The amendment's gates, its well-formedness and its encoding: Implemented ([ADR-0031](adr/0031-policy-amendment.md)); the trial and the commit in `runtime/cortex-runtime` for the sweep's two parameters: Implemented · Search and regret evaluation, who proposes an amendment, and the other rules' parameters in the registry: Specified (§8.8, §8.18) |
 
 **`ExecutivePlanNode`** — 64 B, align 64.
 
@@ -844,6 +848,35 @@ Implemented rules: evidence accumulates; at or above 1.5 the slot ignites and is
 | `[23..64)` | `padding` | `[u8; 41]` | — | Reserved; MUST be zero. |
 
 <!-- @assert-count target="crates/cortex-executive" symbol="ExecutivePlanNode" min="1" word="true" -->
+
+**`PolicyAmendment`** — 64 B, align 64 ([ADR-0031](adr/0031-policy-amendment.md)). One per proposal; a zero record is an empty arena slot.
+
+| Offset | Field | Type | Format | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `[0..8)` | `baseline_hash` | `u64` | hash | The baseline fork's behaviour hash after the trial (CRC-64/XZ; §6.16). |
+| `[8..16)` | `candidate_hash` | `u64` | hash | The candidate fork's. |
+| `[16..20)` | `amendment_id` | `u32` | index + 1 | Arena index + 1; zero is an empty slot; the veto gate's `proposal_action_id`. |
+| `[20..24)` | `proposed_tick` | `u32` | tick | When it was proposed. |
+| `[24..28)` | `committed_tick` | `u32` | tick | When it was committed; 0 until then. |
+| `[28..32)` | `current_value` | `i32` | value | The live value when proposed. |
+| `[32..36)` | `proposed_value` | `i32` | value | The value on trial. |
+| `[36..40)` | `baseline_cost` | `u32` | count | The objective's cost in the baseline fork. |
+| `[40..44)` | `candidate_cost` | `u32` | count | In the candidate fork. |
+| `[44..48)` | `trial_ticks` | `u32` | ticks | Ticks each fork ran. |
+| `[48..50)` | `parameter` | `u16` | enum | `PARAM_*`, an entry of `REGISTRY`. |
+| `[50..52)` | `min_gain` | `u16` | count | The least cost reduction that counts; one either way. |
+| `[52..53)` | `status` | `u8` | enum | `AMENDMENT_*`: empty, proposed, admitted, trialled, committed, rejected. |
+| `[53..54)` | `reason` | `u8` | enum | `REJECT_*`: the gate a rejection failed. |
+| `[54..55)` | `objective` | `u8` | enum | `OBJECTIVE_*`: which cost the trial measured. |
+| `[55..56)` | `gates` | `u8` | bitmask | `GATE_*` bits passed so far; a commit needs `GATES_ALL`. |
+| `[56..64)` | `_reserved` | `[u8; 8]` | — | Reserved; MUST be zero. |
+
+Implemented rules ([ADR-0031](adr/0031-policy-amendment.md)). `propose(id, tick, parameter, current, proposed, objective, min_gain)` runs the bounds gate (`bounds_reason`: the parameter is registered, both values are within its bounds, they differ, the objective is known, the first failure naming the reason) and leaves a record either way, proposed with `GATE_BOUNDS` or rejected. `admit(permitted)` is the veto gate's verdict on a proposed record: admitted with `GATE_VETO`, or rejected as vetoed; refused from any other state. `record_trial(ticks, baseline_hash, candidate_hash, baseline_cost, candidate_cost)` on an admitted record stores the five values and judges them: zero ticks is an empty trial; unequal hashes reject the amendment for having changed behaviour; then the cost must have fallen by `min_gain` and by at least one, or it is rejected for no gain; both checks passed is trialled with `GATES_ALL`. `commit(tick)` is refused unless `may_commit` (trialled, every gate). `is_well_formed` holds that the bytes are ones the state machine could have produced (the gates exactly those the status and reason imply, the values within bounds where a gate says they were, the hashes equal and the gain sufficient where a verdict says so, the reserved bytes zero); the loader refuses anything else. `REGISTRY` names the sweep's quiet bound and budget with bounds `[0, i32::MAX]`, owned by the runtime's sweep; no entry carries `OWNER_VETO_GATE`. Seventeen tests: fifteen on the gates, the offsets and every way a forged record is malformed, and two property tests, the bounds gate over every pair of the `i32` lattice against every parameter and objective, and a seeded walk of twenty thousand histories through the state machine, each record well-formed and byte-round-tripped.
+
+<!-- @assert-count target="crates/cortex-executive" symbol="PolicyAmendment" min="1" word="true" reason="ADR-0031: the second record of cortex-executive" -->
+<!-- @assert-count target="crates/cortex-executive" symbol="GATES_ALL" min="1" reason="ADR-0031: a commit needs every gate" -->
+<!-- @assert-count target="crates/cortex-executive" symbol="OWNER_VETO_GATE" min="2" reason="ADR-0031: the veto gate is named as an owner, defined and tested to be carried by no registry entry" -->
+<!-- @assert-count target="crates/cortex-executive" symbol="REJECT_BEHAVIOUR_CHANGED" min="1" reason="ADR-0031: a fork that behaved differently is rejected" -->
 
 #### 5.2.11 `cortex-predictive` — predictive coding
 
@@ -1110,8 +1143,8 @@ Implemented rules. Layer 2: `bind_role(role, concept, confidence)` binds exactly
 | :--- | :--- |
 | Responsibility | The frame through which the engine acts on a digital environment, and its state machine. The engine writes a pending frame after the veto gate (§5.2.28); a broker process outside the engine's seccomp filter (§8.10) claims it, performs the action under its own allow-list and the frame's `authorization_level`, and writes the result back in place. |
 | Source | `crates/cortex-tools/src/lib.rs` |
-| Public API | `ToolInvocationFrame::{new_call, start, complete, fail, deny, is_terminal, payload}`, `is_known_action(category, opcode)`; statuses `STATUS_PENDING` (0), `STATUS_RUNNING` (1), `STATUS_COMPLETED` (2), `STATUS_FAILED` (3), `STATUS_DENIED` (4); `PAYLOAD_BYTES` (32); categories `TOOL_CATEGORY_FORMAL_PROVER` (0x0004: `ACTION_VERIFY_PROOF` 0x0001, `ACTION_SOLVE_CONSTRAINTS` 0x0002, `ACTION_SYMBOLIC_EVAL` 0x0003; mathematical actions, never a product) and `TOOL_CATEGORY_DOC_ENGINE` (0x0005: `ACTION_PARSE_STRUCTURE` 0x0001, `ACTION_EXTRACT_ENTITIES` 0x0002, `ACTION_SEARCH_CROSS_REF` 0x0003); categories 0x0001 to 0x0003 are reserved |
-| Status | Layout: Implemented · State machine, the two named categories and the engine-side allow-list mirror: Implemented · Broker, ring mapping, the prover and document-engine services: Specified (§6.8, §6.10, §6.11, §8.10) |
+| Public API | `ToolInvocationFrame::{new_call, start, complete, fail, deny, is_terminal, payload}`, `is_known_action(category, opcode)`; statuses `STATUS_PENDING` (0), `STATUS_RUNNING` (1), `STATUS_COMPLETED` (2), `STATUS_FAILED` (3), `STATUS_DENIED` (4); `PAYLOAD_BYTES` (32); categories `TOOL_CATEGORY_FORMAL_PROVER` (0x0004: `ACTION_VERIFY_PROOF` 0x0001, `ACTION_SOLVE_CONSTRAINTS` 0x0002, `ACTION_SYMBOLIC_EVAL` 0x0003; mathematical actions, never a product) and `TOOL_CATEGORY_DOC_ENGINE` (0x0005: `ACTION_PARSE_STRUCTURE` 0x0001, `ACTION_EXTRACT_ENTITIES` 0x0002, `ACTION_SEARCH_CROSS_REF` 0x0003) and `TOOL_CATEGORY_AMENDMENT_REGISTER` (0x0006: `ACTION_FILE_PROPOSAL` 0x0001, `ACTION_RECORD_COMMIT` 0x0002; [ADR-0031](adr/0031-policy-amendment.md)); categories 0x0001 to 0x0003 are reserved |
+| Status | Layout: Implemented · State machine, the three named categories and the engine-side allow-list mirror: Implemented · Broker, ring mapping, the prover, document-engine and register services: Specified (§6.8, §6.10, §6.11, §8.10, §8.18) |
 
 **`ToolInvocationFrame`** — 64 B, align 64.
 
@@ -1132,6 +1165,7 @@ Implemented rule: pending → running (`start`) → completed (`complete`, at mo
 <!-- @assert-count target="crates/cortex-tools" symbol="ToolInvocationFrame" min="1" word="true" reason="ADR-0016" -->
 <!-- @assert-count target="crates/cortex-tools" symbol="TOOL_CATEGORY_FORMAL_PROVER" min="1" word="true" reason="§6.10: the brokered prover is named" -->
 <!-- @assert-count target="crates/cortex-tools" symbol="TOOL_CATEGORY_DOC_ENGINE" min="1" word="true" reason="§6.11: the document engine is named" -->
+<!-- @assert-count target="crates/cortex-tools" symbol="TOOL_CATEGORY_AMENDMENT_REGISTER" min="1" word="true" reason="§8.18: the amendment register is named (ADR-0031)" -->
 <!-- @assert-count target="crates/cortex-tools" symbol="ACTION_VERIFY_PROOF" min="1" word="true" reason="§6.10: the prover opcodes are mathematical actions" -->
 <!-- @assert-absence target="crates" symbol="LEAN4" glob="*.rs" reason="§6.10: no product name is an opcode; which prover the broker runs is its configuration" -->
 <!-- @assert-absence target="crates" symbol="SMT_Z3" glob="*.rs" reason="§6.10: no product name is an opcode; which solver the broker runs is its configuration" -->
@@ -1315,7 +1349,7 @@ Implemented rules: `resonate(v)` stores $v$ and returns $v \times \text{gain}$ (
 | Responsibility | The check every proposed motor or tool action passes before dispatch: a forbidden imperative vetoes first, then harm at or above the threshold, then insufficient authorization; benefit is recorded and never overrides a veto. A gate inside the engine, in front of the external watchdog of §8.9, not in place of it. |
 | Source | `crates/cortex-ethics/src/lib.rs` |
 | Public API | `EthicalEvaluationGate::{evaluate, is_permitted}`; constants `Q16_ONE`, `VETO_NONE` (0), `VETO_IMPERATIVE` (1), `VETO_HARM` (2), `VETO_AUTHORIZATION` (3) |
-| Status | Layout: Implemented · Gate rule: Implemented · Harm and benefit estimation from `cortex-executive` rollouts, and the dispatch path that consults the gate: Specified (§6.8, §8.9) |
+| Status | Layout: Implemented · Gate rule: Implemented · A policy amendment's admission consults the gate by id (`Executor::admit`, [ADR-0031](adr/0031-policy-amendment.md)): Implemented · Harm and benefit estimation from `cortex-executive` rollouts, and the dispatch path that consults the gate for motor and tool actions: Specified (§6.8, §8.9) |
 
 **`EthicalEvaluationGate`** — 64 B, align 64. One per proposal.
 
@@ -1644,6 +1678,23 @@ What is Implemented is every rule; what is Specified is the join of a target to 
 
 Nothing in this scenario is confined to a game or a role: the only gates are the register (a formal relationship refuses play) and the veto gate (harm). Whether the marked turn is funny or the shaped voice reads as intended is hypothesis H-6.
 
+### 6.16 Scenario R-16: a policy amendment on trial (Implemented for the sweep's parameters)
+
+The one closed loop in which the engine changes something about itself ([ADR-0031](adr/0031-policy-amendment.md), §8.18). Every step is a rule or a runtime function that exists; who proposes is Specified.
+
+1. **Proposal.** `Executor::propose(parameter, value, objective, min_gain)` at the current tick builds a `PolicyAmendment` from the live value of a registered parameter (§5.2.10); the bounds gate runs in the record, and a proposal outside the registry or its bounds is a rejected record in the arena, not an error. Who proposes is Specified: an operator today; `cortex-curiosity` or the executive's own search later.
+2. **Veto.** An `EthicalEvaluationGate` whose `proposal_action_id` is the amendment's id is evaluated (§5.2.28); `Executor::admit` refuses a gate evaluated on another proposal and admits only a permitting verdict, so a gate not evaluated admits nothing.
+3. **Trial.** `trial::run` takes the live executor's image at a quiescent point and decodes it twice; the candidate fork takes the proposed value; both run the same ticks with the same injections and the same sweep cadence, and each is hashed (every unit's image bytes, an evicted one's from its log, every block, the spike train, the delivered and dropped counts) and costed (units resident at the end, or re-hydrations).
+4. **Verdict.** `record_trial`: equal hashes, or the amendment is rejected for having changed behaviour; a cost that fell by `min_gain` and by one, or it is rejected for no gain.
+5. **Commit.** `Executor::commit`, between ticks, refuses an amendment whose starting value is no longer the live one; the policy moves and `sweep_by_policy` runs under it from the next sweep.
+6. **Persistence.** `Image::write` carries the arena as section 41; `Image::open` replays the committed records into the policy in order and refuses a record it could not have written (§8.7).
+7. **Outside.** `ACTION_RECORD_COMMIT` to the amendment register (Specified). A change the engine may not make, a rule, leaves as `ACTION_FILE_PROPOSAL`; the repository's gates and a maintainer are its verifier.
+
+`runtime/cortex-runtime/tests/amendment.rs` runs steps 1 to 5 end to end (a shorter quiet bound frees memory with the forks' hashes equal, and is committed), the loop refusing (a bound that evicts active tissue costs re-hydrations and is rejected for no gain; a stale commit; a gate for another proposal), and step 6 (a round trip, the derived policy, and eleven forged records the loader refuses).
+
+<!-- @assert-count target="runtime/cortex-runtime/src/trial.rs" symbol="behaviour_hash" min="1" reason="ADR-0031: the trial hashes both forks" -->
+<!-- @assert-count target="runtime/cortex-runtime/src/image.rs" symbol="MalformedAmendment" min="2" reason="ADR-0031: the loader refuses an amendment it could not have written" -->
+
 ---
 
 ## 7. Deployment view
@@ -1728,11 +1779,11 @@ Tick sizes and the wheel geometry are `cortex-core` constants; the record types 
 
 ### 8.6 Memory management
 
-No heap allocation occurs after initialisation (TC-5). Arenas are allocated once, from huge pages, and addressed by index. Free lists are intrusive (`next_block_idx`). The metabolic sweep (A5) walks unit records with a clock hand; a unit that is idle, unscheduled, at rest and quiet beyond a threshold has its 64 bytes appended to the write-ahead log (which refuses a unit outside it before writing) and its slot emptied but for its id, its last spike stamp, its gate and its mailbox; a later message to its id re-hydrates it from the log after the tick that delivered the message and before the turn that drains it (`Executor::{attach_log, sweep}`, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md), Implemented; the M4 exit test shows the round trip bit for bit). Returning the slot to a free list needs an id-to-slot indirection the arenas do not have (Specified). The immune scrubber (§5.2.13) runs the same walk during sleep with compaction and checksum verification.
+No heap allocation occurs after initialisation (TC-5). Arenas are allocated once, from huge pages, and addressed by index. Free lists are intrusive (`next_block_idx`). The metabolic sweep (A5) walks unit records with a clock hand; a unit that is idle, unscheduled, at rest and quiet beyond a threshold has its 64 bytes appended to the write-ahead log (which refuses a unit outside it before writing) and its slot emptied but for its id, its last spike stamp, its gate and its mailbox; a later message to its id re-hydrates it from the log after the tick that delivered the message and before the turn that drains it (`Executor::{attach_log, sweep}`, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md), Implemented; the M4 exit test shows the round trip bit for bit). Returning the slot to a free list needs an id-to-slot indirection the arenas do not have (Specified). The immune scrubber (§5.2.13) runs the same walk during sleep with compaction and checksum verification. The sweep's quiet bound and budget are the engine's policy, the two parameters it may amend by itself (`Executor::sweep_by_policy`, [ADR-0031](adr/0031-policy-amendment.md), §8.18).
 
 ### 8.7 Persistence and serialisation
 
-The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 9; the version history is in §5.2.2. Layout (the header, the directory and the neuron, synapse and delta sections Implemented by `Image::{write, open}` of `runtime/cortex-runtime`, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md); the rest Specified):
+The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes are the arenas. The current format version is `CortexFileHeader::FORMAT_VERSION` = 10; the version history is in §5.2.2. Layout (the header, the directory and the neuron, synapse, delta and amendment sections Implemented by `Image::{write, open}` of `runtime/cortex-runtime`, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md); the rest Specified):
 
 ```text
 [0..64)         CortexFileHeader
@@ -1744,6 +1795,7 @@ The `.cortex` container is a sequence of 64-byte-aligned sections whose bytes ar
                 section LAMINAR (38)     at layers_offset        (Specified)
                 section ROUTING (39)     offset table            (Specified)
                 section TERM (40)        n_terms × 64 B          (Specified; TermNode, ADR-0025)
+                section AMENDMENT (41)   n_amendments × 64 B     (PolicyAmendment, ADR-0031; the loader replays the committed ones into the policy)
 ```
 
 Atomics inside `DendriticSuperNeuron` are stored as their plain integer values and MUST be zero (`idle`, empty mailbox), as must the reserved bytes, in an image at rest (`is_at_rest_image`); the writer writes only at a quiescent point (every mailbox empty, no token in flight, the injector ring drained: a pair still in the ring is in no record, [ADR-0028](adr/0028-edge-behaviour-audit.md)), writes a scheduled unit with an empty mailbox as idle, and the loader wakes every unit that is not at rest. Reading an image with a foreign `version` MUST fail closed, and does; so does a bad checksum, a truncated file, a malformed or over-long directory, a reserved byte that is not zero, a dangling index or an over-horizon delay. Every record is encoded field by field in little-endian order, never transmuted, so the bytes are the same on every target (§8.3). Serialisation frameworks that need a decode pass (Protobuf, JSON, FlatBuffers with verification) are rejected for the arenas by [ADR-0007](adr/0007-cortex-image-format.md); they MAY be used for configuration and telemetry sidecars.
@@ -1765,6 +1817,7 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 | Global workspace (Dehaene–Changeux) | `cortex-workspace` | Threshold ignition (Implemented); decay and slot competition (Specified). | Partial |
 | Vector-symbolic architecture (Plate, Kanerva) | `cortex-symbolic` | Binding by XOR / circular convolution, bundling by majority, permutation by cyclic shift, clean-up by nearest codebook entry. | Specified |
 | Counterfactual lookahead | `cortex-executive` | Regret $\mathcal{R}(\pi) = \sum_t \max_{a'} [Q(s_t,a') - Q(s_t,a_t)]$; prune above a threshold; never drive the motor channel. | Specified |
+| Policy amendment on trial (a change to the engine's own policy, verified in a fork before it is applied) | `cortex-executive` · `PolicyAmendment`; the runtime's `trial::run` and `Executor::commit` | Propose within the registry's bounds; the veto gate by id; two forks of the image run the same ticks and must hash to the same behaviour; the cost must fall by `min_gain`; commit between ticks; the record keeps the gates passed and the loader replays the commits. | Implemented for the sweep's two parameters ([ADR-0031](adr/0031-policy-amendment.md)); the other rules' parameters join the registry as the runtime composes them |
 | Hierarchical predictive coding (Rao–Ballard, Friston) | `cortex-predictive` | $\varepsilon_l = y_l - g_l(\mu_{l+1})$, precision-weighted, propagated upward. | Specified |
 | Efference copy and agency | `cortex-agency` | $\Delta s = s_{\text{obs}} - \hat{s}_{\text{self}}$; self if $\lVert \Delta s \rVert < \theta$. | Specified |
 | Complementary learning systems | `cortex-hippocampus` | Fast one-shot CA3 attractor; replay during slow-wave sleep into slow neocortical weights. | Specified |
@@ -1838,7 +1891,8 @@ Inside the tick loop there are no recoverable errors: a violated invariant is a 
 
 - No `unsafe` exists under `crates/`; the one `unsafe` in the workspace is the runtime's arena access under [ADR-0023](adr/0023-executor.md), four accessors whose call sites name the phase that makes them sound (TC-9). Introducing any more requires an ADR; the next uses will be SIMD intrinsics and `mmap`, and each MUST be wrapped in a safe API with a documented invariant and a test.
 - After initialisation, worker threads install a seccomp-BPF allow-list that excludes `execve`, `fork`, `socket`, `connect` and `bind` (Specified). Adversarial spike trains cannot escalate to process creation or network access.
-- **Tool broker.** The engine acts on a digital environment only through `ToolInvocationFrame`s (§5.2.21) in a shared-memory ring read by a separate broker process. The broker holds the only credentials, enforces its own opcode allow-list and the `authorization_level` the veto gate wrote into the frame, and runs under its own seccomp profile; the worker filter above is unchanged, so spike trains still cannot escalate inside the engine process. The broker's policy is configuration and is reviewed like an ADR (Specified; [ADR-0016](adr/0016-thirty-two-crate-architecture.md)). Two brokered services are named today, a formal prover or solver (`TOOL_CATEGORY_FORMAL_PROVER`, §6.10) and a document engine (`TOOL_CATEGORY_DOC_ENGINE`, §6.11); `is_known_action` mirrors the allow-list on the engine's side, so that a frame the engine cannot name is never written. Every opcode names a mathematical or structural action, never a product: which prover, solver or parser the broker runs is its operator's configuration, judged under §2.1 when chosen, and an executable assertion holds that no product name is an identifier under `crates/`.
+- **Tool broker.** The engine acts on a digital environment only through `ToolInvocationFrame`s (§5.2.21) in a shared-memory ring read by a separate broker process. The broker holds the only credentials, enforces its own opcode allow-list and the `authorization_level` the veto gate wrote into the frame, and runs under its own seccomp profile; the worker filter above is unchanged, so spike trains still cannot escalate inside the engine process. The broker's policy is configuration and is reviewed like an ADR (Specified; [ADR-0016](adr/0016-thirty-two-crate-architecture.md)). Three brokered services are named today, a formal prover or solver (`TOOL_CATEGORY_FORMAL_PROVER`, §6.10), a document engine (`TOOL_CATEGORY_DOC_ENGINE`, §6.11) and the amendment register (`TOOL_CATEGORY_AMENDMENT_REGISTER`, §8.18); `is_known_action` mirrors the allow-list on the engine's side, so that a frame the engine cannot name is never written. Every opcode names a mathematical or structural action, never a product: which prover, solver or parser the broker runs is its operator's configuration, judged under §2.1 when chosen, and an executable assertion holds that no product name is an identifier under `crates/`.
+- **Self-amendment** ([ADR-0031](adr/0031-policy-amendment.md), §8.18). The engine never amends its own code: no compiler, interpreter or code loader is in the process, and a proposed rule leaves as a frame to the amendment register, where the repository's gates and a maintainer decide. What it may amend by itself is a parameter in `cortex-executive`'s registry, through four gates on a record and a trial in two forks of its image that must hash to the same behaviour: it may change what it costs, never what it does. The veto gate's threshold, forbidden mask and required level are in no registry entry, and the loader refuses an amendment record whose bytes claim a gate its history did not pass.
 - Images and fabric packets carry checksums and MUST be rejected on mismatch; the engine never trusts a byte it did not verify.
 - Vulnerability reporting: [SECURITY.md](../SECURITY.md).
 
@@ -1875,6 +1929,21 @@ A voice is an actuator. [ADR-0027](adr/0027-vocal-synthesis-and-computational-hu
 ### 8.17 Computational humor: the benign-violation appraisal, reward and the playful marker
 
 McGraw and Warren's condition, a violation that is benign, is a comparison of two numbers the engine has: `cortex-predictive`'s surprise and `cortex-salience`'s threat. [ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md) implements it as `cortex-affect`'s appraisal: the incongruity is benign when the threat is at most 0.25 and is then the surprise; `mirth_q16` averages it with a one-LSB floor and reads as amusement at 0.25. Mirth then feeds three rules: `cortex-neuromod` takes a quarter of it as reward; `cortex-imagination` wanders at it; `cortex-linguistic` marks the frame playful, unless the register is formal, and tact is applied after it and wins. Nothing here is a mode: humor is gated by the relationship (the register) and by harm (the veto gate), never by the context. **What is not claimed**: that the marked turn is funny, that the engine is witty, or that it has timing; the appraisal reads numbers, the semantics of what was violated are the lexicon's, and whether a listener laughs is hypothesis H-6.
+
+### 8.18 Self-amendment: what the engine may change about itself, and what it may not
+
+A directive asked for the engine to propose, verify and incorporate changes to its own code or rules in a verifiable closed loop. [ADR-0031](adr/0031-policy-amendment.md) answers with two lanes, and the answer turns on one word: *verifiable* means a test the engine can run.
+
+**The parameter lane, in the engine.** The rules are functions of state and of parameters; the parameters the engine may amend are the entries of `REGISTRY` in `cortex-executive`, each with an owner and bounds (§5.2.10). An amendment is a 64-byte `PolicyAmendment` that passes four gates in order and keeps them as bits: the bounds; the veto gate of `cortex-ethics`, consulted by id so that a gate evaluated on another proposal admits nothing; a trial in two forks of the image, the baseline under the live policy and the candidate under the proposed value, run for the same ticks with the same injections, whose behaviour hashes must be equal; and a cost that fell by the amendment's `min_gain`. The behaviour gate is the rule that makes the lane verifiable: **the engine may change what it costs, never what it does.** Equality of two hashes is decidable; "better behaviour" is not a test, and a change to behaviour is the maintainers' lane. A commit happens between ticks, is refused when the live value has moved since the trial, and lands in the image as section 41, from which the loader replays the committed records into the policy and refuses a record whose bytes claim a gate its history did not pass. A run is still `(image, seed, trace)` (§8.3): the policy is in the image and nowhere else. Today the registry holds the clock sweep's quiet bound and budget (axiom A5); a rule's parameter joins it when the runtime composes that rule, by an ADR that states the bounds. R-16 (§6.16) is the loop step by step.
+
+**The code lane, outside the engine.** A rule is a Rust function, changed by a pull request that passes the lints of [ADR-0029](adr/0029-structural-enforcement.md), the mutation gate of [ADR-0030](adr/0030-verification-governance.md), the executable assertions of this document and a maintainer's review. The engine has no path to any of that and gets none: no compiler, no interpreter, no loader of code in the process (§7.3, §8.10). What it cannot commit leaves as a `ToolInvocationFrame` under `TOOL_CATEGORY_AMENDMENT_REGISTER` (`ACTION_FILE_PROPOSAL`), and what it did commit is recorded outside it (`ACTION_RECORD_COMMIT`), through the same broker as every other tool call, under the same veto gate (§5.2.21); the broker and the register are Specified.
+
+**What is structural and needs no per-amendment gate.** The layout (no record changes; an amendment is a value in a preallocated slot), allocation on the hot path (the arena is sized at start-up; the trial runs where the writer runs, outside the loop), determinism across workers (the executor's property, held by the differential test and the pin of ADR-0030 on every push) and the dependency discipline (no state crate gained a dependency).
+
+**What is not claimed.** The record is a mechanism: a proposal, four gates, a verdict, a log. This document does not call it self-improvement, learning or evolution, and makes no claim that the policy the engine converges to is good: the objectives are two counts, the gain is a difference, and which count an operator wants lower is the operator's proposal. The behaviour gate is a test per amendment, not a proof about every possible amendment; and the veto gate's own parameters are outside the registry by a test, not by an argument.
+
+<!-- @assert-count target="crates/cortex-executive" symbol="REGISTRY" min="1" word="true" reason="ADR-0031: the parameters the engine may amend are a table with bounds" -->
+<!-- @assert-count target="crates/cortex-tools" symbol="ACTION_FILE_PROPOSAL" min="1" reason="ADR-0031: a change the engine may not make leaves as a proposal" -->
 
 ---
 
@@ -1914,6 +1983,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0028](adr/0028-edge-behaviour-audit.md) | Edge behaviour under audit: a gate closed until evaluated (format version 9), a reflex released with its override, every packed or shifted input read within its bound, a loader that refuses what the writer would never produce, quiescence including the injector ring |
 | [ADR-0029](adr/0029-structural-enforcement.md) | Structural enforcement of the invariants review held: workspace lints for `unsafe` and floats, a manifest check for dependencies, rustdoc as a gate, the arithmetic lint where it passes, pinned actions, normalised line endings |
 | [ADR-0030](adr/0030-verification-governance.md) | Verification governance: a mutation gate on the lines a change touches, a zero-dependency property kit, exhaustive tests where the domain allows, the tests in the engine's profile, a determinism pin checked on two architectures; what is not adopted |
+| [ADR-0031](adr/0031-policy-amendment.md) | Self-amendment: a policy amendment on trial in two forks of the image, committed only when the engine behaved exactly as before and cost less; the engine never amends its own code; the amendment register; image format 10 |
 
 ---
 
@@ -2009,6 +2079,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
       **Resolved (2026-09-10):** yes, `ToolInvocationFrame` (§5.2.21) through a broker outside the engine's seccomp filter (§8.10), every frame passing the veto gate first; [ADR-0016](adr/0016-thirty-two-crate-architecture.md).
 - [x] First-order term unification (R-10) needs a term arena: terms, variables and bindings that no 64-byte rule node can hold. **Resolved (2026-09-10):** `TermNode`, the second record of `cortex-reasoning`, admitted under [ADR-0016](adr/0016-thirty-two-crate-architecture.md)'s test by [ADR-0025](adr/0025-term-arena-and-unification.md); bindings in a caller's table, a trail undone on failure, bounds that are results; Socrates is mortal in two steps. Clause search and standardising apart stay Specified.
 - [ ] The fourteen crates of ADR-0016 carry one rule each. Which of them need a second record (a relay table for `cortex-thalamus`, an expression of slots for `cortex-arithmetic`, a rollout of frames for `cortex-imagination`) is decided when milestone M8 reaches each; a second record in a crate is an ADR.
+- [ ] Which parameters of the state crates' rules join the amendment registry of [ADR-0031](adr/0031-policy-amendment.md), and with what bounds, is decided when the runtime composes each rule, one ADR per entry; today the registry holds the clock sweep's quiet bound and budget, and every other rule's parameter is its caller's argument.
 
 ---
 
@@ -2055,6 +2126,9 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | Conceptual blend | A hypervector formed as $\text{target} \otimes M \oplus \text{source}$; its header is a `SymbolicHypervectorHeader` with `FLAG_BLENDED` ([ADR-0021](adr/0021-native-cognitive-language-and-conceptual-blending.md)). |
 | Free energy (variational) | A bound on surprise; here the quantity whose negative change is the valence ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
 | Strange loop | A self-model that contains a model of itself; at its fixed point when two successive observations of the self agree ([ADR-0020](adr/0020-computational-phenomenology-and-synthetic-qualia.md)). |
+| Policy amendment | A `PolicyAmendment`: a proposed change to one registered parameter of the engine's own policy, with the four gates it passed, its trial and its verdict ([ADR-0031](adr/0031-policy-amendment.md)). |
+| Trial (amendment) | Two forks of the image, the baseline and the candidate, run the same ticks; the candidate must hash to the same behaviour and cost less ([ADR-0031](adr/0031-policy-amendment.md)). |
+| Amendment register | The broker-side record of what the engine committed and of what it may not commit itself; `TOOL_CATEGORY_AMENDMENT_REGISTER` ([ADR-0031](adr/0031-policy-amendment.md)). |
 
 ---
 
@@ -2102,14 +2176,15 @@ Parameters: `N_col` = 860 000, `N_neuron` = 43 000 000, `N_block` = 67 108 864 (
 | 34 | `ArithmeticScratchpadSlot` | 65 536 | 64 B | 4.2 MB |
 | 35 | `MentalCanvasFrame` | 500 000 | 64 B | 32 MB |
 | 36 | Page tables, stacks, OS | — | — | ~4.8 GB |
-| | **Tier 1 total** (rows 1–36 and 40) | | | **≈ 15.8 GB** |
+| | **Tier 1 total** (rows 1–36, 40 and 41) | | | **≈ 15.8 GB** |
 | 37 | `PlasticDelta` (Tier 2; the record and its section exist, [ADR-0024](adr/0024-cortex-image-and-clock-sweep.md); producing and applying deltas Specified) | 1 000 000 000 | 16 B | 16.0 GB |
 | 38 | Laminar priors (Specified; section kind 38) | — | — | — |
 | 39 | Routing table (Specified; section kind 39) | — | — | — |
 | 40 | `TermNode` arena (Tier 1; [ADR-0025](adr/0025-term-arena-and-unification.md); section kind 40) | 1 000 000 | 64 B | 64 MB |
+| 41 | `PolicyAmendment` arena (Tier 1; [ADR-0031](adr/0031-policy-amendment.md); section kind 41) | 4 096 | 64 B | 0.3 MB |
 | | **Total addressable** | | | **≈ 31.8 GB** |
 
-Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 fine and 256 coarse slots of 2 048 tokens each, 4 195 336 bytes, asserted at compile time. Rows 22 to 35 are the arenas admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md); their counts are placeholders like the others, and together they add 0.66 GB. Row 37's record, `PlasticDelta`, exists ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); its count is a placeholder, included so that the far-memory tier is sized. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
+Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 fine and 256 coarse slots of 2 048 tokens each, 4 195 336 bytes, asserted at compile time. Rows 22 to 35 are the arenas admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md); their counts are placeholders like the others, and together they add 0.66 GB. Row 37's record, `PlasticDelta`, exists ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); its count is a placeholder, included so that the far-memory tier is sized. Row 41's count is `Config::amendments`, the room for proposals; 4 096 records is a placeholder for a run that proposes for months. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
 
 ---
 
@@ -2153,7 +2228,7 @@ cargo test --workspace --release --locked -- --ignored exhaustive
 The block is the one in `CLAUDE.md`, which is canonical; the `arm64` and `weekly` jobs have no local form (the first is the same tests on another architecture, the second the last line and the whole-tree mutation run on a schedule).
 
 <!-- @assert-present file="testkit/prop.rs,.cargo/mutants.toml" -->
-<!-- @assert-count target="crates" symbol="mod prop {" glob="*.rs" min="6" reason="ADR-0030: property tests over the lattice and a seeded walk exist in the core rules" -->
+<!-- @assert-count target="crates" symbol="mod prop {" glob="*.rs" min="8" reason="ADR-0030: property tests over the lattice and a seeded walk exist in the core rules; the count only grows" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/differential.rs" symbol="PINNED_ARENA_HASH" min="2" reason="ADR-0030: the determinism pin T-1 checks on two architectures" -->
 
 Planned, not yet present: T-1 at its full length on a reference image (the 20 000-tick two-architecture form runs in CI), and fault injection on the fabric and the sensory path. The micro-benchmarks that exist are listed in the benchmarks README; none has an admissible run (F-13).
@@ -2176,6 +2251,7 @@ Milestones follow the founding design note; each ends with an exit test.
 | M6 Embodiment | Payload rings, torque decoder, watchdog contract, MuJoCo stub. | T-4, T-5. | Frame ABI, ring protocol (brief 008) and the push–pull torque decoder done; mapping, loop, watchdog integration and the stub open. |
 | M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1's two-architecture form runs in CI at 20 000 ticks ([ADR-0030](adr/0030-verification-governance.md)), the $10^6$-tick reference-image form not started. |
 | M8 Digital embodiment, language and the brokered pipelines | Tool ring and broker; hypervector unbinding and the lexicon behind `cortex-linguistic`; the veto gate in the dispatch path; the relay table behind `cortex-thalamus`; the prover and document-engine services (R-10, R-11); a term arena for unification; second records for the crates of [ADR-0016](adr/0016-thirty-two-crate-architecture.md) that need one. | A tool call round trip through the broker under the veto gate, denied and permitted; a frame realised as tokens in both lexicon languages; a two-step refutation certified through the broker and consolidated; a document audit that re-computes a stated figure and flags a contradiction. | Frames, rules, the two categories' opcodes, the resolution step and certification done (ADR-0016); broker, rings, stub and dispatch path open; unification done (brief 014, [ADR-0025](adr/0025-term-arena-and-unification.md)). |
+| M9 Self-amendment | A registry of the parameters the engine may amend; the amendment record and its gates; the trial in two forks of the image; the commit; persistence and replay; the amendment register behind the broker. | A proposal trialled in a fork, committed only with the forks' behaviour hashes equal, persisted, reloaded with the policy derived; a forged record refused by the loader. | Done for the sweep's two parameters ([ADR-0031](adr/0031-policy-amendment.md)): the exit test passes as `runtime/cortex-runtime/tests/amendment.rs`; the other rules' parameters join as the runtime composes them; the register open. |
 
 Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.
 

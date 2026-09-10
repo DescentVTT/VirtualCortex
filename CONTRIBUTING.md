@@ -41,7 +41,8 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 | Every state crate is `#![no_std]`; no `Box`, `Vec`, `String` or thread spawning in state crates. | `spec-guard` directives (the `no_std` count is asserted at 32). |
 | A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a control record derives `Debug` only. | Review; whitepaper §8.2 rule L-5. |
 | No `unsafe` without an ADR naming the invariant and the test. | `unsafe_code = "forbid"` under `[workspace.lints]` in every state crate and the benchmark crate (ADR-0029); `spec-guard` directives for the runtime's one `unsafe`; review. |
-| Arithmetic on Q16.16 state fields is saturating, or explicitly wrapping for phase counters. | `#![deny(clippy::arithmetic_side_effects)]` in the twelve crates that carry it ([ADR-0029](docs/adr/0029-structural-enforcement.md)); review in the other twenty and the runtime until they migrate (finding F-4). |
+| Arithmetic on Q16.16 state fields is saturating, or explicitly wrapping for phase counters. | `#![deny(clippy::arithmetic_side_effects)]` in the fifteen crates that carry it ([ADR-0029](docs/adr/0029-structural-enforcement.md) and three on 2026-09-10); review in the other seventeen and the runtime until they migrate (brief 016, finding F-4). |
+| A parameter the engine may amend by itself is an entry of `cortex-executive`'s `REGISTRY` with an owner and bounds, added by an ADR; the veto gate's parameters never are; the amendment passes the four gates of `PolicyAmendment` and its trial ([ADR-0031](docs/adr/0031-policy-amendment.md)). | The registry test in `cortex-executive`; `spec-guard` holds `OWNER_VETO_GATE` and the record; the loader's `is_well_formed`; review of the ADR that adds an entry. |
 | Trailing padding is an explicit `_reserved` or `padding` byte array. | Review. |
 | Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version` and gets a changelog entry. | Review. |
 

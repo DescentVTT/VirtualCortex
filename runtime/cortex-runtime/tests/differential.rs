@@ -293,6 +293,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             deque_capacity: 0,
             injector_capacity: 1024,
             trace_capacity: 1 << 16,
+            amendments: 0,
         },
         wire_random,
         20_000,

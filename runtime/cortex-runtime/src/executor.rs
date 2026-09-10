@@ -35,6 +35,8 @@ use cortex_core::{
     SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, message_efficacy_q16, message_is_apical,
     spike_message, synapse_token, token_block, token_slot,
 };
+use cortex_ethics::EthicalEvaluationGate;
+use cortex_executive::{PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS, PolicyAmendment, spec_of};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
@@ -62,6 +64,9 @@ pub struct Config {
     /// Delivered messages and spikes each worker records, for tests and reports; 0 records
     /// nothing.
     pub trace_capacity: usize,
+    /// Room for policy amendments (ADR-0031) beyond those an image holds; 0 leaves the engine
+    /// unable to propose one.
+    pub amendments: usize,
 }
 
 impl Default for Config {
@@ -75,8 +80,74 @@ impl Default for Config {
             deque_capacity: 0,
             injector_capacity: 64,
             trace_capacity: 0,
+            amendments: 0,
         }
     }
+}
+
+/// The engine's policy (ADR-0031): the parameters its rules take that it may amend by itself,
+/// each an entry of `cortex_executive::REGISTRY`. Read between ticks by the clock sweep;
+/// changed only by [`Executor::commit`], after the amendment's trial, or by the loader from
+/// the committed amendments an image holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Policy {
+    /// Ticks a unit must have been quiet before [`Executor::sweep_by_policy`] evicts it
+    /// (`PARAM_SWEEP_QUIET_TICKS`).
+    pub sweep_quiet_ticks: u32,
+    /// The most units one [`Executor::sweep_by_policy`] evicts (`PARAM_SWEEP_BUDGET`).
+    pub sweep_budget: u32,
+}
+
+impl Default for Policy {
+    /// Quiet for 10 000 ticks (100 ms at the fine tick), at most 1 024 units per sweep.
+    fn default() -> Self {
+        Self {
+            sweep_quiet_ticks: 10_000,
+            sweep_budget: 1_024,
+        }
+    }
+}
+
+impl Policy {
+    /// The live value of a registered parameter; `None` for one the registry does not name.
+    pub fn value(&self, parameter: u16) -> Option<i32> {
+        match parameter {
+            PARAM_SWEEP_QUIET_TICKS => Some(self.sweep_quiet_ticks.min(i32::MAX as u32) as i32),
+            PARAM_SWEEP_BUDGET => Some(self.sweep_budget.min(i32::MAX as u32) as i32),
+            _ => None,
+        }
+    }
+
+    /// Sets a registered parameter to a value within its bounds; refused, with nothing
+    /// changed, for an unregistered parameter or a value outside them.
+    pub fn set(&mut self, parameter: u16, value: i32) -> bool {
+        if !spec_of(parameter).is_some_and(|s| s.holds(value)) {
+            return false;
+        }
+        match parameter {
+            PARAM_SWEEP_QUIET_TICKS => self.sweep_quiet_ticks = value as u32,
+            PARAM_SWEEP_BUDGET => self.sweep_budget = value as u32,
+            _ => return false,
+        }
+        true
+    }
+}
+
+/// Why an amendment operation is refused (ADR-0031).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AmendError {
+    /// The index names no amendment.
+    NoSuchAmendment,
+    /// The arena has no room for another proposal (`Config::amendments`).
+    ArenaFull,
+    /// The veto gate was evaluated on another proposal: its `proposal_action_id` is not this
+    /// amendment's id.
+    WrongProposal,
+    /// The amendment is not trialled with every gate passed.
+    NotCommittable,
+    /// The live value is no longer the one the trial started from: another commit came
+    /// between, and the trial did not test this one on top of it.
+    Stale,
 }
 
 /// Why a configuration is refused.
@@ -217,6 +288,8 @@ pub struct Executor<const CAP: usize> {
     hand: usize,
     evictions: u64,
     rehydrations: u64,
+    policy: Policy,
+    amendments: Vec<PolicyAmendment>,
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -311,6 +384,8 @@ impl<const CAP: usize> Executor<CAP> {
             hand: 0,
             evictions: 0,
             rehydrations: 0,
+            policy: Policy::default(),
+            amendments: Vec::with_capacity(config.amendments),
         })
     }
 
@@ -466,6 +541,149 @@ impl<const CAP: usize> Executor<CAP> {
         }
         self.evictions += evicted as u64;
         Ok(evicted)
+    }
+
+    /// The clock sweep under the live policy (ADR-0031): [`Executor::sweep`] with the policy's
+    /// quiet bound and budget.
+    pub fn sweep_by_policy(&mut self) -> Result<usize, ImageError> {
+        let policy = self.policy;
+        self.sweep(policy.sweep_quiet_ticks, policy.sweep_budget as usize)
+    }
+
+    // ------------------------------------------------------------ amendments (ADR-0031)
+
+    /// The live policy.
+    pub fn policy(&self) -> Policy {
+        self.policy
+    }
+
+    /// The amendment arena: every proposal so far, in order, whatever became of it.
+    pub fn amendments(&self) -> &[PolicyAmendment] {
+        &self.amendments
+    }
+
+    /// Slots left for proposals.
+    pub fn amendment_room(&self) -> usize {
+        self.amendments.capacity() - self.amendments.len()
+    }
+
+    /// Proposes, at this tick, to change `parameter` from its live value to `proposed_value`,
+    /// judged by `objective` with a gain of at least `min_gain`; the bounds gate runs in
+    /// `PolicyAmendment::propose`. Returns the arena index; every proposal takes a slot, a
+    /// rejected one as the record of its rejection. Refused when the arena is full.
+    pub fn propose(
+        &mut self,
+        parameter: u16,
+        proposed_value: i32,
+        objective: u8,
+        min_gain: u16,
+    ) -> Result<usize, AmendError> {
+        if self.amendments.len() == self.amendments.capacity() {
+            return Err(AmendError::ArenaFull);
+        }
+        let index = self.amendments.len();
+        let current = self.policy.value(parameter).unwrap_or(0);
+        self.amendments.push(PolicyAmendment::propose(
+            index as u32 + 1,
+            self.tick as u32,
+            parameter,
+            current,
+            proposed_value,
+            objective,
+            min_gain,
+        ));
+        Ok(index)
+    }
+
+    /// The veto gate's verdict on the proposal at `index`: the gate must have been evaluated on
+    /// this amendment (`proposal_action_id` is its id), and the amendment is admitted only by
+    /// a permitting verdict; a gate not yet evaluated is closed (ADR-0028). Returns whether
+    /// the amendment is now admitted.
+    pub fn admit(
+        &mut self,
+        index: usize,
+        gate: &EthicalEvaluationGate,
+    ) -> Result<bool, AmendError> {
+        let a = self
+            .amendments
+            .get_mut(index)
+            .ok_or(AmendError::NoSuchAmendment)?;
+        if gate.proposal_action_id != a.amendment_id {
+            return Err(AmendError::WrongProposal);
+        }
+        Ok(a.admit(gate.is_permitted()))
+    }
+
+    /// Records a trial's result on the amendment at `index` (`PolicyAmendment::record_trial`;
+    /// the trial itself is [`crate::trial::run`]). Returns whether it may now be committed.
+    pub fn record_trial(
+        &mut self,
+        index: usize,
+        ticks: u32,
+        baseline_hash: u64,
+        candidate_hash: u64,
+        baseline_cost: u32,
+        candidate_cost: u32,
+    ) -> Result<bool, AmendError> {
+        let a = self
+            .amendments
+            .get_mut(index)
+            .ok_or(AmendError::NoSuchAmendment)?;
+        Ok(a.record_trial(
+            ticks,
+            baseline_hash,
+            candidate_hash,
+            baseline_cost,
+            candidate_cost,
+        ))
+    }
+
+    /// Commits the trialled amendment at `index` into the live policy, between ticks. Refused
+    /// when the amendment is not committable, or when the live value is no longer the one the
+    /// trial started from (another commit came between: the trial did not test this change
+    /// on top of that one).
+    pub fn commit(&mut self, index: usize) -> Result<(), AmendError> {
+        let tick = self.tick as u32;
+        let a = self
+            .amendments
+            .get_mut(index)
+            .ok_or(AmendError::NoSuchAmendment)?;
+        if !a.may_commit() {
+            return Err(AmendError::NotCommittable);
+        }
+        if self.policy.value(a.parameter) != Some(a.current_value) {
+            return Err(AmendError::Stale);
+        }
+        if !self.policy.set(a.parameter, a.proposed_value) {
+            return Err(AmendError::NotCommittable);
+        }
+        a.commit(tick);
+        Ok(())
+    }
+
+    /// A trial fork's policy: the runtime's own way to put the candidate value in place, not a
+    /// public way around [`Executor::commit`].
+    pub(crate) fn set_policy_value(&mut self, parameter: u16, value: i32) -> bool {
+        self.policy.set(parameter, value)
+    }
+
+    /// The loader's way in: an amendment record from an image, already well-formed, appended
+    /// in the image's order; a committed one is replayed into the policy, and is refused when
+    /// its starting value is not the policy's at that point in the replay.
+    pub(crate) fn load_amendment(&mut self, a: PolicyAmendment) -> bool {
+        if self.amendments.len() == self.amendments.capacity() {
+            return false;
+        }
+        if a.is_committed() {
+            if self.policy.value(a.parameter) != Some(a.current_value) {
+                return false;
+            }
+            if !self.policy.set(a.parameter, a.proposed_value) {
+                return false;
+            }
+        }
+        self.amendments.push(a);
+        true
     }
 
     /// After a tick: every evicted unit that received a message gets its plain fields back from

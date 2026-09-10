@@ -15,6 +15,9 @@ repository.workspace = true
 [dependencies]
 cortex-core = { path = "../../crates/cortex-core" }
 cortex-connectome = { path = "../../crates/cortex-connectome" }
+# The amendment record and the veto gate it is admitted through (ADR-0031).
+cortex-executive = { path = "../../crates/cortex-executive" }
+cortex-ethics = { path = "../../crates/cortex-ethics" }
 
 # Not the workspace table: the runtime holds the one `unsafe` (ADR-0023). The float rule
 # still applies (ADR-0029).
