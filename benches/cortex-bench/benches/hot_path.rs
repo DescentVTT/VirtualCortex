@@ -7,7 +7,9 @@
 
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_bench::Lcg;
-use cortex_core::{DendriticSuperNeuron, MailboxNode, WorkerWheel, synaptic_efficacy_q16};
+use cortex_core::{
+    DendriticSuperNeuron, MailboxNode, THRESHOLD_BASE, WorkerWheel, synaptic_efficacy_q16,
+};
 use cortex_workspace::GlobalWorkspaceSlot;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -203,5 +205,28 @@ fn gate(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, wheel, efficacy, gating, ignition, mailbox, gate);
+/// R-1 step 5 (ADR-0018): one `integrate` tick on a configured unit under a drive that keeps
+/// it firing now and then, so both the sub-threshold path and the spike path are measured in
+/// their real proportion.
+fn neuron(c: &mut Criterion) {
+    let mut group = c.benchmark_group("neuron");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("integrate", |b| {
+        let mut unit = DendriticSuperNeuron::new(1);
+        unit.v_thresh = THRESHOLD_BASE;
+        let mut rng = Lcg(Lcg::SEED);
+        let mut tick = 0u32;
+        b.iter(|| {
+            let basal = (rng.next_u32() >> 22) as i32;
+            let apical = (rng.next_u32() >> 23) as i32;
+            tick = tick.wrapping_add(1);
+            black_box(unit.integrate(black_box(basal), black_box(apical), tick))
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(
+    benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron
+);
 criterion_main!(benches);
