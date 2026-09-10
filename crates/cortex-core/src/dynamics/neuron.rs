@@ -216,15 +216,15 @@ impl DendriticSuperNeuron {
             return false;
         };
         let mut head = self.mailbox_head_ptr.load(Ordering::Relaxed);
-        if head > u32::MAX as u64 {
-            return false;
-        }
-        n.payload.store(payload, Ordering::Relaxed);
         let encoded = node as u64 + 1;
         loop {
+            // One check for the first attempt and every retry: a corrupt head refuses before
+            // anything is stored on the first attempt, and leaves the payload in the caller's own
+            // node on a retry.
             if head > u32::MAX as u64 {
                 return false;
             }
+            n.payload.store(payload, Ordering::Relaxed);
             n.next.store(head as u32, Ordering::Relaxed);
             match self.mailbox_head_ptr.compare_exchange_weak(
                 head,
@@ -348,11 +348,30 @@ mod tests {
     }
 
     #[test]
-    fn efficacy_is_monotonic_in_each_factor() {
-        let base = synaptic_efficacy_q16(0x2000, 100, 100);
-        assert!(synaptic_efficacy_q16(0x2001, 100, 100) >= base);
-        assert!(synaptic_efficacy_q16(0x2000, 101, 100) >= base);
-        assert!(synaptic_efficacy_q16(0x2000, 100, 101) >= base);
+    fn efficacy_is_monotonic_in_each_factor_in_the_direction_of_the_weight_s_sign() {
+        for w in [i16::MIN, -0x2000, -1, 1, 0x2000, i16::MAX] {
+            for (u, r) in [
+                (0u8, 0u8),
+                (1, 1),
+                (51, 200),
+                (100, 100),
+                (254, 254),
+                (255, 255),
+            ] {
+                let base = synaptic_efficacy_q16(w, u, r);
+                let up_u = synaptic_efficacy_q16(w, u.saturating_add(1), r);
+                let up_r = synaptic_efficacy_q16(w, u, r.saturating_add(1));
+                if w > 0 {
+                    assert!(up_u >= base && up_r >= base, "{w} {u} {r}");
+                } else {
+                    assert!(up_u <= base && up_r <= base, "{w} {u} {r}");
+                }
+            }
+            assert!(
+                synaptic_efficacy_q16(w.saturating_add(1), 100, 100)
+                    >= synaptic_efficacy_q16(w, 100, 100)
+            );
+        }
     }
 
     #[test]

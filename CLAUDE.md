@@ -98,7 +98,8 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 
 ## Commands
 
-Run all of these before pushing. CI runs exactly the same set; a check here and not in CI is a
+Run all of these before pushing. CI runs exactly the same set (plus the same tests on AArch64 and,
+weekly, the whole-tree mutation run, which have no local form); a check here and not in CI is a
 gate nobody enforces, and the reverse is a green local run and a red push.
 
 ```bash
@@ -114,6 +115,7 @@ cargo +1.85 test --workspace --locked
 npm ci
 npm run spec
 git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0
+cargo test --workspace --release --locked -- --ignored exhaustive   # before a release; the weekly job runs it too
 ```
 
 The mutation line is the gate a pull request meets: every mutant `cargo-mutants` can make in the

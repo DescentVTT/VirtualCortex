@@ -298,9 +298,14 @@ mod prop {
             assert_eq!(u.stp_r_ves, 255 - 92);
             let elapsed = rng.u32_edge_biased();
             let r_before = u.stp_r_ves;
-            let (_, r2) = u.step_stp(elapsed);
+            let (u2, r2) = u.step_stp(elapsed);
             assert!(r2 >= r_before, "recovery before the release");
-            assert!(u.stp_r_ves <= r2, "then depletion");
+            let released = ((u2 as i64 * r2 as i64) + 128) >> 8;
+            assert_eq!(
+                u.stp_r_ves as i64,
+                (r2 as i64 - released).max(0),
+                "then depletion by exactly the release"
+            );
         }
     }
 

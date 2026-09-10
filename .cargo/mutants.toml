@@ -1,13 +1,16 @@
 # cargo-mutants configuration (ADR-0030). The tool is an external, pinned binary; nothing in a
 # manifest changes for it. CI runs it on the lines a pull request changes (`--in-diff`), and a
 # mutant that survives in those lines fails the check: the test that constrains a new rule must
-# exist, and must fail when the rule is wrong. The whole tree is run by hand from time to time
-# (`cargo mutants --workspace`); its survivors are listed in whitepaper §11 or become tests.
+# exist, and must fail when the rule is wrong. The whole tree is run weekly by CI and by hand
+# when a round ends (`cargo mutants --workspace`); its survivors are listed in whitepaper §11
+# or become tests.
 
 # The benchmark crate is measurement, not logic.
 exclude_globs = ["benches/**"]
 
-# Every test binary is built with the lock the rest of CI uses.
+# Every test binary is built with the lock the rest of CI uses. A mutant is tested against its
+# own crate's tests (the tool's default): a runtime test never kills a state-crate mutant, which
+# is why every rule carries its tests in its own crate.
 additional_cargo_test_args = ["--locked"]
 
 # Mutants that are equivalent to the original by construction, each with the reason. A pattern
@@ -35,18 +38,14 @@ exclude_re = [
     # `>=` and `<=` agree with them.
     "membrane\\.rs:\\d+:\\d+: replace > with >= in leak",
     "membrane\\.rs:\\d+:\\d+: replace < with <= in leak",
-    # `-MAX / 1` moves the lower clamp test by one to a value the clamp maps to the same result.
-    "synapse\\.rs:\\d+:\\d+: replace - with / in spike_message",
-    # A bound the domain cannot reach: a mailbox head above `u32::MAX` needs an arena of
-    # 2^32 nodes; `>` and `>=` (or `==`) differ only at a head no test can build. Likewise
-    # more synapse blocks than a token can name (2^26 of them).
+    # A bound the domain cannot reach: a mailbox head of exactly `u32::MAX` is node
+    # `u32::MAX - 1`, which needs an arena of 2^32 nodes, so `>` and `>=` differ at a head no test
+    # can build. (The block bound, `too_many_blocks`, is a function a unit test holds at its
+    # edge, so it needs no entry here.)
     "neuron\\.rs:\\d+:\\d+: replace > with >= in DendriticSuperNeuron::mailbox_push",
-    "neuron\\.rs:\\d+:\\d+: replace > with == in DendriticSuperNeuron::mailbox_push",
-    "image\\.rs:\\d+:\\d+: replace > with (==|>=) in Image::decode",
-    "image\\.rs:\\d+:\\d+: replace \\+ with (-|\\*) in Image::decode",
     # Scheduling and sizing hints with no observable result: how many times a barrier spins
     # before it yields, and a worker thread's stack reserve.
-    "barrier\\.rs:\\d+:\\d+: replace << with >>",
+    "barrier\\.rs:\\d+:\\d+: replace << with >>$",
     "barrier\\.rs:\\d+:\\d+: replace < with (==|>|<=) in SpinBarrier::wait",
     "barrier\\.rs:\\d+:\\d+: replace \\+= with \\*= in SpinBarrier::wait",
     "executor\\.rs:\\d+:\\d+: replace \\* with (\\+|/) in build_wheels",
@@ -58,12 +57,6 @@ exclude_re = [
     "executor\\.rs:\\d+:\\d+: replace <impl Drop for Executor<CAP>>::drop with \\(\\)",
     # `difference < 0` after the `== 0` arm has been taken: `<=` cannot see a zero there.
     "injector\\.rs:\\d+:\\d+: replace < with <= in Injector::(push|pop)",
-    # A gap clamped at 1.0: `> ONE` and `>= ONE` agree at the bound.
-    "cortex-social/src/lib\\.rs:\\d+:\\d+: replace > with >= in SocialPerspectiveNode::assess_sincerity",
-    # The child-role branch of the realisation order runs only for a complete frame, and a
-    # template with a child role is complete only with the child bound: the bit is always set
-    # there, so `&` and `|` agree.
-    "cortex-linguistic/src/lib\\.rs:\\d+:\\d+: replace & with \\| in LinguisticFrameSlot::realisation_order",
     # The directory bound before the allocation: the per-entry read bounds the directory too,
     # so `len - 64` and `len + 64` refuse the same images; the check exists to size the
     # allocation, which either form keeps small.

@@ -127,6 +127,9 @@ fn a_cyclic_chain_ends_within_the_arena_and_the_tokens_in_flight_are_counted() {
 fn a_unit_activated_three_times_before_a_tick_takes_its_turn_without_a_message() {
     let mut exec = Executor::<64>::new(config(2, 0, 64)).unwrap();
     arm(&mut exec);
+    // Unit 1 sits above its threshold; only a turn can make it fire, and only an activation
+    // gives it one without a message.
+    exec.units_mut()[1].v_soma = 2 * THRESHOLD_BASE;
     exec.injector().activate(1).unwrap();
     exec.injector().activate(1).unwrap();
     exec.injector().activate(1).unwrap();
@@ -135,9 +138,9 @@ fn a_unit_activated_three_times_before_a_tick_takes_its_turn_without_a_message()
     assert_eq!(exec.tokens_in_flight(), 0);
     let reports = exec.shutdown();
     assert_eq!(
-        reports[0].spikes.len(),
-        0,
-        "and a unit at rest does not fire from a turn"
+        reports[0].spikes,
+        vec![(1, 1)],
+        "one turn, on the tick after the drain, and the unit fired in it"
     );
     assert_eq!(reports[0].dropped, 0);
 }

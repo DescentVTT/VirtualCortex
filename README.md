@@ -6,7 +6,7 @@
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![Rust: 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](docs/adr/0009-rust-edition-and-msrv.md)
 
-VirtualCortex builds a spiking neural network on the virtual-actor model and constrains it to one physical server. Neural units are passive 64-byte records that occupy memory only while active; a fixed pool of core-pinned workers services them; ownership per tick is decided by a single atomic gate; axonal delay is an index into a timing wheel; and inactive tissue is evicted to local storage. Every quantity is Q16.16 fixed point, so a run is bit-identical on x86-64 and AArch64. The founding rule is **"Latest ≠ Newest"**: only technologies with a stable specification, years of production use and known failure modes are admitted to the hot path.
+VirtualCortex builds a spiking neural network on the virtual-actor model and constrains it to one physical server. Neural units are passive 64-byte records that occupy memory only while active; a fixed pool of core-pinned workers services them; ownership per tick is decided by a single atomic gate; axonal delay is an index into a timing wheel; and inactive tissue is evicted to local storage. Every quantity is Q16.16 fixed point, so that a run is bit-identical on x86-64 and AArch64: CI checks a seeded 128-unit network's arena hash after 20 000 ticks on both (ADR-0030); the full form, a reference image over 10⁶ ticks, is Target T-1. The founding rule is **"Latest ≠ Newest"**: only technologies with a stable specification, years of production use and known failure modes are admitted to the hot path.
 
 ## Status
 
@@ -93,7 +93,7 @@ npm ci
 npm run spec
 ```
 
-`npm run spec` runs [`spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard), which executes the `<!-- @assert-* -->` directives embedded in the documents against `crates/`; [`spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph), which checks that the documents are consistent with one another (links, ADR lifecycle, open questions); and a dependency-free script that checks every live brief carries its mandatory sections. Both are pinned to exact versions and run as blocking checks in [CI](.github/workflows/ci.yml), alongside `cargo fmt --check` and `cargo clippy -D warnings`.
+`npm run spec` runs [`spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard), which executes the `<!-- @assert-* -->` directives embedded in the documents against `crates/`; [`spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph), which checks that the documents are consistent with one another (links, ADR lifecycle, open questions); and two dependency-free scripts, one that checks every live brief carries its mandatory sections and one that checks the state crates declare no dependencies (ADR-0029). The two tools are pinned to exact versions; all four run as blocking checks in [CI](.github/workflows/ci.yml), beside the Rust jobs (check, tests in both profiles, format, lints, rustdoc, the benchmark smoke run, the MSRV, the AArch64 determinism pin) and the mutation gate on every pull request's changed lines (ADR-0030); Appendix B of the whitepaper lists the levels.
 
 ## Contributing
 

@@ -236,6 +236,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_gap_equal_to_the_average_leaves_it_where_it_is() {
+        let mut n = node(Q16_ONE);
+        assert_eq!(
+            n.assess_sincerity(Q16_ONE as i32 / 4, Q16_ONE as i32 / 4),
+            0
+        );
+        assert_eq!(
+            n.insincerity_q16, 0,
+            "a gap of zero over an average of zero"
+        );
+        assert_eq!(n.assess_sincerity(0, 0), 0);
+        assert_eq!(n.insincerity_q16, 0, "and again");
+        let mut m = node(Q16_ONE);
+        m.insincerity_q16 = 4_096;
+        for _ in 0..3 {
+            assert_eq!(m.assess_sincerity(4_096, 0), 4_096);
+            assert_eq!(
+                m.insincerity_q16, 4_096,
+                "a gap equal to the average is a fixed point"
+            );
+        }
+    }
+
+    #[test]
     fn the_sincerity_gap_is_the_distance_its_average_moves_by_an_eighth_and_a_half_is_a_break() {
         let mut n = node(Q16_ONE);
         assert_eq!(
