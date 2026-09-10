@@ -6,25 +6,18 @@
 use crate::dynamics::neuron::{DendriticSuperNeuron, GateState, MAILBOX_EMPTY, SynapseBlock};
 use core::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
-fn u16_at(b: &[u8], i: usize) -> u16 {
-    u16::from_le_bytes([b[i], b[i + 1]])
+// The readers take the field's own bytes, sliced by a literal range at the call site, so that
+// no offset is computed: the layout is written once, as the same ranges `encode` writes.
+fn u16_le(b: &[u8]) -> u16 {
+    u16::from_le_bytes([b[0], b[1]])
 }
 
-fn u32_at(b: &[u8], i: usize) -> u32 {
-    u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
+fn u32_le(b: &[u8]) -> u32 {
+    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
 
-fn u64_at(b: &[u8], i: usize) -> u64 {
-    u64::from_le_bytes([
-        b[i],
-        b[i + 1],
-        b[i + 2],
-        b[i + 3],
-        b[i + 4],
-        b[i + 5],
-        b[i + 6],
-        b[i + 7],
-    ])
+fn u64_le(b: &[u8]) -> u64 {
+    u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
 }
 
 impl DendriticSuperNeuron {
@@ -61,24 +54,24 @@ impl DendriticSuperNeuron {
     /// A record from its 64 bytes.
     pub fn decode(bytes: &[u8; 64]) -> Self {
         Self {
-            id: u64_at(bytes, 0),
-            mailbox_head_ptr: AtomicU64::new(u64_at(bytes, 8)),
-            mailbox_reserved: u64_at(bytes, 16),
-            v_soma: u32_at(bytes, 24) as i32,
-            v_basal: u32_at(bytes, 28) as i32,
-            v_apical: u32_at(bytes, 32) as i32,
-            v_thresh: u32_at(bytes, 36) as i32,
-            bac_plateau_ticks: u16_at(bytes, 40),
-            refractory_ticks: u16_at(bytes, 42),
-            last_soma_spike_tick: u32_at(bytes, 44),
-            synapse_slab_idx: u32_at(bytes, 48),
-            _reserved: u16_at(bytes, 52),
-            spatial_voxel_morton: u16_at(bytes, 54),
+            id: u64_le(&bytes[0..8]),
+            mailbox_head_ptr: AtomicU64::new(u64_le(&bytes[8..16])),
+            mailbox_reserved: u64_le(&bytes[16..24]),
+            v_soma: u32_le(&bytes[24..28]) as i32,
+            v_basal: u32_le(&bytes[28..32]) as i32,
+            v_apical: u32_le(&bytes[32..36]) as i32,
+            v_thresh: u32_le(&bytes[36..40]) as i32,
+            bac_plateau_ticks: u16_le(&bytes[40..42]),
+            refractory_ticks: u16_le(&bytes[42..44]),
+            last_soma_spike_tick: u32_le(&bytes[44..48]),
+            synapse_slab_idx: u32_le(&bytes[48..52]),
+            _reserved: u16_le(&bytes[52..54]),
+            spatial_voxel_morton: u16_le(&bytes[54..56]),
             gate_state: AtomicU8::new(bytes[56]),
             flags: bytes[57],
             stp_r_ves: bytes[58],
             stp_u_rel: bytes[59],
-            plastic_delta_head: u32_at(bytes, 60),
+            plastic_delta_head: u32_le(&bytes[60..64]),
         }
     }
 
@@ -123,19 +116,20 @@ impl SynapseBlock {
     /// The record's 64 bytes, little-endian.
     pub fn encode(&self) -> [u8; 64] {
         let mut out = [0u8; 64];
-        for (k, t) in self.target_neuron_ids.iter().enumerate() {
-            out[4 * k..4 * k + 4].copy_from_slice(&t.to_le_bytes());
+        // Each per-slot array is one literal range of the record, cut into one chunk per slot.
+        for (dst, t) in out[0..16].chunks_exact_mut(4).zip(&self.target_neuron_ids) {
+            dst.copy_from_slice(&t.to_le_bytes());
         }
-        for (k, w) in self.weights_q1_15.iter().enumerate() {
-            out[16 + 2 * k..18 + 2 * k].copy_from_slice(&w.to_le_bytes());
+        for (dst, w) in out[16..24].chunks_exact_mut(2).zip(&self.weights_q1_15) {
+            dst.copy_from_slice(&w.to_le_bytes());
         }
-        for (k, d) in self.delays_ticks.iter().enumerate() {
-            out[24 + 2 * k..26 + 2 * k].copy_from_slice(&d.to_le_bytes());
+        for (dst, d) in out[24..32].chunks_exact_mut(2).zip(&self.delays_ticks) {
+            dst.copy_from_slice(&d.to_le_bytes());
         }
         out[32..36].copy_from_slice(&self.next_block_idx.to_le_bytes());
         out[36..40].copy_from_slice(&self.last_spike_tick.to_le_bytes());
-        for (k, r) in self.last_release_q16.iter().enumerate() {
-            out[40 + 4 * k..44 + 4 * k].copy_from_slice(&r.to_le_bytes());
+        for (dst, r) in out[40..56].chunks_exact_mut(4).zip(&self.last_release_q16) {
+            dst.copy_from_slice(&r.to_le_bytes());
         }
         out[56] = self.apical_mask;
         out[57..64].copy_from_slice(&self._reserved);
@@ -145,14 +139,32 @@ impl SynapseBlock {
     /// A record from its 64 bytes.
     pub fn decode(bytes: &[u8; 64]) -> Self {
         let mut b = Self::new();
-        for k in 0..4 {
-            b.target_neuron_ids[k] = u32_at(bytes, 4 * k);
-            b.weights_q1_15[k] = u16_at(bytes, 16 + 2 * k) as i16;
-            b.delays_ticks[k] = u16_at(bytes, 24 + 2 * k);
-            b.last_release_q16[k] = u32_at(bytes, 40 + 4 * k) as i32;
+        for (dst, src) in b
+            .target_neuron_ids
+            .iter_mut()
+            .zip(bytes[0..16].chunks_exact(4))
+        {
+            *dst = u32_le(src);
         }
-        b.next_block_idx = u32_at(bytes, 32);
-        b.last_spike_tick = u32_at(bytes, 36);
+        for (dst, src) in b
+            .weights_q1_15
+            .iter_mut()
+            .zip(bytes[16..24].chunks_exact(2))
+        {
+            *dst = u16_le(src) as i16;
+        }
+        for (dst, src) in b.delays_ticks.iter_mut().zip(bytes[24..32].chunks_exact(2)) {
+            *dst = u16_le(src);
+        }
+        for (dst, src) in b
+            .last_release_q16
+            .iter_mut()
+            .zip(bytes[40..56].chunks_exact(4))
+        {
+            *dst = u32_le(src) as i32;
+        }
+        b.next_block_idx = u32_le(&bytes[32..36]);
+        b.last_spike_tick = u32_le(&bytes[36..40]);
         b.apical_mask = bytes[56];
         b._reserved.copy_from_slice(&bytes[57..64]);
         b

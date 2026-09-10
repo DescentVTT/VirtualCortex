@@ -134,7 +134,7 @@ impl Iterator for FanOut<'_> {
             if self.next == CHAIN_END {
                 return None;
             }
-            let idx = self.next - 1;
+            let idx = self.next.wrapping_sub(1);
             let Some(block) = self.blocks.get(idx as usize) else {
                 self.next = CHAIN_END;
                 return None;
@@ -144,18 +144,18 @@ impl Iterator for FanOut<'_> {
                     self.next = CHAIN_END;
                     return None;
                 }
-                self.remaining -= 1;
+                self.remaining = self.remaining.saturating_sub(1);
             }
             while self.slot < SYNAPSES_PER_BLOCK {
                 let slot = self.slot;
-                self.slot += 1;
+                self.slot = slot.wrapping_add(1);
                 let encoded = block.target_neuron_ids[slot];
                 if encoded != SLOT_EMPTY {
                     return Some(Synapse {
                         block_idx: idx,
                         slot: slot as u8,
                         apical: block.apical_mask & (1 << slot) != 0,
-                        target: encoded - 1,
+                        target: encoded.wrapping_sub(1),
                         weight_q1_15: block.weights_q1_15[slot],
                         delay_ticks: block.delays_ticks[slot],
                     });
@@ -183,12 +183,12 @@ impl Iterator for Chain<'_> {
         if self.next == CHAIN_END || self.remaining == 0 {
             return None;
         }
-        let idx = self.next - 1;
+        let idx = self.next.wrapping_sub(1);
         let Some(block) = self.blocks.get(idx as usize) else {
             self.next = CHAIN_END;
             return None;
         };
-        self.remaining -= 1;
+        self.remaining = self.remaining.saturating_sub(1);
         self.next = block.next_block_idx;
         Some(idx)
     }
@@ -198,7 +198,10 @@ impl Iterator for Chain<'_> {
 #[inline]
 fn window(amplitude_q1_15: i16, delta_ticks: u32) -> i16 {
     let factor = stp_decay_factor_q16(delta_ticks, STDP_TAU_SHIFT) as i64;
-    ((amplitude_q1_15 as i64 * factor + 0x8000) >> 16) as i16
+    ((amplitude_q1_15 as i64)
+        .saturating_mul(factor)
+        .saturating_add(0x8000)
+        >> 16) as i16
 }
 
 impl SynapseBlock {
@@ -229,7 +232,7 @@ impl SynapseBlock {
         if self.next_block_idx == CHAIN_END {
             None
         } else {
-            Some(self.next_block_idx - 1)
+            Some(self.next_block_idx.wrapping_sub(1))
         }
     }
 
@@ -239,7 +242,7 @@ impl SynapseBlock {
         if next_block_idx == u32::MAX {
             return false;
         }
-        self.next_block_idx = next_block_idx + 1;
+        self.next_block_idx = next_block_idx.wrapping_add(1);
         true
     }
 
@@ -256,7 +259,7 @@ impl SynapseBlock {
         }
         match self.target_neuron_ids[slot] {
             SLOT_EMPTY => None,
-            encoded => Some(encoded - 1),
+            encoded => Some(encoded.wrapping_sub(1)),
         }
     }
 
@@ -280,7 +283,7 @@ impl SynapseBlock {
         if slot >= SYNAPSES_PER_BLOCK || target == u32::MAX {
             return false;
         }
-        self.target_neuron_ids[slot] = target + 1;
+        self.target_neuron_ids[slot] = target.wrapping_add(1);
         self.weights_q1_15[slot] = weight_q1_15;
         self.delays_ticks[slot] = delay_ticks;
         if apical {
@@ -412,7 +415,7 @@ impl DendriticSuperNeuron {
         if self.synapse_slab_idx == CHAIN_END {
             None
         } else {
-            Some(self.synapse_slab_idx - 1)
+            Some(self.synapse_slab_idx.wrapping_sub(1))
         }
     }
 
@@ -422,7 +425,7 @@ impl DendriticSuperNeuron {
         if block_idx == u32::MAX {
             return false;
         }
-        self.synapse_slab_idx = block_idx + 1;
+        self.synapse_slab_idx = block_idx.wrapping_add(1);
         true
     }
 
@@ -472,13 +475,16 @@ mod tests {
         );
     }
 
+    /// A block whose four slots target `first_target` onward with the weights 0.125, 0.25,
+    /// 0.375 and 0.5 (a literal table), the odd slots apical.
     fn full_block(first_target: u32, delay: u16) -> SynapseBlock {
+        const WEIGHTS: [i16; SYNAPSES_PER_BLOCK] = [0x1000, 0x2000, 0x3000, 0x4000];
         let mut b = SynapseBlock::new();
-        for slot in 0..SYNAPSES_PER_BLOCK {
+        for (slot, &weight) in WEIGHTS.iter().enumerate() {
             assert!(b.set_synapse(
                 slot,
-                first_target + slot as u32,
-                0x1000 * (slot as i16 + 1),
+                first_target.wrapping_add(slot as u32),
+                weight,
                 delay,
                 slot & 1 == 1
             ));
@@ -488,12 +494,11 @@ mod tests {
 
     fn collect<const N: usize>(it: FanOut<'_>) -> ([Option<Synapse>; N], usize) {
         let mut out = [None; N];
-        let mut n = 0;
-        for s in it {
-            assert!(n < N, "more synapses than expected");
-            out[n] = Some(s);
-            n += 1;
+        for (i, s) in it.enumerate() {
+            assert!(i < N, "more synapses than expected");
+            out[i] = Some(s);
         }
+        let n = out.iter().filter(|s| s.is_some()).count();
         (out, n)
     }
 

@@ -9,6 +9,8 @@
 //! plasticity and STDP are not stepped here, so the drive is constant and the steady orbit is
 //! periodic; both have their own unit tests.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use cortex_core::{
     DendriticSuperNeuron, FlatTimingWheel, GateState, MailboxNode, STP_MAX, STP_U, SynapseBlock,
     THRESHOLD_BASE, message_efficacy_q16, message_is_apical, spike_message, synapse_token,
@@ -43,10 +45,12 @@ impl Ring {
         let mut units: Vec<_> = (0..UNITS as u64).map(DendriticSuperNeuron::new).collect();
         let mut blocks = vec![SynapseBlock::new(); BLOCKS_PER_UNIT * UNITS + 1];
         for (i, unit) in units.iter_mut().enumerate() {
-            let target = ((i + 1) % UNITS) as u32;
-            let base = BLOCKS_PER_UNIT * i;
+            // The ring: unit `i` targets unit `i + 1`, the last one unit 0. The block indices
+            // are bounded by the fixture (`BLOCKS_PER_UNIT × UNITS + 1` blocks).
+            let target = (i.wrapping_add(1) % UNITS) as u32;
+            let base = BLOCKS_PER_UNIT.wrapping_mul(i);
             for k in 0..SYNAPSES_PER_HOP {
-                assert!(blocks[base + k / 4].set_synapse(
+                assert!(blocks[base.wrapping_add(k / 4)].set_synapse(
                     k % 4,
                     target,
                     i16::MAX,
@@ -55,7 +59,8 @@ impl Ring {
                 ));
             }
             for j in 0..BLOCKS_PER_UNIT - 1 {
-                assert!(blocks[base + j].link((base + j + 1) as u32));
+                let this = base.wrapping_add(j);
+                assert!(blocks[this].link(this.wrapping_add(1) as u32));
             }
             unit.v_thresh = THRESHOLD_BASE;
             assert!(unit.set_first_block(base as u32));
@@ -164,7 +169,8 @@ impl Ring {
 }
 
 fn intervals(ticks: &[u32]) -> Vec<u32> {
-    ticks.windows(2).map(|w| w[1] - w[0]).collect()
+    // Tick differences wrap by name (§8.4).
+    ticks.windows(2).map(|w| w[1].wrapping_sub(w[0])).collect()
 }
 
 /// The latency of each of the last `STEADY_CYCLES` spikes of a unit: the spike tick minus the
@@ -172,7 +178,7 @@ fn intervals(ticks: &[u32]) -> Vec<u32> {
 fn latencies(spikes: &[u32], arrivals: &[u32]) -> Vec<u32> {
     let mut unique = arrivals.to_vec();
     unique.dedup();
-    spikes[spikes.len() - STEADY_CYCLES..]
+    spikes[spikes.len().saturating_sub(STEADY_CYCLES)..]
         .iter()
         .map(|&s| {
             let arrival = unique
@@ -180,7 +186,7 @@ fn latencies(spikes: &[u32], arrivals: &[u32]) -> Vec<u32> {
                 .rev()
                 .find(|&&a| a <= s)
                 .expect("an arrival precedes every spike");
-            s - arrival
+            s.abs_diff(*arrival)
         })
         .collect()
 }
@@ -190,7 +196,7 @@ fn latencies(spikes: &[u32], arrivals: &[u32]) -> Vec<u32> {
 /// three integration latencies, and that a second ring reproduces the same spike train.
 fn exact_period(delays: [u16; UNITS]) -> u32 {
     let sum: u32 = delays.iter().map(|&d| d as u32).sum();
-    let ticks = CYCLES as u32 * (sum + 3 * 64);
+    let ticks = (CYCLES as u32).saturating_mul(sum.saturating_add(3 * 64));
     let mut ring = Ring::new(delays);
     ring.run(ticks);
     for i in 0..UNITS {
@@ -202,20 +208,20 @@ fn exact_period(delays: [u16; UNITS]) -> u32 {
     }
     let period = {
         let p = intervals(&ring.spikes[0]);
-        let steady = &p[p.len() - STEADY_CYCLES..];
+        let steady = &p[p.len().saturating_sub(STEADY_CYCLES)..];
         assert!(
             steady.iter().all(|&x| x == steady[0]),
             "unit 0's periods over the last {STEADY_CYCLES} cycles: {steady:?}"
         );
         steady[0]
     };
-    let mut total_latency = 0;
+    let mut total_latency = 0u32;
     for i in 0..UNITS {
         let p = intervals(&ring.spikes[i]);
+        let steady = &p[p.len().saturating_sub(STEADY_CYCLES)..];
         assert!(
-            p[p.len() - STEADY_CYCLES..].iter().all(|&x| x == period),
-            "unit {i} keeps the period {period}: {:?}",
-            &p[p.len() - STEADY_CYCLES..]
+            steady.iter().all(|&x| x == period),
+            "unit {i} keeps the period {period}: {steady:?}"
         );
         let l = latencies(&ring.spikes[i], &ring.arrivals[i]);
         assert!(
@@ -226,11 +232,11 @@ fn exact_period(delays: [u16; UNITS]) -> u32 {
             l[0] > 0,
             "a unit integrates for at least one tick before it fires"
         );
-        total_latency += l[0];
+        total_latency = total_latency.saturating_add(l[0]);
     }
     assert_eq!(
         period,
-        sum + total_latency,
+        sum.saturating_add(total_latency),
         "the period is the three delays plus the three integration latencies"
     );
     assert!(period > cortex_core::REFRACTORY_TICKS as u32);

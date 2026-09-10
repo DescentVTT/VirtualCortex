@@ -6,6 +6,9 @@
 //! runtime crate (§6.1; brief 012).
 
 #![no_std]
+// §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
+// here (ADR-0029; migrated under brief 016 on 2026-09-10).
+#![deny(clippy::arithmetic_side_effects)]
 pub mod dispatch;
 pub mod dynamics;
 pub mod serial;

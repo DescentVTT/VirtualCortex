@@ -78,13 +78,13 @@ impl Iterator for MailboxDrain<'_> {
         if self.next == MAILBOX_EMPTY || self.remaining == 0 {
             return None;
         }
-        let idx = self.next - 1;
+        let idx = self.next.wrapping_sub(1);
         let Some(node) = usize::try_from(idx).ok().and_then(|i| self.nodes.get(i)) else {
             self.next = MAILBOX_EMPTY;
             return None;
         };
         self.next = node.next.load(Ordering::Relaxed) as u64;
-        self.remaining -= 1;
+        self.remaining = self.remaining.saturating_sub(1);
         Some((idx as u32, node.payload.load(Ordering::Relaxed)))
     }
 }
@@ -216,7 +216,7 @@ impl DendriticSuperNeuron {
             return false;
         };
         let mut head = self.mailbox_head_ptr.load(Ordering::Relaxed);
-        let encoded = node as u64 + 1;
+        let encoded = (node as u64).wrapping_add(1);
         loop {
             // One check for the first attempt and every retry: a corrupt head refuses before
             // anything is stored on the first attempt, and leaves the payload in the caller's own
@@ -287,7 +287,10 @@ pub struct SynapseBlock {
 /// negative infinity, consistent with whitepaper §8.1.
 #[inline(always)]
 pub const fn synaptic_efficacy_q16(w_q1_15: i16, u_q0_8: u8, r_q0_8: u8) -> i32 {
-    ((w_q1_15 as i64 * u_q0_8 as i64 * r_q0_8 as i64) >> 15) as i32
+    ((w_q1_15 as i64)
+        .saturating_mul(u_q0_8 as i64)
+        .saturating_mul(r_q0_8 as i64)
+        >> 15) as i32
 }
 
 const _: () = {
