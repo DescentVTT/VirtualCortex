@@ -57,7 +57,8 @@ fn relax_q0_8(value: u8, target: u8, decay_q16: u32) -> u8 {
         .saturating_add(Q16_ONE >> 1)
         >> 16;
     let moved = gap.abs().saturating_sub(remaining).max(1);
-    if gap > 0 {
+    // The gap is not zero here (`value == target` returned above), so its sign is its direction.
+    if gap.is_positive() {
         (value as i64).saturating_add(moved).min(target as i64) as u8
     } else {
         (value as i64).saturating_sub(moved).max(target as i64) as u8
