@@ -23,13 +23,18 @@ pub const STATUS_DENIED: u32 = 4;
 /// Bytes of result a frame can carry in place.
 pub const PAYLOAD_BYTES: usize = 32;
 
-/// Tool category: a formal prover the broker runs on a conjecture (whitepaper §6.10). Categories
-/// 0x0001 to 0x0003 are reserved for the broker's basic services (Specified).
+/// Tool category: a formal prover or symbolic solver co-processor the broker runs on a
+/// conjecture (whitepaper §6.10). The opcodes name mathematical actions, never a product:
+/// which prover or solver the broker runs is its configuration, judged under whitepaper §2.1
+/// when it is chosen, and the engine stays agnostic and dependency-free. Categories 0x0001 to
+/// 0x0003 are reserved for the broker's basic services (Specified).
 pub const TOOL_CATEGORY_FORMAL_PROVER: u16 = 0x0004;
-/// `TOOL_CATEGORY_FORMAL_PROVER`: check a proof term with Lean 4.
-pub const ACTION_VERIFY_LEAN4: u16 = 0x0001;
-/// `TOOL_CATEGORY_FORMAL_PROVER`: decide a formula with the Z3 SMT solver.
-pub const ACTION_SOLVE_SMT_Z3: u16 = 0x0002;
+/// `TOOL_CATEGORY_FORMAL_PROVER`: check a formal proof term against axiomatic definitions.
+pub const ACTION_VERIFY_PROOF: u16 = 0x0001;
+/// `TOOL_CATEGORY_FORMAL_PROVER`: decide a formula by automated constraint or SMT solving.
+pub const ACTION_SOLVE_CONSTRAINTS: u16 = 0x0002;
+/// `TOOL_CATEGORY_FORMAL_PROVER`: algebraic symbolic simplification and term rewriting.
+pub const ACTION_SYMBOLIC_EVAL: u16 = 0x0003;
 /// Tool category: the document engine the broker runs over a structured text (whitepaper §6.11).
 pub const TOOL_CATEGORY_DOC_ENGINE: u16 = 0x0005;
 /// `TOOL_CATEGORY_DOC_ENGINE`: extract the hierarchy, section dependencies and cross-references.
@@ -40,12 +45,15 @@ pub const ACTION_EXTRACT_ENTITIES: u16 = 0x0002;
 pub const ACTION_SEARCH_CROSS_REF: u16 = 0x0003;
 
 /// True for a (category, opcode) pair this crate defines. Opcodes are per category: 0x0001 is
-/// a Lean 4 check under the prover and a structure parse under the document engine. The
+/// a proof check under the prover and a structure parse under the document engine. The
 /// broker keeps its own allow-list; this is the engine's mirror of it, so that a frame the
 /// engine cannot name is never written.
 pub const fn is_known_action(category: u16, opcode: u16) -> bool {
     match category {
-        TOOL_CATEGORY_FORMAL_PROVER => matches!(opcode, ACTION_VERIFY_LEAN4 | ACTION_SOLVE_SMT_Z3),
+        TOOL_CATEGORY_FORMAL_PROVER => matches!(
+            opcode,
+            ACTION_VERIFY_PROOF | ACTION_SOLVE_CONSTRAINTS | ACTION_SYMBOLIC_EVAL
+        ),
         TOOL_CATEGORY_DOC_ENGINE => matches!(
             opcode,
             ACTION_PARSE_STRUCTURE | ACTION_EXTRACT_ENTITIES | ACTION_SEARCH_CROSS_REF
@@ -210,12 +218,20 @@ mod tests {
     fn the_defined_actions_are_known_per_category_and_nothing_else_is() {
         assert!(is_known_action(
             TOOL_CATEGORY_FORMAL_PROVER,
-            ACTION_VERIFY_LEAN4
+            ACTION_VERIFY_PROOF
         ));
         assert!(is_known_action(
             TOOL_CATEGORY_FORMAL_PROVER,
-            ACTION_SOLVE_SMT_Z3
+            ACTION_SOLVE_CONSTRAINTS
         ));
+        assert!(is_known_action(
+            TOOL_CATEGORY_FORMAL_PROVER,
+            ACTION_SYMBOLIC_EVAL
+        ));
+        assert!(
+            !is_known_action(TOOL_CATEGORY_FORMAL_PROVER, 0x0004),
+            "the prover has three actions"
+        );
         assert!(is_known_action(
             TOOL_CATEGORY_DOC_ENGINE,
             ACTION_PARSE_STRUCTURE
@@ -229,8 +245,8 @@ mod tests {
             ACTION_SEARCH_CROSS_REF
         ));
         assert!(
-            !is_known_action(TOOL_CATEGORY_FORMAL_PROVER, ACTION_SEARCH_CROSS_REF),
-            "opcodes are per category"
+            !is_known_action(0x0003, ACTION_VERIFY_PROOF),
+            "an opcode means nothing outside its category"
         );
         assert!(!is_known_action(TOOL_CATEGORY_DOC_ENGINE, 0));
         assert!(
@@ -245,14 +261,14 @@ mod tests {
         let f = ToolInvocationFrame::new_call(
             9,
             TOOL_CATEGORY_FORMAL_PROVER,
-            ACTION_SOLVE_SMT_Z3,
+            ACTION_SOLVE_CONSTRAINTS,
             0xABCD,
             2,
         )
         .expect("known");
         assert_eq!(
             (f.call_id, f.tool_category, f.action_opcode),
-            (9, TOOL_CATEGORY_FORMAL_PROVER, ACTION_SOLVE_SMT_Z3)
+            (9, TOOL_CATEGORY_FORMAL_PROVER, ACTION_SOLVE_CONSTRAINTS)
         );
         assert_eq!((f.param_hash, f.authorization_level), (0xABCD, 2));
         assert_eq!(f.execution_status, STATUS_PENDING);

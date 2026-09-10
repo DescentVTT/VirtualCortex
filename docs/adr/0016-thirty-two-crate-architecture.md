@@ -79,6 +79,10 @@ Appendix A gains fourteen arena rows with stated placeholder counts, as the exis
 
 Thirty-two is the count until an ADR passes the test below. Capabilities that arrive after this record are added to the interaction protocols of these crates, as constants, rules and runtime scenarios, never as a thirty-third crate: the theorem-proving and document-auditing pipelines of whitepaper §6.10 and §6.11 are the first two, carried by `cortex-reasoning` (resolution), `cortex-tools` (two brokered categories and their opcodes), `cortex-knowledge` (certified theorems) and `cortex-attention` (document foveation) without a new record type. A capability that needs a record no crate has is a second record in the crate that owns it, which is the open question §11.1 records, not a crate.
 
+### Tool opcodes are agnostic; mathematics is native first
+
+The opcodes of `cortex-tools` name actions, never products: `ACTION_VERIFY_PROOF`, `ACTION_SOLVE_CONSTRAINTS` and `ACTION_SYMBOLIC_EVAL` under the prover category, and the three structural actions under the document engine. A product name in an identifier would couple the engine to a vendor's release cycle, which is what "Latest ≠ Newest" (whitepaper §2.1) exists to prevent; the first revision of the prover opcodes named two products and was corrected. Mathematics runs on two tracks (whitepaper §6.10): the native track, resolution and exact arithmetic in `cortex-reasoning` and `cortex-arithmetic`, is complete and offline; the brokered track is optional acceleration through whatever system the broker's operator configured, and returns only a certificate hash. The engine is never less capable without the broker, only slower on large searches.
+
 ### Admission test for the next crate
 
 A new member under `crates/` requires all of the following in the pull request that adds it:
