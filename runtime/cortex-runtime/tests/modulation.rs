@@ -207,13 +207,17 @@ fn the_modulator_is_written_to_and_read_from_the_image_and_a_loaded_engine_conti
     assert_eq!(
         cortex_connectome::CortexFileHeader::decode(at_rest[0..64].try_into().unwrap())
             .section_count,
-        2,
-        "a modulator at rest is not written"
+        3,
+        "the modulation state is always written: the image defines the run"
     );
     assert_eq!(exec.reward(0x4000), 0x4000);
     let raised = Image::encode(&exec).unwrap();
     let header = cortex_connectome::CortexFileHeader::decode(raised[0..64].try_into().unwrap());
     assert_eq!(header.section_count, 3, "the modulator section");
+    // The image's baseline outranks the configuration's: loaded under a configuration that
+    // says 1.0, the engine keeps the 0 it was written with.
+    let under_one = Image::decode::<64>(&raised, config(MODULATION_ONE_Q16)).unwrap();
+    assert_eq!(under_one.modulation_baseline_q16(), 0);
     assert_eq!(
         header.tick_ns,
         cortex_core::TICK_NS,

@@ -76,7 +76,9 @@ pub struct Config {
     /// The modulation of three-factor plasticity with the dopamine signal at rest (ADR-0032):
     /// the fraction of each synapse's eligibility trace consolidated into the weight at a
     /// presynaptic spike, Q16.16 in $[0, 1]$. At 1.0 (the default) the rule is ADR-0022's; a
-    /// lower baseline leaves the pairings pending for a reward to consolidate.
+    /// lower baseline leaves the pairings pending for a reward to consolidate. For an engine
+    /// built from an image, the image's baseline outranks this one: it changes what the run
+    /// does, so it is part of the image (§8.3).
     pub modulation_baseline_q16: i32,
 }
 
@@ -459,6 +461,16 @@ impl<const CAP: usize> Executor<CAP> {
     /// The loader's: the modulator an image holds.
     pub(crate) fn set_modulator(&mut self, modulator: NeuromodulatorState) {
         self.modulator = modulator;
+    }
+
+    /// The loader's: the baseline an image holds, which outranks the configuration's (the
+    /// image defines the run, §8.3). Refused outside $[0, 1]$, as `new` refuses it.
+    pub(crate) fn set_modulation_baseline(&mut self, baseline_q16: i32) -> bool {
+        if !(0..=MODULATION_ONE_Q16).contains(&baseline_q16) {
+            return false;
+        }
+        self.modulation_baseline_q16 = baseline_q16;
+        true
     }
 
     /// The loader's: the clock resumes at the tick the image was written (ADR-0033), between
