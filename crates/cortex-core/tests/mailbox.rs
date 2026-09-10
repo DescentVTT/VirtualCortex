@@ -8,6 +8,8 @@
 //! is an integration test so that the library stays free of thread spawning and heap types
 //! (whitepaper TC-5).
 
+#![deny(clippy::arithmetic_side_effects)]
+
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_core::{DendriticSuperNeuron, GateState, MailboxNode};
 use std::sync::{Arc, Mutex};

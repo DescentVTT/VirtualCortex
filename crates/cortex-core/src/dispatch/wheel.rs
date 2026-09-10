@@ -23,6 +23,9 @@ pub const MAX_TOKEN: u32 = (1 << 28) - 1;
 const FINE_MASK: u64 = FINE_SLOTS as u64 - 1;
 const COARSE_MASK: u64 = COARSE_SLOTS as u64 - 1;
 const RESIDUAL_SHIFT: u32 = 28;
+/// The horizon, `COARSE_SLOTS × FINE_PER_COARSE` fine ticks: a literal, so that the bound holds
+/// no arithmetic for a mutant to touch; the assertion below ties it to the geometry.
+const HORIZON_TICKS: u64 = 2_560;
 
 /// Why a delay could not be scheduled. None of these mutate the wheel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,7 +70,7 @@ impl<const CAP: usize> FlatTimingWheel<CAP> {
 
     /// Delays at or beyond this many fine ticks cannot be scheduled (2 560 ticks, 25.6 ms).
     pub const fn horizon_ticks() -> u64 {
-        COARSE_SLOTS as u64 * FINE_PER_COARSE
+        HORIZON_TICKS
     }
 
     /// The current tick; the slot returned by the last [`advance`](Self::advance) is due now.
@@ -88,7 +91,8 @@ impl<const CAP: usize> FlatTimingWheel<CAP> {
         if token > MAX_TOKEN {
             return Err(ScheduleError::TokenTooLarge);
         }
-        let due = self.tick + delay_ticks as u64;
+        // The tick counter wraps by name (§8.4); a slot is a mask of it, so the wrap is exact.
+        let due = self.tick.wrapping_add(delay_ticks as u64);
         if (delay_ticks as usize) < FINE_SLOTS {
             let slot = (due & FINE_MASK) as usize;
             Self::push(&mut self.fine[slot], &mut self.fine_len[slot], token)
@@ -112,7 +116,7 @@ impl<const CAP: usize> FlatTimingWheel<CAP> {
     pub fn advance(&mut self) -> &[u32] {
         let consumed = (self.tick & FINE_MASK) as usize;
         self.fine_len[consumed] = 0;
-        self.tick += 1;
+        self.tick = self.tick.wrapping_add(1);
         // `%` rather than `is_multiple_of` (Rust 1.87+): the MSRV is 1.85 (ADR-0009). Clippy
         // reads `rust-version` from the manifest and does not suggest the newer method.
         if self.tick % FINE_PER_COARSE == 0 {
@@ -132,7 +136,7 @@ impl<const CAP: usize> FlatTimingWheel<CAP> {
             let packed = self.coarse[window][i];
             let residual = (packed >> RESIDUAL_SHIFT) as u64;
             let token = packed & MAX_TOKEN;
-            let slot = ((self.tick + residual) & FINE_MASK) as usize;
+            let slot = (self.tick.wrapping_add(residual) & FINE_MASK) as usize;
             // A full fine slot here is the same capacity fault as at schedule time; the coarse
             // entry was accepted, so the token is dropped rather than the tick loop aborted.
             // The runtime sizes CAP so that this cannot happen (whitepaper §8.9).
@@ -148,7 +152,8 @@ impl<const CAP: usize> FlatTimingWheel<CAP> {
             return Err(ScheduleError::SlotFull);
         }
         slot[n] = token;
-        *len = (n + 1) as u16;
+        // `n < CAP <= u16::MAX`, checked above: the increment cannot wrap and fits the width.
+        *len = n.wrapping_add(1) as u16;
         Ok(())
     }
 }
@@ -161,6 +166,7 @@ impl<const CAP: usize> Default for FlatTimingWheel<CAP> {
 
 const _: () = {
     assert!(core::mem::size_of::<WorkerWheel>() == 4_195_336);
+    assert!(HORIZON_TICKS == COARSE_SLOTS as u64 * FINE_PER_COARSE);
     assert!(FINE_SLOTS.is_power_of_two());
     assert!(COARSE_SLOTS.is_power_of_two());
     assert!(FINE_PER_COARSE < 16); // the residual must fit in the four bits above MAX_TOKEN

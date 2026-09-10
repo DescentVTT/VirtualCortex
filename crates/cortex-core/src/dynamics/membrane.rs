@@ -49,13 +49,15 @@ pub const FLAG_BURST_MODE: u8 = 0x01;
 pub const FLAG_INHIBITORY: u8 = 0x02;
 
 /// Moves `v` toward zero by a `2^-shift` fraction of itself, and by at least one LSB, so that
-/// a decay reaches rest instead of stalling at `2^shift - 1` (ADR-0016's lesson).
+/// a decay reaches rest instead of stalling at `2^shift - 1` (ADR-0016's lesson). The step is
+/// clamped to `|v|`, so the move never crosses zero and the saturating form never saturates.
 #[inline(always)]
 fn leak(v: i32, shift: u32) -> i32 {
     if v > 0 {
-        v - (v >> shift).max(1).min(v)
+        v.saturating_sub((v >> shift).max(1).min(v))
     } else if v < 0 {
-        v + ((-(v as i64)) >> shift).max(1).min(-(v as i64)) as i32
+        let magnitude = v.unsigned_abs() as i64;
+        v.saturating_add((magnitude >> shift).max(1).min(magnitude) as i32)
     } else {
         0
     }
@@ -64,7 +66,7 @@ fn leak(v: i32, shift: u32) -> i32 {
 /// `v + delta`, widened and clamped to the `i32` range.
 #[inline(always)]
 fn add(v: i32, delta: i64) -> i32 {
-    let sum = v as i64 + delta;
+    let sum = (v as i64).saturating_add(delta);
     if sum > i32::MAX as i64 {
         i32::MAX
     } else if sum < i32::MIN as i64 {
@@ -86,19 +88,21 @@ impl DendriticSuperNeuron {
     /// fires.
     pub fn integrate(&mut self, basal_q16: i32, apical_q16: i32, now_tick: u32) -> bool {
         if self.bac_plateau_ticks > 0 {
-            self.bac_plateau_ticks -= 1;
+            self.bac_plateau_ticks = self.bac_plateau_ticks.saturating_sub(1);
             if self.bac_plateau_ticks == 0 {
                 self.flags &= !FLAG_BURST_MODE;
             }
         }
         if self.v_thresh > THRESHOLD_BASE {
-            let excess = self.v_thresh - THRESHOLD_BASE;
-            self.v_thresh -= (excess >> THRESHOLD_DECAY_SHIFT).max(1);
+            let excess = self.v_thresh.saturating_sub(THRESHOLD_BASE);
+            self.v_thresh = self
+                .v_thresh
+                .saturating_sub((excess >> THRESHOLD_DECAY_SHIFT).max(1));
         }
 
         let in_refractory = self.refractory_ticks > 0;
         if in_refractory {
-            self.refractory_ticks -= 1;
+            self.refractory_ticks = self.refractory_ticks.saturating_sub(1);
         }
         let basal_in = if in_refractory { 0 } else { basal_q16 as i64 };
         let apical_in = if in_refractory { 0 } else { apical_q16 as i64 };
@@ -110,9 +114,12 @@ impl DendriticSuperNeuron {
         } else {
             COUPLING_SHIFT
         };
-        let from_basal = (self.v_basal as i64 - self.v_soma as i64) >> COUPLING_SHIFT;
-        let from_apical = (self.v_apical as i64 - self.v_soma as i64) >> apical_shift;
-        self.v_soma = add(leak(self.v_soma, SOMA_LEAK_SHIFT), from_basal + from_apical);
+        let from_basal = (self.v_basal as i64).saturating_sub(self.v_soma as i64) >> COUPLING_SHIFT;
+        let from_apical = (self.v_apical as i64).saturating_sub(self.v_soma as i64) >> apical_shift;
+        self.v_soma = add(
+            leak(self.v_soma, SOMA_LEAK_SHIFT),
+            from_basal.saturating_add(from_apical),
+        );
 
         if in_refractory || self.v_thresh <= 0 || self.v_soma < self.v_thresh {
             return false;
@@ -175,11 +182,12 @@ mod tests {
     /// Runs `ticks` ticks of constant input; returns the ticks at which the unit fired.
     fn drive(u: &mut DendriticSuperNeuron, basal: i32, apical: i32, ticks: u32) -> [u32; 8] {
         let mut fired = [u32::MAX; 8];
-        let mut n = 0;
+        let mut free = fired.iter_mut();
         for t in 0..ticks {
-            if u.integrate(basal, apical, t) && n < 8 {
-                fired[n] = t;
-                n += 1;
+            if u.integrate(basal, apical, t) {
+                if let Some(slot) = free.next() {
+                    *slot = t;
+                }
             }
         }
         fired

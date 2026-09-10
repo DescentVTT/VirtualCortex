@@ -29,14 +29,14 @@ pub const STP_TAU_D_SHIFT: u32 = 15;
 /// time constant above $2^{16}$ ticks is read as $2^{16}$, the longest a Q16.16 base resolves
 /// (ADR-0028).
 pub fn stp_decay_factor_q16(elapsed_ticks: u32, tau_shift: u32) -> u32 {
-    let mut base = Q16_ONE - (Q16_ONE >> tau_shift.min(16));
+    let mut base = Q16_ONE.saturating_sub(Q16_ONE >> tau_shift.min(16));
     let mut result = Q16_ONE;
     let mut exp = elapsed_ticks;
     while exp > 0 && result > 0 {
         if exp & 1 == 1 {
-            result = (result * base) >> 16;
+            result = result.saturating_mul(base) >> 16;
         }
-        base = (base * base) >> 16;
+        base = base.saturating_mul(base) >> 16;
         exp >>= 1;
     }
     result as u32
@@ -50,13 +50,17 @@ fn relax_q0_8(value: u8, target: u8, decay_q16: u32) -> u8 {
     if value == target || decay_q16 >= Q16_ONE as u32 {
         return value;
     }
-    let gap = target as i64 - value as i64;
-    let remaining = (gap.abs() * decay_q16 as i64 + (Q16_ONE >> 1)) >> 16;
-    let moved = (gap.abs() - remaining).max(1);
+    let gap = (target as i64).saturating_sub(value as i64);
+    let remaining = gap
+        .abs()
+        .saturating_mul(decay_q16 as i64)
+        .saturating_add(Q16_ONE >> 1)
+        >> 16;
+    let moved = gap.abs().saturating_sub(remaining).max(1);
     if gap > 0 {
-        (value as i64 + moved).min(target as i64) as u8
+        (value as i64).saturating_add(moved).min(target as i64) as u8
     } else {
-        (value as i64 - moved).max(target as i64) as u8
+        (value as i64).saturating_sub(moved).max(target as i64) as u8
     }
 }
 
@@ -73,11 +77,14 @@ impl DendriticSuperNeuron {
         let u = relax_q0_8(self.stp_u_rel, STP_U, f_f);
         let r = relax_q0_8(self.stp_r_ves, STP_MAX, f_d);
 
-        let facilitation = ((STP_U as i64 * (256 - u as i64)) + 128) >> 8;
-        let u = (u as i64 + facilitation).min(STP_MAX as i64) as u8;
-        let released = ((u as i64 * r as i64) + 128) >> 8;
+        let facilitation = (STP_U as i64)
+            .saturating_mul(256_i64.saturating_sub(u as i64))
+            .saturating_add(128)
+            >> 8;
+        let u = (u as i64).saturating_add(facilitation).min(STP_MAX as i64) as u8;
+        let released = (u as i64).saturating_mul(r as i64).saturating_add(128) >> 8;
         self.stp_u_rel = u;
-        self.stp_r_ves = (r as i64 - released).max(0) as u8;
+        self.stp_r_ves = (r as i64).saturating_sub(released).max(0) as u8;
         (u, r)
     }
 }

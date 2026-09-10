@@ -30,7 +30,7 @@ impl PlasticDelta {
             return None;
         }
         Some(Self {
-            block_idx: block_idx + 1,
+            block_idx: block_idx.wrapping_add(1),
             slot,
             _pad: 0,
             delta_q1_15,
@@ -44,7 +44,7 @@ impl PlasticDelta {
         if self.block_idx == 0 {
             None
         } else {
-            Some(self.block_idx - 1)
+            Some(self.block_idx.wrapping_sub(1))
         }
     }
 
@@ -53,7 +53,7 @@ impl PlasticDelta {
         if self.next == DELTA_END {
             None
         } else {
-            Some(self.next - 1)
+            Some(self.next.wrapping_sub(1))
         }
     }
 
@@ -62,7 +62,7 @@ impl PlasticDelta {
         if next_idx == u32::MAX {
             return false;
         }
-        self.next = next_idx + 1;
+        self.next = next_idx.wrapping_add(1);
         true
     }
 
@@ -116,12 +116,12 @@ impl Iterator for DeltaChain<'_> {
         if self.next == DELTA_END || self.remaining == 0 {
             return None;
         }
-        let idx = self.next - 1;
+        let idx = self.next.wrapping_sub(1);
         let Some(delta) = self.deltas.get(idx as usize) else {
             self.next = DELTA_END;
             return None;
         };
-        self.remaining -= 1;
+        self.remaining = self.remaining.saturating_sub(1);
         self.next = delta.next;
         Some(idx)
     }
@@ -133,7 +133,7 @@ impl DendriticSuperNeuron {
         if self.plastic_delta_head == DELTA_END {
             None
         } else {
-            Some(self.plastic_delta_head - 1)
+            Some(self.plastic_delta_head.wrapping_sub(1))
         }
     }
 
@@ -142,7 +142,7 @@ impl DendriticSuperNeuron {
         if delta_idx == u32::MAX {
             return false;
         }
-        self.plastic_delta_head = delta_idx + 1;
+        self.plastic_delta_head = delta_idx.wrapping_add(1);
         true
     }
 
@@ -157,7 +157,7 @@ impl DendriticSuperNeuron {
             return false;
         };
         delta.next = self.plastic_delta_head;
-        self.plastic_delta_head = delta_idx + 1;
+        self.plastic_delta_head = delta_idx.wrapping_add(1);
         true
     }
 
