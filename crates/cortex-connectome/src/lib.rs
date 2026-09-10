@@ -33,7 +33,13 @@ impl CortexFileHeader {
     /// - 4: `DendriticSuperNeuron::mailbox_tag` became `mailbox_reserved` and the mailbox head
     ///   encodes `node index + 1`, zero when empty (ADR-0017). A version-3 image at rest has
     ///   both zero, which reads correctly; the meaning of the head changed, hence the bump.
-    pub const FORMAT_VERSION: u32 = 4;
+    /// - 5: reserved bytes became fields in six records (ADR-0020, ADR-0021): `InteroceptiveState`
+    ///   (free energy, valence, existential stake), `GlobalWorkspaceSlot` (attention schema,
+    ///   criticality distance), `MentalCanvasFrame` (reflection, self-model, wandering),
+    ///   `SymbolicHypervectorHeader` (blend source, domain mask, depth), `LinguisticFrameSlot`
+    ///   (parent, child, metaphor), `SocialPerspectiveNode` (repairs, turn state, common
+    ///   ground). A version-4 image has them zero, which every rule reads as "not yet".
+    pub const FORMAT_VERSION: u32 = 5;
 }
 
 const _: () = {
@@ -52,6 +58,6 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 4);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 5);
     }
 }

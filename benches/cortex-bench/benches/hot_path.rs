@@ -153,7 +153,9 @@ fn ignition(c: &mut Criterion) {
                 broadcast_channel_mask: 0,
                 p300_wave_phase: 0,
                 is_ignited: 0,
-                _reserved: [0; 32],
+                attention_schema_meta_hash: 0,
+                criticality_distance_q16: 0,
+                _reserved: [0; 24],
             },
             |mut s| {
                 let mut ignited = false;

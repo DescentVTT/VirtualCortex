@@ -2,9 +2,12 @@
 status: accepted
 date: 2026-09-10
 decision-makers: VirtualCortex maintainers
+amended-by: ADR-0016
 ---
 
 # ADR-0005: One crate per subsystem with no inter-crate dependencies among state crates
+
+> Amended by [ADR-0016](0016-thirty-two-crate-architecture.md) (2026-09-10), which admits fourteen further crates under a six-part admission test and locks the count at thirty-two. The decision, one crate per subsystem with empty dependency tables, stands; the count of eighteen below describes the founding partition.
 
 ## Context and Problem Statement
 

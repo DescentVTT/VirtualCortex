@@ -14,7 +14,7 @@ This repository is at the **state-model stage**. Read the labels before reading 
 
 | Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates, 36 `#[repr(C)]` records with compile-time size and alignment assertions, small deterministic update rules with boundary tests in 22 crates, the turn gate and lock-free mailbox of axiom A3 under a four-thread test, zero dependencies, zero `unsafe`. |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates, 36 `#[repr(C)]` records with compile-time size and alignment assertions, small deterministic update rules with boundary tests in 22 crates (membrane integration and short-term plasticity in the neuron; valence, an attention schema, criticality-gated ignition, a self-model fixed point, nested constructions, conceptual blends and dialogue grounding among them), the turn gate and lock-free mailbox of axiom A3 under a four-thread test, zero dependencies, zero `unsafe`. |
 | **Specified** | Designed in the whitepaper or an ADR; no code yet. | Executor, delivery from the wheel into mailboxes, image loader, the shared-memory mappings of the embodiment and tool rings, the tool broker, the lexicon behind the language frames, reclamation, fabric transport, subsystem dynamics beyond the rules in §5. |
 | **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. A benchmark harness exists; no admissible run on the reference platform does. |
 | **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. |
@@ -60,7 +60,7 @@ Thirty-two crates, one per subsystem, with no dependencies between them ([ADR-00
 | Systems | `cortex-fabric` | `FabricPacketHeader` | 64 B |
 | Systems | `cortex-telemetry` | `LfpSamplePacket` | 64 B |
 
-Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8. A nineteenth workspace member, `benches/cortex-bench`, holds the benchmarks and the workspace's only third-party dependency (the harness, as a dev-dependency; [ADR-0014](docs/adr/0014-benchmark-harness.md)); see [docs/benchmarks/README.md](docs/benchmarks/README.md) for what makes a run admissible.
+Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8. A thirty-third workspace member, `benches/cortex-bench`, holds the benchmarks and the workspace's only third-party dependency (the harness, as a dev-dependency; [ADR-0014](docs/adr/0014-benchmark-harness.md)); see [docs/benchmarks/README.md](docs/benchmarks/README.md) for what makes a run admissible.
 
 <!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="32" reason="the table above lists thirty-two crates" -->
 
@@ -97,7 +97,7 @@ npm run spec
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). In short: one crate per subsystem, no floats, no allocation on the hot path, every record 64 bytes and asserted, every claim labelled, every decision an ADR.
+See [CONTRIBUTING.md](CONTRIBUTING.md). In short: one crate per subsystem, no floats, no allocation on the hot path, every record 64 bytes and asserted, every claim labelled, every decision an ADR. A biological or phenomenological name is descriptive, never a claim of equivalence: the whitepaper implements the variables the theories name as tested integer rules and records whether they constitute experience as a hypothesis it does not assert (§8.12).
 
 ## License
 

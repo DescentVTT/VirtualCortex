@@ -1,22 +1,32 @@
-//! Vector-symbolic architecture: hypervector headers and role binding (whitepaper §5.2.9).
-//! Bundling, permutation, unbinding and the codebook are Specified; the frames that unbound
-//! roles fill are `cortex-linguistic`'s (ADR-0016).
+//! Vector-symbolic architecture: hypervector headers, role binding and, since ADR-0021, the
+//! header of a conceptual blend (whitepaper §5.2.9, §8.13). Bundling, permutation, unbinding
+//! and the codebook are Specified; the frames that unbound roles fill are
+//! `cortex-linguistic`'s (ADR-0016).
 
 #![no_std]
+
+/// `flags` bit: the header holds a role/filler binding.
+pub const FLAG_BOUND: u16 = 0x0001;
+/// `flags` bit: the header is a conceptual blend of a target with a source domain (ADR-0021).
+pub const FLAG_BLENDED: u16 = 0x0004;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct SymbolicHypervectorHeader {
     pub vector_id: u32,              // [0..4] Symbolic concept index
     pub dimensionality: u32,         // [4..8] Hypervector width (typically 10,000 bits)
-    pub binding_role_id: u32,        // [8..12] Bound relation / predicate role ID
-    pub filler_concept_id: u32,      // [12..16] Bound concept filler ID
-    pub token_vocab_id: u32,         // [16..20] Corresponding NLP token vocabulary ID
+    pub binding_role_id: u32, // [8..12] Bound relation / predicate role ID; a blend's target concept
+    pub filler_concept_id: u32, // [12..16] Bound concept filler ID
+    pub token_vocab_id: u32,  // [16..20] Corresponding NLP token vocabulary ID
     pub hamming_distance_cache: u32, // [20..24] Nearest-neighbor associative distance
-    pub permutation_shift: u16,      // [24..26] Syntax cyclic rotation index Pi^k
-    pub flags: u16,                  // [26..28] Feature flags (Bipolar, Clean, Bound)
-    pub confidence_score: u32,       // [28..32] Decoding confidence score (Q16.16)
-    pub _reserved: [u8; 32],         // [32..64] Strict 64-byte cache-line alignment padding
+    pub permutation_shift: u16, // [24..26] Cyclic rotation index Pi^k: syntax position, or a blend's cross-domain map
+    pub flags: u16,             // [26..28] Feature flags (bit 0 bound, bit 2 blended)
+    pub confidence_score: u32,  // [28..32] Decoding confidence score (Q16.16)
+    pub blend_source_id: u32, // [32..36] The source concept a blend draws its structure from (ADR-0021)
+    pub blending_domain_mask: u16, // [36..38] Source domains blended in, one bit each (ADR-0021)
+    pub blend_depth: u8,      // [38] Blends applied to this vector, saturating (ADR-0021)
+    pub _pad: u8,             // [39] Explicit padding; MUST be zero
+    pub _reserved: [u8; 24],  // [40..64] Strict 64-byte cache-line alignment padding
 }
 
 impl SymbolicHypervectorHeader {
@@ -26,7 +36,39 @@ impl SymbolicHypervectorHeader {
     pub fn bind(&mut self, role_id: u32, filler_id: u32) {
         self.binding_role_id = role_id;
         self.filler_concept_id = filler_id;
-        self.flags |= 0x01; // Marked as bound
+        self.flags |= FLAG_BOUND; // Marked as bound
+    }
+
+    /// Conceptual blending (Fauconnier–Turner) in vector-symbolic form (ADR-0021, whitepaper
+    /// §8.13): `blend = target ⊗ M ⊕ source`, where the cross-domain map `M` is a cyclic
+    /// permutation by `cross_domain_shift`. The header records the target as the bound role,
+    /// the source as `blend_source_id`, the map as `permutation_shift`, the source's domain
+    /// bits in the mask, and one more blend in the depth. The vector arithmetic itself is over
+    /// the bodies in their arena and is Specified. Refused, with nothing changed, when
+    /// `domain_mask` is zero: a blend must say which domain it borrowed from.
+    pub fn blend(
+        &mut self,
+        target_id: u32,
+        source_id: u32,
+        domain_mask: u16,
+        cross_domain_shift: u16,
+    ) -> bool {
+        if domain_mask == 0 {
+            return false;
+        }
+        self.binding_role_id = target_id;
+        self.blend_source_id = source_id;
+        self.permutation_shift = cross_domain_shift;
+        self.blending_domain_mask |= domain_mask;
+        self.blend_depth = self.blend_depth.saturating_add(1);
+        self.flags |= FLAG_BLENDED;
+        true
+    }
+
+    /// True for the header of a blend.
+    #[inline]
+    pub const fn is_blend(&self) -> bool {
+        self.flags & FLAG_BLENDED != 0
     }
 }
 
@@ -45,62 +87,86 @@ mod tests {
             dimensionality: SymbolicHypervectorHeader::DIMENSIONS as u32,
             binding_role_id: 0,
             filler_concept_id: 0,
-            token_vocab_id: 5,
-            hamming_distance_cache: 77,
-            permutation_shift: 3,
+            token_vocab_id: 0,
+            hamming_distance_cache: 0,
+            permutation_shift: 0,
             flags: 0,
-            confidence_score: 0x8000,
-            _reserved: [0; 32],
+            confidence_score: 0,
+            blend_source_id: 0,
+            blending_domain_mask: 0,
+            blend_depth: 0,
+            _pad: 0,
+            _reserved: [0; 24],
         }
     }
 
     #[test]
-    fn header_is_one_cache_line() {
+    fn record_is_one_cache_line_and_dimensions_are_ten_thousand() {
         assert_eq!(core::mem::size_of::<SymbolicHypervectorHeader>(), 64);
         assert_eq!(core::mem::align_of::<SymbolicHypervectorHeader>(), 64);
-    }
-
-    #[test]
-    fn dimensions_are_ten_thousand() {
         assert_eq!(SymbolicHypervectorHeader::DIMENSIONS, 10_000);
     }
 
     #[test]
-    fn bind_stores_the_pair_and_sets_the_bound_bit() {
+    fn bind_stores_the_pair_and_sets_bit_zero() {
         let mut h = header();
-        h.bind(7, 42);
-        assert_eq!(h.binding_role_id, 7);
-        assert_eq!(h.filler_concept_id, 42);
-        assert_eq!(h.flags & 0x01, 0x01);
-    }
-
-    #[test]
-    fn bind_preserves_the_other_flag_bits() {
-        let mut h = header();
-        h.flags = 0xFFFE;
-        h.bind(1, 2);
-        assert_eq!(h.flags, 0xFFFF);
-    }
-
-    #[test]
-    fn bind_is_idempotent_and_rebinds() {
-        let mut h = header();
-        h.bind(1, 2);
-        let once = h;
-        h.bind(1, 2);
-        assert_eq!(h, once);
         h.bind(3, 4);
-        assert_eq!((h.binding_role_id, h.filler_concept_id, h.flags), (3, 4, 1));
+        assert_eq!((h.binding_role_id, h.filler_concept_id), (3, 4));
+        assert_eq!(h.flags & FLAG_BOUND, FLAG_BOUND);
+    }
+
+    #[test]
+    fn bind_preserves_other_flag_bits_and_is_idempotent() {
+        let mut h = header();
+        h.flags = 0x8000;
+        h.bind(1, 2);
+        h.bind(1, 2);
+        assert_eq!(h.flags, 0x8000 | FLAG_BOUND);
+        assert_eq!((h.binding_role_id, h.filler_concept_id), (1, 2));
     }
 
     #[test]
     fn bind_touches_nothing_else() {
-        let before = header();
-        let mut h = before;
-        h.bind(1, 2);
-        h.binding_role_id = before.binding_role_id;
-        h.filler_concept_id = before.filler_concept_id;
-        h.flags = before.flags;
+        let mut h = header();
+        let before = h;
+        h.bind(5, 6);
+        assert_eq!(h.vector_id, before.vector_id);
+        assert_eq!(h.dimensionality, before.dimensionality);
+        assert_eq!(h.token_vocab_id, before.token_vocab_id);
+        assert_eq!(h.confidence_score, before.confidence_score);
+        assert_eq!(h._reserved, before._reserved);
+        assert!(!h.is_blend());
+    }
+
+    #[test]
+    fn a_blend_records_target_source_map_and_domain_and_accumulates_depth() {
+        let mut h = header();
+        assert!(h.blend(100, 200, 0x0001, 17));
+        assert!(h.is_blend());
+        assert_eq!((h.binding_role_id, h.blend_source_id), (100, 200));
+        assert_eq!(
+            (h.permutation_shift, h.blending_domain_mask, h.blend_depth),
+            (17, 0x0001, 1)
+        );
+        assert!(
+            h.blend(100, 300, 0x0004, 3),
+            "a second blend from another domain"
+        );
+        assert_eq!(h.blending_domain_mask, 0x0005, "domains accumulate");
+        assert_eq!(
+            (h.blend_source_id, h.permutation_shift, h.blend_depth),
+            (300, 3, 2)
+        );
+        h.blend_depth = u8::MAX;
+        assert!(h.blend(100, 400, 0x0002, 1));
+        assert_eq!(h.blend_depth, u8::MAX, "the depth saturates");
+    }
+
+    #[test]
+    fn a_blend_without_a_domain_is_refused_unchanged() {
+        let mut h = header();
+        let before = h;
+        assert!(!h.blend(1, 2, 0, 5));
         assert_eq!(h, before);
     }
 }
