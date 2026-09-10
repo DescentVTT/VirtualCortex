@@ -207,6 +207,13 @@ mod tests {
             0x7F << 24,
             "every slot negative"
         );
+        let mut zero = zone(1);
+        zero.step_forward_model(0, 0);
+        assert_eq!(
+            zero.delay_ctl & (1 << 24),
+            0,
+            "a zero command is not negative (the mutation gate\'s first catch)"
+        );
     }
 
     const ONE: i32 = 0x0001_0000;
