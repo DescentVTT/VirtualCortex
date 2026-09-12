@@ -776,7 +776,7 @@ mod tests {
         let ok = window(&[3, 4]);
         assert!(ok.is_well_formed());
         type Mutation = fn(&mut HomeostaticDrivePool);
-        let cases: [(&str, Mutation); 16] = [
+        let cases: [(&str, Mutation); 14] = [
             ("gain below the floor", |p| {
                 p.synaptic_gain_q16 = GAIN_MIN_Q16 - 1
             }),
@@ -805,16 +805,6 @@ mod tests {
             ("a pair sum above its bound", |p| {
                 p.sum_pair = (ACTIVITY_COUNT_MAX as u64) * (ACTIVITY_COUNT_MAX as u64) + 1
             }),
-            ("a first bin without a bin", |p| {
-                p.window_bins = 0;
-                p.last_activity = 0;
-                p.first_activity = 1;
-            }),
-            ("a last bin without a bin", |p| {
-                p.window_bins = 0;
-                p.first_activity = 0;
-                p.last_activity = 1;
-            }),
             ("a sleep flag that is neither", |p| p.sleep_mode_active = 2),
             ("reserved bytes", |p| p._reserved = 1),
             ("a sum without a pair", |p| {
@@ -831,6 +821,22 @@ mod tests {
             mutate(&mut p);
             assert!(!p.is_well_formed(), "{what}");
         }
+        // A first or a last bin without a bin, on a record with no pair, so that this clause
+        // is the only one violated.
+        let mut first = HomeostaticDrivePool::new();
+        first.first_activity = 1;
+        assert!(!first.is_well_formed(), "a first bin without a bin");
+        let mut last = HomeostaticDrivePool::new();
+        last.last_activity = 1;
+        assert!(!last.is_well_formed(), "a last bin without a bin");
+        let mut one_bin = HomeostaticDrivePool::new();
+        one_bin.window_bins = 1;
+        one_bin.first_activity = 1;
+        one_bin.last_activity = 1;
+        assert!(
+            one_bin.is_well_formed(),
+            "one bin, remembered as first and last"
+        );
         // The neighbours on the right side of each bound are well formed.
         let mut p = ok;
         p.synaptic_gain_q16 = GAIN_MIN_Q16;
