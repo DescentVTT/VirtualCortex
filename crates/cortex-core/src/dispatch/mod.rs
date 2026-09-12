@@ -1,3 +1,5 @@
-//! Dispatch: the timing wheel that orders delayed delivery (ADR-0013). The delivery path from
-//! the wheel into mailboxes is Specified (whitepaper §6.1).
+//! Dispatch: the timing wheel that orders delayed delivery (ADR-0013; the delivery phase that
+//! drains it is the executor's, ADR-0023) and the cadence a rule slower than the tick runs on
+//! (ADR-0035).
+pub mod cadence;
 pub mod wheel;

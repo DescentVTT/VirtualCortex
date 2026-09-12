@@ -7,11 +7,14 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_connectome::{
-    CortexFileHeader, HeaderError, SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA,
-    SECTION_SYNAPSE, SectionEntry, crc64,
+    CortexFileHeader, HeaderError, SECTION_HOMEOSTASIS, SECTION_MODULATOR, SECTION_NEURON,
+    SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
     PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
+};
+use cortex_homeostasis::{
+    ACTIVITY_WINDOW_BINS, CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, HomeostaticDrivePool,
 };
 use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, WriteAheadLog};
 use std::path::PathBuf;
@@ -146,9 +149,9 @@ fn a_corrupted_truncated_or_foreign_image_fails_closed() {
     let bytes = std::fs::read(&path).unwrap();
 
     let mut flipped = bytes.clone();
-    // The header, four directory entries (neurons, synapses, deltas, the modulation state),
-    // then the neuron section.
-    flipped[64 * 5 + 30] ^= 0x01;
+    // The header, five directory entries (neurons, synapses, deltas, the modulation state,
+    // the homeostasis state), then the neuron section.
+    flipped[64 * 6 + 30] ^= 0x01;
     assert!(matches!(
         Image::decode::<64>(&flipped, config()),
         Err(ImageError::SectionCrc(SECTION_NEURON))
@@ -237,7 +240,8 @@ fn small_image() -> Vec<u8> {
     Image::encode(&exec).unwrap()
 }
 
-/// `small_image` with the dopamine signal off rest, so the modulator section is written.
+/// `small_image` with the dopamine signal off rest, so the modulator section carries a
+/// signal to read back.
 fn small_image_with_modulator() -> Vec<u8> {
     let mut exec = Executor::<8>::new(Config {
         units: 2,
@@ -518,6 +522,80 @@ fn every_clause_of_the_loader_s_checks_refuses_on_its_own() {
             .modulation_baseline_q16(),
         0x8000,
         "the image's baseline is the engine's"
+    );
+    // The homeostasis section (ADR-0036): exactly one 64-byte record, required.
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_HOMEOSTASIS, |e| {
+        e.length = 0;
+        e.crc64 = 0;
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_HOMEOSTASIS))
+    ));
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_HOMEOSTASIS, |e| e.record_size = 16);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_HOMEOSTASIS))
+    ));
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_HOMEOSTASIS, |e| e.kind = SECTION_NEURON);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::MissingSection(SECTION_HOMEOSTASIS))
+    ));
+    // Its record: the step above its bound is the configuration's refusal; a gain outside its
+    // bounds, a reserved byte, a full window and a window that is not the clock's are records
+    // the rules never leave.
+    let with_pool = |patch: fn(&mut HomeostaticDrivePool)| {
+        let mut img = small_image();
+        patch_section(&mut img, SECTION_HOMEOSTASIS, |s| {
+            let mut pool = HomeostaticDrivePool::decode((&s[..64]).try_into().unwrap());
+            patch(&mut pool);
+            s.copy_from_slice(&pool.encode());
+        });
+        img
+    };
+    assert!(matches!(
+        Image::decode::<8>(
+            &with_pool(|p| p.control_step_q0_16 = CONTROL_STEP_MAX_Q0_16 + 1),
+            Config::default()
+        ),
+        Err(ImageError::Config(ConfigError::ControlStepOutOfRange))
+    ));
+    for patch in [
+        (|p| p.synaptic_gain_q16 = GAIN_MAX_Q16 + 1) as fn(&mut HomeostaticDrivePool),
+        |p| p.synaptic_gain_q16 = GAIN_MIN_Q16 - 1,
+        |p| p._reserved = 1,
+        |p| p.window_bins = ACTIVITY_WINDOW_BINS,
+        |p| p.window_bins = 1,
+        |p| p.bin_activity = 0x0100_0000,
+        |p| p.sleep_mode_active = 2,
+    ] {
+        assert!(matches!(
+            Image::decode::<8>(&with_pool(patch), Config::default()),
+            Err(ImageError::MalformedHomeostasis)
+        ));
+    }
+    // The image's gain and step outrank the configuration's.
+    let loaded = Image::decode::<8>(
+        &with_pool(|p| {
+            p.synaptic_gain_q16 = 0x8000;
+            p.control_step_q0_16 = CONTROL_STEP_MAX_Q0_16;
+            p.bin_activity = 9;
+        }),
+        Config::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            loaded.homeostasis().synaptic_gain_q16,
+            loaded.homeostasis().control_step_q0_16,
+            loaded.homeostasis().bin_activity
+        ),
+        (0x8000, CONTROL_STEP_MAX_Q0_16, 9),
+        "the image's homeostasis state is the engine's"
     );
 }
 

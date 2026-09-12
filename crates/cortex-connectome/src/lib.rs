@@ -78,10 +78,16 @@ pub const SECTION_TERM: u32 = 40;
 /// `PolicyAmendment` arena of `cortex-executive` (ADR-0031): the engine's amendments to its own
 /// policy, committed and rejected, so that the policy an image runs under is in the image.
 pub const SECTION_AMENDMENT: u32 = 41;
-/// The engine's `NeuromodulatorState` of `cortex-neuromod` (ADR-0032): one 64-byte record (the
-/// 16 bytes of the record and 48 reserved bytes that MUST be zero), written when the signals
-/// are not at rest, so that the modulation a run continues under is in the image.
+/// The engine's modulation state (ADR-0032): one 64-byte record holding the 16 bytes of
+/// `cortex-neuromod`'s `NeuromodulatorState`, the modulation baseline at `[16..20)` and 44
+/// reserved bytes that MUST be zero; always written and required, so that the modulation a
+/// run continues under is in the image.
 pub const SECTION_MODULATOR: u32 = 42;
+/// The engine's homeostasis state (ADR-0036): one 64-byte record, `cortex-homeostasis`'s
+/// `HomeostaticDrivePool` with its synaptic gain, its control step and the open window of the
+/// branching-ratio estimator; always written and required, so that the gain a run continues
+/// under, and the window it was in, are in the image.
+pub const SECTION_HOMEOSTASIS: u32 = 43;
 
 /// Why a header is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,7 +172,13 @@ impl CortexFileHeader {
     ///   section (`SECTION_MODULATOR`, 42) holds the engine's `NeuromodulatorState`. A
     ///   version-10 image's apical mask at byte 56 would read as a trace, so it MUST NOT be
     ///   read as version 11.
-    pub const FORMAT_VERSION: u32 = 11;
+    /// - 12: `HomeostaticDrivePool` changed shape for criticality control (ADR-0036):
+    ///   `thermal_stress` at `[12..16)` became the open bin's spike count, `target_threshold_bias`
+    ///   at `[28..32)` became the synaptic gain, the circadian phase narrowed to sixteen bits and
+    ///   the sleep flag to one byte, and the reserved bytes became the estimator's window; the
+    ///   homeostasis section (`SECTION_HOMEOSTASIS`, 43) holds the engine's record, always. A
+    ///   version-11 image has no such section, and its loader would refuse one.
+    pub const FORMAT_VERSION: u32 = 12;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -350,7 +362,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 11);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 12);
     }
 
     #[test]
@@ -396,8 +408,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            11,
-            "ADR-0032 and ADR-0033"
+            12,
+            "ADR-0036: the homeostasis record and its section"
         );
     }
 
@@ -482,10 +494,11 @@ mod tests {
                 SECTION_ROUTING,
                 SECTION_TERM,
                 SECTION_AMENDMENT,
-                SECTION_MODULATOR
+                SECTION_MODULATOR,
+                SECTION_HOMEOSTASIS
             ),
-            (1, 38, 39, 40, 41, 42),
-            "the Specified kinds, the amendment arena (ADR-0031) and the modulator (ADR-0032)"
+            (1, 38, 39, 40, 41, 42, 43),
+            "the Specified kinds, the amendment arena (ADR-0031), the modulator (ADR-0032) and the homeostasis state (ADR-0036)"
         );
     }
 }

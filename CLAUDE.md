@@ -18,9 +18,12 @@ update rules in twenty-five crates, synaptic fan-out with three-factor STDP (an 
 trace per synapse, consolidated by the modulator; ADR-0032), and the executor that runs them
 on a pool of workers (`runtime/cortex-runtime`, ADR-0023), the `.cortex` image writer and
 loader and the clock sweep (ADR-0024), the policy amendment's trial in two forks of the image
-and its commit (ADR-0031), and an image that says what a tick is and at which tick it was
-written (ADR-0033) exist; the `mmap` path, the shared-memory mappings, core pinning, the
-tool broker and every subsystem's real dynamics do not. The whitepaper's
+and its commit (ADR-0031), an image that says what a tick is and at which tick it was
+written (ADR-0033), and the criticality controller (the population's spikes tallied every
+tick, the branching ratio estimated by lag-one regression once per window, a bounded global
+synaptic gain applied by every turn, all on a cadence that is a mask on the tick; ADR-0035,
+ADR-0036) exist; the `mmap` path, the shared-memory mappings, core pinning, the tool broker
+and every subsystem's real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.
 

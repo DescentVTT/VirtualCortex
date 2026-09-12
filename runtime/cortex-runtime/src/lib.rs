@@ -3,7 +3,9 @@
 //! timing wheel per worker, mailbox delivery, synaptic fan-out and STDP, in three
 //! barrier-separated phases per fine tick; the `.cortex` image writer and loader and the clock
 //! sweep with its write-ahead log (ADR-0024); the policy amendment's trial in two forks of the
-//! image and its commit into the live policy (ADR-0031). Everything is allocated in [`Executor::new`];
+//! image and its commit into the live policy (ADR-0031); the modulator of three-factor
+//! plasticity (ADR-0032); the population spike tally and the criticality controller's gain,
+//! stepped on a cadence (ADR-0035, ADR-0036). Everything is allocated in [`Executor::new`];
 //! nothing allocates, blocks or (apart from the barrier's yield) makes a system call in the
 //! loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
