@@ -10,15 +10,25 @@
 //! atom 0 is "no literal", so a unit clause is `(lit, LITERAL_NONE)` and the empty clause is
 //! `(LITERAL_NONE, LITERAL_NONE)`. The truth tables and the propositional resolution step are
 //! Implemented, and so are the term arena and first-order unification of [`term`] (ADR-0025):
-//! a literal may name a term node, and a resolution step unifies the complementary pair. Clause
-//! search and constraint propagation are Specified.
+//! a literal may name a term node, and a resolution step unifies the complementary pair; and,
+//! since ADR-0040, syntax as type reduction over the same arena ([`category`]): a category is
+//! a term, the four combinatory rules are unifications, and a greedy shift-reduce reducer
+//! reads a sequence of lexical categories into one with a log of what it did. Clause search,
+//! constraint propagation, type raising and a chart are Specified.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
 // here (ADR-0029; migrated under brief 016 on 2026-09-10).
 #![deny(clippy::arithmetic_side_effects)]
 
+pub mod category;
 pub mod term;
+pub use category::{
+    CATEGORY_BACKWARD, CATEGORY_FORWARD, CATEGORY_RESERVED, ParseError, ParseScratch,
+    RULE_BACKWARD_APPLICATION, RULE_BACKWARD_COMPOSITION, RULE_FORWARD_APPLICATION,
+    RULE_FORWARD_COMPOSITION, Reduction, SLASH_ARITY, argument, backward, forward, head,
+    is_functor, reduce, result, role, slash,
+};
 pub use term::{
     Binding, MAX_ARITY, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TERM_NONE, TERM_VARIABLE,
     TermNode, UnifyResult, deref, is_negated, literal_of_term, resolve_first_order,

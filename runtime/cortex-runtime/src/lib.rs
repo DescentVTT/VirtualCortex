@@ -7,7 +7,10 @@
 //! plasticity (ADR-0032); the population spike tally and the criticality controller's gain,
 //! stepped on a cadence (ADR-0035, ADR-0036); the sleep stages on the window's cadence
 //! (ADR-0037) and the episodic ledger, replayed on the ripple's during slow-wave sleep
-//! (ADR-0038). Everything is allocated in [`Executor::new`];
+//! (ADR-0038); and, between ticks with no executor field, the language composition of
+//! [`language`]: a category sequence reduced on the term arena into a frame, the frame sealed
+//! as a hypervector and read back through a codebook (ADR-0039, ADR-0040). Everything is
+//! allocated in [`Executor::new`];
 //! nothing allocates, blocks or (apart from the barrier's yield) makes a system call in the
 //! loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
@@ -22,6 +25,7 @@ pub mod deque;
 pub mod executor;
 pub mod image;
 pub mod injector;
+pub mod language;
 pub mod pool;
 pub mod trial;
 
@@ -30,6 +34,10 @@ pub use executor::{
     WorkerReport,
 };
 pub use image::{Image, ImageError, WriteAheadLog};
+pub use language::{
+    DECODE_FLOOR_Q16, LanguageError, ROLE_CONCEPT_BASE, ROLES, comprehend, concept_in,
+    decode_frame, encode_frame, read_role, role_concept, role_of_concept, role_slot,
+};
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};
 
 /// The executor with the production wheel geometry (2 048 tokens per slot, ADR-0013).

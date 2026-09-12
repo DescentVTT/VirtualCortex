@@ -23,6 +23,11 @@ cortex-neuromod = { path = "../../crates/cortex-neuromod" }
 # The homeostasis record: the branching-ratio estimator and the synaptic gain (ADR-0036).
 cortex-hippocampus = { path = "../../crates/cortex-hippocampus" }
 cortex-homeostasis = { path = "../../crates/cortex-homeostasis" }
+# The language composition: the hypervector body (ADR-0039), categorial reduction on the
+# term arena (ADR-0040) and the frame they meet in (brief 020).
+cortex-symbolic = { path = "../../crates/cortex-symbolic" }
+cortex-reasoning = { path = "../../crates/cortex-reasoning" }
+cortex-linguistic = { path = "../../crates/cortex-linguistic" }
 
 # Not the workspace table: the runtime holds the one `unsafe` (ADR-0023). The float rule
 # still applies (ADR-0029).

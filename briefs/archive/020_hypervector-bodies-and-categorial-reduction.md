@@ -1,7 +1,15 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-13
 ---
+
+> **Executed 2026-09-13 in pull request PR_NUMBER.** Writes ADR-0039 (the hypervector body)
+> and ADR-0040 (categorial reduction); resolves finding F-30; opens hypothesis H-10; image
+> format 13 and the determinism pin untouched. Every deliverable is done; notes under the boxes
+> say where the tree departs from the text (a slash always has three children; the runtime's
+> error type; the adverb's derivation). The report is in the pull request and in
+> `CHANGELOG.md`. The body below describes the tree before execution and is not maintained;
+> its relative links gained one `../`.
 
 # Brief 020 — Hypervector bodies and categorial reduction: the vector-symbolic algebra as a second record of `cortex-symbolic`, syntax as type reduction over the term arena, and a frame that round-trips through both
 
@@ -22,7 +30,7 @@ basal-ganglia gate; and a five-axis "universal cognitive stance" record with a "
 realization boundary" it calls *"What stays outside. Words."*. Four of its stated premises are
 not in the tree (the Context below says which), so the round begins by re-deriving them. When
 the round is done: **one ADR** admits a second record to `cortex-symbolic` under
-[ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)'s test, `HypervectorBody`, 160
+[ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)'s test, `HypervectorBody`, 160
 words of 64 bits (10 240 bits, twenty cache lines), with the vector-symbolic algebra the
 whitepaper's §8.8 row has called Specified since 3.0.0 as integer rules over the words:
 binding by XOR (its own inverse, so unbinding is binding), permutation by cyclic rotation,
@@ -31,7 +39,7 @@ count, the clean-up as the nearest codebook entry, a decode confidence from the 
 a seeded generator for a codebook; every rule a `u64` loop the compiler vectorises for the
 target it builds for, with no intrinsic and no `unsafe`, so the result is the same integer on
 every target. **One ADR** puts syntax on the term arena of
-[ADR-0025](../docs/adr/0025-term-arena-and-unification.md): a category is a term (an atom, or a
+[ADR-0025](../../docs/adr/0025-term-arena-and-unification.md): a category is a term (an atom, or a
 functor category `X/Y` or `X\Y` as a compound over a reserved slash functor, its argument slot
 optionally annotated with the role the argument fills), the four combinatory rules (forward
 and backward application, forward and backward harmonic composition) are unifications over
@@ -55,29 +63,29 @@ all of this, and this brief is archived with every check green.
 - Every claim is Implemented, Specified, Target or Hypothesis. What a bundle of three bound
   pairs decodes to on a codebook of sixty-four seeded bodies is stated as what it is; what a
   lexicon and a corpus would derive is a hypothesis with a protocol
-  ([ADR-0010](../docs/adr/0010-measured-or-target.md)).
+  ([ADR-0010](../../docs/adr/0010-measured-or-target.md)).
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper
   §11, never a silent edit.
 - No `f32`/`f64`; Q16.16 in `i32`/`u32`, widened to `i64` to multiply; every operation on a
   state field saturates or wraps by name (`clippy::arithmetic_side_effects` is denied
-  everywhere, [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is
+  everywhere, [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is
   bounded a line above the shift.
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; a record that is a
   whole number of cache lines larger than one asserts its size as that multiple; no heap
   types, threads or `unsafe` in a state crate (`unsafe_code = "forbid"` in every one of them,
   ADR-0029), which is why no `core::arch` intrinsic can appear there; `core::simd` is nightly
   and fails TC-1.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md));
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md));
   a second record in a crate passes ADR-0016's six-part test in its ADR; the crate count
   stays 32.
 - A change to a record bumps `CortexFileHeader::FORMAT_VERSION`, updates its §5.2 table and
   gets a changelog entry (rule L-6); a new record no section carries yet does not.
 - State crates declare no dependencies (TC-2); a composition of two crates lives in
   `runtime/cortex-runtime`, the one crate that depends downward
-  ([ADR-0023](../docs/adr/0023-executor.md)).
+  ([ADR-0023](../../docs/adr/0023-executor.md)).
 - Rule L-3: a term, a frame and a body hold ids and bits, never strings; the lexicon that
   turns an id into a word is the runtime's boundary and is Specified (§1.5, §6.9).
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only
   with a stated reason; the mutation gate on the changed lines must pass; a new rule carries
   a test over the lattice of `testkit/prop.rs`.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep
@@ -106,7 +114,7 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
 - The proposal's byte accounting is wrong: 10 000 bits are 1 250 bytes and 156.25 words;
   160 words are 1 280 bytes and 10 240 bits. Whitepaper §5.2.9 and Appendix A row 9 say
   1 250 B; a record must be a whole number of words and, under
-  [ADR-0001](../docs/adr/0001-64-byte-pod-records.md)'s alignment, of cache lines. The body
+  [ADR-0001](../../docs/adr/0001-64-byte-pod-records.md)'s alignment, of cache lines. The body
   is 160 words, every bit used, and the width the header's `DIMENSIONS` names follows it: a
   rotation over 10 000 of 10 240 bits would need a mask on every word and a well-formedness
   clause (240 bits MUST be zero) for no gain.
@@ -155,7 +163,7 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
   the engine "lacks behavioral readouts" and therefore the language stream must precede the
   H-9 measurement. The readout consolidation needs is pattern completion: cue a part of a
   tagged pattern through the injector after a night of the stages of
-  [ADR-0037](../docs/adr/0037-sleep-regulation.md) and count whether the rest fires, which is
+  [ADR-0037](../../docs/adr/0037-sleep-regulation.md) and count whether the rest fires, which is
   a spiking readout on the executor and needs no symbol. The language stream and H-9 are
   orthogonal; this round does not change H-9's protocol and does not claim to serve it.
 - Whitepaper §8.8, row "Vector-symbolic architecture (Plate, Kanerva)": "Binding by XOR /
@@ -169,15 +177,12 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
   round touches the executor, so the pin is untouched by construction.
 - Preconditions, checked by `spec-guard` until this brief is archived:
 
-<!-- @assert-absence target="crates/cortex-symbolic" symbol="HypervectorBody" word="true" reason="brief 020 precondition: no hypervector body record exists yet" -->
 
-<!-- @assert-absence target="crates/cortex-reasoning" symbol="CATEGORY_FORWARD" word="true" reason="brief 020 precondition: no categorial functor exists on the term arena yet" -->
 
-<!-- @assert-count target="crates/cortex-symbolic" symbol="DIMENSIONS: usize = 10_000" min="1" reason="brief 020 precondition: the header still names a width no whole number of words holds" -->
 
 ## Deliverables
 
-1. [ ] **The body** (`cortex-symbolic`, the first ADR; no format bump). A second record,
+1. [x] **The body** (`cortex-symbolic`, the first ADR; no format bump). A second record,
    `HypervectorBody`, `#[repr(C, align(64))]`, `words: [u64; BODY_WORDS]` with `BODY_WORDS`
    160 and `BODY_BITS` 10 240, size 1 280 asserted at compile time as twenty cache lines;
    `Default` the zero body (the identity of binding); `Clone, Copy, Debug, PartialEq, Eq`.
@@ -212,7 +217,8 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
    the confidence at 0, a quarter, half, and `BODY_BITS`; the readout's three fields; and a
    property walk (`mod prop` with the kit: bind round-trips, bundle equals the oracle at
    random counts, permute composes, the distance is a metric on sampled triples).
-2. [ ] **Categorial reduction** (`cortex-reasoning`, the second ADR; no record change). A
+   **As written.** `nearest` returns `Option<(usize, u32)>`; the capacity case's numbers, computed by an independent oracle first, are 2 545, 2 556 and 2 501 for the three fillers, the nearest wrong entry above 4 900, and 4 979 for the unbound role.
+2. [x] **Categorial reduction** (`cortex-reasoning`, the second ADR; no record change). A
    module `category` over the term arena: `CATEGORY_FORWARD` and `CATEGORY_BACKWARD`, two
    reserved functor ids at the top of the id space (`0xFFFF_FF01`, `0xFFFF_FF02`); a
    functor category is a compound over one of them with children `[result, argument]` or
@@ -249,7 +255,8 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
    of one to eight categories from a small lexicon never panic; a result names a node inside
    the arena, every step's three indices do, the steps are one fewer than the shifts, and the
    table dereferences).
-3. [ ] **The composition** (`cortex-runtime`, both ADRs; a module `language`, no executor
+   **Departure:** a functor category always has three children (`SLASH_ARITY`); a two-child slash is `Malformed`, since categories unify structurally and an optional role would clash on arity under composition. `Reduction::role` is a term index (a variable role that stays unbound reads as no role), not an `Option`. An adverb composes backward only with a subjectless verb phrase: with the subject present the greedy reducer applies it first, so the test derives "chase cats quickly" and applies "dogs" in a second reduction over the same scratch. `ParseError::StepsFull` was added; a reduction that cannot be logged or has no node is undone.
+3. [x] **The composition** (`cortex-runtime`, both ADRs; a module `language`, no executor
    change). The runtime depends on `cortex-symbolic`, `cortex-reasoning` and
    `cortex-linguistic` by path. Role concepts for the grammar: `role_concept(role_bit)` and
    `role_of_concept(id)` over a reserved band (`0xFFFF_FE00 | bit`). `comprehend(categories,
@@ -274,7 +281,8 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
    second sentence with the same verb and swapped nouns decodes to the swapped frame;
    `comprehend` refuses a non-sentence; and the whole path is bit-identical on a second run.
    The AArch64 job runs the same test, so every pinned distance is held on both targets.
-4. [ ] **Specified and not adopted, with reasons in the ADRs and the whitepaper.** The
+   **Departure:** the error type is `LanguageError::{Parse(ParseError), RoleRefused(role)}`, not `ParseError`; `concept_in(frame, role)` was added; the pinned distances are 2 574, 2 562 and 2 482 (the affect at 4 997) for the first sentence and 2 532, 2 635 and 2 524 (5 037) for the swapped one, computed by an independent oracle first; a third test reads "the bird slept" into two roles.
+4. [x] **Specified and not adopted, with reasons in the ADRs and the whitepaper.** The
    Dominey cortico-striatal gate: a second owner for the role assignment `bind_role` makes
    from the derivation, on a token path that does not exist; what the gate is symbolically
    is the application rule. The stance record: three of its five axes have owners already
@@ -289,7 +297,7 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
    about H-9 is answered in the whitepaper (pattern completion is the readout; the protocol
    stands). CKY, type raising, the lexicon, the state-vector arena and the body arena's
    section stay Specified.
-5. [ ] **Documents.** Whitepaper §1.6 (the three Logic cells; thirty-nine records), the
+5. [x] **Documents.** Whitepaper §1.6 (the three Logic cells; thirty-nine records), the
    executive summary, §2.2 (the `alloc` directive), §5.2.9 (the body's table, the API, the
    status, the rules with executable assertions), §5.2.20 (Layer 1's status; the
    comprehension path), §5.2.30 (the categories, the reducer, the API), §6.9 (R-9 with what
@@ -301,7 +309,7 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
    2011; Eisner 1996; Dominey 1995 and Gärdenfors 2000 for what was not adopted), the
    glossary; the ADR index; `README.md`, `CLAUDE.md`, the reader's guide; `CHANGELOG.md`;
    this brief archived with every box dispositioned.
-6. [ ] **Departures and measurements recorded.** Where the tree departs from this text (a
+6. [x] **Departures and measurements recorded.** Where the tree departs from this text (a
    constant, a name, a rule's order), the archived brief says so under the box, as brief 019
    did for the ripple and the drive.
 

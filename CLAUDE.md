@@ -25,7 +25,7 @@ synaptic gain applied by every turn, all on a cadence that is a mask on the tick
 ADR-0036), sleep as a state machine stepped once per window (a two-process pressure, a
 circadian phase whose sixteen bits are a day, three stages, a wake as an input; ADR-0037) and
 the episodic ledger (tagged patterns appended and never overwritten, replayed into the network
-on a ripple cadence in slow-wave sleep and depotentiated in REM; ADR-0038) exist; the `mmap` path, the shared-memory mappings, core pinning, the tool broker
+on a ripple cadence in slow-wave sleep and depotentiated in REM; ADR-0038), the hypervector body with the vector-symbolic algebra as integer rules over its words (ADR-0039), syntax as categorial reduction over the term arena and the runtime's composition of a category sequence into a frame sealed as a hypervector and read back (ADR-0040) exist; the `mmap` path, the shared-memory mappings, core pinning, the tool broker
 and every subsystem's real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.

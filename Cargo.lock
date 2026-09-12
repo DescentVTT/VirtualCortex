@@ -207,7 +207,10 @@ dependencies = [
  "cortex-executive",
  "cortex-hippocampus",
  "cortex-homeostasis",
+ "cortex-linguistic",
  "cortex-neuromod",
+ "cortex-reasoning",
+ "cortex-symbolic",
 ]
 
 [[package]]
