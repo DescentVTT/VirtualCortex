@@ -1,12 +1,20 @@
 //! Vector-symbolic architecture: hypervector headers, role binding and, since ADR-0021, the
-//! header of a conceptual blend (whitepaper §5.2.9, §8.13). Bundling, permutation, unbinding
-//! and the codebook are Specified; the frames that unbound roles fill are
-//! `cortex-linguistic`'s (ADR-0016).
+//! header of a conceptual blend (whitepaper §5.2.9, §8.13); and, since ADR-0039, the
+//! hypervector body itself with the algebra over it ([`body`]: binding by XOR, permutation by
+//! rotation, bundling by majority, the Hamming distance, the nearest codebook entry and a
+//! decode confidence), all integer rules over 160 words with no intrinsic and no `unsafe`.
+//! The frames that unbound roles fill are `cortex-linguistic`'s (ADR-0016); the composition
+//! that reads a sealed frame back through a codebook is the runtime's.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
 // here (ADR-0029; migrated under brief 016 on 2026-09-10).
 #![deny(clippy::arithmetic_side_effects)]
+
+pub mod body;
+pub use body::{
+    BODY_BITS, BODY_WORDS, BUNDLE_MAX, HypervectorBody, Q16_ONE, TIE_SEED, confidence_q16,
+};
 
 /// `flags` bit: the header holds a role/filler binding.
 pub const FLAG_BOUND: u16 = 0x0001;
@@ -35,13 +43,24 @@ pub struct SymbolicHypervectorHeader {
 }
 
 impl SymbolicHypervectorHeader {
-    pub const DIMENSIONS: usize = 10_000;
+    /// The width of a body in bits: `BODY_BITS`, 10 240 (ADR-0039). Kanerva's nominal 10 000
+    /// is not a whole number of 64-bit words; the body uses every bit of its twenty lines.
+    pub const DIMENSIONS: usize = BODY_BITS as usize;
 
     #[inline(always)]
     pub fn bind(&mut self, role_id: u32, filler_id: u32) {
         self.binding_role_id = role_id;
         self.filler_concept_id = filler_id;
         self.flags |= FLAG_BOUND; // Marked as bound
+    }
+
+    /// A readout (ADR-0039): the header records that `role_id` was unbound from the vector
+    /// and resolved to `filler_id` at `distance` from that codebook entry, with the confidence
+    /// [`confidence_q16`] gives that distance. Binds the pair as [`bind`](Self::bind) does.
+    pub fn record_readout(&mut self, role_id: u32, filler_id: u32, distance: u32) {
+        self.bind(role_id, filler_id);
+        self.hamming_distance_cache = distance;
+        self.confidence_score = confidence_q16(distance);
     }
 
     /// Conceptual blending (Fauconnier–Turner) in vector-symbolic form (ADR-0021, whitepaper
@@ -133,10 +152,29 @@ mod tests {
     }
 
     #[test]
-    fn record_is_one_cache_line_and_dimensions_are_ten_thousand() {
+    fn record_is_one_cache_line_and_dimensions_are_the_body_s_width() {
         assert_eq!(core::mem::size_of::<SymbolicHypervectorHeader>(), 64);
         assert_eq!(core::mem::align_of::<SymbolicHypervectorHeader>(), 64);
-        assert_eq!(SymbolicHypervectorHeader::DIMENSIONS, 10_000);
+        assert_eq!(SymbolicHypervectorHeader::DIMENSIONS, 10_240);
+        assert_eq!(SymbolicHypervectorHeader::DIMENSIONS, BODY_BITS as usize);
+    }
+
+    #[test]
+    fn a_readout_binds_the_pair_and_writes_the_distance_and_its_confidence() {
+        let mut h = header();
+        h.record_readout(3, 17, 2_560);
+        assert_eq!((h.binding_role_id, h.filler_concept_id), (3, 17));
+        assert_eq!(h.flags & FLAG_BOUND, FLAG_BOUND);
+        assert_eq!(h.hamming_distance_cache, 2_560);
+        assert_eq!(
+            h.confidence_score,
+            Q16_ONE / 2,
+            "a quarter of the width is 0.5"
+        );
+        h.record_readout(4, 18, 0);
+        assert_eq!((h.hamming_distance_cache, h.confidence_score), (0, Q16_ONE));
+        h.record_readout(4, 18, 5_120);
+        assert_eq!(h.confidence_score, 0, "half the width is chance");
     }
 
     #[test]
@@ -207,9 +245,9 @@ mod tests {
         let mut h = header();
         assert_eq!(h.rebase(0), None, "no rotation");
         let before = h;
-        assert_eq!(h.rebase(9_995), Some(9_995));
+        assert_eq!(h.rebase(10_235), Some(10_235));
         assert!(h.is_rebased());
-        assert_eq!(h.rebase(10), Some(5), "wraps at 10 000");
+        assert_eq!(h.rebase(10), Some(5), "wraps at 10 240");
         assert_eq!((h.permutation_shift, h.rebase_count), (5, 2));
         assert_eq!(h.flags, FLAG_REBASED);
         let mut flat = header();
