@@ -376,11 +376,13 @@ fn retract(reduction: &Reduction, bound: usize, scratch: &mut ParseScratch) {
     if matches!(
         reduction.rule,
         RULE_FORWARD_COMPOSITION | RULE_BACKWARD_COMPOSITION
-    ) && scratch.free > 0
-    {
-        // A composition pushed one node, so the cursor is at least one.
-        scratch.free = scratch.free.wrapping_sub(1);
-        scratch.arena[scratch.free] = TermNode::default();
+    ) {
+        // A composition pushed one node, so the cursor is at least one; the checked form
+        // says so without a comparison of its own.
+        if let Some(last) = scratch.free.checked_sub(1) {
+            scratch.free = last;
+            scratch.arena[last] = TermNode::default();
+        }
     }
 }
 
@@ -995,6 +997,98 @@ mod tests {
             step_count: 0,
         };
         assert_eq!(reduce(&sentence, &mut past), Err(ParseError::BoundExceeded));
+    }
+
+    #[test]
+    fn a_full_trail_still_reduces_a_pair_that_binds_nothing() {
+        // `S(sleep)\NP(dog)`, a verb that wants exactly the dog: the application unifies
+        // ground categories and binds no variable, so a trail with no room is enough.
+        let mut lex = Lexicon::<32>::new();
+        let dog = lex.np(DOG);
+        let head_v = lex.constant(CHASE);
+        let s = lex.atom(S, head_v);
+        let dog_again = lex.np(DOG);
+        let agent = lex.constant(AGENT);
+        let verb = lex.bwd(s, dog_again, agent);
+        let mut bindings = [Binding::UNBOUND; 4];
+        let mut no_trail = [0u32; 0];
+        let mut stack = [0u32; 8];
+        let mut parse = [0u32; 4];
+        let mut steps = [Reduction::default(); 4];
+        let free = lex.len;
+        let mut scratch = ParseScratch {
+            arena: &mut lex.nodes,
+            free,
+            bindings: &mut bindings,
+            trail: &mut no_trail,
+            trail_len: 0,
+            stack: &mut stack,
+            parse: &mut parse,
+            steps: &mut steps,
+            step_count: 0,
+        };
+        assert_eq!(
+            reduce(&[dog, verb], &mut scratch),
+            Ok(s),
+            "a full trail, nothing to bind"
+        );
+        assert_eq!((scratch.step_count, scratch.trail_len), (1, 0));
+        // A cat does not unify with the dog: no derivation, still no binding, no panic.
+        let cat = lex.push(TermNode::compound(NP, &[]).unwrap());
+        let mut scratch = ParseScratch {
+            arena: &mut lex.nodes,
+            free: free.wrapping_add(1),
+            bindings: &mut bindings,
+            trail: &mut no_trail,
+            trail_len: 0,
+            stack: &mut stack,
+            parse: &mut parse,
+            steps: &mut steps,
+            step_count: 0,
+        };
+        assert_eq!(
+            reduce(&[cat, verb], &mut scratch),
+            Err(ParseError::NoDerivation { remaining: 2 })
+        );
+    }
+
+    #[test]
+    fn an_application_that_cannot_be_logged_is_undone_without_touching_the_arena() {
+        let mut lex = Lexicon::<32>::new();
+        let the = lex.the();
+        let dog = lex.noun(DOG);
+        let base = lex.len;
+        let before = lex.nodes;
+        let mut bindings = [Binding::UNBOUND; 4];
+        let mut trail = [0u32; 4];
+        let mut stack = [0u32; 8];
+        let mut parse = [0u32; 4];
+        let mut no_steps: [Reduction; 0] = [];
+        let mut scratch = ParseScratch {
+            arena: &mut lex.nodes,
+            free: base,
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            parse: &mut parse,
+            steps: &mut no_steps,
+            step_count: 0,
+        };
+        assert_eq!(
+            reduce(&[the, dog], &mut scratch),
+            Err(ParseError::StepsFull)
+        );
+        assert_eq!(
+            (scratch.free, scratch.trail_len, scratch.step_count),
+            (base, 0, 0),
+            "an application pushes no node, so none is retracted"
+        );
+        assert_eq!(lex.nodes, before, "the arena is as it was");
+        assert!(
+            bindings.iter().all(|b| b.term().is_none()),
+            "the binding was undone"
+        );
     }
 
     #[test]

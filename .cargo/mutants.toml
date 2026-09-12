@@ -37,6 +37,11 @@ exclude_re = [
     "synapse\\.rs:\\d+:\\d+: replace < with <= in spike_message",
     "cortex-linguistic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in required_roles",
     "term\\.rs:\\d+:\\d+: replace \\| with \\^ in literal_of_term",
+    # A rotation joins the high bits of one word with the low bits of the next, which the two
+    # shifts put in disjoint positions; and a bit-sliced comparison joins "above" with
+    # "equal", which are disjoint by construction (ADR-0039).
+    "body\\.rs:\\d+:\\d+: replace \\| with \\^ in HypervectorBody::permute",
+    "body\\.rs:\\d+:\\d+: replace \\| with \\^ in HypervectorBody::bundle",
     # `leak(v)` at `v == 0`: the `> 0` and `< 0` arms both yield 0 there (`.min(v)` is 0), so
     # `>=` and `<=` agree with them.
     "membrane\\.rs:\\d+:\\d+: replace > with >= in leak",
