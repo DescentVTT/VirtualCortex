@@ -97,8 +97,10 @@ impl HypervectorBody {
 
     /// Bundling: the per-bit majority of `items`. An even count adds the tie-breaker body
     /// (`from_seed(TIE_SEED)`) as one more operand so that every bit has a majority; `None` for
-    /// no item or more than `BUNDLE_MAX`. A bundle of one is that body. Each item agrees with
-    /// the bundle on more than half the bits, which is what lets a bound role be read back.
+    /// no item or more than `BUNDLE_MAX`. A bundle of one is that body. For independent items
+    /// each is expected to agree with the bundle on more than half the bits, which is what lets
+    /// a bound role be read back; it is a property of the items, not of the rule (a body
+    /// bundled with two copies of its complement is its complement).
     pub fn bundle(items: &[Self]) -> Option<Self> {
         if items.is_empty() || items.len() > BUNDLE_MAX {
             return None;
@@ -107,9 +109,9 @@ impl HypervectorBody {
         // words: adding `x` to the counter is a ripple of XOR and AND through the planes.
         let mut planes = [[0u64; BODY_WORDS]; 4];
         let mut count = 0u32;
-        let tie = Self::from_seed(TIE_SEED);
-        let even = items.len() % 2 == 0;
-        let operands = items.iter().chain(even.then_some(&tie));
+        // The tie-breaker is generated only when an even count needs it.
+        let tie = (items.len() % 2 == 0).then(|| Self::from_seed(TIE_SEED));
+        let operands = items.iter().chain(tie.as_ref());
         for item in operands {
             count = count.wrapping_add(1);
             for w in 0..BODY_WORDS {
@@ -361,6 +363,15 @@ mod tests {
             let ones = [0, 1, 2].iter().filter(|&&k| bit(&items[k], i)).count();
             assert_eq!(bit(&three, i), ones >= 2, "bit {i}: two of three");
         }
+        // The agreement of an item with the bundle is the items' property, not the rule's: a
+        // body with two copies of its complement bundles to its complement.
+        let mut complement = items[0];
+        for w in complement.words.iter_mut() {
+            *w = !*w;
+        }
+        let outvoted = HypervectorBody::bundle(&[items[0], complement, complement]).unwrap();
+        assert_eq!(outvoted, complement);
+        assert_eq!(items[0].hamming(&outvoted), BODY_BITS, "every bit lost");
         // The counter's top: fifteen copies of one body is that body, and fifteen distinct
         // bodies still take a majority of eight.
         let same = [items[7]; 15];

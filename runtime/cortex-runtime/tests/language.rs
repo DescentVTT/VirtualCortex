@@ -187,6 +187,7 @@ fn comprehend_words(
     let outcome = comprehend(
         &categories[..words.len()],
         &mut scratch,
+        S,
         TEMPLATE_CAUSATIVE,
         SPEECH_ACT_ASSERTIVE,
         0,
@@ -418,4 +419,13 @@ fn a_non_sentence_is_refused_with_the_reducer_s_reason_and_nothing_is_bound() {
         LanguageError::from(ParseError::Empty),
         LanguageError::Parse(ParseError::Empty)
     );
+    // A phrase reduces to one category that is not the sentence's: no frame, no action.
+    let (outcome, _, count) = comprehend_words(&mut arena, &["the", "dog"]);
+    assert!(
+        matches!(outcome, Err(LanguageError::NotASentence(_))),
+        "a noun phrase is not an utterance: {outcome:?}"
+    );
+    assert_eq!(count, 1, "the phrase was built");
+    let (outcome, _, _) = comprehend_words(&mut arena, &["dog"]);
+    assert!(matches!(outcome, Err(LanguageError::NotASentence(_))));
 }

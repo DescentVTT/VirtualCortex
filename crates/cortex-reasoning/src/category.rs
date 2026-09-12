@@ -16,7 +16,7 @@
 //! (standardising apart, ADR-0025) and owns the binding table the parse accumulates into.
 
 use crate::term::{
-    Binding, TERM_COMPOUND, TERM_CONSTANT, TermNode, UnifyResult, deref, undo, unify,
+    Binding, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TermNode, UnifyResult, deref, undo, unify,
 };
 
 /// The functor of a forward-slash category `X/Y`: `CATEGORY_FORWARD(X, Y, role)`.
@@ -68,8 +68,9 @@ pub enum ParseError {
     StepsFull,
     /// The unification stack or the trail is too small for these categories.
     BoundExceeded,
-    /// An index outside the arena or the table, an empty node, or a functor category without
-    /// its three children.
+    /// An index outside the arena or the table, an empty node (as a shifted category, as a
+    /// reduction's result, or reached by a rule), or a functor category without its three
+    /// children.
     Malformed,
 }
 
@@ -174,9 +175,10 @@ pub fn head(term: u32, arena: &[TermNode], bindings: &[Binding]) -> Option<u32> 
 /// and the substitution in the table. After every shift the top two items are reduced while a
 /// rule applies: forward application, backward application, forward composition, backward
 /// composition, the first that unifies. A rule whose unification clashes or fails the occurs
-/// check does not apply; a bound that is exceeded, a malformed index or node, a full stack,
-/// arena or log is the error, with the arena and the bindings as the reductions before it
-/// left them (a reduction that could not be completed is undone).
+/// check does not apply; a bound that is exceeded, a malformed index or node (every shifted
+/// category and every reduction's result is dereferenced and must be a node that is not
+/// empty), a full stack, arena or log is the error, with the arena and the bindings as the
+/// reductions before it left them (a reduction that could not be completed is undone).
 pub fn reduce(categories: &[u32], scratch: &mut ParseScratch) -> Result<u32, ParseError> {
     if categories.is_empty() {
         return Err(ParseError::Empty);
@@ -186,6 +188,7 @@ pub fn reduce(categories: &[u32], scratch: &mut ParseScratch) -> Result<u32, Par
         if top >= scratch.parse.len() {
             return Err(ParseError::StackFull);
         }
+        check(category, scratch)?;
         scratch.parse[top] = category;
         // Below the stack's length after the check above.
         top = top.wrapping_add(1);
@@ -199,6 +202,7 @@ pub fn reduce(categories: &[u32], scratch: &mut ParseScratch) -> Result<u32, Par
                         retract(&reduction, bound, scratch);
                         return Err(ParseError::StepsFull);
                     }
+                    check(reduction.result, scratch)?;
                     scratch.steps[scratch.step_count] = reduction;
                     scratch.step_count = scratch.step_count.wrapping_add(1);
                     scratch.parse[top.wrapping_sub(2)] = reduction.result;
@@ -212,6 +216,17 @@ pub fn reduce(categories: &[u32], scratch: &mut ParseScratch) -> Result<u32, Par
         Ok(scratch.parse[0])
     } else {
         Err(ParseError::NoDerivation { remaining: top })
+    }
+}
+
+/// A category the stack may hold: an index inside the arena that dereferences to a node that
+/// is not empty; `Malformed` otherwise, so that a malformed category is reported when it is
+/// shifted or produced, not only when a rule touches it.
+fn check(term: u32, scratch: &ParseScratch) -> Result<(), ParseError> {
+    let index = deref(term, scratch.arena, scratch.bindings).ok_or(ParseError::Malformed)?;
+    match scratch.arena.get(index as usize) {
+        Some(node) if node.kind != TERM_EMPTY => Ok(()),
+        _ => Err(ParseError::Malformed),
     }
 }
 
@@ -1089,6 +1104,40 @@ mod tests {
             bindings.iter().all(|b| b.term().is_none()),
             "the binding was undone"
         );
+    }
+
+    #[test]
+    fn a_malformed_category_is_reported_when_it_is_shifted_or_produced_not_only_when_touched() {
+        let mut lex = Lexicon::<32>::new();
+        let np = lex.np(DOG);
+        let empty = lex.push(TermNode::default());
+        // Shifted alone or beside a good category, an index outside the arena and an empty
+        // node are results, not derivations.
+        for sequence in [
+            &[9_999u32][..],
+            &[empty],
+            &[empty, np],
+            &[np, empty],
+            &[np, 9_999],
+        ] {
+            let (outcome, _, count, _) = run(&mut lex, sequence);
+            assert_eq!(outcome, Err(ParseError::Malformed), "{sequence:?}");
+            assert_eq!(count, 0);
+        }
+        // A functor whose result lies outside the arena: the application is refused when its
+        // result would be pushed, and it is not logged.
+        let head = lex.constant(DOG);
+        let n = lex.atom(N, head);
+        let none = lex.constant(NONE);
+        let bad = lex.push(forward(9_999, n, none).unwrap());
+        let (outcome, _, count, bindings) = run(&mut lex, &[bad, n]);
+        assert_eq!(outcome, Err(ParseError::Malformed));
+        assert_eq!(count, 0);
+        assert!(bindings.iter().all(|b| b.term().is_none()), "nothing bound");
+        // A variable is a category (it may unify later) and an unbound one alone derives.
+        let v = lex.var();
+        let (outcome, _, _, _) = run(&mut lex, &[v]);
+        assert_eq!(outcome, Ok(v));
     }
 
     #[test]
