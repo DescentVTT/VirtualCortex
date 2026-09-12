@@ -3,7 +3,7 @@ status: archived
 date: 2026-09-13
 ---
 
-> **Executed 2026-09-13 in pull request PR_NUMBER.** Writes ADR-0039 (the hypervector body)
+> **Executed 2026-09-13 in pull request #50.** Writes ADR-0039 (the hypervector body)
 > and ADR-0040 (categorial reduction); resolves finding F-30; opens hypothesis H-10; image
 > format 13 and the determinism pin untouched. Every deliverable is done; notes under the boxes
 > say where the tree departs from the text (a slash always has three children; the runtime's
