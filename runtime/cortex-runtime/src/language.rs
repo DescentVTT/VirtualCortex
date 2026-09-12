@@ -21,9 +21,10 @@ use cortex_symbolic::{HypervectorBody, confidence_q16};
 /// The band of concept ids the grammar's role constants take: `ROLE_CONCEPT_BASE | role_bit`,
 /// above every codebook index and below the slash functors of `cortex-reasoning`.
 pub const ROLE_CONCEPT_BASE: u32 = 0xFFFF_FE00;
-/// The confidence below which a readout binds nothing: 0.125, a distance above 0.4375 of the
-/// width. A bound role in a bundle of three reads at about a quarter (0.5); an unbound one at
-/// about half (0), forty standard deviations of the noise below the floor.
+/// The confidence below which a readout binds nothing: 0.125, a distance of 4 480 bits or
+/// less. An unbound role reads at about half the width, 5 120 bits with a standard deviation
+/// near 50, twelve of them beyond the floor; a role bound in a bundle of three reads at about
+/// 2 560 bits, some forty of its own below it (probed, not Measured).
 pub const DECODE_FLOOR_Q16: u32 = Q16_ONE / 8;
 /// The four roles in slot order: the index of a role's body in a caller's `[HypervectorBody; 4]`.
 pub const ROLES: [u8; 4] = [ROLE_SUBJECT, ROLE_ACTION, ROLE_OBJECT, ROLE_AFFECT];
@@ -35,6 +36,9 @@ pub enum LanguageError {
     Parse(ParseError),
     /// The frame refused a role's binding (an affect concept wider than sixteen bits).
     RoleRefused(u8),
+    /// The sequence reduced to one category, but not to the sentence category the caller
+    /// named: a phrase, not an utterance. Carries the root's term index.
+    NotASentence(u32),
 }
 
 impl From<ParseError> for LanguageError {
@@ -88,14 +92,18 @@ fn role_of_term(term: u32, arena: &[TermNode], bindings: &[Binding]) -> Option<u
 }
 
 /// Comprehension: reduces `categories` (the term indices of the lexical categories, in order,
-/// each instantiated with fresh variables by the caller) and binds into a new frame of
-/// `template` every role a reduction reports, with the head concept of the category that filled
-/// it, and the head of the root category as the action, each at a confidence of 1.0. The frame
-/// is returned unsealed; a reduction whose role is not a role constant, or whose argument has
-/// no head, binds nothing. The reductions and the substitution are left in `scratch`.
+/// each instantiated with fresh variables by the caller) to one category, which must be the
+/// sentence category `sentence` (the functor of the root's node under the bindings; a phrase
+/// such as `NP(dog)` is `NotASentence`), and binds into a new frame of `template` every role a
+/// reduction reports, with the head concept of the category that filled it, and the head of
+/// the root as the action, each at a confidence of 1.0; the root's head is bound last and has
+/// the last word on the action role. The frame is returned unsealed; a reduction whose role is
+/// not a role constant, or whose argument has no head, binds nothing. The reductions and the
+/// substitution are left in `scratch`.
 pub fn comprehend(
     categories: &[u32],
     scratch: &mut ParseScratch,
+    sentence: u32,
     template: u16,
     speech_act: u8,
     politeness: u8,
@@ -104,6 +112,13 @@ pub fn comprehend(
     let mut frame = LinguisticFrameSlot::new(template, speech_act, politeness);
     let arena = &*scratch.arena;
     let bindings = &*scratch.bindings;
+    // `reduce` dereferenced the root and found a node, so the lookups hold.
+    let root_functor = deref(root, arena, bindings)
+        .and_then(|index| arena.get(index as usize))
+        .map(|node| node.functor);
+    if root_functor != Some(sentence) {
+        return Err(LanguageError::NotASentence(root));
+    }
     for step in scratch.steps.iter().take(scratch.step_count) {
         let Some(role) = role_of_term(step.role, arena, bindings) else {
             continue;

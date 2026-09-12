@@ -281,7 +281,7 @@ Re-derived on 2026-09-13 against `main` at `182c00c`.
    second sentence with the same verb and swapped nouns decodes to the swapped frame;
    `comprehend` refuses a non-sentence; and the whole path is bit-identical on a second run.
    The AArch64 job runs the same test, so every pinned distance is held on both targets.
-   **Departure:** the error type is `LanguageError::{Parse(ParseError), RoleRefused(role)}`, not `ParseError`; `concept_in(frame, role)` was added; the pinned distances are 2 574, 2 562 and 2 482 (the affect at 4 997) for the first sentence and 2 532, 2 635 and 2 524 (5 037) for the swapped one, computed by an independent oracle first; a third test reads "the bird slept" into two roles.
+   **Departure:** the error type is `LanguageError::{Parse(ParseError), RoleRefused(role), NotASentence(root)}`, not `ParseError`, and `comprehend` takes the sentence category the root must have (a review found that a noun phrase's head was bound as an action); `concept_in(frame, role)` was added; the pinned distances are 2 574, 2 562 and 2 482 (the affect at 4 997) for the first sentence and 2 532, 2 635 and 2 524 (5 037) for the swapped one, computed by an independent oracle first; a third test reads "the bird slept" into two roles.
 4. [x] **Specified and not adopted, with reasons in the ADRs and the whitepaper.** The
    Dominey cortico-striatal gate: a second owner for the role assignment `bind_role` makes
    from the derivation, on a token path that does not exist; what the gate is symbolically

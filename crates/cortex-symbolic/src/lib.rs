@@ -27,7 +27,7 @@ pub const FLAG_REBASED: u16 = 0x0008;
 #[repr(C, align(64))]
 pub struct SymbolicHypervectorHeader {
     pub vector_id: u32,              // [0..4] Symbolic concept index
-    pub dimensionality: u32,         // [4..8] Hypervector width (typically 10,000 bits)
+    pub dimensionality: u32, // [4..8] Hypervector width in bits: BODY_BITS (10 240) for a body of this crate
     pub binding_role_id: u32, // [8..12] Bound relation / predicate role ID; a blend's target concept
     pub filler_concept_id: u32, // [12..16] Bound concept filler ID
     pub token_vocab_id: u32,  // [16..20] Corresponding NLP token vocabulary ID
@@ -91,8 +91,8 @@ impl SymbolicHypervectorHeader {
 
     /// A basis rotation (ADR-0026, whitepaper §8.15): the cyclic permutation the vector is
     /// read through advances by `shift` modulo the dimensionality, composing with any earlier
-    /// rotation (a permutation of a bipolar hypervector is an orthogonal change of basis, so
-    /// two rotations are one). Refused, with nothing changed, for a zero shift, a zero
+    /// rotation (a permutation of a binary hypervector is a change of basis, so two rotations
+    /// are one). Refused, with nothing changed, for a zero shift, a zero
     /// dimensionality, or one the sixteen-bit shift cannot index. Returns the new shift.
     pub fn rebase(&mut self, shift: u16) -> Option<u16> {
         // One past `u16::MAX`: the largest dimensionality a sixteen-bit shift indexes.
