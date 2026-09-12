@@ -200,8 +200,8 @@ impl HomeostaticDrivePool {
     /// True when the window's activity is at or above `saturation_per_bin` in every bin on
     /// average: a saturated network's bins no longer form a branching process (every unit
     /// fires as often as its refractory window lets it), so the slope is not $\sigma$ there;
-    /// the caller names the ceiling (the executor's is a quarter of the refractory-limited
-    /// maximum), and a window at or above it is regulated as supercritical.
+    /// the caller names the ceiling (the executor's is one spike per unit per bin), and a
+    /// window at or above it is regulated as supercritical.
     pub fn is_saturated(&self, saturation_per_bin: u32) -> bool {
         if self.window_bins == 0 {
             return false;
@@ -249,11 +249,16 @@ impl HomeostaticDrivePool {
         estimate.map(|_| self.synaptic_gain_q16)
     }
 
-    /// True for a record the rules can produce between windows: the gain within its bounds, the
-    /// control step within its, fewer bins than a window holds (a full window is regulated in
-    /// the step that fills it), every count at or below the cap, every sum at or below what
-    /// the pairs and the cap allow, no first or last bin without a bin, the sleep flag 0 or 1,
-    /// the reserved bytes zero. The loader refuses a record that is not (ADR-0028).
+    /// True for a record within the bounds and the consistency the rules keep between
+    /// windows: the gain within its bounds, the control step within its, fewer bins than a
+    /// window holds (a full window is regulated in the step that fills it), every count at or
+    /// below the cap, every sum at or below what the pairs and the cap allow, the sums
+    /// consistent with each other (the square of the sum at most the pairs times the sum of
+    /// squares, and the pair sum at most the cap times the sum), no first or last bin without
+    /// a bin, a one-bin window's first and last the same bin, the sleep flag 0 or 1, the
+    /// reserved bytes zero. The loader refuses a record that is not (ADR-0028). Not every
+    /// record that passes is one the rules produced (the sums are not the bins), and the
+    /// estimator answers every record that passes without an estimate at worst.
     pub fn is_well_formed(&self) -> bool {
         let max = ACTIVITY_COUNT_MAX as u64;
         let pairs = (self.window_bins as u64).saturating_sub(1);
@@ -267,7 +272,12 @@ impl HomeostaticDrivePool {
             && self.sum_prev <= pairs.saturating_mul(max)
             && self.sum_prev_sq <= square_bound
             && self.sum_pair <= square_bound
+            // Cauchy–Schwarz over the pairs' first members, and each pair's product at most the
+            // cap times its first member; both hold for every series of counts.
+            && self.sum_prev.saturating_mul(self.sum_prev) <= pairs.saturating_mul(self.sum_prev_sq)
+            && self.sum_pair <= self.sum_prev.saturating_mul(max)
             && (self.window_bins > 0 || (self.first_activity == 0 && self.last_activity == 0))
+            && (self.window_bins != 1 || self.first_activity == self.last_activity)
             && self.sleep_mode_active <= 1
             && self._reserved == 0
     }
@@ -836,6 +846,36 @@ mod tests {
         assert!(
             one_bin.is_well_formed(),
             "one bin, remembered as first and last"
+        );
+        one_bin.last_activity = 2;
+        assert!(
+            !one_bin.is_well_formed(),
+            "a one-bin window whose first and last differ"
+        );
+        // The sums' consistency: the square of the sum at most the pairs times the sum of
+        // squares (equal for a constant series), the pair sum at most the cap times the sum.
+        let constant = window(&[5, 5, 5]);
+        assert_eq!((constant.sum_prev, constant.sum_prev_sq), (10, 50));
+        assert!(constant.is_well_formed(), "100 is exactly 2 times 50");
+        let mut inconsistent = constant;
+        inconsistent.sum_prev_sq = 49;
+        assert!(!inconsistent.is_well_formed(), "100 exceeds 2 times 49");
+        let mut impossible = window(&[3, 4]);
+        impossible.sum_prev_sq = 0;
+        assert!(
+            !impossible.is_well_formed(),
+            "a sum of 3 with no sum of squares"
+        );
+        let mut pair_too_large = window(&[1, 4]);
+        pair_too_large.sum_pair = ACTIVITY_COUNT_MAX as u64 + 1;
+        assert!(
+            !pair_too_large.is_well_formed(),
+            "a pair sum above the cap times the sum"
+        );
+        pair_too_large.sum_pair = ACTIVITY_COUNT_MAX as u64;
+        assert!(
+            pair_too_large.is_well_formed(),
+            "exactly the cap times the sum"
         );
         // The neighbours on the right side of each bound are well formed.
         let mut p = ok;
