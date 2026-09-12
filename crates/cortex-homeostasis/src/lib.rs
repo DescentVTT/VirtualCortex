@@ -11,6 +11,15 @@
 //! the turn holder applies to every unit's input sums: the whitepaper's
 //! $W_{ij} \leftarrow W_{ij}[1 - \kappa(\sigma - 1)]$ as one factor per unit instead of a sweep
 //! over every weight. At $\kappa = 0$ the gain is 1.0 and nothing moves.
+//!
+//! Sleep (ADR-0037) is a state machine stepped once per window on the same cadence: a sleep
+//! pressure $S$ that rises while awake and falls while asleep (process S of Borbély's
+//! two-process model), a circadian phase advanced by one per window so that its sixteen bits
+//! are a day, onset and wake thresholds lower in the night quarter (process C), and three
+//! stages, awake, slow-wave and REM, the two sleep stages alternating under a budget of
+//! windows. The executor replays the episodic ledger during slow-wave sleep and lowers an
+//! episode's tag during REM (`cortex-hippocampus`, ADR-0038). A wake is an input between
+//! ticks. With the shift at 0 the pressure and the stage stay where the image put them.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -44,18 +53,46 @@ pub const CONTROL_STEP_MAX_Q0_16: u16 = 0x8000;
 /// The largest branching ratio the estimator reports, 16.0.
 pub const SIGMA_MAX_Q16: u32 = 0x0010_0000;
 
+/// The sleep stage awake (ADR-0037): the pressure rises.
+pub const STAGE_AWAKE: u8 = 0;
+/// Slow-wave sleep: the pressure falls and the executor replays the ledger on the ripple
+/// cadence (ADR-0038).
+pub const STAGE_SWS: u8 = 1;
+/// REM sleep: the pressure falls and a ripple lowers an episode's tag; nothing is replayed.
+pub const STAGE_REM: u8 = 2;
+/// The largest sleep shift, 15: the pressure's rise has a time constant of $2^{15}$ windows
+/// (11.9 h at the fine tick) and its fall of $2^{13}$ (3.0 h), near the human values.
+pub const SLEEP_SHIFT_MAX: u8 = 15;
+/// The sleep pressure's ceiling, 1.0 in Q16.16.
+pub const PRESSURE_MAX_Q16: u32 = 0x0001_0000;
+/// The circadian phase at which the night quarter begins: three quarters of the cycle.
+pub const NIGHT_PHASE: u16 = 0xC000;
+/// Sleep begins by day when the pressure reaches 0.875.
+pub const SLEEP_ONSET_DAY_Q16: u32 = 0xE000;
+/// Sleep begins in the night quarter when the pressure reaches 0.5.
+pub const SLEEP_ONSET_NIGHT_Q16: u32 = 0x8000;
+/// Sleep ends by day when the pressure falls to 0.375.
+pub const WAKE_DAY_Q16: u32 = 0x6000;
+/// Sleep ends in the night quarter when the pressure falls to 0.125.
+pub const WAKE_NIGHT_Q16: u32 = 0x2000;
+/// Windows of slow-wave sleep before REM begins (5.2 s at the fine tick; a Target to tune).
+pub const SWS_WINDOWS: u8 = 4;
+/// Windows of REM before slow-wave sleep resumes (2.6 s; a Target to tune).
+pub const REM_WINDOWS: u8 = 2;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C, align(64))]
 pub struct HomeostaticDrivePool {
     pub energy_level: u32,        // [0..4] Energy reserve (Q16.16)
-    pub sensory_fatigue: u32,     // [4..8] Accumulated synaptic load (Q16.16)
+    pub sleep_pressure_q16: u32,  // [4..8] Sleep pressure S in [0, 1.0] (Q16.16; ADR-0037)
     pub curiosity_drive: u32, // [8..12] Intrinsic novelty seeking drive (Q16.16; the organism's one scalar, ADR-0016)
     pub bin_activity: u32, // [12..16] Spikes counted in the open bin, at most ACTIVITY_COUNT_MAX (ADR-0036)
     pub circadian_phase: u16, // [16..18] Internal phase angle, wraps at 16 bits
-    pub sleep_mode_active: u8, // [18] 1 in SWR memory consolidation sleep, 0 awake
+    pub sleep_stage: u8,   // [18] STAGE_AWAKE, STAGE_SWS or STAGE_REM (ADR-0037)
     pub window_bins: u8,   // [19] Bins closed in the open window, below ACTIVITY_WINDOW_BINS
     pub control_step_q0_16: u16, // [20..22] The control step kappa (Q0.16); 0 leaves the gain
-    pub _reserved: u16,    // [22..24] Reserved; MUST be zero
+    pub sleep_shift: u8, // [22] The pressure's time constant, 2^shift windows; 0 leaves the stage (ADR-0037)
+    pub stage_windows: u8, // [23] Windows in the current stage, saturating (ADR-0037)
     pub branching_ratio_q16: u32, // [24..28] Self-Organized Criticality sigma (~1.0), the last estimate
     pub synaptic_gain_q16: u32, // [28..32] The global synaptic gain (Q16.16), in [GAIN_MIN_Q16, GAIN_MAX_Q16]
     pub sum_prev: u64,          // [32..40] Sum of the previous bin over the window's pairs
@@ -71,14 +108,15 @@ impl HomeostaticDrivePool {
     pub const fn new() -> Self {
         Self {
             energy_level: 0,
-            sensory_fatigue: 0,
+            sleep_pressure_q16: 0,
             curiosity_drive: 0,
             bin_activity: 0,
             circadian_phase: 0,
-            sleep_mode_active: 0,
+            sleep_stage: STAGE_AWAKE,
             window_bins: 0,
             control_step_q0_16: 0,
-            _reserved: 0,
+            sleep_shift: 0,
+            stage_windows: 0,
             branching_ratio_q16: 0,
             synaptic_gain_q16: GAIN_ONE_Q16,
             sum_prev: 0,
@@ -105,18 +143,107 @@ impl HomeostaticDrivePool {
         self.branching_ratio_q16
     }
 
-    /// Advances the 16-bit circadian phase and sets the sleep gate. The phase is a counter
-    /// whose wrap is the intended semantics (whitepaper §8.1), so the addition is explicitly
-    /// wrapping: the low sixteen bits of the delta are what a sixteen-bit phase can take.
-    #[inline(always)]
-    pub fn update_circadian_tick(&mut self, dt_ticks: u32) {
-        self.circadian_phase = self.circadian_phase.wrapping_add(dt_ticks as u16);
-        // Sleep phase active when fatigue exceeds threshold or in nocturnal phase
-        if self.sensory_fatigue > 0x8000_0000 || self.circadian_phase > 0xC000 {
-            self.sleep_mode_active = 1;
+    /// True in the night quarter of the circadian cycle: the phase at or above
+    /// [`NIGHT_PHASE`].
+    #[inline]
+    pub const fn is_night(&self) -> bool {
+        self.circadian_phase >= NIGHT_PHASE
+    }
+
+    /// True in either sleep stage, or in a stage the constants do not name.
+    #[inline]
+    pub const fn is_asleep(&self) -> bool {
+        self.sleep_stage != STAGE_AWAKE
+    }
+
+    /// The pressure at which sleep begins: [`SLEEP_ONSET_NIGHT_Q16`] in the night quarter,
+    /// [`SLEEP_ONSET_DAY_Q16`] otherwise (process C of the two-process model).
+    pub const fn sleep_onset_q16(&self) -> u32 {
+        if self.is_night() {
+            SLEEP_ONSET_NIGHT_Q16
         } else {
-            self.sleep_mode_active = 0;
+            SLEEP_ONSET_DAY_Q16
         }
+    }
+
+    /// The pressure at which sleep ends: [`WAKE_NIGHT_Q16`] in the night quarter,
+    /// [`WAKE_DAY_Q16`] otherwise.
+    pub const fn wake_threshold_q16(&self) -> u32 {
+        if self.is_night() {
+            WAKE_NIGHT_Q16
+        } else {
+            WAKE_DAY_Q16
+        }
+    }
+
+    /// Once per window (ADR-0037): the circadian phase advances by one, wrapping (sixteen
+    /// bits of windows of $2^{17}$ ticks are $2^{33}$ ticks, 23.86 h at the fine tick); then,
+    /// with the shift $k > 0$, the sleep pressure $S$ (process S of Borbély's two-process
+    /// model) rises while awake by $(1 - S) \gg k$ and falls while asleep by
+    /// $S \gg \max(k - 2, 0)$, four times as fast, each by at least one LSB so that 1.0 and 0
+    /// are reached exactly; then the stage moves: awake to slow-wave sleep when $S$ reaches
+    /// the onset threshold, either sleep stage to awake when $S$ falls to the wake threshold,
+    /// slow-wave to REM after [`SWS_WINDOWS`] windows in the stage and REM back to slow-wave
+    /// after [`REM_WINDOWS`], the wake test first. A stage the constants do not name wakes.
+    /// At $k = 0$ the pressure and the stage stay where the image put them; a shift above
+    /// [`SLEEP_SHIFT_MAX`] is read as the bound. Returns the stage.
+    pub fn step_sleep(&mut self) -> u8 {
+        self.circadian_phase = self.circadian_phase.wrapping_add(1);
+        // A shift above the bound (reachable through the public field; the loader refuses it)
+        // is read as the bound, so no shift reaches the width (ADR-0028).
+        let k = (self.sleep_shift as u32).min(SLEEP_SHIFT_MAX as u32);
+        if k == 0 {
+            return self.sleep_stage;
+        }
+        // This window counts toward the stage, saturating: only the two budgets read it.
+        self.stage_windows = self.stage_windows.saturating_add(1);
+        match self.sleep_stage {
+            STAGE_AWAKE => {
+                let gap = PRESSURE_MAX_Q16.saturating_sub(self.sleep_pressure_q16);
+                self.sleep_pressure_q16 = self
+                    .sleep_pressure_q16
+                    .saturating_add((gap >> k).max(1))
+                    .min(PRESSURE_MAX_Q16);
+                if self.sleep_pressure_q16 >= self.sleep_onset_q16() {
+                    self.enter(STAGE_SWS);
+                }
+            }
+            STAGE_SWS | STAGE_REM => {
+                // Two shifts fewer than the rise (Borbély's ratio is about 4.5), floored at a
+                // whole step.
+                let fall = k.saturating_sub(2);
+                self.sleep_pressure_q16 = self
+                    .sleep_pressure_q16
+                    .saturating_sub((self.sleep_pressure_q16 >> fall).max(1));
+                if self.sleep_pressure_q16 <= self.wake_threshold_q16() {
+                    self.enter(STAGE_AWAKE);
+                } else if self.sleep_stage == STAGE_SWS && self.stage_windows >= SWS_WINDOWS {
+                    self.enter(STAGE_REM);
+                } else if self.sleep_stage == STAGE_REM && self.stage_windows >= REM_WINDOWS {
+                    self.enter(STAGE_SWS);
+                }
+            }
+            _ => self.enter(STAGE_AWAKE),
+        }
+        self.sleep_stage
+    }
+
+    /// The stage changes and its window count starts again.
+    #[inline]
+    fn enter(&mut self, stage: u8) {
+        self.sleep_stage = stage;
+        self.stage_windows = 0;
+    }
+
+    /// An input between ticks (ADR-0037): whatever the stage, the engine is awake, with its
+    /// windows in the stage at zero and its pressure kept, as an alarm leaves a sleeper.
+    /// Returns whether it was not awake.
+    pub fn wake(&mut self) -> bool {
+        if self.sleep_stage == STAGE_AWAKE {
+            return false;
+        }
+        self.enter(STAGE_AWAKE);
+        true
     }
 
     /// Counts `spikes` into the open bin, saturating at [`ACTIVITY_COUNT_MAX`]. Returns the
@@ -255,8 +382,9 @@ impl HomeostaticDrivePool {
     /// below the cap, every sum at or below what the pairs and the cap allow, the sums
     /// consistent with each other (the square of the sum at most the pairs times the sum of
     /// squares, and the pair sum at most the cap times the sum), no first or last bin without
-    /// a bin, a one-bin window's first and last the same bin, the sleep flag 0 or 1, the
-    /// reserved bytes zero. The loader refuses a record that is not (ADR-0028). Not every
+    /// a bin, a one-bin window's first and last the same bin, the stage one of three, the
+    /// pressure at most 1.0, the shift at most [`SLEEP_SHIFT_MAX`], a sleep stage's windows
+    /// below its budget. The loader refuses a record that is not (ADR-0028). Not every
     /// record that passes is one the rules produced (the sums are not the bins), and the
     /// estimator answers every record that passes without an estimate at worst.
     pub fn is_well_formed(&self) -> bool {
@@ -278,22 +406,26 @@ impl HomeostaticDrivePool {
             && self.sum_pair <= self.sum_prev.saturating_mul(max)
             && (self.window_bins > 0 || (self.first_activity == 0 && self.last_activity == 0))
             && (self.window_bins != 1 || self.first_activity == self.last_activity)
-            && self.sleep_mode_active <= 1
-            && self._reserved == 0
+            && self.sleep_stage <= STAGE_REM
+            && self.sleep_pressure_q16 <= PRESSURE_MAX_Q16
+            && self.sleep_shift <= SLEEP_SHIFT_MAX
+            && (self.sleep_stage != STAGE_SWS || self.stage_windows < SWS_WINDOWS)
+            && (self.sleep_stage != STAGE_REM || self.stage_windows < REM_WINDOWS)
     }
 
     /// The record's 64 bytes, little-endian, field by field (§8.7).
     pub fn encode(&self) -> [u8; 64] {
         let mut out = [0u8; 64];
         out[0..4].copy_from_slice(&self.energy_level.to_le_bytes());
-        out[4..8].copy_from_slice(&self.sensory_fatigue.to_le_bytes());
+        out[4..8].copy_from_slice(&self.sleep_pressure_q16.to_le_bytes());
         out[8..12].copy_from_slice(&self.curiosity_drive.to_le_bytes());
         out[12..16].copy_from_slice(&self.bin_activity.to_le_bytes());
         out[16..18].copy_from_slice(&self.circadian_phase.to_le_bytes());
-        out[18] = self.sleep_mode_active;
+        out[18] = self.sleep_stage;
         out[19] = self.window_bins;
         out[20..22].copy_from_slice(&self.control_step_q0_16.to_le_bytes());
-        out[22..24].copy_from_slice(&self._reserved.to_le_bytes());
+        out[22] = self.sleep_shift;
+        out[23] = self.stage_windows;
         out[24..28].copy_from_slice(&self.branching_ratio_q16.to_le_bytes());
         out[28..32].copy_from_slice(&self.synaptic_gain_q16.to_le_bytes());
         out[32..40].copy_from_slice(&self.sum_prev.to_le_bytes());
@@ -317,14 +449,15 @@ impl HomeostaticDrivePool {
         };
         Self {
             energy_level: u32_at(0),
-            sensory_fatigue: u32_at(4),
+            sleep_pressure_q16: u32_at(4),
             curiosity_drive: u32_at(8),
             bin_activity: u32_at(12),
             circadian_phase: u16_at(16),
-            sleep_mode_active: bytes[18],
+            sleep_stage: bytes[18],
             window_bins: bytes[19],
             control_step_q0_16: u16_at(20),
-            _reserved: u16_at(22),
+            sleep_shift: bytes[22],
+            stage_windows: bytes[23],
             branching_ratio_q16: u32_at(24),
             synaptic_gain_q16: u32_at(28),
             sum_prev: u64_at(32),
@@ -351,6 +484,14 @@ const _: () = {
     // 31 pairs of squares below 2^48, then a product with n or with another sum below 2^61.
     assert!((ACTIVITY_COUNT_MAX as u64) < (1 << 24));
     assert!(CONTROL_STEP_MAX_Q0_16 <= 0x8000);
+    // The thresholds are ordered so that the machine cannot sleep and wake in one step, and
+    // the night's are below the day's; the shift stays below the width of the pressure.
+    assert!(WAKE_DAY_Q16 < SLEEP_ONSET_DAY_Q16 && SLEEP_ONSET_DAY_Q16 <= PRESSURE_MAX_Q16);
+    assert!(WAKE_NIGHT_Q16 < SLEEP_ONSET_NIGHT_Q16 && SLEEP_ONSET_NIGHT_Q16 < SLEEP_ONSET_DAY_Q16);
+    assert!(WAKE_NIGHT_Q16 < WAKE_DAY_Q16);
+    assert!(SWS_WINDOWS > 0 && REM_WINDOWS > 0);
+    assert!((SLEEP_SHIFT_MAX as u32) < 32);
+    assert!(STAGE_AWAKE < STAGE_SWS && STAGE_SWS < STAGE_REM);
 };
 
 #[cfg(test)]
@@ -361,7 +502,7 @@ mod tests {
 
     #[test]
     fn the_branching_ratio_is_descendants_over_ancestors_and_an_empty_window_measures_nothing() {
-        let mut p = pool(0, 0);
+        let mut p = pool(0, 0, 0);
         p.branching_ratio_q16 = 0x1234;
         assert_eq!(p.update_branching_ratio(100, 100), 0x0001_0000, "critical");
         assert_eq!(
@@ -383,10 +524,15 @@ mod tests {
         assert_eq!(p.update_branching_ratio(0, 5), 0, "an avalanche that died");
     }
 
-    fn pool(circadian_phase: u16, sensory_fatigue: u32) -> HomeostaticDrivePool {
+    fn pool(
+        circadian_phase: u16,
+        sleep_pressure_q16: u32,
+        sleep_shift: u8,
+    ) -> HomeostaticDrivePool {
         HomeostaticDrivePool {
-            sensory_fatigue,
+            sleep_pressure_q16,
             circadian_phase,
+            sleep_shift,
             ..HomeostaticDrivePool::new()
         }
     }
@@ -399,6 +545,16 @@ mod tests {
         assert_eq!(p, HomeostaticDrivePool::default());
         assert_eq!(p.synaptic_gain_q16, ONE);
         assert_eq!(p.control_step_q0_16, 0);
+        assert_eq!(
+            (
+                p.sleep_stage,
+                p.sleep_shift,
+                p.sleep_pressure_q16,
+                p.stage_windows
+            ),
+            (STAGE_AWAKE, 0, 0, 0)
+        );
+        assert!(!p.is_asleep() && !p.is_night());
         assert!(p.is_well_formed());
         assert!(
             !HomeostaticDrivePool::decode(&[0; 64]).is_well_formed(),
@@ -422,46 +578,267 @@ mod tests {
             ),
             (0x4000, 0x0004_0000, 0x8000, 0x0010_0000)
         );
+        assert_eq!((STAGE_AWAKE, STAGE_SWS, STAGE_REM), (0, 1, 2));
+        assert_eq!(
+            (
+                SLEEP_SHIFT_MAX,
+                PRESSURE_MAX_Q16,
+                NIGHT_PHASE,
+                SWS_WINDOWS,
+                REM_WINDOWS
+            ),
+            (15, 0x0001_0000, 0xC000, 4, 2)
+        );
+        assert_eq!(
+            (
+                SLEEP_ONSET_DAY_Q16,
+                SLEEP_ONSET_NIGHT_Q16,
+                WAKE_DAY_Q16,
+                WAKE_NIGHT_Q16
+            ),
+            (0xE000, 0x8000, 0x6000, 0x2000)
+        );
     }
 
     #[test]
-    fn phase_wraps_at_sixteen_bits() {
-        let mut p = pool(0xFFFF, 0);
-        p.update_circadian_tick(1);
-        assert_eq!(p.circadian_phase, 0);
-        assert_eq!(p.sleep_mode_active, 0);
+    fn awake_the_pressure_rises_by_the_shift_and_sleep_begins_at_the_onset_threshold() {
+        let mut p = pool(0, 0, 3);
+        let expected = [
+            0x2000u32, 0x3C00, 0x5480, 0x69F0, 0x7CB2, 0x8D1B, 0x9B77, 0xA808, 0xB307, 0xBCA6,
+            0xC511, 0xCC6E, 0xD2E0, 0xD884, 0xDD73,
+        ];
+        for (i, &s) in expected.iter().enumerate() {
+            assert_eq!(p.step_sleep(), STAGE_AWAKE, "window {i}");
+            assert_eq!(p.sleep_pressure_q16, s, "window {i}: an eighth of the gap");
+            assert_eq!(
+                p.circadian_phase as usize,
+                i + 1,
+                "one phase step per window"
+            );
+            assert_eq!(p.stage_windows as usize, i + 1);
+            assert!(!p.is_asleep());
+        }
+        assert_eq!(p.step_sleep(), STAGE_SWS, "0xE1C4 is past 0.875");
+        assert_eq!(
+            (p.sleep_pressure_q16, p.stage_windows, p.circadian_phase),
+            (0xE1C4, 0, 16)
+        );
+        assert!(p.is_asleep());
+        // Exactly at the threshold: one LSB short at the largest shift rises by the floor of
+        // one LSB and lands on it; two short stays one below.
+        let mut at = pool(0, SLEEP_ONSET_DAY_Q16 - 1, SLEEP_SHIFT_MAX);
+        assert_eq!(at.step_sleep(), STAGE_SWS);
+        assert_eq!(at.sleep_pressure_q16, SLEEP_ONSET_DAY_Q16);
+        let mut below = pool(0, SLEEP_ONSET_DAY_Q16 - 2, SLEEP_SHIFT_MAX);
+        assert_eq!(below.step_sleep(), STAGE_AWAKE);
+        assert_eq!(below.sleep_pressure_q16, SLEEP_ONSET_DAY_Q16 - 1);
+        assert_eq!(below.stage_windows, 1);
     }
 
     #[test]
-    fn phase_wraps_for_the_largest_tick_delta() {
-        let mut p = pool(0xFFFF, 0);
-        p.update_circadian_tick(u32::MAX);
-        assert_eq!(p.circadian_phase, 0xFFFE);
-        assert_eq!(p.sleep_mode_active, 1);
-        let mut q = pool(5, 0);
-        q.update_circadian_tick(0x0001_0002);
-        assert_eq!(q.circadian_phase, 7, "the low sixteen bits of the delta");
+    fn the_night_quarter_lowers_both_thresholds_and_begins_at_three_quarters_exactly() {
+        assert!(!pool(0xBFFF, 0, 0).is_night());
+        assert!(pool(NIGHT_PHASE, 0, 0).is_night());
+        assert!(pool(0xFFFF, 0, 0).is_night());
+        let day = pool(0, 0, 0);
+        assert_eq!(
+            (day.sleep_onset_q16(), day.wake_threshold_q16()),
+            (SLEEP_ONSET_DAY_Q16, WAKE_DAY_Q16)
+        );
+        let night = pool(NIGHT_PHASE, 0, 0);
+        assert_eq!(
+            (night.sleep_onset_q16(), night.wake_threshold_q16()),
+            (SLEEP_ONSET_NIGHT_Q16, WAKE_NIGHT_Q16)
+        );
+        // The step advances the phase before it reads the threshold: the window that enters
+        // the night quarter sleeps at 0.5.
+        let mut dusk = pool(0xBFFF, SLEEP_ONSET_NIGHT_Q16 - 1, SLEEP_SHIFT_MAX);
+        assert_eq!(dusk.step_sleep(), STAGE_SWS);
+        assert_eq!(dusk.circadian_phase, NIGHT_PHASE);
+        let mut earlier = pool(0xBFFE, SLEEP_ONSET_NIGHT_Q16 - 1, SLEEP_SHIFT_MAX);
+        assert_eq!(
+            earlier.step_sleep(),
+            STAGE_AWAKE,
+            "one window earlier the onset is still 0.875"
+        );
+        // The phase wraps from 0xFFFF to 0: dawn, and the day's thresholds again.
+        let mut dawn = pool(0xFFFF, WAKE_DAY_Q16, SLEEP_SHIFT_MAX);
+        dawn.sleep_stage = STAGE_SWS;
+        assert_eq!(
+            dawn.step_sleep(),
+            STAGE_AWAKE,
+            "0x6000 falls to 0x5FFD, at or below the day's wake threshold"
+        );
+        assert_eq!((dawn.circadian_phase, dawn.sleep_pressure_q16), (0, 0x5FFD));
+        let mut late = pool(0xFFFE, WAKE_DAY_Q16, SLEEP_SHIFT_MAX);
+        late.sleep_stage = STAGE_SWS;
+        assert_eq!(
+            late.step_sleep(),
+            STAGE_SWS,
+            "still night: 0.125 is the wake threshold"
+        );
     }
 
     #[test]
-    fn sleep_gate_opens_one_tick_past_three_quarters() {
-        let mut p = pool(0xBFFF, 0);
-        p.update_circadian_tick(1);
-        assert_eq!(p.circadian_phase, 0xC000);
-        assert_eq!(p.sleep_mode_active, 0);
-        p.update_circadian_tick(1);
-        assert_eq!(p.circadian_phase, 0xC001);
-        assert_eq!(p.sleep_mode_active, 1);
+    fn asleep_the_pressure_falls_four_times_as_fast_and_the_stages_alternate_under_their_budgets() {
+        let mut p = pool(NIGHT_PHASE, PRESSURE_MAX_Q16, 5);
+        p.sleep_stage = STAGE_SWS;
+        let expected: [(u32, u8, u8); 16] = [
+            (57_344, STAGE_SWS, 1),
+            (50_176, STAGE_SWS, 2),
+            (43_904, STAGE_SWS, 3),
+            (38_416, STAGE_REM, 0),
+            (33_614, STAGE_REM, 1),
+            (29_413, STAGE_SWS, 0),
+            (25_737, STAGE_SWS, 1),
+            (22_520, STAGE_SWS, 2),
+            (19_705, STAGE_SWS, 3),
+            (17_242, STAGE_REM, 0),
+            (15_087, STAGE_REM, 1),
+            (13_202, STAGE_SWS, 0),
+            (11_552, STAGE_SWS, 1),
+            (10_108, STAGE_SWS, 2),
+            (8_845, STAGE_SWS, 3),
+            (7_740, STAGE_AWAKE, 0),
+        ];
+        for (i, &(s, stage, windows)) in expected.iter().enumerate() {
+            assert_eq!(p.step_sleep(), stage, "window {i}");
+            assert_eq!(
+                (p.sleep_pressure_q16, p.stage_windows),
+                (s, windows),
+                "window {i}: an eighth of the pressure off"
+            );
+            assert!(p.is_well_formed());
+        }
+        // Awake again, the pressure rises from where it was, by a thirty-second of the gap.
+        assert_eq!(p.step_sleep(), STAGE_AWAKE);
+        assert_eq!(p.sleep_pressure_q16, 7_740 + ((65_536 - 7_740) >> 5));
+        // The wake test comes first: a slow-wave stage at its budget with the pressure landing
+        // on the threshold wakes rather than dreams; one LSB above it, the budget moves the
+        // stage.
+        let mut tired = pool(0, 0x6003, SLEEP_SHIFT_MAX);
+        tired.sleep_stage = STAGE_SWS;
+        tired.stage_windows = SWS_WINDOWS - 1;
+        assert_eq!(tired.step_sleep(), STAGE_AWAKE);
+        assert_eq!(
+            tired.sleep_pressure_q16, WAKE_DAY_Q16,
+            "exactly the threshold"
+        );
+        let mut rested = pool(0, 0x6004, SLEEP_SHIFT_MAX);
+        rested.sleep_stage = STAGE_SWS;
+        rested.stage_windows = SWS_WINDOWS - 1;
+        assert_eq!(rested.step_sleep(), STAGE_REM);
+        assert_eq!(rested.sleep_pressure_q16, 0x6001);
+        let mut dreaming = pool(0, 0x6004, SLEEP_SHIFT_MAX);
+        dreaming.sleep_stage = STAGE_REM;
+        dreaming.stage_windows = REM_WINDOWS - 1;
+        assert_eq!(dreaming.step_sleep(), STAGE_SWS, "REM's budget spent");
+        assert_eq!(dreaming.stage_windows, 0);
+        let mut short = pool(0, 0x6004, SLEEP_SHIFT_MAX);
+        short.sleep_stage = STAGE_REM;
+        short.stage_windows = REM_WINDOWS - 2;
+        assert_eq!(short.step_sleep(), STAGE_REM, "one window short of it");
+        assert_eq!(short.stage_windows, REM_WINDOWS - 1);
+        // At the two smallest shifts the fall is the whole pressure in one window; at three
+        // it is a half.
+        for k in [1u8, 2] {
+            let mut fast = pool(NIGHT_PHASE, PRESSURE_MAX_Q16, k);
+            fast.sleep_stage = STAGE_REM;
+            assert_eq!(fast.step_sleep(), STAGE_AWAKE, "shift {k}");
+            assert_eq!(fast.sleep_pressure_q16, 0);
+        }
+        let mut half = pool(NIGHT_PHASE, PRESSURE_MAX_Q16, 3);
+        half.sleep_stage = STAGE_SWS;
+        assert_eq!(half.step_sleep(), STAGE_SWS);
+        assert_eq!(half.sleep_pressure_q16, 0x8000);
+        // A shift above the bound, reachable through the public field, is read as the bound:
+        // the same step as fifteen, and no shift reaches the width.
+        let mut wide = pool(0, 0x1000, u8::MAX);
+        let mut bound = pool(0, 0x1000, SLEEP_SHIFT_MAX);
+        assert_eq!(wide.step_sleep(), bound.step_sleep());
+        assert_eq!(wide.sleep_pressure_q16, bound.sleep_pressure_q16);
+        assert_eq!(wide.sleep_pressure_q16, 0x1000 + ((0x10000 - 0x1000) >> 15));
+        let mut wide_asleep = pool(NIGHT_PHASE, 0x9000, 16);
+        wide_asleep.sleep_stage = STAGE_REM;
+        assert_eq!(wide_asleep.step_sleep(), STAGE_REM);
+        assert_eq!(wide_asleep.sleep_pressure_q16, 0x9000 - (0x9000 >> 13));
     }
 
     #[test]
-    fn fatigue_at_exactly_half_does_not_force_sleep() {
-        let mut p = pool(0, 0x8000_0000);
-        p.update_circadian_tick(0);
-        assert_eq!(p.sleep_mode_active, 0);
-        let mut q = pool(0, 0x8000_0001);
-        q.update_circadian_tick(0);
-        assert_eq!(q.sleep_mode_active, 1);
+    fn the_pressure_reaches_one_and_zero_exactly_by_the_one_lsb_floor() {
+        // Kept awake past onset (an alarm each window), the pressure saturates at 1.0.
+        let mut p = pool(0, PRESSURE_MAX_Q16 - 3, SLEEP_SHIFT_MAX);
+        for expected in [
+            PRESSURE_MAX_Q16 - 2,
+            PRESSURE_MAX_Q16 - 1,
+            PRESSURE_MAX_Q16,
+            PRESSURE_MAX_Q16,
+        ] {
+            assert_eq!(p.step_sleep(), STAGE_SWS);
+            assert_eq!(p.sleep_pressure_q16, expected);
+            assert!(p.wake());
+        }
+        // Asleep with three LSB of pressure: one off per window, to zero, which is a fixed
+        // point; each step wakes, since the threshold is far above, and is put back.
+        let mut q = pool(0, 3, SLEEP_SHIFT_MAX);
+        for (expected, stage) in [
+            (2, STAGE_REM),
+            (1, STAGE_SWS),
+            (0, STAGE_REM),
+            (0, STAGE_SWS),
+        ] {
+            q.sleep_stage = stage;
+            assert_eq!(q.step_sleep(), STAGE_AWAKE);
+            assert_eq!(q.sleep_pressure_q16, expected);
+        }
+    }
+
+    #[test]
+    fn a_shift_of_zero_moves_nothing_but_the_phase() {
+        for stage in [STAGE_AWAKE, STAGE_SWS, STAGE_REM] {
+            let mut p = pool(0xFFFF, 0x1234, 0);
+            p.sleep_stage = stage;
+            p.stage_windows = 1;
+            assert_eq!(p.step_sleep(), stage);
+            assert_eq!(
+                (p.sleep_pressure_q16, p.stage_windows, p.circadian_phase),
+                (0x1234, 1, 0),
+                "the phase wrapped, nothing else moved"
+            );
+            assert!(p.is_well_formed());
+        }
+    }
+
+    #[test]
+    fn wake_returns_the_stage_to_awake_keeps_the_pressure_and_is_nothing_when_awake() {
+        let mut p = pool(7, 0x9000, 4);
+        assert!(!p.wake());
+        assert_eq!(p, pool(7, 0x9000, 4));
+        for stage in [STAGE_SWS, STAGE_REM] {
+            let mut q = pool(7, 0x9000, 4);
+            q.sleep_stage = stage;
+            q.stage_windows = 1;
+            assert!(q.wake());
+            assert_eq!(
+                (
+                    q.sleep_stage,
+                    q.stage_windows,
+                    q.sleep_pressure_q16,
+                    q.circadian_phase
+                ),
+                (STAGE_AWAKE, 0, 0x9000, 7)
+            );
+            assert!(!q.wake());
+        }
+        // A stage the constants do not name (the loader refuses it; the public field can hold
+        // it) wakes on its next step, with the pressure neither risen nor fallen.
+        let mut odd = pool(0, 0x9000, 4);
+        odd.sleep_stage = 3;
+        odd.stage_windows = 9;
+        assert!(odd.is_asleep(), "not awake");
+        assert!(!odd.is_well_formed());
+        assert_eq!(odd.step_sleep(), STAGE_AWAKE);
+        assert_eq!((odd.stage_windows, odd.sleep_pressure_q16), (0, 0x9000));
     }
 
     #[test]
@@ -786,7 +1163,7 @@ mod tests {
         let ok = window(&[3, 4]);
         assert!(ok.is_well_formed());
         type Mutation = fn(&mut HomeostaticDrivePool);
-        let cases: [(&str, Mutation); 14] = [
+        let cases: [(&str, Mutation); 17] = [
             ("gain below the floor", |p| {
                 p.synaptic_gain_q16 = GAIN_MIN_Q16 - 1
             }),
@@ -815,8 +1192,23 @@ mod tests {
             ("a pair sum above its bound", |p| {
                 p.sum_pair = (ACTIVITY_COUNT_MAX as u64) * (ACTIVITY_COUNT_MAX as u64) + 1
             }),
-            ("a sleep flag that is neither", |p| p.sleep_mode_active = 2),
-            ("reserved bytes", |p| p._reserved = 1),
+            ("a stage the constants do not name", |p| {
+                p.sleep_stage = STAGE_REM + 1
+            }),
+            ("a pressure above 1.0", |p| {
+                p.sleep_pressure_q16 = PRESSURE_MAX_Q16 + 1
+            }),
+            ("a shift above its bound", |p| {
+                p.sleep_shift = SLEEP_SHIFT_MAX + 1
+            }),
+            ("a slow-wave stage at its budget", |p| {
+                p.sleep_stage = STAGE_SWS;
+                p.stage_windows = SWS_WINDOWS;
+            }),
+            ("a REM stage at its budget", |p| {
+                p.sleep_stage = STAGE_REM;
+                p.stage_windows = REM_WINDOWS;
+            }),
             ("a sum without a pair", |p| {
                 p.window_bins = 1;
                 p.sum_prev = 1;
@@ -892,24 +1284,35 @@ mod tests {
         p.bin_activity = ACTIVITY_COUNT_MAX;
         p.last_activity = ACTIVITY_COUNT_MAX;
         p.first_activity = ACTIVITY_COUNT_MAX;
-        p.sleep_mode_active = 1;
+        p.sleep_stage = STAGE_REM;
+        p.stage_windows = REM_WINDOWS - 1;
+        p.sleep_pressure_q16 = PRESSURE_MAX_Q16;
+        p.sleep_shift = SLEEP_SHIFT_MAX;
         assert!(p.is_well_formed(), "every bound at its edge");
         p.sum_prev += 1;
         assert!(!p.is_well_formed());
+        let mut sws = ok;
+        sws.sleep_stage = STAGE_SWS;
+        sws.stage_windows = SWS_WINDOWS - 1;
+        assert!(sws.is_well_formed(), "one window short of the budget");
+        let mut awake = ok;
+        awake.stage_windows = u8::MAX;
+        assert!(awake.is_well_formed(), "awake, any count of windows");
     }
 
     #[test]
     fn the_record_round_trips_through_its_bytes() {
         let p = HomeostaticDrivePool {
             energy_level: 1,
-            sensory_fatigue: 2,
+            sleep_pressure_q16: 2,
             curiosity_drive: 3,
             bin_activity: 4,
             circadian_phase: 0x1234,
-            sleep_mode_active: 1,
+            sleep_stage: 1,
             window_bins: 31,
             control_step_q0_16: 0x5678,
-            _reserved: 0,
+            sleep_shift: 15,
+            stage_windows: 3,
             branching_ratio_q16: 0x0001_0000,
             synaptic_gain_q16: 0x0002_0000,
             sum_prev: 0x0123_4567_89AB_CDEF,
@@ -922,6 +1325,7 @@ mod tests {
         assert_eq!(&bytes[16..18], &[0x34, 0x12]);
         assert_eq!(bytes[18], 1);
         assert_eq!(bytes[19], 31);
+        assert_eq!((bytes[22], bytes[23]), (15, 3));
         assert_eq!(&bytes[28..32], &0x0002_0000u32.to_le_bytes());
         assert_eq!(&bytes[40..48], &[0xFF; 8]);
         assert_eq!(&bytes[60..64], &9u32.to_le_bytes());
@@ -930,19 +1334,19 @@ mod tests {
             HomeostaticDrivePool::decode(&HomeostaticDrivePool::new().encode()),
             HomeostaticDrivePool::new()
         );
-        let mut reserved = HomeostaticDrivePool::new();
-        reserved._reserved = 0xBEEF;
-        assert_eq!(&reserved.encode()[22..24], &[0xEF, 0xBE]);
-        assert_eq!(
-            HomeostaticDrivePool::decode(&reserved.encode())._reserved,
-            0xBEEF
-        );
+        let mut odd = HomeostaticDrivePool::new().encode();
+        odd[22] = 0xEF;
+        odd[23] = 0xBE;
+        let decoded = HomeostaticDrivePool::decode(&odd);
+        assert_eq!((decoded.sleep_shift, decoded.stage_windows), (0xEF, 0xBE));
+        assert!(!decoded.is_well_formed());
     }
 }
 
 /// Property tests (ADR-0030): every rule keeps a well-formed record well formed, the estimate
 /// stays within its range, the gain within its bounds, and at a control step of zero the gain
-/// never moves.
+/// never moves; every sleep step keeps the pressure within its range and the stage one of
+/// three, and a shift above zero cycles.
 #[cfg(test)]
 mod prop {
     use super::*;
@@ -997,6 +1401,43 @@ mod prop {
                 assert_eq!(HomeostaticDrivePool::decode(&p.encode()), p);
             }
             assert!(windows > 0);
+        }
+    }
+
+    #[test]
+    fn every_sleep_step_keeps_the_record_well_formed_and_the_stage_one_of_three() {
+        let mut rng = Lcg::new(31);
+        for round in 0..200u32 {
+            let mut p = HomeostaticDrivePool::new();
+            p.sleep_shift = rng.below(SLEEP_SHIFT_MAX as u32 + 1) as u8;
+            p.circadian_phase = rng.next_u16();
+            p.sleep_pressure_q16 = rng.below(PRESSURE_MAX_Q16 + 1);
+            let mut transitions = 0u32;
+            let mut previous = p.sleep_stage;
+            for step in 0..4_000u32 {
+                if rng.below(97) == 0 {
+                    p.wake();
+                }
+                let stage = p.step_sleep();
+                assert!(stage <= STAGE_REM);
+                assert!(p.sleep_pressure_q16 <= PRESSURE_MAX_Q16);
+                assert!(p.is_well_formed(), "round {round}, step {step}: {p:?}");
+                assert_eq!(HomeostaticDrivePool::decode(&p.encode()), p);
+                if stage != previous {
+                    transitions = transitions.wrapping_add(1);
+                    previous = stage;
+                }
+                if p.sleep_shift == 0 {
+                    assert_eq!(stage, STAGE_AWAKE, "off: the stage stays where it was");
+                }
+            }
+            if p.sleep_shift != 0 && p.sleep_shift <= 6 {
+                assert!(
+                    transitions > 2,
+                    "round {round}: a shift of {} cycles within 4 000 windows",
+                    p.sleep_shift
+                );
+            }
         }
     }
 }

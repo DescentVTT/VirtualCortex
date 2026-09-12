@@ -14,7 +14,7 @@ core-pinned workers. Thirty-two crates, one per subsystem, no dependencies betwe
 fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
 It is past the **state-model stage**: the records, their compile-time layout assertions, small
-update rules in twenty-five crates, synaptic fan-out with three-factor STDP (an eligibility
+update rules in twenty-six crates, synaptic fan-out with three-factor STDP (an eligibility
 trace per synapse, consolidated by the modulator; ADR-0032), and the executor that runs them
 on a pool of workers (`runtime/cortex-runtime`, ADR-0023), the `.cortex` image writer and
 loader and the clock sweep (ADR-0024), the policy amendment's trial in two forks of the image
@@ -22,7 +22,10 @@ and its commit (ADR-0031), an image that says what a tick is and at which tick i
 written (ADR-0033), and the criticality controller (the population's spikes tallied every
 tick, the branching ratio estimated by lag-one regression once per window, a bounded global
 synaptic gain applied by every turn, all on a cadence that is a mask on the tick; ADR-0035,
-ADR-0036) exist; the `mmap` path, the shared-memory mappings, core pinning, the tool broker
+ADR-0036), sleep as a state machine stepped once per window (a two-process pressure, a
+circadian phase whose sixteen bits are a day, three stages, a wake as an input; ADR-0037) and
+the episodic ledger (tagged patterns appended and never overwritten, replayed into the network
+on a ripple cadence in slow-wave sleep and depotentiated in REM; ADR-0038) exist; the `mmap` path, the shared-memory mappings, core pinning, the tool broker
 and every subsystem's real dynamics do not. The whitepaper's
 [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) is the table of what is built;
 [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt) is the numbered list of what is wrong.

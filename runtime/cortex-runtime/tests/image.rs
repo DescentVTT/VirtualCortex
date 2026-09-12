@@ -7,14 +7,16 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_connectome::{
-    CortexFileHeader, HeaderError, SECTION_HOMEOSTASIS, SECTION_MODULATOR, SECTION_NEURON,
-    SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
+    CortexFileHeader, HeaderError, SECTION_EPISODE, SECTION_HIPPOCAMPUS, SECTION_HOMEOSTASIS,
+    SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
     PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
 };
+use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX};
 use cortex_homeostasis::{
     ACTIVITY_WINDOW_BINS, CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, HomeostaticDrivePool,
+    PRESSURE_MAX_Q16, REM_WINDOWS, SLEEP_SHIFT_MAX, STAGE_REM, STAGE_SWS, SWS_WINDOWS,
 };
 use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, WriteAheadLog};
 use std::path::PathBuf;
@@ -149,9 +151,9 @@ fn a_corrupted_truncated_or_foreign_image_fails_closed() {
     let bytes = std::fs::read(&path).unwrap();
 
     let mut flipped = bytes.clone();
-    // The header, five directory entries (neurons, synapses, deltas, the modulation state,
-    // the homeostasis state), then the neuron section.
-    flipped[64 * 6 + 30] ^= 0x01;
+    // The header, six directory entries (neurons, synapses, deltas, the modulation state,
+    // the homeostasis state, the hippocampal state), then the neuron section.
+    flipped[64 * 7 + 30] ^= 0x01;
     assert!(matches!(
         Image::decode::<64>(&flipped, config()),
         Err(ImageError::SectionCrc(SECTION_NEURON))
@@ -564,26 +566,45 @@ fn every_clause_of_the_loader_s_checks_refuses_on_its_own() {
         ),
         Err(ImageError::Config(ConfigError::ControlStepOutOfRange))
     ));
+    assert!(matches!(
+        Image::decode::<8>(
+            &with_pool(|p| p.sleep_shift = SLEEP_SHIFT_MAX + 1),
+            Config::default()
+        ),
+        Err(ImageError::Config(ConfigError::SleepShiftOutOfRange))
+    ));
     for patch in [
         (|p| p.synaptic_gain_q16 = GAIN_MAX_Q16 + 1) as fn(&mut HomeostaticDrivePool),
         |p| p.synaptic_gain_q16 = GAIN_MIN_Q16 - 1,
-        |p| p._reserved = 1,
         |p| p.window_bins = ACTIVITY_WINDOW_BINS,
         |p| p.window_bins = 1,
         |p| p.bin_activity = 0x0100_0000,
-        |p| p.sleep_mode_active = 2,
+        |p| p.sleep_stage = STAGE_REM + 1,
+        |p| p.sleep_pressure_q16 = PRESSURE_MAX_Q16 + 1,
+        |p| {
+            p.sleep_stage = STAGE_SWS;
+            p.stage_windows = SWS_WINDOWS;
+        },
+        |p| {
+            p.sleep_stage = STAGE_REM;
+            p.stage_windows = REM_WINDOWS;
+        },
     ] {
         assert!(matches!(
             Image::decode::<8>(&with_pool(patch), Config::default()),
             Err(ImageError::MalformedHomeostasis)
         ));
     }
-    // The image's gain and step outrank the configuration's.
+    // The image's gain, step, shift, stage and pressure outrank the configuration's.
     let loaded = Image::decode::<8>(
         &with_pool(|p| {
             p.synaptic_gain_q16 = 0x8000;
             p.control_step_q0_16 = CONTROL_STEP_MAX_Q0_16;
             p.bin_activity = 9;
+            p.sleep_shift = SLEEP_SHIFT_MAX;
+            p.sleep_stage = STAGE_REM;
+            p.stage_windows = REM_WINDOWS - 1;
+            p.sleep_pressure_q16 = PRESSURE_MAX_Q16;
         }),
         Config::default(),
     )
@@ -592,10 +613,185 @@ fn every_clause_of_the_loader_s_checks_refuses_on_its_own() {
         (
             loaded.homeostasis().synaptic_gain_q16,
             loaded.homeostasis().control_step_q0_16,
-            loaded.homeostasis().bin_activity
+            loaded.homeostasis().bin_activity,
+            loaded.homeostasis().sleep_shift,
+            loaded.sleep_stage(),
+            loaded.homeostasis().stage_windows,
+            loaded.homeostasis().sleep_pressure_q16,
         ),
-        (0x8000, CONTROL_STEP_MAX_Q0_16, 9),
+        (
+            0x8000,
+            CONTROL_STEP_MAX_Q0_16,
+            9,
+            SLEEP_SHIFT_MAX,
+            STAGE_REM,
+            REM_WINDOWS - 1,
+            PRESSURE_MAX_Q16
+        ),
         "the image's homeostasis state is the engine's"
+    );
+    // The hippocampal section (ADR-0038): exactly one 64-byte record, required; the ledger
+    // section required when the record says the ledger is not empty, its count the record's
+    // length; a hand at the length or a reserved byte refused; an episode refused on each
+    // clause of its own well-formedness and for a unit outside the arena.
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_HIPPOCAMPUS, |e| {
+        e.length = 0;
+        e.crc64 = 0;
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_HIPPOCAMPUS))
+    ));
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_HIPPOCAMPUS, |e| e.record_size = 16);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_HIPPOCAMPUS))
+    ));
+    let mut img = small_image();
+    patch_entry(&mut img, SECTION_HIPPOCAMPUS, |e| e.kind = SECTION_NEURON);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::MissingSection(SECTION_HIPPOCAMPUS))
+    ));
+    let with_state = |patch: fn(&mut HippocampalAttractorState)| {
+        let mut img = small_image();
+        patch_section(&mut img, SECTION_HIPPOCAMPUS, |s| {
+            let mut state = HippocampalAttractorState::decode((&s[..64]).try_into().unwrap());
+            patch(&mut state);
+            s.copy_from_slice(&state.encode());
+        });
+        img
+    };
+    assert!(
+        matches!(
+            Image::decode::<8>(&with_state(|h| h.episodes = 1), Config::default()),
+            Err(ImageError::MissingSection(SECTION_EPISODE))
+        ),
+        "a length without a ledger section"
+    );
+    for patch in [
+        (|h| h.replay_hand = 1) as fn(&mut HippocampalAttractorState),
+        |h| h._reserved[35] = 1,
+    ] {
+        assert!(matches!(
+            Image::decode::<8>(&with_state(patch), Config::default()),
+            Err(ImageError::MalformedHippocampus)
+        ));
+    }
+    let specified = Image::decode::<8>(
+        &with_state(|h| {
+            h.dg_sparsity_bits = 5;
+            h.place_field_id = 6;
+        }),
+        Config::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            specified.hippocampus().dg_sparsity_bits,
+            specified.hippocampus().place_field_id
+        ),
+        (5, 6),
+        "the Specified fields are read back"
+    );
+    // A ledger of two episodes, then each refusal on its own.
+    let ledger = || {
+        let mut exec = Executor::<8>::new(Config {
+            units: 4,
+            blocks: 1,
+            episodes: 2,
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(exec.tag_episode(&[0, 1, 2], 3), Ok(0));
+        assert_eq!(exec.tag_episode(&[3], 1), Ok(1));
+        assert_eq!(exec.hippocampus().episodes, 2);
+        Image::encode(&exec).unwrap()
+    };
+    let loaded = Image::decode::<8>(&ledger(), Config::default()).unwrap();
+    assert_eq!(loaded.episodes().len(), 2);
+    assert_eq!(loaded.episodes()[0].pattern(), &[0, 1, 2]);
+    assert_eq!(
+        (loaded.episodes()[1].tag, loaded.episodes()[1].pattern()),
+        (1, &[3][..])
+    );
+    assert_eq!(
+        loaded.episode_room(),
+        0,
+        "sized as the image's ledger plus the configuration's room"
+    );
+    assert_eq!(
+        Image::decode::<8>(
+            &ledger(),
+            Config {
+                episodes: 3,
+                ..Config::default()
+            }
+        )
+        .unwrap()
+        .episode_room(),
+        3
+    );
+    let mut img = ledger();
+    patch_entry(&mut img, SECTION_EPISODE, |e| e.record_size = 16);
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Directory(SECTION_EPISODE))
+    ));
+    let mut img = ledger();
+    patch_section(&mut img, SECTION_HIPPOCAMPUS, |s| {
+        s[12..16].copy_from_slice(&1u32.to_le_bytes())
+    });
+    assert!(
+        matches!(
+            Image::decode::<8>(&img, Config::default()),
+            Err(ImageError::MalformedHippocampus)
+        ),
+        "a length that is not the section's count"
+    );
+    let mut img = ledger();
+    patch_section(&mut img, SECTION_HIPPOCAMPUS, |s| {
+        s[24..28].copy_from_slice(&2u32.to_le_bytes())
+    });
+    assert!(
+        matches!(
+            Image::decode::<8>(&img, Config::default()),
+            Err(ImageError::MalformedHippocampus)
+        ),
+        "a hand at the length"
+    );
+    let with_episode = |index: usize, patch: fn(&mut Episode)| {
+        let mut img = ledger();
+        patch_section(&mut img, SECTION_EPISODE, |s| {
+            let at = index * 64;
+            let mut e = Episode::decode((&s[at..at + 64]).try_into().unwrap());
+            patch(&mut e);
+            s[at..at + 64].copy_from_slice(&e.encode());
+        });
+        img
+    };
+    for (index, patch) in [
+        (0usize, (|e| e.len = 0) as fn(&mut Episode)),
+        (1, |e| e.len = PATTERN_MAX as u8 + 1),
+        (0, |e| e.pattern[3] = 3),
+        (0, |e| e.pattern[2] = 0),
+        (1, |e| e._pad = 1),
+        (1, |e| e._reserved[0] = 1),
+        (1, |e| e.pattern[0] = 4),
+        (0, |e| e.pattern[1] = u32::MAX),
+    ] {
+        let err = Image::decode::<8>(&with_episode(index, patch), Config::default()).err();
+        assert!(
+            matches!(err, Some(ImageError::MalformedEpisode(i)) if i as usize == index),
+            "episode {index}: {err:?}"
+        );
+    }
+    let spent = Image::decode::<8>(&with_episode(1, |e| e.tag = 0), Config::default()).unwrap();
+    assert!(
+        spent.episodes()[1].is_spent(),
+        "a spent episode is a record of the ledger"
     );
 }
 

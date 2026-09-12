@@ -1,7 +1,15 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-12
 ---
+
+> **Executed 2026-09-12 in pull request #48.** Writes ADR-0037 (sleep regulation) and ADR-0038
+> (the episodic ledger and its replay); resolves finding F-29; image format 13; the determinism
+> pin unmoved. Every deliverable is done; notes under the boxes say where the tree departs from
+> the text, the largest under deliverables 2 and 3: the ripple is every $2^{11}$ ticks, not $2^9$,
+> and the drive 2.5, not 3.0, both from a measurement the round made. The report is in the pull
+> request and in `CHANGELOG.md`. The body below describes the tree before execution and is not
+> maintained; its relative links gained one `../`.
 
 # Brief 019 — Sleep as a state machine and the episodic ledger: two-process regulation on the window cadence, slow-wave replay through the executor, REM depotentiation
 
@@ -21,17 +29,17 @@ state machine in place of the binary sleep flag, scheduled on a cadence, with an
 Three of its stated baseline findings are not in the tree (the Context below says which), so
 the round begins by re-deriving them. When the round is done: **one ADR** makes sleep a state
 machine in `cortex-homeostasis` stepped once per window on the cadence of
-[ADR-0035](../docs/adr/0035-cadence-and-the-population-tally.md): a sleep pressure that rises
+[ADR-0035](../../docs/adr/0035-cadence-and-the-population-tally.md): a sleep pressure that rises
 while awake and falls while asleep (the two-process model, Borbély 1982), a circadian phase
 that advances once per window so that its sixteen bits are a day, onset and wake thresholds by
 day and night, three stages (awake, slow-wave, REM) alternating under a bounded budget of
 windows, and a wake as an input between ticks; with the regulation off by default so that the
 reference dynamics are unchanged. **One ADR** admits a second record to `cortex-hippocampus`
-under [ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)'s test: an *episode*, a
+under [ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)'s test: an *episode*, a
 tagged pattern of units appended to an index-addressed ledger the executor holds and the image
 carries, never overwritten; replayed during slow-wave sleep on a ripple cadence by delivering
 the pattern's units a drive that fires them together, so that the three-factor rule of
-[ADR-0032](../docs/adr/0032-three-factor-plasticity.md) consolidates the synapses among them
+[ADR-0032](../../docs/adr/0032-three-factor-plasticity.md) consolidates the synapses among them
 (the transfer the whitepaper's complementary-learning row called Specified); depotentiated
 during REM by lowering the episode's tag, which is how many REM ripples it survives; with the
 canvas hydration of `cortex-imagination` written down as Specified. Synaptic downscaling as a
@@ -44,17 +52,17 @@ with every check green.
 
 - Every claim is Implemented, Specified, Target or Hypothesis. What replay does to a
   four-unit ring in a test is stated as what it is; what it does at the reference scale is a
-  hypothesis with a protocol ([ADR-0010](../docs/adr/0010-measured-or-target.md)).
+  hypothesis with a protocol ([ADR-0010](../../docs/adr/0010-measured-or-target.md)).
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper
   §11, never a silent edit.
 - No `f32`/`f64`; Q16.16 in `i32`/`u32`, widened to `i64` to multiply; every operation on a
   state field saturates or wraps by name (`clippy::arithmetic_side_effects` is denied
-  everywhere, [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a relaxation toward a
+  everywhere, [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a relaxation toward a
   target moves by at least one LSB so that the target is reached exactly (§8.1).
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; no heap types, threads
   or `unsafe` in a state crate; the runtime's arena access is the one `unsafe`
-  ([ADR-0023](../docs/adr/0023-executor.md)), every site naming its phase.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md));
+  ([ADR-0023](../../docs/adr/0023-executor.md)), every site naming its phase.
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md));
   a second record in a crate passes ADR-0016's six-part test in its ADR; the crate count stays
   32.
 - A change to a record bumps `CortexFileHeader::FORMAT_VERSION`, updates its §5.2 table and
@@ -64,8 +72,8 @@ with every check green.
   a reward; never a configuration or a constant a caller can vary without the image knowing.
 - A rule slower than the tick runs on a cadence, between ticks on the coordinator or inside a
   phase by the record's holder; no new barrier, no new phase
-  ([ADR-0035](../docs/adr/0035-cadence-and-the-population-tally.md)).
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only
+  ([ADR-0035](../../docs/adr/0035-cadence-and-the-population-tally.md)).
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only
   with a stated reason; the mutation gate on the changed lines must pass.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep
   their names.
@@ -112,7 +120,7 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
 - `runtime/cortex-runtime/src/executor.rs`: `Executor::sweep(quiet_ticks, budget)` and
   `sweep_by_policy` run between ticks when the caller calls them; nothing ties them to a sleep
   phase, and compaction does not exist (the slot is zeroed, not reclaimed;
-  [ADR-0024](../docs/adr/0024-cortex-image-and-clock-sweep.md)). The proposal's "glymphatic
+  [ADR-0024](../../docs/adr/0024-cortex-image-and-clock-sweep.md)). The proposal's "glymphatic
   clearance compacts memory and evicts cold units to the WAL" describes the sweep's eviction
   and a compaction that is Specified in `cortex-immune`.
 - `runtime/cortex-runtime/src/executor.rs`: worker 0 drains the injector in phase 3 and
@@ -123,7 +131,7 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
   `tests/criticality.rs`); the message efficacy is 18 bits, at most 2.0 (`spike_message`).
   Phase 2 pairs each fired unit's blocks against the targets' last spikes, settled: two units
   that fire in the same tick pair as $q = t$, potentiation only, no depression
-  ([ADR-0022](../docs/adr/0022-synapse-fan-out-and-stdp.md)'s rule as `step_stdp` reads it).
+  ([ADR-0022](../../docs/adr/0022-synapse-fan-out-and-stdp.md)'s rule as `step_stdp` reads it).
 - `runtime/cortex-runtime/src/executor.rs`: `Shared` carries `modulation`, `gain` and `spikes`
   as atomics stored by the coordinator before the tick's first barrier and read by the workers
   after it: the pattern a per-tick replay decision follows. `Config` has eleven fields;
@@ -161,7 +169,7 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
 
 ## Deliverables
 
-1. [ ] **Sleep regulation** (`cortex-homeostasis`, the first ADR; format 13). `HomeostaticDrivePool`
+1. [x] **Sleep regulation** (`cortex-homeostasis`, the first ADR; format 13). `HomeostaticDrivePool`
    `[4..8)` becomes `sleep_pressure_q16: u32` (Process S, in $[0, 1]$; `sensory_fatigue`
    renamed, since the rule now defines it), `[18)` `sleep_stage: u8` (`STAGE_AWAKE` 0,
    `STAGE_SWS` 1, `STAGE_REM` 2; `sleep_mode_active` renamed), `[22)` `sleep_shift: u8` (the
@@ -185,7 +193,7 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
    budgets, the wake, $k = 0$ moving nothing, the bytes, each well-formedness clause alone,
    and the property walk (every step keeps the record well formed and the pressure in its
    range; the stage is one of three).
-2. [ ] **The ledger** (`cortex-hippocampus`, the second ADR; format 13). A second record,
+2. [x] **The ledger** (`cortex-hippocampus`, the second ADR; format 13). A second record,
    `Episode`, 64 bytes: `tagged_tick: u32` `[0..4)`, `tag: u8` `[4)` (the REM ripples it
    survives; 0 is spent), `replays: u8` `[5)` (saturating), `len: u8` `[6)`, `_pad: u8` `[7)`,
    `pattern: [u32; 12]` `[8..56)` (unit indices, the first `len` of them; the rest MUST be
@@ -207,7 +215,8 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
    ADR-0016's six-part test for the second record. Tests at each refusal, the order kept, the
    spent episode, the tag reaching zero and staying, the hand's wrap, each clause alone, the
    bytes, and a property walk.
-3. [ ] **The composition** (`cortex-runtime`, both ADRs). `Config::sleep_shift` (default 0;
+   **Departure:** `RIPPLE_SHIFT` is 11 ($2^{11}$ ticks, 20.48 ms), not 9: at 512 ticks successive drives sum in the basal compartment (time constant 512 ticks) and every replay after the first fired the pattern twice; 2 048 ticks is four basal time constants, asserted at compile time in the runtime, and the 150 to 250 Hz band is the ripple's oscillation, not the rate of replay events (a Target). `next_hand` and `append` are as written; `is_spent` was added.
+3. [x] **The composition** (`cortex-runtime`, both ADRs). `Config::sleep_shift` (default 0;
    refused above 15, `ConfigError::SleepShiftOutOfRange`) and `Config::episodes` (room for
    tagged episodes beyond what an image holds; default 0; refused at the width). The executor
    holds one `HippocampalAttractorState` and an arena of `Episode`s (in `Shared`, read by
@@ -234,7 +243,8 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
    image's shift, stage and pressure outrank the configuration's. `FORMAT_VERSION` 13 with the
    reason in its list. The pin's `Config` literal gains both fields and the pin holds: with the
    shift at 0 and no episode nothing runs.
-4. [ ] **The exit test** (`runtime/cortex-runtime/tests/sleep.rs`, and `tests/image.rs` for
+   **Departure:** `REPLAY_DRIVE_Q16` is 1.25 (2.5 in all), not 1.5: measured on a unit at its base threshold, drives from 2.25 to 2.875 fire exactly once per replay and 3.0 fires twice at the ripple's interval; the middle of the band was taken. `Executor::episode_room` and `depotentiations` were added beside the accessors named.
+4. [x] **The exit test** (`runtime/cortex-runtime/tests/sleep.rs`, and `tests/image.rs` for
    the loader). The stage machine on the executor equals an oracle record stepped once per
    window, exactly, over a full cycle (awake until onset, SWS, REM, SWS, awake), and one tick
    short of a window boundary nothing has moved. In SWS with the regulation off (the stage as
@@ -248,13 +258,14 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
    and the stage round-trip through the image mid-sleep and a loaded engine continues alike.
    Tagging is refused for a full ledger, a missing unit and a bad pattern; the defaults never
    sleep; every loader refusal on its own; the image's sleep state read back.
-5. [ ] **Specified and not adopted.** The canvas hydration: a `MentalCanvasFrame` with
+   **Departure:** the weights are held against an oracle block fed the exit test's own spike ticks (the pair rule at the chosen interval, 120 per ripple after the first); the one-and-four-worker run is five windows (four of slow-wave sleep, one of REM) rather than a whole cycle, which the oracle test covers on one worker.
+5. [x] **Specified and not adopted.** The canvas hydration: a `MentalCanvasFrame` with
    `simulation_id` the episode's index and tagged tick and `hypothetical_action_hash` a hash
    of its pattern, wandered at a temperature, reads the ledger and never writes it; Specified
    in §5.2.32 and §8.8 with the rule, not built, since nothing reads a frame's outcome yet.
    The second ADR says why synaptic downscaling as a weight sweep is not adopted (the
    multiplicative actuator exists as the gain of
-   [ADR-0036](../docs/adr/0036-criticality-control.md), whose loop runs asleep as awake; a
+   [ADR-0036](../../docs/adr/0036-criticality-control.md), whose loop runs asleep as awake; a
    uniform downscale differs from it only in the pair rule's relative step; nothing in the tree
    shows weight saturation under a depression-biased rule; an $O(S)$ sweep is what ADR-0036
    removed), why affect is not recalibrated by the executor (`InteroceptiveState` is composed
@@ -265,7 +276,7 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
    Specified). The first ADR says why the ultradian alternation is a budget of windows and not
    a completion signal, and why the pressure is time-based and not activity-based (Borbély's
    form; the bin activity is the input a use-dependent variant would take).
-6. [ ] **Documents.** Whitepaper §1.6 (the two Logic cells; thirty-eight records), the
+6. [x] **Documents.** Whitepaper §1.6 (the two Logic cells; thirty-eight records), the
    executive summary, §5.2.1 (the executor's status), §5.2.2 (format 13, sections 44 and 45),
    §5.2.15 (both tables, the API, the status, the rules with executable assertions), §5.2.16
    (the table, the API, the status, the rule), §5.2.32 (the hydration), §6.6 (R-6 with what is
@@ -284,7 +295,7 @@ Re-derived on 2026-09-12 against `main` at `cb43350`.
   add `unsafe` outside `arena.rs`; to add a barrier or a phase.
 - To let a sleep rule touch weights (a sweep over blocks in the loop), or to put the shift,
   the thresholds, the budgets, the ripple or the drive in the amendment registry of
-  [ADR-0031](../docs/adr/0031-policy-amendment.md): they change what the engine does.
+  [ADR-0031](../../docs/adr/0031-policy-amendment.md): they change what the engine does.
 - To keep the ledger or the stage out of the image, or to write the control section only
   sometimes: they change results (the review finding of PR #44).
 - To drop or gate injections by the stage: the trace is the run's definition.

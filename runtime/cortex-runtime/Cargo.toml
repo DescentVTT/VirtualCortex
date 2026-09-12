@@ -21,6 +21,7 @@ cortex-ethics = { path = "../../crates/cortex-ethics" }
 # The modulator of three-factor plasticity (ADR-0032).
 cortex-neuromod = { path = "../../crates/cortex-neuromod" }
 # The homeostasis record: the branching-ratio estimator and the synaptic gain (ADR-0036).
+cortex-hippocampus = { path = "../../crates/cortex-hippocampus" }
 cortex-homeostasis = { path = "../../crates/cortex-homeostasis" }
 
 # Not the workspace table: the runtime holds the one `unsafe` (ADR-0023). The float rule

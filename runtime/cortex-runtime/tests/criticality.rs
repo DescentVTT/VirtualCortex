@@ -173,6 +173,9 @@ fn designed_window(
         assert!(oracle.close_bin().is_some());
     }
     oracle.regulate(UNITS as u32);
+    // The window's cadence also steps the sleep stage (ADR-0037): with the shift at 0 only
+    // the circadian phase moves.
+    oracle.step_sleep();
 }
 
 #[test]
