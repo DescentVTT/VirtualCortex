@@ -18,16 +18,18 @@
 //!    target's mailbox now (delay 0) or into this worker's wheel (`synapse_token`). Blocks are
 //!    referenced exclusively by the worker that owns the spiking unit; units only shared.
 //! 3. **Deliveries.** Each worker advances its wheel and pushes the due tokens' stored releases
-//!    into the targets' mailboxes as spike messages; worker 0 also drains the injector. Blocks
-//!    and units only shared. Units woken by a push are queued for the next tick, as is the
-//!    active set.
+//!    into the targets' mailboxes as spike messages; worker 0 also drains the injector and,
+//!    during slow-wave sleep on the ripple's cadence, delivers the replay drive to every unit
+//!    of the episode the coordinator chose before the tick (ADR-0038). Blocks and units only
+//!    shared. Units woken by a push are queued for the next tick, as is the active set.
 //!
 //! A message pushed in phase 2 or 3 of tick $t$ is integrated in phase 1 of tick $t + 1$, so a
 //! zero-delay synapse and a one-tick one arrive together; a delay $d$ scheduled in phase 2 is
 //! due at $t + d$. Between ticks the coordinator sums the workers' spike counts into the
-//! homeostasis record's open bin, closes the bin on its cadence and regulates the gain on the
-//! window's (ADR-0035, ADR-0036): a schedule that is a function of the tick, so it adds no
-//! barrier and runs at the same ticks on every worker count. Nothing allocates after
+//! homeostasis record's open bin, closes the bin on its cadence, regulates the gain on the
+//! window's and steps the sleep stage (ADR-0035, ADR-0036, ADR-0037); before a tick's first
+//! barrier it decides the ripple (ADR-0038): a schedule that is a function of the tick, so it
+//! adds no barrier and runs at the same ticks on every worker count. Nothing allocates after
 //! [`Executor::new`], nothing blocks but the spin barrier, and the only system call in the
 //! loop is the barrier's yield.
 
@@ -38,18 +40,19 @@ use crate::image::{ImageError, WriteAheadLog};
 use crate::injector::{self, Injector};
 use crate::pool::Pools;
 use cortex_core::{
-    CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel, MODULATION_ONE_Q16,
-    NO_SPIKE_ON_RECORD, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE,
-    WorkerWheel, message_efficacy_q16, message_is_apical, spike_message, synapse_token,
-    token_block, token_slot,
+    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel,
+    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK,
+    SynapseBlock, THRESHOLD_BASE, WorkerWheel, message_efficacy_q16, message_is_apical,
+    spike_message, synapse_token, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
     AMENDMENT_PROPOSED, PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS, PolicyAmendment, spec_of,
 };
+use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX, RIPPLE_SHIFT};
 use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16, GAIN_ONE_Q16,
-    HomeostaticDrivePool,
+    HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_REM, STAGE_SWS,
 };
 use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
 use std::path::Path;
@@ -72,7 +75,9 @@ pub struct Config {
     pub deltas: usize,
     /// Mailbox nodes per worker: the most messages one worker can have in flight at once. A
     /// tick takes at most one wheel slot's tokens plus the zero-delay synapses of the units
-    /// that fired, and, on worker 0, one injector ring's worth; nodes come back the tick after.
+    /// that fired, and, on worker 0, one injector ring's worth and one ripple's worth
+    /// (`REPLAY_MESSAGES × PATTERN_MAX`, 24, while the ledger has room; ADR-0038); nodes come
+    /// back the tick after. Refused below one ripple's worth when the ledger has room.
     pub nodes_per_worker: usize,
     /// Slots per worker deque; 0 means one per unit, which cannot fill.
     pub deque_capacity: usize,
@@ -97,6 +102,15 @@ pub struct Config {
     /// stays at 1.0 and the dynamics are the reference ones. For an engine built from an image,
     /// the image's step and gain outrank this one: they change what the run does (§8.3).
     pub control_step_q0_16: u16,
+    /// The sleep shift $k$ of ADR-0037, at most `SLEEP_SHIFT_MAX` (15): the sleep pressure's
+    /// time constant is $2^k$ windows awake and $2^{k-2}$ asleep. At 0 (the default) the
+    /// pressure and the stage stay where they are: the engine never sleeps and the dynamics
+    /// are the reference ones. For an engine built from an image, the image's shift, stage
+    /// and pressure outrank this one (§8.3).
+    pub sleep_shift: u8,
+    /// Room for episodes tagged into the ledger (ADR-0038) beyond those an image holds; 0
+    /// leaves the engine unable to tag one.
+    pub episodes: usize,
 }
 
 impl Default for Config {
@@ -113,6 +127,8 @@ impl Default for Config {
             amendments: 0,
             modulation_baseline_q16: MODULATION_ONE_Q16,
             control_step_q0_16: 0,
+            sleep_shift: 0,
+            episodes: 0,
         }
     }
 }
@@ -206,6 +222,26 @@ pub enum ConfigError {
     ModulationOutOfRange,
     /// `control_step_q0_16` is above `CONTROL_STEP_MAX_Q0_16` (ADR-0036).
     ControlStepOutOfRange,
+    /// `sleep_shift` is above `SLEEP_SHIFT_MAX` (ADR-0037).
+    SleepShiftOutOfRange,
+    /// More episodes than a `u32` index can name (ADR-0038).
+    TooManyEpisodes,
+    /// Fewer mailbox nodes per worker than one ripple's deliveries take on worker 0
+    /// (`REPLAY_MESSAGES × PATTERN_MAX`, 24) while the ledger has room (ADR-0038): a ripple
+    /// would exhaust the pool and abort the process.
+    TooFewNodes,
+}
+
+/// Why an episode could not be tagged (ADR-0038).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TagError {
+    /// The ledger has no room for another episode (`Config::episodes`).
+    LedgerFull,
+    /// A unit of the pattern is outside the arena.
+    NoSuchUnit,
+    /// The pattern is one `Episode::tag` refuses: no unit, more than `PATTERN_MAX`, a unit
+    /// twice, or a priority of zero.
+    InvalidPattern,
 }
 
 /// Why an injection is refused.
@@ -244,6 +280,34 @@ const WINDOW_CADENCE: Cadence =
 /// itself or the next bin (ADR-0036); a shorter one would read a delayed network as
 /// sub-critical and the controller would raise the gain without bound.
 const _: () = assert!(BIN_CADENCE.period() >= WorkerWheel::horizon_ticks());
+/// A replay event every $2^{11}$ ticks (ADR-0038), on a cadence that is a mask on the tick.
+const RIPPLE_CADENCE: Cadence = match Cadence::new(RIPPLE_SHIFT, 0) {
+    Some(c) => c,
+    None => panic!("the ripple shift is below the clock's width"),
+};
+/// A ripple is longer than the refractory window, and at least four basal time constants, so
+/// that successive drives do not sum in the dendrite and a unit replayed at every ripple fires
+/// once at every ripple (ADR-0038; at two constants the second drive fires it twice).
+const _: () = assert!(RIPPLE_CADENCE.period() > REFRACTORY_TICKS as u64);
+const _: () = assert!(RIPPLE_CADENCE.period() >= 4 << BASAL_LEAK_SHIFT);
+/// The episodes one ripple considers before it gives up: the hand walks the ledger round
+/// robin, skipping spent episodes, and a ripple that finds none within this many delivers
+/// nothing (ADR-0038); the walk is bounded so that a ledger of spent episodes costs a ripple
+/// nothing more than this.
+const RIPPLE_SCAN: usize = 16;
+/// The replay drive (ADR-0038): `REPLAY_MESSAGES` messages of `REPLAY_DRIVE_Q16` each into
+/// the basal compartment of every unit of the episode, two and a half times the threshold's
+/// base in all: the middle of the band that fires a unit at its base threshold exactly once,
+/// about twelve ticks on (below about 2.1 the soma, which settles near half the basal
+/// potential, never reaches the threshold; from 3.0 what the drive leaves in the dendrite
+/// after the refractory window fires the unit a second time; ADR-0018).
+const REPLAY_DRIVE_Q16: i32 = 0x0001_4000;
+const REPLAY_MESSAGES: usize = 2;
+const REPLAY_MESSAGE: u32 = spike_message(REPLAY_DRIVE_Q16, false);
+/// The mailbox nodes one ripple takes on worker 0: a message per unit of the widest pattern,
+/// `REPLAY_MESSAGES` times; `Executor::new` refuses a pool below it while the ledger has room.
+const RIPPLE_NODES: usize = REPLAY_MESSAGES * PATTERN_MAX;
+const _: () = assert!(REPLAY_DRIVE_Q16 * REPLAY_MESSAGES as i32 == THRESHOLD_BASE * 5 / 2);
 /// The activity above which a window is read as saturated (ADR-0036): one spike per unit per
 /// bin on average (about 24 Hz per unit at the fine tick). A population
 /// firing that often no longer forms the branching process the estimator's slope reads, so
@@ -306,6 +370,12 @@ struct Shared {
     /// Per worker, the units that fired in its turns phase this tick: stored at the end of the
     /// phase, summed by the coordinator after the tick (ADR-0036).
     spikes: Box<[AtomicU32]>,
+    /// The episodic ledger (ADR-0038): written between ticks by the coordinator (a tag, a
+    /// replay's count, a REM ripple's depotentiation), read by worker 0 in phase 3.
+    episodes: Arena<Episode>,
+    /// The episode worker 0 replays in this tick's phase 3, as index + 1, or 0 for none:
+    /// stored by the coordinator before the tick's first barrier (ADR-0038).
+    replay: AtomicU32,
     stop: AtomicBool,
 }
 
@@ -391,9 +461,18 @@ pub struct Executor<const CAP: usize> {
     /// The engine's modulator record (ADR-0032): one for the engine until macro-columns exist.
     modulator: NeuromodulatorState,
     modulation_baseline_q16: i32,
-    /// The engine's homeostasis record (ADR-0036): the population tally, the branching-ratio
-    /// estimator's window and the synaptic gain; one for the engine until macro-columns exist.
+    /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
+    /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
+    /// stage; one for the engine until macro-columns exist.
     homeostasis: HomeostaticDrivePool,
+    /// The engine's hippocampal record (ADR-0038): the ledger's length and its hand.
+    hippocampus: HippocampalAttractorState,
+    /// `Config::episodes` plus what an image held: the ledger arena's size.
+    episode_capacity: usize,
+    /// Slow-wave replays delivered so far.
+    replays: u64,
+    /// REM ripples that lowered an episode's tag so far.
+    depotentiations: u64,
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -421,6 +500,15 @@ impl<const CAP: usize> Executor<CAP> {
         }
         if config.control_step_q0_16 > CONTROL_STEP_MAX_Q0_16 {
             return Err(ConfigError::ControlStepOutOfRange);
+        }
+        if config.sleep_shift > SLEEP_SHIFT_MAX {
+            return Err(ConfigError::SleepShiftOutOfRange);
+        }
+        if config.episodes >= u32::MAX as usize {
+            return Err(ConfigError::TooManyEpisodes);
+        }
+        if config.episodes > 0 && config.nodes_per_worker < RIPPLE_NODES {
+            return Err(ConfigError::TooFewNodes);
         }
         let workers = config.workers;
         let deque_capacity = if config.deque_capacity == 0 {
@@ -451,6 +539,8 @@ impl<const CAP: usize> Executor<CAP> {
             modulation: AtomicI32::new(config.modulation_baseline_q16),
             gain: AtomicU32::new(GAIN_ONE_Q16),
             spikes: (0..workers).map(|_| AtomicU32::new(0)).collect(),
+            episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
+            replay: AtomicU32::new(0),
             stop: AtomicBool::new(false),
         });
         // Saturates for a pool that would not fit the address space; `Pools::new` refused that
@@ -507,8 +597,13 @@ impl<const CAP: usize> Executor<CAP> {
             modulation_baseline_q16: config.modulation_baseline_q16,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
+                sleep_shift: config.sleep_shift,
                 ..HomeostaticDrivePool::new()
             },
+            hippocampus: HippocampalAttractorState::new(),
+            episode_capacity: config.episodes,
+            replays: 0,
+            depotentiations: 0,
         })
     }
 
@@ -579,10 +674,148 @@ impl<const CAP: usize> Executor<CAP> {
         true
     }
 
-    /// After a tick, between ticks (ADR-0036): the workers' spike counts into the open bin;
-    /// on the bin's cadence the bin closes into the window; on the window's cadence the gain
-    /// is regulated and the window cleared. The cadences are masks on the tick, so a loaded
-    /// engine continues the window it was written in.
+    /// The sleep stage (ADR-0037): `STAGE_AWAKE`, `STAGE_SWS` or `STAGE_REM` of
+    /// `cortex-homeostasis`, read between ticks.
+    pub fn sleep_stage(&self) -> u8 {
+        self.homeostasis.sleep_stage
+    }
+
+    /// An input between ticks (ADR-0037): whatever the stage, the engine is awake from the
+    /// next tick, its pressure kept. Returns whether it was asleep.
+    pub fn wake(&mut self) -> bool {
+        self.homeostasis.wake()
+    }
+
+    /// The engine's hippocampal record (ADR-0038): the ledger's length and the hand the next
+    /// ripple starts from, read between ticks.
+    pub fn hippocampus(&self) -> &HippocampalAttractorState {
+        &self.hippocampus
+    }
+
+    /// The ledger (ADR-0038): every episode tagged so far, in order, read between ticks.
+    pub fn episodes(&self) -> &[Episode] {
+        // SAFETY: `&self` between ticks; every worker is parked at the barrier, and phase 3's
+        // reader is worker 0, which is this thread.
+        let all = unsafe { self.shared.episodes.as_slice() };
+        &all[..(self.hippocampus.episodes as usize).min(all.len())]
+    }
+
+    /// Room left in the ledger for tagged episodes.
+    pub fn episode_room(&self) -> usize {
+        // The ledger never holds more than its capacity (`tag_episode`, `load_episode`).
+        self.episode_capacity
+            .saturating_sub(self.hippocampus.episodes as usize)
+    }
+
+    /// Slow-wave replays delivered so far (ADR-0038).
+    pub fn replays(&self) -> u64 {
+        self.replays
+    }
+
+    /// REM ripples that lowered an episode's tag so far (ADR-0038).
+    pub fn depotentiations(&self) -> u64 {
+        self.depotentiations
+    }
+
+    /// An input between ticks (ADR-0038): appends an episode of `units`, tagged at this tick
+    /// with `priority` REM ripples to survive, and returns its index in the ledger. Refused
+    /// for a full ledger, a unit outside the arena, or a pattern `Episode::tag` refuses;
+    /// nothing changes then. Like an injection or a reward, a tag is part of the trace: a
+    /// run that replays its tags at the same ticks is the same run.
+    pub fn tag_episode(&mut self, units: &[u32], priority: u8) -> Result<u32, TagError> {
+        if self.episode_room() == 0 {
+            return Err(TagError::LedgerFull);
+        }
+        if units
+            .iter()
+            .any(|&unit| unit as usize >= self.shared.units.len())
+        {
+            return Err(TagError::NoSuchUnit);
+        }
+        let episode =
+            Episode::tag(self.tick as u32, units, priority).ok_or(TagError::InvalidPattern)?;
+        let index = self.hippocampus.episodes as usize;
+        // SAFETY: `&mut self` between ticks; every worker is parked at the barrier.
+        let Some(slot) = (unsafe { self.shared.episodes.get_mut(index) }) else {
+            abort("the ledger's length exceeds its arena");
+        };
+        *slot = episode;
+        // Below the capacity, which `new` bounded below `u32::MAX`: never `None`.
+        self.hippocampus.append().ok_or(TagError::LedgerFull)
+    }
+
+    /// The loader's: an episode from an image, already well formed, appended at the ledger's
+    /// end. Refused when the arena is full or the pattern names a unit outside the arena.
+    pub(crate) fn load_episode(&mut self, episode: Episode) -> bool {
+        if self.episode_room() == 0
+            || episode
+                .pattern()
+                .iter()
+                .any(|&unit| unit as usize >= self.shared.units.len())
+        {
+            return false;
+        }
+        let index = self.hippocampus.episodes as usize;
+        // SAFETY: between ticks; every worker is parked at the barrier.
+        let Some(slot) = (unsafe { self.shared.episodes.get_mut(index) }) else {
+            return false;
+        };
+        *slot = episode;
+        self.hippocampus.append().is_some()
+    }
+
+    /// The loader's: the hippocampal record an image holds. Refused for a record that is not
+    /// well formed or whose length is not the episodes loaded before it.
+    pub(crate) fn set_hippocampus(&mut self, record: HippocampalAttractorState) -> bool {
+        if !record.is_well_formed() || record.episodes != self.hippocampus.episodes {
+            return false;
+        }
+        self.hippocampus = record;
+        true
+    }
+
+    /// Before a tick's first barrier (ADR-0038): on the ripple's cadence, in slow-wave sleep
+    /// the hand walks the ledger to the first episode that is not spent, within
+    /// `RIPPLE_SCAN`, counts its replay and returns its index + 1 for worker 0 to deliver in
+    /// phase 3; in REM the same walk lowers that episode's tag and returns 0; awake, off the
+    /// cadence, or with no episode to find, 0.
+    fn ripple(&mut self) -> u32 {
+        if !RIPPLE_CADENCE.is_due(self.tick) {
+            return 0;
+        }
+        let stage = self.homeostasis.sleep_stage;
+        if stage != STAGE_SWS && stage != STAGE_REM {
+            return 0;
+        }
+        // SAFETY: before the tick's first barrier; every worker is parked at it.
+        let episodes = unsafe { self.shared.episodes.as_mut_slice() };
+        for _ in 0..RIPPLE_SCAN {
+            let Some(index) = self.hippocampus.next_hand() else {
+                return 0;
+            };
+            let Some(episode) = episodes.get_mut(index as usize) else {
+                abort("the ledger's hand names an episode outside its arena");
+            };
+            if episode.is_spent() {
+                continue;
+            }
+            if stage == STAGE_SWS {
+                episode.replay();
+                self.replays = self.replays.saturating_add(1);
+                // Below the ledger's length, which is below `u32::MAX`: index + 1 fits.
+                return index.wrapping_add(1);
+            }
+            episode.depotentiate();
+            self.depotentiations = self.depotentiations.saturating_add(1);
+            return 0;
+        }
+        0
+    }
+
+    /// After a tick, between ticks (ADR-0036, ADR-0037): the workers' spike counts into the
+    /// open bin; on the bin's cadence the bin closes into the window; on the window's cadence
+    /// the gain is regulated, the window cleared and the sleep stage stepped. The cadences
+    /// are masks on the tick, so a loaded engine continues the window it was written in.
     fn tally(&mut self) {
         let spikes = self
             .shared
@@ -597,6 +830,7 @@ impl<const CAP: usize> Executor<CAP> {
             if WINDOW_CADENCE.is_due(self.tick) {
                 self.homeostasis
                     .regulate(saturation_ceiling(self.shared.units.len()));
+                self.homeostasis.step_sleep();
             }
         }
     }
@@ -963,6 +1197,10 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared
             .gain
             .store(self.homeostasis.synaptic_gain_q16, Ordering::Relaxed);
+        // The episode this tick's phase 3 replays, if a ripple is due in slow-wave sleep
+        // (ADR-0038), likewise.
+        let replay = self.ripple();
+        self.shared.replay.store(replay, Ordering::Relaxed);
         self.shared.barrier.wait();
         self.worker0.phase_turns(&self.shared, now);
         self.shared.barrier.wait();
@@ -1263,6 +1501,24 @@ impl<const CAP: usize> Worker<CAP> {
                     self.wake(shared, unit);
                 } else {
                     self.deliver(shared, unit, payload);
+                }
+            }
+            // The ripple (ADR-0038): the replay drive to every unit of the episode the
+            // coordinator chose, in the pattern's order, so that they fire together at the
+            // next tick and phase 2 pairs every synapse among them as potentiation.
+            let replay = shared.replay.load(Ordering::Relaxed);
+            if replay != 0 {
+                // SAFETY (phase 3): the ledger is written only between ticks by the
+                // coordinator; every reference in a phase is shared.
+                let Some(episode) =
+                    (unsafe { shared.episodes.get(replay.wrapping_sub(1) as usize) })
+                else {
+                    abort("a ripple names an episode outside the ledger");
+                };
+                for &unit in episode.pattern() {
+                    for _ in 0..REPLAY_MESSAGES {
+                        self.deliver(shared, unit, REPLAY_MESSAGE);
+                    }
                 }
             }
         }

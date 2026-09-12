@@ -88,6 +88,12 @@ pub const SECTION_MODULATOR: u32 = 42;
 /// branching-ratio estimator; always written and required, so that the gain a run continues
 /// under, and the window it was in, are in the image.
 pub const SECTION_HOMEOSTASIS: u32 = 43;
+/// The engine's `HippocampalAttractorState` (ADR-0038): the ledger's length and its hand;
+/// always written and required.
+pub const SECTION_HIPPOCAMPUS: u32 = 44;
+/// The episodic ledger (ADR-0038): the appended `Episode` records, in order; written when the
+/// ledger is not empty and required when the hippocampal record says it is not.
+pub const SECTION_EPISODE: u32 = 45;
 
 /// Why a header is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,7 +184,15 @@ impl CortexFileHeader {
     ///   the sleep flag to one byte, and the reserved bytes became the estimator's window; the
     ///   homeostasis section (`SECTION_HOMEOSTASIS`, 43) holds the engine's record, always. A
     ///   version-11 image has no such section, and its loader would refuse one.
-    pub const FORMAT_VERSION: u32 = 12;
+    /// - 13: `HomeostaticDrivePool` `[4..8)` is the sleep pressure, `[18)` the sleep stage
+    ///   (awake, slow-wave, REM) and `[22..24)` the sleep shift and the stage's windows
+    ///   (ADR-0037); `HippocampalAttractorState` `[12..16)` is the ledger's length (the replay
+    ///   countdown until now, finding F-29) and `[24..28)` its hand; `Episode` is a new 64-byte
+    ///   record; the hippocampal section (`SECTION_HIPPOCAMPUS`, 44) holds the engine's record,
+    ///   always, and the episode section (`SECTION_EPISODE`, 45) the ledger (ADR-0038). A
+    ///   version-12 image's sleep flag reads as a stage and its reserved bytes as a shift of
+    ///   zero, but it has no hippocampal section, so its loader would refuse it.
+    pub const FORMAT_VERSION: u32 = 13;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -362,7 +376,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 12);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 13);
     }
 
     #[test]
@@ -408,8 +422,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            12,
-            "ADR-0036: the homeostasis record and its section"
+            13,
+            "ADR-0037, ADR-0038: the sleep fields, the ledger and its sections"
         );
     }
 
@@ -495,9 +509,11 @@ mod tests {
                 SECTION_TERM,
                 SECTION_AMENDMENT,
                 SECTION_MODULATOR,
-                SECTION_HOMEOSTASIS
+                SECTION_HOMEOSTASIS,
+                SECTION_HIPPOCAMPUS,
+                SECTION_EPISODE
             ),
-            (1, 38, 39, 40, 41, 42, 43),
+            (1, 38, 39, 40, 41, 42, 43, 44, 45),
             "the Specified kinds, the amendment arena (ADR-0031), the modulator (ADR-0032) and the homeostasis state (ADR-0036)"
         );
     }

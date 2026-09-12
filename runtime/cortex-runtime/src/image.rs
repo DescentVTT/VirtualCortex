@@ -10,20 +10,24 @@
 //! quiescent point: every mailbox empty, no token in flight; a scheduled unit with an empty
 //! mailbox is written idle and woken again on load; the executor's clock is written with it
 //! and resumed by the loader, so the stamps keep their meaning (ADR-0033). The engine's
-//! modulation state (ADR-0032: the modulator record and the baseline) is a section of its
-//! own, always written, so that the image defines the run (§8.3).
+//! modulation state (ADR-0032: the modulator record and the baseline), its homeostasis state
+//! (ADR-0036, ADR-0037) and its hippocampal state (ADR-0038) are sections of their own, always
+//! written, and the episodic ledger a section written when it is not empty, so that the image
+//! defines the run (§8.3).
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_connectome::{
-    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_HOMEOSTASIS,
-    SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
+    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_EPISODE, SECTION_HIPPOCAMPUS,
+    SECTION_HOMEOSTASIS, SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE,
+    SectionEntry, crc64,
 };
 use cortex_core::{
     DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, TICK_NS,
     WorkerWheel,
 };
 use cortex_executive::PolicyAmendment;
-use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, HomeostaticDrivePool};
+use cortex_hippocampus::{Episode, HippocampalAttractorState};
+use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, HomeostaticDrivePool, SLEEP_SHIFT_MAX};
 use cortex_neuromod::NeuromodulatorState;
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -84,11 +88,19 @@ pub enum ImageError {
     /// (`cortex_core::TICK_NS`; ADR-0033): the image's delays and stamps would mean other
     /// times.
     TickMismatch(u32),
-    /// The homeostasis record (section kind 43, ADR-0036) is outside the bounds or the
-    /// consistency the rules keep: a gain outside its bounds, a full window, a count above the
-    /// cap, a sum beyond what the pairs allow or inconsistent with the others, a reserved
-    /// byte, or a window whose bin count is not the one the clock at the write implies.
+    /// The homeostasis record (section kind 43, ADR-0036, ADR-0037) is outside the bounds or
+    /// the consistency the rules keep: a gain outside its bounds, a full window, a count above
+    /// the cap, a sum beyond what the pairs allow or inconsistent with the others, a stage the
+    /// constants do not name, a pressure above 1.0, a sleep stage at its budget, or a window
+    /// whose bin count is not the one the clock at the write implies.
     MalformedHomeostasis,
+    /// The hippocampal record (section kind 44, ADR-0038) is not well formed (its hand at or
+    /// beyond its length, a reserved byte) or its length is not the episode section's count.
+    MalformedHippocampus,
+    /// An episode (section kind 45, ADR-0038) is one `Episode::tag` could not have produced
+    /// (no unit, too many, a unit twice, a pad or reserved byte) or names a unit outside the
+    /// arena.
+    MalformedEpisode(u32),
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -328,6 +340,21 @@ impl Image {
             64,
             exec.homeostasis().encode().to_vec(),
         ));
+        // The engine's hippocampal state, always, and the ledger when it is not empty: what
+        // the ripples replay changes what a run does (ADR-0038).
+        sections.push((
+            SECTION_HIPPOCAMPUS,
+            64,
+            exec.hippocampus().encode().to_vec(),
+        ));
+        let episodes = exec.episodes();
+        if !episodes.is_empty() {
+            let mut episode_bytes = Vec::with_capacity(episodes.len().saturating_mul(64));
+            for e in episodes {
+                episode_bytes.extend_from_slice(&e.encode());
+            }
+            sections.push((SECTION_EPISODE, 64, episode_bytes));
+        }
         // The offsets of an image held in memory: each fits, and saturating says so by name.
         let directory_len = (sections.len() as u64).saturating_mul(64);
         let mut offset = directory_len.saturating_add(64);
@@ -410,7 +437,7 @@ impl Image {
             let entry = SectionEntry::decode(entry_bytes);
             let expected_size = match entry.kind {
                 SECTION_NEURON | SECTION_SYNAPSE | SECTION_AMENDMENT | SECTION_MODULATOR
-                | SECTION_HOMEOSTASIS => 64,
+                | SECTION_HOMEOSTASIS | SECTION_HIPPOCAMPUS | SECTION_EPISODE => 64,
                 SECTION_PLASTIC_DELTA => 16,
                 other => return Err(ImageError::Directory(other)),
             };
@@ -434,6 +461,9 @@ impl Image {
             find(SECTION_MODULATOR).ok_or(ImageError::MissingSection(SECTION_MODULATOR))?;
         let homeostasis =
             find(SECTION_HOMEOSTASIS).ok_or(ImageError::MissingSection(SECTION_HOMEOSTASIS))?;
+        let hippocampus =
+            find(SECTION_HIPPOCAMPUS).ok_or(ImageError::MissingSection(SECTION_HIPPOCAMPUS))?;
+        let episode = find(SECTION_EPISODE);
         if neuron.record_count() != header.num_neurons
             || synapse.record_count() != header.num_synapses
         {
@@ -446,11 +476,13 @@ impl Image {
         let blocks = synapse.record_count() as usize;
         let deltas = delta.map_or(0, |d| d.record_count() as usize);
         let amendments = amendment.map_or(0, |a| a.record_count() as usize);
+        let episodes = episode.map_or(0, |e| e.record_count() as usize);
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
             deltas,
             amendments: amendments.saturating_add(config.amendments),
+            episodes: episodes.saturating_add(config.episodes),
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -581,10 +613,38 @@ impl Image {
             if pool.control_step_q0_16 > CONTROL_STEP_MAX_Q0_16 {
                 return Err(ImageError::Config(ConfigError::ControlStepOutOfRange));
             }
+            if pool.sleep_shift > SLEEP_SHIFT_MAX {
+                return Err(ImageError::Config(ConfigError::SleepShiftOutOfRange));
+            }
             if pool.window_bins != Executor::<CAP>::window_bins_at(header.written_tick)
                 || !exec.set_homeostasis(pool)
             {
                 return Err(ImageError::MalformedHomeostasis);
+            }
+        }
+        {
+            // The ledger (ADR-0038): every episode well formed and naming units of the arena,
+            // appended in the image's order; then the hippocampal record, one, well formed,
+            // its length the section's count (or zero without a section: an image whose
+            // record says the ledger is not empty needs the section).
+            if hippocampus.record_count() != 1 {
+                return Err(ImageError::Directory(SECTION_HIPPOCAMPUS));
+            }
+            if let Some(section) = episode {
+                for (i, record) in section_of(bytes, &section)?.chunks_exact(64).enumerate() {
+                    let e = Episode::decode(record.try_into().unwrap_or(&[0; 64]));
+                    if !e.is_well_formed() || !exec.load_episode(e) {
+                        return Err(ImageError::MalformedEpisode(i as u32));
+                    }
+                }
+            }
+            let record = section_of(bytes, &hippocampus)?;
+            let state = HippocampalAttractorState::decode(record.try_into().unwrap_or(&[0; 64]));
+            if state.episodes > 0 && episode.is_none() {
+                return Err(ImageError::MissingSection(SECTION_EPISODE));
+            }
+            if !exec.set_hippocampus(state) {
+                return Err(ImageError::MalformedHippocampus);
             }
         }
         // The clock resumes where the image was written, so every stamp in it (a unit's last

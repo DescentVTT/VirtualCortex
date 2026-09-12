@@ -308,6 +308,8 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             amendments: 0,
             modulation_baseline_q16: MODULATION_ONE_Q16,
             control_step_q0_16: 0,
+            sleep_shift: 0,
+            episodes: 0,
         },
         wire_random,
         20_000,
