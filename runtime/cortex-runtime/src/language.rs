@@ -47,7 +47,8 @@ impl From<ParseError> for LanguageError {
 /// one `ROLE_*` bit.
 pub const fn role_concept(role: u8) -> Option<u32> {
     if role_slot(role).is_some() {
-        Some(ROLE_CONCEPT_BASE | role as u32)
+        // One role bit, at most 8, into the band's clear low nibble.
+        Some(ROLE_CONCEPT_BASE.wrapping_add(role as u32))
     } else {
         None
     }
@@ -239,6 +240,37 @@ mod tests {
         assert_eq!(role_slot(0), None);
         assert_eq!(role_slot(ROLE_AFFECT | ROLE_ACTION), None);
         assert_eq!(DECODE_FLOOR_Q16, 0x2000);
+    }
+
+    #[test]
+    fn the_affect_role_is_read_encoded_and_decoded_like_the_others() {
+        let book: [HypervectorBody; 8] =
+            core::array::from_fn(|i| HypervectorBody::from_seed(70u64.wrapping_add(i as u64)));
+        let roles: [HypervectorBody; 4] =
+            core::array::from_fn(|i| HypervectorBody::from_seed(80u64.wrapping_add(i as u64)));
+        let mut frame = LinguisticFrameSlot::new(0, 0, 0);
+        assert!(frame.bind_role(ROLE_AFFECT, 6, Q16_ONE));
+        assert!(frame.bind_role(ROLE_SUBJECT, 1, Q16_ONE));
+        assert_eq!(concept_in(&frame, ROLE_AFFECT), Some(6));
+        assert_eq!(concept_in(&frame, ROLE_ACTION), None);
+        let sealed = encode_frame(&frame, &roles, &book).unwrap();
+        assert_eq!(
+            sealed,
+            HypervectorBody::bundle(&[roles[0].bind(&book[1]), roles[3].bind(&book[6])]).unwrap(),
+            "the subject's pair, then the affect's: slot order"
+        );
+        let decoded = decode_frame(&sealed, &roles, &book, 0, 0, 0);
+        assert_eq!(decoded.filled_roles(), ROLE_SUBJECT | ROLE_AFFECT);
+        assert_eq!(
+            (
+                concept_in(&decoded, ROLE_SUBJECT),
+                concept_in(&decoded, ROLE_AFFECT)
+            ),
+            (Some(1), Some(6))
+        );
+        let (index, _, confidence) = read_role(&sealed, &roles[3], &book).unwrap();
+        assert_eq!(index, 6);
+        assert!(confidence >= DECODE_FLOOR_Q16);
     }
 
     #[test]
