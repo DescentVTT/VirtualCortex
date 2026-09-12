@@ -27,6 +27,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         trace_capacity: total as usize,
         amendments: 0,
         modulation_baseline_q16: MODULATION_ONE_Q16,
+        control_step_q0_16: 0,
     })
     .expect("a valid configuration");
     let inject = exec.injector();

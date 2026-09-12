@@ -20,8 +20,9 @@
 | `synapse/step_stdp` | one `step_stdp_all` on a full block with pseudo-random postsynaptic stamps, four window exponentiations included | §8.8, ADR-0022 |
 | `vocal/render_x16` | one epoch of voice: sixteen samples through the source and three resonators of `VocalSynth` (divide by 16) | §8.16, ADR-0027 |
 | `executor/push_to_turn` | one injected message through the delivery phase into a mailbox and the turn that drains and integrates it, on one worker: two ticks of the three-phase loop | R-1 steps 2–5, ADR-0023 |
+| `executor/idle_tick/{1,2,4}` | one tick with every unit at rest, on one, two and four workers: the four barrier waits, the coordinator's publication of the modulation and the gain, and the population tally; the subject of whitepaper §11.1's conservative-lookahead question | §8.5, ADR-0035 |
 
-Inputs come from `cortex_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: the loop across several workers (the barriers' cost with contention), and T-8 throughput, which has no subject yet.
+Inputs come from `cortex_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: the loop across several workers under load (`idle_tick` measures the barriers without contention), and T-8 throughput, which has no subject yet.
 
 ## Running
 

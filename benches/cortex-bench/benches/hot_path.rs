@@ -332,6 +332,32 @@ fn executor(c: &mut Criterion) {
     group.finish();
 }
 
+/// The cost of a tick that does nothing (ADR-0035): the four barrier waits, the coordinator's
+/// publication of the tick's modulation and gain, and the tally, on one, two and four workers
+/// with every unit at rest. The subject whitepaper §11.1 names for the conservative-lookahead
+/// question; admissible only under the protocol of `docs/benchmarks/README.md`.
+fn idle_tick(c: &mut Criterion) {
+    let mut group = c.benchmark_group("executor");
+    group.throughput(Throughput::Elements(1));
+    for workers in [1usize, 2, 4] {
+        group.bench_function(format!("idle_tick/{workers}"), |b| {
+            let mut exec = Executor::<64>::new(Config {
+                workers,
+                units: 8,
+                nodes_per_worker: 64,
+                injector_capacity: 64,
+                ..Config::default()
+            })
+            .expect("a valid configuration");
+            b.iter(|| {
+                exec.tick();
+                black_box(exec.ticks())
+            });
+        });
+    }
+    group.finish();
+}
+
 /// One epoch of voice (ADR-0027): sixteen samples at 16 kHz through the source and the three
 /// resonators, from a neutral frame with jitter, shimmer and aspiration (divide by 16).
 fn vocal(c: &mut Criterion) {
@@ -354,6 +380,6 @@ fn vocal(c: &mut Criterion) {
 
 criterion_group!(
     benches, wheel, efficacy, gating, ignition, mailbox, gate, neuron, stp, synapse, executor,
-    vocal
+    idle_tick, vocal
 );
 criterion_main!(benches);

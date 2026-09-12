@@ -15,14 +15,15 @@
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_connectome::{
-    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_MODULATOR, SECTION_NEURON,
-    SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
+    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_HOMEOSTASIS,
+    SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
     DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, TICK_NS,
     WorkerWheel,
 };
 use cortex_executive::PolicyAmendment;
+use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, HomeostaticDrivePool};
 use cortex_neuromod::NeuromodulatorState;
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -83,6 +84,11 @@ pub enum ImageError {
     /// (`cortex_core::TICK_NS`; ADR-0033): the image's delays and stamps would mean other
     /// times.
     TickMismatch(u32),
+    /// The homeostasis record (section kind 43, ADR-0036) is not one the rules produce: a gain
+    /// outside its bounds, a full window, a count above the cap, a sum beyond what the pairs
+    /// allow, a reserved byte, or a window whose bin count is not the one the clock at the
+    /// write implies.
+    MalformedHomeostasis,
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -315,6 +321,13 @@ impl Image {
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
+        // The engine's homeostasis state, always: the gain and the estimator's window change
+        // what a run does, so they are in the image (ADR-0036).
+        sections.push((
+            SECTION_HOMEOSTASIS,
+            64,
+            exec.homeostasis().encode().to_vec(),
+        ));
         // The offsets of an image held in memory: each fits, and saturating says so by name.
         let directory_len = (sections.len() as u64).saturating_mul(64);
         let mut offset = directory_len.saturating_add(64);
@@ -396,7 +409,8 @@ impl Image {
                 .ok_or(ImageError::Truncated)?;
             let entry = SectionEntry::decode(entry_bytes);
             let expected_size = match entry.kind {
-                SECTION_NEURON | SECTION_SYNAPSE | SECTION_AMENDMENT | SECTION_MODULATOR => 64,
+                SECTION_NEURON | SECTION_SYNAPSE | SECTION_AMENDMENT | SECTION_MODULATOR
+                | SECTION_HOMEOSTASIS => 64,
                 SECTION_PLASTIC_DELTA => 16,
                 other => return Err(ImageError::Directory(other)),
             };
@@ -418,6 +432,8 @@ impl Image {
         let amendment = find(SECTION_AMENDMENT);
         let modulator =
             find(SECTION_MODULATOR).ok_or(ImageError::MissingSection(SECTION_MODULATOR))?;
+        let homeostasis =
+            find(SECTION_HOMEOSTASIS).ok_or(ImageError::MissingSection(SECTION_HOMEOSTASIS))?;
         if neuron.record_count() != header.num_neurons
             || synapse.record_count() != header.num_synapses
         {
@@ -552,6 +568,24 @@ impl Image {
             exec.set_modulator(NeuromodulatorState::decode(
                 record[0..16].try_into().unwrap_or(&[0; 16]),
             ));
+        }
+        {
+            // One record, the engine's homeostasis state (ADR-0036): its step within the
+            // configuration's bound, the record as the rules leave it, and its window at the
+            // bin count the clock at the write implies.
+            if homeostasis.record_count() != 1 {
+                return Err(ImageError::Directory(SECTION_HOMEOSTASIS));
+            }
+            let record = section_of(bytes, &homeostasis)?;
+            let pool = HomeostaticDrivePool::decode(record.try_into().unwrap_or(&[0; 64]));
+            if pool.control_step_q0_16 > CONTROL_STEP_MAX_Q0_16 {
+                return Err(ImageError::Config(ConfigError::ControlStepOutOfRange));
+            }
+            if pool.window_bins != Executor::<CAP>::window_bins_at(header.written_tick)
+                || !exec.set_homeostasis(pool)
+            {
+                return Err(ImageError::MalformedHomeostasis);
+            }
         }
         // The clock resumes where the image was written, so every stamp in it (a unit's last
         // spike, a block's, the intervals the plasticity rules and the sweep read from them)

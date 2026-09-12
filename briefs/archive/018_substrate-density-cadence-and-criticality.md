@@ -1,7 +1,16 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-12
 ---
+
+> **Executed 2026-09-12 in pull request #46.** Writes ADR-0034 (synaptic density), ADR-0035
+> (the cadence and the population tally) and ADR-0036 (criticality control); resolves finding
+> F-28; image format 12; the determinism pin unmoved. Every deliverable is done; three notes
+> under the boxes say where the tree departs from the text, the largest under deliverable 6:
+> the branching ratio does not settle at 1 on a test-sized network, and the reason is
+> hypothesis H-8. The report is in the pull request and in `CHANGELOG.md`. The body below
+> describes the tree before execution and is not maintained; its relative links gained one
+> `../`.
 
 # Brief 018 — The substrate re-examined: synaptic density, a multirate cadence, and closed-loop criticality control
 
@@ -31,7 +40,7 @@ that measurement; **one ADR** implements criticality control as an integer rule 
 population activity (Wilting and Priesemann 2018), a global synaptic gain as the actuator,
 multiplicative and bounded, moved once per window by a bounded step, composed by the executor
 and persisted in the image, with the reference dynamics unchanged at the default step of zero
-(the modulator's precedent, [ADR-0032](../docs/adr/0032-three-factor-plasticity.md)). Per-unit
+(the modulator's precedent, [ADR-0032](../../docs/adr/0032-three-factor-plasticity.md)). Per-unit
 multiplicative scaling (Turrigiano) is written down as Specified with its closed-form rule and
 the bytes it will take; the annealing and the quench are not adopted, with the reasons. The
 whitepaper, README, `CLAUDE.md`, the ADR index and the changelog say all of this, two document
@@ -40,21 +49,21 @@ defects found on the way are corrected, and this brief is archived with every ch
 ## Standing directives
 
 - Every claim is Implemented, Specified, Target or Hypothesis. A number is Measured only from an
-  admissible run ([ADR-0010](../docs/adr/0010-measured-or-target.md)); the proposal's "severe
+  admissible run ([ADR-0010](../../docs/adr/0010-measured-or-target.md)); the proposal's "severe
   barrier skew" and "4.29 GB halved" are not measurements and MUST NOT be written as findings.
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper
   §11, never a silent edit.
 - No `f32`/`f64`; Q16.16 in `i32`/`u32`, widened to `i64` (or `i128` where a product needs it)
   to multiply; every operation on a state field saturates or wraps by name
-  (`clippy::arithmetic_side_effects` is denied everywhere, [ADR-0029](../docs/adr/0029-structural-enforcement.md)).
+  (`clippy::arithmetic_side_effects` is denied everywhere, [ADR-0029](../../docs/adr/0029-structural-enforcement.md)).
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; no heap types, threads
   or `unsafe` in a state crate; the runtime's arena access is the one `unsafe`
-  ([ADR-0023](../docs/adr/0023-executor.md)).
+  ([ADR-0023](../../docs/adr/0023-executor.md)).
 - A change to a record bumps `CortexFileHeader::FORMAT_VERSION`, updates its §5.2 table and
   gets a changelog entry (rule L-6).
 - A run is `(image, seed, input trace)` (§8.3): anything that changes what a run does is in
   the image, not in a configuration or a constant a caller can vary.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only
   with a stated reason; the mutation gate on the changed lines must pass.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep
   their names.
@@ -75,8 +84,8 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
   eight-bit weight saves one sixteenth of the arena, not half; eight synapses per block would
   need the delay at 8 bits (a 2.55 ms horizon, below every coarse-ring delay), no stored release
   (the delivering worker has neither the source's STP factors nor its weight at the spike,
-  [ADR-0022](../docs/adr/0022-synapse-fan-out-and-stdp.md)) and an 8-bit trace, which
-  [ADR-0032](../docs/adr/0032-three-factor-plasticity.md) rejected (0.0100 is 1.3 LSB of Q0.7).
+  [ADR-0022](../../docs/adr/0022-synapse-fan-out-and-stdp.md)) and an 8-bit trace, which
+  [ADR-0032](../../docs/adr/0032-three-factor-plasticity.md) rejected (0.0100 is 1.3 LSB of Q0.7).
 - `crates/cortex-core/src/dynamics/synapse.rs`: `STDP_A_PLUS_Q1_15` 328, `STDP_A_MINUS_Q1_15`
   344 (the proposal's 1.05 ratio is right); the chain word's 28 bits, `CHAIN_MASK`; the STP
   factors are the *unit's* (`stp_u_rel`, `stp_r_ves` in `neuron.rs`, `step_stp` in
@@ -86,7 +95,7 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
   no homeostasis, thalamus, immune or metabolic rule is composed, so no "slow node
   synchronising at every tick" exists in the tree. `docs/benchmarks/README.md` says what is not
   measured: "the loop across several workers (the barriers' cost with contention)".
-  [ADR-0023](../docs/adr/0023-executor.md)'s consequences already name the four waits as "the
+  [ADR-0023](../../docs/adr/0023-executor.md)'s consequences already name the four waits as "the
   dominant cost of an idle tick and a T-3 measurement subject".
 - `runtime/cortex-runtime/src/executor.rs`: units are not owned by workers; a work-stealing
   deque moves a unit to whichever worker pops it, so a region a worker could step ahead of
@@ -126,26 +135,26 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
 
 ## Deliverables
 
-1. [ ] **Density** (one ADR, no code). The four-synapse block stands. The ADR carries the
+1. [x] **Density** (one ADR, no code). The four-synapse block stands. The ADR carries the
    byte accounting of the Context, rejects eight-bit logarithmic weights (a pairing of 1 % is
-   below one level of a 256-level logarithmic range; [ADR-0012](../docs/adr/0012-synaptic-weight-q1-15.md)
+   below one level of a 256-level logarithmic range; [ADR-0012](../../docs/adr/0012-synaptic-weight-q1-15.md)
    rejected Q8.8 for the same resolution reason, and stochastic rounding is a change to the
    numeric model), eight synapses per block (the delay, the release and the trace above) and
    a far-memory synapse tier built into the engine (a block is touched only when its unit
    fires, so cold blocks are already cold pages; placement is the OS's, and a hint at load is
    the `mmap` round's), and names the density levers in order with the measurement that
    admits each: the stored release as the block's `(u, r)` at the spike (2 bytes for 16,
-   widening [ADR-0022](../docs/adr/0022-synapse-fan-out-and-stdp.md)'s overwrite defect); a
+   widening [ADR-0022](../../docs/adr/0022-synapse-fan-out-and-stdp.md)'s overwrite defect); a
    column-relative target id; the token width (finding F-23). Whitepaper §11.1 gains the
    hypothesis that the block arena is the binding constraint, with T-2 on a reference image
    as the test.
-2. [ ] **Cadence** (`cortex-core`, part of the second ADR). `Cadence::new(period_shift, phase)
+2. [x] **Cadence** (`cortex-core`, part of the second ADR). `Cadence::new(period_shift, phase)
    -> Option<Cadence>` (refused for a shift of 64 or more and for a phase at or beyond the
    period), `is_due(tick: u64) -> bool` as `tick & (period − 1) == phase`, `period()`,
    `phase()`. A power-of-two period so that the wrap of the clock is exact and the test is a
    mask. Tests at both bounds, across the wrap, and the property walk of `testkit/prop.rs`
    (every tick is due on exactly one phase of a period).
-3. [ ] **The tally and the barrier benchmark** (`cortex-runtime`, `cortex-bench`; the second
+3. [x] **The tally and the barrier benchmark** (`cortex-runtime`, `cortex-bench`; the second
    ADR). Every worker publishes the number of units that fired in its turns phase; the
    coordinator sums them between ticks (a sum of integers, so the count is the same on any
    worker count). `benches/cortex-bench` gains `executor/idle_tick` on one, two and four
@@ -154,7 +163,7 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
    conservative lookahead (synchronising per minimum delay instead of per tick, which needs
    units owned by workers) with the decision rule: the idle tick at the reference platform's
    worker count, from an admissible run, against the tick's budget.
-4. [ ] **The estimator and the controller** (`cortex-homeostasis`, the third ADR).
+4. [x] **The estimator and the controller** (`cortex-homeostasis`, the third ADR).
    `HomeostaticDrivePool` becomes: `energy_level` `[0..4)`, `sensory_fatigue` `[4..8)`,
    `curiosity_drive` `[8..12)`, `bin_activity: u32` `[12..16)` (spikes counted in the open bin;
    `thermal_stress` removed, finding), `circadian_phase: u16` `[16..18)`, `sleep_mode_active:
@@ -185,7 +194,8 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
    rules). Tests: a synthetic AR(1) series recovers its slope within rounding, the silent and
    the constant windows, both rails of the gain, $\kappa = 0$ leaves the gain bit for bit, the
    bytes, and the property walk. F-28 (the two fields with two owners or none).
-5. [ ] **The composition** (`cortex-runtime`, the third ADR). `Config::control_step_q0_16`
+   **Departure:** `regulate` takes a saturation ceiling and `is_saturated` exists: a window at or above the ceiling per bin on average is read as $\hat\sigma = 16$, since a saturated population no longer forms the branching process the slope reads (ADR-0036).
+5. [x] **The composition** (`cortex-runtime`, the third ADR). `Config::control_step_q0_16`
    (default 0; refused above `CONTROL_STEP_MAX_Q0_16`); one `HomeostaticDrivePool` per engine,
    `homeostasis()` between ticks; the gain published to the workers before every tick and
    applied by the turn holder to the basal and the apical sums before `integrate` (rounded
@@ -199,7 +209,8 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
    configuration's. `FORMAT_VERSION` 12, with the reason in its list. The pin's `Config`
    literal gains the field, and the pin holds: with $\kappa = 0$ the gain is 1.0 and the
    turn's product is exact.
-6. [ ] **The exit test** (`runtime/cortex-runtime/tests/`). With $\kappa > 0$: a network wired
+   **Departure:** the executor regulates with a ceiling of one spike per unit per bin, and the loader also refuses a record whose `window_bins` is not the count the clock at the write implies (`MalformedHomeostasis`), both with the well-formedness clauses.
+6. [x] **The exit test** (`runtime/cortex-runtime/tests/`). With $\kappa > 0$: a network wired
    super-critical settles with $\hat\sigma$ within a stated distance of 1 and the gain below
    1, its activity bounded; a network wired sub-critical under a steady drive ends with the
    gain above 1 and activity that persists; a silent engine's gain climbs to the ceiling and
@@ -207,17 +218,18 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
    run is bit-identical on one and four workers (the tally is a sum); the homeostasis state
    written mid-window round-trips through the image and a loaded engine continues alike; the
    loader's refusals, each on its own.
-7. [ ] **Specified and not adopted.** Whitepaper §8.8 gains a Specified row for per-unit
+   **Departure:** the super-critical clause does not hold on a network: on a 64-unit recurrent network with depleting synapses avalanches finish inside a bin and the slope reads them as sub-critical, so no network settles with $\hat\sigma$ near 1 (hypothesis H-8, with its protocol). The composition is held instead against an oracle record fed the same per-bin counts on a network without synapses: a growing window lowers the gain, a decaying one raises it, a straight line leaves it, a saturated one lowers it. The sub-critical, silent, $\kappa = 0$, one-and-four-worker, round-trip and refusal clauses hold as written.
+7. [x] **Specified and not adopted.** Whitepaper §8.8 gains a Specified row for per-unit
    multiplicative scaling (Turrigiano): a gain per unit in `[52..54)` of
    `DendriticSuperNeuron`, lowered by a step at each spike and relaxing toward its ceiling
    between spikes by $(1 - 2^{-k})^{\Delta t}$ at the next event (the STP pattern of
-   [ADR-0019](../docs/adr/0019-short-term-plasticity.md)), so a silent unit's gain rises and
+   [ADR-0019](../../docs/adr/0019-short-term-plasticity.md)), so a silent unit's gain rises and
    a busy unit's falls with no sweep. The third ADR says why columnar annealing (a seeded
    jitter changes the run's definition and nothing in the tree exhibits the deadlock it would
    escape) and an immune quench (the branching ratio has one owner; a second actuator in
-   `cortex-immune` gives it two, against [ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)'s
+   `cortex-immune` gives it two, against [ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)'s
    rule) are not adopted.
-8. [ ] **Documents.** Whitepaper §1.6 (the two Logic cells), §5.2.1 (the cadence and the
+8. [x] **Documents.** Whitepaper §1.6 (the two Logic cells), §5.2.1 (the cadence and the
    gain in the turn), §5.2.2 (format 12, section 43), §5.2.16 (the table, the API, the status,
    the rule with executable assertions), §6.1 and R-12 (the tally), §8.3 (the tally is a sum),
    §8.4 (the cadence row), §8.7 (the section), §8.8 (the criticality rows and the new
@@ -231,15 +243,15 @@ Re-derived on 2026-09-12 against `main` at `3595208`.
 ## Not empowered
 
 - To change the tick, the wheel's geometry, or the phase structure of
-  [ADR-0023](../docs/adr/0023-executor.md): no new barrier, no static assignment of units to
+  [ADR-0023](../../docs/adr/0023-executor.md): no new barrier, no static assignment of units to
   workers, no phase pipelining. Conservative lookahead is an open question this round measures
   for, not one it decides.
-- To change the weight format ([ADR-0012](../docs/adr/0012-synaptic-weight-q1-15.md)) or the
+- To change the weight format ([ADR-0012](../../docs/adr/0012-synaptic-weight-q1-15.md)) or the
   block's layout, or to add a synapse tier: the density ADR decides what is *not* done and
   what would admit it.
 - To let the controller touch weights (an $O(S)$ sweep in the loop), or to put $\kappa$, the
   gain or the bin geometry in the amendment registry of
-  [ADR-0031](../docs/adr/0031-policy-amendment.md): they change what the engine does.
+  [ADR-0031](../../docs/adr/0031-policy-amendment.md): they change what the engine does.
 - To keep the pool out of the image or to write its section only sometimes: the gain changes
   results, so the section is always written and required (the review finding of PR #44).
 - To add a state crate, a dependency, `#[allow]`, a feature flag or a nightly attribute; to

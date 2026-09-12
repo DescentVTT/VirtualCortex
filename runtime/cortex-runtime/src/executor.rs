@@ -6,9 +6,11 @@
 //!
 //! 1. **Turns.** Each worker pops units from its deque, stealing from the others when it is
 //!    empty; for each, it claims the turn (`begin_turn`), drains the mailbox, orders the batch
-//!    by message value (§8.3), integrates, steps the short-term plasticity if the unit fired,
-//!    ends the turn, and keeps the unit on the active set for the next tick while it is not at
-//!    rest. Only the turn holder references the unit, exclusively.
+//!    by message value (§8.3), scales the two compartment sums by the tick's synaptic gain
+//!    (ADR-0036), integrates, steps the short-term plasticity if the unit fired, ends the
+//!    turn, and keeps the unit on the active set for the next tick while it is not at rest.
+//!    Only the turn holder references the unit, exclusively. At the end of the phase the
+//!    worker publishes how many of its units fired.
 //! 2. **Fan-out.** For each unit that fired in phase 1, the worker that ran it walks its chain:
 //!    per block, STDP against the targets' last spikes (settled, since every turn has ended)
 //!    into the eligibility traces, the traces consolidated into the weights under the tick's
@@ -22,8 +24,12 @@
 //!
 //! A message pushed in phase 2 or 3 of tick $t$ is integrated in phase 1 of tick $t + 1$, so a
 //! zero-delay synapse and a one-tick one arrive together; a delay $d$ scheduled in phase 2 is
-//! due at $t + d$. Nothing allocates after [`Executor::new`], nothing blocks but the spin
-//! barrier, and the only system call in the loop is the barrier's yield.
+//! due at $t + d$. Between ticks the coordinator sums the workers' spike counts into the
+//! homeostasis record's open bin, closes the bin on its cadence and regulates the gain on the
+//! window's (ADR-0035, ADR-0036): a schedule that is a function of the tick, so it adds no
+//! barrier and runs at the same ticks on every worker count. Nothing allocates after
+//! [`Executor::new`], nothing blocks but the spin barrier, and the only system call in the
+//! loop is the barrier's yield.
 
 use crate::arena::Arena;
 use crate::barrier::SpinBarrier;
@@ -32,13 +38,18 @@ use crate::image::{ImageError, WriteAheadLog};
 use crate::injector::{self, Injector};
 use crate::pool::Pools;
 use cortex_core::{
-    CHAIN_END, DendriticSuperNeuron, FlatTimingWheel, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
-    PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, message_efficacy_q16,
-    message_is_apical, spike_message, synapse_token, token_block, token_slot,
+    CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel, MODULATION_ONE_Q16,
+    NO_SPIKE_ON_RECORD, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE,
+    WorkerWheel, message_efficacy_q16, message_is_apical, spike_message, synapse_token,
+    token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
     AMENDMENT_PROPOSED, PARAM_SWEEP_BUDGET, PARAM_SWEEP_QUIET_TICKS, PolicyAmendment, spec_of,
+};
+use cortex_homeostasis::{
+    ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16, GAIN_ONE_Q16,
+    HomeostaticDrivePool,
 };
 use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
 use std::path::Path;
@@ -80,6 +91,12 @@ pub struct Config {
     /// built from an image, the image's baseline outranks this one: it changes what the run
     /// does, so it is part of the image (§8.3).
     pub modulation_baseline_q16: i32,
+    /// The control step $\kappa$ of criticality control (ADR-0036), Q0.16 at most
+    /// `CONTROL_STEP_MAX_Q0_16` (0.5): once per window the synaptic gain moves by
+    /// $1 - \kappa\,\operatorname{clamp}(\hat\sigma - 1, -1, 1)$. At 0 (the default) the gain
+    /// stays at 1.0 and the dynamics are the reference ones. For an engine built from an image,
+    /// the image's step and gain outrank this one: they change what the run does (§8.3).
+    pub control_step_q0_16: u16,
 }
 
 impl Default for Config {
@@ -95,6 +112,7 @@ impl Default for Config {
             trace_capacity: 0,
             amendments: 0,
             modulation_baseline_q16: MODULATION_ONE_Q16,
+            control_step_q0_16: 0,
         }
     }
 }
@@ -186,6 +204,8 @@ pub enum ConfigError {
     TooManyBlocks,
     /// `modulation_baseline_q16` is outside $[0, 1]$ (ADR-0032).
     ModulationOutOfRange,
+    /// `control_step_q0_16` is above `CONTROL_STEP_MAX_Q0_16` (ADR-0036).
+    ControlStepOutOfRange,
 }
 
 /// Why an injection is refused.
@@ -207,6 +227,41 @@ pub const ACTIVATE: u32 = u32::MAX;
 fn abort(message: &str) -> ! {
     eprintln!("cortex-runtime: invariant violated: {message}");
     std::process::abort()
+}
+
+/// The bin of population activity closes every $2^{12}$ ticks and the window is regulated
+/// every $2^{17}$ (ADR-0036), on cadences that are masks on the tick (ADR-0035).
+const BIN_CADENCE: Cadence = match Cadence::new(ACTIVITY_BIN_SHIFT, 0) {
+    Some(c) => c,
+    None => panic!("the bin shift is below the clock's width"),
+};
+const WINDOW_CADENCE: Cadence =
+    match Cadence::new(ACTIVITY_BIN_SHIFT.saturating_add(ACTIVITY_WINDOW_SHIFT), 0) {
+        Some(c) => c,
+        None => panic!("the window shift is below the clock's width"),
+    };
+/// A bin that is at least the wheel's horizon sees every direct descendant of its spikes in
+/// itself or the next bin (ADR-0036); a shorter one would read a delayed network as
+/// sub-critical and the controller would raise the gain without bound.
+const _: () = assert!(BIN_CADENCE.period() >= WorkerWheel::horizon_ticks());
+/// The activity above which a window is read as saturated (ADR-0036): one spike per unit per
+/// bin on average (about 24 Hz across the whole population at the fine tick). A population
+/// firing that often no longer forms the branching process the estimator's slope reads, so
+/// the ceiling reads such a window as supercritical instead; the units' own short-term
+/// depression keeps a network well below it in every run of the exit test.
+fn saturation_ceiling(units: usize) -> u32 {
+    units.max(1).min(u32::MAX as usize) as u32
+}
+
+/// The two compartment sums under the tick's gain: `sum × gain`, Q16.16, rounded to nearest
+/// and clamped to the width; exact at a gain of 1.0 (ADR-0036).
+#[inline]
+fn scaled(sum: i32, gain_q16: u32) -> i32 {
+    ((sum as i64)
+        .saturating_mul(gain_q16 as i64)
+        .saturating_add(0x8000)
+        >> 16)
+        .clamp(i32::MIN as i64, i32::MAX as i64) as i32
 }
 
 /// `Vec::push` that never grows: exceeding the capacity is a sizing bug, not an allocation.
@@ -245,6 +300,12 @@ struct Shared {
     /// The modulation this tick's fan-out consolidates with (ADR-0032): stored by the
     /// coordinator before the tick's first barrier, read by every worker after it.
     modulation: AtomicI32,
+    /// The synaptic gain this tick's turns scale their sums by (ADR-0036): stored by the
+    /// coordinator before the tick's first barrier, read by every worker after it.
+    gain: AtomicU32,
+    /// Per worker, the units that fired in its turns phase this tick: stored at the end of the
+    /// phase, summed by the coordinator after the tick (ADR-0036).
+    spikes: Box<[AtomicU32]>,
     stop: AtomicBool,
 }
 
@@ -330,6 +391,9 @@ pub struct Executor<const CAP: usize> {
     /// The engine's modulator record (ADR-0032): one for the engine until macro-columns exist.
     modulator: NeuromodulatorState,
     modulation_baseline_q16: i32,
+    /// The engine's homeostasis record (ADR-0036): the population tally, the branching-ratio
+    /// estimator's window and the synaptic gain; one for the engine until macro-columns exist.
+    homeostasis: HomeostaticDrivePool,
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -354,6 +418,9 @@ impl<const CAP: usize> Executor<CAP> {
         }
         if !(0..=MODULATION_ONE_Q16).contains(&config.modulation_baseline_q16) {
             return Err(ConfigError::ModulationOutOfRange);
+        }
+        if config.control_step_q0_16 > CONTROL_STEP_MAX_Q0_16 {
+            return Err(ConfigError::ControlStepOutOfRange);
         }
         let workers = config.workers;
         let deque_capacity = if config.deque_capacity == 0 {
@@ -382,6 +449,8 @@ impl<const CAP: usize> Executor<CAP> {
             delivered: (0..workers).map(|_| AtomicU64::new(0)).collect(),
             now: AtomicU32::new(0),
             modulation: AtomicI32::new(config.modulation_baseline_q16),
+            gain: AtomicU32::new(GAIN_ONE_Q16),
+            spikes: (0..workers).map(|_| AtomicU32::new(0)).collect(),
             stop: AtomicBool::new(false),
         });
         // Saturates for a pool that would not fit the address space; `Pools::new` refused that
@@ -436,6 +505,10 @@ impl<const CAP: usize> Executor<CAP> {
             amendment_capacity: config.amendments,
             modulator: NeuromodulatorState::new(),
             modulation_baseline_q16: config.modulation_baseline_q16,
+            homeostasis: HomeostaticDrivePool {
+                control_step_q0_16: config.control_step_q0_16,
+                ..HomeostaticDrivePool::new()
+            },
         })
     }
 
@@ -478,6 +551,54 @@ impl<const CAP: usize> Executor<CAP> {
     pub(crate) fn resume_clock(&mut self, tick: u64) {
         self.tick = tick;
         self.shared.now.store(tick as u32, Ordering::Relaxed);
+    }
+
+    /// The engine's homeostasis record (ADR-0036): the spikes of the open bin, the estimator's
+    /// window, the last branching-ratio estimate, the control step and the synaptic gain; one
+    /// for the engine until macro-columns exist, read between ticks.
+    pub fn homeostasis(&self) -> &HomeostaticDrivePool {
+        &self.homeostasis
+    }
+
+    /// The bins the homeostasis record's window holds at tick `tick`, as the tally leaves
+    /// them: the bins closed since the window began. An image whose record says otherwise
+    /// was not written by this executor.
+    pub(crate) fn window_bins_at(tick: u64) -> u8 {
+        let bins_per_window = WINDOW_CADENCE.period() >> ACTIVITY_BIN_SHIFT;
+        ((tick >> ACTIVITY_BIN_SHIFT) & bins_per_window.wrapping_sub(1)) as u8
+    }
+
+    /// The loader's: the homeostasis record an image holds, whose gain and step outrank the
+    /// configuration's (the image defines the run, §8.3). Refused for a record that is not
+    /// well formed, as the rules would never leave it.
+    pub(crate) fn set_homeostasis(&mut self, pool: HomeostaticDrivePool) -> bool {
+        if !pool.is_well_formed() {
+            return false;
+        }
+        self.homeostasis = pool;
+        true
+    }
+
+    /// After a tick, between ticks (ADR-0036): the workers' spike counts into the open bin;
+    /// on the bin's cadence the bin closes into the window; on the window's cadence the gain
+    /// is regulated and the window cleared. The cadences are masks on the tick, so a loaded
+    /// engine continues the window it was written in.
+    fn tally(&mut self) {
+        let spikes = self
+            .shared
+            .spikes
+            .iter()
+            .fold(0u32, |sum, s| sum.saturating_add(s.load(Ordering::Relaxed)));
+        self.homeostasis.count_activity(spikes);
+        if BIN_CADENCE.is_due(self.tick) {
+            if self.homeostasis.close_bin().is_none() {
+                abort("the homeostasis window was full before its cadence regulated it");
+            }
+            if WINDOW_CADENCE.is_due(self.tick) {
+                self.homeostasis
+                    .regulate(saturation_ceiling(self.shared.units.len()));
+            }
+        }
     }
 
     /// Worker threads, including the caller's.
@@ -838,6 +959,10 @@ impl<const CAP: usize> Executor<CAP> {
             Ordering::Relaxed,
         );
         self.modulator.decay_dopamine(DOPAMINE_TAU_SHIFT);
+        // The gain this tick's turns scale by (ADR-0036), likewise before the barrier.
+        self.shared
+            .gain
+            .store(self.homeostasis.synaptic_gain_q16, Ordering::Relaxed);
         self.shared.barrier.wait();
         self.worker0.phase_turns(&self.shared, now);
         self.shared.barrier.wait();
@@ -848,6 +973,7 @@ impl<const CAP: usize> Executor<CAP> {
         // A clock wraps by name (§8.1): the dynamics already see it as `tick as u32`.
         self.tick = self.tick.wrapping_add(1);
         self.rehydrate_pending();
+        self.tally();
     }
 
     /// `ticks` fine ticks.
@@ -942,6 +1068,7 @@ impl<const CAP: usize> Worker<CAP> {
     // ---------------------------------------------------------------- phase 1: turns
 
     fn phase_turns(&mut self, shared: &Shared, now: u32) {
+        let gain = shared.gain.load(Ordering::Relaxed);
         loop {
             let unit = match self.local.pop() {
                 Some(unit) => unit,
@@ -950,8 +1077,11 @@ impl<const CAP: usize> Worker<CAP> {
                     None => break,
                 },
             };
-            self.turn(shared, unit, now);
+            self.turn(shared, unit, now, gain);
         }
+        // The units this worker fired this tick, for the population tally (ADR-0036); a
+        // count below the unit count, which `Executor::new` bounded below `u32::MAX`.
+        shared.spikes[self.id].store(self.spiked.len() as u32, Ordering::Relaxed);
     }
 
     fn steal(&mut self, shared: &Shared) -> Option<u32> {
@@ -973,7 +1103,7 @@ impl<const CAP: usize> Worker<CAP> {
         None
     }
 
-    fn turn(&mut self, shared: &Shared, unit: u32, now: u32) {
+    fn turn(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32) {
         // SAFETY (phase 1): this worker took `unit` from a deque, where it was put by the one
         // `try_schedule` that moved its gate to scheduled, so no other worker holds it; no
         // phase-1 code references another unit, and phases 2 and 3 have ended at the barrier.
@@ -1009,6 +1139,9 @@ impl<const CAP: usize> Worker<CAP> {
                 basal = basal.saturating_add(efficacy);
             }
         }
+        // The tick's synaptic gain on every input of the unit (ADR-0036): the whitepaper's
+        // rescaling of every weight, as one factor per turn.
+        let (basal, apical) = (scaled(basal, gain), scaled(apical, gain));
         let previous_spike = u.last_soma_spike_tick;
         if u.integrate(basal, apical, now) {
             let elapsed = if previous_spike == NO_SPIKE_ON_RECORD {

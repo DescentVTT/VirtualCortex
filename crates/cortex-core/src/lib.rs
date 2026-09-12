@@ -1,9 +1,9 @@
 //! Neural state and dispatch: the `DendriticSuperNeuron` and `SynapseBlock` arena records, the
 //! turn gate and mailbox (ADR-0017), membrane integration (ADR-0018), short-term plasticity
 //! (ADR-0019), synaptic fan-out with STDP and the delivery encodings (ADR-0022), the Tier-2
-//! plastic delta and the records' image bytes (ADR-0024), and the two-tier timing wheel
-//! (ADR-0013); whitepaper §5.2.1. The executor that composes them is a
-//! runtime crate (§6.1; brief 012).
+//! plastic delta and the records' image bytes (ADR-0024), the two-tier timing wheel
+//! (ADR-0013) and the cadence of a rule slower than the tick (ADR-0035); whitepaper §5.2.1.
+//! The executor that composes them is a runtime crate (§6.1; brief 012).
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -13,6 +13,7 @@ pub mod dispatch;
 pub mod dynamics;
 pub mod serial;
 
+pub use dispatch::cadence::Cadence;
 pub use dispatch::wheel::{FlatTimingWheel, MAX_TOKEN, ScheduleError, TICK_NS, WorkerWheel};
 pub use dynamics::delta::{DELTA_END, DeltaChain, PlasticDelta};
 pub use dynamics::membrane::{
