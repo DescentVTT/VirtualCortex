@@ -84,10 +84,10 @@ pub enum ImageError {
     /// (`cortex_core::TICK_NS`; ADR-0033): the image's delays and stamps would mean other
     /// times.
     TickMismatch(u32),
-    /// The homeostasis record (section kind 43, ADR-0036) is not one the rules produce: a gain
-    /// outside its bounds, a full window, a count above the cap, a sum beyond what the pairs
-    /// allow, a reserved byte, or a window whose bin count is not the one the clock at the
-    /// write implies.
+    /// The homeostasis record (section kind 43, ADR-0036) is outside the bounds or the
+    /// consistency the rules keep: a gain outside its bounds, a full window, a count above the
+    /// cap, a sum beyond what the pairs allow or inconsistent with the others, a reserved
+    /// byte, or a window whose bin count is not the one the clock at the write implies.
     MalformedHomeostasis,
 }
 

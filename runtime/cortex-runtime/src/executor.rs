@@ -245,7 +245,7 @@ const WINDOW_CADENCE: Cadence =
 /// sub-critical and the controller would raise the gain without bound.
 const _: () = assert!(BIN_CADENCE.period() >= WorkerWheel::horizon_ticks());
 /// The activity above which a window is read as saturated (ADR-0036): one spike per unit per
-/// bin on average (about 24 Hz across the whole population at the fine tick). A population
+/// bin on average (about 24 Hz per unit at the fine tick). A population
 /// firing that often no longer forms the branching process the estimator's slope reads, so
 /// the ceiling reads such a window as supercritical instead; the units' own short-term
 /// depression keeps a network well below it in every run of the exit test.
