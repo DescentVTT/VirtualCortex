@@ -72,14 +72,15 @@ impl From<InjectError> for ForkError {
 }
 
 /// Runs `exec` from its clock to `until` under `drive`, the drive's messages injected before
-/// each tick they are due.
+/// each tick they are due; nothing when `until` is at or behind the clock. The ticks are a
+/// range, not a comparison the loop re-evaluates, so the run ends by construction.
 pub fn run_driven<const CAP: usize>(
     exec: &mut Executor<CAP>,
     drive: &Drive,
     until: u64,
 ) -> Result<(), InjectError> {
     let inject = exec.injector();
-    while exec.ticks() < until {
+    for _ in exec.ticks()..until {
         drive.step(&inject, exec.ticks())?;
         exec.tick();
     }
@@ -410,6 +411,28 @@ mod tests {
             (2, 0, 1),
             "101 past the second descendant, 105 past the first"
         );
+    }
+
+    #[test]
+    fn a_driven_run_to_a_tick_at_or_behind_the_clock_runs_nothing() {
+        use crate::executor::{Config, Executor};
+        let mut exec = Executor::<8>::new(Config {
+            units: 1,
+            ..Config::default()
+        })
+        .unwrap();
+        let quiet = Drive {
+            every: 0,
+            messages: 0,
+            efficacy_q16: 0,
+            units: 1,
+            seed: 0,
+        };
+        run_driven(&mut exec, &quiet, 7).unwrap();
+        assert_eq!(exec.ticks(), 7);
+        run_driven(&mut exec, &quiet, 7).unwrap();
+        run_driven(&mut exec, &quiet, 3).unwrap();
+        assert_eq!(exec.ticks(), 7, "at or behind the clock: no tick");
     }
 
     #[test]

@@ -951,13 +951,15 @@ fn prove_in(
         }
         let mut advanced = false;
         let mut r = frame.next;
-        while r < store.len() {
+        // The clauses from `next` on, by `get`: past the store the scan ends, with no index a
+        // comparison could carry past it.
+        while let Some(&rule) = store.get(r) {
             if resolutions >= budget {
                 return Err(InduceError::Budget);
             }
             resolutions = resolutions.wrapping_add(1);
             let mark = s.mark();
-            match resolve_literal(frame.goal, store[r], 0, s) {
+            match resolve_literal(frame.goal, rule, 0, s) {
                 Ok(resolvent) => {
                     frames[top].next = r.saturating_add(1);
                     if depth >= frames.len() {
