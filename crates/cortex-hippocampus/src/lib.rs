@@ -9,8 +9,10 @@
 //! ticks, by firing its pattern together, so that the pair rule of ADR-0022 potentiates every
 //! synapse among its units and the modulator of ADR-0032 consolidates them; during REM a
 //! ripple lowers an episode's tag instead, and an episode whose tag reached zero is spent and
-//! never replayed again. [`HippocampalAttractorState`] keeps the ledger's length and the hand
-//! the next ripple starts from. Where a pattern comes from is the caller's until it is
+//! never replayed again. An episode may be bound, once, to the id of the symbol its pattern
+//! stands for (ADR-0052: an invented predicate's, by the discovery loop); the ledger is then
+//! where a symbol's pattern is looked up. [`HippocampalAttractorState`] keeps the ledger's
+//! length and the hand the next ripple starts from. Where a pattern comes from is the caller's until it is
 //! tagged; [`capture`](mod@capture) gives the rules that read one from a spike train (the densest span of
 //! a ripple's length, the units that fired most within it; ADR-0048).
 
@@ -43,7 +45,8 @@ pub struct Episode {
     pub len: u8,          // [6] Units in the pattern, 1 to PATTERN_MAX
     pub _pad: u8,         // [7] Reserved; MUST be zero
     pub pattern: [u32; PATTERN_MAX], // [8..56] Unit indices, the first `len`; the rest MUST be zero
-    pub _reserved: [u8; 8], // [56..64] Reserved; MUST be zero
+    pub symbol: u32, // [56..60] The id of the symbol the pattern stands for (an invented predicate's, ADR-0052); 0 for none; written once
+    pub _reserved: [u8; 4], // [60..64] Reserved; MUST be zero
 }
 
 impl Episode {
@@ -69,8 +72,32 @@ impl Episode {
             len: units.len() as u8,
             _pad: 0,
             pattern,
-            _reserved: [0; 8],
+            symbol: 0,
+            _reserved: [0; 4],
         })
+    }
+
+    /// Binds the episode to `symbol`, the id of what its pattern stands for (ADR-0052: an
+    /// invented predicate's, bound by the discovery loop when the pattern is the one active
+    /// before the invention's reward). Refused, with nothing changed, for a symbol of zero
+    /// (none) and for an episode already bound: what a pattern stands for is written once,
+    /// as the pattern is.
+    pub fn bind(&mut self, symbol: u32) -> bool {
+        if symbol == 0 || self.symbol != 0 {
+            return false;
+        }
+        self.symbol = symbol;
+        true
+    }
+
+    /// The symbol the pattern stands for, or `None` when it stands for nothing yet.
+    #[inline]
+    pub const fn symbol(&self) -> Option<u32> {
+        if self.symbol == 0 {
+            None
+        } else {
+            Some(self.symbol)
+        }
     }
 
     /// The units of the pattern, in the order they were tagged.
@@ -119,7 +146,7 @@ impl Episode {
                 return false;
             }
         }
-        self._pad == 0 && self._reserved == [0; 8]
+        self._pad == 0 && self._reserved == [0; 4]
     }
 
     /// The record's 64 bytes, little-endian, field by field (§8.7).
@@ -134,7 +161,8 @@ impl Episode {
             let at = slot.wrapping_mul(4).wrapping_add(8);
             out[at..at.wrapping_add(4)].copy_from_slice(&unit.to_le_bytes());
         }
-        out[56..64].copy_from_slice(&self._reserved);
+        out[56..60].copy_from_slice(&self.symbol.to_le_bytes());
+        out[60..64].copy_from_slice(&self._reserved);
         out
     }
 
@@ -152,7 +180,8 @@ impl Episode {
             len: bytes[6],
             _pad: bytes[7],
             pattern,
-            _reserved: bytes[56..64].try_into().unwrap_or([0; 8]),
+            symbol: u32::from_le_bytes(bytes[56..60].try_into().unwrap_or([0; 4])),
+            _reserved: bytes[60..64].try_into().unwrap_or([0; 4]),
         }
     }
 }
@@ -296,7 +325,7 @@ mod tests {
             (7, 5, 0, 3, 0)
         );
         assert_eq!(&e.pattern[3..], &[0; 9]);
-        assert_eq!(e._reserved, [0; 8]);
+        assert_eq!((e.symbol, e._reserved), (0, [0; 4]));
         assert!(e.is_well_formed());
         assert!(!e.is_spent());
         assert_eq!(Episode::tag(7, &[], 5), None, "no unit");
@@ -365,7 +394,7 @@ mod tests {
             ("a unit beyond the length", |e| e.pattern[3] = 1),
             ("a unit twice", |e| e.pattern[2] = 8),
             ("the pad", |e| e._pad = 1),
-            ("a reserved byte", |e| e._reserved[7] = 1),
+            ("a reserved byte", |e| e._reserved[3] = 1),
         ];
         for (what, mutate) in cases {
             let mut e = ok;
@@ -392,6 +421,28 @@ mod tests {
             zero_unit.is_well_formed(),
             "unit 0 inside the length is a unit, not an empty slot"
         );
+    }
+
+    #[test]
+    fn an_episode_is_bound_to_a_symbol_once_and_never_to_none() {
+        let mut e = Episode::tag(5, &[1, 2], 3).unwrap();
+        assert_eq!(e.symbol(), None);
+        assert!(!e.bind(0), "none is not a symbol");
+        assert_eq!(e.symbol(), None);
+        assert!(e.bind(0xFFFE_0000));
+        assert_eq!(e.symbol(), Some(0xFFFE_0000));
+        assert!(e.is_well_formed());
+        assert!(!e.bind(0xFFFE_0001), "written once");
+        assert!(!e.bind(0));
+        assert_eq!(e.symbol, 0xFFFE_0000);
+        assert_eq!(Episode::decode(&e.encode()), e);
+        // A spent, replayed episode keeps its symbol: the annotations touch the tag and the
+        // count only.
+        e.replay();
+        while !e.is_spent() {
+            e.depotentiate();
+        }
+        assert_eq!(e.symbol(), Some(0xFFFE_0000));
     }
 
     #[test]
@@ -468,14 +519,16 @@ mod tests {
             len: 12,
             _pad: 7,
             pattern: core::array::from_fn(|i| 0x1000_0000 + i as u32),
-            _reserved: [8; 8],
+            symbol: 0xFFFE_0002,
+            _reserved: [8; 4],
         };
         let bytes = e.encode();
         assert_eq!(&bytes[0..4], &[4, 3, 2, 1]);
         assert_eq!(&bytes[4..8], &[5, 6, 12, 7]);
         assert_eq!(&bytes[8..12], &0x1000_0000u32.to_le_bytes());
         assert_eq!(&bytes[52..56], &0x1000_000Bu32.to_le_bytes());
-        assert_eq!(&bytes[56..64], &[8; 8]);
+        assert_eq!(&bytes[56..60], &[2, 0, 0xFE, 0xFF]);
+        assert_eq!(&bytes[60..64], &[8; 4]);
         assert_eq!(Episode::decode(&bytes), e);
         assert_eq!(Episode::decode(&[0; 64]), Episode::default());
         let s = HippocampalAttractorState {

@@ -13,12 +13,15 @@
 //! modulation state (ADR-0032: the modulator record and the baseline), its homeostasis state
 //! (ADR-0036, ADR-0037) and its hippocampal state (ADR-0038) are sections of their own, always
 //! written, and the episodic ledger a section written when it is not empty, so that the image
-//! defines the run (§8.3).
+//! defines the run (§8.3); since ADR-0052 so are the engine's affect state and induction
+//! record, always, and its term arena and clause store when they hold anything.
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
+use cortex_affect::InteroceptiveState;
 use cortex_connectome::{
-    CortexFileHeader, Crc64, HeaderError, SECTION_AMENDMENT, SECTION_EPISODE, SECTION_HIPPOCAMPUS,
-    SECTION_HOMEOSTASIS, SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE,
+    CortexFileHeader, Crc64, HeaderError, SECTION_AFFECT, SECTION_AMENDMENT, SECTION_CLAUSE,
+    SECTION_EPISODE, SECTION_HIPPOCAMPUS, SECTION_HOMEOSTASIS, SECTION_INDUCTION,
+    SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SECTION_TERM,
     SectionEntry, crc64,
 };
 use cortex_core::{
@@ -29,6 +32,7 @@ use cortex_executive::PolicyAmendment;
 use cortex_hippocampus::{Episode, HippocampalAttractorState};
 use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, HomeostaticDrivePool, SLEEP_SHIFT_MAX};
 use cortex_neuromod::NeuromodulatorState;
+use cortex_reasoning::{INVENTED_BASE, INVENTED_LIMIT, InductionState, TermNode};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
@@ -98,9 +102,21 @@ pub enum ImageError {
     /// beyond its length, a reserved byte) or its length is not the episode section's count.
     MalformedHippocampus,
     /// An episode (section kind 45, ADR-0038) is one `Episode::tag` could not have produced
-    /// (no unit, too many, a unit twice, a pad or reserved byte) or names a unit outside the
-    /// arena.
+    /// (no unit, too many, a unit twice, a pad or reserved byte), names a unit outside the
+    /// arena, or is bound to a symbol outside the invented band (ADR-0052).
     MalformedEpisode(u32),
+    /// A term node (section kind 40, ADR-0052) is not well formed, is empty, names a child
+    /// at or beyond its own index, or is a variable outside the binding table.
+    MalformedTerm(u32),
+    /// A clause index (section kind 49, ADR-0052) is at or beyond the arena's cursor, names
+    /// a node that is not a clause, or appears twice.
+    MalformedClause(u32),
+    /// The induction record (section kind 48, ADR-0052) is not well formed, or its cursor,
+    /// its length or its next variable do not describe the loaded arena and store.
+    MalformedInduction,
+    /// The affect record (section kind 47, ADR-0052) is not well formed or is not primed to
+    /// the loaded store's description length.
+    MalformedAffect,
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -355,6 +371,27 @@ impl Image {
             }
             sections.push((SECTION_EPISODE, 64, episode_bytes));
         }
+        // The term arena and the clause store when they hold anything, the affect state and
+        // the induction record always (ADR-0052): what the discovery loop reads and writes
+        // changes what a run does, so all of it is in the image.
+        let terms = exec.terms();
+        if !terms.is_empty() {
+            let mut term_bytes = Vec::with_capacity(terms.len().saturating_mul(64));
+            for t in terms {
+                term_bytes.extend_from_slice(&t.encode());
+            }
+            sections.push((SECTION_TERM, 64, term_bytes));
+        }
+        let clauses = exec.clauses();
+        if !clauses.is_empty() {
+            let mut clause_bytes = Vec::with_capacity(clauses.len().saturating_mul(4));
+            for c in clauses {
+                clause_bytes.extend_from_slice(&c.to_le_bytes());
+            }
+            sections.push((SECTION_CLAUSE, 4, clause_bytes));
+        }
+        sections.push((SECTION_AFFECT, 64, exec.affect().encode().to_vec()));
+        sections.push((SECTION_INDUCTION, 64, exec.induction().encode().to_vec()));
         // The offsets of an image held in memory: each fits, and saturating says so by name.
         let directory_len = (sections.len() as u64).saturating_mul(64);
         let mut offset = directory_len.saturating_add(64);
@@ -437,8 +474,10 @@ impl Image {
             let entry = SectionEntry::decode(entry_bytes);
             let expected_size = match entry.kind {
                 SECTION_NEURON | SECTION_SYNAPSE | SECTION_AMENDMENT | SECTION_MODULATOR
-                | SECTION_HOMEOSTASIS | SECTION_HIPPOCAMPUS | SECTION_EPISODE => 64,
+                | SECTION_HOMEOSTASIS | SECTION_HIPPOCAMPUS | SECTION_EPISODE | SECTION_TERM
+                | SECTION_AFFECT | SECTION_INDUCTION => 64,
                 SECTION_PLASTIC_DELTA => 16,
+                SECTION_CLAUSE => 4,
                 other => return Err(ImageError::Directory(other)),
             };
             if !entry.is_well_formed() || entry.record_size != expected_size {
@@ -464,6 +503,11 @@ impl Image {
         let hippocampus =
             find(SECTION_HIPPOCAMPUS).ok_or(ImageError::MissingSection(SECTION_HIPPOCAMPUS))?;
         let episode = find(SECTION_EPISODE);
+        let term = find(SECTION_TERM);
+        let clause = find(SECTION_CLAUSE);
+        let affect = find(SECTION_AFFECT).ok_or(ImageError::MissingSection(SECTION_AFFECT))?;
+        let induction =
+            find(SECTION_INDUCTION).ok_or(ImageError::MissingSection(SECTION_INDUCTION))?;
         if neuron.record_count() != header.num_neurons
             || synapse.record_count() != header.num_synapses
         {
@@ -477,12 +521,16 @@ impl Image {
         let deltas = delta.map_or(0, |d| d.record_count() as usize);
         let amendments = amendment.map_or(0, |a| a.record_count() as usize);
         let episodes = episode.map_or(0, |e| e.record_count() as usize);
+        let terms = term.map_or(0, |t| t.record_count() as usize);
+        let clauses = clause.map_or(0, |c| c.record_count() as usize);
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
             deltas,
             amendments: amendments.saturating_add(config.amendments),
             episodes: episodes.saturating_add(config.episodes),
+            terms: terms.saturating_add(config.terms),
+            clauses: clauses.saturating_add(config.clauses),
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -633,7 +681,11 @@ impl Image {
             if let Some(section) = episode {
                 for (i, record) in section_of(bytes, &section)?.chunks_exact(64).enumerate() {
                     let e = Episode::decode(record.try_into().unwrap_or(&[0; 64]));
-                    if !e.is_well_formed() || !exec.load_episode(e) {
+                    // A bound episode names an invented predicate (ADR-0052): the band is
+                    // the runtime's to know, not the ledger's.
+                    let symbol_in_band =
+                        e.symbol == 0 || (INVENTED_BASE..INVENTED_LIMIT).contains(&e.symbol);
+                    if !e.is_well_formed() || !symbol_in_band || !exec.load_episode(e) {
                         return Err(ImageError::MalformedEpisode(i as u32));
                     }
                 }
@@ -645,6 +697,45 @@ impl Image {
             }
             if !exec.set_hippocampus(state) {
                 return Err(ImageError::MalformedHippocampus);
+            }
+        }
+        {
+            // The term arena, the clause store, the induction record and the affect state
+            // (ADR-0052): every node well formed and bottom-up (so no loaded arena is
+            // cyclic), every store index a clause below the cursor and named once, the
+            // record describing what was loaded, the affect state primed to the store's
+            // length; the two records one each, required.
+            if let Some(section) = term {
+                for (i, record) in section_of(bytes, &section)?.chunks_exact(64).enumerate() {
+                    let node = TermNode::decode(record.try_into().unwrap_or(&[0; 64]));
+                    if !exec.load_term(node) {
+                        return Err(ImageError::MalformedTerm(i as u32));
+                    }
+                }
+            }
+            if let Some(section) = clause {
+                for (i, record) in section_of(bytes, &section)?.chunks_exact(4).enumerate() {
+                    let index = u32::from_le_bytes(record.try_into().unwrap_or([0; 4]));
+                    if !exec.load_clause(index) {
+                        return Err(ImageError::MalformedClause(i as u32));
+                    }
+                }
+            }
+            if induction.record_count() != 1 {
+                return Err(ImageError::Directory(SECTION_INDUCTION));
+            }
+            let record = section_of(bytes, &induction)?;
+            let state = InductionState::decode(record.try_into().unwrap_or(&[0; 64]));
+            if !exec.set_induction(state) {
+                return Err(ImageError::MalformedInduction);
+            }
+            if affect.record_count() != 1 {
+                return Err(ImageError::Directory(SECTION_AFFECT));
+            }
+            let record = section_of(bytes, &affect)?;
+            let state = InteroceptiveState::decode(record.try_into().unwrap_or(&[0; 64]));
+            if !exec.set_affect(state) {
+                return Err(ImageError::MalformedAffect);
             }
         }
         // The clock resumes where the image was written, so every stamp in it (a unit's last

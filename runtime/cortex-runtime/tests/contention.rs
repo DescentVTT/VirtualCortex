@@ -31,6 +31,11 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         sleep_shift: 0,
         episodes: 0,
         train_capacity: 0,
+        terms: 0,
+        clauses: 0,
+        search_shift: 0,
+        search_budget: 0,
+        discovery_tag: 0,
     })
     .expect("a valid configuration");
     let inject = exec.injector();

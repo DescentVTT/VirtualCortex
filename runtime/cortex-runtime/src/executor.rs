@@ -28,18 +28,25 @@
 //! due at $t + d$. Between ticks the coordinator merges the units the workers fired, in unit
 //! order, into its own bounded train (ADR-0050), sums the workers' spike counts into the
 //! homeostasis record's open bin, closes the bin on its cadence, regulates the gain on the
-//! window's and steps the sleep stage (ADR-0035, ADR-0036, ADR-0037); before a tick's first
-//! barrier it decides the ripple (ADR-0038): a schedule that is a function of the tick, so it
-//! adds no barrier and runs at the same ticks on every worker count. Nothing allocates after
-//! [`Executor::new`], nothing blocks but the spin barrier, and the only system call in the
-//! loop is the barrier's yield.
+//! window's and steps the sleep stage (ADR-0035, ADR-0036, ADR-0037), and, awake on the
+//! search's cadence, runs the discovery loop over its own clause store (ADR-0052): the search
+//! from its cursor, the committed rewards into the modulator, the coincidence before the
+//! reward tagged from its own train and bound to the invented predicate; before a tick's
+//! first barrier it decides the ripple (ADR-0038): a schedule that is a function of the tick,
+//! so it adds no barrier and runs at the same ticks on every worker count. Nothing allocates
+//! after [`Executor::new`], nothing blocks but the spin barrier, and the only system call in
+//! the loop is the barrier's yield.
 
 use crate::arena::Arena;
 use crate::barrier::SpinBarrier;
 use crate::deque::{self, Local, Steal, Stealer};
+use crate::discovery::Discovery;
+use crate::episode::{COINCIDENCE_TICKS, DISCOVERY_WINDOW, DiscoverError, DiscoverReport};
 use crate::image::{ImageError, WriteAheadLog};
 use crate::injector::{self, Injector};
 use crate::pool::Pools;
+use crate::store::{Induction, TermError};
+use cortex_affect::InteroceptiveState;
 use cortex_core::{
     BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel,
     MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS,
@@ -53,9 +60,10 @@ use cortex_executive::{
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX, RIPPLE_SHIFT};
 use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16, GAIN_ONE_Q16,
-    HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_REM, STAGE_SWS,
+    HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_AWAKE, STAGE_REM, STAGE_SWS,
 };
 use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
+use cortex_reasoning::{InductionState, SEARCH_SHIFT_MAX, TermNode};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
@@ -118,6 +126,21 @@ pub struct Config {
     /// `(tick, unit)` entries, the oldest let go when it is full and counted; read between
     /// ticks by [`Executor::train`]. 0 keeps none and adds nothing to the tick.
     pub train_capacity: usize,
+    /// Nodes of the engine's term arena (ADR-0052) beyond those an image holds; 0 (the
+    /// default) leaves the engine without an arena, a store or a search.
+    pub terms: usize,
+    /// Slots of the engine's clause store beyond those an image holds; refused without an
+    /// arena.
+    pub clauses: usize,
+    /// The search's cadence inside the tick, $2^{\text{shift}}$ ticks, while awake (ADR-0052);
+    /// 0 (the default) never searches inside the tick, and a caller may still search between
+    /// ticks. For an engine built from an image, the image's outranks this one (§8.3).
+    pub search_shift: u8,
+    /// Attempts one search may spend (ADR-0045); the image's outranks this one.
+    pub search_budget: u32,
+    /// The REM ripples an invention's episode survives (ADR-0048); at 0 a rewarded search
+    /// tags nothing and is counted as untagged. The image's outranks this one.
+    pub discovery_tag: u8,
 }
 
 impl Default for Config {
@@ -137,6 +160,11 @@ impl Default for Config {
             sleep_shift: 0,
             episodes: 0,
             train_capacity: 0,
+            terms: 0,
+            clauses: 0,
+            search_shift: 0,
+            search_budget: 0,
+            discovery_tag: 0,
         }
     }
 }
@@ -238,6 +266,12 @@ pub enum ConfigError {
     /// (`REPLAY_MESSAGES × PATTERN_MAX`, 24) while the ledger has room (ADR-0038): a ripple
     /// would exhaust the pool and abort the process.
     TooFewNodes,
+    /// More term nodes or clause slots than a `u32` index can name (ADR-0052).
+    TooManyTerms,
+    /// A clause store without a term arena (`clauses` above zero with `terms` zero).
+    ClausesWithoutArena,
+    /// `search_shift` is above `SEARCH_SHIFT_MAX` (ADR-0052).
+    SearchShiftOutOfRange,
 }
 
 /// Why an episode could not be tagged (ADR-0038).
@@ -250,6 +284,10 @@ pub enum TagError {
     /// The pattern is one `Episode::tag` refuses: no unit, more than `PATTERN_MAX`, a unit
     /// twice, or a priority of zero.
     InvalidPattern,
+    /// No episode at that index of the ledger (ADR-0052).
+    NoSuchEpisode,
+    /// The episode is bound to a symbol already, or the symbol is none (ADR-0052).
+    Bound,
 }
 
 /// Why an injection is refused.
@@ -494,6 +532,21 @@ pub struct Executor<const CAP: usize> {
     train_overwritten: u64,
     /// The tick's spikes as the coordinator sorts them, one slot per unit.
     merge: Vec<u32>,
+    /// The engine's term arena, clause store, affect state and induction record (ADR-0052),
+    /// with the loop's counters.
+    induction: Induction,
+    /// The search's cadence inside the tick, from the induction record's shift; `None` never
+    /// searches.
+    search_cadence: Option<Cadence>,
+}
+
+/// The cadence of a search shift: none at zero.
+fn search_cadence_of(shift: u8) -> Option<Cadence> {
+    if shift == 0 {
+        None
+    } else {
+        Cadence::new(u32::from(shift), 0)
+    }
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -530,6 +583,15 @@ impl<const CAP: usize> Executor<CAP> {
         }
         if config.episodes > 0 && config.nodes_per_worker < RIPPLE_NODES {
             return Err(ConfigError::TooFewNodes);
+        }
+        if config.terms >= u32::MAX as usize || config.clauses >= u32::MAX as usize {
+            return Err(ConfigError::TooManyTerms);
+        }
+        if config.clauses > 0 && config.terms == 0 {
+            return Err(ConfigError::ClausesWithoutArena);
+        }
+        if config.search_shift > SEARCH_SHIFT_MAX {
+            return Err(ConfigError::SearchShiftOutOfRange);
         }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
@@ -637,6 +699,14 @@ impl<const CAP: usize> Executor<CAP> {
             train_capacity: config.train_capacity,
             train_overwritten: 0,
             merge: Vec::with_capacity(fired_slots),
+            induction: Induction::new(
+                config.terms,
+                config.clauses,
+                config.search_shift,
+                config.search_budget,
+                config.discovery_tag,
+            ),
+            search_cadence: search_cadence_of(config.search_shift),
         })
     }
 
@@ -767,6 +837,209 @@ impl<const CAP: usize> Executor<CAP> {
     /// `Config::train_capacity`.
     pub fn train_capacity(&self) -> usize {
         self.train_capacity
+    }
+
+    // ------------------------------------------------ the term arena and the store (ADR-0052)
+
+    /// The engine's term arena (ADR-0052): the nodes in use, in order, read between ticks.
+    pub fn terms(&self) -> &[TermNode] {
+        self.induction.terms()
+    }
+
+    /// The engine's clause store: the arena indices of its clauses, in order.
+    pub fn clauses(&self) -> &[u32] {
+        self.induction.clauses()
+    }
+
+    /// The engine's affect state (ADR-0043): primed to the store's description length, the
+    /// valence rule reading an invention's drop.
+    pub fn affect(&self) -> &InteroceptiveState {
+        &self.induction.affect
+    }
+
+    /// The engine's induction record (ADR-0052): the arena's cursor and counters, the
+    /// store's length, the search's cursor, budget, cadence and tag.
+    pub fn induction(&self) -> &InductionState {
+        &self.induction.record
+    }
+
+    /// Searches run so far, inside the tick and between ticks.
+    pub fn searches(&self) -> u64 {
+        self.induction.searches
+    }
+
+    /// Inventions committed by them.
+    pub fn inventions(&self) -> u64 {
+        self.induction.inventions
+    }
+
+    /// Rewarded searches whose moment the ledger or the train refused to tag: the reward
+    /// stood, no episode was bound.
+    pub fn untagged(&self) -> u64 {
+        self.induction.untagged
+    }
+
+    /// Searches that ended in an error of their own (the store or the arena full, a bound,
+    /// a malformed store), their commits before it standing.
+    pub fn search_failures(&self) -> u64 {
+        self.induction.failures
+    }
+
+    /// The last search's commits, in order (ADR-0045): the invention, the store's length
+    /// before and after it, its valence and its reward; the first is the one the rewarded
+    /// moment's episode is bound to. Empty after a search that ended in an error.
+    pub fn discoveries(&self) -> &[Discovery] {
+        self.induction.discoveries()
+    }
+
+    /// An input between ticks (ADR-0052): `node` into the arena, its index returned. Refused
+    /// for an engine without an arena, a full arena, and a node that is not well formed, is
+    /// empty, names a child at or beyond the arena's cursor (a host builds bottom-up) or is a
+    /// variable outside the binding table. A variable moves the record's `next_variable`
+    /// above its number. Like an injection, a term is part of the trace: a run that asserts
+    /// the same terms at the same ticks is the same run.
+    pub fn term(&mut self, node: TermNode) -> Result<u32, TermError> {
+        self.induction.term(node)
+    }
+
+    /// An input between ticks (ADR-0052): the clause `head ← body` into the arena and its
+    /// index into the store, the affect state primed to the store's new length; returns the
+    /// clause's index. Refused as `term` refuses, for a full store, for a body longer than
+    /// `MAX_BODY`, and for a clause whose size cannot be measured.
+    pub fn assert_clause(&mut self, head: u32, body: &[u32]) -> Result<u32, TermError> {
+        self.induction.assert_clause(head, body)
+    }
+
+    /// An input between ticks (ADR-0052): the episode at `index` bound to `symbol`, the id of
+    /// what its pattern stands for. Refused for an index the ledger does not hold, a symbol
+    /// of zero and an episode already bound (`Episode::bind`).
+    pub fn bind_episode(&mut self, index: u32, symbol: u32) -> Result<(), TagError> {
+        if index >= self.hippocampus.episodes {
+            return Err(TagError::NoSuchEpisode);
+        }
+        // SAFETY: `&mut self` between ticks; every worker is parked at the barrier.
+        let Some(episode) = (unsafe { self.shared.episodes.get_mut(index as usize) }) else {
+            abort("the ledger's length exceeds its arena");
+        };
+        if episode.bind(symbol) {
+            Ok(())
+        } else {
+            Err(TagError::Bound)
+        }
+    }
+
+    /// The discovery loop between ticks (ADR-0052; the composition ADR-0050 ran over a
+    /// caller's store): one search over the engine's own store from the record's cursor with
+    /// the record's budget (ADR-0045), the committed rewards' total into the modulator when
+    /// positive (ADR-0043), then the pattern active in the ripple before now (its densest
+    /// basal time constant, from the executor's own train) tagged once with the record's tag
+    /// and bound to the first commit's predicate (ADR-0048); a search of two commits binds
+    /// the one episode to the first and reports both. The search's refusals as it gives
+    /// them, its commits before one standing; the ledger's or the train's refusal of the
+    /// moment as `Tag`, the reward the modulator's by then. The same loop runs inside the
+    /// tick on the record's cadence while the engine is awake, its refusals counted
+    /// (`untagged`, `search_failures`) and never returned.
+    pub fn discover(&mut self) -> Result<DiscoverReport, DiscoverError> {
+        self.induce()
+    }
+
+    fn induce(&mut self) -> Result<DiscoverReport, DiscoverError> {
+        self.induction.searches = self.induction.searches.saturating_add(1);
+        let report = match self.induction.search() {
+            Ok(report) => report,
+            Err(e) => {
+                self.induction.failures = self.induction.failures.saturating_add(1);
+                return Err(DiscoverError::Discovery(e));
+            }
+        };
+        self.induction.inventions = self
+            .induction
+            .inventions
+            .saturating_add(u64::from(report.commits));
+        if report.reward_total_q16 <= 0 {
+            return Ok(DiscoverReport {
+                search: report,
+                signal_q16: self.modulator.dopamine_rpe,
+                tagged: None,
+            });
+        }
+        let signal_q16 = self.reward(report.reward_total_q16);
+        let at = self.tick as u32;
+        let tag = self.induction.record.tag;
+        let predicate = self
+            .induction
+            .first_invention()
+            .map_or(0, |d| d.invention.predicate);
+        let tagged = crate::episode::tag_burst_in(
+            self,
+            at.saturating_sub(DISCOVERY_WINDOW),
+            at,
+            COINCIDENCE_TICKS,
+            tag,
+        )
+        .and_then(|(burst, episode, _, _)| {
+            self.bind_episode(episode, predicate)?;
+            Ok((episode, burst))
+        });
+        match tagged {
+            Ok(tagged) => Ok(DiscoverReport {
+                search: report,
+                signal_q16,
+                tagged: Some(tagged),
+            }),
+            Err(e) => {
+                self.induction.untagged = self.induction.untagged.saturating_add(1);
+                Err(DiscoverError::Tag(e))
+            }
+        }
+    }
+
+    /// After the tally, between ticks (ADR-0052): the loop on its cadence while awake.
+    fn search_on_cadence(&mut self) {
+        let Some(cadence) = self.search_cadence else {
+            return;
+        };
+        if self.homeostasis.sleep_stage != STAGE_AWAKE || !cadence.is_due(self.tick) {
+            return;
+        }
+        // The refusals are counted by `induce`; inside the tick there is no caller to
+        // return them to.
+        let _ = self.induce();
+    }
+
+    /// The loader's: a node from an image, appended at the arena's cursor; refused as `term`
+    /// refuses (so no loaded arena holds a forward reference or a cycle).
+    pub(crate) fn load_term(&mut self, node: TermNode) -> bool {
+        self.induction.load_term(node)
+    }
+
+    /// The loader's: a store index from an image; refused for an index at or beyond the
+    /// cursor, a node that is not a clause, an index the store holds already or a full store.
+    pub(crate) fn load_clause(&mut self, index: u32) -> bool {
+        self.induction.load_clause(index)
+    }
+
+    /// The loader's: the induction record an image holds, after its arena and store; its
+    /// cadence, budget and tag outrank the configuration's (§8.3). Refused for a record that
+    /// is not well formed or does not describe what was loaded.
+    pub(crate) fn set_induction(&mut self, record: InductionState) -> bool {
+        if !self.induction.set_record(record) {
+            return false;
+        }
+        self.search_cadence = search_cadence_of(record.search_shift);
+        true
+    }
+
+    /// The loader's: the affect state an image holds. Refused for a state that is not well
+    /// formed or not primed to the loaded store's length.
+    pub(crate) fn set_affect(&mut self, state: InteroceptiveState) -> bool {
+        self.induction.set_affect(state)
+    }
+
+    /// The arena's and the store's capacities: what the image held plus the configuration's
+    /// room.
+    pub fn term_capacity(&self) -> (usize, usize) {
+        self.induction.capacity()
     }
 
     /// After a tick, between ticks (ADR-0050): the units the workers fired this tick, sorted,
@@ -1300,6 +1573,7 @@ impl<const CAP: usize> Executor<CAP> {
         self.tick = self.tick.wrapping_add(1);
         self.rehydrate_pending();
         self.tally();
+        self.search_on_cadence();
     }
 
     /// `ticks` fine ticks.
@@ -1716,10 +1990,79 @@ mod tests {
         assert_eq!(
             Executor::<8>::new(Config {
                 blocks: cortex_core::MAX_TOKEN_BLOCK as usize + 2,
-                ..ok
+                ..ok.clone()
             })
             .err(),
             Some(ConfigError::TooManyBlocks)
+        );
+        // The term arena and the store (ADR-0052): a store needs an arena, the counts stay
+        // below the width, the shift below the cadence's width.
+        assert_eq!(
+            Executor::<8>::new(Config {
+                clauses: 1,
+                ..ok.clone()
+            })
+            .err(),
+            Some(ConfigError::ClausesWithoutArena)
+        );
+        assert_eq!(
+            Executor::<8>::new(Config {
+                terms: u32::MAX as usize,
+                ..ok.clone()
+            })
+            .err(),
+            Some(ConfigError::TooManyTerms)
+        );
+        assert_eq!(
+            Executor::<8>::new(Config {
+                terms: 1,
+                clauses: u32::MAX as usize,
+                ..ok.clone()
+            })
+            .err(),
+            Some(ConfigError::TooManyTerms)
+        );
+        assert_eq!(
+            Executor::<8>::new(Config {
+                search_shift: SEARCH_SHIFT_MAX + 1,
+                ..ok.clone()
+            })
+            .err(),
+            Some(ConfigError::SearchShiftOutOfRange)
+        );
+        let with_store = Executor::<8>::new(Config {
+            terms: 4,
+            clauses: 2,
+            search_shift: SEARCH_SHIFT_MAX,
+            search_budget: 3,
+            discovery_tag: 7,
+            ..ok
+        })
+        .unwrap();
+        assert_eq!(with_store.term_capacity(), (4, 2));
+        assert_eq!(
+            (
+                with_store.induction().search_shift,
+                with_store.induction().search_budget,
+                with_store.induction().tag
+            ),
+            (SEARCH_SHIFT_MAX, 3, 7)
+        );
+        assert!(with_store.terms().is_empty() && with_store.clauses().is_empty());
+        assert_eq!(
+            (
+                with_store.searches(),
+                with_store.inventions(),
+                with_store.untagged(),
+                with_store.search_failures()
+            ),
+            (0, 0, 0, 0)
+        );
+        assert_eq!(search_cadence_of(0), None, "a shift of zero is no cadence");
+        assert_eq!(
+            search_cadence_of(4).map(|c| c.period()),
+            Some(16),
+            "a shift of four is every sixteen ticks"
         );
     }
 

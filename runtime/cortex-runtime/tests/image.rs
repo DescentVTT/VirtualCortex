@@ -151,9 +151,10 @@ fn a_corrupted_truncated_or_foreign_image_fails_closed() {
     let bytes = std::fs::read(&path).unwrap();
 
     let mut flipped = bytes.clone();
-    // The header, six directory entries (neurons, synapses, deltas, the modulation state,
-    // the homeostasis state, the hippocampal state), then the neuron section.
-    flipped[64 * 7 + 30] ^= 0x01;
+    // The header, eight directory entries (neurons, synapses, deltas, the modulation state,
+    // the homeostasis state, the hippocampal state, the affect state, the induction
+    // record), then the neuron section.
+    flipped[64 * 9 + 30] ^= 0x01;
     assert!(matches!(
         Image::decode::<64>(&flipped, config()),
         Err(ImageError::SectionCrc(SECTION_NEURON))

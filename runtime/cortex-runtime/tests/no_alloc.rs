@@ -1,11 +1,14 @@
 //! Whitepaper TC-5 for the tick loop: after `Executor::new`, running ticks allocates nothing,
-//! however many spikes, deliveries, wheel cascades and injections they carry. A counting
-//! global allocator (the `unsafe` the `GlobalAlloc` trait requires) counts every allocation
-//! while a flag is set; the flag is set only around `run`.
+//! however many spikes, deliveries, wheel cascades and injections they carry, and however
+//! many searches the discovery loop runs on its cadence over the engine's own store, with
+//! their commits, rewards and tags (ADR-0052). A counting global allocator (the `unsafe` the
+//! `GlobalAlloc` trait requires) counts every allocation while a flag is set; the flag is set
+//! only around `run`.
 
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_core::{STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16};
+use cortex_reasoning::TermNode;
 use cortex_runtime::{Config, Executor};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -45,6 +48,12 @@ fn the_tick_loop_allocates_nothing_after_new() {
         injector_capacity: 64,
         trace_capacity: 1024,
         train_capacity: 64,
+        episodes: 2,
+        terms: 256,
+        clauses: 16,
+        search_shift: 9,
+        search_budget: 64,
+        discovery_tag: 3,
         ..Config::default()
     })
     .unwrap();
@@ -76,6 +85,26 @@ fn the_tick_loop_allocates_nothing_after_new() {
     for _ in 0..13 {
         inject.inject(0, spike_message(one, false)).unwrap();
     }
+    // The exit store of ADR-0045 in the engine's own arena: three rules of one head sharing
+    // four literals and differing in a fifth, so that the loop's first search on its cadence
+    // commits two inventions, rewards the modulator and tags the coincidence before it, and
+    // every later search walks the pairs and commits nothing.
+    let next = exec.induction().next_variable;
+    let x = exec.term(TermNode::variable(next)).unwrap();
+    let head = exec.term(TermNode::compound(0x100, &[x]).unwrap()).unwrap();
+    let literals: Vec<u32> = (0x200..0x207u32)
+        .map(|l| exec.term(TermNode::compound(l, &[x]).unwrap()).unwrap())
+        .collect();
+    for own in 4..7 {
+        let body = [
+            literals[0],
+            literals[1],
+            literals[2],
+            literals[3],
+            literals[own],
+        ];
+        exec.assert_clause(head, &body).unwrap();
+    }
     // Warm up: the worker thread has started and the first spikes have fanned out.
     exec.run(2000);
 
@@ -93,6 +122,13 @@ fn the_tick_loop_allocates_nothing_after_new() {
     COUNTING.store(false, Ordering::SeqCst);
 
     let allocations = ALLOCATIONS.load(Ordering::SeqCst);
+    assert!(
+        exec.searches() >= 39 && exec.inventions() == 2 && exec.episodes().len() == 1,
+        "the loop ran on its cadence: {} searches, {} inventions, {} episodes",
+        exec.searches(),
+        exec.inventions(),
+        exec.episodes().len()
+    );
     let reports = exec.shutdown();
     assert!(
         reports.iter().map(|r| r.spikes.len()).sum::<usize>() > 30,

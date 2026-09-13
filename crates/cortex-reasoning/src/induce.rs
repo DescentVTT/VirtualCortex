@@ -293,15 +293,23 @@ impl InduceScratch<'_> {
         }
     }
 
-    /// Undoes the bindings made since the mark, zeroes the nodes appended since it, and
-    /// resets the cursor and the counters: what every rule here does on its own failure, and
-    /// what a caller that composes several rules does on a failure of its own.
-    pub fn restore(&mut self, mark: &InduceMark) {
+    /// Undoes the bindings made since the mark and cuts the trail there, keeping every node
+    /// appended since it and the counters where they are: what a search does after it has
+    /// instantiated a commit's outputs (ADR-0052), so that the binding table is empty between
+    /// searches and the store reads the same without it.
+    pub fn unbind(&mut self, mark: &InduceMark) {
         let bound = self.trail_len.saturating_sub(mark.trail_len);
         if let Some(trail) = self.trail.get(mark.trail_len..) {
             undo(self.bindings, trail, bound);
         }
         self.trail_len = mark.trail_len;
+    }
+
+    /// Undoes the bindings made since the mark, zeroes the nodes appended since it, and
+    /// resets the cursor and the counters: what every rule here does on its own failure, and
+    /// what a caller that composes several rules does on a failure of its own.
+    pub fn restore(&mut self, mark: &InduceMark) {
+        self.unbind(mark);
         if let Some(nodes) = self.arena.get_mut(mark.free..self.free) {
             for node in nodes {
                 *node = TermNode::default();
@@ -310,6 +318,85 @@ impl InduceScratch<'_> {
         self.free = mark.free;
         self.next_variable = mark.next_variable;
         self.next_invented = mark.next_invented;
+    }
+}
+
+/// The deepest nesting [`instantiate`] follows: a compound within a compound, or a variable
+/// bound to a term, this many levels (a clause is three deep: the clause, a literal, its
+/// arguments). Deeper, or a binding that loops, is a bound exceeded.
+pub const INSTANTIATE_DEPTH: u32 = 32;
+
+/// A copy of `term` through the bindings (ADR-0052): every variable bound in the table is
+/// replaced by the instance of what it is bound to, so that the copy reads the same with an
+/// empty table as `term` reads through the bindings (`size`, `term_hash` and a proof over it
+/// agree). A constant, an unbound variable and a compound with no bound variable beneath are
+/// returned as they are, the same index, so nothing is copied that need not be; a copied
+/// compound's children are allocated before it. `BoundExceeded` past [`INSTANTIATE_DEPTH`]
+/// levels or [`WALK_LIMIT`] nodes, `ArenaFull` when a copy has no slot, `Malformed` for an
+/// index outside the arena or the table or an empty node; every failure leaves the scratch
+/// as it was.
+pub fn instantiate(term: u32, s: &mut InduceScratch) -> Result<u32, InduceError> {
+    let m = s.mark();
+    let mut visited = 0u32;
+    let out = instantiate_in(term, INSTANTIATE_DEPTH, &mut visited, s);
+    if out.is_err() {
+        s.restore(&m);
+    }
+    out
+}
+
+fn instantiate_in(
+    term: u32,
+    depth: u32,
+    visited: &mut u32,
+    s: &mut InduceScratch,
+) -> Result<u32, InduceError> {
+    if *visited >= WALK_LIMIT {
+        return Err(InduceError::BoundExceeded);
+    }
+    // Below the limit, checked above.
+    *visited = visited.wrapping_add(1);
+    let Some(node) = s.arena.get(term as usize).copied() else {
+        return Err(InduceError::Malformed);
+    };
+    // A level down, or the bound: the recursion's argument falls by one on every descent.
+    let below = depth.checked_sub(1);
+    match node.kind {
+        TERM_CONSTANT => Ok(term),
+        TERM_VARIABLE => {
+            let Some(binding) = s.bindings.get(node.functor as usize) else {
+                return Err(InduceError::Malformed);
+            };
+            match binding.term() {
+                None => Ok(term),
+                Some(bound) => {
+                    instantiate_in(bound, below.ok_or(InduceError::BoundExceeded)?, visited, s)
+                }
+            }
+        }
+        TERM_COMPOUND => {
+            let below = below.ok_or(InduceError::BoundExceeded)?;
+            let arity = (node.arity as usize).min(MAX_ARITY);
+            let mut children = [TERM_NONE; MAX_ARITY];
+            let mut copied = false;
+            for (slot, child) in children.iter_mut().enumerate().take(arity) {
+                let Some(original) = node.child(slot) else {
+                    return Err(InduceError::Malformed);
+                };
+                let instance = instantiate_in(original, below, visited, s)?;
+                copied |= instance != original;
+                *child = instance;
+            }
+            if !copied {
+                return Ok(term);
+            }
+            alloc(
+                s,
+                TermNode::compound(node.functor, &children[..arity])
+                    .ok_or(InduceError::Malformed)?,
+            )
+        }
+        _ => Err(InduceError::Malformed),
     }
 }
 
@@ -1244,6 +1331,110 @@ mod tests {
             Err(InduceError::Malformed),
             "a hole"
         );
+    }
+
+    #[test]
+    fn instantiation_copies_through_the_bindings_children_first_and_only_what_is_bound() {
+        let mut kit = Kit::<64>::new();
+        let (x, y, z) = (kit.var(), kit.var(), kit.var());
+        let (a, b) = (kit.constant(A), kit.constant(B));
+        let fa = kit.compound(F, &[a]);
+        let gxy = kit.compound(G, &[x, y]);
+        let pz = kit.compound(P, &[z, gxy]);
+        let mut s = kit.scratch();
+        // Nothing bound: every term is its own instance, and nothing is allocated.
+        let free = s.free;
+        for t in [a, x, fa, gxy, pz] {
+            assert_eq!(instantiate(t, &mut s), Ok(t));
+        }
+        assert_eq!(s.free, free);
+        // x ← f(a), z ← b: the instance of g(x, y) is a new g(f(a), y); that of p(z, g(x, y))
+        // a new p(b, g(f(a), y)) whose inner copy is allocated before it; the sizes and the
+        // hashes through the bindings equal the instances' with an empty table.
+        let m = s.mark();
+        assert!(unify_in(x, fa, &mut s).unwrap());
+        assert!(unify_in(z, b, &mut s).unwrap());
+        let g2 = instantiate(gxy, &mut s).unwrap();
+        assert_ne!(g2, gxy);
+        assert_eq!(s.arena[g2 as usize].functor, G);
+        assert_eq!(
+            s.arena[g2 as usize].child(0),
+            Some(fa),
+            "the bound variable's binding"
+        );
+        assert_eq!(
+            s.arena[g2 as usize].child(1),
+            Some(y),
+            "the unbound variable itself"
+        );
+        let p2 = instantiate(pz, &mut s).unwrap();
+        let inner = s.arena[p2 as usize].child(1).unwrap();
+        assert!(inner < p2, "the child copy precedes its parent");
+        assert_eq!(s.arena[p2 as usize].child(0), Some(b));
+        assert_eq!(
+            s.free,
+            free + 3,
+            "g(f(a), y), then g again inside p, then p"
+        );
+        let through = (
+            size(pz, s.arena, s.bindings, s.stack).unwrap(),
+            term_hash(pz, s.arena, s.bindings, s.stack).unwrap(),
+        );
+        s.unbind(&m);
+        assert!(s.bindings.iter().all(|b| *b == Binding::UNBOUND));
+        assert_eq!(s.trail_len, 0);
+        assert_eq!(s.free, free + 3, "unbinding keeps the nodes");
+        let bare = (
+            size(p2, s.arena, s.bindings, s.stack).unwrap(),
+            term_hash(p2, s.arena, s.bindings, s.stack).unwrap(),
+        );
+        assert_eq!(through, bare);
+        assert_eq!(bare.0, 6, "p, b, g, f, a, y");
+        assert_eq!(
+            instantiate(x, &mut s),
+            Ok(x),
+            "unbound again, the variable is its own instance"
+        );
+        // A variable bound to a variable bound to a term: the chain is followed.
+        assert!(unify_in(y, x, &mut s).unwrap());
+        assert!(unify_in(x, a, &mut s).unwrap());
+        assert_eq!(instantiate(y, &mut s), Ok(a));
+        // The bounds: a full arena, a binding that loops, a depth past the constant, all
+        // restored.
+        let m = s.mark();
+        s.free = s.arena.len();
+        assert_eq!(instantiate(gxy, &mut s), Err(InduceError::ArenaFull));
+        s.free = m.free;
+        s.bindings[s.arena[z as usize].functor as usize] = Binding(z.wrapping_add(1));
+        assert_eq!(
+            instantiate(z, &mut s),
+            Err(InduceError::BoundExceeded),
+            "z bound to itself"
+        );
+        assert_eq!(s.mark(), m);
+        s.bindings[s.arena[z as usize].functor as usize] = Binding::UNBOUND;
+        let mut deep = Kit::<128>::new();
+        let leaf = deep.var();
+        let bottom = deep.constant(A);
+        let mut term = leaf;
+        for _ in 0..INSTANTIATE_DEPTH {
+            term = deep.compound(F, &[term]);
+        }
+        let mut d = deep.scratch();
+        assert!(unify_in(leaf, bottom, &mut d).unwrap());
+        assert_eq!(
+            instantiate(term, &mut d),
+            Err(InduceError::BoundExceeded),
+            "the leaf is one level past the bound"
+        );
+        assert_eq!(
+            instantiate(d.arena[term as usize].child(0).unwrap(), &mut d).map(|t| t != term),
+            Ok(true),
+            "one level less fits"
+        );
+        assert_eq!(instantiate(u32::MAX, &mut d), Err(InduceError::Malformed));
+        let empty = d.free as u32;
+        assert_eq!(instantiate(empty, &mut d), Err(InduceError::Malformed));
     }
 
     #[test]
