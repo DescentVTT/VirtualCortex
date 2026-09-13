@@ -6,8 +6,9 @@
 //! lexicon's speech-act markers sets the frame's act, one that is a prosody particle sets its
 //! marker. [`realise`] emits a complete frame's roles in the template's order, each concept
 //! as its token (the formal register's variant at or above `POLITENESS_FORMAL`), descending
-//! into a nested frame at `ROLE_CHILD`, with the act's opener and closer and the particle
-//! when the slot is open, and writes the last token into `surface_token_id`. No word is here:
+//! into a nested frame at `ROLE_CHILD` (a child slot that names a frame being realised is a
+//! cycle and is refused), with the act's opener and closer and the particle when the slot is
+//! open, and writes the last token into `surface_token_id`. No word is here:
 //! a token is an id the host chose (§1.5), the table is the caller's slice, and nothing
 //! allocates.
 
@@ -43,6 +44,8 @@ pub const MAX_NESTING: usize = 8;
 
 /// The steps a frame costs the realisation's walk: its five positions and its return.
 const STEPS_PER_FRAME: usize = 6;
+/// The steps a realisation takes at most: the stack's frames, each at its cost.
+const BUDGET: usize = MAX_NESTING * STEPS_PER_FRAME;
 
 /// One word of the table: a token id, its concept, its lexical shape, and the token the
 /// formal register uses in its place (0 for none).
@@ -115,7 +118,9 @@ impl Lexicon<'_> {
     /// True for a table the rules can use: the entries strictly sorted by token with no token
     /// zero and every shape one of the eight; the three atoms distinct and below the role
     /// band; every marker that is not zero no entry's token and no other marker's; the
-    /// particle of `PROSODY_NONE` zero.
+    /// particle of `PROSODY_NONE` zero; every formal variant that is not zero no entry's
+    /// token, no marker's and no other entry's variant, so that a realised token names one
+    /// concept.
     pub fn is_well_formed(&self) -> bool {
         self.entries.windows(2).all(|w| w[0].token < w[1].token)
             && self
@@ -136,6 +141,16 @@ impl Lexicon<'_> {
                             .markers()
                             .skip(i.wrapping_add(1))
                             .all(|other| other != marker))
+            })
+            && self.entries.iter().enumerate().all(|(i, entry)| {
+                entry.formal == 0
+                    || (self.lookup(entry.formal).is_none()
+                        && self.markers().all(|marker| marker != entry.formal)
+                        && self
+                            .entries
+                            .iter()
+                            .skip(i.wrapping_add(1))
+                            .all(|other| other.formal != entry.formal))
             })
     }
 
@@ -435,8 +450,8 @@ fn emit(
 /// particle slot is open. The last token realised is written into the root's
 /// `surface_token_id`. Refused, with the output partly written, for a frame outside the
 /// arena (`NoSuchFrame`), a frame without a realisation order (`Incomplete`), a concept
-/// without an entry (`NoToken`), a nesting past the bound or a child slot that returns to a
-/// frame already realised (`TooDeep`), and an output too small (`OutFull`). A child clause's
+/// without an entry (`NoToken`), a child slot that names a frame being realised (a cycle) or
+/// a ninth level of nesting (`TooDeep`), and an output too small (`OutFull`). A child clause's
 /// markers and particle are not realised: they are the utterance's.
 pub fn realise(
     frames: &mut [LinguisticFrameSlot],
@@ -464,11 +479,10 @@ pub fn realise(
         at: 0,
     };
     let mut depth = 1usize;
-    let mut visited = 1usize;
-    // Every step emits a token, descends or returns, and a frame is visited once unless the
-    // arena holds a cycle, which the visit count refuses: the steps per frame bound the walk.
-    let budget = frames.len().saturating_mul(STEPS_PER_FRAME);
-    for _ in 0..budget {
+    // Every step emits a token, descends or returns; a frame costs at most six, the stack
+    // holds at most `MAX_NESTING` frames and a frame on the stack is never entered again, so
+    // the walk ends within the budget and the check after the loop is a result, not a path.
+    for _ in 0..BUDGET {
         let Some(below) = depth.checked_sub(1) else {
             break;
         };
@@ -497,8 +511,9 @@ pub fn realise(
                 .ok_or(LexiconError::NoSuchFrame(child))?
                 .realisation_order()
                 .ok_or(LexiconError::Incomplete(child))?;
-            visited = visited.wrapping_add(1);
-            if visited > frames.len() || depth >= MAX_NESTING {
+            // A frame being realised, entered again, is a cycle; a level past the stack is
+            // the nesting's bound.
+            if stack.iter().take(depth).any(|level| level.frame == child) {
                 return Err(LexiconError::TooDeep);
             }
             let Some(slot) = stack.get_mut(depth) else {
@@ -509,7 +524,7 @@ pub fn realise(
                 order,
                 at: 0,
             };
-            // Below the bound, checked above.
+            // Below the stack's length, checked above.
             depth = depth.wrapping_add(1);
         } else {
             let concept = concept_in(&frame, role).ok_or(LexiconError::Incomplete(frame_index))?;
@@ -753,6 +768,54 @@ mod tests {
             }
             .is_well_formed(),
             "no markers at all"
+        );
+        // A formal variant that is a word, a marker or another entry's variant.
+        let mut variant = ENTRIES;
+        variant[8].formal = 11;
+        assert!(
+            !Lexicon {
+                entries: &variant,
+                ..lex
+            }
+            .is_well_formed(),
+            "a variant that is a word"
+        );
+        variant[8].formal = 31;
+        assert!(
+            !Lexicon {
+                entries: &variant,
+                ..lex
+            }
+            .is_well_formed(),
+            "a variant that is a particle"
+        );
+        variant[8].formal = 20;
+        assert!(
+            !Lexicon {
+                entries: &variant,
+                ..lex
+            }
+            .is_well_formed(),
+            "a variant that is an opener"
+        );
+        variant[8].formal = 19;
+        variant[1].formal = 19;
+        assert!(
+            !Lexicon {
+                entries: &variant,
+                ..lex
+            }
+            .is_well_formed(),
+            "one variant for two words"
+        );
+        variant[1].formal = 29;
+        assert!(
+            Lexicon {
+                entries: &variant,
+                ..lex
+            }
+            .is_well_formed(),
+            "two variants apart"
         );
         assert!(
             Lexicon {
@@ -1134,8 +1197,26 @@ mod tests {
         assert_eq!(
             &wide[..7],
             &[11, 14, 11, 14, 11, 14, 0],
-            "three frames realised, the fourth visit refused before the budget would be"
+            "three frames realised, the return to the first refused before the budget would be"
         );
+        // A root whose child slot names itself is refused at its own child position, with
+        // its two roles written and nothing more; a child that names its grandparent
+        // likewise.
+        let mut selfish = cycle;
+        selfish[0].child_frame_idx = 0;
+        let mut out = [0u32; 8];
+        assert_eq!(
+            realise(&mut selfish, 0, &lex, &mut out),
+            Err(LexiconError::TooDeep)
+        );
+        assert_eq!(&out[..3], &[11, 14, 0]);
+        let mut back = cycle;
+        back[1].child_frame_idx = 0;
+        assert_eq!(
+            realise(&mut back, 0, &lex, &mut out),
+            Err(LexiconError::TooDeep)
+        );
+        assert_eq!(&out[..5], &[11, 14, 11, 14, 0]);
         // A chain of nine relative frames, the last a state frame: eight levels is the bound.
         let chain = |length: usize| -> [LinguisticFrameSlot; 10] {
             core::array::from_fn(|i| {

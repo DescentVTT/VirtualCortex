@@ -11,14 +11,16 @@ use crate::executor::{Executor, TagError};
 use cortex_hippocampus::{Burst, PATTERN_MAX, burst, capture};
 
 /// A rewarded invention's episode: the invented predicate's id, the ledger index of the
-/// pattern active in the ripple before its reward, and the pattern itself. The caller's
-/// table, as the clause store is (ADR-0043): no record holds it.
+/// pattern active in the ripple before its reward, the pattern itself, and the span it was
+/// read from. The caller's table, as the clause store is (ADR-0043): no record holds it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Association {
     pub predicate: u32,
     pub episode: u32,
     pub pattern: [u32; PATTERN_MAX],
     pub len: u8,
+    /// The densest span of the window before the reward, where the pattern fired.
+    pub burst: Burst,
 }
 
 impl Association {
@@ -30,8 +32,9 @@ impl Association {
 
 /// Tags the pattern of the span `[from, from + window)` of `train` (`capture`) into the
 /// executor's ledger with `priority`, between ticks; returns the ledger index, the pattern
-/// and its length. `InvalidPattern` for a span with no spike; the ledger's refusals as
-/// `tag_episode` gives them.
+/// and its length. The ledger's refusals as `tag_episode` gives them, in its order: a full
+/// ledger is `LedgerFull` before anything else, then a unit outside the arena, then a span
+/// with no spike (`InvalidPattern`).
 pub fn tag_from_trace<const CAP: usize>(
     exec: &mut Executor<CAP>,
     train: &[(u32, u32)],
@@ -85,12 +88,13 @@ pub fn tag_discovery<const CAP: usize>(
     let low = train.partition_point(|&(t, _)| t < from);
     let high = train.partition_point(|&(t, _)| t < at);
     let span = train.get(low..high).unwrap_or(&[]);
-    let (_, episode, pattern, len) = tag_burst(exec, span, coincidence, priority)?;
+    let (burst, episode, pattern, len) = tag_burst(exec, span, coincidence, priority)?;
     Ok(Some(Association {
         predicate: discovery.invention.predicate,
         episode,
         pattern,
         len,
+        burst,
     }))
 }
 
@@ -207,6 +211,13 @@ mod tests {
             .expect("a positive reward");
         assert_eq!((a.predicate, a.episode, a.len), (0xFFFE_0007, 0, 2));
         assert_eq!(a.pattern(), &[1, 2]);
+        assert_eq!(
+            a.burst,
+            Burst {
+                from: 100,
+                spikes: 3
+            }
+        );
         assert_eq!(exec.episodes()[0].pattern(), a.pattern());
         assert_eq!(exec.episodes()[0].tag, 5);
         // A coincidence as long as the window takes the window's units.

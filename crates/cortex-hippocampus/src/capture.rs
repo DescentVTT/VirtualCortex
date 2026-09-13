@@ -147,10 +147,18 @@ mod tests {
         assert_eq!(out[0], 9);
         assert_eq!(capture(&TRAIN, 5, 6, &mut out), 2);
         assert_eq!(&out[..2], &[9, 1], "one spike each: the earlier first");
-        // Equal spikes and equal first ticks: the lower index.
+        // Equal spikes and equal first ticks: the lower index, whichever came first in the
+        // train.
         let tie = [(3, 8), (3, 2), (4, 8), (4, 2)];
         assert_eq!(capture(&tie, 0, 10, &mut out), 2);
         assert_eq!(&out[..2], &[2, 8]);
+        let tie = [(3, 2), (3, 8), (4, 2), (4, 8)];
+        assert_eq!(capture(&tie, 0, 10, &mut out), 2);
+        assert_eq!(&out[..2], &[2, 8]);
+        // Equal spikes and a later first tick: after, whatever the index.
+        let later = [(3, 8), (4, 2), (5, 8), (6, 2)];
+        assert_eq!(capture(&later, 0, 10, &mut out), 2);
+        assert_eq!(&out[..2], &[8, 2]);
         // A later spike of a ranked unit is not ranked again.
         let again = [(1, 4), (2, 6), (3, 4)];
         assert_eq!(capture(&again, 0, 10, &mut out), 2);
@@ -283,12 +291,10 @@ mod prop {
                     distinct = distinct.wrapping_add(1);
                 }
             }
-            keys[..distinct].sort_unstable_by(|&a, &b| {
-                if before(a, b) {
-                    core::cmp::Ordering::Less
-                } else {
-                    core::cmp::Ordering::Greater
-                }
+            // The oracle's order, spelled out independently of the rule's `before`: most
+            // spikes first, then the earliest first spike, then the lowest index.
+            keys[..distinct].sort_unstable_by_key(|&(spikes, first, unit)| {
+                (core::cmp::Reverse(spikes), first, unit)
             });
             let mut out = [u32::MAX; PATTERN_MAX];
             let written = capture(train, from, window, &mut out) as usize;
