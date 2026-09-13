@@ -12,7 +12,7 @@
 //! What this file does not show: the branching ratio settling at 1 on a network. The
 //! estimator reads the lag-one slope of population activity across bins, which is the
 //! branching ratio when the activity is a stationary branching process observed at its
-//! generation time (Wilting and Priesemann 2018); a 48-unit network with depleting synapses
+//! generation time (Wilting and Priesemann 2018); a 64-unit network with depleting synapses
 //! produces avalanches that finish inside one bin, which the slope reads as sub-critical. The
 //! regime is the reference population's (whitepaper hypothesis H-8).
 

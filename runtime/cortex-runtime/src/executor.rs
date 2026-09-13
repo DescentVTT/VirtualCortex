@@ -873,6 +873,19 @@ impl<const CAP: usize> Executor<CAP> {
         unsafe { self.shared.units.as_mut_slice() }
     }
 
+    /// The unit and synapse arenas together, exclusively, between ticks: for a rule that
+    /// writes both, such as the synthesis of a network from a prior (ADR-0044).
+    pub fn arenas_mut(&mut self) -> (&mut [DendriticSuperNeuron], &mut [SynapseBlock]) {
+        // SAFETY: as in `units_mut`; the two arenas are distinct allocations, so the two
+        // exclusive slices do not overlap.
+        unsafe {
+            (
+                self.shared.units.as_mut_slice(),
+                self.shared.blocks.as_mut_slice(),
+            )
+        }
+    }
+
     /// The synapse arena, between ticks.
     pub fn blocks(&self) -> &[SynapseBlock] {
         // SAFETY: as in `units`.

@@ -11,7 +11,16 @@
 //! statement hash is
 //! pinned, and a prover frame completed with that hash and a certificate certifies a node,
 //! while the pending frame does not.
-
+//!
+//! Brief 022 (ADR-0045) adds the executive search over a clause store: three clauses of one
+//! head sharing four literals and differing in a fifth, a clause of another head and the
+//! facts of three constants; the search commits two inventions (46 nodes become 40, two
+//! rewards of three quarters), every goal `p(k)` provable before is provable after and no
+//! other, the proofs' steps go from 6 to 8, 8 and 7 (the invented predicates read back on
+//! the path, one step each), and the committed rewards consolidate a pending trace in the
+//! two-unit network. The symbolic half of hypothesis H-11 is what this holds; the synaptic
+//! half (that the trace consolidated biases a later behaviour toward the invention) needs a
+//! rule that maps an id to a pattern of units, which the tree does not have.
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_affect::InteroceptiveState;
@@ -19,9 +28,12 @@ use cortex_core::{
     MODULATION_ONE_Q16, STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
 use cortex_knowledge::SemanticOntologyNode;
-use cortex_reasoning::{Binding, INVENTED_BASE, InduceScratch, TermNode, clause, term_hash};
+use cortex_reasoning::{
+    Binding, Frame, INVENTED_BASE, InduceScratch, TermNode, clause, next_pair, prove, term_hash,
+};
 use cortex_runtime::{
-    CertifyError, Config, Executor, certify_from_frame, conjecture_frame, invent, prime,
+    CertifyError, Config, Discovery, Executor, SearchReport, certify_from_frame, conjecture_frame,
+    description_length, invent, prime, search,
 };
 
 /// The vocabulary: predicates and the head, as concept ids; no word enters the runtime.
@@ -313,5 +325,198 @@ fn the_invention_leaves_as_a_conjecture_and_returns_as_a_theorem_only_when_certi
         certify_from_frame(&frame, STATEMENT ^ 1, &mut node),
         Err(CertifyError::Mismatch),
         "the frame certifies its own statement only"
+    );
+}
+
+// ------------------------------------------------------------------ ADR-0045: the search
+
+/// The vocabulary of the search's store: the heads `P` and `R` above, these literals and
+/// constants.
+const LIT: [u32; 8] = [0x200, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x207];
+const K: [u32; 4] = [0x300, 0x301, 0x302, 0x303];
+const GOAL: u32 = 0x400;
+
+/// A builder over a fixed arena, as the induction tests' kit.
+struct Store {
+    arena: [TermNode; 1024],
+    len: usize,
+    vars: u32,
+}
+
+impl Store {
+    fn new() -> Self {
+        Self {
+            arena: [TermNode::default(); 1024],
+            len: 0,
+            vars: 0,
+        }
+    }
+
+    fn push(&mut self, node: TermNode) -> u32 {
+        let i = self.len;
+        self.arena[i] = node;
+        self.len = self.len.wrapping_add(1);
+        i as u32
+    }
+
+    /// `head(X) ← l1(X), ..., lk(X)` over a fresh variable.
+    fn rule(&mut self, head: u32, literals: &[u32]) -> u32 {
+        let x = self.push(TermNode::variable(self.vars));
+        self.vars = self.vars.wrapping_add(1);
+        let h = self.push(TermNode::compound(head, &[x]).unwrap());
+        let mut body = [0u32; 7];
+        for (i, &l) in literals.iter().enumerate() {
+            body[i] = self.push(TermNode::compound(l, &[x]).unwrap());
+        }
+        self.push(clause(h, &body[..literals.len()]).unwrap())
+    }
+
+    /// The fact `l(k)`.
+    fn fact(&mut self, literal: u32, k: u32) -> u32 {
+        let c = self.push(TermNode::constant(k));
+        let h = self.push(TermNode::compound(literal, &[c]).unwrap());
+        self.push(clause(h, &[]).unwrap())
+    }
+}
+
+/// The store of ADR-0045's exit test: three clauses of `p` sharing `LIT[0..4]` and differing
+/// in `LIT[4]`, `LIT[5]`, `LIT[6]`; one clause of `r`; the facts that make `p(K[0])` hold
+/// through the first, `p(K[1])` through the second, `p(K[2])` through the third, and
+/// `p(K[3])` through none (its fifth literal is `LIT[7]`, which no clause has).
+fn exit_store(store: &mut Store) -> Vec<u32> {
+    let mut out = vec![
+        store.rule(P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[4]]),
+        store.rule(P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[5]]),
+        store.rule(P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[6]]),
+        store.rule(R, &[LIT[0], LIT[7]]),
+    ];
+    for (i, &k) in K.iter().enumerate() {
+        for &l in &LIT[..4] {
+            out.push(store.fact(l, k));
+        }
+        out.push(store.fact([LIT[4], LIT[5], LIT[6], LIT[7]][i], k));
+    }
+    out
+}
+
+/// Whether and in how many steps each `p(K[i])` is provable from `store`; the goals are
+/// appended at the scratch's cursor, which the caller restores.
+fn proofs(store: &[u32], s: &mut InduceScratch) -> [Option<u32>; 4] {
+    let goals: Vec<u32> = K.iter().map(|&k| goal_at(s, k)).collect();
+    let mut frames = [Frame::default(); 16];
+    let mut out = [None; 4];
+    for (i, &g) in goals.iter().enumerate() {
+        out[i] = prove(g, store, &mut frames, 4096, s)
+            .unwrap()
+            .map(|p| p.steps);
+    }
+    out
+}
+
+/// The goal `← p(k)`, appended at the scratch's cursor.
+fn goal_at(s: &mut InduceScratch, k: u32) -> u32 {
+    let base = s.free as u32;
+    let at = |k: u32| base.wrapping_add(k);
+    s.arena[s.free] = TermNode::constant(GOAL);
+    s.arena[s.free.wrapping_add(1)] = TermNode::constant(k);
+    s.arena[s.free.wrapping_add(2)] = TermNode::compound(P, &[at(1)]).unwrap();
+    s.arena[s.free.wrapping_add(3)] = clause(base, &[at(2)]).unwrap();
+    s.free = s.free.wrapping_add(4);
+    at(3)
+}
+
+#[test]
+fn the_search_commits_two_inventions_the_store_is_shorter_and_every_proof_is_kept_with_the_invented_predicates_read_back()
+ {
+    let mut builder = Store::new();
+    let clauses = exit_store(&mut builder);
+    assert_eq!(clauses.len(), 24, "four rules and twenty facts");
+    let mut bindings = [Binding::UNBOUND; 128];
+    let (mut trail, mut stack, mut pairs) = ([0u32; 256], [0u32; 512], [[0u32; 3]; 32]);
+    let mut s = InduceScratch {
+        arena: &mut builder.arena,
+        free: builder.len,
+        bindings: &mut bindings,
+        trail: &mut trail,
+        trail_len: 0,
+        stack: &mut stack,
+        pairs: &mut pairs,
+        next_variable: builder.vars,
+        next_invented: INVENTED_BASE,
+    };
+    let mut store = [0u32; 32];
+    store[..clauses.len()].copy_from_slice(&clauses);
+    let mut len = clauses.len();
+    // Four rules of 13, 13, 13 and 7 nodes (the clause, a head of two, literals of two);
+    // twenty facts of 3 (the clause, the literal, its constant): 106 in all.
+    let before = description_length(&store[..len], s.arena, s.bindings, s.stack).unwrap();
+    assert_eq!(before, 13 + 13 + 13 + 7 + 20 * 3);
+    let goals_before = {
+        let mark = s.mark();
+        let g = proofs(&store[..len], &mut s);
+        s.restore(&mark);
+        g
+    };
+    assert_eq!(
+        goals_before,
+        [Some(6), Some(6), Some(6), None],
+        "p(k) through five facts is six steps; p(K[3]) has no clause for its fifth literal"
+    );
+    let mut affect = InteroceptiveState::default();
+    prime(&mut affect, before);
+    let mut out = [Discovery::default(); 4];
+    let report = search(&mut store, &mut len, &mut s, &mut affect, 64, &mut out).unwrap();
+    assert_eq!(
+        report,
+        SearchReport {
+            attempts: 2,
+            commits: 2,
+            rejections: 0,
+            length_before: before,
+            length_after: before - 6,
+            reward_total_q16: 3 * ONE / 2,
+        }
+    );
+    assert_eq!(len, 26, "two inputs became three outputs, twice");
+    assert_eq!(
+        (out[0].invention.predicate, out[1].invention.predicate),
+        (INVENTED_BASE, INVENTED_BASE + 1)
+    );
+    assert_eq!(
+        (out[0].reward_q16, out[1].reward_q16),
+        (3 * ONE / 4, 3 * ONE / 4)
+    );
+    // Every goal provable before is provable after, and no other; the invented predicates
+    // are read back on the path: `p(K[0])` and `p(K[1])` through both (eight steps),
+    // `p(K[2])` through the second only (seven).
+    let goals_after = {
+        let mark = s.mark();
+        let g = proofs(&store[..len], &mut s);
+        s.restore(&mark);
+        g
+    };
+    assert_eq!(goals_after, [Some(8), Some(8), Some(7), None]);
+    // No pair is left: a second search does nothing.
+    let again = search(&mut store, &mut len, &mut s, &mut affect, 64, &mut out).unwrap();
+    assert_eq!((again.attempts, again.commits), (0, 0));
+    assert_eq!(next_pair(&store[..len], None, &s), Ok(None));
+
+    // The committed rewards into the modulator of a network with a pending trace: the next
+    // presynaptic spike consolidates it (ADR-0043's coupling, unchanged).
+    let mut exec = network();
+    let trace = pending(&mut exec);
+    for d in &out[..report.commits as usize] {
+        exec.reward(d.reward_q16);
+    }
+    assert_eq!(
+        exec.modulator().dopamine_rpe,
+        3 * ONE / 2,
+        "the two rewards summed"
+    );
+    fire(&mut exec, 0);
+    let (weight_after, trace_after) = synapse(&exec);
+    assert!(
+        weight_after > WEIGHT && trace_after < trace,
+        "consolidated at a modulation clamped to 1.0: {weight_after}, {trace_after}"
     );
 }

@@ -1,11 +1,18 @@
 //! Connectome: the `.cortex` image header, the section directory record and the CRC-64 that
-//! seals them (whitepaper §5.2.2, §8.7; ADR-0007, ADR-0024). The writer and the loader are the
-//! runtime's (`runtime/cortex-runtime`); the laminar priors are Specified.
+//! seals them (whitepaper §5.2.2, §8.7; ADR-0007, ADR-0024), and the anatomical prior of a
+//! synthesized network ([`prior`]: a seeded ring lattice with a local window, a rewired
+//! fraction and every $k$-th unit inhibitory, yielded synapse by synapse; ADR-0044). The
+//! writer, the loader and the synthesis that writes a prior into the arenas are the runtime's
+//! (`runtime/cortex-runtime`); the laminar priors of the cortical sheet are Specified.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
 // here (ADR-0029; migrated under brief 016 on 2026-09-10).
 #![deny(clippy::arithmetic_side_effects)]
+
+pub mod prior;
+
+pub use prior::{Census, Lcg, Prior, Synapse, Synapses, ring_distance};
 
 /// The reflected form of the ECMA-182 polynomial `0x42F0E1EBA9EA3693`: the CRC-64/XZ
 /// parameters (reflected input and output, initial and final value all ones).

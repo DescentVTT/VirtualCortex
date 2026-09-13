@@ -31,9 +31,10 @@ pub use category::{
     is_functor, reduce, result, role, slash,
 };
 pub use induce::{
-    CLAUSE, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceMark, InduceScratch, Invention,
-    MAX_BODY, absorb, clause, clause_body_len, clause_head, clause_literal, free_variables,
-    identify, intra_construct, is_clause, lgg, resolve_definite, size, term_hash,
+    CLAUSE, Frame, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceMark, InduceScratch,
+    Invention, MAX_BODY, Proof, absorb, clause, clause_body_len, clause_head, clause_literal,
+    free_variables, identify, intra_construct, is_clause, lgg, next_pair, prove, resolve_definite,
+    resolve_literal, size, term_hash,
 };
 pub use term::{
     Binding, MAX_ARITY, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TERM_NONE, TERM_VARIABLE,
