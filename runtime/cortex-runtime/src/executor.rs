@@ -1262,12 +1262,15 @@ impl<const CAP: usize> Drop for Executor<CAP> {
     }
 }
 
-/// Builds the wheels on a thread whose stack holds one (a production wheel is 4 MB and
-/// `Box::new` may build it on the stack first).
+/// Builds the wheels on a thread whose stack holds several: a production wheel is 4 MB,
+/// `Box::new` builds it on the stack and copies it on its way into the box, and the debug
+/// profile materialises more than two copies (a Linux build overflowed at twice the wheel,
+/// finding F-34, the first time a test constructed the production geometry), so the
+/// reservation is eight wheels and a megabyte, virtual memory committed only as touched.
 fn build_wheels<const CAP: usize>(count: usize) -> Vec<Box<FlatTimingWheel<CAP>>> {
     let bytes = std::mem::size_of::<FlatTimingWheel<CAP>>();
     thread::Builder::new()
-        .stack_size(bytes.saturating_mul(2).max(1 << 20))
+        .stack_size(bytes.saturating_mul(8).saturating_add(1 << 20))
         .spawn(move || {
             (0..count)
                 .map(|_| Box::new(FlatTimingWheel::<CAP>::new()))
