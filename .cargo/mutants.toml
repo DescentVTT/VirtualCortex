@@ -27,6 +27,7 @@ exclude_re = [
     # (ADR-0032).
     "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in SynapseBlock::link",
     "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in spike_message",
+    "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in synaptic_message",
     # A clamp compared at its own bound: `if v > MAX { MAX } else { v }` and `>=` agree at
     # `v == MAX`, and likewise `<` and `<=` at `MIN`.
     "cortex-cerebellum/src/lib\\.rs:\\d+:\\d+: replace > with >= in CerebellarMicrozone::plant_delay",
@@ -35,6 +36,9 @@ exclude_re = [
     "membrane\\.rs:\\d+:\\d+: replace < with <= in add",
     "synapse\\.rs:\\d+:\\d+: replace > with >= in spike_message",
     "synapse\\.rs:\\d+:\\d+: replace < with <= in spike_message",
+    # The period's clamp in `istdp_alpha_q1_15`, compared at both its bounds.
+    "synapse\\.rs:\\d+:\\d+: replace < with <= in istdp_alpha_q1_15",
+    "synapse\\.rs:\\d+:\\d+: replace > with >= in istdp_alpha_q1_15",
     "cortex-linguistic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in required_roles",
     "term\\.rs:\\d+:\\d+: replace \\| with \\^ in literal_of_term",
     # A rotation joins the high bits of one word with the low bits of the next, which the two
