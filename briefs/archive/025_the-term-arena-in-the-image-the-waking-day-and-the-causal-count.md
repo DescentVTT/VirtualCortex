@@ -1,7 +1,18 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-14
 ---
+
+> **Executed 2026-09-14 in pull request #60.** Writes ADR-0052 (the term arena in the image and
+> the discovery loop inside the tick), ADR-0053 (the waking day and the inhibitory target period
+> as an image parameter) and ADR-0054 (the causal count inside the loop); resolves finding F-37;
+> image format 14; the determinism pin moved once, for the unit's stamp, with its reason. Every
+> deliverable is done; notes under the boxes say where the tree departs from the text (the
+> causal rule failed, so the record and the controller are untouched; the day at 1 024 units runs
+> eighty windows, since sixty-four do not reach the onset at shift 5; a rewarded moment tags one
+> episode, bound to the first commit). The report is in the pull request and in
+> `CHANGELOG.md`. The body below describes the tree before execution and is not maintained;
+> its relative links gained one `../`.
 
 # Brief 025 — The term arena in the image and the discovery loop inside the tick, the waking day and the inhibitory target as an image parameter, and the causal count inside the loop
 
@@ -16,7 +27,7 @@ code, measurements and tests. **One ADR** gives the image a term arena and moves
 loop inside the tick: the clause store, the term nodes it names, the counters that number the
 arena's variables and its inventions, the affect state and the association between an invented
 predicate and its episode are the executor's and the image's (format 14), the search of
-[ADR-0045](../docs/adr/0045-clause-search.md) runs on a cadence of the tick while the engine is
+[ADR-0045](../../docs/adr/0045-clause-search.md) runs on a cadence of the tick while the engine is
 awake with a bounded budget from a cursor it keeps, its reward goes into the modulator and the
 coincidence before the reward is tagged from the executor's own train and bound to the invented
 predicate without a caller, and a caller may still trigger the same loop between ticks; a
@@ -25,9 +36,9 @@ store in the image is nodes alone and the binding table stays the scratch it is.
 runs a waking day on the reference network: the population rate, the drift of the inhibitory
 and the excitatory weights, the gain and the estimate per window over the engine's own day (the
 pressure's time constant at shift 5, a night included), at 256 and 1 024 units, under the
-target rate [ADR-0049](../docs/adr/0049-dale-principle-in-plasticity.md) chose and under one that
+target rate [ADR-0049](../../docs/adr/0049-dale-principle-in-plasticity.md) chose and under one that
 matches the regime; decides where that target lives (the behaviour gate of
-[ADR-0031](../docs/adr/0031-policy-amendment.md) admits no parameter that changes what the engine
+[ADR-0031](../../docs/adr/0031-policy-amendment.md) admits no parameter that changes what the engine
 does, so the registry cannot hold it; the image can), makes the rule take the depression per
 presynaptic spike as an argument, and either tunes a sleep placeholder under a criterion stated
 before the run or keeps it with the reading. **One ADR** puts the causal count inside the loop:
@@ -48,7 +59,7 @@ brief is archived with every check green.
 - Every claim is Implemented, Specified, Target or Hypothesis. What a test holds on a network
   of 256, 1 024 or 4 096 units is stated as what it is, with the prior's parameters; what the
   same rules do at Appendix A's scale is a Target with the same generator
-  ([ADR-0010](../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from
+  ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from
   a developer machine. A rule is what it does: no "validates", no "autonomous", no
   "reference-scale" for anything below Appendix A's counts; "a day" is the engine's own (the
   pressure's time constant), stated in windows and in simulated seconds, never a clock's.
@@ -59,7 +70,7 @@ brief is archived with every check green.
 - No `f32`/`f64`, in the crates and in the tests; a ratio is Q16.16 in `u32`/`i32`, widened to
   `i64` to multiply; every operation on a state field saturates or wraps by name
   (`clippy::arithmetic_side_effects` is denied everywhere,
-  [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
+  [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
   above the shift.
 - Every loop ends by construction: a countdown, a range, a scan by `get`, a slice's iterator,
   a recursion whose depth argument falls to a stated bound; never by a comparison alone that
@@ -68,11 +79,11 @@ brief is archived with every check green.
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; no heap types, threads
   or `unsafe` in a state crate (`unsafe_code = "forbid"`, ADR-0029). A rule of `cortex-core`
   takes what it needs as an argument; it does not read a unit's flag or a policy.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   the term arena's record and rules are `cortex-reasoning`'s, the affect record
   `cortex-affect`'s, the episode's binding to a symbol `cortex-hippocampus`'s, the descendant
   rule and the message bit `cortex-core`'s, the tally and the ratio `cortex-homeostasis`'s, the
-  composition of all of them the executor's ([ADR-0023](../docs/adr/0023-executor.md)). No new
+  composition of all of them the executor's ([ADR-0023](../../docs/adr/0023-executor.md)). No new
   crate; the crate count stays 32. A new record in a crate is decided by an ADR of this round
   that names the gap it fills and no existing record owning the quantity.
 - A change to a record is an ADR of this round with the format bump (13 → 14, one bump for the
@@ -81,7 +92,7 @@ brief is archived with every check green.
   ADR names the field that takes them.
 - Rule L-3 and §1.5: no word, no string and no language name enters a crate; a clause holds
   ids.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only
   with a stated reason (this round has one: the unit record gains a field the loop writes);
   the mutation gate on the changed lines must pass; a new rule carries a test over the lattice
   of `testkit/prop.rs`; every pinned number an arithmetic oracle can produce is computed by that
@@ -91,7 +102,7 @@ brief is archived with every check green.
 - A decision rule for a measurement is written in this brief before the run and applied as
   written; what the numbers say beyond it is recorded as a reading, never folded into the rule
   after the fact (brief 024's lesson, ADR-0051).
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); a
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); a
   parameter that changes what a run does is in the image or in the trace (§8.3), never in a
   configuration alone.
 - A heavy exit test runs in the weekly job as an ignored test whose name contains
@@ -143,7 +154,7 @@ quoted sentences are what to re-derive.
    (`episode.rs`) is "the caller's table, as the clause store is (ADR-0043): no record holds
    it"; `discover(exec, ClauseSearch { store, len, scratch, affect, budget }, Tagging {
    window, coincidence, priority }, discoveries, associations)` runs the loop between ticks
-   over a caller's store ([ADR-0050](../docs/adr/0050-the-train-inside-the-executor.md)), and
+   over a caller's store ([ADR-0050](../../docs/adr/0050-the-train-inside-the-executor.md)), and
    its option 3 ("a cadence inside `tick()` that runs the search over an executor-owned store
    on every ripple while awake") was not adopted because "the store is the caller's arena".
    `Executor::tick` (`executor.rs`) runs the three phases, `merge_spikes`, the increment,
@@ -161,7 +172,7 @@ quoted sentences are what to re-derive.
    the oracle blocks of `tests/sleep.rs` and `tests/modulation.rs`, `benches/cortex-bench`.
    Whitepaper §11.1's item after F-36 says "the round that runs a waking day on the reference
    network measures both and makes the rate a `REGISTRY` entry". But the registry's third gate
-   (`PolicyAmendment::record_trial`, [ADR-0031](../docs/adr/0031-policy-amendment.md): "the
+   (`PolicyAmendment::record_trial`, [ADR-0031](../../docs/adr/0031-policy-amendment.md): "the
    candidate fork's behaviour hash equals the baseline's, or the amendment is rejected as
    `REJECT_BEHAVIOUR_CHANGED`... *the engine may change what it costs, never what it does*")
    admits no parameter whose change moves a weight, so the sentence prescribed what the
@@ -244,7 +255,7 @@ quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The term-arena ADR (the next free number)** (`depends-on: ADR-0050`; ADR-0025,
+- [x] **The term-arena ADR (the next free number)** (`depends-on: ADR-0050`; ADR-0025,
   ADR-0041, ADR-0043 and ADR-0045 named). In `cortex-reasoning`: `TermNode::{encode, decode,
   is_well_formed}` (a kind the constants name, an arity of zero for a constant or a variable
   and at most eight for a compound, the slots beyond the arity zero, the pad and the reserved
@@ -322,7 +333,13 @@ quoted sentences are what to re-derive.
   commits, what the cadence costs per tick (bounded by the budget and the walk limit), and
   what is Specified (a compaction of the arena's garbage; standardising apart; a trigger that
   is not a cadence).
-- [ ] **The waking-day ADR (the number after it)** (`depends-on: ADR-0049`; ADR-0031,
+  **Departure:** the search's parameters are the induction record's fields, `search_shift`,
+  `search_budget` and `tag`, with `Config::{search_shift, search_budget, discovery_tag}` as
+  their initial values; the search inside the tick runs after the tally; a search's own error
+  is counted as a failure with its commits before it standing; `instantiate` copies on need;
+  the kinds are 47 (affect), 48 (induction) and 49 (clauses); the loader also refuses an
+  induction record whose next variable is at or below a loaded variable's number.
+- [x] **The waking-day ADR (the number after it)** (`depends-on: ADR-0049`; ADR-0031,
   ADR-0036, ADR-0037 and ADR-0044 named). In `cortex-core`:
   `istdp_alpha_q1_15(target_period_ticks) -> i32` with `ISTDP_PERIOD_MIN_TICKS` (100, 1 kHz,
   α 13 434) and `ISTDP_PERIOD_MAX_TICKS` (1 000 000, 0.1 Hz, α 1) and a `const` assertion that
@@ -346,7 +363,12 @@ quoted sentences are what to re-derive.
   the §11.1 item after F-36 dispositioned (the period is an image parameter, not a registry
   entry, and why); the sleep placeholders' disposition under the rule; what a round that
   chooses a target would need.
-- [ ] **The causal-count ADR (the number after that)** (`depends-on: ADR-0051`; ADR-0036,
+  **Departure:** the 1 024-unit day runs eighty windows, not sixty-four, since at shift 5 from
+  a pressure of zero the onset comes at the sixty-sixth; the local cluster of twelve is tagged
+  at the start so that the night replays something; the reading is the opposite of the §11.1
+  sentence's expectation (inhibition only weakens from the rail) and the excitatory arena's
+  drain under the stationary drive is recorded as the next controller round's subject.
+- [x] **The causal-count ADR (the number after that)** (`depends-on: ADR-0051`; ADR-0036,
   ADR-0044 and ADR-0047 named). In `cortex-core`: `MESSAGE_SYNAPTIC` (bit 19),
   `synaptic_message(efficacy, apical)` and `message_is_synaptic`; `CAUSAL_LATENCY_TICKS`
   (128, the oracle's, `tests/reference.rs::LATENCY` tied to it); `DendriticSuperNeuron::
@@ -370,12 +392,16 @@ quoted sentences are what to re-derive.
   not (the oracle's first-generation rule without the counterfactual: a spike the drive would
   have caused anyway counts as a descendant when a synapse's message reached it within the
   latency), and the reading against gross and net.
-- [ ] **The findings and the items.** F-37 in whitepaper §11 (the §11.1 sentence that made
+  **Departure:** the rule failed (at 256 units on both priors and at 1 024 on the lattice),
+  so no field of the homeostasis record was taken, `regulate` is unchanged and no F-38 is
+  written; the count is the executor's reading in every window of the exit tests and the
+  day; the pin moved to `0x27e12eea1ee625a5` with 95 spikes.
+- [x] **The findings and the items.** F-37 in whitepaper §11 (the §11.1 sentence that made
   the target a registry entry against ADR-0031's third gate) Resolved by the waking-day ADR;
   F-38 (the field written by nothing) if taken; §11.1: the item after F-36, the sleep
   placeholders' item and the estimator's item dispositioned; H-9 and H-11 extended with the
   association in the image and the day's reading.
-- [ ] **The documents.** Whitepaper 4.13.0: the executive summary's sentence on what exists;
+- [x] **The documents.** Whitepaper 4.13.0: the executive summary's sentence on what exists;
   §1.6 rows (`cortex-reasoning`, `cortex-affect`, `cortex-hippocampus`, `cortex-core`,
   `cortex-homeostasis` if taken; the date); §5.2.1 (the message bit, the stamp, the two
   rules, the period's argument; the unit's table row `[16..24)`); §5.2.2 (format 14, the new
@@ -393,7 +419,7 @@ quoted sentences are what to re-derive.
   (the sentence on what exists and what does not), `docs/zh-TW/README.md` (§6 and §11 rows),
   `docs/adr/README.md` (three rows), `CHANGELOG.md` (one entry under Unreleased in the shape
   of brief 024's).
-- [ ] **Not adopted, with the reason in the ADR that is closest:** the binding table in the
+- [x] **Not adopted, with the reason in the ADR that is closest:** the binding table in the
   image (the term-arena ADR: a scratch persisted is a second store); a section of
   associations (the same ADR: the episode owns what its pattern stands for); the target rate
   as a `REGISTRY` entry (the waking-day ADR: the behaviour gate); a tuned target rate (the
@@ -401,12 +427,9 @@ quoted sentences are what to re-derive.
   attribution (the causal-count ADR: the oracle's own criterion is the one the comparison
   can read); a line for the regression's sums (ADR-0051 stands); a compaction of the arena
   (Specified, its own round).
-- [ ] **This brief archived** under `briefs/archive/` with the frozen banner, every box
+- [x] **This brief archived** under `briefs/archive/` with the frozen banner, every box
   dispositioned, the precondition directives removed and the links rebased.
 
-<!-- @assert-absence target="crates/cortex-reasoning" symbol="fn instantiate" reason="precondition: no rule copies a term through the bindings yet; the term-arena ADR of this brief adds one" -->
-<!-- @assert-absence target="crates/cortex-core" symbol="MESSAGE_SYNAPTIC" reason="precondition: no message says whether it is a synapse's; the causal-count ADR of this brief adds the bit" -->
-<!-- @assert-count target="crates/cortex-connectome" symbol="FORMAT_VERSION: u32 = 13" min="1" reason="precondition: the image format is 13; this brief moves it to 14" -->
 
 ## Not empowered
 

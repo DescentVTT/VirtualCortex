@@ -9,6 +9,7 @@
 //! inputs that arrived; the method touches the plain fields only.
 
 use super::neuron::DendriticSuperNeuron;
+use super::synapse::NO_SPIKE_ON_RECORD;
 
 /// 1.0 in Q16.16.
 pub const Q16_ONE: i32 = 0x0001_0000;
@@ -47,6 +48,13 @@ pub const FLAG_BURST_MODE: u8 = 0x01;
 /// `flags` bit: the unit is inhibitory (its fan-out weights are negative); read by the
 /// runtime, not by this method.
 pub const FLAG_INHIBITORY: u8 = 0x02;
+
+/// The ticks within which a spike is a descendant of the last synapse's message that reached
+/// the unit (ADR-0054): 128 ticks, 1.28 ms, the latency the oracle of ADR-0044 attributes a
+/// descendant within (a message's effect on the soma peaks within a few coupling steps of
+/// the basal time constant's start). The in-loop count is the oracle's first-generation
+/// rule without its counterfactual.
+pub const CAUSAL_LATENCY_TICKS: u32 = 128;
 
 /// Moves `v` toward zero by a `2^-shift` fraction of itself, and by at least one LSB, so that
 /// a decay reaches rest instead of stalling at `2^shift - 1` (ADR-0016's lesson). The step is
@@ -145,11 +153,51 @@ impl DendriticSuperNeuron {
     pub const fn ticks_since_spike(&self, now_tick: u32) -> u32 {
         now_tick.wrapping_sub(self.last_soma_spike_tick)
     }
+
+    /// A synapse's message reached the unit at `now_tick` (ADR-0054): the stamp the
+    /// descendant rule reads, written by the turn holder from the batch it drained.
+    #[inline]
+    pub fn note_synaptic_input(&mut self, now_tick: u32) {
+        self.last_synaptic_tick = now_tick;
+    }
+
+    /// True when a spike at `now_tick` is a descendant (ADR-0054): a synapse's message
+    /// reached the unit within [`CAUSAL_LATENCY_TICKS`] before it, as a wrapping difference
+    /// (§8.4). A stamp of zero is no message on record: a delivery is integrated the tick
+    /// after it, so no message reaches a turn at tick 0.
+    #[inline]
+    pub const fn is_descendant(&self, now_tick: u32) -> bool {
+        self.last_synaptic_tick != NO_SPIKE_ON_RECORD
+            && now_tick.wrapping_sub(self.last_synaptic_tick) <= CAUSAL_LATENCY_TICKS
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_spike_within_the_latency_of_a_synapse_s_message_is_a_descendant_and_none_before_one() {
+        let mut u = unit();
+        assert!(!u.is_descendant(0), "no message on record");
+        assert!(!u.is_descendant(CAUSAL_LATENCY_TICKS));
+        u.note_synaptic_input(1000);
+        assert_eq!(u.last_synaptic_tick, 1000);
+        assert!(u.is_descendant(1000), "the same tick");
+        assert!(
+            u.is_descendant(1000 + CAUSAL_LATENCY_TICKS),
+            "at the latency"
+        );
+        assert!(!u.is_descendant(1001 + CAUSAL_LATENCY_TICKS), "one past it");
+        assert!(
+            !u.is_descendant(999),
+            "before the message: a wrapping difference reads as far"
+        );
+        u.note_synaptic_input(u32::MAX);
+        assert!(u.is_descendant(CAUSAL_LATENCY_TICKS - 1), "across the wrap");
+        assert!(!u.is_descendant(CAUSAL_LATENCY_TICKS));
+        assert_eq!(CAUSAL_LATENCY_TICKS, 128, "the oracle's latency (ADR-0044)");
+    }
 
     #[test]
     fn rest_is_a_fixed_point_and_a_spike_leaves_the_soma_below_rest() {

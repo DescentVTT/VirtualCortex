@@ -32,7 +32,8 @@ impl DendriticSuperNeuron {
         let mut out = [0u8; 64];
         out[0..8].copy_from_slice(&self.id.to_le_bytes());
         out[8..16].copy_from_slice(&self.mailbox_head_ptr.load(Ordering::SeqCst).to_le_bytes());
-        out[16..24].copy_from_slice(&self.mailbox_reserved.to_le_bytes());
+        out[16..20].copy_from_slice(&self.last_synaptic_tick.to_le_bytes());
+        out[20..24].copy_from_slice(&self._reserved_20.to_le_bytes());
         out[24..28].copy_from_slice(&self.v_soma.to_le_bytes());
         out[28..32].copy_from_slice(&self.v_basal.to_le_bytes());
         out[32..36].copy_from_slice(&self.v_apical.to_le_bytes());
@@ -56,7 +57,8 @@ impl DendriticSuperNeuron {
         Self {
             id: u64_le(&bytes[0..8]),
             mailbox_head_ptr: AtomicU64::new(u64_le(&bytes[8..16])),
-            mailbox_reserved: u64_le(&bytes[16..24]),
+            last_synaptic_tick: u32_le(&bytes[16..20]),
+            _reserved_20: u32_le(&bytes[20..24]),
             v_soma: u32_le(&bytes[24..28]) as i32,
             v_basal: u32_le(&bytes[28..32]) as i32,
             v_apical: u32_le(&bytes[32..36]) as i32,
@@ -80,7 +82,8 @@ impl DendriticSuperNeuron {
     /// (ADR-0024).
     pub fn restore_plain_fields(&mut self, from: &DendriticSuperNeuron) {
         self.id = from.id;
-        self.mailbox_reserved = from.mailbox_reserved;
+        self.last_synaptic_tick = from.last_synaptic_tick;
+        self._reserved_20 = from._reserved_20;
         self.v_soma = from.v_soma;
         self.v_basal = from.v_basal;
         self.v_apical = from.v_apical;
@@ -103,10 +106,11 @@ impl DendriticSuperNeuron {
     }
 
     /// Whether the record decodes to an image at rest: an idle gate, an empty mailbox and zero
-    /// reserved bytes (§8.7).
+    /// reserved bytes (§8.7); the stamp of a synapse's last message is a field the loop
+    /// writes (ADR-0054), so it may hold anything.
     pub fn is_at_rest_image(&self) -> bool {
         self.is_image_ready()
-            && self.mailbox_reserved == 0
+            && self._reserved_20 == 0
             && self._reserved == 0
             && self.mailbox_head_ptr.load(Ordering::SeqCst) == MAILBOX_EMPTY
     }
@@ -191,8 +195,15 @@ mod tests {
         assert!(u.is_image_ready(), "the gate and the mailbox are fine");
         assert!(!u.is_at_rest_image(), "but the reserved bytes are not zero");
         let mut bytes = DendriticSuperNeuron::new(1).encode();
-        bytes[16] = 1;
+        bytes[20] = 1;
         assert!(!DendriticSuperNeuron::decode(&bytes).is_at_rest_image());
+        // The stamp of a synapse's last message is a field the loop writes (ADR-0054): a
+        // unit at rest may carry one.
+        let mut bytes = DendriticSuperNeuron::new(1).encode();
+        bytes[16] = 1;
+        let stamped = DendriticSuperNeuron::decode(&bytes);
+        assert_eq!(stamped.last_synaptic_tick, 1);
+        assert!(stamped.is_at_rest_image());
     }
 
     #[test]

@@ -343,11 +343,13 @@ impl Image {
             sections.push((SECTION_AMENDMENT, 64, amendment_bytes));
         }
         // The engine's modulation state, always: one 64-byte record holding the modulator's 16
-        // bytes, the baseline at `[16..20)` and 44 reserved bytes. The baseline changes what a
-        // run does, so it is in the image, not in a configuration (§8.3).
+        // bytes, the baseline at `[16..20)`, the inhibitory rule's target period at `[20..24)`
+        // (ADR-0053) and 40 reserved bytes. The baseline and the period change what a run
+        // does, so they are in the image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
+        modulator_bytes[20..24].copy_from_slice(&exec.istdp_target_period_ticks().to_le_bytes());
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
         // what a run does, so they are in the image (ADR-0036).
@@ -630,12 +632,13 @@ impl Image {
         }
         {
             // One record, the engine's: the modulator's 16 bytes, the baseline at `[16..20)`
-            // (within its bounds, as `Executor::new` would have demanded), 44 reserved bytes.
+            // and the inhibitory rule's target period at `[20..24)` (each within its bounds,
+            // as `Executor::new` would have demanded), 40 reserved bytes.
             if modulator.record_count() != 1 {
                 return Err(ImageError::Directory(SECTION_MODULATOR));
             }
             let record = section_of(bytes, &modulator)?;
-            if record[20..64].iter().any(|&b| b != 0) {
+            if record[24..64].iter().any(|&b| b != 0) {
                 return Err(ImageError::ReservedNotZero {
                     section: SECTION_MODULATOR,
                     index: 0,
@@ -644,6 +647,10 @@ impl Image {
             let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));
             if !exec.set_modulation_baseline(baseline) {
                 return Err(ImageError::Config(ConfigError::ModulationOutOfRange));
+            }
+            let period = u32::from_le_bytes(record[20..24].try_into().unwrap_or([0; 4]));
+            if !exec.set_istdp_target_period(period) {
+                return Err(ImageError::Config(ConfigError::IstdpPeriodOutOfRange));
             }
             exec.set_modulator(NeuromodulatorState::decode(
                 record[0..16].try_into().unwrap_or(&[0; 16]),

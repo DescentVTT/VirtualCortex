@@ -162,15 +162,17 @@ fn synapses_of(exec: &Engine, unit: u32) -> Vec<(u32, u16)> {
         .collect()
 }
 
-/// One window as `windows` reports it: `(gain, estimate, spikes)`.
-type Window = (u32, u32, u64);
+/// One window as `windows` reports it: `(gain, estimate, spikes, descendants)`, the last the
+/// in-loop count of ADR-0054 (the spikes within the oracle's latency of a synapse's message).
+type Window = (u32, u32, u64, u64);
 
-/// Runs `windows` windows under the drive; returns `(gain, estimate, spikes)` per window,
-/// the gain and the estimate as the window's regulation left them.
+/// Runs `windows` windows under the drive; returns `(gain, estimate, spikes, descendants)`
+/// per window, the gain and the estimate as the window's regulation left them.
 fn windows(exec: &mut Engine, drive: &Drive, windows: u64) -> Vec<Window> {
     let mut out = Vec::new();
     for _ in 0..windows {
         let mut spikes = 0u64;
+        let before = exec.descendants();
         for _ in 0..(1u64 << ACTIVITY_WINDOW_SHIFT) {
             let until = exec.ticks().wrapping_add(BIN);
             run_driven(exec, drive, until).unwrap();
@@ -183,7 +185,81 @@ fn windows(exec: &mut Engine, drive: &Drive, windows: u64) -> Vec<Window> {
             spikes = spikes.wrapping_add(bin as u64);
         }
         let h = exec.homeostasis();
-        out.push((h.synaptic_gain_q16, h.branching_ratio_q16, spikes));
+        out.push((
+            h.synaptic_gain_q16,
+            h.branching_ratio_q16,
+            spikes,
+            exec.descendants().wrapping_sub(before),
+        ));
+    }
+    out
+}
+
+/// The in-loop ratio of a window (ADR-0054), Q16.16: descendants over spikes; `None` for a
+/// window without a spike.
+fn in_loop_q16(w: &Window) -> Option<u32> {
+    let (_, _, spikes, descendants) = *w;
+    // Below the spikes, which are below the cap: the shift cannot wrap and the quotient
+    // fits `u32`; a window without a spike has no ratio.
+    descendants
+        .wrapping_shl(16)
+        .checked_div(spikes)
+        .map(|ratio| ratio as u32)
+}
+
+/// One window of a day (ADR-0053): the spikes, the gain and the estimate as the window's
+/// regulation left them, the sleep stage, the descendants (ADR-0054), the sum of the
+/// inhibitory magnitudes and the sum of the excitatory weights over the arena after the
+/// window, and the replays so far.
+type DayWindow = (u64, u32, u32, u8, u64, i64, i64, u64);
+
+/// The weights over the arena by polarity: the sum of the inhibitory magnitudes and the sum
+/// of the excitatory weights.
+fn weights_by_polarity(exec: &Engine) -> (i64, i64) {
+    let mut inhibitory = 0i64;
+    let mut excitatory = 0i64;
+    for unit in exec.units() {
+        let inhibitory_unit = unit.flags & FLAG_INHIBITORY != 0;
+        for s in unit.fan_out(exec.blocks()) {
+            let w = s.weight_q1_15 as i64;
+            if inhibitory_unit {
+                inhibitory = inhibitory.wrapping_add(w.wrapping_neg());
+            } else {
+                excitatory = excitatory.wrapping_add(w);
+            }
+        }
+    }
+    (inhibitory, excitatory)
+}
+
+/// A day on prior `p` (ADR-0053): `w` windows under the drive from a gain of 2.0, held
+/// (`step` 0) or regulated by the controller, the pressure rising at `shift` (0 never
+/// sleeps) from zero, the inhibitory rule at `period`, the local cluster of twelve tagged at
+/// the start so that a night has something to replay; per window the reading above.
+fn day(p: &Prior, w: u64, step: u16, shift: u8, period: u32) -> Vec<DayWindow> {
+    let units = p.units;
+    let mut cfg = config(units, 2, step, MODULATION_ONE_Q16);
+    cfg.sleep_shift = shift;
+    cfg.istdp_target_period_ticks = period;
+    let mut exec = at_gain(p, cfg, 0x0002_0000);
+    assert_eq!(exec.istdp_target_period_ticks(), period);
+    let cluster: Vec<u32> = (0..15u32).filter(|u| !p.is_inhibitory(*u)).collect();
+    assert_eq!(exec.tag_episode(&cluster, 200), Ok(0));
+    let drive = drive(units);
+    let mut out = Vec::new();
+    for _ in 0..w {
+        let (gain, estimate, spikes, descendants) = windows(&mut exec, &drive, 1)[0];
+        let (inhibitory, excitatory) = weights_by_polarity(&exec);
+        out.push((
+            spikes,
+            gain,
+            estimate,
+            exec.sleep_stage(),
+            descendants,
+            inhibitory,
+            excitatory,
+            exec.replays(),
+        ));
     }
     out
 }
@@ -316,7 +392,9 @@ fn criticality(
 /// The three gains of the fixed-gain measurement.
 const GAINS: [u32; 3] = [0x0001_C000, 0x0002_0000, 0x0002_4000];
 
-/// The fixed part of a measurement with the ratios beside it, for the assertions.
+/// The fixed part of a measurement with the ratios beside it, for the assertions: the gain,
+/// its windows, the attribution, the gross and net causal ratios, the fine slopes, the
+/// coarse cross-check, and the in-loop ratio per window (ADR-0054).
 type Reading = (
     u32,
     Vec<Window>,
@@ -324,6 +402,7 @@ type Reading = (
     Option<u32>,
     Option<i32>,
     [Option<u32>; 5],
+    Vec<Option<u32>>,
     Vec<Option<u32>>,
 );
 
@@ -339,9 +418,19 @@ fn readings(c: &Criticality) -> Vec<Reading> {
                 a.net_branching_ratio_q16(),
                 *fine,
                 coarse.clone(),
+                w.iter().map(in_loop_q16).collect(),
             )
         })
         .collect()
+}
+
+/// The readings as Rust literals, for a pin taken from the run: one line per gain with the
+/// windows and the in-loop ratios, then the loop's windows.
+fn dump(name: &str, c: &Criticality) {
+    for (g, w, _, _, _, _, _, in_loop) in readings(c) {
+        eprintln!("DUMP {name} gain {g:#x} windows {w:?} in_loop {in_loop:?}");
+    }
+    eprintln!("DUMP {name} closed {:?}", c.closed);
 }
 
 /// The synapses among `pattern`: `(count, sum of weights)`.
@@ -838,6 +927,10 @@ fn the_prior_is_written_and_read_back_whole_and_a_driven_run_is_bit_identical_on
 #[test]
 fn the_estimate_the_causal_ratio_and_the_loop_at_256_units() {
     let c = criticality(&prior(256), &GAINS[1..2], 1, 4, 0x0002_0000, 4);
+    dump(
+        "the_estimate_the_causal_ratio_and_the_loop_at_256_units",
+        &c,
+    );
     // At a gain of 2.0: a window's estimate of 0.659 over 3 156 spikes; four kicks, eleven
     // ancestor spikes, five first-generation descendants of which two advanced spikes the
     // drive would have produced: a gross ratio of 0.455 and a net one of 0.273. The record's
@@ -848,7 +941,7 @@ fn the_estimate_the_causal_ratio_and_the_loop_at_256_units() {
         readings(&c),
         vec![(
             0x0002_0000,
-            vec![(0x0002_0000, 43_210, 3_156)],
+            vec![(0x0002_0000, 43_210, 3_156, 1_754)],
             Attribution {
                 kicks: 4,
                 ancestors: 11,
@@ -866,7 +959,8 @@ fn the_estimate_the_causal_ratio_and_the_loop_at_256_units() {
                 Some(12_893),
                 Some(15_540)
             ],
-            vec![Some(43_210)]
+            vec![Some(43_210)],
+            vec![Some(36_422)]
         )]
     );
     // The loop from 2.0 under a step of an eighth: up while the slope reads below 1, the
@@ -874,10 +968,511 @@ fn the_estimate_the_causal_ratio_and_the_loop_at_256_units() {
     assert_eq!(
         c.closed,
         vec![
-            (136_654, 43_210, 3_156),
-            (151_386, 9_016, 3_778),
-            (167_295, 10_442, 7_473),
-            (146_383, SIGMA_MAX_Q16, 11_846),
+            (136_654, 43_210, 3_156, 1_754),
+            (151_386, 9_016, 3_778, 1_979),
+            (167_295, 10_442, 7_473, 4_954),
+            (146_383, SIGMA_MAX_Q16, 11_846, 9_251),
+        ]
+    );
+}
+
+/// The gate's form of ADR-0053's measurement: the lattice at 256 units at a gain of 2.0
+/// held, no controller, no sleep, eight windows at the default target period (20 000 ticks,
+/// 5 Hz) and at one in the reference regime (5 000 ticks, 20 Hz); per window the spikes,
+/// the estimate, the descendants, the inhibitory magnitudes' sum, the excitatory weights'
+/// sum.
+#[test]
+fn a_waking_day_at_256_units_at_two_target_periods() {
+    let slow = day(&prior(256), 8, 0, 0, 20_000);
+    let fast = day(&prior(256), 8, 0, 0, 5_000);
+    eprintln!("DUMP day256 slow {slow:?}");
+    eprintln!("DUMP day256 fast {fast:?}");
+    assert_eq!(
+        slow,
+        vec![
+            (3_039, 131_072, 39_504, 0, 1_625, 53_227_953, 56_684_837, 0),
+            (2_464, 131_072, 0, 0, 1_103, 53_024_805, 55_219_648, 0),
+            (2_619, 131_072, 6_109, 0, 1_199, 52_872_788, 53_552_474, 0),
+            (2_507, 131_072, 3_075, 0, 1_102, 52_737_333, 52_050_975, 0),
+            (2_452, 131_072, 9_902, 0, 1_029, 52_549_297, 50_693_718, 0),
+            (2_434, 131_072, 15_312, 0, 1_040, 52_355_577, 49_372_795, 0),
+            (2_370, 131_072, 2_087, 0, 979, 52_168_376, 48_144_023, 0),
+            (2_299, 131_072, 11_186, 0, 896, 52_007_040, 46_951_567, 0),
+        ]
+    );
+    assert_eq!(
+        fast,
+        vec![
+            (3_075, 131_072, 36_887, 0, 1_631, 49_247_248, 56_625_123, 0),
+            (2_485, 131_072, 0, 0, 1_109, 45_402_693, 55_138_166, 0),
+            (2_666, 131_072, 7_804, 0, 1_224, 41_431_295, 53_460_792, 0),
+            (2_610, 131_072, 0, 0, 1_178, 37_469_897, 51_828_909, 0),
+            (2_566, 131_072, 2_393, 0, 1_102, 33_550_912, 50_334_185, 0),
+            (2_619, 131_072, 4_519, 0, 1_163, 29_576_920, 48_766_442, 0),
+            (2_563, 131_072, 8_357, 0, 1_080, 25_521_567, 47_324_922, 0),
+            (2_566, 131_072, 11_655, 0, 1_077, 21_649_131, 45_843_315, 0),
+        ]
+    );
+}
+
+/// The weekly job's form of ADR-0053's measurement: the lattice at 1 024 units, eighty
+/// windows (105 s of simulated time) under the controller's step of an eighth with the
+/// pressure rising at shift 5 from zero, so that the day holds one night, at each of the two
+/// periods.
+#[test]
+#[ignore]
+fn a_waking_day_at_1024_units_at_two_target_periods_exhaustive() {
+    let slow = day(&prior(1024), 80, 0x2000, 5, 20_000);
+    let fast = day(&prior(1024), 80, 0x2000, 5, 5_000);
+    eprintln!("DUMP day1024 slow {slow:?}");
+    eprintln!("DUMP day1024 fast {fast:?}");
+    assert_eq!(
+        slow,
+        vec![
+            (
+                12_424,
+                135_332,
+                48_493,
+                0,
+                6_993,
+                212_996_332,
+                225_908_044,
+                0
+            ),
+            (
+                13_899,
+                149_713,
+                9_822,
+                0,
+                7_116,
+                212_719_459,
+                214_870_652,
+                0
+            ),
+            (
+                25_332,
+                156_781,
+                40_787,
+                0,
+                15_116,
+                213_678_669,
+                183_539_023,
+                0
+            ),
+            (
+                29_304,
+                168_286,
+                27_064,
+                0,
+                17_636,
+                213_863_479,
+                142_896_484,
+                0
+            ),
+            (
+                37_060,
+                147_250,
+                1_048_576,
+                0,
+                23_702,
+                213_901_913,
+                86_360_998,
+                0
+            ),
+            (16_090, 165_656, 0, 0, 5_947, 213_830_948, 74_896_090, 0),
+            (30_076, 186_363, 0, 0, 16_113, 213_891_174, 45_524_275, 0),
+            (
+                46_974,
+                163_068,
+                1_048_576,
+                0,
+                32_222,
+                213_902_976,
+                11_822_530,
+                0
+            ),
+            (25_189, 183_452, 0, 0, 10_961, 213_891_639, 6_955_080, 0),
+            (
+                42_212,
+                160_521,
+                1_048_576,
+                0,
+                26_815,
+                213_902_434,
+                1_667_307,
+                0
+            ),
+            (22_676, 178_955, 5_325, 0, 9_078, 213_889_700, 1_118_879, 0),
+            (
+                37_594,
+                156_586,
+                1_048_576,
+                0,
+                21_903,
+                213_900_445,
+                394_874,
+                0
+            ),
+            (19_727, 176_159, 0, 0, 7_011, 213_840_137, 386_416, 0),
+            (
+                35_240,
+                154_139,
+                1_048_576,
+                0,
+                19_550,
+                213_894_634,
+                131_993,
+                0
+            ),
+            (18_146, 173_406, 0, 0, 5_964, 213_815_663, 195_814, 0),
+            (
+                32_792,
+                151_730,
+                1_048_576,
+                0,
+                17_194,
+                213_877_160,
+                68_284,
+                0
+            ),
+            (16_588, 167_191, 12_114, 0, 5_037, 213_715_041, 189_024, 0),
+            (27_625, 184_725, 10_554, 0, 12_646, 213_841_262, 96_493, 0),
+            (43_254, 161_634, 1_048_576, 0, 27_498, 213_899_078, 5_844, 0),
+            (23_378, 179_458, 7_718, 0, 9_505, 213_872_015, 33_646, 0),
+            (38_216, 157_026, 1_048_576, 0, 22_636, 213_881_930, 5_338, 0),
+            (20_229, 175_315, 4_474, 0, 7_353, 213_813_087, 84_303, 0),
+            (
+                34_298,
+                153_401,
+                1_048_576,
+                0,
+                18_780,
+                213_876_624,
+                19_474,
+                0
+            ),
+            (17_648, 171_565, 3_454, 0, 5_612, 213_720_505, 120_878, 0),
+            (31_384, 192_414, 1_824, 0, 16_153, 213_874_402, 44_264, 0),
+            (50_607, 168_362, 1_048_576, 0, 35_425, 213_902_976, 353, 0),
+            (28_840, 189_407, 0, 0, 13_964, 213_901_669, 9_385, 0),
+            (47_561, 165_731, 1_048_576, 0, 32_292, 213_902_976, 301, 0),
+            (26_919, 186_139, 973, 0, 12_252, 213_896_957, 17_714, 0),
+            (44_562, 162_872, 1_048_576, 0, 28_870, 213_897_396, 619, 0),
+            (24_423, 174_247, 28_922, 0, 10_351, 213_888_752, 27_996, 0),
+            (
+                33_432,
+                152_466,
+                1_048_576,
+                0,
+                17_963,
+                213_898_794,
+                14_362,
+                0
+            ),
+            (16_848, 166_018, 18_935, 0, 5_246, 213_757_125, 138_686, 0),
+            (26_849, 186_770, 0, 0, 12_271, 213_804_969, 81_781, 0),
+            (45_115, 163_424, 1_048_576, 0, 29_685, 213_902_701, 1_659, 0),
+            (25_202, 180_156, 11_853, 0, 10_904, 213_887_249, 29_013, 0),
+            (38_854, 157_637, 1_048_576, 0, 23_169, 213_902_769, 7_866, 0),
+            (20_632, 177_342, 0, 0, 7_624, 213_838_689, 63_861, 0),
+            (
+                36_364,
+                155_174,
+                1_048_576,
+                0,
+                20_641,
+                213_897_602,
+                13_667,
+                0
+            ),
+            (18_868, 173_579, 3_348, 0, 6_388, 213_807_008, 108_267, 0),
+            (
+                33_043,
+                151_882,
+                1_048_576,
+                0,
+                17_425,
+                213_885_014,
+                35_436,
+                0
+            ),
+            (16_591, 170_867, 0, 0, 5_073, 213_755_079, 159_357, 0),
+            (30_303, 188_312, 12_007, 0, 15_154, 213_867_751, 54_192, 0),
+            (46_285, 164_773, 1_048_576, 0, 30_740, 213_902_824, 639, 0),
+            (25_948, 183_318, 6_529, 0, 11_578, 213_897_013, 18_787, 0),
+            (41_762, 160_403, 1_048_576, 0, 26_126, 213_901_305, 2_246, 0),
+            (22_633, 176_647, 12_439, 0, 9_036, 213_882_327, 54_307, 0),
+            (
+                35_812,
+                154_566,
+                1_048_576,
+                0,
+                20_195,
+                213_892_988,
+                15_156,
+                0
+            ),
+            (18_405, 173_887, 0, 0, 6_162, 213_798_882, 92_708, 0),
+            (
+                33_195,
+                152_151,
+                1_048_576,
+                0,
+                17_694,
+                213_889_818,
+                26_170,
+                0
+            ),
+            (16_783, 170_021, 3_963, 0, 5_119, 213_754_351, 162_112, 0),
+            (29_914, 189_172, 6_481, 0, 14_545, 213_837_923, 50_907, 0),
+            (47_535, 165_526, 1_048_576, 0, 32_298, 213_902_976, 179, 0),
+            (26_682, 186_217, 0, 0, 12_017, 213_891_629, 7_904, 0),
+            (44_253, 162_940, 1_048_576, 0, 28_756, 213_900_833, 1_218, 0),
+            (24_563, 177_644, 18_225, 0, 10_322, 213_893_378, 23_037, 0),
+            (36_512, 155_439, 1_048_576, 0, 20_798, 213_900_157, 6_063, 0),
+            (19_065, 170_068, 16_194, 0, 6_491, 213_826_548, 84_350, 0),
+            (30_092, 191_327, 0, 0, 15_062, 213_868_701, 48_930, 0),
+            (49_188, 167_411, 1_048_576, 0, 34_146, 213_902_976, 116, 0),
+            (27_848, 188_021, 988, 0, 12_958, 213_899_750, 8_059, 0),
+            (46_272, 164_518, 1_048_576, 0, 30_951, 213_901_632, 843, 0),
+            (25_729, 185_083, 0, 0, 11_314, 213_890_202, 23_572, 0),
+            (43_530, 161_948, 1_048_576, 0, 27_838, 213_901_620, 325, 0),
+            (24_066, 179_612, 8_351, 0, 10_107, 213_881_202, 29_480, 0),
+            (38_452, 157_161, 1_048_576, 1, 22_743, 213_902_850, 4_212, 0),
+            (22_770, 176_806, 0, 1, 10_028, 213_860_390, 1_354_048, 64),
+            (
+                38_264,
+                154_705,
+                1_048_576,
+                1,
+                22_878,
+                213_897_140,
+                3_180_378,
+                128
+            ),
+            (
+                20_710,
+                171_713,
+                7_898,
+                1,
+                8_372,
+                213_806_295,
+                4_278_048,
+                192
+            ),
+            (
+                33_792,
+                150_249,
+                1_048_576,
+                2,
+                18_725,
+                213_884_299,
+                4_599_265,
+                256
+            ),
+            (15_950, 169_030, 0, 2, 5_006, 213_699_891, 4_389_979, 256),
+            (29_461, 190_159, 0, 1, 14_620, 213_813_326, 3_506_757, 256),
+            (
+                50_887,
+                166_389,
+                1_048_576,
+                0,
+                36_126,
+                213_902_909,
+                4_549_552,
+                320
+            ),
+            (27_600, 187_188, 0, 0, 13_114, 213_899_920, 4_036_675, 320),
+            (
+                45_801,
+                163_790,
+                1_048_576,
+                0,
+                30_436,
+                213_902_976,
+                2_925_219,
+                320
+            ),
+            (25_583, 184_264, 0, 0, 11_427, 213_890_274, 2_390_015, 320),
+            (
+                42_924,
+                161_231,
+                1_048_576,
+                0,
+                27_387,
+                213_902_575,
+                1_640_876,
+                320
+            ),
+            (
+                23_355,
+                178_162,
+                10_480,
+                0,
+                9_523,
+                213_876_542,
+                1_432_722,
+                320
+            ),
+            (
+                37_145,
+                155_892,
+                1_048_576,
+                0,
+                21_455,
+                213_897_995,
+                998_198,
+                320
+            ),
+            (19_534, 172_971, 8_096, 0, 6_896, 213_832_916, 993_455, 320),
+        ]
+    );
+    assert_eq!(
+        fast,
+        vec![
+            (
+                12_529,
+                135_184,
+                49_091,
+                0,
+                7_030,
+                196_786_033,
+                225_748_127,
+                0
+            ),
+            (
+                14_045,
+                151_131,
+                3_686,
+                0,
+                7_234,
+                178_474_227,
+                214_445_433,
+                0
+            ),
+            (
+                28_282,
+                160_365,
+                33_503,
+                0,
+                17_742,
+                152_388_035,
+                176_458_249,
+                0
+            ),
+            (
+                35_109,
+                140_319,
+                1_048_576,
+                0,
+                22_944,
+                126_799_770,
+                121_230_219,
+                0
+            ),
+            (
+                14_271,
+                157_182,
+                2_525,
+                0,
+                5_440,
+                108_762_956,
+                110_445_709,
+                0
+            ),
+            (
+                29_104, 170_105, 22_434, 0, 16_526, 83_608_550, 74_265_552, 0
+            ),
+            (
+                41_206, 148_842, 1_048_576, 0, 27_518, 61_317_666, 27_329_604, 0
+            ),
+            (18_707, 167_447, 0, 0, 7_160, 41_440_228, 19_856_414, 0),
+            (
+                37_826, 146_516, 1_048_576, 0, 23_745, 21_713_856, 5_176_427, 0
+            ),
+            (17_329, 164_831, 0, 0, 6_296, 9_770_004, 3_588_018, 0),
+            (36_118, 144_227, 1_048_576, 0, 22_176, 2_879_472, 678_098, 0),
+            (15_497, 162_255, 0, 0, 5_091, 705_040, 565_074, 0),
+            (33_177, 141_973, 1_048_576, 0, 19_587, 86_016, 93_505, 0),
+            (13_812, 159_720, 0, 0, 4_198, 23_988, 201_810, 0),
+            (30_381, 179_685, 0, 0, 16_694, 66, 36_850, 0),
+            (54_142, 157_224, 1_048_576, 0, 41_616, 238_598, 0, 0),
+            (27_635, 176_877, 0, 0, 14_317, 202, 4_271, 0),
+            (50_864, 154_767, 1_048_576, 0, 37_909, 110_053, 383, 0),
+            (25_233, 173_995, 402, 0, 12_195, 0, 6_991, 0),
+            (47_138, 152_246, 1_048_576, 0, 33_782, 38_479, 0, 0),
+            (22_783, 171_277, 0, 0, 10_251, 0, 19_937, 0),
+            (44_018, 149_867, 1_048_576, 0, 30_576, 19_372, 861, 0),
+            (20_447, 168_600, 0, 0, 8_527, 0, 36_702, 0),
+            (40_668, 147_525, 1_048_576, 0, 27_040, 12_133, 1_290, 0),
+            (18_514, 165_966, 0, 0, 7_176, 0, 54_890, 0),
+            (37_718, 145_220, 1_048_576, 0, 23_753, 1_070, 2_327, 0),
+            (16_312, 163_373, 0, 0, 5_686, 0, 84_419, 0),
+            (34_530, 142_951, 1_048_576, 0, 20_592, 394, 12_775, 0),
+            (14_749, 160_820, 0, 0, 4_822, 0, 122_702, 0),
+            (31_760, 140_718, 1_048_576, 0, 17_975, 1_320, 23_954, 0),
+            (12_877, 158_059, 931, 0, 3_683, 0, 193_879, 0),
+            (28_516, 177_816, 0, 0, 14_960, 528, 54_963, 0),
+            (51_936, 155_589, 1_048_576, 0, 39_074, 173_052, 0, 0),
+            (26_039, 175_038, 0, 0, 12_945, 769, 7_004, 0),
+            (48_626, 153_158, 1_048_576, 0, 35_564, 77_590, 0, 0),
+            (23_939, 168_624, 12_593, 0, 11_196, 0, 14_422, 0),
+            (40_731, 147_546, 1_048_576, 0, 26_913, 9_314, 1_528, 0),
+            (18_397, 161_709, 15_204, 0, 7_167, 0, 49_555, 0),
+            (32_614, 141_495, 1_048_576, 0, 18_714, 0, 12_912, 0),
+            (13_502, 159_182, 0, 0, 3_930, 0, 152_771, 0),
+            (30_061, 179_080, 0, 0, 16_418, 378, 41_094, 0),
+            (53_580, 156_695, 1_048_576, 0, 40_938, 208_569, 0, 0),
+            (27_057, 176_282, 0, 0, 13_784, 1_404, 3_512, 0),
+            (49_920, 154_247, 1_048_576, 0, 36_882, 105_331, 10, 0),
+            (24_643, 173_481, 157, 0, 11_861, 0, 8_797, 0),
+            (46_543, 151_796, 1_048_576, 0, 33_127, 26_621, 194, 0),
+            (22_289, 170_771, 0, 0, 9_942, 54, 22_321, 0),
+            (43_579, 149_425, 1_048_576, 0, 30_083, 21_300, 157, 0),
+            (20_048, 168_103, 0, 0, 8_221, 0, 34_331, 0),
+            (40_119, 147_090, 1_048_576, 0, 26_187, 10_199, 2_129, 0),
+            (18_044, 160_590, 17_419, 0, 6_748, 0, 60_763, 0),
+            (31_526, 180_664, 0, 0, 17_746, 814, 20_515, 0),
+            (55_673, 158_081, 1_048_576, 0, 43_293, 276_314, 0, 0),
+            (28_705, 177_841, 0, 0, 15_265, 5_351, 2_201, 0),
+            (51_861, 155_611, 1_048_576, 0, 39_187, 163_166, 0, 0),
+            (26_242, 173_258, 6_076, 0, 13_074, 667, 5_768, 0),
+            (46_281, 151_601, 1_048_576, 0, 32_794, 39_895, 9, 0),
+            (22_152, 169_080, 5_085, 0, 9_629, 0, 21_281, 0),
+            (41_222, 147_945, 1_048_576, 0, 27_630, 13_012, 1_188, 0),
+            (18_706, 166_438, 0, 0, 7_301, 381, 44_291, 0),
+            (37_932, 145_633, 1_048_576, 0, 24_049, 3_674, 7_306, 0),
+            (16_812, 163_837, 0, 0, 6_126, 0, 85_974, 0),
+            (35_092, 143_357, 1_048_576, 0, 21_224, 149, 13_054, 0),
+            (14_996, 161_277, 0, 0, 4_926, 0, 112_100, 0),
+            (32_262, 141_117, 1_048_576, 0, 18_494, 2_384, 24_708, 0),
+            (13_043, 157_493, 4_693, 1, 3_838, 0, 167_546, 0),
+            (30_514, 177_180, 0, 1, 17_244, 77_564, 1_595_506, 64),
+            (
+                53_591, 155_033, 1_048_576, 1, 41_067, 664_784, 3_659_455, 128
+            ),
+            (27_676, 173_397, 3_428, 1, 14_639, 662_628, 4_563_209, 192),
+            (
+                48_904, 151_722, 1_048_576, 2, 35_825, 1_128_610, 4_685_921, 256
+            ),
+            (22_616, 170_687, 0, 2, 10_306, 994_485, 4_356_832, 256),
+            (
+                43_564, 149_351, 1_048_576, 1, 30_182, 950_289, 3_446_254, 256
+            ),
+            (22_260, 168_020, 0, 0, 10_252, 1_003_592, 4_522_756, 320),
+            (
+                40_226, 147_018, 1_048_576, 0, 26_628, 955_878, 3_775_655, 320
+            ),
+            (18_145, 164_547, 3_026, 0, 7_061, 830_203, 3_389_487, 320),
+            (
+                36_350, 143_979, 1_048_576, 0, 22_569, 725_680, 2_583_512, 320
+            ),
+            (15_618, 160_799, 4_289, 0, 5_434, 563_594, 2_402_089, 320),
+            (
+                32_037, 140_699, 1_048_576, 0, 18_277, 414_653, 1_879_916, 320
+            ),
+            (12_941, 158_286, 0, 0, 3_818, 315_221, 1_914_562, 320),
+            (29_058, 177_062, 3_346, 0, 15_650, 214_081, 1_510_424, 320),
         ]
     );
 }
@@ -887,6 +1482,10 @@ fn the_estimate_the_causal_ratio_and_the_loop_at_256_units() {
 #[test]
 fn the_estimate_the_causal_ratio_and_the_fine_slopes_on_the_random_prior_at_256_units() {
     let c = criticality(&random_prior(256), &GAINS[1..2], 2, 4, 0x0002_0000, 0);
+    dump(
+        "the_estimate_the_causal_ratio_and_the_fine_slopes_on_the_random_prior_at_256_units",
+        &c,
+    );
     // At a gain of 2.0 the random network spikes 2 738 then 2 256 times per window, its
     // estimate 0.232 then 0.040 (the train's bins give the same); four kicks are twelve
     // ancestor spikes and one descendant, itself an advanced spike: a gross ratio of 0.083
@@ -895,7 +1494,10 @@ fn the_estimate_the_causal_ratio_and_the_fine_slopes_on_the_random_prior_at_256_
         readings(&c),
         vec![(
             0x0002_0000,
-            vec![(0x0002_0000, 15_190, 2_738), (0x0002_0000, 2_620, 2_256)],
+            vec![
+                (0x0002_0000, 15_190, 2_738, 1_308),
+                (0x0002_0000, 2_620, 2_256, 928)
+            ],
             Attribution {
                 kicks: 4,
                 ancestors: 12,
@@ -907,7 +1509,8 @@ fn the_estimate_the_causal_ratio_and_the_fine_slopes_on_the_random_prior_at_256_
             Some(5_461),
             Some(0),
             [Some(44_309), Some(34_199), Some(12_333), Some(0), Some(0)],
-            vec![Some(15_190), Some(2_620)]
+            vec![Some(15_190), Some(2_620)],
+            vec![Some(31_307), Some(26_958)]
         )]
     );
     assert!(c.closed.is_empty());
@@ -919,6 +1522,10 @@ fn the_estimate_the_causal_ratio_and_the_fine_slopes_on_the_random_prior_at_256_
 #[ignore]
 fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
     let c = criticality(&prior(256), &GAINS, 2, 8, MODULATION_ONE_Q16 as u32, 10);
+    dump(
+        "the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive",
+        &c,
+    );
     // At fixed gains, two windows each: the lag-one estimate per window (Q16.16) and the
     // window's spikes, then eight kicks attributed through the connectome. The estimate of
     // one window of thirty-two bins varies by more than itself between two windows at one
@@ -932,7 +1539,10 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
         vec![
             (
                 0x0001_C000,
-                vec![(0x0001_C000, 12_462, 555), (0x0001_C000, 14_075, 489)],
+                vec![
+                    (0x0001_C000, 12_462, 555, 152),
+                    (0x0001_C000, 14_075, 489, 122)
+                ],
                 Attribution {
                     kicks: 8,
                     ancestors: 18,
@@ -944,11 +1554,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
                 Some(25_486),
                 Some(25_486),
                 [Some(12_044), Some(8_048), Some(1_055), Some(3_577), Some(0)],
-                vec![Some(12_462), Some(14_075)]
+                vec![Some(12_462), Some(14_075)],
+                vec![Some(17_948), Some(16_350)]
             ),
             (
                 0x0002_0000,
-                vec![(0x0002_0000, 43_210, 3_156), (0x0002_0000, 0, 2_563)],
+                vec![
+                    (0x0002_0000, 43_210, 3_156, 1_754),
+                    (0x0002_0000, 0, 2_563, 1_220)
+                ],
                 Attribution {
                     kicks: 8,
                     ancestors: 20,
@@ -966,11 +1580,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
                     Some(10_115),
                     Some(11_099)
                 ],
-                vec![Some(43_210), Some(0)]
+                vec![Some(43_210), Some(0)],
+                vec![Some(36_422), Some(31_195)]
             ),
             (
                 0x0002_4000,
-                vec![(0x0002_4000, 35_054, 6_845), (0x0002_4000, 2_292, 6_223)],
+                vec![
+                    (0x0002_4000, 35_054, 6_845, 4_546),
+                    (0x0002_4000, 2_292, 6_223, 3_839)
+                ],
                 Attribution {
                     kicks: 8,
                     ancestors: 36,
@@ -988,7 +1606,8 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
                     Some(7_824),
                     Some(3_152)
                 ],
-                vec![Some(35_054), Some(2_292)]
+                vec![Some(35_054), Some(2_292)],
+                vec![Some(43_524), Some(40_429)]
             ),
         ]
     );
@@ -1000,16 +1619,16 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
     assert_eq!(
         c.closed,
         vec![
-            (73_728, 0, 0),
-            (82_944, 0, 0),
-            (93_312, 0, 0),
-            (104_976, 0, 15),
-            (114_723, 16_852, 127),
-            (129_063, 0, 537),
-            (142_565, 10_690, 2_606),
-            (160_386, 0, 5_253),
-            (140_338, SIGMA_MAX_Q16, 9_940),
-            (157_880, 0, 4_643),
+            (73_728, 0, 0, 0),
+            (82_944, 0, 0, 0),
+            (93_312, 0, 0, 0),
+            (104_976, 0, 15, 1),
+            (114_723, 16_852, 127, 8),
+            (129_063, 0, 537, 161),
+            (142_565, 10_690, 2_606, 1_362),
+            (160_386, 0, 5_253, 3_131),
+            (140_338, SIGMA_MAX_Q16, 9_940, 7_240),
+            (157_880, 0, 4_643, 2_629),
         ]
     );
     // The random network under the same sweep (ADR-0047): quieter at 1.75 (468 and 407
@@ -1025,12 +1644,16 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
         MODULATION_ONE_Q16 as u32,
         10,
     );
+    dump(
+        "the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive",
+        &r,
+    );
     assert_eq!(
         readings(&r),
         vec![
             (
                 0x0001_C000,
-                vec![(0x0001_C000, 2_822, 468), (0x0001_C000, 8_523, 407)],
+                vec![(0x0001_C000, 2_822, 468, 75), (0x0001_C000, 8_523, 407, 40)],
                 Attribution {
                     kicks: 8,
                     ancestors: 16,
@@ -1042,11 +1665,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
                 Some(12_288),
                 Some(8_192),
                 [Some(5_624), Some(4_231), Some(0), Some(0), Some(0)],
-                vec![Some(2_822), Some(8_523)]
+                vec![Some(2_822), Some(8_523)],
+                vec![Some(10_502), Some(6_440)]
             ),
             (
                 0x0002_0000,
-                vec![(0x0002_0000, 15_190, 2_738), (0x0002_0000, 2_620, 2_256)],
+                vec![
+                    (0x0002_0000, 15_190, 2_738, 1_308),
+                    (0x0002_0000, 2_620, 2_256, 928)
+                ],
                 Attribution {
                     kicks: 8,
                     ancestors: 21,
@@ -1058,11 +1685,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
                 Some(6_241),
                 Some(3_121),
                 [Some(44_309), Some(34_199), Some(12_333), Some(0), Some(0)],
-                vec![Some(15_190), Some(2_620)]
+                vec![Some(15_190), Some(2_620)],
+                vec![Some(31_307), Some(26_958)]
             ),
             (
                 0x0002_4000,
-                vec![(0x0002_4000, 25_166, 6_542), (0x0002_4000, 0, 5_884)],
+                vec![
+                    (0x0002_4000, 25_166, 6_542, 4_396),
+                    (0x0002_4000, 0, 5_884, 3_687)
+                ],
                 Attribution {
                     kicks: 8,
                     ancestors: 28,
@@ -1080,7 +1711,8 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
                     Some(6_015),
                     Some(4_456)
                 ],
-                vec![Some(25_166), Some(0)]
+                vec![Some(25_166), Some(0)],
+                vec![Some(44_037), Some(41_065)]
             ),
         ]
     );
@@ -1089,16 +1721,16 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
     assert_eq!(
         r.closed,
         vec![
-            (73_728, 0, 0),
-            (82_944, 0, 0),
-            (93_312, 0, 0),
-            (104_976, 0, 14),
-            (116_871, 6_128, 123),
-            (130_073, 6_309, 567),
-            (146_332, 0, 2_339),
-            (164_624, 0, 5_857),
-            (144_046, SIGMA_MAX_Q16, 10_878),
-            (162_052, 0, 5_168),
+            (73_728, 0, 0, 0),
+            (82_944, 0, 0, 0),
+            (93_312, 0, 0, 0),
+            (104_976, 0, 14, 0),
+            (116_871, 6_128, 123, 3),
+            (130_073, 6_309, 567, 96),
+            (146_332, 0, 2_339, 957),
+            (164_624, 0, 5_857, 3_744),
+            (144_046, SIGMA_MAX_Q16, 10_878, 8_680),
+            (162_052, 0, 5_168, 2_995),
         ]
     );
 }
@@ -1213,12 +1845,19 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
 #[ignore]
 fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
     let c = criticality(&prior(1024), &GAINS, 2, 16, MODULATION_ONE_Q16 as u32, 12);
+    dump(
+        "the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive",
+        &c,
+    );
     assert_eq!(
         readings(&c),
         vec![
             (
                 0x0001_C000,
-                vec![(0x0001_C000, 21_657, 2_406), (0x0001_C000, 17_656, 2_297)],
+                vec![
+                    (0x0001_C000, 21_657, 2_406, 825),
+                    (0x0001_C000, 17_656, 2_297, 722)
+                ],
                 Attribution {
                     kicks: 16,
                     ancestors: 34,
@@ -1236,11 +1875,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
                     Some(5_480),
                     Some(5_506)
                 ],
-                vec![Some(21_657), Some(17_656)]
+                vec![Some(21_657), Some(17_656)],
+                vec![Some(22_471), Some(20_599)]
             ),
             (
                 0x0002_0000,
-                vec![(0x0002_0000, 36_723, 12_757), (0x0002_0000, 2_124, 11_328)],
+                vec![
+                    (0x0002_0000, 36_723, 12_757, 7_337),
+                    (0x0002_0000, 2_124, 11_328, 5_707)
+                ],
                 Attribution {
                     kicks: 16,
                     ancestors: 47,
@@ -1258,11 +1901,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
                     Some(19_920),
                     Some(14_295)
                 ],
-                vec![Some(36_723), Some(2_124)]
+                vec![Some(36_723), Some(2_124)],
+                vec![Some(37_692), Some(33_016)]
             ),
             (
                 0x0002_4000,
-                vec![(0x0002_4000, 48_229, 27_945), (0x0002_4000, 0, 25_754)],
+                vec![
+                    (0x0002_4000, 48_229, 27_945, 18_843),
+                    (0x0002_4000, 0, 25_754, 16_439)
+                ],
                 Attribution {
                     kicks: 16,
                     ancestors: 61,
@@ -1280,25 +1927,26 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
                     Some(24_696),
                     Some(19_592)
                 ],
-                vec![Some(48_229), Some(0)]
+                vec![Some(48_229), Some(0)],
+                vec![Some(44_190), Some(41_832)]
             ),
         ]
     );
     assert_eq!(
         c.closed,
         vec![
-            (73_728, 0, 0),
-            (82_944, 0, 0),
-            (88_896, 27_913, 4),
-            (100_008, 0, 22),
-            (111_804, 3_693, 224),
-            (124_558, 5_728, 1_504),
-            (132_976, 30_101, 7_656),
-            (146_183, 13_467, 13_086),
-            (160_251, 15_083, 25_060),
-            (140_220, SIGMA_MAX_Q16, 39_759),
-            (154_121, 13_559, 18_361),
-            (134_856, SIGMA_MAX_Q16, 33_001),
+            (73_728, 0, 0, 0),
+            (82_944, 0, 0, 0),
+            (88_896, 27_913, 4, 0),
+            (100_008, 0, 22, 0),
+            (111_804, 3_693, 224, 12),
+            (124_558, 5_728, 1_504, 419),
+            (132_976, 30_101, 7_656, 3_863),
+            (146_183, 13_467, 13_086, 7_174),
+            (160_251, 15_083, 25_060, 15_831),
+            (140_220, SIGMA_MAX_Q16, 39_759, 29_100),
+            (154_121, 13_559, 18_361, 10_404),
+            (134_856, SIGMA_MAX_Q16, 33_001, 22_888),
         ]
     );
     // The random network at 1 024 units: the fine lag-one slope rises with the gain (0.12,
@@ -1312,12 +1960,19 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
         MODULATION_ONE_Q16 as u32,
         12,
     );
+    dump(
+        "the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive",
+        &r,
+    );
     assert_eq!(
         readings(&r),
         vec![
             (
                 0x0001_C000,
-                vec![(0x0001_C000, 750, 1_838), (0x0001_C000, 7_396, 1_800)],
+                vec![
+                    (0x0001_C000, 750, 1_838, 296),
+                    (0x0001_C000, 7_396, 1_800, 271)
+                ],
                 Attribution {
                     kicks: 16,
                     ancestors: 34,
@@ -1329,11 +1984,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
                 Some(13_492),
                 Some(7_710),
                 [Some(8_112), Some(6_167), Some(0), Some(0), Some(0)],
-                vec![Some(750), Some(7_396)]
+                vec![Some(750), Some(7_396)],
+                vec![Some(10_554), Some(9_866)]
             ),
             (
                 0x0002_0000,
-                vec![(0x0002_0000, 41_482, 10_534), (0x0002_0000, 0, 9_794)],
+                vec![
+                    (0x0002_0000, 41_482, 10_534, 4_773),
+                    (0x0002_0000, 0, 9_794, 4_243)
+                ],
                 Attribution {
                     kicks: 16,
                     ancestors: 45,
@@ -1351,11 +2010,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
                     Some(9_484),
                     Some(12_187)
                 ],
-                vec![Some(41_482), Some(0)]
+                vec![Some(41_482), Some(0)],
+                vec![Some(29_694), Some(28_391)]
             ),
             (
                 0x0002_4000,
-                vec![(0x0002_4000, 9_983, 26_290), (0x0002_4000, 0, 24_075)],
+                vec![
+                    (0x0002_4000, 9_983, 26_290, 17_700),
+                    (0x0002_4000, 0, 24_075, 15_500)
+                ],
                 Attribution {
                     kicks: 16,
                     ancestors: 62,
@@ -1367,25 +2030,26 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_1024_units_exhaustive() {
                 Some(46_509),
                 Some(12_684),
                 [Some(56_263), Some(44_730), Some(17_666), Some(0), Some(386)],
-                vec![Some(9_983), Some(0)]
+                vec![Some(9_983), Some(0)],
+                vec![Some(44_122), Some(42_193)]
             ),
         ]
     );
     assert_eq!(
         r.closed,
         vec![
-            (73_728, 0, 0),
-            (82_944, 0, 0),
-            (88_896, 27_913, 4),
-            (100_008, 0, 22),
-            (112_509, 0, 216),
-            (125_896, 3_151, 1_295),
-            (140_634, 4_162, 6_752),
-            (153_936, 15_943, 18_033),
-            (172_903, 932, 31_394),
-            (151_290, SIGMA_MAX_Q16, 53_441),
-            (170_201, 0, 27_800),
-            (148_926, SIGMA_MAX_Q16, 50_081),
+            (73_728, 0, 0, 0),
+            (82_944, 0, 0, 0),
+            (88_896, 27_913, 4, 0),
+            (100_008, 0, 22, 0),
+            (112_509, 0, 216, 3),
+            (125_896, 3_151, 1_295, 140),
+            (140_634, 4_162, 6_752, 2_407),
+            (153_936, 15_943, 18_033, 10_288),
+            (172_903, 932, 31_394, 22_199),
+            (151_290, SIGMA_MAX_Q16, 53_441, 46_080),
+            (170_201, 0, 27_800, 18_761),
+            (148_926, SIGMA_MAX_Q16, 50_081, 42_553),
         ]
     );
 }
@@ -1424,12 +2088,19 @@ fn a_night_at_1024_units_exhaustive() {
 #[ignore]
 fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
     let c = criticality(&prior(4096), &GAINS, 2, 32, MODULATION_ONE_Q16 as u32, 12);
+    dump(
+        "the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive",
+        &c,
+    );
     assert_eq!(
         readings(&c),
         vec![
             (
                 0x0001_C000,
-                vec![(0x0001_C000, 0, 9_851), (0x0001_C000, 0, 9_207)],
+                vec![
+                    (0x0001_C000, 0, 9_851, 3_275),
+                    (0x0001_C000, 0, 9_207, 2_727)
+                ],
                 Attribution {
                     kicks: 32,
                     ancestors: 66,
@@ -1447,11 +2118,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
                     Some(6_237),
                     Some(0)
                 ],
-                vec![Some(0), Some(0)]
+                vec![Some(0), Some(0)],
+                vec![Some(21_787), Some(19_410)]
             ),
             (
                 0x0002_0000,
-                vec![(0x0002_0000, 48_797, 51_087), (0x0002_0000, 0, 45_854)],
+                vec![
+                    (0x0002_0000, 48_797, 51_087, 29_328),
+                    (0x0002_0000, 0, 45_854, 23_527)
+                ],
                 Attribution {
                     kicks: 32,
                     ancestors: 97,
@@ -1469,11 +2144,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
                     Some(33_225),
                     Some(18_970)
                 ],
-                vec![Some(48_797), Some(0)]
+                vec![Some(48_797), Some(0)],
+                vec![Some(37_622), Some(33_625)]
             ),
             (
                 0x0002_4000,
-                vec![(0x0002_4000, 46_156, 112_272), (0x0002_4000, 0, 102_769)],
+                vec![
+                    (0x0002_4000, 46_156, 112_272, 76_170),
+                    (0x0002_4000, 0, 102_769, 64_886)
+                ],
                 Attribution {
                     kicks: 30,
                     ancestors: 103,
@@ -1491,25 +2170,26 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
                     Some(32_847),
                     Some(22_644)
                 ],
-                vec![Some(46_156), Some(0)]
+                vec![Some(46_156), Some(0)],
+                vec![Some(44_462), Some(41_377)]
             ),
         ]
     );
     assert_eq!(
         c.closed,
         vec![
-            (73_728, 0, 0),
-            (82_944, 0, 0),
-            (93_312, 0, 19),
-            (104_976, 0, 215),
-            (118_098, 0, 1_958),
-            (124_645, 36_472, 15_727),
-            (132_941, 30_642, 29_421),
-            (141_662, 31_141, 52_639),
-            (149_887, 35_095, 81_839),
-            (161_338, 25_483, 114_046),
-            (141_171, SIGMA_MAX_Q16, 163_418),
-            (152_616, 23_033, 77_632),
+            (73_728, 0, 0, 0),
+            (82_944, 0, 0, 0),
+            (93_312, 0, 19, 0),
+            (104_976, 0, 215, 9),
+            (118_098, 0, 1_958, 220),
+            (124_645, 36_472, 15_727, 6_565),
+            (132_941, 30_642, 29_421, 13_991),
+            (141_662, 31_141, 52_639, 28_605),
+            (149_887, 35_095, 81_839, 49_023),
+            (161_338, 25_483, 114_046, 74_803),
+            (141_171, SIGMA_MAX_Q16, 163_418, 120_633),
+            (152_616, 23_033, 77_632, 44_770),
         ]
     );
     let c = criticality(
@@ -1520,12 +2200,19 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
         MODULATION_ONE_Q16 as u32,
         12,
     );
+    dump(
+        "the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive",
+        &c,
+    );
     assert_eq!(
         readings(&c),
         vec![
             (
                 0x0001_C000,
-                vec![(0x0001_C000, 0, 7_562), (0x0001_C000, 5_643, 7_516)],
+                vec![
+                    (0x0001_C000, 0, 7_562, 1_130),
+                    (0x0001_C000, 5_643, 7_516, 1_113)
+                ],
                 Attribution {
                     kicks: 32,
                     ancestors: 62,
@@ -1537,11 +2224,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
                 Some(11_627),
                 Some(10_570),
                 [Some(7_731), Some(6_453), Some(0), Some(126), Some(1_254)],
-                vec![Some(0), Some(5_643)]
+                vec![Some(0), Some(5_643)],
+                vec![Some(9_793), Some(9_704)]
             ),
             (
                 0x0002_0000,
-                vec![(0x0002_0000, 47_994, 42_321), (0x0002_0000, 0, 38_544)],
+                vec![
+                    (0x0002_0000, 47_994, 42_321, 19_780),
+                    (0x0002_0000, 0, 38_544, 16_001)
+                ],
                 Attribution {
                     kicks: 31,
                     ancestors: 77,
@@ -1559,11 +2250,15 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
                     Some(20_295),
                     Some(6_267)
                 ],
-                vec![Some(47_994), Some(0)]
+                vec![Some(47_994), Some(0)],
+                vec![Some(30_630), Some(27_206)]
             ),
             (
                 0x0002_4000,
-                vec![(0x0002_4000, 7_848, 105_042), (0x0002_4000, 0, 95_996)],
+                vec![
+                    (0x0002_4000, 7_848, 105_042, 71_485),
+                    (0x0002_4000, 0, 95_996, 61_097)
+                ],
                 Attribution {
                     kicks: 29,
                     ancestors: 104,
@@ -1581,25 +2276,26 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
                     Some(0),
                     Some(1_413)
                 ],
-                vec![Some(7_848), Some(0)]
+                vec![Some(7_848), Some(0)],
+                vec![Some(44_599), Some(41_710)]
             ),
         ]
     );
     assert_eq!(
         c.closed,
         vec![
-            (73_728, 0, 0),
-            (82_944, 0, 0),
-            (93_312, 0, 19),
-            (104_976, 0, 203),
-            (116_395, 8_503, 1_828),
-            (130_944, 0, 9_280),
-            (136_515, 43_230, 40_153),
-            (151_532, 7_863, 56_072),
-            (164_161, 21_839, 114_896),
-            (143_641, SIGMA_MAX_Q16, 171_658),
-            (158_287, 12_080, 79_973),
-            (138_501, SIGMA_MAX_Q16, 144_274),
+            (73_728, 0, 0, 0),
+            (82_944, 0, 0, 0),
+            (93_312, 0, 19, 0),
+            (104_976, 0, 203, 0),
+            (116_395, 8_503, 1_828, 99),
+            (130_944, 0, 9_280, 1_607),
+            (136_515, 43_230, 40_153, 17_889),
+            (151_532, 7_863, 56_072, 28_098),
+            (164_161, 21_839, 114_896, 79_591),
+            (143_641, SIGMA_MAX_Q16, 171_658, 138_358),
+            (158_287, 12_080, 79_973, 46_486),
+            (138_501, SIGMA_MAX_Q16, 144_274, 109_021),
         ]
     );
 }

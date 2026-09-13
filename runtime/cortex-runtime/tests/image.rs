@@ -11,7 +11,8 @@ use cortex_connectome::{
     SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
-    PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
+    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, PlasticDelta,
+    STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
 };
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX};
 use cortex_homeostasis::{
@@ -311,7 +312,7 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
         })
     ));
     let mut img = small_image_with_modulator();
-    patch_section(&mut img, SECTION_MODULATOR, |s| s[20] = 1);
+    patch_section(&mut img, SECTION_MODULATOR, |s| s[24] = 1);
     assert!(matches!(
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::ReservedNotZero {
@@ -319,6 +320,48 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
             index: 0
         })
     ));
+    // The inhibitory rule's target period at [20..24) (ADR-0053): outside its bounds, the
+    // configuration's refusal; within them, the image's outranks the configuration's.
+    let mut img = small_image_with_modulator();
+    patch_section(&mut img, SECTION_MODULATOR, |s| {
+        s[20..24].copy_from_slice(&(ISTDP_PERIOD_MIN_TICKS - 1).to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Config(ConfigError::IstdpPeriodOutOfRange))
+    ));
+    let mut img = small_image_with_modulator();
+    patch_section(&mut img, SECTION_MODULATOR, |s| {
+        s[20..24].copy_from_slice(&(ISTDP_PERIOD_MAX_TICKS + 1).to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&img, Config::default()),
+        Err(ImageError::Config(ConfigError::IstdpPeriodOutOfRange))
+    ));
+    let mut img = small_image_with_modulator();
+    patch_section(&mut img, SECTION_MODULATOR, |s| {
+        s[20..24].copy_from_slice(&5_000u32.to_le_bytes())
+    });
+    assert_eq!(
+        Image::decode::<8>(
+            &img,
+            Config {
+                istdp_target_period_ticks: 40_000,
+                ..Config::default()
+            }
+        )
+        .unwrap()
+        .istdp_target_period_ticks(),
+        5_000,
+        "the image's period is the engine's"
+    );
+    assert_eq!(
+        Image::decode::<8>(&small_image(), Config::default())
+            .unwrap()
+            .istdp_target_period_ticks(),
+        ISTDP_TARGET_PERIOD_TICKS,
+        "written from the configuration's default"
+    );
     let img = small_image_with_modulator();
     let loaded = Image::decode::<8>(&img, Config::default()).unwrap();
     assert_eq!(

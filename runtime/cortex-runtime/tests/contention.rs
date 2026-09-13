@@ -6,7 +6,7 @@
 
 #![deny(clippy::arithmetic_side_effects)]
 
-use cortex_core::MODULATION_ONE_Q16;
+use cortex_core::{ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16};
 use cortex_runtime::{Config, Executor, InjectError};
 use std::thread;
 
@@ -36,6 +36,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         search_shift: 0,
         search_budget: 0,
         discovery_tag: 0,
+        istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
     })
     .expect("a valid configuration");
     let inject = exec.injector();

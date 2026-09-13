@@ -11,8 +11,8 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_core::{
-    MODULATION_ONE_Q16, Polarity, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, spike_message,
-    synaptic_efficacy_q16,
+    ISTDP_ALPHA_Q1_15, MODULATION_ONE_Q16, Polarity, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE,
+    spike_message, synaptic_efficacy_q16,
 };
 use cortex_runtime::{Config, ConfigError, Executor, Image};
 
@@ -79,6 +79,46 @@ fn pairing(exec: &mut Executor<64>) -> (u32, u32) {
     (pre, post)
 }
 
+/// The descendant rule inside the loop (ADR-0054): unit 0 is fired by the injector, so its
+/// spike is no descendant; unit 1 fires from unit 0's synapse's message within the latency,
+/// so its spike is one; the tally counts one per pairing.
+#[test]
+fn a_spike_from_a_synapse_s_message_is_a_descendant_and_an_injected_one_is_not() {
+    let mut exec = network(0);
+    assert_eq!(exec.descendants(), 0);
+    for round in 1..=3u64 {
+        let (pre, post) = pairing(&mut exec);
+        assert!(
+            post > pre && post - pre <= 128,
+            "within the latency: {pre}, {post}"
+        );
+        assert_eq!(
+            exec.descendants(),
+            round,
+            "unit 1's spike after each pairing, unit 0's never"
+        );
+        assert_eq!(
+            exec.units()[1].last_synaptic_tick,
+            pre + 1,
+            "stamped the tick after the fan-out"
+        );
+        assert_eq!(
+            exec.units()[0].last_synaptic_tick,
+            0,
+            "no synapse reaches unit 0"
+        );
+    }
+    // An image carries the stamp, and a loaded engine continues the count from zero: the
+    // count is the executor's, the stamp the unit's.
+    let img = Image::encode(&exec).unwrap();
+    let loaded = Image::decode::<64>(&img, config(0)).unwrap();
+    assert_eq!(
+        loaded.units()[1].last_synaptic_tick,
+        exec.units()[1].last_synaptic_tick
+    );
+    assert_eq!(loaded.descendants(), 0);
+}
+
 #[test]
 fn pairings_accumulate_in_the_trace_and_a_reward_consolidates_them_at_the_next_spike() {
     let mut exec = network(0);
@@ -90,7 +130,12 @@ fn pairings_accumulate_in_the_trace_and_a_reward_consolidates_them_at_the_next_s
     for _ in 0..3 {
         let (pre, post) = pairing(&mut exec);
         assert!(post > pre, "the post fired after the pre");
-        oracle.step_stdp_all(pre, [post_last, 0, 0, 0], Polarity::Excitatory);
+        oracle.step_stdp_all(
+            pre,
+            [post_last, 0, 0, 0],
+            Polarity::Excitatory,
+            ISTDP_ALPHA_Q1_15,
+        );
         oracle.consolidate_all(0, Polarity::Excitatory);
         post_last = post;
     }
@@ -116,7 +161,12 @@ fn pairings_accumulate_in_the_trace_and_a_reward_consolidates_them_at_the_next_s
     assert_eq!(exec.reward(MODULATION_ONE_Q16), MODULATION_ONE_Q16);
     let pre = fire(&mut exec, 0);
     let (weight_after, trace_after) = synapse(&exec);
-    oracle.step_stdp_all(pre, [post_last, 0, 0, 0], Polarity::Excitatory);
+    oracle.step_stdp_all(
+        pre,
+        [post_last, 0, 0, 0],
+        Polarity::Excitatory,
+        ISTDP_ALPHA_Q1_15,
+    );
     let pending = oracle.eligibility_q1_15[0];
     assert_eq!(
         (weight_after as i32) - (WEIGHT as i32) + (trace_after as i32),
