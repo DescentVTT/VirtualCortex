@@ -238,6 +238,71 @@ const _: () = {
 mod tests {
     use super::*;
 
+    /// A role term is a constant of the band (the filler is the argument's head) or a
+    /// compound of exactly one child over a constant of the band whose child is a constant
+    /// through the bindings (the filler is that constant); anything else names no role.
+    #[test]
+    fn a_role_term_is_a_constant_of_the_band_or_a_compound_over_one_that_names_its_filler() {
+        let affect = role_concept(ROLE_AFFECT).unwrap();
+        let mut arena = [TermNode::default(); 12];
+        arena[0] = TermNode::constant(affect);
+        arena[1] = TermNode::constant(7);
+        arena[2] = TermNode::compound(affect, &[1]).unwrap();
+        arena[3] = TermNode::compound(affect, &[1, 1]).unwrap();
+        arena[4] = TermNode::variable(0);
+        arena[5] = TermNode::compound(affect, &[4]).unwrap();
+        arena[6] = TermNode::constant(9);
+        arena[7] = TermNode::compound(9, &[1]).unwrap();
+        arena[8] = TermNode::compound(affect, &[]).unwrap();
+        arena[9] = TermNode::variable(1);
+        let mut bindings = [Binding::UNBOUND; 2];
+        assert_eq!(
+            role_of_term(0, &arena, &bindings),
+            Some((ROLE_AFFECT, None))
+        );
+        assert_eq!(
+            role_of_term(2, &arena, &bindings),
+            Some((ROLE_AFFECT, Some(7))),
+            "a compound over the band names its filler"
+        );
+        assert_eq!(role_of_term(3, &arena, &bindings), None, "two children");
+        assert_eq!(role_of_term(8, &arena, &bindings), None, "no child");
+        assert_eq!(
+            role_of_term(5, &arena, &bindings),
+            None,
+            "a variable child, unbound"
+        );
+        assert_eq!(role_of_term(6, &arena, &bindings), None, "outside the band");
+        assert_eq!(
+            role_of_term(7, &arena, &bindings),
+            None,
+            "a compound outside the band"
+        );
+        assert_eq!(role_of_term(10, &arena, &bindings), None, "an empty node");
+        assert_eq!(
+            role_of_term(9, &arena, &bindings),
+            None,
+            "an unbound variable"
+        );
+        // Bound through the table: the variable child to the constant, the variable term to
+        // the compound.
+        bindings[0] = Binding(1u32.wrapping_add(1));
+        bindings[1] = Binding(2u32.wrapping_add(1));
+        assert_eq!(
+            role_of_term(5, &arena, &bindings),
+            Some((ROLE_AFFECT, Some(7)))
+        );
+        assert_eq!(
+            role_of_term(9, &arena, &bindings),
+            Some((ROLE_AFFECT, Some(7)))
+        );
+        assert_eq!(
+            role_of_term(99, &arena, &bindings),
+            None,
+            "outside the arena"
+        );
+    }
+
     #[test]
     fn role_concepts_are_one_bit_in_the_band_and_nothing_else() {
         for (slot, &role) in ROLES.iter().enumerate() {

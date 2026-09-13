@@ -1131,6 +1131,11 @@ mod tests {
             realise(&mut cycle, 0, &lex, &mut wide),
             Err(LexiconError::TooDeep)
         );
+        assert_eq!(
+            &wide[..7],
+            &[11, 14, 11, 14, 11, 14, 0],
+            "three frames realised, the fourth visit refused before the budget would be"
+        );
         // A chain of nine relative frames, the last a state frame: eight levels is the bound.
         let chain = |length: usize| -> [LinguisticFrameSlot; 10] {
             core::array::from_fn(|i| {
