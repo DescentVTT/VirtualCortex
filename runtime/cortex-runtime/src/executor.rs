@@ -873,6 +873,19 @@ impl<const CAP: usize> Executor<CAP> {
         unsafe { self.shared.units.as_mut_slice() }
     }
 
+    /// The unit and synapse arenas together, exclusively, between ticks: for a rule that
+    /// writes both, such as the synthesis of a network from a prior (ADR-0044).
+    pub fn arenas_mut(&mut self) -> (&mut [DendriticSuperNeuron], &mut [SynapseBlock]) {
+        // SAFETY: as in `units_mut`; the two arenas are distinct allocations, so the two
+        // exclusive slices do not overlap.
+        unsafe {
+            (
+                self.shared.units.as_mut_slice(),
+                self.shared.blocks.as_mut_slice(),
+            )
+        }
+    }
+
     /// The synapse arena, between ticks.
     pub fn blocks(&self) -> &[SynapseBlock] {
         // SAFETY: as in `units`.
@@ -1249,12 +1262,15 @@ impl<const CAP: usize> Drop for Executor<CAP> {
     }
 }
 
-/// Builds the wheels on a thread whose stack holds one (a production wheel is 4 MB and
-/// `Box::new` may build it on the stack first).
+/// Builds the wheels on a thread whose stack holds several: a production wheel is 4 MB,
+/// `Box::new` builds it on the stack and copies it on its way into the box, and the debug
+/// profile materialises more than two copies (a Linux build overflowed at twice the wheel,
+/// finding F-34, the first time a test constructed the production geometry), so the
+/// reservation is eight wheels and a megabyte, virtual memory committed only as touched.
 fn build_wheels<const CAP: usize>(count: usize) -> Vec<Box<FlatTimingWheel<CAP>>> {
     let bytes = std::mem::size_of::<FlatTimingWheel<CAP>>();
     thread::Builder::new()
-        .stack_size(bytes.saturating_mul(2).max(1 << 20))
+        .stack_size(bytes.saturating_mul(8).saturating_add(1 << 20))
         .spawn(move || {
             (0..count)
                 .map(|_| Box::new(FlatTimingWheel::<CAP>::new()))

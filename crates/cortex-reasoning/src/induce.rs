@@ -66,6 +66,9 @@ pub enum InduceError {
     BodyFull,
     /// Every id of the invented band is taken.
     InventionsExhausted,
+    /// A proof search spent its budget of resolutions before it found a proof or ran out
+    /// of choices (ADR-0045).
+    Budget,
 }
 
 /// The caller's slices an induction runs over (TC-5: nothing is allocated). The arena is
@@ -269,7 +272,9 @@ pub fn free_variables(
 }
 
 /// Where a call started: the cursor and the counters [`InduceScratch::restore`] puts back.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The default is a mark at the arena's start, which a frame slice is filled with before a
+/// proof search overwrites it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InduceMark {
     free: usize,
     trail_len: usize,
@@ -755,29 +760,234 @@ pub fn resolve_definite(goal: u32, rule: u32, s: &mut InduceScratch) -> Result<u
 
 fn resolve_in(goal: u32, rule: u32, s: &mut InduceScratch) -> Result<u32, InduceError> {
     let ng = clause_at(goal, s)?;
+    for i in 0..clause_body_len(&ng) {
+        match resolve_literal_in(goal, rule, i, s) {
+            Err(InduceError::NoMatch) => continue,
+            out => return out,
+        }
+    }
+    Err(InduceError::NoMatch)
+}
+
+/// One step of definite-clause resolution on a chosen literal (ADR-0045): literal `index`
+/// of `goal`'s body is replaced by `rule`'s body when `rule`'s head unifies with it, in
+/// place; the bindings stay. `NoMatch` when it does not unify or the goal has no such
+/// literal; `BodyFull` as for [`resolve_definite`]. With `index` 0 this is the leftmost
+/// selection a proof search needs: the rule is then the only choice point.
+pub fn resolve_literal(
+    goal: u32,
+    rule: u32,
+    index: usize,
+    s: &mut InduceScratch,
+) -> Result<u32, InduceError> {
+    let m = s.mark();
+    let out = resolve_literal_in(goal, rule, index, s);
+    if out.is_err() {
+        s.restore(&m);
+    }
+    out
+}
+
+fn resolve_literal_in(
+    goal: u32,
+    rule: u32,
+    index: usize,
+    s: &mut InduceScratch,
+) -> Result<u32, InduceError> {
+    let ng = clause_at(goal, s)?;
     let nr = clause_at(rule, s)?;
     let (Some(hg), Some(hr)) = (clause_head(&ng), clause_head(&nr)) else {
         return Err(InduceError::Malformed);
     };
-    for i in 0..clause_body_len(&ng) {
-        let lit = clause_literal(&ng, i).ok_or(InduceError::Malformed)?;
-        if !unify_in(lit, hr, s)? {
+    if index >= clause_body_len(&ng) {
+        return Err(InduceError::NoMatch);
+    }
+    let lit = clause_literal(&ng, index).ok_or(InduceError::Malformed)?;
+    if !unify_in(lit, hr, s)? {
+        return Err(InduceError::NoMatch);
+    }
+    let mut body = Body::new();
+    body.push(hg)?;
+    for k in 0..index {
+        body.push(clause_literal(&ng, k).ok_or(InduceError::Malformed)?)?;
+    }
+    for j in 0..clause_body_len(&nr) {
+        body.push(clause_literal(&nr, j).ok_or(InduceError::Malformed)?)?;
+    }
+    for k in index.wrapping_add(1)..clause_body_len(&ng) {
+        body.push(clause_literal(&ng, k).ok_or(InduceError::Malformed)?)?;
+    }
+    body.alloc(s)
+}
+
+/// The next pair of clauses in `store`, in index order, that intra-construction can take
+/// (ADR-0045): both at least two literals long, their heads of one functor and arity through
+/// the bindings (two constants equal, two compounds of one functor and arity, so that the
+/// heads can unify); `(i, j)` with `i < j`, after `after` when there is one, `None` when no
+/// pair is left. `Malformed` for an entry that is not a clause.
+pub fn next_pair(
+    store: &[u32],
+    after: Option<(usize, usize)>,
+    s: &InduceScratch,
+) -> Result<Option<(usize, usize)>, InduceError> {
+    let (mut i, mut j) = match after {
+        None => (0, 1),
+        // A malformed `after` with `j` at or below `i` continues from `(i, i + 1)`, so the
+        // walk never yields a pair that is not `i < j` (the review of brief 022).
+        Some((i, j)) => (i, j.max(i).saturating_add(1)),
+    };
+    loop {
+        let Some(&ci) = store.get(i) else {
+            return Ok(None);
+        };
+        let Some(&cj) = store.get(j) else {
+            i = i.saturating_add(1);
+            j = i.saturating_add(1);
+            continue;
+        };
+        let a = clause_at(ci, s)?;
+        let b = clause_at(cj, s)?;
+        if clause_body_len(&a) >= 2 && clause_body_len(&b) >= 2 {
+            let (Some(ha), Some(hb)) = (clause_head(&a), clause_head(&b)) else {
+                return Err(InduceError::Malformed);
+            };
+            if same_shape(ha, hb, s)? {
+                return Ok(Some((i, j)));
+            }
+        }
+        j = j.saturating_add(1);
+    }
+}
+
+/// True when the two terms, dereferenced, are constants of one id or compounds of one
+/// functor and arity (the shape two heads must share to unify); a variable head has every
+/// shape.
+fn same_shape(a: u32, b: u32, s: &InduceScratch) -> Result<bool, InduceError> {
+    let (Some(ia), Some(ib)) = (deref(a, s.arena, s.bindings), deref(b, s.arena, s.bindings))
+    else {
+        return Err(InduceError::Malformed);
+    };
+    // `deref` returned indices inside the arena.
+    let (na, nb) = (s.arena[ia as usize], s.arena[ib as usize]);
+    if na.kind == TERM_EMPTY || nb.kind == TERM_EMPTY {
+        return Err(InduceError::Malformed);
+    }
+    Ok(na.kind == TERM_VARIABLE
+        || nb.kind == TERM_VARIABLE
+        || (na.kind == nb.kind && na.functor == nb.functor && na.arity == nb.arity))
+}
+
+/// One choice point of a proof search: the goal at this depth, the store index the next
+/// attempt starts from, and the mark to restore when the choice point is abandoned.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Frame {
+    pub goal: u32,
+    pub next: usize,
+    pub mark: InduceMark,
+}
+
+/// A proof found by [`prove`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Proof {
+    /// Resolution steps on the path from the goal to the empty clause.
+    pub steps: u32,
+    /// Resolutions attempted in all, the failed ones included.
+    pub resolutions: u32,
+}
+
+/// A bounded proof search (ADR-0045): depth-first over `store` in index order from `goal`
+/// (a clause whose body is what is to be proved; its head is not read), each step
+/// [`resolve_literal`] on the goal's leftmost literal with the next clause of the store whose
+/// head unifies with it (the selection of SLD resolution: the clause is the only choice
+/// point, so a goal of $k$ literals is not searched in $k!$ orders), backtracking over the
+/// choice of clause; `Some(proof)` at the empty body, `None` when every choice is spent.
+/// `frames` is the depth bound (`BoundExceeded` past it) and `budget` the bound on
+/// resolutions attempted, the ones that did not unify included (`Budget` past it). The
+/// scratch is left as it was, proof or not: the answer is whether, and in how many steps,
+/// not the substitution. A clause is not renamed between uses, so a proof that needs one
+/// clause twice under two bindings is not found (standardising apart is Specified).
+pub fn prove(
+    goal: u32,
+    store: &[u32],
+    frames: &mut [Frame],
+    budget: u32,
+    s: &mut InduceScratch,
+) -> Result<Option<Proof>, InduceError> {
+    let start = s.mark();
+    let out = prove_in(goal, store, frames, budget, s);
+    s.restore(&start);
+    out
+}
+
+fn prove_in(
+    goal: u32,
+    store: &[u32],
+    frames: &mut [Frame],
+    budget: u32,
+    s: &mut InduceScratch,
+) -> Result<Option<Proof>, InduceError> {
+    if frames.is_empty() {
+        return Err(InduceError::BoundExceeded);
+    }
+    frames[0] = Frame {
+        goal,
+        next: 0,
+        mark: s.mark(),
+    };
+    let mut depth = 1usize;
+    let mut resolutions = 0u32;
+    loop {
+        // `depth` is at least one here: it is set to one above and the pop below returns at
+        // zero.
+        let top = depth.wrapping_sub(1);
+        let frame = frames[top];
+        let node = clause_at(frame.goal, s)?;
+        if clause_body_len(&node) == 0 {
+            return Ok(Some(Proof {
+                // Below the frame count, which a slice bounds below `u32::MAX`.
+                steps: top as u32,
+                resolutions,
+            }));
+        }
+        let mut advanced = false;
+        let mut r = frame.next;
+        // The clauses from `next` on, by `get`: past the store the scan ends, with no index a
+        // comparison could carry past it.
+        while let Some(&rule) = store.get(r) {
+            if resolutions >= budget {
+                return Err(InduceError::Budget);
+            }
+            resolutions = resolutions.wrapping_add(1);
+            let mark = s.mark();
+            match resolve_literal(frame.goal, rule, 0, s) {
+                Ok(resolvent) => {
+                    frames[top].next = r.saturating_add(1);
+                    if depth >= frames.len() {
+                        return Err(InduceError::BoundExceeded);
+                    }
+                    frames[depth] = Frame {
+                        goal: resolvent,
+                        next: 0,
+                        mark,
+                    };
+                    depth = depth.wrapping_add(1);
+                    advanced = true;
+                    break;
+                }
+                Err(InduceError::NoMatch) => r = r.saturating_add(1),
+                Err(e) => return Err(e),
+            }
+        }
+        if advanced {
             continue;
         }
-        let mut body = Body::new();
-        body.push(hg)?;
-        for k in 0..i {
-            body.push(clause_literal(&ng, k).ok_or(InduceError::Malformed)?)?;
+        // Every clause tried at this depth: abandon the choice point.
+        s.restore(&frame.mark);
+        depth = top;
+        if depth == 0 {
+            return Ok(None);
         }
-        for j in 0..clause_body_len(&nr) {
-            body.push(clause_literal(&nr, j).ok_or(InduceError::Malformed)?)?;
-        }
-        for k in i.wrapping_add(1)..clause_body_len(&ng) {
-            body.push(clause_literal(&ng, k).ok_or(InduceError::Malformed)?)?;
-        }
-        return body.alloc(s);
     }
-    Err(InduceError::NoMatch)
 }
 
 const _: () = {
@@ -1879,6 +2089,267 @@ mod tests {
         );
         assert_eq!(
             resolve_definite(goal, 30, &mut s),
+            Err(InduceError::Malformed)
+        );
+    }
+    // ------------------------------------------------------------ ADR-0045: pairs and proofs
+
+    const GOAL: u32 = 0x400;
+    const H: u32 = 0x107;
+    const K: u32 = 0x203;
+
+    /// `p(X) ← l1(X), ..., lk(X)` over one fresh variable, the literals of arity one.
+    fn rule<const N: usize>(kit: &mut Kit<N>, head: u32, literals: &[u32]) -> u32 {
+        let x = kit.var();
+        let h = kit.compound(head, &[x]);
+        let mut body = [0u32; MAX_BODY];
+        for (i, &l) in literals.iter().enumerate() {
+            body[i] = kit.compound(l, &[x]);
+        }
+        kit.clause(h, &body[..literals.len()])
+    }
+
+    /// The fact `l(k)`.
+    fn fact<const N: usize>(kit: &mut Kit<N>, literal: u32, k: u32) -> u32 {
+        let c = kit.constant(k);
+        let h = kit.compound(literal, &[c]);
+        kit.clause(h, &[])
+    }
+
+    /// The goal `← l1(k), ...`.
+    fn goal<const N: usize>(kit: &mut Kit<N>, literals: &[(u32, u32)]) -> u32 {
+        let g = kit.constant(GOAL);
+        let mut body = [0u32; MAX_BODY];
+        for (i, &(l, k)) in literals.iter().enumerate() {
+            let c = kit.constant(k);
+            body[i] = kit.compound(l, &[c]);
+        }
+        kit.clause(g, &body[..literals.len()])
+    }
+
+    #[test]
+    fn next_pair_walks_the_pairs_of_one_head_shape_with_two_or_more_literals_in_order() {
+        let mut kit = Kit::<128>::new();
+        let c0 = rule(&mut kit, P, &[A, B, C]);
+        let c1 = rule(&mut kit, R, &[A, B]);
+        let c2 = rule(&mut kit, P, &[A, C]);
+        let c3 = rule(&mut kit, P, &[A]);
+        let c4 = rule(&mut kit, P, &[B, C, K]);
+        let f = fact(&mut kit, P, A);
+        let store = [c0, c1, c2, c3, c4, f];
+        let s = kit.scratch();
+        assert_eq!(
+            next_pair(&store, None, &s),
+            Ok(Some((0, 2))),
+            "the same head, two literals each"
+        );
+        assert_eq!(next_pair(&store, Some((0, 2)), &s), Ok(Some((0, 4))));
+        assert_eq!(
+            next_pair(&store, Some((0, 4)), &s),
+            Ok(Some((2, 4))),
+            "a one-literal clause and a fact are skipped"
+        );
+        assert_eq!(next_pair(&store, Some((2, 4)), &s), Ok(None));
+        assert_eq!(
+            next_pair(&store[..1], None, &s),
+            Ok(None),
+            "one clause pairs with nothing"
+        );
+        assert_eq!(
+            next_pair(&store, Some((2, 1)), &s),
+            Ok(Some((2, 4))),
+            "a malformed after: from (2, 3)"
+        );
+        assert_eq!(next_pair(&store, Some((2, 0)), &s), Ok(Some((2, 4))));
+        assert_eq!(
+            next_pair(&store, Some((0, 0)), &s),
+            Ok(Some((0, 2))),
+            "never a self-pair"
+        );
+        assert_eq!(next_pair(&[], None, &s), Ok(None));
+        assert_eq!(
+            next_pair(&store, Some((5, 5)), &s),
+            Ok(None),
+            "after the end"
+        );
+        // A different arity of one functor is another shape; a variable head has every shape.
+        let mut kit = Kit::<64>::new();
+        let x = kit.var();
+        let y = kit.var();
+        let h2 = kit.compound(P, &[x, y]);
+        let l1 = kit.compound(A, &[x]);
+        let l2 = kit.compound(B, &[y]);
+        let wide = kit.clause(h2, &[l1, l2]);
+        let narrow = rule(&mut kit, P, &[A, B]);
+        let v = kit.var();
+        let any = kit.clause(v, &[l1, l2]);
+        let s = kit.scratch();
+        assert_eq!(next_pair(&[wide, narrow], None, &s), Ok(None));
+        assert_eq!(next_pair(&[wide, any], None, &s), Ok(Some((0, 1))));
+        assert_eq!(next_pair(&[any, narrow], None, &s), Ok(Some((0, 1))));
+        // A store entry that is not a clause is malformed.
+        let mut kit = Kit::<64>::new();
+        let c = rule(&mut kit, P, &[A, B]);
+        let d = rule(&mut kit, P, &[A, C]);
+        let bare = kit.constant(A);
+        let s = kit.scratch();
+        assert_eq!(
+            next_pair(&[c, bare, d], None, &s),
+            Err(InduceError::Malformed)
+        );
+        assert_eq!(
+            next_pair(&[c, 999, d], None, &s),
+            Err(InduceError::Malformed)
+        );
+        assert_eq!(
+            next_pair(&[c, d, 999], None, &s),
+            Ok(Some((0, 1))),
+            "the walk stops at the first pair, before the entry it never reaches"
+        );
+        // A clause whose head is an empty node (a slot in the arena nothing wrote) is
+        // malformed on either side of the pair.
+        let mut kit = Kit::<64>::new();
+        let c = rule(&mut kit, P, &[A, B]);
+        let x = kit.var();
+        let l1 = kit.compound(A, &[x]);
+        let l2 = kit.compound(B, &[x]);
+        let hollow = kit.clause(60, &[l1, l2]);
+        let s = kit.scratch();
+        assert_eq!(
+            next_pair(&[c, hollow], None, &s),
+            Err(InduceError::Malformed)
+        );
+        assert_eq!(
+            next_pair(&[hollow, c], None, &s),
+            Err(InduceError::Malformed)
+        );
+    }
+
+    #[test]
+    fn resolve_literal_resolves_the_chosen_literal_only_and_resolve_definite_the_first_that_unifies()
+     {
+        let mut kit = Kit::<128>::new();
+        // goal ← a(k), b(k); rules b(X) ← h(X) and a(X) ← .
+        let g = goal(&mut kit, &[(A, K), (B, K)]);
+        let rb = rule(&mut kit, B, &[H]);
+        let ra = rule(&mut kit, A, &[]);
+        let mut s = kit.scratch();
+        let before = s.mark();
+        assert_eq!(
+            resolve_literal(g, rb, 0, &mut s),
+            Err(InduceError::NoMatch),
+            "a(k) is not b"
+        );
+        assert_eq!(s.mark(), before, "nothing bound, nothing appended");
+        let r = resolve_literal(g, rb, 1, &mut s).unwrap();
+        let n = clause_at(r, &s).unwrap();
+        assert_eq!(clause_body_len(&n), 2, "a(k), h(k)");
+        assert_eq!(
+            resolve_literal(g, rb, 2, &mut s),
+            Err(InduceError::NoMatch),
+            "no third literal"
+        );
+        s.restore(&before);
+        // `resolve_definite` takes the first literal the head unifies with: b(k) for rb.
+        let d = resolve_definite(g, rb, &mut s).unwrap();
+        assert_eq!(clause_body_len(&clause_at(d, &s).unwrap()), 2);
+        s.restore(&before);
+        let a = resolve_literal(g, ra, 0, &mut s).unwrap();
+        assert_eq!(
+            clause_body_len(&clause_at(a, &s).unwrap()),
+            1,
+            "b(k) is left"
+        );
+        assert_eq!(
+            resolve_literal(g, 999, 0, &mut s),
+            Err(InduceError::Malformed)
+        );
+    }
+
+    #[test]
+    fn a_proof_is_found_by_backtracking_and_counts_its_steps_and_the_scratch_is_left_as_it_was() {
+        let mut kit = Kit::<256>::new();
+        // p(X) ← a(X), b(X).  a(k).  b(k).  a(m).  p(X) ← c(X).  c(m)? no: c(n).
+        let r0 = rule(&mut kit, P, &[A, B]);
+        let fa = fact(&mut kit, A, K);
+        let fb = fact(&mut kit, B, K);
+        let fam = fact(&mut kit, A, C);
+        let r1 = rule(&mut kit, P, &[H]);
+        let fh = fact(&mut kit, H, W);
+        let store = [r0, fa, fb, fam, r1, fh];
+        let g_k = goal(&mut kit, &[(P, K)]);
+        let g_m = goal(&mut kit, &[(P, C)]);
+        let g_w = goal(&mut kit, &[(P, W)]);
+        let g_two = goal(&mut kit, &[(P, K), (P, W)]);
+        let empty = goal(&mut kit, &[]);
+        let mut frames = [Frame::default(); 8];
+        let mut s = kit.scratch();
+        let before = (s.free, s.trail_len, s.next_variable);
+        // p(k): r0 then a(k) then b(k): three steps.
+        let proof = prove(g_k, &store, &mut frames, 64, &mut s)
+            .unwrap()
+            .unwrap();
+        assert_eq!(proof.steps, 3);
+        assert_eq!(
+            (s.free, s.trail_len, s.next_variable),
+            before,
+            "left as it was"
+        );
+        // p(m): r0 binds X = m, a(m) holds, b(m) fails, backtrack out of r0; r1 needs h(m):
+        // fails. No proof.
+        assert_eq!(prove(g_m, &store, &mut frames, 64, &mut s), Ok(None));
+        assert_eq!((s.free, s.trail_len, s.next_variable), before);
+        // p(w): r0 fails at a(w); r1 then h(w): two steps, after the failed branch.
+        let proof = prove(g_w, &store, &mut frames, 64, &mut s)
+            .unwrap()
+            .unwrap();
+        assert_eq!(proof.steps, 2);
+        assert!(
+            proof.resolutions > 2,
+            "the failed branch was tried: {}",
+            proof.resolutions
+        );
+        // Two literals: p(k) through r0 and its facts, then p(w) through r1.
+        let proof = prove(g_two, &store, &mut frames, 64, &mut s)
+            .unwrap()
+            .unwrap();
+        assert_eq!(proof.steps, 5);
+        // An empty goal is proved in no step; a store with nothing proves nothing.
+        assert_eq!(
+            prove(empty, &store, &mut frames, 64, &mut s)
+                .unwrap()
+                .unwrap()
+                .steps,
+            0
+        );
+        assert_eq!(prove(g_k, &[], &mut frames, 64, &mut s), Ok(None));
+        // The bounds: a depth of three needs four frames; a budget below the resolutions
+        // needed is spent.
+        assert_eq!(
+            prove(g_k, &store, &mut frames[..3], 64, &mut s),
+            Err(InduceError::BoundExceeded)
+        );
+        assert!(
+            prove(g_k, &store, &mut frames[..4], 64, &mut s)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            prove(g_k, &store, &mut frames, 2, &mut s),
+            Err(InduceError::Budget)
+        );
+        assert_eq!(
+            prove(g_k, &store, &mut [], 64, &mut s),
+            Err(InduceError::BoundExceeded)
+        );
+        assert_eq!(
+            (s.free, s.trail_len, s.next_variable),
+            before,
+            "after every refusal too"
+        );
+        // A store entry that is not a clause.
+        assert_eq!(
+            prove(g_k, &[r0, 999], &mut frames, 64, &mut s),
             Err(InduceError::Malformed)
         );
     }

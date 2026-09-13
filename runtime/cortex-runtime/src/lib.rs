@@ -23,6 +23,7 @@
 
 pub mod arena;
 pub mod barrier;
+pub mod branching;
 pub mod deque;
 pub mod discovery;
 pub mod executor;
@@ -30,12 +31,16 @@ pub mod image;
 pub mod injector;
 pub mod language;
 pub mod pool;
+pub mod synthesis;
 pub mod trial;
 
+pub use branching::{
+    Attribution, Cascade, ForkError, Perturbation, cascade, fork, run_driven, trace,
+};
 pub use discovery::{
     CERTIFICATE_BYTES, COMPRESSION_REWARD_SHIFT, CertifyError, Discovery, DiscoveryError,
-    LENGTH_CEILING, certify_from_frame, conjecture_frame, description_length, free_energy_q16,
-    invent, prime, reward_q16,
+    LENGTH_CEILING, SearchReport, certify_from_frame, conjecture_frame, description_length,
+    free_energy_q16, invent, prime, reward_q16, search,
 };
 pub use executor::{
     ACTIVATE, AmendError, Config, ConfigError, Executor, Inject, InjectError, Policy, TagError,
@@ -46,6 +51,7 @@ pub use language::{
     DECODE_FLOOR_Q16, LanguageError, ROLE_CONCEPT_BASE, ROLES, comprehend, concept_in,
     decode_frame, encode_frame, read_role, role_concept, role_of_concept, role_slot,
 };
+pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};
 
 /// The executor with the production wheel geometry (2 048 tokens per slot, ADR-0013).

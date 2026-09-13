@@ -18,7 +18,8 @@
 use cortex_affect::{InteroceptiveState, Q16_ONE};
 use cortex_knowledge::SemanticOntologyNode;
 use cortex_reasoning::{
-    Binding, INVENTED_LIMIT, InduceError, InduceScratch, Invention, TermNode, intra_construct, size,
+    Binding, INVENTED_LIMIT, InduceError, InduceScratch, Invention, TermNode, intra_construct,
+    next_pair, size,
 };
 use cortex_tools::{
     ACTION_SOLVE_CONSTRAINTS, ACTION_VERIFY_PROOF, STATUS_COMPLETED, TOOL_CATEGORY_FORMAL_PROVER,
@@ -49,6 +50,11 @@ pub enum DiscoveryError {
     NotPrimed,
     /// One of the two clauses is not in the store.
     NotInStore,
+    /// The search committed an invention and the store has no slot for its third clause
+    /// (ADR-0045): the store's slice is its capacity.
+    StoreFull,
+    /// The search committed more inventions than `out` holds (ADR-0045).
+    OutFull,
 }
 
 impl From<InduceError> for DiscoveryError {
@@ -169,6 +175,110 @@ pub fn invent(
         valence_q16,
         reward_q16: reward_q16(valence_q16),
     })
+}
+
+/// What a search over a clause store came to (ADR-0045).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SearchReport {
+    /// Pairs the search tried.
+    pub attempts: u32,
+    /// Inventions committed: those whose reward was positive.
+    pub commits: u32,
+    /// Inventions undone: those whose reward was not positive, and pairs the operator
+    /// refused for a reason of their own (no common literal, nothing to invent, a bound of
+    /// the clause).
+    pub rejections: u32,
+    /// The store's description length before the first attempt and after the last commit.
+    pub length_before: u32,
+    pub length_after: u32,
+    /// The committed rewards, summed, saturating: what the caller passes to the modulator.
+    pub reward_total_q16: i32,
+}
+
+/// The executive search over a clause store (ADR-0045): the pairs `next_pair` yields, in
+/// order, each intra-constructed by [`invent`]; an invention whose reward is positive is
+/// committed (the two inputs replaced by the common clause and the first definition, the
+/// second definition appended at `len`, the discovery written to `out`, the walk restarted
+/// from the first pair), one whose reward is not positive is undone (the scratch restored to
+/// before it, the affect state put back as it was), as is a pair the operator refuses for a
+/// reason of its own; the walk ends when no pair is left or `budget` attempts are spent.
+/// The affect state must be primed to the store's length, as `invent` requires; after a
+/// commit it is primed to the new length by the valence update itself. `StoreFull` when a
+/// commit finds no slot, `OutFull` when it finds no room in `out`, either with the invention
+/// undone; the operator's own bounds (an arena or a band exhausted, a walk past its limit, a
+/// malformed store) end the search as errors with the store as it was before that attempt.
+/// Returns the report; `len` is the store's length after.
+pub fn search(
+    store: &mut [u32],
+    len: &mut usize,
+    scratch: &mut InduceScratch,
+    affect: &mut InteroceptiveState,
+    budget: u32,
+    out: &mut [Discovery],
+) -> Result<SearchReport, DiscoveryError> {
+    let mut report = SearchReport {
+        length_before: description_length(
+            store.get(..*len).ok_or(DiscoveryError::Length)?,
+            scratch.arena,
+            scratch.bindings,
+            scratch.stack,
+        )?,
+        ..SearchReport::default()
+    };
+    report.length_after = report.length_before;
+    let mut pair = next_pair(&store[..*len], None, scratch)?;
+    while let Some((i, j)) = pair {
+        if report.attempts >= budget {
+            break;
+        }
+        report.attempts = report.attempts.wrapping_add(1);
+        let saved = *affect;
+        let mark = scratch.mark();
+        match invent(store[i], store[j], &store[..*len], scratch, affect) {
+            Ok(discovery) if discovery.reward_q16 > 0 => {
+                let Some(slot) = store.get_mut(*len) else {
+                    scratch.restore(&mark);
+                    *affect = saved;
+                    return Err(DiscoveryError::StoreFull);
+                };
+                let Some(record) = out.get_mut(report.commits as usize) else {
+                    scratch.restore(&mark);
+                    *affect = saved;
+                    return Err(DiscoveryError::OutFull);
+                };
+                *slot = discovery.invention.definitions[1];
+                store[i] = discovery.invention.common;
+                store[j] = discovery.invention.definitions[0];
+                // Below the store's length, which a slice bounds.
+                *len = len.wrapping_add(1);
+                *record = discovery;
+                report.commits = report.commits.wrapping_add(1);
+                report.length_after = discovery.length_after;
+                report.reward_total_q16 =
+                    report.reward_total_q16.saturating_add(discovery.reward_q16);
+                pair = next_pair(&store[..*len], None, scratch)?;
+            }
+            Ok(_) => {
+                scratch.restore(&mark);
+                *affect = saved;
+                report.rejections = report.rejections.wrapping_add(1);
+                pair = next_pair(&store[..*len], Some((i, j)), scratch)?;
+            }
+            Err(DiscoveryError::Induce(
+                InduceError::NoMatch
+                | InduceError::NothingToInvent
+                | InduceError::TooManyArguments
+                | InduceError::BodyFull
+                | InduceError::PairsFull,
+            )) => {
+                // The operator restored the scratch and touched no affect state.
+                report.rejections = report.rejections.wrapping_add(1);
+                pair = next_pair(&store[..*len], Some((i, j)), scratch)?;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(report)
 }
 
 /// The frame a conjecture leaves in: a pending proof check whose parameter hash is the
@@ -644,5 +754,349 @@ mod tests {
             );
             assert_eq!(node, fresh);
         }
+    }
+
+    /// `p(X) ← a(X), b(X), c(X), d(X), l(X)` over a fresh variable, `l` the last literal.
+    fn wide(arena: &mut [TermNode], free: &mut usize, next_var: &mut u32, last: u32) -> u32 {
+        let base = *free as u32;
+        let at = |k: u32| base.wrapping_add(k);
+        let nodes = [
+            TermNode::variable(*next_var),
+            TermNode::compound(0x100, &[base]).unwrap(),
+            TermNode::compound(0x200, &[base]).unwrap(),
+            TermNode::compound(0x201, &[base]).unwrap(),
+            TermNode::compound(0x202, &[base]).unwrap(),
+            TermNode::compound(0x203, &[base]).unwrap(),
+            TermNode::compound(last, &[base]).unwrap(),
+            clause(at(1), &[at(2), at(3), at(4), at(5), at(6)]).unwrap(),
+        ];
+        let end = free.wrapping_add(nodes.len());
+        arena[*free..end].copy_from_slice(&nodes);
+        *free = end;
+        *next_var = next_var.wrapping_add(1);
+        at(7)
+    }
+
+    #[test]
+    fn the_search_commits_the_inventions_that_pay_restores_the_rest_and_stops_at_its_bounds() {
+        let mut arena = [TermNode::default(); 512];
+        let (mut free, mut vars) = (0usize, 0u32);
+        // Three clauses of one head sharing four literals, and one of another head.
+        let c0 = wide(&mut arena, &mut free, &mut vars, 0x204);
+        let c1 = wide(&mut arena, &mut free, &mut vars, 0x205);
+        let c2 = wide(&mut arena, &mut free, &mut vars, 0x206);
+        let base = free as u32;
+        let at = |k: u32| base.wrapping_add(k);
+        arena[free] = TermNode::variable(vars);
+        arena[free.wrapping_add(1)] = TermNode::compound(0x101, &[base]).unwrap();
+        arena[free.wrapping_add(2)] = TermNode::compound(0x200, &[base]).unwrap();
+        arena[free.wrapping_add(3)] = TermNode::compound(0x207, &[base]).unwrap();
+        arena[free.wrapping_add(4)] = clause(at(1), &[at(2), at(3)]).unwrap();
+        let c3 = at(4);
+        free = free.wrapping_add(5);
+        vars = vars.wrapping_add(1);
+        let mut bindings = [Binding::UNBOUND; 64];
+        let (mut trail, mut stack, mut pairs) = ([0u32; 128], [0u32; 256], [[0u32; 3]; 32]);
+        let mut scratch = InduceScratch {
+            arena: &mut arena,
+            free,
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            pairs: &mut pairs,
+            next_variable: vars,
+            next_invented: INVENTED_BASE,
+        };
+        let mut store = [c0, c1, c2, c3, 0, 0, 0, 0];
+        let mut len = 4;
+        let mut affect = InteroceptiveState::default();
+        // Each wide clause is 13 nodes (the clause, the head of two, five literals of two),
+        // the narrow one 7: forty-six in all. Two inventions of four shared literals save
+        // three nodes each: the common clause of thirteen and two definitions of five
+        // against two of thirteen.
+        prime(&mut affect, 46);
+        let mut out = [Discovery::default(); 4];
+        let report = search(
+            &mut store,
+            &mut len,
+            &mut scratch,
+            &mut affect,
+            16,
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(
+            report,
+            SearchReport {
+                attempts: 2,
+                commits: 2,
+                rejections: 0,
+                length_before: 46,
+                length_after: 40,
+                reward_total_q16: 3 * ONE / 2,
+            },
+            "two commits of three nodes each, a reward of three quarters each"
+        );
+        assert_eq!(
+            len, 6,
+            "two inputs became three outputs, twice: four clauses become six"
+        );
+        assert_eq!(out[0].invention.predicate, INVENTED_BASE);
+        assert_eq!(out[1].invention.predicate, INVENTED_BASE + 1);
+        assert_eq!((out[0].length_before, out[0].length_after), (46, 43));
+        assert_eq!((out[1].length_before, out[1].length_after), (43, 40));
+        assert_eq!(
+            affect.free_energy_prev_q16,
+            40 << 16,
+            "primed to the store after"
+        );
+        assert_eq!(
+            description_length(
+                &store[..len],
+                scratch.arena,
+                scratch.bindings,
+                scratch.stack
+            ),
+            Ok(40)
+        );
+        // The store's shape after: the common clause at 0, the first definition at 1, the
+        // second appended; then the second invention over the common clause and clause 2.
+        assert_eq!(store[0], out[1].invention.common);
+        assert_eq!(store[1], out[0].invention.definitions[0]);
+        assert_eq!(store[4], out[0].invention.definitions[1]);
+        assert_eq!(store[2], out[1].invention.definitions[0]);
+        assert_eq!(store[5], out[1].invention.definitions[1]);
+        assert_eq!(store[3], c3, "the other head's clause stays");
+        // Nothing left to pair: a second search changes nothing.
+        let again = search(
+            &mut store,
+            &mut len,
+            &mut scratch,
+            &mut affect,
+            16,
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(
+            (again.attempts, again.commits, again.length_after),
+            (0, 0, 40)
+        );
+        assert_eq!(len, 6);
+    }
+
+    #[test]
+    fn the_search_undoes_an_invention_that_does_not_pay_and_refuses_what_it_cannot_hold() {
+        let mut arena = [TermNode::default(); 64];
+        let (ca, cb) = small_store(&mut arena);
+        let mut bindings = [Binding::UNBOUND; 16];
+        let (mut trail, mut stack, mut pairs) = ([0u32; 32], [0u32; 64], [[0u32; 3]; 8]);
+        let mut scratch = InduceScratch {
+            arena: &mut arena,
+            free: 10,
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            pairs: &mut pairs,
+            next_variable: 2,
+            next_invented: INVENTED_BASE,
+        };
+        let mut affect = InteroceptiveState::default();
+        prime(&mut affect, 14);
+        let mut store = [ca, cb, 0];
+        let mut len = 2;
+        let mut out = [Discovery::default(); 1];
+        // One shared literal: fourteen become seventeen, undone.
+        let report = search(
+            &mut store,
+            &mut len,
+            &mut scratch,
+            &mut affect,
+            16,
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(
+            report,
+            SearchReport {
+                attempts: 1,
+                commits: 0,
+                rejections: 1,
+                length_before: 14,
+                length_after: 14,
+                reward_total_q16: 0,
+            }
+        );
+        assert_eq!(
+            (len, scratch.free, scratch.trail_len, scratch.next_invented),
+            (2, 10, 0, INVENTED_BASE)
+        );
+        assert_eq!(
+            affect,
+            {
+                let mut a = InteroceptiveState::default();
+                prime(&mut a, 14);
+                a
+            },
+            "the affect state as it was"
+        );
+        assert_eq!(out[0], Discovery::default(), "nothing written");
+        // A budget of zero tries nothing; an unprimed state is the operator's refusal.
+        let report = search(&mut store, &mut len, &mut scratch, &mut affect, 0, &mut out).unwrap();
+        assert_eq!((report.attempts, report.length_before), (0, 14));
+        prime(&mut affect, 1);
+        assert_eq!(
+            search(
+                &mut store,
+                &mut len,
+                &mut scratch,
+                &mut affect,
+                16,
+                &mut out
+            ),
+            Err(DiscoveryError::NotPrimed)
+        );
+        // A length past the store is a length error.
+        prime(&mut affect, 14);
+        let mut too_long = 4;
+        assert_eq!(
+            search(
+                &mut store,
+                &mut too_long,
+                &mut scratch,
+                &mut affect,
+                16,
+                &mut out
+            ),
+            Err(DiscoveryError::Length)
+        );
+    }
+
+    #[test]
+    fn a_commit_with_no_slot_in_the_store_or_in_the_output_is_refused_and_undone() {
+        let mut arena = [TermNode::default(); 256];
+        let (mut free, mut vars) = (0usize, 0u32);
+        let c0 = wide(&mut arena, &mut free, &mut vars, 0x204);
+        let c1 = wide(&mut arena, &mut free, &mut vars, 0x205);
+        let mut bindings = [Binding::UNBOUND; 32];
+        let (mut trail, mut stack, mut pairs) = ([0u32; 64], [0u32; 128], [[0u32; 3]; 16]);
+        let mut scratch = InduceScratch {
+            arena: &mut arena,
+            free,
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            pairs: &mut pairs,
+            next_variable: vars,
+            next_invented: INVENTED_BASE,
+        };
+        let mut affect = InteroceptiveState::default();
+        prime(&mut affect, 26);
+        let mut out = [Discovery::default(); 1];
+        let mut full = [c0, c1];
+        let mut len = 2;
+        assert_eq!(
+            search(&mut full, &mut len, &mut scratch, &mut affect, 16, &mut out),
+            Err(DiscoveryError::StoreFull)
+        );
+        assert_eq!(
+            (len, scratch.free, scratch.next_invented),
+            (2, free, INVENTED_BASE),
+            "undone"
+        );
+        assert_eq!(affect.free_energy_prev_q16, 26 << 16);
+        let mut room = [c0, c1, 0];
+        let mut none: [Discovery; 0] = [];
+        assert_eq!(
+            search(
+                &mut room,
+                &mut len,
+                &mut scratch,
+                &mut affect,
+                16,
+                &mut none
+            ),
+            Err(DiscoveryError::OutFull)
+        );
+        assert_eq!((len, scratch.free, room[2]), (2, free, 0), "undone");
+        let report = search(&mut room, &mut len, &mut scratch, &mut affect, 16, &mut out).unwrap();
+        assert_eq!((report.commits, len), (1, 3));
+    }
+
+    /// Two clauses `p(X) ← a(X, c), b(X), e(X)` and `p(Y) ← a(Y, c), b(Y), f(Y)`: the
+    /// invention saves nothing (twenty nodes become twenty), so its reward is zero and the
+    /// search undoes it: a commit needs a reward above zero, not at it.
+    #[test]
+    fn an_invention_that_saves_nothing_is_not_committed() {
+        let mut arena = [TermNode::default(); 64];
+        let nodes = [
+            TermNode::variable(0),
+            TermNode::constant(0x300),
+            TermNode::compound(0x200, &[0, 1]).unwrap(),
+            TermNode::compound(0x201, &[0]).unwrap(),
+            TermNode::compound(0x204, &[0]).unwrap(),
+            TermNode::compound(0x100, &[0]).unwrap(),
+            clause(5, &[2, 3, 4]).unwrap(),
+            TermNode::variable(1),
+            TermNode::constant(0x300),
+            TermNode::compound(0x200, &[7, 8]).unwrap(),
+            TermNode::compound(0x201, &[7]).unwrap(),
+            TermNode::compound(0x205, &[7]).unwrap(),
+            TermNode::compound(0x100, &[7]).unwrap(),
+            clause(12, &[9, 10, 11]).unwrap(),
+        ];
+        arena[..nodes.len()].copy_from_slice(&nodes);
+        let mut bindings = [Binding::UNBOUND; 16];
+        let (mut trail, mut stack, mut pairs) = ([0u32; 32], [0u32; 64], [[0u32; 3]; 8]);
+        let mut scratch = InduceScratch {
+            arena: &mut arena,
+            free: nodes.len(),
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            pairs: &mut pairs,
+            next_variable: 2,
+            next_invented: INVENTED_BASE,
+        };
+        let mut store = [6u32, 13, 0];
+        let mut len = 2;
+        assert_eq!(
+            description_length(
+                &store[..len],
+                scratch.arena,
+                scratch.bindings,
+                scratch.stack
+            ),
+            Ok(20)
+        );
+        let mut affect = InteroceptiveState::default();
+        prime(&mut affect, 20);
+        let mut out = [Discovery::default(); 1];
+        let report = search(
+            &mut store,
+            &mut len,
+            &mut scratch,
+            &mut affect,
+            16,
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                report.attempts,
+                report.commits,
+                report.rejections,
+                report.length_after
+            ),
+            (1, 0, 1, 20)
+        );
+        assert_eq!(
+            (len, scratch.free, scratch.next_invented),
+            (2, nodes.len(), INVENTED_BASE)
+        );
+        assert_eq!(out[0], Discovery::default());
     }
 }
