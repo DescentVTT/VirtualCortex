@@ -172,10 +172,11 @@ impl Prior {
             } else {
                 self.units.wrapping_sub(place.wrapping_sub(self.window))
             };
-            source
-                .wrapping_add(offset)
-                .checked_rem(self.units)
-                .unwrap_or(0)
+            // Widened: `source + offset` is below `2 × units`, which a ring of more than
+            // $2^{31}$ units would wrap in `u32` (the review of brief 022).
+            ((source as u64).wrapping_add(offset as u64))
+                .checked_rem(self.units as u64)
+                .unwrap_or(0) as u32
         };
         (target, rewired)
     }
@@ -348,6 +349,17 @@ mod tests {
             }
         }
         assert_eq!(all, super::tests::all(&p), "one seed, one network");
+        // The walk's position: the unit and the slot of the synapse it yields next.
+        let mut walk = p.synapses();
+        assert_eq!(walk.position(), (0, 0));
+        walk.next();
+        assert_eq!(walk.position(), (0, 1));
+        for _ in 0..7 {
+            walk.next();
+        }
+        assert_eq!(walk.position(), (1, 0), "eight synapses on: the next unit");
+        walk.by_ref().count();
+        assert_eq!(walk.position(), (64, 0), "past the last unit");
         assert_ne!(all, super::tests::all(&Prior { seed: 8, ..p }));
     }
 
@@ -407,6 +419,13 @@ mod tests {
             (none.inhibitory_units, none.inhibitory_synapses, none.apical),
             (0, 0, 0)
         );
+        // At 255 of 256 a draw of 255 is basal: the bound is strict.
+        let most = Prior {
+            apical_q0_8: 255,
+            ..prior()
+        }
+        .census();
+        assert!(most.apical > 480 && most.apical < 512, "{}", most.apical);
     }
 
     #[test]
@@ -515,6 +534,28 @@ mod tests {
             0,
             "a zero weight is not negative"
         );
+    }
+
+    #[test]
+    fn a_local_target_on_a_ring_past_two_billion_units_stays_within_the_window() {
+        let huge = Prior {
+            units: 0xC000_0000,
+            window: 1,
+            rewire_q0_8: 0,
+            ..prior()
+        };
+        let mut lcg = Lcg::new(9);
+        for source in [0x8000_0001u32, 0xBFFF_FFFF, 0x4000_0001, 0xBFFF_FFFE] {
+            for _ in 0..16 {
+                let (target, rewired) = huge.target(&mut lcg, source);
+                assert!(!rewired);
+                assert!(target < huge.units);
+                assert!(
+                    ring_distance(huge.units, source, target) == 1,
+                    "{source} -> {target}"
+                );
+            }
+        }
     }
 
     #[test]

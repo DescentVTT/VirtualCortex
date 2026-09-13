@@ -293,6 +293,8 @@ struct Night {
     stages: Vec<u8>,
     replays: u64,
     depotentiations: u64,
+    /// The two episodes' tags after the night.
+    tags: (u8, u8),
     cluster: ((u32, i64), (u32, i64)),
     random: ((u32, i64), (u32, i64)),
     readouts: [(usize, usize, usize); 4],
@@ -367,6 +369,7 @@ fn night(units: u32) -> Night {
     let post = Image::encode(&exec).unwrap();
     let replays = exec.replays();
     let depotentiations = exec.depotentiations();
+    let tags = (exec.episodes()[0].tag, exec.episodes()[1].tag);
     drop(exec);
     let mut fork_cfg = cfg;
     fork_cfg.episodes = 0;
@@ -380,6 +383,7 @@ fn night(units: u32) -> Night {
         stages,
         replays,
         depotentiations,
+        tags,
         cluster: (before.0, after.0),
         random: (before.1, after.1),
         readouts,
@@ -521,10 +525,11 @@ fn the_estimate_the_causal_ratios_and_the_loop_at_256_units_exhaustive() {
     // At fixed gains, two windows each: the lag-one estimate per window (Q16.16) and the
     // window's spikes, then eight kicks attributed through the connectome. The estimate of
     // one window of thirty-two bins varies by more than itself between two windows at one
-    // gain (0.659 then 0.000 at 2.0); the causal ratios rise with the gain (gross 0.389,
-    // 0.300, 0.583; net 0.389, 0.200, 0.306) and stay below 1 up to the ceiling's
-    // neighbourhood; the two forks drift apart (`extra`, `missing`) far beyond the first
-    // generation, which is why the oracle attributes through the synapses and not by time.
+    // gain (0.659 then 0.000 at 2.0); the causal ratios are of its order and share no trend
+    // with the gain (gross 0.389, 0.300, 0.583; net 0.389, 0.200, 0.306: both dip at 2.0)
+    // and stay below 1 up to the ceiling's neighbourhood; the two forks drift apart
+    // (`extra`, `missing`) far beyond the first generation, which is why the oracle
+    // attributes through the synapses and not by time.
     let fixed: Vec<_> = c
         .fixed
         .iter()
@@ -613,9 +618,11 @@ fn a_night_consolidates_the_synapses_among_a_tagged_pattern_and_a_cue_completes_
  {
     let n = night(256);
     // Three windows of slow-wave sleep, two of REM, two more of slow-wave, awake: 376
-    // replays of the two episodes in turn, 128 depotentiations (the tags of 200 survive).
+    // replays of the two episodes in turn, 128 depotentiations, sixty-four to each, so the
+    // tags of 200 end at 136 and neither episode is spent.
     assert_eq!(n.stages, vec![1, 1, 1, 2, 2, 1, 1, 0]);
     assert_eq!((n.replays, n.depotentiations), (376, 128));
+    assert_eq!(n.tags, (136, 136));
     // The cluster of twelve neighbours holds 147 synapses among itself, the random pattern
     // five; every one of them ends at the rail (32 767) after the night's replays.
     assert_eq!(n.cluster, ((147, 1_281_021), (147, 147 * 32_767)));
@@ -725,6 +732,7 @@ fn a_night_at_1024_units_exhaustive() {
     let n = night(1024);
     assert_eq!(n.stages, vec![1, 1, 1, 2, 2, 1, 1, 0]);
     assert_eq!((n.replays, n.depotentiations), (376, 128));
+    assert_eq!(n.tags, (136, 136));
     assert_eq!(n.cluster, ((143, 1_268_100), (143, 143 * 32_767)));
     assert_eq!(n.random, ((2, 18_841), (2, 2 * 32_767)));
     assert_eq!(n.readouts, [(0, 0, 18), (6, 0, 39), (0, 0, 18), (0, 0, 18)]);

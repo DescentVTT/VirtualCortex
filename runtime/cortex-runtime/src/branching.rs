@@ -5,11 +5,12 @@
 //! population activity instead. A deterministic engine can attribute exactly: two forks of one
 //! image under one drive differ only by the one spike a kick adds to one of them, so every
 //! spike in the perturbed fork and not in the baseline is that spike's descendant, and every
-//! spike in the baseline and not in the perturbed fork is one it suppressed. With delays in a
-//! band $[d_{\min}, d_{\max}]$, no spike two synapses deep can land before $2 d_{\min}$ after
-//! its ancestor, so the descendants within that many ticks are the first generation and the
-//! mean over kicks is $\sigma$; the descendants after it are the later generations. The
-//! forks run outside the tick loop, where the writer runs (TC-5), and allocate their traces.
+//! spike in the baseline and not in the perturbed fork is one it moved or removed. The
+//! kicked unit's synapses are known, so a first-generation descendant is an extra spike of a
+//! target within a latency after one of those synapses' delays from an ancestor spike,
+//! whatever the delay bands; the rest of the difference is the later generations and the
+//! two forks drifting apart. The forks run outside the tick loop, where the writer runs
+//! (TC-5), and allocate their traces.
 
 use crate::executor::{Config, Executor, InjectError};
 use crate::image::{Image, ImageError};
@@ -54,6 +55,8 @@ pub enum ForkError {
     /// A kick at a tick the fork had passed: the kicks are given in tick order, at or after
     /// the image's clock.
     Passed(u64),
+    /// A kick at a tick beyond the run's end, which the fork would never reach.
+    Unreached(u64),
 }
 
 impl From<ImageError> for ForkError {
@@ -101,8 +104,8 @@ pub fn trace<const CAP: usize>(exec: Executor<CAP>) -> Result<Vec<(u32, u32)>, F
 
 /// One fork of `image` under `config` and `drive`, run to `ticks`, with every kick of
 /// `perturb` injected before its tick (the kicks in tick order; a kick before the fork's
-/// clock is refused as a kick at a tick the fork has passed); its trace. No kick is the
-/// baseline.
+/// clock is refused as a kick at a tick the fork has passed, one after `ticks` as a kick it
+/// would never reach); its trace. No kick is the baseline.
 pub fn fork<const CAP: usize>(
     image: &[u8],
     config: &Config,
@@ -114,6 +117,9 @@ pub fn fork<const CAP: usize>(
     for p in perturb {
         if p.tick < exec.ticks() {
             return Err(ForkError::Passed(p.tick));
+        }
+        if p.tick > ticks {
+            return Err(ForkError::Unreached(p.tick));
         }
         run_driven(&mut exec, drive, p.tick)?;
         p.inject(&exec.injector())?;
@@ -208,14 +214,11 @@ pub fn cascade(
             continue;
         }
         cascade.first = cascade.first.saturating_add(1);
-        if let Some(i) = missing
-            .iter()
-            .position(|&(t, v)| v == u && t > tick && t.wrapping_sub(tick) <= advance)
-        {
-            if !paired[i] {
-                paired[i] = true;
-                cascade.advanced = cascade.advanced.saturating_add(1);
-            }
+        if let Some(i) = missing.iter().enumerate().position(|(i, &(t, v))| {
+            !paired[i] && v == u && t > tick && t.wrapping_sub(tick) <= advance
+        }) {
+            paired[i] = true;
+            cascade.advanced = cascade.advanced.saturating_add(1);
         }
     }
     missing.retain(|&(tick, _)| tick >= ancestor);
@@ -371,11 +374,16 @@ mod tests {
         let c = cascade(&[], &exact, 4, 0, &synapses, 20, 100);
         assert_eq!((c.first, c.extra), (0, 2));
         // A missing spike is paired once: two advanced descendants of one unit and one
-        // missing spike leave one advanced.
+        // missing spike leave one advanced; with two missing spikes in range the second
+        // descendant takes the second (the review of brief 022 found the first draft
+        // stopping at the first candidate, paired or not).
         let b = [(200, 5)];
         let p = [(12, 4), (105, 5), (109, 5)];
         let c = cascade(&b, &p, 4, 0, &synapses, 20, 100);
         assert_eq!((c.first, c.advanced, c.missing), (2, 1, 0));
+        let b2 = [(200, 5), (210, 5)];
+        let c = cascade(&b2, &p, 4, 0, &synapses, 20, 200);
+        assert_eq!((c.first, c.advanced, c.missing), (2, 2, 0));
     }
 
     #[test]
