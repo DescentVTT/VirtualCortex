@@ -63,6 +63,7 @@ Option 2.
 - Bad: the pull request's gate holds the harness at 256 units only; the 1 024-unit numbers are the weekly job's, and a change that moves them is seen a week later unless the round runs the ignored tests.
 - Bad: the oracle's forks replay the run from the image, so a kick at tick $t$ costs a run to $t$; a fork of a running engine would need a copy of the wheels and the pools, which the runtime does not have.
 - Bad: the estimator's noise and the ceiling's role are recorded, not resolved.
+- Good, by accident: the exit tests are the first to construct the production wheel geometry (`Executor<2048>`), and they found that the wheel builder's stack reservation of twice the wheel overflowed on Linux in the debug profile (finding F-34); the builder now reserves eight wheels and a megabyte, and every CI target constructs the production geometry from now on.
 
 ## Alternatives considered and why rejected
 
