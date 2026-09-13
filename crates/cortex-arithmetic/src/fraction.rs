@@ -221,7 +221,8 @@ pub fn within(
     if c.q == 0 || td == 0 || od == 0 {
         return Err(ERR_DIVIDE_BY_ZERO);
     }
-    // At most the smaller magnitude, so it fits `i128` as a positive value.
+    // At most 2^127. The one value that does not fit, 2^127 itself (both operands
+    // `i128::MIN`), casts to `i128::MIN` and divides each operand to exactly 1.
     let g = gcd(c.p.unsigned_abs(), c.q.unsigned_abs()) as i128;
     let p = op(slot, OP_DIV, c.p, g)?;
     let q = op(slot, OP_DIV, c.q, g)?;
@@ -578,6 +579,16 @@ mod tests {
         assert_eq!(
             within(&three, (3, 1), (1, i128::MIN), &mut slot),
             Err(ERR_OVERFLOW)
+        );
+        let both_min = Convergent {
+            p: i128::MIN,
+            q: i128::MIN,
+            depth: 0,
+        };
+        assert_eq!(
+            within(&both_min, (1, 1), (0, 1), &mut slot),
+            Ok(true),
+            "MIN / MIN is 1"
         );
         let q_min = Convergent {
             p: 1,

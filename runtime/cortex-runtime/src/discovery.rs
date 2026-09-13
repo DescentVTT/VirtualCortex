@@ -47,6 +47,8 @@ pub enum DiscoveryError {
     Length,
     /// The affect state's previous free energy is not the store's length: `prime` first.
     NotPrimed,
+    /// One of the two clauses is not in the store.
+    NotInStore,
 }
 
 impl From<InduceError> for DiscoveryError {
@@ -117,12 +119,13 @@ pub fn reward_q16(valence_q16: i32) -> i32 {
     (valence_q16 >> COMPRESSION_REWARD_SHIFT).clamp(one.wrapping_neg(), one)
 }
 
-/// Intra-constructs `ca` and `cb` (both in `store`) into a discovery: the store's length
-/// before, its length after (the two inputs replaced by the three outputs, every clause
-/// measured through the bindings the matching made), the valence `update_valence` returns
-/// for the length after, and the reward. `NotPrimed` unless the affect state's previous free
-/// energy is the length before; every error leaves the scratch and the affect state as they
-/// were.
+/// Intra-constructs `ca` and `cb` into a discovery: the store's length before, its length
+/// after (the two inputs replaced by the three outputs, every clause measured through the
+/// bindings the matching made), the valence `update_valence` returns for the length after,
+/// and the reward. `NotInStore` unless both clauses are in `store`; `NotPrimed` unless the
+/// affect state's previous free energy is the length before; every error leaves the scratch
+/// and the affect state as they were (an after-measure that does not fit restores what the
+/// invention did).
 pub fn invent(
     ca: u32,
     cb: u32,
@@ -130,10 +133,14 @@ pub fn invent(
     scratch: &mut InduceScratch,
     affect: &mut InteroceptiveState,
 ) -> Result<Discovery, DiscoveryError> {
+    if !store.contains(&ca) || !store.contains(&cb) {
+        return Err(DiscoveryError::NotInStore);
+    }
     let length_before = description_length(store, scratch.arena, scratch.bindings, scratch.stack)?;
     if affect.free_energy_prev_q16 != free_energy_q16(length_before) {
         return Err(DiscoveryError::NotPrimed);
     }
+    let mark = scratch.mark();
     let invention = intra_construct(ca, cb, scratch)?;
     let outputs = [
         invention.common,
@@ -146,9 +153,12 @@ pub fn invent(
         .filter(|&&c| c != ca && c != cb)
         .chain(outputs.iter())
     {
-        // The store measured before; the outputs are the operator's, well formed.
-        let nodes = size(clause, scratch.arena, scratch.bindings, scratch.stack)
-            .map_err(|_| DiscoveryError::Length)?;
+        // The store measured before; a deeper term through the new bindings may still
+        // exceed the stack, and then the invention is undone.
+        let Ok(nodes) = size(clause, scratch.arena, scratch.bindings, scratch.stack) else {
+            scratch.restore(&mark);
+            return Err(DiscoveryError::Length);
+        };
         length_after = length_after.saturating_add(nodes);
     }
     let valence_q16 = affect.update_valence(free_energy_q16(length_after));
@@ -343,6 +353,15 @@ mod tests {
             "nothing happened"
         );
         prime(&mut affect, 14);
+        for wrong in [&[][..], &[ca][..], &[cb][..], &[cb, 99][..]] {
+            let mut primed = InteroceptiveState::default();
+            prime(&mut primed, 0);
+            assert_eq!(
+                invent(ca, cb, wrong, &mut scratch, &mut primed),
+                Err(DiscoveryError::NotInStore),
+                "{wrong:?}"
+            );
+        }
         assert_eq!(
             invent(ca, ca, &store, &mut scratch, &mut affect),
             Err(DiscoveryError::Induce(InduceError::NothingToInvent)),
@@ -372,9 +391,80 @@ mod tests {
                 &mut scratch,
                 &mut affect
             ),
-            Err(DiscoveryError::NotPrimed),
-            "the store no longer holds the inputs the length was primed with"
+            Err(DiscoveryError::NotInStore),
+            "the outputs are not in the store"
         );
+        assert_eq!(
+            invent(ca, cb, &store, &mut scratch, &mut affect),
+            Err(DiscoveryError::NotPrimed),
+            "the store still reads fourteen, the affect state seventeen"
+        );
+    }
+
+    #[test]
+    fn an_after_measure_that_does_not_fit_restores_the_scratch() {
+        // ca = p(W) ← r(a), u(a); cb = p(f(X1..X8)) ← r(a), w(a); c3 = s(W, ..., W), seven
+        // times. The heads bind W to f(X1..X8): before, c3 walks with seven entries and cb
+        // with ten; after, c3 needs fourteen. A stack of ten measures before, invents, and
+        // cannot measure after; the invention is undone. Fourteen entries measure both.
+        let mut nodes = [TermNode::default(); 48];
+        nodes[0] = TermNode::variable(0);
+        nodes[1] = TermNode::constant(0x200);
+        nodes[2] = TermNode::compound(0x100, &[0]).unwrap();
+        nodes[3] = TermNode::compound(0x101, &[1]).unwrap();
+        nodes[4] = TermNode::compound(0x104, &[1]).unwrap();
+        nodes[5] = clause(2, &[3, 4]).unwrap();
+        for (k, slot) in nodes[6..14].iter_mut().enumerate() {
+            *slot = TermNode::variable(k.wrapping_add(1) as u32);
+        }
+        nodes[14] = TermNode::compound(0x300, &[6, 7, 8, 9, 10, 11, 12, 13]).unwrap();
+        nodes[15] = TermNode::compound(0x100, &[14]).unwrap();
+        nodes[16] = TermNode::compound(0x105, &[1]).unwrap();
+        nodes[17] = clause(15, &[3, 16]).unwrap();
+        nodes[18] = TermNode::compound(0x102, &[0; 7]).unwrap();
+        nodes[19] = clause(18, &[]).unwrap();
+        let (ca, cb, c3) = (5u32, 17u32, 19u32);
+        let store = [ca, cb, c3];
+        let snapshot = nodes;
+        let mut bindings = [Binding::UNBOUND; 12];
+        let (mut trail, mut pairs) = ([0u32; 16], [[0u32; 3]; 4]);
+        for (entries, expected) in [(10usize, Err(DiscoveryError::Length)), (14, Ok((31, 87)))] {
+            let mut stack = [0u32; 14];
+            let mut scratch = InduceScratch {
+                arena: &mut nodes,
+                free: 20,
+                bindings: &mut bindings,
+                trail: &mut trail,
+                trail_len: 0,
+                stack: &mut stack[..entries],
+                pairs: &mut pairs,
+                next_variable: 9,
+                next_invented: INVENTED_BASE,
+            };
+            let mut affect = InteroceptiveState::default();
+            prime(&mut affect, 31);
+            let outcome = invent(ca, cb, &store, &mut scratch, &mut affect)
+                .map(|d| (d.length_before, d.length_after));
+            assert_eq!(outcome, expected, "{entries} entries");
+            if outcome.is_err() {
+                assert_eq!(
+                    (scratch.free, scratch.trail_len),
+                    (20, 0),
+                    "the invention undone"
+                );
+                assert_eq!(scratch.next_invented, INVENTED_BASE);
+                assert!(scratch.bindings.iter().all(|&b| b == Binding::UNBOUND));
+                assert_eq!(&scratch.arena[..], &snapshot[..]);
+                assert_eq!(affect.valence_df_dt_q16, 0, "the affect state untouched");
+                assert_eq!(affect.free_energy_prev_q16, 31 << 16);
+            } else {
+                assert_eq!(
+                    affect.valence_df_dt_q16,
+                    -56 * ONE,
+                    "thirty-one nodes became eighty-seven"
+                );
+            }
+        }
     }
 
     #[test]

@@ -6,7 +6,9 @@
 //! the modulator of a network with a pending eligibility trace (the shape of
 //! `modulation.rs`) consolidates the trace at the next presynaptic spike, the weight gaining
 //! what the trace lost; an invention that does not pay (one shared literal) is a negative
-//! valence, a negative reward, and consolidates nothing; the invention's statement hash is
+//! valence, a negative reward, and, under the test's baseline of zero (the modulation is the
+//! baseline plus the signal, clamped to $[0, 1]$), consolidates nothing; the invention's
+//! statement hash is
 //! pinned, and a prover frame completed with that hash and a certificate certifies a node,
 //! while the pending frame does not.
 

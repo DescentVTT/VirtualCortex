@@ -31,13 +31,13 @@ pub use category::{
     is_functor, reduce, result, role, slash,
 };
 pub use induce::{
-    CLAUSE, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceScratch, Invention, MAX_BODY, absorb,
-    clause, clause_body_len, clause_head, clause_literal, free_variables, identify,
-    intra_construct, is_clause, lgg, resolve_definite, size, term_hash,
+    CLAUSE, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceMark, InduceScratch, Invention,
+    MAX_BODY, absorb, clause, clause_body_len, clause_head, clause_literal, free_variables,
+    identify, intra_construct, is_clause, lgg, resolve_definite, size, term_hash,
 };
 pub use term::{
     Binding, MAX_ARITY, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TERM_NONE, TERM_VARIABLE,
-    TermNode, UnifyResult, deref, is_negated, literal_of_term, resolve_first_order,
+    TermNode, UnifyResult, WALK_LIMIT, deref, is_negated, literal_of_term, resolve_first_order,
     term_of_literal, undo, unify,
 };
 
