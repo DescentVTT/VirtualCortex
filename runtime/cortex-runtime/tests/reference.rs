@@ -352,8 +352,9 @@ fn among(exec: &Engine, pattern: &[u32]) -> (u32, i64) {
 }
 
 /// A cue of the first six units of `pattern` on a fork of `image` with no drive: the units
-/// of the rest that fired within two horizons, the other units that fired, and the spikes.
-fn readout(image: &[u8], config: &Config, pattern: &[u32]) -> (usize, usize, usize) {
+/// of the rest that fired within two horizons (sorted), the other units that fired, and the
+/// spikes.
+fn readout(image: &[u8], config: &Config, pattern: &[u32]) -> (Vec<u32>, usize, usize) {
     let quiet = Drive {
         every: 0,
         messages: 0,
@@ -390,7 +391,7 @@ fn readout(image: &[u8], config: &Config, pattern: &[u32]) -> (usize, usize, usi
             others.insert(u);
         }
     }
-    (rest.len(), others.len(), trace.len())
+    (rest.into_iter().collect(), others.len(), trace.len())
 }
 
 /// Runs `exec` quiet until it is quiescent.
@@ -433,7 +434,7 @@ struct Night {
     tags: (u8, u8),
     cluster: ((u32, i64), (u32, i64)),
     random: ((u32, i64), (u32, i64)),
-    readouts: [(usize, usize, usize); 4],
+    readouts: [(Vec<u32>, usize, usize); 4],
 }
 
 fn night(units: u32) -> Night {
@@ -625,7 +626,7 @@ struct Capture {
     tags: (u8, u8),
     invention: ((u32, i64), (u32, i64)),
     own: ((u32, i64), (u32, i64)),
-    readouts: [(usize, usize, usize); 4],
+    readouts: [(Vec<u32>, usize, usize); 4],
 }
 
 fn capture_night(units: u32) -> Capture {
@@ -1107,7 +1108,15 @@ fn a_night_consolidates_the_synapses_among_a_tagged_pattern_and_a_cue_completes_
     // other unit (39 spikes); the random pattern's rest never fires: completion needs the
     // synapses among the pattern, which a local pattern has and a random one at this
     // density does not.
-    assert_eq!(n.readouts, [(0, 0, 18), (6, 0, 39), (0, 0, 18), (0, 0, 18)]);
+    assert_eq!(
+        n.readouts,
+        [
+            (vec![], 0, 18),
+            (vec![7, 8, 10, 11, 12, 13], 0, 39),
+            (vec![], 0, 18),
+            (vec![], 0, 18)
+        ]
+    );
 }
 
 /// The gate's form of ADR-0048's measurement at 256 units.
@@ -1116,11 +1125,13 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
  {
     let c = capture_night(256);
     // 436 spikes to the reward's tick. The invention's pattern is the densest basal time
-    // constant of the ripple before the reward, which holds the experience: eleven of the
-    // twelve cued neighbours and one unit the drive fired in the same span, ranked by their
-    // spikes; the network's own pattern is the densest span of the two bins before the
-    // experience, a cascade of 64 spikes around the ring's wrap, twelve units of which one,
-    // unit 0, is in both patterns. The store of two facts commits nothing and tags nothing.
+    // constant of the ripple before the reward (a span from tick 8 088 holding 62 spikes,
+    // the experience at 8 192 inside it): eleven of the twelve cued neighbours (ten firing
+    // three times in the span, unit 13 twice) and one unit the drive fired twice in the same
+    // span, ranked by their spikes; the network's own pattern is the densest span of the two
+    // bins before the experience, a cascade of 64 spikes around the ring's wrap, twelve
+    // units of which two (149, 254) are inhibitory and one, unit 0, is in both patterns. The
+    // store of two facts commits nothing and tags nothing.
     assert_eq!(c.spikes, 436);
     assert_eq!(
         (
@@ -1133,6 +1144,13 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
     assert_eq!(
         c.association.pattern(),
         &[7, 0, 1, 8, 10, 12, 2, 5, 6, 11, 13, 163]
+    );
+    assert_eq!(
+        c.association.burst,
+        Burst {
+            from: 8_088,
+            spikes: 62
+        }
     );
     assert_eq!(
         c.burst,
@@ -1152,15 +1170,23 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
     assert_eq!((c.replays, c.depotentiations), (376, 128));
     assert_eq!(c.tags, (136, 136));
     // The invention's pattern holds 127 synapses among itself; after the night most are at
-    // the rail and the eleven from unit 0 at the negative rail, since unit 0 fires in the
-    // other episode's replays too and the pair rule depresses its synapses whose targets
-    // last fired a ripple earlier; the network's own pattern holds 45. A cue of six of the
-    // invention's pattern fires five of the other six after the night (not unit 163, which
-    // has one synapse from the pattern) and none before; the network's own pattern never
-    // completes.
+    // the rail and the eleven from unit 0 depressed, six of them to the negative rail and
+    // the five onto unit 5 near -23 400, since unit 0 fires in the other episode's replays
+    // too and the pair rule at those spikes finds its targets' last spikes a ripple earlier;
+    // the network's own pattern holds 45. A cue of six of the invention's pattern fires five
+    // of the other six after the night (units 2, 5, 6, 11 and 13; not 163, which no synapse
+    // of the cued six reaches) and none before; the network's own pattern never completes.
     assert_eq!(c.invention, ((127, 1_117_805), (127, 3_193_610)));
     assert_eq!(c.own, ((45, 175_285), (45, 825_276)));
-    assert_eq!(c.readouts, [(0, 0, 18), (5, 0, 32), (0, 0, 18), (0, 0, 18)]);
+    assert_eq!(
+        c.readouts,
+        [
+            (vec![], 0, 18),
+            (vec![2, 5, 6, 11, 13], 0, 32),
+            (vec![], 0, 18),
+            (vec![], 0, 18)
+        ]
+    );
     let _ = PATTERN_MAX;
 }
 
@@ -1362,7 +1388,15 @@ fn a_night_at_1024_units_exhaustive() {
     assert_eq!(n.tags, (136, 136));
     assert_eq!(n.cluster, ((143, 1_268_100), (143, 143 * 32_767)));
     assert_eq!(n.random, ((2, 18_841), (2, 2 * 32_767)));
-    assert_eq!(n.readouts, [(0, 0, 18), (6, 0, 39), (0, 0, 18), (0, 0, 18)]);
+    assert_eq!(
+        n.readouts,
+        [
+            (vec![], 0, 18),
+            (vec![7, 8, 10, 11, 12, 13], 0, 39),
+            (vec![], 0, 18),
+            (vec![], 0, 18)
+        ]
+    );
 }
 
 /// The weekly job's form of ADR-0048's measurement at 1 024 units.
@@ -1372,7 +1406,7 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_at_1024_unit
     let c = capture_night(1024);
     // 1 370 spikes to the reward's tick. The invention's pattern is all twelve cued
     // neighbours in rank order; the network's own is a span of 153 spikes at tick 4 238,
-    // twelve units of which three (149, 499, 1 014) are inhibitory.
+    // twelve units of which five (149, 494, 499, 484, 1 014) are inhibitory.
     assert_eq!(c.spikes, 1_370);
     assert_eq!(
         (
@@ -1385,6 +1419,13 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_at_1024_unit
     assert_eq!(
         c.association.pattern(),
         &[2, 0, 3, 10, 11, 13, 1, 5, 7, 12, 6, 8]
+    );
+    assert_eq!(
+        c.association.burst,
+        Burst {
+            from: 8_172,
+            spikes: 140
+        }
     );
     assert_eq!(
         c.burst,
@@ -1404,11 +1445,19 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_at_1024_unit
     assert_eq!(c.tags, (136, 136));
     // The cluster's 143 synapses (ADR-0044's count at this size) every one at the rail after
     // the night; the network's own twenty, summing to a negative weight before the night
-    // (three of its units are inhibitory), every one at the positive rail after it: the
+    // (five of its units are inhibitory), every one at the positive rail after it: the
     // pair rule's potentiation carries an inhibitory synapse across zero (finding F-36). A
     // cue of six in rank order fires five of the invention's other six (a cue in index order
     // fired all six in ADR-0044's night); the network's own pattern never completes.
     assert_eq!(c.invention, ((143, 1_268_100), (143, 143 * 32_767)));
     assert_eq!(c.own, ((20, -77_824), (20, 20 * 32_767)));
-    assert_eq!(c.readouts, [(0, 0, 18), (5, 0, 31), (0, 0, 18), (0, 0, 18)]);
+    assert_eq!(
+        c.readouts,
+        [
+            (vec![], 0, 18),
+            (vec![5, 6, 7, 8, 12], 0, 31),
+            (vec![], 0, 18),
+            (vec![], 0, 18)
+        ]
+    );
 }
