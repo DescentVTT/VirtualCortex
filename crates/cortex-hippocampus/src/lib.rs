@@ -10,12 +10,17 @@
 //! synapse among its units and the modulator of ADR-0032 consolidates them; during REM a
 //! ripple lowers an episode's tag instead, and an episode whose tag reached zero is spent and
 //! never replayed again. [`HippocampalAttractorState`] keeps the ledger's length and the hand
-//! the next ripple starts from.
+//! the next ripple starts from. Where a pattern comes from is the caller's until it is
+//! tagged; [`capture`](mod@capture) gives the rules that read one from a spike train (the densest span of
+//! a ripple's length, the units that fired most within it; ADR-0048).
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
 // here, one of the crates that passed the lint when it was adopted (ADR-0029).
 #![deny(clippy::arithmetic_side_effects)]
+
+pub mod capture;
+pub use capture::{Burst, burst, capture};
 
 /// The most units one episode names: what a 64-byte record holds beside its header.
 pub const PATTERN_MAX: usize = 12;
