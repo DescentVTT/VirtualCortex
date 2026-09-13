@@ -11,14 +11,15 @@
 //! tests hold. Literals are matched first fit, in order, without backtracking, by
 //! unification: an output is an instance of its inputs, and the bindings the matching made
 //! stay in the caller's table with the trail saying which. Every bound is a result, nothing
-//! allocates, and a failure leaves the arena, the bindings and the counters as they were.
+//! allocates, every walk visits at most [`WALK_LIMIT`] nodes (a cyclic arena is a bound
+//! exceeded), and a failure leaves the arena, the bindings and the counters as they were.
 //! Which pairs of clauses to try is the caller's search (Specified); a clause holds ids,
 //! never words (rule L-3).
 
 use crate::category::{CATEGORY_BACKWARD, CATEGORY_FORWARD, CATEGORY_RESERVED};
 use crate::term::{
     Binding, MAX_ARITY, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TERM_NONE, TERM_VARIABLE,
-    TermNode, UnifyResult, deref, undo, unify,
+    TermNode, UnifyResult, WALK_LIMIT, deref, undo, unify,
 };
 
 /// The functor of a definite clause: `CLAUSE(head, literal, ...)`.
@@ -110,9 +111,13 @@ pub fn clause(head: u32, body: &[u32]) -> Option<TermNode> {
     TermNode::compound(CLAUSE, &args[..=body.len()])
 }
 
-/// True for a clause node: a compound over `CLAUSE` with at least its head.
+/// True for a clause node: a compound over `CLAUSE` with at least its head and at most
+/// `MAX_ARITY` children (an arity byte past that is a corrupted node, not a clause).
 pub const fn is_clause(node: &TermNode) -> bool {
-    node.kind == TERM_COMPOUND && node.functor == CLAUSE && node.arity >= 1
+    node.kind == TERM_COMPOUND
+        && node.functor == CLAUSE
+        && node.arity >= 1
+        && node.arity as usize <= MAX_ARITY
 }
 
 /// The head of a clause, or `None` for a node that is not one.
@@ -142,7 +147,7 @@ pub const fn clause_literal(node: &TermNode, index: usize) -> Option<u32> {
 /// A pre-order walk of `term` through the bindings with `stack` as the work stack: `visit`
 /// sees every node once, its index and the node, children after their parent and the first
 /// child first. `Malformed` for an index outside the arena or the table or an empty node;
-/// `BoundExceeded` when the stack is too small.
+/// `BoundExceeded` when the stack is too small or the walk passes `WALK_LIMIT` nodes.
 fn walk(
     term: u32,
     arena: &[TermNode],
@@ -155,7 +160,12 @@ fn walk(
     }
     stack[0] = term;
     let mut top = 1usize;
+    let mut visited = 0u32;
     while top > 0 {
+        if visited == WALK_LIMIT {
+            return Err(InduceError::BoundExceeded);
+        }
+        visited = visited.wrapping_add(1);
         // Positive above, so at least one.
         top = top.wrapping_sub(1);
         let Some(index) = deref(stack[top], arena, bindings) else {
@@ -258,39 +268,44 @@ pub fn free_variables(
     Ok(len)
 }
 
-/// Where a call started, so that a failure can put everything back.
-struct Mark {
+/// Where a call started: the cursor and the counters [`InduceScratch::restore`] puts back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InduceMark {
     free: usize,
     trail_len: usize,
     next_variable: u32,
     next_invented: u32,
 }
 
-fn mark(s: &InduceScratch) -> Mark {
-    Mark {
-        free: s.free,
-        trail_len: s.trail_len,
-        next_variable: s.next_variable,
-        next_invented: s.next_invented,
-    }
-}
-
-/// Undoes the bindings made since the mark, zeroes the nodes appended since it, and resets
-/// the cursor and the counters.
-fn restore(s: &mut InduceScratch, m: &Mark) {
-    let bound = s.trail_len.saturating_sub(m.trail_len);
-    if let Some(trail) = s.trail.get(m.trail_len..) {
-        undo(s.bindings, trail, bound);
-    }
-    s.trail_len = m.trail_len;
-    if let Some(nodes) = s.arena.get_mut(m.free..s.free) {
-        for node in nodes {
-            *node = TermNode::default();
+impl InduceScratch<'_> {
+    /// The cursor and the counters now, for [`restore`](Self::restore).
+    pub fn mark(&self) -> InduceMark {
+        InduceMark {
+            free: self.free,
+            trail_len: self.trail_len,
+            next_variable: self.next_variable,
+            next_invented: self.next_invented,
         }
     }
-    s.free = m.free;
-    s.next_variable = m.next_variable;
-    s.next_invented = m.next_invented;
+
+    /// Undoes the bindings made since the mark, zeroes the nodes appended since it, and
+    /// resets the cursor and the counters: what every rule here does on its own failure, and
+    /// what a caller that composes several rules does on a failure of its own.
+    pub fn restore(&mut self, mark: &InduceMark) {
+        let bound = self.trail_len.saturating_sub(mark.trail_len);
+        if let Some(trail) = self.trail.get(mark.trail_len..) {
+            undo(self.bindings, trail, bound);
+        }
+        self.trail_len = mark.trail_len;
+        if let Some(nodes) = self.arena.get_mut(mark.free..self.free) {
+            for node in nodes {
+                *node = TermNode::default();
+            }
+        }
+        self.free = mark.free;
+        self.next_variable = mark.next_variable;
+        self.next_invented = mark.next_invented;
+    }
 }
 
 /// Appends a node at the cursor.
@@ -414,10 +429,10 @@ impl Body {
 /// its node: a caller that shares one node per variable, as the reducer's lexicon does, gets
 /// the least general result.
 pub fn lgg(a: u32, b: u32, s: &mut InduceScratch) -> Result<u32, InduceError> {
-    let m = mark(s);
+    let m = s.mark();
     let out = lgg_in(a, b, s);
     if out.is_err() {
-        restore(s, &m);
+        s.restore(&m);
     }
     out
 }
@@ -527,10 +542,10 @@ fn lgg_in(a: u32, b: u32, s: &mut InduceScratch) -> Result<u32, InduceError> {
 /// literals, first, then the unmatched ones in their order. Resolving the result with `c2`
 /// gives `c` back. `NoMatch` when `c2` has no body or a literal of it has no partner.
 pub fn absorb(c2: u32, c: u32, s: &mut InduceScratch) -> Result<u32, InduceError> {
-    let m = mark(s);
+    let m = s.mark();
     let out = absorb_in(c2, c, s);
     if out.is_err() {
-        restore(s, &m);
+        s.restore(&m);
     }
     out
 }
@@ -562,10 +577,10 @@ fn absorb_in(c2: u32, c: u32, s: &mut InduceScratch) -> Result<u32, InduceError>
 /// Resolving `c1` with the result gives `c` back. `NoMatch` unless exactly one literal of
 /// `c1` is unmatched.
 pub fn identify(c1: u32, c: u32, s: &mut InduceScratch) -> Result<u32, InduceError> {
-    let m = mark(s);
+    let m = s.mark();
     let out = identify_in(c1, c, s);
     if out.is_err() {
-        restore(s, &m);
+        s.restore(&m);
     }
     out
 }
@@ -608,10 +623,10 @@ fn identify_in(c1: u32, c: u32, s: &mut InduceScratch) -> Result<u32, InduceErro
 /// definition gives the corresponding input back. `NothingToInvent` when no literal is
 /// shared or either clause has no literal of its own.
 pub fn intra_construct(ca: u32, cb: u32, s: &mut InduceScratch) -> Result<Invention, InduceError> {
-    let m = mark(s);
+    let m = s.mark();
     let out = intra_construct_in(ca, cb, s);
     if out.is_err() {
-        restore(s, &m);
+        s.restore(&m);
     }
     out
 }
@@ -730,10 +745,10 @@ fn intra_construct_in(ca: u32, cb: u32, s: &mut InduceScratch) -> Result<Inventi
 /// when no literal unifies; `BodyFull` when the resolvent would have more than `MAX_BODY`
 /// literals.
 pub fn resolve_definite(goal: u32, rule: u32, s: &mut InduceScratch) -> Result<u32, InduceError> {
-    let m = mark(s);
+    let m = s.mark();
     let out = resolve_in(goal, rule, s);
     if out.is_err() {
-        restore(s, &m);
+        s.restore(&m);
     }
     out
 }
@@ -857,8 +872,10 @@ mod tests {
     /// True when `a` and `b` are the same term through the bindings: they unify without
     /// binding anything.
     fn identical(a: u32, b: u32, s: &mut InduceScratch) -> bool {
-        let before = s.trail_len;
-        unify_in(a, b, s) == Ok(true) && s.trail_len == before
+        let m = s.mark();
+        let same = unify_in(a, b, s) == Ok(true) && s.trail_len == m.trail_len;
+        s.restore(&m);
+        same
     }
 
     /// True when `x` and `y` are the same clause through the bindings up to the order of
@@ -1080,6 +1097,12 @@ mod tests {
             node.child(0),
             node.child(1),
             "different pairs are different variables"
+        );
+        let numbers = [0, 1].map(|k| s.arena[node.child(k).unwrap() as usize].functor);
+        assert_eq!(
+            numbers,
+            [2, 3],
+            "numbered in slot order: the first child's pair first"
         );
 
         let g = lgg(fga, fgb, &mut s).unwrap();
@@ -1660,6 +1683,71 @@ mod tests {
     }
 
     #[test]
+    fn a_clause_with_a_corrupted_arity_is_malformed_on_either_side() {
+        let mut kit = Kit::<32>::new();
+        let x = kit.var();
+        let a = kit.constant(A);
+        let px = kit.compound(P, &[x]);
+        let rx = kit.compound(R, &[x]);
+        let c1 = kit.clause(px, &[rx]);
+        let pa = kit.compound(P, &[a]);
+        let sa = kit.compound(S, &[a]);
+        let c2 = kit.clause(pa, &[sa, sa, sa, sa, sa, sa, sa]);
+        kit.arena[c2 as usize].arity = 10;
+        assert!(
+            !is_clause(&kit.arena[c2 as usize]),
+            "nine or more children is no clause"
+        );
+        assert_eq!(clause_body_len(&kit.arena[c2 as usize]), 0);
+        assert_eq!(clause_head(&kit.arena[c2 as usize]), None);
+        let mut s = kit.scratch();
+        for (first, second) in [(c1, c2), (c2, c1)] {
+            assert_eq!(absorb(first, second, &mut s), Err(InduceError::Malformed));
+            assert_eq!(identify(first, second, &mut s), Err(InduceError::Malformed));
+            assert_eq!(
+                intra_construct(first, second, &mut s),
+                Err(InduceError::Malformed)
+            );
+            assert_eq!(
+                resolve_definite(first, second, &mut s),
+                Err(InduceError::Malformed)
+            );
+        }
+        assert_eq!(s.trail_len, 0);
+    }
+
+    #[test]
+    fn a_cyclic_arena_is_a_bound_exceeded_not_a_walk_that_never_ends() {
+        let mut kit = Kit::<8>::new();
+        let a = kit.constant(A);
+        let f = kit.compound(F, &[a]);
+        // A compound whose child is itself: no builder makes one; a caller's arena can.
+        kit.arena[f as usize].children[0] = f.wrapping_add(1);
+        let mut s = kit.scratch();
+        assert_eq!(
+            size(f, s.arena, s.bindings, s.stack),
+            Err(InduceError::BoundExceeded)
+        );
+        assert_eq!(
+            term_hash(f, s.arena, s.bindings, s.stack),
+            Err(InduceError::BoundExceeded)
+        );
+        let mut out = [TERM_NONE; 2];
+        assert_eq!(
+            free_variables(f, s.arena, s.bindings, s.stack, &mut out, 0),
+            Err(InduceError::BoundExceeded)
+        );
+        // A binding cycle through a compound, which unification refuses to make.
+        let x = alloc(&mut s, TermNode::variable(0)).unwrap();
+        let g = alloc(&mut s, TermNode::compound(G, &[x]).unwrap()).unwrap();
+        s.bindings[0] = Binding(g.wrapping_add(1));
+        assert_eq!(
+            size(x, s.arena, s.bindings, s.stack),
+            Err(InduceError::BoundExceeded)
+        );
+    }
+
+    #[test]
     fn a_variable_only_a_differing_literal_uses_is_not_an_argument() {
         // ca = p(X) ← r(X), u(X, W); cb = p(X') ← r(X'), w(X'): W is in neither the head nor
         // the shared literal, so q takes X alone.
@@ -1857,8 +1945,10 @@ mod prop {
 
     fn same(x: u32, y: u32, s: &mut InduceScratch) -> bool {
         fn identical(a: u32, b: u32, s: &mut InduceScratch) -> bool {
-            let before = s.trail_len;
-            unify_in(a, b, s) == Ok(true) && s.trail_len == before
+            let m = s.mark();
+            let same = unify_in(a, b, s) == Ok(true) && s.trail_len == m.trail_len;
+            s.restore(&m);
+            same
         }
         let (nx, ny) = (clause_at(x, s).unwrap(), clause_at(y, s).unwrap());
         if clause_body_len(&nx) != clause_body_len(&ny)

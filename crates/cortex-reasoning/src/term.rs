@@ -21,6 +21,12 @@ pub const TERM_COMPOUND: u8 = 3;
 pub const MAX_ARITY: usize = 8;
 /// A child slot, a binding or a literal that names no term.
 pub const TERM_NONE: u32 = 0;
+/// The most nodes one walk over the arena visits: the occurs check here, and the measures
+/// and the generalisation of `induce`. A term larger than this, or a cyclic arena (a
+/// compound whose child is itself, a variable bound to a compound that contains it: what
+/// no builder and no unification makes, but a caller's arena can hold), is a bound
+/// exceeded rather than a walk that never ends.
+pub const WALK_LIMIT: u32 = 1 << 20;
 
 /// 64-byte term node (whitepaper §5.2.30, ADR-0025).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -150,8 +156,8 @@ pub fn undo(bindings: &mut [Binding], trail: &[u32], bound: usize) {
 }
 
 /// True when variable `var` occurs in `term` under the bindings; a depth-first walk over
-/// `scratch` as its stack. `None` when the walk needs more than `scratch` holds, or on a
-/// malformed index.
+/// `scratch` as its stack. `None` when the walk needs more than `scratch` holds, on a
+/// malformed index, or past `WALK_LIMIT` nodes (a cyclic arena).
 fn occurs(
     var: u32,
     term: u32,
@@ -165,7 +171,12 @@ fn occurs(
     // `top` never exceeds `scratch.len()`: every push checks the room first, and the loop
     // pops only while it is positive.
     top = top.wrapping_add(1);
+    let mut visited = 0u32;
     while top > 0 {
+        if visited == WALK_LIMIT {
+            return None;
+        }
+        visited = visited.wrapping_add(1);
         top = top.wrapping_sub(1);
         let current = scratch[top];
         let node = arena.get(current as usize)?;
@@ -407,6 +418,24 @@ mod tests {
             unify(gx, gs, &arena.nodes, &mut bindings, &mut trail, &mut five).0,
             UnifyResult::BoundExceeded
         );
+    }
+
+    #[test]
+    fn a_cyclic_arena_is_a_bound_exceeded_not_a_walk_that_never_ends() {
+        let mut arena = Arena::<8>::new();
+        let y = arena.var(0);
+        let f = arena.compound(F, &[y]);
+        // A compound whose child is itself: no builder makes one; a caller's arena can.
+        arena.nodes[f as usize].children[0] = f.wrapping_add(1);
+        let mut bindings = [Binding::default(); 2];
+        let mut trail = [0u32; 2];
+        let mut stack = [0u32; 8];
+        assert_eq!(
+            unify(y, f, &arena.nodes, &mut bindings, &mut trail, &mut stack).0,
+            UnifyResult::BoundExceeded,
+            "the occurs check stops at WALK_LIMIT nodes"
+        );
+        assert_eq!(bindings[0], Binding::UNBOUND);
     }
 
     #[test]
