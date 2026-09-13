@@ -233,6 +233,14 @@ mod tests {
             (1, &[5u32][..]),
             "[195, 205)"
         );
+        // A spike exactly a window before the reward is inside the span: from 100 the span
+        // [100, 200) holds 100, 101, 102 and 150, and its densest ten ticks rank unit 1
+        // (twice) before unit 2; without the spike at 100 the ranking would be 2 then 1.
+        let mut edge = engine(1);
+        let at_start = tag_discovery(&mut edge, &TRAIN, 200, 100, 10, &paid, 5)
+            .unwrap()
+            .unwrap();
+        assert_eq!(at_start.pattern(), &[1, 2]);
         // A window past the reward's tick starts at zero; the spike at the reward's tick is
         // outside the window; a window with no spike is refused.
         let mut fresh = engine(2);

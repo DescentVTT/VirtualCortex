@@ -76,4 +76,8 @@ exclude_re = [
     # A bound the domain cannot reach: a block slice of 2^28 blocks is 16 GiB, so `>` and its
     # neighbours differ at a length no test can allocate.
     "synthesis\\.rs:\\d+:\\d+: replace > with (==|>=) in synthesize",
+    # The rank's last key is the unit's index, and a unit is ranked once (a ranked unit's
+    # later spikes are skipped), so two keys never share it: `<` and `<=` agree on every
+    # comparison the rule makes (ADR-0048).
+    "capture\\.rs:\\d+:\\d+: replace < with <= in before",
 ]
