@@ -132,11 +132,19 @@ impl Prior {
     /// slot order: `units × synapses_per_unit` of them. The generator is seeded once, so a
     /// synapse's draw depends on every synapse before it: the network is one walk.
     pub fn synapses(&self) -> Synapses {
+        // The walk holds how many synapses are left, none for a prior the rule refuses; the
+        // product is below 2^64 for any two 32-bit counts.
+        let remaining = if self.is_well_formed() {
+            (self.units as u64).saturating_mul(self.synapses_per_unit as u64)
+        } else {
+            0
+        };
         Synapses {
             prior: *self,
             lcg: Lcg::new(self.seed),
             unit: 0,
             slot: 0,
+            remaining,
         }
     }
 
@@ -189,6 +197,10 @@ pub struct Synapses {
     lcg: Lcg,
     unit: u32,
     slot: u32,
+    /// Synapses the walk has left to yield; the walk ends at zero, by a countdown and not a
+    /// comparison, so that no single change to a guard can make it walk forever (a mutant
+    /// that turned the first draft's `||` into `&&` did, until the gate's timeout).
+    remaining: u64,
 }
 
 impl Synapses {
@@ -196,15 +208,18 @@ impl Synapses {
     pub const fn position(&self) -> (u32, u32) {
         (self.unit, self.slot)
     }
+
+    /// Synapses the walk has left to yield.
+    pub const fn remaining(&self) -> u64 {
+        self.remaining
+    }
 }
 
 impl Iterator for Synapses {
     type Item = Synapse;
 
     fn next(&mut self) -> Option<Synapse> {
-        if !self.prior.is_well_formed() || self.unit >= self.prior.units {
-            return None;
-        }
+        self.remaining = self.remaining.checked_sub(1)?;
         let source = self.unit;
         let (target, rewired) = self.prior.target(&mut self.lcg, source);
         let (lo, hi) = if rewired {
@@ -240,6 +255,12 @@ impl Iterator for Synapses {
             delay_ticks,
             apical,
         })
+    }
+
+    /// Exact: the synapses left.
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let left = usize::try_from(self.remaining).unwrap_or(usize::MAX);
+        (left, Some(left))
     }
 }
 
@@ -360,6 +381,15 @@ mod tests {
         assert_eq!(walk.position(), (1, 0), "eight synapses on: the next unit");
         walk.by_ref().count();
         assert_eq!(walk.position(), (64, 0), "past the last unit");
+        assert_eq!((walk.remaining(), walk.size_hint()), (0, (0, Some(0))));
+        let mut walk = p.synapses();
+        assert_eq!(
+            (walk.remaining(), walk.size_hint()),
+            (512, (512, Some(512)))
+        );
+        walk.next();
+        assert_eq!(walk.remaining(), 511);
+        assert_eq!(walk.count(), 511, "the rest, then nothing more");
         assert_ne!(all, super::tests::all(&Prior { seed: 8, ..p }));
     }
 
@@ -476,6 +506,7 @@ mod tests {
         for p in bad {
             assert!(!p.is_well_formed(), "{p:?}");
             assert_eq!(p.synapses().next(), None);
+            assert_eq!(p.synapses().remaining(), 0, "a refused prior has no walk");
         }
         assert!(
             Prior {
