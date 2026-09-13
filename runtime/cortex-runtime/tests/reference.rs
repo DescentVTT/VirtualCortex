@@ -21,7 +21,6 @@
 
 #![deny(clippy::arithmetic_side_effects)]
 
-use cortex_affect::InteroceptiveState;
 use cortex_connectome::{CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SectionEntry, crc64};
 use cortex_core::{FLAG_INHIBITORY, MODULATION_ONE_Q16, WorkerWheel};
 use cortex_hippocampus::{Burst, PATTERN_MAX, RIPPLE_SHIFT};
@@ -29,11 +28,10 @@ use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, HomeostaticDrivePool, PRESSURE_MAX_Q16,
     SIGMA_MAX_Q16, STAGE_AWAKE, STAGE_SWS, count_bins, slope_at_lag,
 };
-use cortex_reasoning::{Binding, INVENTED_BASE, InduceScratch, TermNode, clause};
+use cortex_reasoning::{INVENTED_BASE, TermNode};
 use cortex_runtime::{
-    Association, Attribution, ClauseSearch, Config, DiscoverReport, Discovery, Drive, Executor,
-    Image, Perturbation, Tagging, blocks_for, blocks_per_unit, cascade, description_length,
-    discover, fork, prime, run_driven, synthesize, tag_burst_in, trace,
+    Attribution, COINCIDENCE_TICKS, Config, Drive, Executor, Image, Perturbation, blocks_for,
+    blocks_per_unit, cascade, fork, run_driven, synthesize, tag_burst_in, trace,
 };
 
 type Engine = Executor<2048>;
@@ -51,8 +49,9 @@ const KICK_Q16: i32 = 0x0001_8000;
 /// The cue of the readout and the experience: two messages of 1.25, the replay drive's.
 const CUE_Q16: i32 = 0x0001_4000;
 /// The span the capture rules rank within: a basal time constant (ADR-0018), the span the
-/// cued units' messages must land within for a pattern to complete (ADR-0044).
-const COINCIDENCE: u32 = 512;
+/// cued units' messages must land within for a pattern to complete (ADR-0044); the loop's
+/// own constant since ADR-0052.
+const COINCIDENCE: u32 = COINCIDENCE_TICKS;
 /// The bin a caller reads the train at (ADR-0047): $2^8$ ticks, near one generation of the
 /// lattice's local delays with the unit's latency, a sixteenth of the record's bin.
 const FINE: u32 = 256;
@@ -117,6 +116,13 @@ fn config(units: u32, workers: usize, step: u16, baseline_q16: i32) -> Config {
         modulation_baseline_q16: baseline_q16,
         control_step_q0_16: step,
         episodes: 4,
+        // The engine's own arena and store (ADR-0052): room for the exit store of ADR-0045
+        // and its commits; a search between ticks spends at most 64 attempts and tags with
+        // the priority of the nights' tags.
+        terms: 1024,
+        clauses: 32,
+        search_budget: 64,
+        discovery_tag: 200,
         ..Config::default()
     }
 }
@@ -516,140 +522,83 @@ const R: u32 = 0x101;
 const LIT: [u32; 8] = [0x200, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x207];
 const K: [u32; 4] = [0x300, 0x301, 0x302, 0x303];
 
-/// A builder over a fixed arena, as the induction tests' kit.
-struct Store {
-    arena: [TermNode; 1024],
-    len: usize,
-    vars: u32,
+/// A fresh variable in the executor's own arena (ADR-0052), numbered after the record's.
+fn var(exec: &mut Engine) -> u32 {
+    let next = exec.induction().next_variable;
+    exec.term(TermNode::variable(next)).unwrap()
 }
 
-impl Store {
-    fn new() -> Self {
-        Self {
-            arena: [TermNode::default(); 1024],
-            len: 0,
-            vars: 0,
-        }
+/// `head(X) ← l1(X), ..., lk(X)` over a fresh variable, asserted into the engine's store.
+fn rule(exec: &mut Engine, head: u32, literals: &[u32]) -> u32 {
+    let x = var(exec);
+    let h = exec.term(TermNode::compound(head, &[x]).unwrap()).unwrap();
+    let mut body = [0u32; 7];
+    for (i, &l) in literals.iter().enumerate() {
+        body[i] = exec.term(TermNode::compound(l, &[x]).unwrap()).unwrap();
     }
-
-    fn push(&mut self, node: TermNode) -> u32 {
-        let i = self.len;
-        self.arena[i] = node;
-        self.len = self.len.wrapping_add(1);
-        i as u32
-    }
-
-    /// `head(X) ← l1(X), ..., lk(X)` over a fresh variable.
-    fn rule(&mut self, head: u32, literals: &[u32]) -> u32 {
-        let x = self.push(TermNode::variable(self.vars));
-        self.vars = self.vars.wrapping_add(1);
-        let h = self.push(TermNode::compound(head, &[x]).unwrap());
-        let mut body = [0u32; 7];
-        for (i, &l) in literals.iter().enumerate() {
-            body[i] = self.push(TermNode::compound(l, &[x]).unwrap());
-        }
-        self.push(clause(h, &body[..literals.len()]).unwrap())
-    }
-
-    /// The fact `l(k)`.
-    fn fact(&mut self, literal: u32, k: u32) -> u32 {
-        let c = self.push(TermNode::constant(k));
-        let h = self.push(TermNode::compound(literal, &[c]).unwrap());
-        self.push(clause(h, &[]).unwrap())
-    }
+    exec.assert_clause(h, &body[..literals.len()]).unwrap()
 }
 
-/// The store of ADR-0045's exit test: three clauses of `p` sharing `LIT[0..4]` and differing
-/// in `LIT[4]`, `LIT[5]`, `LIT[6]`; one clause of `r`; the facts of four constants.
-fn exit_store(store: &mut Store) -> Vec<u32> {
+/// The fact `l(k)`, asserted.
+fn fact(exec: &mut Engine, literal: u32, k: u32) -> u32 {
+    let c = exec.term(TermNode::constant(k)).unwrap();
+    let h = exec
+        .term(TermNode::compound(literal, &[c]).unwrap())
+        .unwrap();
+    exec.assert_clause(h, &[]).unwrap()
+}
+
+/// The store of ADR-0045's exit test, asserted into the engine's own store: three clauses
+/// of `p` sharing `LIT[0..4]` and differing in `LIT[4]`, `LIT[5]`, `LIT[6]`; one clause of
+/// `r`; the facts of four constants.
+fn exit_store(exec: &mut Engine) -> Vec<u32> {
     let mut out = vec![
-        store.rule(P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[4]]),
-        store.rule(P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[5]]),
-        store.rule(P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[6]]),
-        store.rule(R, &[LIT[0], LIT[7]]),
+        rule(exec, P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[4]]),
+        rule(exec, P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[5]]),
+        rule(exec, P, &[LIT[0], LIT[1], LIT[2], LIT[3], LIT[6]]),
+        rule(exec, R, &[LIT[0], LIT[7]]),
     ];
     for (i, &k) in K.iter().enumerate() {
         for &l in &LIT[..4] {
-            out.push(store.fact(l, k));
+            out.push(fact(exec, l, k));
         }
-        out.push(store.fact([LIT[4], LIT[5], LIT[6], LIT[7]][i], k));
+        out.push(fact(exec, [LIT[4], LIT[5], LIT[6], LIT[7]][i], k));
     }
     out
 }
 
-/// The search over `clauses` between ticks through the executor (ADR-0050's `discover`):
-/// the report, and one association per commit to the episode the rewarded moment tagged.
-fn search_and_tag(
-    exec: &mut Engine,
-    builder: &mut Store,
-    clauses: &[u32],
-) -> (DiscoverReport, [Association; 4]) {
-    let mut bindings = [Binding::UNBOUND; 128];
-    let (mut trail, mut stack, mut pairs) = ([0u32; 256], [0u32; 512], [[0u32; 3]; 32]);
-    let mut s = InduceScratch {
-        arena: &mut builder.arena,
-        free: builder.len,
-        bindings: &mut bindings,
-        trail: &mut trail,
-        trail_len: 0,
-        stack: &mut stack,
-        pairs: &mut pairs,
-        next_variable: builder.vars,
-        next_invented: INVENTED_BASE,
-    };
-    let mut store = [0u32; 32];
-    store[..clauses.len()].copy_from_slice(clauses);
-    let mut len = clauses.len();
-    let before = description_length(&store[..len], s.arena, s.bindings, s.stack).unwrap();
-    let mut affect = InteroceptiveState::default();
-    prime(&mut affect, before);
-    let mut out = [Discovery::default(); 4];
-    let mut associations = [Association::default(); 4];
-    let report = discover(
-        exec,
-        ClauseSearch {
-            store: &mut store,
-            len: &mut len,
-            scratch: &mut s,
-            affect: &mut affect,
-            budget: 64,
-        },
-        Tagging {
-            window: RIPPLE as u32,
-            coincidence: COINCIDENCE,
-            priority: 200,
-        },
-        &mut out,
-        &mut associations,
-    )
-    .unwrap();
-    builder.len = s.free;
-    builder.vars = s.next_variable;
-    (report, associations)
-}
-
-/// H-9's open item and H-11's synaptic half at `units` (ADR-0048): the plastic network awake
-/// under the drive for two bins, an experience at the third bin's start, the store of
-/// ADR-0045 searched a quarter of a ripple later with the reward passed to the modulator;
-/// the executor's own train; the pattern active in the ripple before the reward tagged as
-/// the invention's by `discover`, the densest coincidence of the two bins before the
-/// experience tagged as the network's own; a search with nothing to invent tagging nothing;
-/// the night; the synapses among each pattern before and after; the readouts.
+/// H-9's open item and H-11's synaptic half at `units` (ADR-0048, ADR-0052): the plastic
+/// network awake under the drive for two bins, an experience at the third bin's start, the
+/// store of ADR-0045 asserted into the engine's own store and searched a quarter of a ripple
+/// later by the loop between ticks, its reward into the modulator; the executor's own
+/// train; the pattern active in the ripple before the reward tagged as the invention's and
+/// bound to the first invented predicate, the densest coincidence of the two bins before the
+/// experience tagged as the network's own; a second search over the store, with no pair
+/// left, committing nothing and tagging nothing; the night; the synapses among each pattern
+/// before and after; the readouts.
 struct Capture {
     /// The train's spikes up to the reward's tick.
     spikes: usize,
-    association: Association,
-    /// The second commit's association: the same episode, the next invented predicate.
-    second: Association,
+    /// The two commits' predicates, in the search's order.
+    predicates: (u32, u32),
+    /// The rewarded moment's episode: its index and its span, as the loop reports them.
+    tagged: (u32, Burst),
+    /// The invention's pattern, from the ledger.
+    pattern: Vec<u32>,
     burst: Burst,
     background: Vec<u32>,
-    /// The signal the reward left in the modulator, and what a store of two facts commits.
+    /// The signal the reward left in the modulator, and what a second search commits.
     signal: i32,
     control: (u32, bool),
+    /// The store's length after the search: two inputs became three outputs, twice.
+    clauses: usize,
     stages: Vec<u8>,
     replays: u64,
     depotentiations: u64,
     tags: (u8, u8),
+    /// The two episodes' symbols after the night: the invention's bound, the network's own
+    /// not.
+    symbols: (Option<u32>, Option<u32>),
     invention: ((u32, i64), (u32, i64)),
     own: ((u32, i64), (u32, i64)),
     readouts: [(Vec<u32>, usize, usize); 4],
@@ -681,48 +630,49 @@ fn capture_night(units: u32) -> Capture {
     run_driven(&mut exec, &drive, at).unwrap();
     let spikes = exec.train().len();
     assert_eq!(exec.train_overwritten(), 0);
-    // The search between ticks through the executor: its reward into the modulator, the
-    // pattern active in the ripple before it tagged from the executor's own train.
-    let mut builder = Store::new();
-    let clauses = exit_store(&mut builder);
-    let (report, associations) = search_and_tag(&mut exec, &mut builder, &clauses);
+    // The search between ticks over the engine's own store (ADR-0052): its reward into the
+    // modulator, the pattern active in the ripple before it tagged from the executor's own
+    // train and bound to the first invented predicate.
+    let clauses = exit_store(&mut exec);
+    assert_eq!(clauses.len(), 24);
+    assert_eq!(exec.clauses(), &clauses[..]);
+    let report = exec.discover().unwrap();
     assert_eq!(
         (report.search.commits, report.search.reward_total_q16),
         (2, 3 * ONE / 2)
     );
     let signal = report.signal_q16;
-    let (index, reward_burst) = report.tagged.expect("a positive reward tags");
-    let association = associations[0];
-    assert_eq!(
-        (index, reward_burst),
-        (association.episode, association.burst)
+    let tagged = report.tagged.expect("a positive reward tags");
+    let predicates = (
+        exec.discoveries()[0].invention.predicate,
+        exec.discoveries()[1].invention.predicate,
     );
-    let second = associations[1];
     assert_eq!(
-        (second.episode, second.pattern, second.len, second.burst),
-        (
-            association.episode,
-            association.pattern,
-            association.len,
-            association.burst
-        ),
-        "both commits of the search share the rewarded moment's episode"
+        exec.episodes()[tagged.0 as usize].symbol(),
+        Some(predicates.0),
+        "the episode is bound to the first commit's predicate"
     );
+    let pattern = exec.episodes()[tagged.0 as usize].pattern().to_vec();
     let (burst, index, own, len) =
         tag_burst_in(&mut exec, 0, experience as u32, COINCIDENCE, 200).unwrap();
     assert_eq!(index, 1);
     let background = own[..len as usize].to_vec();
-    // A store with nothing to invent: two facts, no pair, nothing tagged.
-    let facts = [builder.fact(LIT[0], K[0]), builder.fact(LIT[1], K[1])];
-    let (none, _) = search_and_tag(&mut exec, &mut builder, &facts);
-    let control = (none.search.commits, none.tagged.is_none());
-    assert_eq!(none.signal_q16, signal, "no commit: the signal as it stood");
+    // A second search over the store: no pair is left, nothing is committed, nothing
+    // tagged, the signal as it stood.
+    let again = exec.discover().unwrap();
+    let control = (again.search.commits, again.tagged.is_none());
+    assert_eq!(
+        again.signal_q16, signal,
+        "no commit: the signal as it stood"
+    );
     assert_eq!(exec.episodes().len(), 2);
+    assert_eq!((exec.searches(), exec.inventions()), (2, 2));
+    let clauses = exec.clauses().len();
     let mut fork_cfg = cfg.clone();
     fork_cfg.episodes = 0;
     run_driven(&mut exec, &drive, 3 * BIN).unwrap();
     settle(&mut exec);
-    let invention = association.pattern().to_vec();
+    let invention = pattern.clone();
     let before = (among(&exec, &invention), among(&exec, &background));
     let pre = Image::encode(&exec).unwrap();
     let (exec, stages) = sleep(&exec, &cfg);
@@ -731,6 +681,7 @@ fn capture_night(units: u32) -> Capture {
     let replays = exec.replays();
     let depotentiations = exec.depotentiations();
     let tags = (exec.episodes()[0].tag, exec.episodes()[1].tag);
+    let symbols = (exec.episodes()[0].symbol(), exec.episodes()[1].symbol());
     drop(exec);
     let readouts = [
         readout(&pre, &fork_cfg, &invention),
@@ -740,16 +691,19 @@ fn capture_night(units: u32) -> Capture {
     ];
     Capture {
         spikes,
-        association,
-        second,
+        predicates,
+        tagged,
+        pattern,
         burst,
         background,
         signal,
         control,
+        clauses,
         stages,
         replays,
         depotentiations,
         tags,
+        symbols,
         invention: (before.0, after.0),
         own: (before.1, after.1),
         readouts,
@@ -821,17 +775,33 @@ fn the_prior_is_written_and_read_back_whole_and_a_driven_run_is_bit_identical_on
     // The driven run at the gain of the measurements (at 1.0 the drive fires nothing), then
     // quiet until quiescent: a mailbox node's index is a position in its worker's pool, so
     // the arenas are compared where the writer would write them, with every mailbox empty.
+    // With the exit store asserted and the loop on a cadence of one bin (ADR-0052): the
+    // search at the first bin's end commits two inventions, rewards the modulator and binds
+    // the coincidence before it; the search at the second finds no pair.
     let outcome = |workers: usize| {
         let cfg = Config {
             trace_capacity: 1 << 20,
+            search_shift: ACTIVITY_BIN_SHIFT as u8,
             ..config(units, workers, 0, 0)
         };
         let mut exec = at_gain(&p, cfg, 0x0002_0000);
+        exit_store(&mut exec);
         run_driven(&mut exec, &drive(units), 2 * BIN).unwrap();
         settle(&mut exec);
+        assert_eq!((exec.searches(), exec.inventions()), (2, 2));
+        assert_eq!((exec.untagged(), exec.search_failures()), (0, 0));
+        assert_eq!(exec.episodes().len(), 1);
+        assert_eq!(exec.episodes()[0].symbol(), Some(INVENTED_BASE));
         let units: Vec<[u8; 64]> = exec.units().iter().map(|u| u.encode()).collect();
         let blocks = exec.blocks().to_vec();
         let pool = *exec.homeostasis();
+        let store = (
+            exec.terms().to_vec(),
+            exec.clauses().to_vec(),
+            *exec.induction(),
+            *exec.affect(),
+            exec.episodes().to_vec(),
+        );
         // The executor's own train (ADR-0050) is the workers' traces, sorted, on every
         // worker count.
         let train = exec.train().to_vec();
@@ -841,7 +811,7 @@ fn the_prior_is_written_and_read_back_whole_and_a_driven_run_is_bit_identical_on
             trace(exec).unwrap(),
             "the ring and the reports agree"
         );
-        (units, blocks, pool, train)
+        (units, blocks, pool, train, store)
     };
     let one = outcome(1);
     let four = outcome(4);
@@ -854,6 +824,11 @@ fn the_prior_is_written_and_read_back_whole_and_a_driven_run_is_bit_identical_on
     assert_eq!(one.1, four.1, "the synapse arenas");
     assert_eq!(one.2, four.2, "the homeostasis record");
     assert_eq!(one.3, four.3, "the spike trains");
+    assert_eq!(
+        one.4, four.4,
+        "the arena, the store, the records and the ledger"
+    );
+    assert_eq!(one.4.1.len(), 26);
 }
 
 /// The gate's form at 256 units: one fixed gain (2.0), one window and four kicks, then the
@@ -1173,29 +1148,21 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
     // store of two facts commits nothing and tags nothing.
     assert_eq!(c.spikes, 437);
     assert_eq!(
-        (
-            c.association.predicate,
-            c.association.episode,
-            c.association.len
-        ),
-        (INVENTED_BASE, 0, 12)
+        c.predicates,
+        (INVENTED_BASE, INVENTED_BASE + 1),
+        "the search's two commits; the episode is bound to the first"
     );
+    assert_eq!(c.tagged.0, 0);
+    assert_eq!(c.pattern, vec![7, 0, 1, 8, 10, 12, 2, 5, 6, 11, 13, 163]);
     assert_eq!(
-        c.association.pattern(),
-        &[7, 0, 1, 8, 10, 12, 2, 5, 6, 11, 13, 163]
-    );
-    assert_eq!(
-        c.second.predicate,
-        INVENTED_BASE + 1,
-        "the search's second commit, associated with the same episode"
-    );
-    assert_eq!(
-        c.association.burst,
+        c.tagged.1,
         Burst {
             from: 8_088,
             spikes: 62
         }
     );
+    assert_eq!(c.clauses, 26, "two inputs became three outputs, twice");
+    assert_eq!(c.symbols, (Some(INVENTED_BASE), None));
     assert_eq!(
         c.burst,
         Burst {
@@ -1646,25 +1613,18 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_at_1024_unit
     // neighbours in rank order; the network's own is a span of 153 spikes at tick 4 238,
     // twelve units of which five (149, 494, 499, 484, 1 014) are inhibitory.
     assert_eq!(c.spikes, 1_370);
+    assert_eq!(c.predicates, (INVENTED_BASE, INVENTED_BASE + 1));
+    assert_eq!(c.tagged.0, 0);
+    assert_eq!(c.pattern, vec![2, 0, 3, 10, 11, 13, 1, 5, 7, 12, 6, 8]);
     assert_eq!(
-        (
-            c.association.predicate,
-            c.association.episode,
-            c.association.len
-        ),
-        (INVENTED_BASE, 0, 12)
-    );
-    assert_eq!(
-        c.association.pattern(),
-        &[2, 0, 3, 10, 11, 13, 1, 5, 7, 12, 6, 8]
-    );
-    assert_eq!(
-        c.association.burst,
+        c.tagged.1,
         Burst {
             from: 8_172,
             spikes: 140
         }
     );
+    assert_eq!(c.clauses, 26);
+    assert_eq!(c.symbols, (Some(INVENTED_BASE), None));
     assert_eq!(
         c.burst,
         Burst {

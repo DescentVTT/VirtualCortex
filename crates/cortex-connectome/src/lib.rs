@@ -80,7 +80,9 @@ pub const SECTION_PLASTIC_DELTA: u32 = 37;
 pub const SECTION_LAMINAR: u32 = 38;
 /// The routing table (Specified).
 pub const SECTION_ROUTING: u32 = 39;
-/// `TermNode` arena of `cortex-reasoning` (ADR-0025; the loader's support is Specified).
+/// `TermNode` arena of `cortex-reasoning` (ADR-0025): the engine's term arena, its first
+/// `free` nodes in order; written when there are any and required when the induction record
+/// says there are (ADR-0052).
 pub const SECTION_TERM: u32 = 40;
 /// `PolicyAmendment` arena of `cortex-executive` (ADR-0031): the engine's amendments to its own
 /// policy, committed and rejected, so that the policy an image runs under is in the image.
@@ -101,6 +103,17 @@ pub const SECTION_HIPPOCAMPUS: u32 = 44;
 /// The episodic ledger (ADR-0038): the appended `Episode` records, in order; written when the
 /// ledger is not empty and required when the hippocampal record says it is not.
 pub const SECTION_EPISODE: u32 = 45;
+/// The engine's `InteroceptiveState` of `cortex-affect` (ADR-0052): one 64-byte record, the
+/// affect state the discovery loop reads the valence from; always written and required.
+pub const SECTION_AFFECT: u32 = 47;
+/// The engine's `InductionState` of `cortex-reasoning` (ADR-0052): one 64-byte record, the
+/// arena's cursor and counters, the store's length, the search's cursor, budget, cadence and
+/// tag; always written and required.
+pub const SECTION_INDUCTION: u32 = 48;
+/// The clause store (ADR-0052): the arena indices of the store's clauses, in order, as 4-byte
+/// little-endian records; written when the store is not empty and required when the
+/// induction record says it is not.
+pub const SECTION_CLAUSE: u32 = 49;
 
 /// Why a header is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -199,7 +212,16 @@ impl CortexFileHeader {
     ///   always, and the episode section (`SECTION_EPISODE`, 45) the ledger (ADR-0038). A
     ///   version-12 image's sleep flag reads as a stage and its reserved bytes as a shift of
     ///   zero, but it has no hippocampal section, so its loader would refuse it.
-    pub const FORMAT_VERSION: u32 = 13;
+    /// - 14: the term arena is in the image (ADR-0052): the term section (`SECTION_TERM`, 40)
+    ///   holds the engine's `TermNode`s, the clause section (`SECTION_CLAUSE`, 49) the store's
+    ///   indices, the induction section (`SECTION_INDUCTION`, 48) the engine's
+    ///   `InductionState`, always, and the affect section (`SECTION_AFFECT`, 47) the engine's
+    ///   `InteroceptiveState`, always; `Episode` `[56..60)` is the symbol its pattern stands
+    ///   for; `DendriticSuperNeuron` `[16..20)` is the tick a synapse's message last reached
+    ///   the unit (ADR-0054); the modulator section's `[20..24)` is the inhibitory rule's
+    ///   target period (ADR-0053). A version-13 image has no affect or induction section, so
+    ///   its loader would refuse it; its unit records read a stamp of zero, which is none.
+    pub const FORMAT_VERSION: u32 = 14;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -383,7 +405,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 13);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 14);
     }
 
     #[test]
@@ -429,8 +451,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            13,
-            "ADR-0037, ADR-0038: the sleep fields, the ledger and its sections"
+            14,
+            "ADR-0052 to ADR-0054: the term arena in the image, the symbol, the stamp, the period"
         );
     }
 

@@ -11,15 +11,17 @@
 //! behaviour reads is hypothesis H-11. A conjecture leaves as a prover frame whose parameter
 //! hash is the statement's; a node is certified only by a completed prover frame whose
 //! payload carries that statement hash and a certificate hash, every other frame leaving the
-//! node untouched (§6.10, fail-closed). The clause store, the scratch and the affect state are
-//! the caller's, as the language module's codebook is; which clauses to try is the caller's
-//! search (Specified). Nothing here allocates.
+//! node untouched (§6.10, fail-closed). The rules here run over a caller's slices, as the
+//! language module's codebook is; the executor composes them over its own arena and store
+//! ([`store`](crate::store), ADR-0052), where a search runs from a cursor with a budget and a
+//! commit's outputs are instantiated through the bindings so that the store reads without
+//! the table. Nothing here allocates.
 
 use cortex_affect::{InteroceptiveState, Q16_ONE};
 use cortex_knowledge::SemanticOntologyNode;
 use cortex_reasoning::{
-    Binding, INVENTED_LIMIT, InduceError, InduceScratch, Invention, TermNode, intra_construct,
-    next_pair, size,
+    Binding, INVENTED_LIMIT, InduceError, InduceScratch, Invention, TermNode, instantiate,
+    intra_construct, next_pair, size,
 };
 use cortex_tools::{
     ACTION_SOLVE_CONSTRAINTS, ACTION_VERIFY_PROOF, STATUS_COMPLETED, TOOL_CATEGORY_FORMAL_PROVER,
@@ -195,19 +197,8 @@ pub struct SearchReport {
     pub reward_total_q16: i32,
 }
 
-/// The executive search over a clause store (ADR-0045): the pairs `next_pair` yields, in
-/// order, each intra-constructed by [`invent`]; an invention whose reward is positive is
-/// committed (the two inputs replaced by the common clause and the first definition, the
-/// second definition appended at `len`, the discovery written to `out`, the walk restarted
-/// from the first pair), one whose reward is not positive is undone (the scratch restored to
-/// before it, the affect state put back as it was), as is a pair the operator refuses for a
-/// reason of its own; the walk ends when no pair is left or `budget` attempts are spent.
-/// The affect state must be primed to the store's length, as `invent` requires; after a
-/// commit it is primed to the new length by the valence update itself. `StoreFull` when a
-/// commit finds no slot, `OutFull` when it finds no room in `out`, either with the invention
-/// undone; the operator's own bounds (an arena or a band exhausted, a walk past its limit, a
-/// malformed store) end the search as errors with the store as it was before that attempt.
-/// Returns the report; `len` is the store's length after.
+/// The executive search over a clause store (ADR-0045) from its first pair:
+/// [`search_from`] with no pair to resume after, the report alone.
 pub fn search(
     store: &mut [u32],
     len: &mut usize,
@@ -216,6 +207,36 @@ pub fn search(
     budget: u32,
     out: &mut [Discovery],
 ) -> Result<SearchReport, DiscoveryError> {
+    search_from(store, len, scratch, affect, budget, None, out).map(|(report, _)| report)
+}
+
+/// The executive search over a clause store (ADR-0045, ADR-0052): the pairs `next_pair`
+/// yields after `after` (the start when `None`), in order, each intra-constructed by
+/// [`invent`]; an invention whose reward is positive is committed (its three outputs
+/// instantiated through the bindings the matching made and the table unbound to before the
+/// attempt, so that the store's clauses stand without it; the two inputs replaced by the
+/// common clause and the first definition, the second definition appended at `len`, the
+/// discovery written to `out` with the instantiated indices, the walk restarted from the
+/// first pair), one whose reward is not positive is undone (the scratch restored to before
+/// it, the affect state put back as it was), as is a pair the operator refuses for a reason
+/// of its own; the walk ends when no pair is left or `budget` attempts are spent. The affect
+/// state must be primed to the store's length, as `invent` requires; after a commit it is
+/// primed to the new length by the valence update itself. `StoreFull` when a commit finds no
+/// slot, `OutFull` when it finds no room in `out`, either with the invention undone; the
+/// operator's own bounds (an arena or a band exhausted, a walk past its limit, a malformed
+/// store) end the search as errors with the store as it was before that attempt. Returns
+/// the report and the pair after which the next search resumes: the last pair attempted
+/// when the budget ended the walk, the start when no pair was left or the last action was
+/// a commit; `len` is the store's length after.
+pub fn search_from(
+    store: &mut [u32],
+    len: &mut usize,
+    scratch: &mut InduceScratch,
+    affect: &mut InteroceptiveState,
+    budget: u32,
+    after: Option<(usize, usize)>,
+    out: &mut [Discovery],
+) -> Result<(SearchReport, Option<(usize, usize)>), DiscoveryError> {
     let mut report = SearchReport {
         length_before: description_length(
             store.get(..*len).ok_or(DiscoveryError::Length)?,
@@ -226,7 +247,8 @@ pub fn search(
         ..SearchReport::default()
     };
     report.length_after = report.length_before;
-    let mut pair = next_pair(&store[..*len], None, scratch)?;
+    let mut pair = next_pair(&store[..*len], after, scratch)?;
+    let mut last = after;
     while let Some((i, j)) = pair {
         if report.attempts >= budget {
             break;
@@ -236,33 +258,56 @@ pub fn search(
         let mark = scratch.mark();
         match invent(store[i], store[j], &store[..*len], scratch, affect) {
             Ok(discovery) if discovery.reward_q16 > 0 => {
-                let Some(slot) = store.get_mut(*len) else {
+                if *len >= store.len() {
                     scratch.restore(&mark);
                     *affect = saved;
                     return Err(DiscoveryError::StoreFull);
-                };
-                let Some(record) = out.get_mut(report.commits as usize) else {
+                }
+                if report.commits as usize >= out.len() {
                     scratch.restore(&mark);
                     *affect = saved;
                     return Err(DiscoveryError::OutFull);
-                };
-                *slot = discovery.invention.definitions[1];
-                store[i] = discovery.invention.common;
-                store[j] = discovery.invention.definitions[0];
-                // Below the store's length, which a slice bounds.
+                }
+                // The outputs through the bindings the matching made, then the table as it
+                // was before the attempt (ADR-0052): what the store holds reads without it.
+                let mut committed = discovery;
+                let mut outputs = [
+                    discovery.invention.common,
+                    discovery.invention.definitions[0],
+                    discovery.invention.definitions[1],
+                ];
+                for output in &mut outputs {
+                    match instantiate(*output, scratch) {
+                        Ok(instance) => *output = instance,
+                        Err(e) => {
+                            scratch.restore(&mark);
+                            *affect = saved;
+                            return Err(DiscoveryError::Induce(e));
+                        }
+                    }
+                }
+                scratch.unbind(&mark);
+                committed.invention.common = outputs[0];
+                committed.invention.definitions = [outputs[1], outputs[2]];
+                store[*len] = outputs[2];
+                store[i] = outputs[0];
+                store[j] = outputs[1];
+                // Below the store's length, checked above.
                 *len = len.wrapping_add(1);
-                *record = discovery;
+                out[report.commits as usize] = committed;
                 report.commits = report.commits.wrapping_add(1);
                 report.length_after = discovery.length_after;
                 report.reward_total_q16 =
                     report.reward_total_q16.saturating_add(discovery.reward_q16);
                 pair = next_pair(&store[..*len], None, scratch)?;
+                last = None;
             }
             Ok(_) => {
                 scratch.restore(&mark);
                 *affect = saved;
                 report.rejections = report.rejections.wrapping_add(1);
                 pair = next_pair(&store[..*len], Some((i, j)), scratch)?;
+                last = Some((i, j));
             }
             Err(DiscoveryError::Induce(
                 InduceError::NoMatch
@@ -274,11 +319,15 @@ pub fn search(
                 // The operator restored the scratch and touched no affect state.
                 report.rejections = report.rejections.wrapping_add(1);
                 pair = next_pair(&store[..*len], Some((i, j)), scratch)?;
+                last = Some((i, j));
             }
             Err(e) => return Err(e),
         }
     }
-    Ok(report)
+    // The budget ended the walk with a pair in hand: resume after the last one attempted;
+    // no pair left: the start.
+    let resume = if pair.is_some() { last } else { None };
+    Ok((report, resume))
 }
 
 /// The frame a conjecture leaves in: a pending proof check whose parameter hash is the

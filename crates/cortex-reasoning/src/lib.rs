@@ -13,8 +13,11 @@
 //! a literal may name a term node, and a resolution step unifies the complementary pair; and,
 //! since ADR-0040, syntax as type reduction over the same arena ([`category`]): a category is
 //! a term, the four combinatory rules are unifications, and a greedy shift-reduce reducer
-//! reads a sequence of lexical categories into one with a log of what it did. Clause search,
-//! constraint propagation, type raising and a chart are Specified.
+//! reads a sequence of lexical categories into one with a log of what it did; and, since
+//! ADR-0052, the record an engine carries its arena and its clause store across a restart
+//! with ([`state`]) and the copy of a term through the bindings that lets a committed
+//! invention's outputs stand without the table. Constraint propagation, type raising, a
+//! chart, standardising apart and a compaction of the arena are Specified.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -23,6 +26,7 @@
 
 pub mod category;
 pub mod induce;
+pub mod state;
 pub mod term;
 pub use category::{
     CATEGORY_BACKWARD, CATEGORY_FORWARD, CATEGORY_RESERVED, ParseError, ParseScratch,
@@ -31,11 +35,12 @@ pub use category::{
     is_functor, reduce, result, role, slash,
 };
 pub use induce::{
-    CLAUSE, Frame, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceMark, InduceScratch,
-    Invention, MAX_BODY, Proof, absorb, clause, clause_body_len, clause_head, clause_literal,
-    free_variables, identify, intra_construct, is_clause, lgg, next_pair, prove, resolve_definite,
-    resolve_literal, size, term_hash,
+    CLAUSE, Frame, INSTANTIATE_DEPTH, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceMark,
+    InduceScratch, Invention, MAX_BODY, Proof, absorb, clause, clause_body_len, clause_head,
+    clause_literal, free_variables, identify, instantiate, intra_construct, is_clause, lgg,
+    next_pair, prove, resolve_definite, resolve_literal, size, term_hash,
 };
+pub use state::{InductionState, SEARCH_SHIFT_MAX};
 pub use term::{
     Binding, MAX_ARITY, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TERM_NONE, TERM_VARIABLE,
     TermNode, UnifyResult, WALK_LIMIT, deref, is_negated, literal_of_term, resolve_first_order,

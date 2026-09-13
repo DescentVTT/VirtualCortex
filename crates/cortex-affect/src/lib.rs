@@ -5,7 +5,8 @@
 //!
 //! `cortex-homeostasis` holds the metabolic drives and the circadian gate; this crate holds
 //! what the body feels like. One record per interoceptive region. The integration and valence
-//! rules and the metaphor source-domain map (ADR-0021) are Implemented; how the mood baseline
+//! rules and the metaphor source-domain map (ADR-0021) are Implemented, and so are the
+//! record's bytes and its well-formedness for the image (ADR-0052); how the mood baseline
 //! biases `cortex-neuromod` and how the stake preempts executive bandwidth are Specified.
 
 #![no_std]
@@ -161,6 +162,58 @@ impl InteroceptiveState {
             DOMAIN_WEIGHT
         } else {
             DOMAIN_DUSK
+        }
+    }
+}
+
+impl InteroceptiveState {
+    /// True for a record the rules keep (ADR-0052): the comfort and the mood within
+    /// $[-1, 1]$ (the integration bounds both) and the reserved bytes zero. The loader refuses
+    /// anything else (ADR-0028).
+    pub fn is_well_formed(&self) -> bool {
+        let one = Q16_ONE as i32;
+        let unit = one.wrapping_neg()..=one;
+        unit.contains(&self.somatic_comfort_q16)
+            && unit.contains(&self.mood_baseline_q16)
+            && self._reserved == [0; 20]
+    }
+
+    /// The record's 64 bytes, little-endian, field by field (§8.7).
+    pub fn encode(&self) -> [u8; 64] {
+        let mut out = [0u8; 64];
+        out[0..4].copy_from_slice(&self.somatic_comfort_q16.to_le_bytes());
+        out[4..8].copy_from_slice(&self.allostatic_load_q16.to_le_bytes());
+        out[8..12].copy_from_slice(&self.thermal_strain_q16.to_le_bytes());
+        out[12..16].copy_from_slice(&self.energy_resilience_q16.to_le_bytes());
+        out[16..20].copy_from_slice(&self.mood_baseline_q16.to_le_bytes());
+        out[20..24].copy_from_slice(&self.pain_signal_burst.to_le_bytes());
+        out[24..28].copy_from_slice(&self.free_energy_prev_q16.to_le_bytes());
+        out[28..32].copy_from_slice(&self.valence_df_dt_q16.to_le_bytes());
+        out[32..36].copy_from_slice(&self.existential_stake_q16.to_le_bytes());
+        out[36..40].copy_from_slice(&self.benign_incongruity_q16.to_le_bytes());
+        out[40..44].copy_from_slice(&self.mirth_q16.to_le_bytes());
+        out[44..64].copy_from_slice(&self._reserved);
+        out
+    }
+
+    /// A record from its 64 bytes; not validated (`is_well_formed` is the check).
+    pub fn decode(bytes: &[u8; 64]) -> Self {
+        let u32_at = |at: usize| {
+            u32::from_le_bytes(bytes[at..at.wrapping_add(4)].try_into().unwrap_or([0; 4]))
+        };
+        Self {
+            somatic_comfort_q16: u32_at(0) as i32,
+            allostatic_load_q16: u32_at(4),
+            thermal_strain_q16: u32_at(8),
+            energy_resilience_q16: u32_at(12),
+            mood_baseline_q16: u32_at(16) as i32,
+            pain_signal_burst: u32_at(20),
+            free_energy_prev_q16: u32_at(24),
+            valence_df_dt_q16: u32_at(28) as i32,
+            existential_stake_q16: u32_at(32),
+            benign_incongruity_q16: u32_at(36),
+            mirth_q16: u32_at(40),
+            _reserved: bytes[44..64].try_into().unwrap_or([0; 20]),
         }
     }
 }
@@ -495,5 +548,55 @@ mod tests {
             assert!(a.mirth_q16 <= ONE);
         }
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn the_record_round_trips_through_its_bytes_and_is_well_formed_on_each_clause_alone() {
+        let s = InteroceptiveState {
+            somatic_comfort_q16: -0x0001_0000,
+            allostatic_load_q16: 0x0102_0304,
+            thermal_strain_q16: 5,
+            energy_resilience_q16: 6,
+            mood_baseline_q16: 0x0001_0000,
+            pain_signal_burst: 7,
+            free_energy_prev_q16: 0x0A0B_0C0D,
+            valence_df_dt_q16: -2,
+            existential_stake_q16: 9,
+            benign_incongruity_q16: 10,
+            mirth_q16: 11,
+            _reserved: [0; 20],
+        };
+        let bytes = s.encode();
+        assert_eq!(&bytes[0..4], &(-0x0001_0000i32).to_le_bytes());
+        assert_eq!(&bytes[4..8], &[4, 3, 2, 1]);
+        assert_eq!(&bytes[24..28], &[0x0D, 0x0C, 0x0B, 0x0A]);
+        assert_eq!(&bytes[28..32], &(-2i32).to_le_bytes());
+        assert_eq!(&bytes[40..44], &11u32.to_le_bytes());
+        assert_eq!(&bytes[44..64], &[0; 20]);
+        assert_eq!(InteroceptiveState::decode(&bytes), s);
+        assert_eq!(
+            InteroceptiveState::decode(&[0; 64]),
+            InteroceptiveState::default()
+        );
+        let mut reserved = s;
+        reserved._reserved[19] = 3;
+        assert_eq!(InteroceptiveState::decode(&reserved.encode()), reserved);
+        assert!(s.is_well_formed(), "comfort at -1.0 and mood at +1.0");
+        assert!(InteroceptiveState::default().is_well_formed());
+        type Mutation = fn(&mut InteroceptiveState);
+        let clauses: [(&str, Mutation); 5] = [
+            ("comfort below -1.0", |s| {
+                s.somatic_comfort_q16 = -0x0001_0001
+            }),
+            ("comfort above 1.0", |s| s.somatic_comfort_q16 = 0x0001_0001),
+            ("mood below -1.0", |s| s.mood_baseline_q16 = -0x0001_0001),
+            ("mood above 1.0", |s| s.mood_baseline_q16 = 0x0001_0001),
+            ("a reserved byte", |s| s._reserved[0] = 1),
+        ];
+        for (what, clause) in clauses {
+            let mut bad = s;
+            clause(&mut bad);
+            assert!(!bad.is_well_formed(), "{what}");
+        }
     }
 }

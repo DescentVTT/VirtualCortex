@@ -16,8 +16,12 @@
 //! in both directions (ADR-0046); and the episodes of [`episode`], tagged from a spike train
 //! and bound to a rewarded invention (ADR-0048), from the executor's own train since ADR-0050
 //! (every worker's spikes of a tick merged in unit order into a bounded ring after the tick).
-//! Everything is allocated in [`Executor::new`]; nothing allocates, blocks or (apart from the
-//! barrier's yield) makes a system call in the loop. This crate is `std`, is never published, and is the one place in the workspace with
+//! Since ADR-0052 the executor owns a term arena and a clause store ([`store`]) that the
+//! image carries, and the discovery loop runs inside the tick on a cadence while awake: the
+//! search from its cursor, the reward into the modulator, the coincidence before the reward
+//! tagged and bound to the invented predicate. Everything is allocated in [`Executor::new`];
+//! nothing allocates, blocks or (apart from the barrier's yield) makes a system call in the
+//! loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
 
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -36,6 +40,7 @@ pub mod injector;
 pub mod language;
 pub mod lexicon;
 pub mod pool;
+pub mod store;
 pub mod synthesis;
 pub mod trial;
 
@@ -45,10 +50,10 @@ pub use branching::{
 pub use discovery::{
     CERTIFICATE_BYTES, COMPRESSION_REWARD_SHIFT, CertifyError, Discovery, DiscoveryError,
     LENGTH_CEILING, SearchReport, certify_from_frame, conjecture_frame, description_length,
-    free_energy_q16, invent, prime, reward_q16, search,
+    free_energy_q16, invent, prime, reward_q16, search, search_from,
 };
 pub use episode::{
-    Association, ClauseSearch, DiscoverError, DiscoverReport, Tagging, discover, tag_burst,
+    Association, COINCIDENCE_TICKS, DISCOVERY_WINDOW, DiscoverError, DiscoverReport, tag_burst,
     tag_burst_in, tag_discovery, tag_discovery_recent, tag_from_trace, tag_recent,
 };
 pub use executor::{
@@ -65,6 +70,7 @@ pub use lexicon::{
     SHAPE_HEDGE, SHAPE_INTRANSITIVE, SHAPE_NOMINAL, SHAPE_NOUN, SHAPE_TAG, SHAPE_TRANSITIVE,
     comprehend_tokens, realise,
 };
+pub use store::TermError;
 pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};
 

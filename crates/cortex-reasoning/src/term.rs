@@ -95,6 +95,62 @@ impl TermNode {
             self.children[slot].checked_sub(1)
         }
     }
+
+    /// True for a node the constructors could have made (ADR-0052): a kind the constants
+    /// name; an arity of zero for a constant, a variable or an empty node and at most
+    /// [`MAX_ARITY`] for a compound; every slot below the arity holding a child and every slot
+    /// at or beyond it empty; an empty node all zero; the pad and the reserved bytes zero. The
+    /// loader refuses anything else; whether a child index is inside the arena is the
+    /// loader's check, since the node cannot know the arena.
+    pub fn is_well_formed(&self) -> bool {
+        let arity = self.arity as usize;
+        let shape = match self.kind {
+            TERM_EMPTY => arity == 0 && self.functor == 0,
+            TERM_CONSTANT | TERM_VARIABLE => arity == 0,
+            TERM_COMPOUND => arity <= MAX_ARITY,
+            _ => false,
+        };
+        shape
+            && self
+                .children
+                .iter()
+                .enumerate()
+                .all(|(slot, &child)| (slot < arity) == (child != TERM_NONE))
+            && self._pad == 0
+            && self._reserved == [0; 24]
+    }
+
+    /// The record's 64 bytes, little-endian, field by field (§8.7).
+    pub fn encode(&self) -> [u8; 64] {
+        let mut out = [0u8; 64];
+        out[0] = self.kind;
+        out[1] = self.arity;
+        out[2..4].copy_from_slice(&self._pad.to_le_bytes());
+        out[4..8].copy_from_slice(&self.functor.to_le_bytes());
+        for (slot, child) in self.children.iter().enumerate() {
+            let at = slot.wrapping_mul(4).wrapping_add(8);
+            out[at..at.wrapping_add(4)].copy_from_slice(&child.to_le_bytes());
+        }
+        out[40..64].copy_from_slice(&self._reserved);
+        out
+    }
+
+    /// A record from its 64 bytes; not validated (`is_well_formed` is the check).
+    pub fn decode(bytes: &[u8; 64]) -> Self {
+        let mut children = [TERM_NONE; MAX_ARITY];
+        for (slot, child) in children.iter_mut().enumerate() {
+            let at = slot.wrapping_mul(4).wrapping_add(8);
+            *child = u32::from_le_bytes(bytes[at..at.wrapping_add(4)].try_into().unwrap_or([0; 4]));
+        }
+        Self {
+            kind: bytes[0],
+            arity: bytes[1],
+            _pad: u16::from_le_bytes(bytes[2..4].try_into().unwrap_or([0; 2])),
+            functor: u32::from_le_bytes(bytes[4..8].try_into().unwrap_or([0; 4])),
+            children,
+            _reserved: bytes[40..64].try_into().unwrap_or([0; 24]),
+        }
+    }
 }
 
 /// One entry of the binding table: the term a variable is bound to, as index + 1; 0 unbound.
@@ -418,6 +474,62 @@ mod tests {
             unify(gx, gs, &arena.nodes, &mut bindings, &mut trail, &mut five).0,
             UnifyResult::BoundExceeded
         );
+    }
+
+    #[test]
+    fn a_node_round_trips_through_its_bytes_and_is_well_formed_on_each_clause_alone() {
+        let node = TermNode::compound(0x0102_0304, &[0, 0x0A0B_0C0D]).unwrap();
+        let bytes = node.encode();
+        assert_eq!(&bytes[0..4], &[TERM_COMPOUND, 2, 0, 0]);
+        assert_eq!(&bytes[4..8], &[4, 3, 2, 1]);
+        assert_eq!(&bytes[8..12], &1u32.to_le_bytes(), "index + 1");
+        assert_eq!(&bytes[12..16], &0x0A0B_0C0Eu32.to_le_bytes());
+        assert!(bytes[16..].iter().all(|&b| b == 0));
+        assert_eq!(TermNode::decode(&bytes), node);
+        assert_eq!(TermNode::decode(&[0; 64]), TermNode::default());
+        let mut padded = node;
+        padded._pad = 0x0201;
+        padded._reserved[23] = 9;
+        let bytes = padded.encode();
+        assert_eq!(&bytes[2..4], &[1, 2]);
+        assert_eq!(bytes[63], 9);
+        assert_eq!(TermNode::decode(&bytes), padded);
+
+        assert!(TermNode::default().is_well_formed(), "the empty slot");
+        assert!(TermNode::constant(7).is_well_formed());
+        assert!(TermNode::variable(u32::MAX).is_well_formed());
+        assert!(node.is_well_formed());
+        assert!(TermNode::compound(1, &[0; 8]).unwrap().is_well_formed());
+        assert!(TermNode::compound(1, &[]).unwrap().is_well_formed());
+        type Mutation = fn(&mut TermNode);
+        let clauses: [(&str, Mutation); 9] = [
+            ("a kind the constants do not name", |n| n.kind = 4),
+            ("a constant with an arity", |n| {
+                n.kind = TERM_CONSTANT;
+                n.arity = 1;
+            }),
+            ("an empty node with a functor", |n| {
+                *n = TermNode::default();
+                n.functor = 1;
+            }),
+            ("an empty node with an arity", |n| {
+                *n = TermNode::default();
+                n.arity = 1;
+                n.children[0] = 1;
+            }),
+            ("a compound of nine", |n| n.arity = 9),
+            ("an empty slot below the arity", |n| {
+                n.children[0] = TERM_NONE
+            }),
+            ("a child at the arity", |n| n.children[2] = 1),
+            ("the pad", |n| n._pad = 1),
+            ("a reserved byte", |n| n._reserved[0] = 1),
+        ];
+        for (what, clause) in clauses {
+            let mut bad = node;
+            clause(&mut bad);
+            assert!(!bad.is_well_formed(), "{what}");
+        }
     }
 
     #[test]
