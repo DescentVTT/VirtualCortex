@@ -1024,4 +1024,79 @@ mod tests {
         let report = search(&mut room, &mut len, &mut scratch, &mut affect, 16, &mut out).unwrap();
         assert_eq!((report.commits, len), (1, 3));
     }
+
+    /// Two clauses `p(X) ← a(X, c), b(X), e(X)` and `p(Y) ← a(Y, c), b(Y), f(Y)`: the
+    /// invention saves nothing (twenty nodes become twenty), so its reward is zero and the
+    /// search undoes it: a commit needs a reward above zero, not at it.
+    #[test]
+    fn an_invention_that_saves_nothing_is_not_committed() {
+        let mut arena = [TermNode::default(); 64];
+        let nodes = [
+            TermNode::variable(0),
+            TermNode::constant(0x300),
+            TermNode::compound(0x200, &[0, 1]).unwrap(),
+            TermNode::compound(0x201, &[0]).unwrap(),
+            TermNode::compound(0x204, &[0]).unwrap(),
+            TermNode::compound(0x100, &[0]).unwrap(),
+            clause(5, &[2, 3, 4]).unwrap(),
+            TermNode::variable(1),
+            TermNode::constant(0x300),
+            TermNode::compound(0x200, &[7, 8]).unwrap(),
+            TermNode::compound(0x201, &[7]).unwrap(),
+            TermNode::compound(0x205, &[7]).unwrap(),
+            TermNode::compound(0x100, &[7]).unwrap(),
+            clause(12, &[9, 10, 11]).unwrap(),
+        ];
+        arena[..nodes.len()].copy_from_slice(&nodes);
+        let mut bindings = [Binding::UNBOUND; 16];
+        let (mut trail, mut stack, mut pairs) = ([0u32; 32], [0u32; 64], [[0u32; 3]; 8]);
+        let mut scratch = InduceScratch {
+            arena: &mut arena,
+            free: nodes.len(),
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            pairs: &mut pairs,
+            next_variable: 2,
+            next_invented: INVENTED_BASE,
+        };
+        let mut store = [6u32, 13, 0];
+        let mut len = 2;
+        assert_eq!(
+            description_length(
+                &store[..len],
+                scratch.arena,
+                scratch.bindings,
+                scratch.stack
+            ),
+            Ok(20)
+        );
+        let mut affect = InteroceptiveState::default();
+        prime(&mut affect, 20);
+        let mut out = [Discovery::default(); 1];
+        let report = search(
+            &mut store,
+            &mut len,
+            &mut scratch,
+            &mut affect,
+            16,
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                report.attempts,
+                report.commits,
+                report.rejections,
+                report.length_after
+            ),
+            (1, 0, 1, 20)
+        );
+        assert_eq!(
+            (len, scratch.free, scratch.next_invented),
+            (2, nodes.len(), INVENTED_BASE)
+        );
+        assert_eq!(out[0], Discovery::default());
+    }
 }

@@ -215,7 +215,7 @@ pub fn cascade(
         }
         cascade.first = cascade.first.saturating_add(1);
         if let Some(i) = missing.iter().enumerate().position(|(i, &(t, v))| {
-            !paired[i] && v == u && t > tick && t.wrapping_sub(tick) <= advance
+            !paired[i] && v == u && (1..=advance).contains(&t.wrapping_sub(tick))
         }) {
             paired[i] = true;
             cascade.advanced = cascade.advanced.saturating_add(1);
@@ -384,6 +384,73 @@ mod tests {
         let b2 = [(200, 5), (210, 5)];
         let c = cascade(&b2, &p, 4, 0, &synapses, 20, 200);
         assert_eq!((c.first, c.advanced, c.missing), (2, 2, 0));
+        assert_eq!(c.net_first(), 0, "two added, two advanced");
+        // An extra spike before the ancestor is the same in both forks and is not counted;
+        // one of another unit at the ancestor's tick is counted as extra.
+        let around = [(3, 9), (12, 3), (12, 4)];
+        let c = cascade(&[(5, 1)], &around, 4, 0, &synapses, 20, 100);
+        assert_eq!((c.ancestor, c.first, c.extra), (Some(12), 0, 1));
+        // A missing spike at exactly `advance` ticks after the descendant is advanced; one
+        // tick further is not.
+        let at_edge = [(205, 5)];
+        let c = cascade(&at_edge, &p, 4, 0, &synapses, 20, 100);
+        assert_eq!(
+            (c.first, c.advanced, c.missing),
+            (2, 1, 0),
+            "205 - 105 is the advance"
+        );
+        let past_edge = [(210, 5)];
+        let c = cascade(&past_edge, &p, 4, 0, &synapses, 20, 100);
+        assert_eq!(
+            (c.first, c.advanced, c.missing),
+            (2, 0, 1),
+            "101 past the second descendant, 105 past the first"
+        );
+    }
+
+    #[test]
+    fn a_fork_refuses_a_kick_beyond_its_end_and_takes_one_at_it() {
+        use crate::executor::{Config, Executor};
+        use crate::image::Image;
+        let exec = Executor::<8>::new(Config {
+            units: 2,
+            trace_capacity: 8,
+            ..Config::default()
+        })
+        .unwrap();
+        let image = Image::encode(&exec).unwrap();
+        let config = Config {
+            units: 2,
+            trace_capacity: 8,
+            ..Config::default()
+        };
+        drop(exec);
+        let quiet = Drive {
+            every: 0,
+            messages: 0,
+            efficacy_q16: 0,
+            units: 2,
+            seed: 0,
+        };
+        let kick = |tick: u64| Perturbation {
+            unit: 0,
+            tick,
+            messages: 1,
+            efficacy_q16: 0x0001_8000,
+        };
+        assert!(matches!(
+            fork::<8>(&image, &config, &quiet, &[kick(11)], 10),
+            Err(ForkError::Unreached(11))
+        ));
+        assert!(
+            fork::<8>(&image, &config, &quiet, &[kick(10)], 10).is_ok(),
+            "at the end"
+        );
+        assert!(fork::<8>(&image, &config, &quiet, &[kick(5)], 10).is_ok());
+        assert!(matches!(
+            fork::<8>(&image, &config, &quiet, &[kick(5), kick(4)], 10),
+            Err(ForkError::Passed(4))
+        ));
     }
 
     #[test]

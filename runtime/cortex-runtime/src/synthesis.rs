@@ -311,6 +311,17 @@ mod tests {
         );
     }
 
+    /// SplitMix64's outputs for a state of 0 (the published sequence: `e220a8397b1dcdaf`,
+    /// `6e789e6aa1b965f4`), and two more computed by the reference algorithm outside the
+    /// tree.
+    #[test]
+    fn mix64_is_splitmix64_s_finaliser() {
+        assert_eq!(mix64(0), 0xE220_A839_7B1D_CDAF);
+        assert_eq!(mix64(0x9E37_79B9_7F4A_7C15), 0x6E78_9E6A_A1B9_65F4);
+        assert_eq!(mix64(1), 0x910A_2DEC_8902_5CC1);
+        assert_eq!(mix64(u64::MAX), 0xE4D9_7177_1B65_2C20);
+    }
+
     #[test]
     fn the_drive_is_a_function_of_the_tick_and_lands_in_range() {
         let d = Drive {
