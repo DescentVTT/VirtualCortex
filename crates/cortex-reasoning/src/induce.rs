@@ -965,6 +965,11 @@ mod tests {
         assert_eq!(n, 2, "Y again is not listed twice");
         let mut one = [TERM_NONE; 1];
         assert_eq!(
+            free_variables(a, s.arena, s.bindings, s.stack, &mut one, 1),
+            Ok(1),
+            "a full slice with nothing to add"
+        );
+        assert_eq!(
             free_variables(fga, s.arena, s.bindings, s.stack, &mut one, 2),
             Err(InduceError::BoundExceeded),
             "a length past the slice"
@@ -1652,6 +1657,35 @@ mod tests {
             intra_construct(ca, cb, &mut s).is_ok(),
             "and with room it applies"
         );
+    }
+
+    #[test]
+    fn a_variable_only_a_differing_literal_uses_is_not_an_argument() {
+        // ca = p(X) ← r(X), u(X, W); cb = p(X') ← r(X'), w(X'): W is in neither the head nor
+        // the shared literal, so q takes X alone.
+        let mut kit = Kit::<32>::new();
+        let (x, w, x2) = (kit.var(), kit.var(), kit.var());
+        let px = kit.compound(P, &[x]);
+        let rx = kit.compound(R, &[x]);
+        let uxw = kit.compound(U, &[x, w]);
+        let ca = kit.clause(px, &[rx, uxw]);
+        let px2 = kit.compound(P, &[x2]);
+        let rx2 = kit.compound(R, &[x2]);
+        let wx2 = kit.compound(W, &[x2]);
+        let cb = kit.clause(px2, &[rx2, wx2]);
+        let mut s = kit.scratch();
+        let inv = intra_construct(ca, cb, &mut s).unwrap();
+        assert_eq!((inv.arguments, inv.shared), (1, 1));
+        let q = clause_head(&s.arena[inv.definitions[0] as usize]).unwrap();
+        let qn = s.arena[q as usize];
+        assert_eq!(qn.arity, 1);
+        assert_eq!(
+            deref(qn.child(0).unwrap(), s.arena, s.bindings),
+            Some(x2),
+            "the one argument is X, which reads as X' through the heads' binding"
+        );
+        let back = resolve_definite(inv.common, inv.definitions[0], &mut s).unwrap();
+        assert!(same_clause(back, ca, &mut s));
     }
 
     #[test]
