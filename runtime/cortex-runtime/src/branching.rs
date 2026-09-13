@@ -387,9 +387,13 @@ mod tests {
         assert_eq!(c.net_first(), 0, "two added, two advanced");
         // An extra spike before the ancestor is the same in both forks and is not counted;
         // one of another unit at the ancestor's tick is counted as extra.
-        let around = [(3, 9), (12, 3), (12, 4)];
+        let around = [(3, 9), (4, 8), (12, 3), (12, 4)];
         let c = cascade(&[(5, 1)], &around, 4, 0, &synapses, 20, 100);
-        assert_eq!((c.ancestor, c.first, c.extra), (Some(12), 0, 1));
+        assert_eq!(
+            (c.ancestor, c.first, c.extra),
+            (Some(12), 0, 1),
+            "two before the ancestor uncounted, one at its tick counted"
+        );
         // A missing spike at exactly `advance` ticks after the descendant is advanced; one
         // tick further is not.
         let at_edge = [(205, 5)];
