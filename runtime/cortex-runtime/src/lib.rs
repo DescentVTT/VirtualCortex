@@ -9,8 +9,10 @@
 //! (ADR-0037) and the episodic ledger, replayed on the ripple's during slow-wave sleep
 //! (ADR-0038); and, between ticks with no executor field, the language composition of
 //! [`language`]: a category sequence reduced on the term arena into a frame, the frame sealed
-//! as a hypervector and read back through a codebook (ADR-0039, ADR-0040). Everything is
-//! allocated in [`Executor::new`];
+//! as a hypervector and read back through a codebook (ADR-0039, ADR-0040), and the discovery
+//! path of [`discovery`]: an invention's drop in a clause store's description length as the
+//! valence and the modulator's reward, and a prover frame's certificate into a theorem
+//! (ADR-0041, ADR-0043). Everything is allocated in [`Executor::new`];
 //! nothing allocates, blocks or (apart from the barrier's yield) makes a system call in the
 //! loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
@@ -22,6 +24,7 @@
 pub mod arena;
 pub mod barrier;
 pub mod deque;
+pub mod discovery;
 pub mod executor;
 pub mod image;
 pub mod injector;
@@ -29,6 +32,11 @@ pub mod language;
 pub mod pool;
 pub mod trial;
 
+pub use discovery::{
+    CERTIFICATE_BYTES, COMPRESSION_REWARD_SHIFT, CertifyError, Discovery, DiscoveryError,
+    LENGTH_CEILING, certify_from_frame, conjecture_frame, description_length, free_energy_q16,
+    invent, prime, reward_q16,
+};
 pub use executor::{
     ACTIVATE, AmendError, Config, ConfigError, Executor, Inject, InjectError, Policy, TagError,
     WorkerReport,
