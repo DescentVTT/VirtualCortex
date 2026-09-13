@@ -1,0 +1,58 @@
+---
+status: accepted
+date: 2026-09-13
+decision-makers: VirtualCortex maintainers
+depends-on: ADR-0032
+---
+
+# ADR-0043: The discovery path — a clause store's description length as the free energy the valence rule reads, an invention's drop as the valence, a quarter of the valence as the modulator's reward-prediction error, composed in the runtime between ticks with no executor field; a conjecture as a prover frame whose parameter hash is the statement's, and a node certified only by a completed prover frame whose payload carries the statement hash and a certificate hash; the interoceptive record stays out of the image
+
+## Context and Problem Statement
+
+Three rules existed and nothing joined them. `InteroceptiveState::update_valence(F)` ([ADR-0020](0020-computational-phenomenology-and-synthetic-qualia.md)) set the valence to $F_{\text{prev}} - F_{\text{now}}$ for a free energy the whitepaper said `cortex-predictive` would supply (Specified); `Executor::reward(rpe)` ([ADR-0032](0032-three-factor-plasticity.md)) took a reward-prediction error as an input "like an injection", and the modulator's rule said the mirth of `cortex-affect` "arrives here as a quarter of itself" ([ADR-0027](0027-vocal-synthesis-and-computational-humor.md)); `SemanticOntologyNode::certify(statement_hash)` consolidated a theorem with its statement's hash. Whitepaper §6.10 said the broker "returns the certificate hash in the payload" and that "the engine stores a certificate hash", while the record stored the statement's and no document defined the bytes of a prover's payload (finding F-31). The proposal of brief 021 asked to "detect rapid drops in variational free energy ($\Delta F \gg 0$) when a candidate hypothesis unifies disparate observations", to convert them "into an intrinsic dopamine reward-prediction error", to "drive ADR-0032 three-factor synaptic plasticity to permanently consolidate the discovery", and, on the second track, to "receive the cryptographic certificate hash and record it in `SemanticOntologyNode::property_vector_hash` with `AFFORDANCE_CERTIFIED_THEOREM` set", fail-closed.
+
+Three facts shaped the answer. A free energy in the variational sense is a description length: the bound on surprise a model gives is the code length of the data under it, an identity Hinton and Zemel (1994) stated for exactly this use, so the length of a clause store in nodes is a free energy the existing rule can read without a second rule. A drop in that length is what an invention of [ADR-0041](0041-induction-on-the-term-arena.md) produces or fails to produce, and compression progress as a reward is Schmidhuber's (2009) formalisation of the curiosity and aesthetics the proposal invokes, with a quarter as the scale the tree already uses for the mirth. And nothing in the executor computes a free energy every window, so an interoceptive record carried in the image would be a record the loop never writes, the class of defect finding F-30 named; the affect state is the caller's until an executor loop feeds it, as the language module's codebook is.
+
+## Decision Drivers
+
+- [ADR-0023](0023-executor.md): a composition of state crates lives in the runtime, the one crate that depends downward; nothing here allocates or touches the loop.
+- ADR-0016: the valence is `cortex-affect`'s, the reward `cortex-neuromod`'s, the invention `cortex-reasoning`'s, the certified theorem `cortex-knowledge`'s; the runtime joins them and owns nothing.
+- Rule L-6 and [ADR-0024](0024-cortex-image-and-clock-sweep.md): a record the executor carries is in the image; a record the executor never writes is not carried.
+- §6.10: the engine's only dependency on a prover is a certificate hash; no product name; fail-closed.
+- [ADR-0010](0010-measured-or-target.md): the exit test's numbers are what the tree does; what a consolidated trace means for a later behaviour is H-11.
+
+## Considered Options
+
+1. **The free energy as the store's description length; `invent` measuring the store before and after an intra-construction, calling `update_valence` once, returning the valence and its reward; the caller passing the reward to `Executor::reward`; `certify_from_frame` reading a fixed payload layout; the affect state the caller's.**
+2. An `InteroceptiveState` field on the executor, carried in a new image section (format 14), updated by a window-cadence rule.
+3. The reward computed inside `Executor` from a discovery it runs itself.
+4. The certificate hash stored in the node, in a reserved byte range, beside the statement's.
+
+## Decision Outcome
+
+Option 1, in `runtime/cortex-runtime/src/discovery.rs`; the runtime gains path dependencies on `cortex-affect`, `cortex-tools` and `cortex-knowledge`.
+
+- **The free energy.** `description_length(store, ...)` is the saturating sum of the sizes of a store's clauses through the bindings; `free_energy_q16(length)` is that length as whole nodes in Q16.16, saturating at `LENGTH_CEILING` = 65 535 nodes (the format's integer ceiling); `prime(affect, length)` writes it as the previous free energy the next discovery is measured against.
+- **`invent(ca, cb, store, scratch, affect)`** measures the store, refuses with `NotPrimed` unless the affect state's previous free energy is that length (so a stale state cannot read a stale drop), runs `intra_construct`, measures the store with the two inputs replaced by the three outputs (every clause through the bindings the matching made), calls `update_valence` once with the length after, and returns `Discovery { invention, length_before, length_after, valence_q16, reward_q16 }`; any error leaves the scratch and the affect state as they were.
+- **The reward.** `reward_q16(valence)` is the valence shifted right by `COMPRESSION_REWARD_SHIFT` = 2 (an arithmetic shift; a saving of four nodes is a full reward, a lengthening of four a full negative one) clamped to $[-1, 1]$. The caller passes it to `Executor::reward`, which the exit test does: with a trace pending under a baseline of zero, the reward of an invention that shortens the store by five nodes consolidates the trace at the next presynaptic spike, the weight gaining what the trace lost; the reward of an invention that lengthens the store by one node is $-0.25$, the modulation clamps at zero, and nothing moves.
+- **The conjecture and the certificate.** `conjecture_frame(call_id, statement_hash, level)` is a pending `ACTION_VERIFY_PROOF` frame whose `param_hash` is the statement's (a clause's `term_hash`, a candidate's `statement_hash`). A prover's payload is `CERTIFICATE_BYTES` = 8: `[0..4)` the statement hash it certifies, `[4..8)` the certificate hash, little-endian, zero meaning none. `certify_from_frame(frame, statement_hash, node)` certifies the node and returns the certificate hash only when the frame is completed, its category the prover, its action a proof check or a constraint solve, its parameter hash the statement's, and the payload's statement hash the statement's with a non-zero certificate; `NotCompleted`, `NotAProver`, `NotAVerification`, `Mismatch` and `NoCertificate` each leave the node untouched. The node holds the statement's hash and the theorem bit, as `certify` always did; the certificate hash lives in the completed frame's payload, the audit trail of the call, and §6.10 now says so (F-31 resolved).
+- **What is not adopted.** A record in the image (option 2): no loop writes it. A reward the executor computes (option 3): the executor runs the network, and a discovery is an input to it, like an injection, so a trace that replays its discoveries at the same ticks is the same run. A certificate in the node (option 4): the record has no field for it and the frame already is one. A cryptographic hash: the record's hash is 32 bits, and a broker that wants a digest keeps it on its side of the ring. An "aesthetic selection threshold" gating dispatch: the veto gate is the gate on every frame ([ADR-0016](0016-thirty-two-crate-architecture.md)), and which conjectures to dispatch is the executive's Specified search. The geometric intuition manifold of the proposal's first frontier: `cortex-spatial` integrates, `cortex-imagination` accumulates what a caller supplies, and neither computes a potential; a manifold over three records with no energy to descend is three records, and the item that would give it one, the canvas's generative model, is what §8.8 already calls Specified.
+
+### Consequences
+
+- Good: the proposal's third and fourth frontiers exist as one module of fewer than two hundred lines with an exit test that moves a weight, and format 13 and the determinism pin are untouched.
+- Good: §5.2.23's "free energy itself" has one Implemented source, the length of a store, beside the Specified one from `cortex-predictive`; the two are the same quantity in different units and the rule reads either.
+- Bad: the affect state, the store and the scratch are the caller's, so a discovery is not in the image until the round that gives the executor a loop which computes a free energy every window; that round moves the record in and bumps the format.
+- Bad: `LENGTH_CEILING` saturates a store above 65 535 nodes; a drop within a store that large reads as zero until the store falls below it.
+- Bad: the reward's scale is a constant, not a registry entry of [ADR-0031](0031-policy-amendment.md); it joins the registry when a measurement asks.
+
+## Alternatives considered and why rejected
+
+- **Option 2** would carry a record the loop never updates (F-30's class) and bump the format for it.
+- **Option 3** would put a search inside the executor's tick, which ADR-0023 keeps to the network, and make the run depend on a store the image does not hold.
+- **Option 4** would change a record and the format for a hash the frame already holds.
+- **A relative drop** ($\Delta L / L$) instead of an absolute one: a saving of four nodes in a store of a thousand is the same invention as in a store of ten; the absolute drop is what the identity of ADR-0041 compresses.
+
+## Confirmation
+
+`runtime/cortex-runtime`: the reward at 0, ±1, 3, 4, 5, ±4 and the extremes, an arithmetic shift for a negative valence; the free energy up to and past the ceiling, priming without an update; a store measured, an empty store, an index outside the arena and a stack too small as `Length`; `NotPrimed` on a fresh state and after an invention changed the store, the operator's refusal passed through with the affect state untouched; an invention that lengthens a store by three nodes as a valence of $-3$ and a reward of $-0.75$; a conjecture frame's fields; a completed prover frame (a proof check, a constraint solve, a padded payload) certifying with the statement's hash in the node, and nine refusals plus four short payloads leaving the node equal to a fresh one. The exit test `tests/discovery.rs`: the store of two clauses at 30 nodes becomes 25, the valence 5 and the reward 1.0, the invention's hash `0x21a1c619` pinned; the reward into a network with a pending trace consolidates it at the next presynaptic spike, the weight gaining at least the trace; the one-shared-literal pair at 18 nodes becomes 19, the reward $-0.25$, and the weight does not move; the pending frame certifies nothing and the completed one certifies. `npx spec-guard` asserts `fn invent` and `fn certify_from_frame`. The mutation gate on the changed lines ([ADR-0030](0030-verification-governance.md)) passes in CI.
