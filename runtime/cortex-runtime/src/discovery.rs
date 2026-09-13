@@ -1,0 +1,558 @@
+//! The discovery path (whitepaper §5.2.23, §5.2.29, §6.10, §8.8; ADR-0043; brief 021): the
+//! place an invention of `cortex-reasoning` meets the valence of `cortex-affect`, the reward
+//! of `cortex-neuromod` and the certification of `cortex-knowledge`, between ticks, with no
+//! executor field. A clause store's description length in nodes is the free energy the
+//! valence rule reads (minimum description length and Helmholtz free energy are one quantity:
+//! Hinton and Zemel 1994); an intra-construction that shortens the store is a drop, the drop
+//! is the valence, and a quarter of the valence, clamped to $[-1, 1]$, is the
+//! reward-prediction error `Executor::reward` takes, at the scale the mirth already arrives
+//! at (compression progress as the reward: Schmidhuber 2009). What the modulator then
+//! consolidates is whatever eligibility trace is pending; whether that is anything a later
+//! behaviour reads is hypothesis H-11. A conjecture leaves as a prover frame whose parameter
+//! hash is the statement's; a node is certified only by a completed prover frame whose
+//! payload carries that statement hash and a certificate hash, every other frame leaving the
+//! node untouched (§6.10, fail-closed). The clause store, the scratch and the affect state are
+//! the caller's, as the language module's codebook is; which clauses to try is the caller's
+//! search (Specified). Nothing here allocates.
+
+use cortex_affect::{InteroceptiveState, Q16_ONE};
+use cortex_knowledge::SemanticOntologyNode;
+use cortex_reasoning::{
+    Binding, INVENTED_LIMIT, InduceError, InduceScratch, Invention, TermNode, intra_construct, size,
+};
+use cortex_tools::{
+    ACTION_SOLVE_CONSTRAINTS, ACTION_VERIFY_PROOF, STATUS_COMPLETED, TOOL_CATEGORY_FORMAL_PROVER,
+    ToolInvocationFrame,
+};
+
+use crate::language::ROLE_CONCEPT_BASE;
+
+/// The valence shifted right by this many bits is the reward: a saving of four nodes is a
+/// full reward, the quarter at which the mirth of `cortex-affect` arrives at the modulator.
+pub const COMPRESSION_REWARD_SHIFT: u32 = 2;
+/// The bytes of a prover's payload: `[0..4)` the statement hash it certifies and `[4..8)`
+/// the certificate hash, both little-endian; a certificate hash of zero is none.
+pub const CERTIFICATE_BYTES: usize = 8;
+/// The most nodes a description length reads as: the integer ceiling of Q16.16.
+pub const LENGTH_CEILING: u32 = 0xFFFF;
+
+/// Why an invention was not made into a discovery. The scratch and the affect state are as
+/// they were.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscoveryError {
+    /// The operator's reason.
+    Induce(InduceError),
+    /// A clause of the store could not be measured (an index outside the arena, an empty
+    /// node, a stack too small).
+    Length,
+    /// The affect state's previous free energy is not the store's length: `prime` first.
+    NotPrimed,
+}
+
+impl From<InduceError> for DiscoveryError {
+    fn from(error: InduceError) -> Self {
+        Self::Induce(error)
+    }
+}
+
+/// Why a frame certified nothing. The node is as it was.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CertifyError {
+    /// The frame is pending, running, failed or denied.
+    NotCompleted,
+    /// The frame's category is not the formal prover.
+    NotAProver,
+    /// The frame's action is neither a proof check nor a constraint solve.
+    NotAVerification,
+    /// The frame's parameter hash or the payload's statement hash is not the statement's.
+    Mismatch,
+    /// The payload is shorter than `CERTIFICATE_BYTES` or its certificate hash is zero.
+    NoCertificate,
+}
+
+/// What an invention did to the store and to the affect state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Discovery {
+    pub invention: Invention,
+    pub length_before: u32,
+    pub length_after: u32,
+    pub valence_q16: i32,
+    pub reward_q16: i32,
+}
+
+/// The description length of a clause store: the sum of its clauses' sizes through the
+/// bindings, saturating.
+pub fn description_length(
+    store: &[u32],
+    arena: &[TermNode],
+    bindings: &[Binding],
+    stack: &mut [u32],
+) -> Result<u32, DiscoveryError> {
+    let mut total = 0u32;
+    for &clause in store {
+        let nodes = size(clause, arena, bindings, stack).map_err(|_| DiscoveryError::Length)?;
+        total = total.saturating_add(nodes);
+    }
+    Ok(total)
+}
+
+/// A description length as the free energy the valence rule reads: whole nodes in Q16.16,
+/// saturating at the format's ceiling of `LENGTH_CEILING` nodes.
+pub fn free_energy_q16(length: u32) -> u32 {
+    // At most sixteen bits, so the shift stays within the width.
+    length.min(LENGTH_CEILING) << 16
+}
+
+/// Writes the store's length into the affect state as the free energy the next discovery
+/// is measured against.
+pub fn prime(affect: &mut InteroceptiveState, length: u32) {
+    affect.free_energy_prev_q16 = free_energy_q16(length);
+}
+
+/// The reward-prediction error a valence becomes: the valence shifted right by
+/// `COMPRESSION_REWARD_SHIFT` (an arithmetic shift, so a negative valence stays negative),
+/// clamped to $[-1, 1]$.
+pub fn reward_q16(valence_q16: i32) -> i32 {
+    let one = Q16_ONE as i32;
+    (valence_q16 >> COMPRESSION_REWARD_SHIFT).clamp(one.wrapping_neg(), one)
+}
+
+/// Intra-constructs `ca` and `cb` (both in `store`) into a discovery: the store's length
+/// before, its length after (the two inputs replaced by the three outputs, every clause
+/// measured through the bindings the matching made), the valence `update_valence` returns
+/// for the length after, and the reward. `NotPrimed` unless the affect state's previous free
+/// energy is the length before; every error leaves the scratch and the affect state as they
+/// were.
+pub fn invent(
+    ca: u32,
+    cb: u32,
+    store: &[u32],
+    scratch: &mut InduceScratch,
+    affect: &mut InteroceptiveState,
+) -> Result<Discovery, DiscoveryError> {
+    let length_before = description_length(store, scratch.arena, scratch.bindings, scratch.stack)?;
+    if affect.free_energy_prev_q16 != free_energy_q16(length_before) {
+        return Err(DiscoveryError::NotPrimed);
+    }
+    let invention = intra_construct(ca, cb, scratch)?;
+    let outputs = [
+        invention.common,
+        invention.definitions[0],
+        invention.definitions[1],
+    ];
+    let mut length_after = 0u32;
+    for &clause in store
+        .iter()
+        .filter(|&&c| c != ca && c != cb)
+        .chain(outputs.iter())
+    {
+        // The store measured before; the outputs are the operator's, well formed.
+        let nodes = size(clause, scratch.arena, scratch.bindings, scratch.stack)
+            .map_err(|_| DiscoveryError::Length)?;
+        length_after = length_after.saturating_add(nodes);
+    }
+    let valence_q16 = affect.update_valence(free_energy_q16(length_after));
+    Ok(Discovery {
+        invention,
+        length_before,
+        length_after,
+        valence_q16,
+        reward_q16: reward_q16(valence_q16),
+    })
+}
+
+/// The frame a conjecture leaves in: a pending proof check whose parameter hash is the
+/// statement's, at the authorization level the veto gate assigned.
+pub fn conjecture_frame(
+    call_id: u64,
+    statement_hash: u32,
+    authorization_level: u8,
+) -> Option<ToolInvocationFrame> {
+    ToolInvocationFrame::new_call(
+        call_id,
+        TOOL_CATEGORY_FORMAL_PROVER,
+        ACTION_VERIFY_PROOF,
+        statement_hash,
+        authorization_level,
+    )
+}
+
+/// Certifies `node` with `statement_hash` from a prover's completed frame and returns the
+/// certificate hash: the frame must be completed, its category the prover, its action a
+/// proof check or a constraint solve, its parameter hash the statement's, and its payload
+/// at least `CERTIFICATE_BYTES` with the statement hash first and a non-zero certificate
+/// hash second. Every other frame leaves the node untouched.
+pub fn certify_from_frame(
+    frame: &ToolInvocationFrame,
+    statement_hash: u32,
+    node: &mut SemanticOntologyNode,
+) -> Result<u32, CertifyError> {
+    if frame.execution_status != STATUS_COMPLETED {
+        return Err(CertifyError::NotCompleted);
+    }
+    if frame.tool_category != TOOL_CATEGORY_FORMAL_PROVER {
+        return Err(CertifyError::NotAProver);
+    }
+    if !matches!(
+        frame.action_opcode,
+        ACTION_VERIFY_PROOF | ACTION_SOLVE_CONSTRAINTS
+    ) {
+        return Err(CertifyError::NotAVerification);
+    }
+    if frame.param_hash != statement_hash {
+        return Err(CertifyError::Mismatch);
+    }
+    let payload = frame.payload();
+    let (Some(statement), Some(certificate)) = (payload.get(0..4), payload.get(4..8)) else {
+        return Err(CertifyError::NoCertificate);
+    };
+    let (Ok(statement), Ok(certificate)) = (
+        <[u8; 4]>::try_from(statement),
+        <[u8; 4]>::try_from(certificate),
+    ) else {
+        return Err(CertifyError::NoCertificate);
+    };
+    let certificate = u32::from_le_bytes(certificate);
+    if certificate == 0 {
+        return Err(CertifyError::NoCertificate);
+    }
+    if u32::from_le_bytes(statement) != statement_hash {
+        return Err(CertifyError::Mismatch);
+    }
+    node.certify(statement_hash);
+    Ok(certificate)
+}
+
+const _: () = {
+    // An invented predicate's id never reaches the grammar's role band.
+    assert!(INVENTED_LIMIT <= ROLE_CONCEPT_BASE);
+    assert!(CERTIFICATE_BYTES <= cortex_tools::PAYLOAD_BYTES);
+    assert!(COMPRESSION_REWARD_SHIFT < 32);
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cortex_knowledge::AFFORDANCE_CERTIFIED_THEOREM;
+    use cortex_reasoning::{INVENTED_BASE, clause};
+    use cortex_tools::{
+        ACTION_PARSE_STRUCTURE, ACTION_SYMBOLIC_EVAL, PAYLOAD_BYTES, TOOL_CATEGORY_DOC_ENGINE,
+    };
+
+    const ONE: i32 = Q16_ONE as i32;
+
+    #[test]
+    fn the_reward_is_a_quarter_of_the_valence_clamped() {
+        assert_eq!(reward_q16(0), 0);
+        assert_eq!(reward_q16(ONE), ONE / 4);
+        assert_eq!(reward_q16(3 * ONE), 3 * ONE / 4);
+        assert_eq!(reward_q16(4 * ONE), ONE, "four nodes are a full reward");
+        assert_eq!(reward_q16(5 * ONE), ONE, "and more is clamped");
+        assert_eq!(reward_q16(-ONE), -ONE / 4);
+        assert_eq!(reward_q16(-4 * ONE), -ONE);
+        assert_eq!(reward_q16(i32::MIN), -ONE);
+        assert_eq!(reward_q16(i32::MAX), ONE);
+        assert_eq!(
+            reward_q16(-1),
+            -1,
+            "an arithmetic shift keeps a negative negative"
+        );
+    }
+
+    #[test]
+    fn a_length_is_a_free_energy_up_to_the_ceiling() {
+        assert_eq!(free_energy_q16(0), 0);
+        assert_eq!(free_energy_q16(30), 30 << 16);
+        assert_eq!(free_energy_q16(LENGTH_CEILING), 0xFFFF_0000);
+        assert_eq!(
+            free_energy_q16(LENGTH_CEILING + 1),
+            0xFFFF_0000,
+            "saturates"
+        );
+        assert_eq!(free_energy_q16(u32::MAX), 0xFFFF_0000);
+        let mut affect = InteroceptiveState::default();
+        prime(&mut affect, 30);
+        assert_eq!(affect.free_energy_prev_q16, 30 << 16);
+        assert_eq!(affect.valence_df_dt_q16, 0, "priming is not an update");
+    }
+
+    /// A store of two clauses `p(X) ← r(X), u(X)` and `p(Y) ← r(Y), w(Y)`: one shared
+    /// literal, so the invention does not pay (eighteen nodes become nineteen).
+    fn small_store(arena: &mut [TermNode]) -> (u32, u32) {
+        let nodes = [
+            TermNode::variable(0),
+            TermNode::compound(0x100, &[0]).unwrap(),
+            TermNode::compound(0x101, &[0]).unwrap(),
+            TermNode::compound(0x104, &[0]).unwrap(),
+            clause(1, &[2, 3]).unwrap(),
+            TermNode::variable(1),
+            TermNode::compound(0x100, &[5]).unwrap(),
+            TermNode::compound(0x101, &[5]).unwrap(),
+            TermNode::compound(0x105, &[5]).unwrap(),
+            clause(6, &[7, 8]).unwrap(),
+        ];
+        arena[..nodes.len()].copy_from_slice(&nodes);
+        (4, 9)
+    }
+
+    #[test]
+    fn a_store_is_measured_and_an_invention_that_does_not_pay_is_a_negative_valence() {
+        let mut arena = [TermNode::default(); 32];
+        let (ca, cb) = small_store(&mut arena);
+        let mut bindings = [Binding::UNBOUND; 8];
+        let (mut trail, mut stack, mut pairs) = ([0u32; 16], [0u32; 32], [[0u32; 3]; 4]);
+        let store = [ca, cb];
+        assert_eq!(
+            description_length(&store, &arena, &bindings, &mut stack),
+            Ok(14)
+        );
+        assert_eq!(
+            description_length(&[], &arena, &bindings, &mut stack),
+            Ok(0)
+        );
+        assert_eq!(
+            description_length(&[ca, 99], &arena, &bindings, &mut stack),
+            Err(DiscoveryError::Length)
+        );
+        let mut one = [0u32; 1];
+        assert_eq!(
+            description_length(&store, &arena, &bindings, &mut one),
+            Err(DiscoveryError::Length),
+            "a stack too small"
+        );
+        let mut scratch = InduceScratch {
+            arena: &mut arena,
+            free: 10,
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            pairs: &mut pairs,
+            next_variable: 2,
+            next_invented: INVENTED_BASE,
+        };
+        let mut affect = InteroceptiveState::default();
+        assert_eq!(
+            invent(ca, cb, &store, &mut scratch, &mut affect),
+            Err(DiscoveryError::NotPrimed),
+            "a fresh affect state reads zero, not fourteen"
+        );
+        assert_eq!(
+            (scratch.free, scratch.trail_len),
+            (10, 0),
+            "nothing happened"
+        );
+        prime(&mut affect, 14);
+        assert_eq!(
+            invent(ca, ca, &store, &mut scratch, &mut affect),
+            Err(DiscoveryError::Induce(InduceError::NothingToInvent)),
+            "a clause with itself shares everything"
+        );
+        assert_eq!(
+            affect.valence_df_dt_q16, 0,
+            "the affect state is untouched by a refusal"
+        );
+        assert_eq!(affect.free_energy_prev_q16, 14 << 16);
+        let d = invent(ca, cb, &store, &mut scratch, &mut affect).unwrap();
+        assert_eq!((d.length_before, d.length_after), (14, 17));
+        assert_eq!(d.valence_q16, -3 * ONE, "three nodes longer");
+        assert_eq!(d.reward_q16, -3 * ONE / 4);
+        assert_eq!(d.invention.predicate, INVENTED_BASE);
+        assert_eq!(
+            affect.free_energy_prev_q16,
+            17 << 16,
+            "the next discovery measures from here"
+        );
+        assert_eq!(affect.valence_df_dt_q16, -3 * ONE);
+        assert_eq!(
+            invent(
+                d.invention.common,
+                d.invention.definitions[0],
+                &store,
+                &mut scratch,
+                &mut affect
+            ),
+            Err(DiscoveryError::NotPrimed),
+            "the store no longer holds the inputs the length was primed with"
+        );
+    }
+
+    #[test]
+    fn a_conjecture_frame_is_a_pending_proof_check_with_the_statement_as_its_parameter() {
+        let frame = conjecture_frame(7, 0xABCD, 3).unwrap();
+        assert_eq!(frame.call_id, 7);
+        assert_eq!(frame.tool_category, TOOL_CATEGORY_FORMAL_PROVER);
+        assert_eq!(frame.action_opcode, ACTION_VERIFY_PROOF);
+        assert_eq!(frame.param_hash, 0xABCD);
+        assert_eq!(frame.authorization_level, 3);
+        assert_eq!(frame.execution_status, cortex_tools::STATUS_PENDING);
+    }
+
+    fn completed(
+        category: u16,
+        opcode: u16,
+        param_hash: u32,
+        payload: &[u8],
+    ) -> ToolInvocationFrame {
+        let mut frame = ToolInvocationFrame::new_call(1, category, opcode, param_hash, 1).unwrap();
+        assert!(frame.start());
+        assert!(frame.complete(payload));
+        frame
+    }
+
+    fn payload(statement: u32, certificate: u32) -> [u8; 8] {
+        let mut out = [0u8; 8];
+        out[..4].copy_from_slice(&statement.to_le_bytes());
+        out[4..].copy_from_slice(&certificate.to_le_bytes());
+        out
+    }
+
+    #[test]
+    fn a_completed_prover_frame_certifies_and_every_other_frame_does_not() {
+        const STATEMENT: u32 = 0x21a1_c619;
+        const CERTIFICATE: u32 = 0xC0FF_EE01;
+        let fresh = SemanticOntologyNode::default();
+        let mut node = fresh;
+        let good = completed(
+            TOOL_CATEGORY_FORMAL_PROVER,
+            ACTION_VERIFY_PROOF,
+            STATEMENT,
+            &payload(STATEMENT, CERTIFICATE),
+        );
+        assert_eq!(
+            certify_from_frame(&good, STATEMENT, &mut node),
+            Ok(CERTIFICATE)
+        );
+        assert!(node.is_certified_theorem());
+        assert_eq!(
+            node.property_vector_hash, STATEMENT,
+            "the node holds the statement's hash"
+        );
+        assert_eq!(node.consolidation_count, 1);
+        assert_eq!(node.affordance_action_mask, AFFORDANCE_CERTIFIED_THEOREM);
+        let solved = completed(
+            TOOL_CATEGORY_FORMAL_PROVER,
+            ACTION_SOLVE_CONSTRAINTS,
+            STATEMENT,
+            &payload(STATEMENT, CERTIFICATE),
+        );
+        let mut node = fresh;
+        assert_eq!(
+            certify_from_frame(&solved, STATEMENT, &mut node),
+            Ok(CERTIFICATE)
+        );
+        let mut longer = payload(STATEMENT, CERTIFICATE).to_vec();
+        longer.extend_from_slice(&[9; PAYLOAD_BYTES - 8]);
+        let padded = completed(
+            TOOL_CATEGORY_FORMAL_PROVER,
+            ACTION_VERIFY_PROOF,
+            STATEMENT,
+            &longer,
+        );
+        let mut node = fresh;
+        assert_eq!(
+            certify_from_frame(&padded, STATEMENT, &mut node),
+            Ok(CERTIFICATE),
+            "more bytes are ignored"
+        );
+
+        let refusals: [(ToolInvocationFrame, CertifyError); 9] = [
+            (
+                conjecture_frame(1, STATEMENT, 1).unwrap(),
+                CertifyError::NotCompleted,
+            ),
+            (
+                {
+                    let mut f = conjecture_frame(1, STATEMENT, 1).unwrap();
+                    assert!(f.start());
+                    f
+                },
+                CertifyError::NotCompleted,
+            ),
+            (
+                {
+                    let mut f = conjecture_frame(1, STATEMENT, 1).unwrap();
+                    assert!(f.start() && f.fail());
+                    f
+                },
+                CertifyError::NotCompleted,
+            ),
+            (
+                {
+                    let mut f = conjecture_frame(1, STATEMENT, 1).unwrap();
+                    assert!(f.deny());
+                    f
+                },
+                CertifyError::NotCompleted,
+            ),
+            (
+                completed(
+                    TOOL_CATEGORY_DOC_ENGINE,
+                    ACTION_PARSE_STRUCTURE,
+                    STATEMENT,
+                    &payload(STATEMENT, CERTIFICATE),
+                ),
+                CertifyError::NotAProver,
+            ),
+            (
+                completed(
+                    TOOL_CATEGORY_FORMAL_PROVER,
+                    ACTION_SYMBOLIC_EVAL,
+                    STATEMENT,
+                    &payload(STATEMENT, CERTIFICATE),
+                ),
+                CertifyError::NotAVerification,
+            ),
+            (
+                completed(
+                    TOOL_CATEGORY_FORMAL_PROVER,
+                    ACTION_VERIFY_PROOF,
+                    STATEMENT ^ 1,
+                    &payload(STATEMENT, CERTIFICATE),
+                ),
+                CertifyError::Mismatch,
+            ),
+            (
+                completed(
+                    TOOL_CATEGORY_FORMAL_PROVER,
+                    ACTION_VERIFY_PROOF,
+                    STATEMENT,
+                    &payload(STATEMENT ^ 1, CERTIFICATE),
+                ),
+                CertifyError::Mismatch,
+            ),
+            (
+                completed(
+                    TOOL_CATEGORY_FORMAL_PROVER,
+                    ACTION_VERIFY_PROOF,
+                    STATEMENT,
+                    &payload(STATEMENT, 0),
+                ),
+                CertifyError::NoCertificate,
+            ),
+        ];
+        for (frame, expected) in refusals {
+            let mut node = fresh;
+            assert_eq!(
+                certify_from_frame(&frame, STATEMENT, &mut node),
+                Err(expected)
+            );
+            assert_eq!(node, fresh, "{expected:?} leaves the node untouched");
+        }
+        for short in [0usize, 3, 4, 7] {
+            let frame = completed(
+                TOOL_CATEGORY_FORMAL_PROVER,
+                ACTION_VERIFY_PROOF,
+                STATEMENT,
+                &payload(STATEMENT, CERTIFICATE)[..short],
+            );
+            let mut node = fresh;
+            assert_eq!(
+                certify_from_frame(&frame, STATEMENT, &mut node),
+                Err(CertifyError::NoCertificate),
+                "{short} bytes"
+            );
+            assert_eq!(node, fresh);
+        }
+    }
+}

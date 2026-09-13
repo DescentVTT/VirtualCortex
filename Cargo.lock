@@ -201,16 +201,19 @@ version = "0.1.0"
 name = "cortex-runtime"
 version = "0.1.0"
 dependencies = [
+ "cortex-affect",
  "cortex-connectome",
  "cortex-core",
  "cortex-ethics",
  "cortex-executive",
  "cortex-hippocampus",
  "cortex-homeostasis",
+ "cortex-knowledge",
  "cortex-linguistic",
  "cortex-neuromod",
  "cortex-reasoning",
  "cortex-symbolic",
+ "cortex-tools",
 ]
 
 [[package]]

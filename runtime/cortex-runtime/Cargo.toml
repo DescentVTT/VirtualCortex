@@ -28,6 +28,11 @@ cortex-homeostasis = { path = "../../crates/cortex-homeostasis" }
 cortex-symbolic = { path = "../../crates/cortex-symbolic" }
 cortex-reasoning = { path = "../../crates/cortex-reasoning" }
 cortex-linguistic = { path = "../../crates/cortex-linguistic" }
+# The discovery path: an invention's description-length drop as the valence and the reward,
+# and a prover frame's certificate into a theorem (ADR-0043, brief 021).
+cortex-affect = { path = "../../crates/cortex-affect" }
+cortex-tools = { path = "../../crates/cortex-tools" }
+cortex-knowledge = { path = "../../crates/cortex-knowledge" }
 
 # Not the workspace table: the runtime holds the one `unsafe` (ADR-0023). The float rule
 # still applies (ADR-0029).

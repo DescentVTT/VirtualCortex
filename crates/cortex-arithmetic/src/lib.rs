@@ -5,8 +5,10 @@
 //! A slot holds two 128-bit two's-complement operands, split into `u64` low and `i64` high
 //! words so that the record stays `#[repr(C)]`, and the result. Overflow and division by zero
 //! are reported in `error_flags`, not saturated: a scratchpad is not a state field, and a wrong
-//! answer must be visible. The eight opcodes are Implemented; the sequencing of slots into an
-//! expression is Specified.
+//! answer must be visible. The eight opcodes are Implemented; the first sequencing of slots
+//! into an expression is the convergent recurrence of [`fraction`] (ADR-0042), with a bounded
+//! search for a polynomial continued fraction near a rational target; a general expression
+//! tree is Specified.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -31,6 +33,12 @@ pub const ERR_OVERFLOW: u16 = 0x0001;
 pub const ERR_DIVIDE_BY_ZERO: u16 = 0x0002;
 /// `error_flags` bit: the opcode is not one of the above.
 pub const ERR_UNKNOWN_OP: u16 = 0x0004;
+
+pub mod fraction;
+pub use fraction::{
+    Candidate, Convergent, FractionError, MAX_DEGREE, MAX_DEPTH, Poly, SearchError, convergent,
+    deepest, poly_at, search, within,
+};
 
 /// 64-byte scratchpad slot (whitepaper §5.2.31).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

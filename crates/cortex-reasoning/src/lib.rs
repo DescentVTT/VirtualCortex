@@ -22,12 +22,18 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 pub mod category;
+pub mod induce;
 pub mod term;
 pub use category::{
     CATEGORY_BACKWARD, CATEGORY_FORWARD, CATEGORY_RESERVED, ParseError, ParseScratch,
     RULE_BACKWARD_APPLICATION, RULE_BACKWARD_COMPOSITION, RULE_FORWARD_APPLICATION,
     RULE_FORWARD_COMPOSITION, Reduction, SLASH_ARITY, argument, backward, forward, head,
     is_functor, reduce, result, role, slash,
+};
+pub use induce::{
+    CLAUSE, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceScratch, Invention, MAX_BODY, absorb,
+    clause, clause_body_len, clause_head, clause_literal, free_variables, identify,
+    intra_construct, is_clause, lgg, resolve_definite, size, term_hash,
 };
 pub use term::{
     Binding, MAX_ARITY, TERM_COMPOUND, TERM_CONSTANT, TERM_EMPTY, TERM_NONE, TERM_VARIABLE,
