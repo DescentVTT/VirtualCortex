@@ -31,9 +31,9 @@ use cortex_homeostasis::{
 };
 use cortex_reasoning::{Binding, INVENTED_BASE, InduceScratch, TermNode, clause};
 use cortex_runtime::{
-    Association, Attribution, Config, Discovery, Drive, Executor, Image, Perturbation, blocks_for,
-    blocks_per_unit, cascade, description_length, fork, prime, run_driven, search, synthesize,
-    tag_burst, tag_discovery, trace,
+    Association, Attribution, ClauseSearch, Config, DiscoverReport, Discovery, Drive, Executor,
+    Image, Perturbation, Tagging, blocks_for, blocks_per_unit, cascade, description_length,
+    discover, fork, prime, run_driven, synthesize, tag_burst_in, trace,
 };
 
 type Engine = Executor<2048>;
@@ -113,7 +113,7 @@ fn config(units: u32, workers: usize, step: u16, baseline_q16: i32) -> Config {
         blocks: blocks_for(&prior(units)) as usize,
         nodes_per_worker: 1 << 16,
         injector_capacity: 1 << 12,
-        trace_capacity: 1 << 22,
+        train_capacity: 1 << 22,
         modulation_baseline_q16: baseline_q16,
         control_step_q0_16: step,
         episodes: 4,
@@ -289,7 +289,9 @@ fn criticality(
         let synapses: Vec<Vec<(u32, u16)>> = (0..units).map(|u| synapses_of(&exec, u)).collect();
         let per_window = windows(&mut exec, &drive, w);
         let ticks = exec.ticks();
-        let train = trace(exec).unwrap();
+        assert_eq!(exec.train_overwritten(), 0, "the ring holds the run");
+        let train = exec.train().to_vec();
+        drop(exec);
         let fine = fine_slopes(&train, ticks);
         let coarse = coarse_slopes(&train, w);
         let a = attribution(&image, &cfg, units, &synapses, kicks, 4 * BIN);
@@ -575,9 +577,13 @@ fn exit_store(store: &mut Store) -> Vec<u32> {
     out
 }
 
-/// The search over `clauses` between ticks, as ADR-0045's exit test runs it: the report's
-/// commits, the reward total, and the first committed discovery.
-fn discover(builder: &mut Store, clauses: &[u32]) -> (u32, i32, Discovery) {
+/// The search over `clauses` between ticks through the executor (ADR-0050's `discover`):
+/// the report, and one association per commit to the episode the rewarded moment tagged.
+fn search_and_tag(
+    exec: &mut Engine,
+    builder: &mut Store,
+    clauses: &[u32],
+) -> (DiscoverReport, [Association; 4]) {
     let mut bindings = [Binding::UNBOUND; 128];
     let (mut trail, mut stack, mut pairs) = ([0u32; 256], [0u32; 512], [[0u32; 3]; 32]);
     let mut s = InduceScratch {
@@ -598,23 +604,43 @@ fn discover(builder: &mut Store, clauses: &[u32]) -> (u32, i32, Discovery) {
     let mut affect = InteroceptiveState::default();
     prime(&mut affect, before);
     let mut out = [Discovery::default(); 4];
-    let report = search(&mut store, &mut len, &mut s, &mut affect, 64, &mut out).unwrap();
+    let mut associations = [Association::default(); 4];
+    let report = discover(
+        exec,
+        ClauseSearch {
+            store: &mut store,
+            len: &mut len,
+            scratch: &mut s,
+            affect: &mut affect,
+            budget: 64,
+        },
+        Tagging {
+            window: RIPPLE as u32,
+            coincidence: COINCIDENCE,
+            priority: 200,
+        },
+        &mut out,
+        &mut associations,
+    )
+    .unwrap();
     builder.len = s.free;
     builder.vars = s.next_variable;
-    (report.commits, report.reward_total_q16, out[0])
+    (report, associations)
 }
 
 /// H-9's open item and H-11's synaptic half at `units` (ADR-0048): the plastic network awake
 /// under the drive for two bins, an experience at the third bin's start, the store of
 /// ADR-0045 searched a quarter of a ripple later with the reward passed to the modulator;
-/// the run's train from a fork of the start image; the pattern active in the ripple before
-/// the reward tagged as the invention's, the densest coincidence of the two bins before the
+/// the executor's own train; the pattern active in the ripple before the reward tagged as
+/// the invention's by `discover`, the densest coincidence of the two bins before the
 /// experience tagged as the network's own; a search with nothing to invent tagging nothing;
 /// the night; the synapses among each pattern before and after; the readouts.
 struct Capture {
     /// The train's spikes up to the reward's tick.
     spikes: usize,
     association: Association,
+    /// The second commit's association: the same episode, the next invented predicate.
+    second: Association,
     burst: Burst,
     background: Vec<u32>,
     /// The signal the reward left in the modulator, and what a store of two facts commits.
@@ -634,7 +660,6 @@ fn capture_night(units: u32) -> Capture {
     let mut cfg = config(units, 2, 0, MODULATION_ONE_Q16);
     cfg.sleep_shift = 5;
     let mut exec = at_gain(&p, cfg.clone(), 0x0002_0000);
-    let start = Image::encode(&exec).unwrap();
     let drive = drive(units);
     let cluster: Vec<u32> = (0..15u32).filter(|u| !p.is_inhibitory(*u)).collect();
     run_driven(&mut exec, &drive, 2 * BIN).unwrap();
@@ -654,47 +679,47 @@ fn capture_night(units: u32) -> Capture {
     }
     let at = experience.wrapping_add(RIPPLE / 4);
     run_driven(&mut exec, &drive, at).unwrap();
-    // The search between ticks, its reward into the modulator.
+    let spikes = exec.train().len();
+    assert_eq!(exec.train_overwritten(), 0);
+    // The search between ticks through the executor: its reward into the modulator, the
+    // pattern active in the ripple before it tagged from the executor's own train.
     let mut builder = Store::new();
     let clauses = exit_store(&mut builder);
-    let (commits, reward, first) = discover(&mut builder, &clauses);
-    assert_eq!((commits, reward), (2, 3 * ONE / 2));
-    let signal = exec.reward(reward);
-    // The run's train to the reward's tick: a fork of the start image under the same drive
-    // and the same cues is the same run (§8.3).
-    let mut fork_cfg = cfg.clone();
-    fork_cfg.episodes = 0;
-    let train = fork::<2048>(&start, &fork_cfg, &drive, &cues, at).unwrap();
-    let association = tag_discovery(
-        &mut exec,
-        &train,
-        at as u32,
-        RIPPLE as u32,
-        COINCIDENCE,
-        &first,
-        200,
-    )
-    .unwrap()
-    .expect("a positive reward tags");
-    let quiet = train.partition_point(|&(t, _)| (t as u64) < experience);
-    let (burst, index, own, len) = tag_burst(&mut exec, &train[..quiet], COINCIDENCE, 200).unwrap();
+    let (report, associations) = search_and_tag(&mut exec, &mut builder, &clauses);
+    assert_eq!(
+        (report.search.commits, report.search.reward_total_q16),
+        (2, 3 * ONE / 2)
+    );
+    let signal = report.signal_q16;
+    let (index, reward_burst) = report.tagged.expect("a positive reward tags");
+    let association = associations[0];
+    assert_eq!(
+        (index, reward_burst),
+        (association.episode, association.burst)
+    );
+    let second = associations[1];
+    assert_eq!(
+        (second.episode, second.pattern, second.len, second.burst),
+        (
+            association.episode,
+            association.pattern,
+            association.len,
+            association.burst
+        ),
+        "both commits of the search share the rewarded moment's episode"
+    );
+    let (burst, index, own, len) =
+        tag_burst_in(&mut exec, 0, experience as u32, COINCIDENCE, 200).unwrap();
     assert_eq!(index, 1);
     let background = own[..len as usize].to_vec();
     // A store with nothing to invent: two facts, no pair, nothing tagged.
     let facts = [builder.fact(LIT[0], K[0]), builder.fact(LIT[1], K[1])];
-    let (none, _, nothing) = discover(&mut builder, &facts);
-    let untagged = tag_discovery(
-        &mut exec,
-        &train,
-        at as u32,
-        RIPPLE as u32,
-        COINCIDENCE,
-        &nothing,
-        200,
-    )
-    .unwrap();
-    let control = (none, untagged.is_none());
+    let (none, _) = search_and_tag(&mut exec, &mut builder, &facts);
+    let control = (none.search.commits, none.tagged.is_none());
+    assert_eq!(none.signal_q16, signal, "no commit: the signal as it stood");
     assert_eq!(exec.episodes().len(), 2);
+    let mut fork_cfg = cfg.clone();
+    fork_cfg.episodes = 0;
     run_driven(&mut exec, &drive, 3 * BIN).unwrap();
     settle(&mut exec);
     let invention = association.pattern().to_vec();
@@ -714,8 +739,9 @@ fn capture_night(units: u32) -> Capture {
         readout(&post, &fork_cfg, &background),
     ];
     Capture {
-        spikes: train.len(),
+        spikes,
         association,
+        second,
         burst,
         background,
         signal,
@@ -796,13 +822,26 @@ fn the_prior_is_written_and_read_back_whole_and_a_driven_run_is_bit_identical_on
     // quiet until quiescent: a mailbox node's index is a position in its worker's pool, so
     // the arenas are compared where the writer would write them, with every mailbox empty.
     let outcome = |workers: usize| {
-        let mut exec = at_gain(&p, config(units, workers, 0, 0), 0x0002_0000);
+        let cfg = Config {
+            trace_capacity: 1 << 20,
+            ..config(units, workers, 0, 0)
+        };
+        let mut exec = at_gain(&p, cfg, 0x0002_0000);
         run_driven(&mut exec, &drive(units), 2 * BIN).unwrap();
         settle(&mut exec);
         let units: Vec<[u8; 64]> = exec.units().iter().map(|u| u.encode()).collect();
         let blocks = exec.blocks().to_vec();
         let pool = *exec.homeostasis();
-        (units, blocks, pool, trace(exec).unwrap())
+        // The executor's own train (ADR-0050) is the workers' traces, sorted, on every
+        // worker count.
+        let train = exec.train().to_vec();
+        assert_eq!(exec.train_overwritten(), 0);
+        assert_eq!(
+            train,
+            trace(exec).unwrap(),
+            "the ring and the reports agree"
+        );
+        (units, blocks, pool, train)
     };
     let one = outcome(1);
     let four = outcome(4);
@@ -1101,7 +1140,7 @@ fn a_night_consolidates_the_synapses_among_a_tagged_pattern_and_a_cue_completes_
     assert_eq!(n.tags, (136, 136));
     // The cluster of twelve neighbours holds 147 synapses among itself, the random pattern
     // five; every one of them ends at the rail (32 767) after the night's replays.
-    assert_eq!(n.cluster, ((147, 1_281_021), (147, 147 * 32_767)));
+    assert_eq!(n.cluster, ((147, 1_281_024), (147, 147 * 32_767)));
     assert_eq!(n.random, ((5, 40_203), (5, 5 * 32_767)));
     // A cue of six units on the image before the night fires no other unit (the cued six
     // fire, 18 spikes); on the image after it fires all six of the cluster's rest and no
@@ -1124,7 +1163,7 @@ fn a_night_consolidates_the_synapses_among_a_tagged_pattern_and_a_cue_completes_
 fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_night_completes_the_invention_s_pattern_at_256_units()
  {
     let c = capture_night(256);
-    // 436 spikes to the reward's tick. The invention's pattern is the densest basal time
+    // 437 spikes to the reward's tick. The invention's pattern is the densest basal time
     // constant of the ripple before the reward (a span from tick 8 088 holding 62 spikes,
     // the experience at 8 192 inside it): eleven of the twelve cued neighbours (ten firing
     // three times in the span, unit 13 twice) and one unit the drive fired twice in the same
@@ -1132,7 +1171,7 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
     // bins before the experience, a cascade of 64 spikes around the ring's wrap, twelve
     // units of which two (149, 254) are inhibitory and one, unit 0, is in both patterns. The
     // store of two facts commits nothing and tags nothing.
-    assert_eq!(c.spikes, 436);
+    assert_eq!(c.spikes, 437);
     assert_eq!(
         (
             c.association.predicate,
@@ -1144,6 +1183,11 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
     assert_eq!(
         c.association.pattern(),
         &[7, 0, 1, 8, 10, 12, 2, 5, 6, 11, 13, 163]
+    );
+    assert_eq!(
+        c.second.predicate,
+        INVENTED_BASE + 1,
+        "the search's second commit, associated with the same episode"
     );
     assert_eq!(
         c.association.burst,
@@ -1169,20 +1213,23 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_and_the_nigh
     assert_eq!(c.stages, vec![1, 1, 1, 2, 2, 1, 1, 0]);
     assert_eq!((c.replays, c.depotentiations), (376, 128));
     assert_eq!(c.tags, (136, 136));
-    // The invention's pattern holds 127 synapses among itself; after the night most are at
-    // the rail and the eleven from unit 0 depressed, six of them to the negative rail and
-    // the five onto unit 5 near -23 400, since unit 0 fires in the other episode's replays
-    // too and the pair rule at those spikes finds its targets' last spikes a ripple earlier;
-    // the network's own pattern holds 45. A cue of six of the invention's pattern fires five
-    // of the other six after the night (units 2, 5, 6, 11 and 13; not 163, which no synapse
-    // of the cued six reaches) and none before; the network's own pattern never completes.
-    assert_eq!(c.invention, ((127, 1_117_805), (127, 3_193_610)));
-    assert_eq!(c.own, ((45, 175_285), (45, 825_276)));
+    // The invention's pattern holds 127 synapses among itself; after the night 107 are at
+    // the rail, the eleven from unit 0 are at zero (unit 0 fires in the other episode's
+    // replays too, the pair rule at those spikes finds its targets' last spikes a ripple
+    // earlier, and the half-range holds the depression at zero; ADR-0049) and the nine onto
+    // unit 0 end near their prior weights (8 300 to 14 091), since unit 0's own spike at each
+    // replay comes a ripple after theirs; the network's own pattern holds 45, the five from
+    // its inhibitory unit 254 at the negative rail after the night. A cue of six of the
+    // invention's pattern fires five of the other six after the night (units 2, 5, 6, 11 and
+    // 13; not 163, which no synapse of the cued six reaches; 30 spikes) and none before; the
+    // network's own pattern never completes.
+    assert_eq!(c.invention, ((127, 1_117_808), (127, 3_605_986)));
+    assert_eq!(c.own, ((45, 175_290), (45, 846_292)));
     assert_eq!(
         c.readouts,
         [
             (vec![], 0, 18),
-            (vec![2, 5, 6, 11, 13], 0, 32),
+            (vec![2, 5, 6, 11, 13], 0, 30),
             (vec![], 0, 18),
             (vec![], 0, 18)
         ]
@@ -1399,6 +1446,197 @@ fn a_night_at_1024_units_exhaustive() {
     );
 }
 
+/// The weekly job's form of ADR-0051's measurement: 4 096 units, thirty-two kicks per gain,
+/// twelve windows of closed loop, on both priors, with the decision rule of brief 024 applied
+/// in the ADR. The coarse estimate reads zero in seven windows of twelve and never the gross
+/// ratio (0.000 and 0.000 where the oracle attributes 0.515); the fine lag-one slope is within
+/// 0.15 of the gross ratio in five rows of six and 0.28 above it on the lattice at 2.25, where
+/// the window holds 112 272 spikes against a ceiling of 131 072; the loop crosses the ceiling
+/// once on the lattice and twice on the random network within twelve windows.
+#[test]
+#[ignore]
+fn the_estimate_the_causal_ratios_and_the_loop_at_4096_units_exhaustive() {
+    let c = criticality(&prior(4096), &GAINS, 2, 32, MODULATION_ONE_Q16 as u32, 12);
+    assert_eq!(
+        readings(&c),
+        vec![
+            (
+                0x0001_C000,
+                vec![(0x0001_C000, 0, 9_851), (0x0001_C000, 0, 9_207)],
+                Attribution {
+                    kicks: 32,
+                    ancestors: 66,
+                    descendants: 34,
+                    advanced: 4,
+                    extra: 172,
+                    missing: 140
+                },
+                Some(33_760),
+                Some(29_789),
+                [
+                    Some(24_112),
+                    Some(13_336),
+                    Some(1_790),
+                    Some(6_237),
+                    Some(0)
+                ],
+                vec![Some(0), Some(0)]
+            ),
+            (
+                0x0002_0000,
+                vec![(0x0002_0000, 48_797, 51_087), (0x0002_0000, 0, 45_854)],
+                Attribution {
+                    kicks: 32,
+                    ancestors: 97,
+                    descendants: 86,
+                    advanced: 32,
+                    extra: 2_341,
+                    missing: 2_427
+                },
+                Some(58_104),
+                Some(36_484),
+                [
+                    Some(55_777),
+                    Some(51_033),
+                    Some(42_201),
+                    Some(33_225),
+                    Some(18_970)
+                ],
+                vec![Some(48_797), Some(0)]
+            ),
+            (
+                0x0002_4000,
+                vec![(0x0002_4000, 46_156, 112_272), (0x0002_4000, 0, 102_769)],
+                Attribution {
+                    kicks: 30,
+                    ancestors: 103,
+                    descendants: 63,
+                    advanced: 35,
+                    extra: 2_407,
+                    missing: 2_492
+                },
+                Some(40_085),
+                Some(17_816),
+                [
+                    Some(58_158),
+                    Some(51_550),
+                    Some(37_077),
+                    Some(32_847),
+                    Some(22_644)
+                ],
+                vec![Some(46_156), Some(0)]
+            ),
+        ]
+    );
+    assert_eq!(
+        c.closed,
+        vec![
+            (73_728, 0, 0),
+            (82_944, 0, 0),
+            (93_312, 0, 19),
+            (104_976, 0, 215),
+            (118_098, 0, 1_958),
+            (124_645, 36_472, 15_727),
+            (132_941, 30_642, 29_421),
+            (141_662, 31_141, 52_639),
+            (149_887, 35_095, 81_839),
+            (161_338, 25_483, 114_046),
+            (141_171, SIGMA_MAX_Q16, 163_418),
+            (152_616, 23_033, 77_632),
+        ]
+    );
+    let c = criticality(
+        &random_prior(4096),
+        &GAINS,
+        2,
+        32,
+        MODULATION_ONE_Q16 as u32,
+        12,
+    );
+    assert_eq!(
+        readings(&c),
+        vec![
+            (
+                0x0001_C000,
+                vec![(0x0001_C000, 0, 7_562), (0x0001_C000, 5_643, 7_516)],
+                Attribution {
+                    kicks: 32,
+                    ancestors: 62,
+                    descendants: 11,
+                    advanced: 1,
+                    extra: 115,
+                    missing: 137
+                },
+                Some(11_627),
+                Some(10_570),
+                [Some(7_731), Some(6_453), Some(0), Some(126), Some(1_254)],
+                vec![Some(0), Some(5_643)]
+            ),
+            (
+                0x0002_0000,
+                vec![(0x0002_0000, 47_994, 42_321), (0x0002_0000, 0, 38_544)],
+                Attribution {
+                    kicks: 31,
+                    ancestors: 77,
+                    descendants: 52,
+                    advanced: 22,
+                    extra: 12_024,
+                    missing: 12_135
+                },
+                Some(44_258),
+                Some(25_534),
+                [
+                    Some(51_644),
+                    Some(46_974),
+                    Some(37_003),
+                    Some(20_295),
+                    Some(6_267)
+                ],
+                vec![Some(47_994), Some(0)]
+            ),
+            (
+                0x0002_4000,
+                vec![(0x0002_4000, 7_848, 105_042), (0x0002_4000, 0, 95_996)],
+                Attribution {
+                    kicks: 29,
+                    ancestors: 104,
+                    descendants: 89,
+                    advanced: 51,
+                    extra: 25_702,
+                    missing: 25_336
+                },
+                Some(56_083),
+                Some(23_946),
+                [
+                    Some(59_393),
+                    Some(48_738),
+                    Some(21_682),
+                    Some(0),
+                    Some(1_413)
+                ],
+                vec![Some(7_848), Some(0)]
+            ),
+        ]
+    );
+    assert_eq!(
+        c.closed,
+        vec![
+            (73_728, 0, 0),
+            (82_944, 0, 0),
+            (93_312, 0, 19),
+            (104_976, 0, 203),
+            (116_395, 8_503, 1_828),
+            (130_944, 0, 9_280),
+            (136_515, 43_230, 40_153),
+            (151_532, 7_863, 56_072),
+            (164_161, 21_839, 114_896),
+            (143_641, SIGMA_MAX_Q16, 171_658),
+            (158_287, 12_080, 79_973),
+            (138_501, SIGMA_MAX_Q16, 144_274),
+        ]
+    );
+}
+
 /// The weekly job's form of ADR-0048's measurement at 1 024 units.
 #[test]
 #[ignore]
@@ -1445,12 +1683,14 @@ fn an_experience_and_a_rewarded_invention_are_tagged_from_the_train_at_1024_unit
     assert_eq!(c.tags, (136, 136));
     // The cluster's 143 synapses (ADR-0044's count at this size) every one at the rail after
     // the night; the network's own twenty, summing to a negative weight before the night
-    // (five of its units are inhibitory), every one at the positive rail after it: the
-    // pair rule's potentiation carries an inhibitory synapse across zero (finding F-36). A
-    // cue of six in rank order fires five of the invention's other six (a cue in index order
-    // fired all six in ADR-0044's night); the network's own pattern never completes.
+    // (five of its units are inhibitory), fourteen at the positive rail after it and six, the
+    // ones from its inhibitory units 494, 499 and 484, at the negative rail: the symmetric
+    // rule potentiates inhibition within a replayed pattern and the half-range keeps its
+    // sign (ADR-0049; finding F-36 resolved). A cue of six in rank order fires five of the
+    // invention's other six (a cue in index order fired all six in ADR-0044's night); the
+    // network's own pattern never completes.
     assert_eq!(c.invention, ((143, 1_268_100), (143, 143 * 32_767)));
-    assert_eq!(c.own, ((20, -77_824), (20, 20 * 32_767)));
+    assert_eq!(c.own, ((20, -77_818), (20, 8 * 32_767)));
     assert_eq!(
         c.readouts,
         [

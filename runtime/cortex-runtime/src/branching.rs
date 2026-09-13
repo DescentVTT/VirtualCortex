@@ -10,7 +10,7 @@
 //! target within a latency after one of those synapses' delays from an ancestor spike,
 //! whatever the delay bands; the rest of the difference is the later generations and the
 //! two forks drifting apart. The forks run outside the tick loop, where the writer runs
-//! (TC-5), and allocate their traces.
+//! (TC-5); their trains are the executor's own (ADR-0050).
 
 use crate::executor::{Config, Executor, InjectError};
 use crate::image::{Image, ImageError};
@@ -49,9 +49,12 @@ pub enum ForkError {
     Image(ImageError),
     /// The drive or the kick was refused.
     Inject(InjectError),
-    /// A worker dropped a spike from its trace: the configuration's `trace_capacity` is too
-    /// small for the run, and a partial trace attributes nothing.
+    /// The executor's train let this many spikes go: the configuration's `train_capacity`
+    /// is too small for the run, and a partial train attributes nothing.
     Dropped(u64),
+    /// The configuration keeps no train (`train_capacity` 0), so the fork has nothing to
+    /// return.
+    NoTrain,
     /// A kick at a tick the fork had passed: the kicks are given in tick order, at or after
     /// the image's clock.
     Passed(u64),
@@ -87,8 +90,10 @@ pub fn run_driven<const CAP: usize>(
     Ok(())
 }
 
-/// Every spike of `exec`, as `(tick, unit)` sorted, from the workers' traces; refused when a
-/// trace dropped one. Consumes the executor.
+/// Every spike of `exec`, as `(tick, unit)` sorted, from the workers' traces
+/// (`WorkerReport::spikes`); refused when a trace dropped one. Consumes the executor. The
+/// same train as [`train_of`] when both capacities hold the run, from the other record of
+/// it.
 pub fn trace<const CAP: usize>(exec: Executor<CAP>) -> Result<Vec<(u32, u32)>, ForkError> {
     let reports = exec.shutdown();
     let dropped: u64 = reports.iter().map(|r| r.dropped).sum();
@@ -106,7 +111,8 @@ pub fn trace<const CAP: usize>(exec: Executor<CAP>) -> Result<Vec<(u32, u32)>, F
 /// One fork of `image` under `config` and `drive`, run to `ticks`, with every kick of
 /// `perturb` injected before its tick (the kicks in tick order; a kick before the fork's
 /// clock is refused as a kick at a tick the fork has passed, one after `ticks` as a kick it
-/// would never reach); its trace. No kick is the baseline.
+/// would never reach); its train, from the executor's own ring (ADR-0050), which `config`
+/// must size for the run. No kick is the baseline.
 pub fn fork<const CAP: usize>(
     image: &[u8],
     config: &Config,
@@ -126,7 +132,21 @@ pub fn fork<const CAP: usize>(
         p.inject(&exec.injector())?;
     }
     run_driven(&mut exec, drive, ticks)?;
-    trace(exec)
+    train_of(exec)
+}
+
+/// The executor's own train (ADR-0050) as the fork returns it: every spike of the run when
+/// the ring held them all; `Dropped` when it let some go, `NoTrain` when it keeps none.
+/// Consumes the executor.
+pub fn train_of<const CAP: usize>(mut exec: Executor<CAP>) -> Result<Vec<(u32, u32)>, ForkError> {
+    if exec.train_capacity() == 0 {
+        return Err(ForkError::NoTrain);
+    }
+    let overwritten = exec.train_overwritten();
+    if overwritten != 0 {
+        return Err(ForkError::Dropped(overwritten));
+    }
+    Ok(exec.train().to_vec())
 }
 
 /// What one kick caused, read from the two traces and the kicked unit's synapses.
@@ -441,14 +461,14 @@ mod tests {
         use crate::image::Image;
         let exec = Executor::<8>::new(Config {
             units: 2,
-            trace_capacity: 8,
+            train_capacity: 8,
             ..Config::default()
         })
         .unwrap();
         let image = Image::encode(&exec).unwrap();
         let config = Config {
             units: 2,
-            trace_capacity: 8,
+            train_capacity: 8,
             ..Config::default()
         };
         drop(exec);
@@ -478,6 +498,23 @@ mod tests {
             fork::<8>(&image, &config, &quiet, &[kick(5), kick(4)], 10),
             Err(ForkError::Passed(4))
         ));
+        // No train kept is refused; a ring too small for the run is refused with what it let
+        // go (the executor's own test holds the ring's rule; here the fork's refusals).
+        let none = Config {
+            units: 2,
+            ..Config::default()
+        };
+        assert!(matches!(
+            fork::<8>(&image, &none, &quiet, &[], 10),
+            Err(ForkError::NoTrain)
+        ));
+        let mut exec = Executor::<8>::new(config.clone()).unwrap();
+        exec.run(3);
+        assert_eq!(
+            train_of(exec).unwrap(),
+            vec![],
+            "a quiet run has an empty train"
+        );
     }
 
     #[test]

@@ -8,7 +8,7 @@
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_bench::Lcg;
 use cortex_core::{
-    DendriticSuperNeuron, MODULATION_ONE_Q16, MailboxNode, STP_MAX, STP_U, SynapseBlock,
+    DendriticSuperNeuron, MODULATION_ONE_Q16, MailboxNode, Polarity, STP_MAX, STP_U, SynapseBlock,
     THRESHOLD_BASE, WorkerWheel, synaptic_efficacy_q16,
 };
 use cortex_embodiment::{VocalFrame, VocalSynth};
@@ -295,8 +295,8 @@ fn synapse(c: &mut Criterion) {
         b.iter(|| {
             now = now.wrapping_add(1 + (rng.next_u32() >> 20));
             let posts: [u32; 4] = core::array::from_fn(|_| now.wrapping_sub(rng.next_u32() >> 19));
-            black_box(block.step_stdp_all(black_box(now), posts));
-            black_box(block.consolidate_all(black_box(MODULATION_ONE_Q16)))
+            black_box(block.step_stdp_all(black_box(now), posts, Polarity::Excitatory));
+            black_box(block.consolidate_all(black_box(MODULATION_ONE_Q16), Polarity::Excitatory))
         });
     });
     group.finish();

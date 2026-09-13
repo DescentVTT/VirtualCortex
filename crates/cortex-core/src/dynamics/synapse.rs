@@ -16,7 +16,14 @@
 //! `consolidate` moves the fraction of it that the modulator names into the weight, so that a
 //! reward arriving after the pairing can still consolidate it (the three-factor rule). With the
 //! modulator at 1.0 the whole trace is consolidated at once and the rule is ADR-0022's.
+//! Since ADR-0049 every rule takes the block's [`Polarity`], its presynaptic unit's: the trace
+//! is the change of the weight's *magnitude*, consolidation keeps the weight within the
+//! polarity's half of the width (an excitatory weight never falls below zero, an inhibitory one
+//! never rises above it; Dale's principle by construction), and an inhibitory block takes the
+//! symmetric window of Vogels et al. 2011, both orders potentiating and a constant depression
+//! at every presynaptic spike derived from a target rate.
 
+use super::membrane::FLAG_INHIBITORY;
 use super::neuron::{DendriticSuperNeuron, SynapseBlock, synaptic_efficacy_q16};
 use super::plasticity::stp_decay_factor_q16;
 use crate::dispatch::wheel::MAX_TOKEN;
@@ -46,6 +53,66 @@ pub const ELIGIBILITY_TAU_SHIFT: u32 = 16;
 /// A modulation of 1.0 in Q16.16: [`SynapseBlock::consolidate`] moves the whole trace into the
 /// weight at the presynaptic spike, which is the rule of ADR-0022 (ADR-0032).
 pub const MODULATION_ONE_Q16: i32 = 0x0001_0000;
+/// The target rate of the inhibitory rule (ADR-0049; Vogels et al. 2011), as a period in
+/// ticks: 20 000 ticks is 5 Hz at the 10 µs tick.
+pub const ISTDP_TARGET_PERIOD_TICKS: u32 = 20_000;
+/// The depression of an inhibitory synapse's magnitude at every presynaptic spike,
+/// $\alpha = 2 \rho_0 \tau A_+$ with $\rho_0$ the target rate, $\tau$ the window's time
+/// constant and $A_+$ the amplitude both of the rule's potentiating terms use: 67/32 768 ≈
+/// 0.0020, a fifth of $A_+$; a target that fires at the rate is potentiated as much as it is
+/// depressed on average. A constant until a round tunes it by its own registry entry.
+pub const ISTDP_ALPHA_Q1_15: i16 = 67;
+const _: () = assert!(
+    ISTDP_ALPHA_Q1_15 as i64
+        == 2 * STDP_A_PLUS_Q1_15 as i64 * (1i64 << STDP_TAU_SHIFT)
+            / ISTDP_TARGET_PERIOD_TICKS as i64
+);
+
+/// The sign a block's synapses carry: its presynaptic unit's (Dale's principle, ADR-0049).
+/// Every synapse of an excitatory unit has a weight at or above zero and every synapse of an
+/// inhibitory unit one at or below it, and the plasticity rules move a weight within that
+/// half of the width. The executor reads it from the unit's [`FLAG_INHIBITORY`] at the spike;
+/// the rules of this module take it as an argument and read no unit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Polarity {
+    Excitatory,
+    Inhibitory,
+}
+
+impl Polarity {
+    /// The polarity a unit's `flags` byte names.
+    #[inline]
+    pub const fn of_flags(flags: u8) -> Self {
+        if flags & FLAG_INHIBITORY != 0 {
+            Self::Inhibitory
+        } else {
+            Self::Excitatory
+        }
+    }
+
+    /// A weight's magnitude under this polarity: the weight for an excitatory block, its
+    /// negation for an inhibitory one; a weight on the wrong side of zero reads as zero, so
+    /// that the first consolidation brings it to the polarity's side.
+    #[inline]
+    fn magnitude(self, weight_q1_15: i16) -> i32 {
+        // A sixteen-bit value negated in thirty-two bits cannot overflow: `wrapping_neg` by
+        // name (§8.1).
+        let signed = match self {
+            Self::Excitatory => weight_q1_15 as i32,
+            Self::Inhibitory => (weight_q1_15 as i32).wrapping_neg(),
+        };
+        signed.max(0)
+    }
+
+    /// The weight of a magnitude in `[0, i16::MAX]` under this polarity.
+    #[inline]
+    const fn weight(self, magnitude: i32) -> i16 {
+        match self {
+            Self::Excitatory => magnitude as i16,
+            Self::Inhibitory => (magnitude as i16).wrapping_neg(),
+        }
+    }
+}
 /// Bits 0–27 of [`SynapseBlock::chain`]: the next block index + 1, [`CHAIN_END`] (0) for the
 /// last block of a chain. A block index is bounded to 26 bits by the wheel token (finding
 /// F-23), so 28 bits hold every index a loader accepts (ADR-0032).
@@ -409,23 +476,37 @@ impl SynapseBlock {
     }
 
     /// The nearest-neighbour pair rule at a presynaptic spike, for one slot (ADR-0022,
-    /// whitepaper §8.8), into the slot's eligibility trace (ADR-0032). With $p$ this block's
-    /// previous presynaptic stamp, $q$ the target's last somatic spike and $t$ the spike now: if
-    /// $p < q \le t$ the target fired after the previous presynaptic spike, and the trace gains
-    /// $A_+ (1 - 2^{-11})^{q - p}$; then, if $q < t$, the target fired before this one and the
-    /// trace loses $A_- (1 - 2^{-11})^{t - q}$. Every comparison is a wrapping difference read
-    /// as signed (§8.4), so a stamp older than $2^{31}$ ticks reads as future and pairs with
-    /// nothing; a stamp of zero is no spike on record. The trace saturates in $[-1, 1)$. Nothing
-    /// reaches the weight here: [`consolidate`](Self::consolidate) does that under the
-    /// modulator. Does not decay and does not stamp: the caller decays once per block before
-    /// the slots ([`decay_eligibility`](Self::decay_eligibility)) and stamps once after them
+    /// whitepaper §8.8), into the slot's eligibility trace (ADR-0032), which is the change of
+    /// the weight's magnitude under `polarity` (ADR-0049). With $p$ this block's previous
+    /// presynaptic stamp, $q$ the target's last somatic spike and $t$ the spike now, an
+    /// excitatory block takes the asymmetric rule: if $p < q \le t$ the target fired after the
+    /// previous presynaptic spike, and the trace gains $A_+ (1 - 2^{-11})^{q - p}$; then, if
+    /// $q < t$, the target fired before this one and the trace loses
+    /// $A_- (1 - 2^{-11})^{t - q}$. An inhibitory block takes the symmetric rule of Vogels et
+    /// al. 2011: the trace loses [`ISTDP_ALPHA_Q1_15`] at every presynaptic spike, and gains
+    /// $A_+ (1 - 2^{-11})^{|\Delta t|}$ for each of the two pairings above, whichever way
+    /// round. Every comparison is a wrapping difference read as signed (§8.4), so a stamp
+    /// older than $2^{31}$ ticks reads as future and pairs with nothing; a stamp of zero is no
+    /// spike on record. The trace saturates in $[-1, 1)$. Nothing reaches the weight here:
+    /// [`consolidate`](Self::consolidate) does that under the modulator. Does not decay and
+    /// does not stamp: the caller decays once per block before the slots
+    /// ([`decay_eligibility`](Self::decay_eligibility)) and stamps once after them
     /// ([`stamp_presynaptic`](Self::stamp_presynaptic)), or uses
     /// [`step_stdp_all`](Self::step_stdp_all). Returns the trace; zero for an empty slot.
-    pub fn step_stdp(&mut self, slot: usize, pre_now_tick: u32, post_last_tick: u32) -> i16 {
+    pub fn step_stdp(
+        &mut self,
+        slot: usize,
+        pre_now_tick: u32,
+        post_last_tick: u32,
+        polarity: Polarity,
+    ) -> i16 {
         if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
             return 0;
         }
         let mut e = self.eligibility_q1_15[slot];
+        if polarity == Polarity::Inhibitory {
+            e = e.saturating_sub(ISTDP_ALPHA_Q1_15);
+        }
         if post_last_tick != NO_SPIKE_ON_RECORD {
             let since_post = pre_now_tick.wrapping_sub(post_last_tick) as i32;
             if self.last_spike_tick != NO_SPIKE_ON_RECORD {
@@ -435,7 +516,14 @@ impl SynapseBlock {
                 }
             }
             if since_post > 0 {
-                e = e.saturating_sub(window(STDP_A_MINUS_Q1_15, since_post as u32));
+                e = match polarity {
+                    Polarity::Excitatory => {
+                        e.saturating_sub(window(STDP_A_MINUS_Q1_15, since_post as u32))
+                    }
+                    Polarity::Inhibitory => {
+                        e.saturating_add(window(STDP_A_PLUS_Q1_15, since_post as u32))
+                    }
+                };
             }
         }
         self.eligibility_q1_15[slot] = e;
@@ -458,14 +546,18 @@ impl SynapseBlock {
     }
 
     /// Consolidates a slot's eligibility into its weight (ADR-0032, the third factor): moves
-    /// `round(trace × m)` into the weight, saturating in $[-1, 1)$, with `modulation_q16`
-    /// clamped to $[0, 1]$ ([`MODULATION_ONE_Q16`] is 1.0), and takes what the weight absorbed
-    /// out of the trace, so that the weight and the trace conserve their sum: a weight at the
-    /// rail keeps its pending change in the trace, where it decays. At 1.0 the whole trace
-    /// moves and the pairing's two terms have already summed in the trace, which is the one
-    /// place this differs from ADR-0022's sequence (which saturated after each term). Returns
-    /// the weight; zero for an empty slot.
-    pub fn consolidate(&mut self, slot: usize, modulation_q16: i32) -> i16 {
+    /// `round(trace × m)` into the weight's magnitude under `polarity`, clamped to
+    /// $[0, 1)$ (ADR-0049: an excitatory weight stays at or above zero, an inhibitory one at
+    /// or below it, whatever the trace holds), with `modulation_q16` clamped to $[0, 1]$
+    /// ([`MODULATION_ONE_Q16`] is 1.0), and takes what the magnitude absorbed out of the
+    /// trace, so that the magnitude and the trace conserve their sum: a weight at a rail keeps
+    /// its pending change in the trace, where it decays. A weight on the wrong side of zero
+    /// for its polarity reads as a magnitude of zero and is brought to the polarity's side by
+    /// the first consolidation, the trace untouched. At 1.0 the whole trace moves and the
+    /// pairing's two terms have already summed in the trace, which is the one place this
+    /// differs from ADR-0022's sequence (which saturated after each term). Returns the weight;
+    /// zero for an empty slot.
+    pub fn consolidate(&mut self, slot: usize, modulation_q16: i32, polarity: Polarity) -> i16 {
         if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
             return 0;
         }
@@ -479,21 +571,24 @@ impl SynapseBlock {
             .saturating_add(0x8000)
             >> 16) as i32;
         let transfer = amount.saturating_mul(trace.signum());
-        let before = self.weights_q1_15[slot] as i32;
-        let after = before
-            .saturating_add(transfer)
-            .clamp(i16::MIN as i32, i16::MAX as i32);
+        let before = polarity.magnitude(self.weights_q1_15[slot]);
+        let after = before.saturating_add(transfer).clamp(0, i16::MAX as i32);
         let absorbed = after.saturating_sub(before);
-        self.weights_q1_15[slot] = after as i16;
+        let weight = polarity.weight(after);
+        self.weights_q1_15[slot] = weight;
         self.eligibility_q1_15[slot] = trace.saturating_sub(absorbed) as i16;
-        after as i16
+        weight
     }
 
     /// [`consolidate`](Self::consolidate) for every slot. Returns the weights.
-    pub fn consolidate_all(&mut self, modulation_q16: i32) -> [i16; SYNAPSES_PER_BLOCK] {
+    pub fn consolidate_all(
+        &mut self,
+        modulation_q16: i32,
+        polarity: Polarity,
+    ) -> [i16; SYNAPSES_PER_BLOCK] {
         let mut out = [0; SYNAPSES_PER_BLOCK];
         for (slot, w) in out.iter_mut().enumerate() {
-            *w = self.consolidate(slot, modulation_q16);
+            *w = self.consolidate(slot, modulation_q16, polarity);
         }
         out
     }
@@ -514,11 +609,12 @@ impl SynapseBlock {
         &mut self,
         now_tick: u32,
         post_last_ticks: [u32; SYNAPSES_PER_BLOCK],
+        polarity: Polarity,
     ) -> [i16; SYNAPSES_PER_BLOCK] {
         self.decay_eligibility(now_tick.wrapping_sub(self.last_spike_tick));
         let mut out = [0; SYNAPSES_PER_BLOCK];
         for (slot, e) in out.iter_mut().enumerate() {
-            *e = self.step_stdp(slot, now_tick, post_last_ticks[slot]);
+            *e = self.step_stdp(slot, now_tick, post_last_ticks[slot], polarity);
         }
         self.stamp_presynaptic(now_tick);
         out
@@ -563,6 +659,7 @@ const _: () = {
 
 #[cfg(test)]
 mod tests {
+    use super::super::membrane::FLAG_BURST_MODE;
     use super::super::plasticity::{STP_MAX, STP_U};
     use super::*;
 
@@ -834,36 +931,60 @@ mod tests {
         b
     }
 
-    /// The rule of ADR-0022 as the executor composes it: the pairing into the trace, then the
-    /// whole trace into the weight (a modulation of 1.0). Returns the weight.
+    /// The rule of ADR-0022 as the executor composes it for an excitatory block: the pairing
+    /// into the trace, then the whole trace into the weight (a modulation of 1.0). Returns
+    /// the weight.
     fn pair(b: &mut SynapseBlock, slot: usize, pre_now: u32, post_last: u32) -> i16 {
-        b.step_stdp(slot, pre_now, post_last);
-        b.consolidate(slot, MODULATION_ONE_Q16)
+        pair_in(b, slot, pre_now, post_last, Polarity::Excitatory)
     }
+
+    /// The same under a stated polarity.
+    fn pair_in(
+        b: &mut SynapseBlock,
+        slot: usize,
+        pre_now: u32,
+        post_last: u32,
+        polarity: Polarity,
+    ) -> i16 {
+        b.step_stdp(slot, pre_now, post_last, polarity);
+        b.consolidate(slot, MODULATION_ONE_Q16, polarity)
+    }
+
+    /// The excitatory potentiation window at five deltas, $A_+ (1 - 2^{-11})^{\Delta t}$,
+    /// pinned by the first test below; the inhibitory rule's two terms are this window, so
+    /// its amounts are sums of these and the constant.
+    const PLUS: [(u32, i16); 5] = [(1, 328), (500, 257), (2000, 123), (10_000, 2), (40_000, 0)];
+    /// The excitatory depression window at the same deltas, $A_- (1 - 2^{-11})^{\Delta t}$.
+    const MINUS: [(u32, i16); 5] = [(1, 344), (500, 269), (2000, 129), (10_000, 3), (40_000, 0)];
 
     #[test]
     fn pre_before_post_potentiates_and_post_before_pre_depresses_by_the_window() {
         // Potentiation alone: the target fired `delta` after the previous presynaptic spike
         // and this presynaptic spike is at the same tick as that (no depression at zero).
-        for (delta, amount) in [(1, 328), (500, 257), (2000, 123), (10_000, 2), (40_000, 0)] {
+        for (delta, amount) in PLUS {
             let mut b = one_synapse(0, 1000);
             assert_eq!(
-                b.step_stdp(0, 1000 + delta, 1000 + delta),
+                b.step_stdp(0, 1000 + delta, 1000 + delta, Polarity::Excitatory),
                 amount,
                 "delta {delta}: the amount enters the trace"
             );
             assert_eq!(b.weights_q1_15[0], 0, "and not the weight");
-            assert_eq!(b.consolidate(0, MODULATION_ONE_Q16), amount);
+            assert_eq!(
+                b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
+                amount
+            );
             assert_eq!(b.eligibility_q1_15[0], 0, "consolidated whole at 1.0");
         }
-        // Depression alone: no previous presynaptic spike; the target fired `delta` before.
-        for (delta, amount) in [(1, 344), (500, 269), (2000, 129), (10_000, 3), (40_000, 0)] {
-            let mut b = one_synapse(0, NO_SPIKE_ON_RECORD);
+        // Depression alone: no previous presynaptic spike; the target fired `delta` before
+        // (from a weight of 1 000, since a weight never falls below zero: ADR-0049).
+        for (delta, amount) in MINUS {
+            let mut b = one_synapse(1000, NO_SPIKE_ON_RECORD);
             assert_eq!(
                 pair(&mut b, 0, 5000 + delta, 5000),
-                -amount,
+                1000 - amount,
                 "delta {delta}"
             );
+            assert_eq!(b.eligibility_q1_15[0], 0, "consolidated whole at 1.0");
         }
         // Both: previous pre at 1000, post at 1500, this pre at 3500.
         let mut b = one_synapse(0, 1000);
@@ -882,7 +1003,7 @@ mod tests {
     }
 
     #[test]
-    fn a_weight_saturates_at_both_ends_keeps_the_rest_pending_and_an_empty_slot_is_untouched() {
+    fn a_weight_saturates_at_both_rails_keeps_the_rest_pending_and_an_empty_slot_is_untouched() {
         let mut b = one_synapse(32_700, 1000);
         assert_eq!(pair(&mut b, 0, 1001, 1001), i16::MAX);
         assert_eq!(
@@ -890,16 +1011,27 @@ mod tests {
             328 - 67,
             "the rail absorbed 67 of the 328; the rest stays pending in the trace"
         );
+        // The inhibitory rail is −32 767, the magnitude's width: a post one tick before the
+        // spike potentiates the magnitude by 328 − α = 261, of which the rail absorbs 7.
         let mut b = one_synapse(-32_760, NO_SPIKE_ON_RECORD);
-        assert_eq!(pair(&mut b, 0, 1001, 1000), i16::MIN);
-        assert_eq!(b.eligibility_q1_15[0], -344 + 8);
+        assert_eq!(
+            pair_in(&mut b, 0, 1001, 1000, Polarity::Inhibitory),
+            -i16::MAX
+        );
+        assert_eq!(b.eligibility_q1_15[0], 261 - 7);
         // A stray trace on an empty slot: the slot is empty, so nothing reads or moves it.
         b.eligibility_q1_15[1] = 50;
         let before = b;
-        assert_eq!(b.step_stdp(1, 1001, 1000), 0);
-        assert_eq!(b.step_stdp(4, 1001, 1000), 0);
-        assert_eq!(b.consolidate(1, MODULATION_ONE_Q16), 0);
-        assert_eq!(b.consolidate(4, MODULATION_ONE_Q16), 0);
+        assert_eq!(b.step_stdp(1, 1001, 1000, Polarity::Excitatory), 0);
+        assert_eq!(b.step_stdp(4, 1001, 1000, Polarity::Excitatory), 0);
+        assert_eq!(
+            b.consolidate(1, MODULATION_ONE_Q16, Polarity::Excitatory),
+            0
+        );
+        assert_eq!(
+            b.consolidate(4, MODULATION_ONE_Q16, Polarity::Excitatory),
+            0
+        );
         assert_eq!(b, before);
     }
 
@@ -909,9 +1041,9 @@ mod tests {
         // applied, leaving 32 767 − 129. Since ADR-0032 the trace holds 257 − 129 = 128 and the
         // weight stays at the rail with 128 pending.
         let mut b = one_synapse(i16::MAX, 1000);
-        assert_eq!(b.step_stdp(0, 3500, 1500), 257 - 129);
+        assert_eq!(b.step_stdp(0, 3500, 1500, Polarity::Excitatory), 257 - 129);
         assert_eq!(
-            b.consolidate(0, MODULATION_ONE_Q16),
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
             i16::MAX,
             "not 32 767 − 129"
         );
@@ -919,8 +1051,14 @@ mod tests {
         b.stamp_presynaptic(3500);
         // The pending change decays for 2 000 ticks (128 → 124), then a depression the rail
         // can absorb pairs with a post at the previous presynaptic spike (no potentiation).
-        assert_eq!(b.step_stdp_all(5500, [3500, 0, 0, 0]), [124 - 129, 0, 0, 0]);
-        assert_eq!(b.consolidate(0, MODULATION_ONE_Q16), i16::MAX - 5);
+        assert_eq!(
+            b.step_stdp_all(5500, [3500, 0, 0, 0], Polarity::Excitatory),
+            [124 - 129, 0, 0, 0]
+        );
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
+            i16::MAX - 5
+        );
         assert_eq!(b.eligibility_q1_15[0], 0);
     }
 
@@ -976,7 +1114,7 @@ mod tests {
         b.stamp_presynaptic(1000);
         b.eligibility_q1_15 = [1000, 0, 0, -1000];
         assert_eq!(
-            b.step_stdp_all(1000 + 65_536, [NO_SPIKE_ON_RECORD; 4]),
+            b.step_stdp_all(1000 + 65_536, [NO_SPIKE_ON_RECORD; 4], Polarity::Excitatory),
             [367, 0, 0, -367],
             "decayed by the ticks since the stamp; nothing paired"
         );
@@ -984,16 +1122,25 @@ mod tests {
         // A block with no spike on record has held its traces since tick 0.
         let mut b = full_block(0, 1);
         b.eligibility_q1_15 = [1000; 4];
-        assert_eq!(b.step_stdp_all(65_536, [NO_SPIKE_ON_RECORD; 4]), [367; 4]);
+        assert_eq!(
+            b.step_stdp_all(65_536, [NO_SPIKE_ON_RECORD; 4], Polarity::Excitatory),
+            [367; 4]
+        );
         // The decay precedes the pairing: the new amount is not decayed (pairing first would
         // give 1 089).
         let mut b = one_synapse(0, 1000);
         b.eligibility_q1_15[0] = 1000;
-        assert_eq!(b.step_stdp_all(3000, [3000, 0, 0, 0]), [970 + 123, 0, 0, 0]);
+        assert_eq!(
+            b.step_stdp_all(3000, [3000, 0, 0, 0], Polarity::Excitatory),
+            [970 + 123, 0, 0, 0]
+        );
         // No time has passed: nothing decays, even a trace of one LSB.
         let mut b = one_synapse(0, 1000);
         b.eligibility_q1_15[0] = 1;
-        assert_eq!(b.step_stdp_all(1000, [NO_SPIKE_ON_RECORD; 4]), [1, 0, 0, 0]);
+        assert_eq!(
+            b.step_stdp_all(1000, [NO_SPIKE_ON_RECORD; 4], Polarity::Excitatory),
+            [1, 0, 0, 0]
+        );
     }
 
     #[test]
@@ -1002,42 +1149,63 @@ mod tests {
         b.eligibility_q1_15 = [300, -300, 5, -5];
         assert_eq!(b.weights_q1_15, [0x1000, 0x2000, 0x3000, 0x4000]);
         assert_eq!(
-            b.consolidate_all(0),
+            b.consolidate_all(0, Polarity::Excitatory),
             [0x1000, 0x2000, 0x3000, 0x4000],
             "a modulation of 0 consolidates nothing"
         );
         assert_eq!(b.eligibility_q1_15, [300, -300, 5, -5]);
         assert_eq!(
-            b.consolidate_all(-1),
+            b.consolidate_all(-1, Polarity::Excitatory),
             [0x1000, 0x2000, 0x3000, 0x4000],
             "clamped to 0"
         );
         assert_eq!(
-            b.consolidate_all(MODULATION_ONE_Q16 / 2),
+            b.consolidate_all(MODULATION_ONE_Q16 / 2, Polarity::Excitatory),
             [0x1000 + 150, 0x2000 - 150, 0x3000 + 3, 0x4000 - 3],
             "half, rounded to nearest (2.5 → 3)"
         );
         assert_eq!(b.eligibility_q1_15, [150, -150, 2, -2], "the rest stays");
         assert_eq!(
-            b.consolidate_all(MODULATION_ONE_Q16 + 1),
+            b.consolidate_all(MODULATION_ONE_Q16 + 1, Polarity::Excitatory),
             [0x1000 + 300, 0x2000 - 300, 0x3000 + 5, 0x4000 - 5],
             "clamped to 1.0: the rest moves"
         );
         assert_eq!(b.eligibility_q1_15, [0; 4]);
         // A quarter of an odd trace: 7 × 0.25 = 1.75 → 2.
         b.eligibility_q1_15 = [7, -7, 0, 0];
-        assert_eq!(b.consolidate(0, MODULATION_ONE_Q16 / 4), 0x1000 + 300 + 2);
-        assert_eq!(b.consolidate(1, MODULATION_ONE_Q16 / 4), 0x2000 - 300 - 2);
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16 / 4, Polarity::Excitatory),
+            0x1000 + 300 + 2
+        );
+        assert_eq!(
+            b.consolidate(1, MODULATION_ONE_Q16 / 4, Polarity::Excitatory),
+            0x2000 - 300 - 2
+        );
         assert_eq!(b.eligibility_q1_15, [5, -5, 0, 0]);
         // At the rail the weight absorbs what it can and the trace keeps the rest.
         let mut b = one_synapse(i16::MAX - 1, 1000);
         b.eligibility_q1_15[0] = 10;
-        assert_eq!(b.consolidate(0, MODULATION_ONE_Q16), i16::MAX);
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
+            i16::MAX
+        );
         assert_eq!(b.eligibility_q1_15[0], 9, "one absorbed, nine pending");
-        let mut b = one_synapse(i16::MIN + 2, 1000);
-        b.eligibility_q1_15[0] = -32_768;
-        assert_eq!(b.consolidate(0, MODULATION_ONE_Q16), i16::MIN);
-        assert_eq!(b.eligibility_q1_15[0], -32_766);
+        // An inhibitory weight near its rail with the whole width pending: the rail absorbs
+        // one and 32 766 stay pending; one depressed below zero stops at zero.
+        let mut b = one_synapse(-32_766, 1000);
+        b.eligibility_q1_15[0] = i16::MAX;
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Inhibitory),
+            -i16::MAX
+        );
+        assert_eq!(b.eligibility_q1_15[0], 32_766);
+        let mut b = one_synapse(-5, 1000);
+        b.eligibility_q1_15[0] = -10;
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Inhibitory),
+            0
+        );
+        assert_eq!(b.eligibility_q1_15[0], -5, "five absorbed, five pending");
         // Filling or clearing a slot drops its trace.
         let mut b = one_synapse(0, 1000);
         b.eligibility_q1_15[0] = 77;
@@ -1050,22 +1218,176 @@ mod tests {
     }
 
     #[test]
+    fn the_half_range_holds_a_weight_at_zero_and_a_weight_on_the_wrong_side_is_brought_to_it() {
+        // An excitatory weight at zero depressed stays at zero with the depression pending;
+        // one of 100 depressed by 344 ends at zero with 244 pending: nothing crosses.
+        let mut b = one_synapse(0, NO_SPIKE_ON_RECORD);
+        assert_eq!(pair(&mut b, 0, 1001, 1000), 0);
+        assert_eq!(b.eligibility_q1_15[0], -344);
+        let mut b = one_synapse(100, NO_SPIKE_ON_RECORD);
+        assert_eq!(pair(&mut b, 0, 1001, 1000), 0);
+        assert_eq!(b.eligibility_q1_15[0], -244);
+        // An inhibitory weight of −1 with a depression of 10 pending ends at zero, nine
+        // pending; one at the rail potentiated stays there with the whole amount pending.
+        let mut b = one_synapse(-1, 1000);
+        b.eligibility_q1_15[0] = -10;
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Inhibitory),
+            0
+        );
+        assert_eq!(b.eligibility_q1_15[0], -9);
+        let mut b = one_synapse(-i16::MAX, 1000);
+        b.eligibility_q1_15[0] = 100;
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Inhibitory),
+            -i16::MAX
+        );
+        assert_eq!(b.eligibility_q1_15[0], 100);
+        // A weight on the wrong side of zero for its polarity reads as a magnitude of zero:
+        // brought to zero by the first consolidation with the trace untouched, and a pending
+        // amount lands on the polarity's side.
+        let mut b = one_synapse(-500, 1000);
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
+            0
+        );
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        let mut b = one_synapse(500, 1000);
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Inhibitory),
+            0
+        );
+        let mut b = one_synapse(-500, 1000);
+        b.eligibility_q1_15[0] = 10;
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
+            10
+        );
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        let mut b = one_synapse(500, 1000);
+        b.eligibility_q1_15[0] = 10;
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Inhibitory),
+            -10
+        );
+        // A modulation of zero moves nothing, wrong side included.
+        let mut b = one_synapse(-500, 1000);
+        b.eligibility_q1_15[0] = 10;
+        assert_eq!(b.consolidate(0, 0, Polarity::Excitatory), 0);
+        assert_eq!(b.eligibility_q1_15[0], 10);
+        // The polarity is the unit's flag, and the burst flag is not it.
+        assert_eq!(Polarity::of_flags(0), Polarity::Excitatory);
+        assert_eq!(Polarity::of_flags(FLAG_INHIBITORY), Polarity::Inhibitory);
+        assert_eq!(
+            Polarity::of_flags(FLAG_INHIBITORY | FLAG_BURST_MODE),
+            Polarity::Inhibitory
+        );
+        assert_eq!(Polarity::of_flags(FLAG_BURST_MODE), Polarity::Excitatory);
+        assert_eq!(Polarity::of_flags(0xFF), Polarity::Inhibitory);
+    }
+
+    #[test]
+    fn the_inhibitory_rule_potentiates_both_orders_by_the_plus_window_and_loses_alpha_at_every_spike()
+     {
+        const ALPHA: i16 = ISTDP_ALPHA_Q1_15;
+        assert_eq!((ALPHA, ISTDP_TARGET_PERIOD_TICKS), (67, 20_000));
+        // The target's spike after the previous presynaptic one: the plus window less α, into
+        // the magnitude (the weight moves the other way).
+        for (delta, amount) in PLUS {
+            let mut b = one_synapse(-1000, 1000);
+            assert_eq!(
+                b.step_stdp(0, 1000 + delta, 1000 + delta, Polarity::Inhibitory),
+                amount - ALPHA,
+                "delta {delta}"
+            );
+            assert_eq!(
+                b.consolidate(0, MODULATION_ONE_Q16, Polarity::Inhibitory),
+                -1000 - (amount - ALPHA)
+            );
+            assert_eq!(b.eligibility_q1_15[0], 0);
+        }
+        // The target's spike before this one: the same plus window less α, where the
+        // excitatory rule loses the minus window.
+        for (delta, amount) in PLUS {
+            let mut b = one_synapse(-1000, NO_SPIKE_ON_RECORD);
+            assert_eq!(
+                pair_in(&mut b, 0, 5000 + delta, 5000, Polarity::Inhibitory),
+                -1000 - (amount - ALPHA),
+                "delta {delta}"
+            );
+        }
+        // Both: previous pre at 1000, post at 1500, this pre at 3500: 257 + 123 − 67, where
+        // the excitatory rule gives 257 − 129.
+        let mut b = one_synapse(-1000, 1000);
+        assert_eq!(
+            pair_in(&mut b, 0, 3500, 1500, Polarity::Inhibitory),
+            -1000 - (257 + 123 - ALPHA)
+        );
+        let mut e = one_synapse(1000, 1000);
+        assert_eq!(pair(&mut e, 0, 3500, 1500), 1000 + 257 - 129);
+        // No spike of the target on record: α alone, so an inhibitory synapse onto a silent
+        // target weakens at every presynaptic spike; the excitatory rule leaves it.
+        let mut b = one_synapse(-1000, NO_SPIKE_ON_RECORD);
+        assert_eq!(
+            pair_in(&mut b, 0, 2000, NO_SPIKE_ON_RECORD, Polarity::Inhibitory),
+            -1000 + ALPHA
+        );
+        let mut e = one_synapse(1000, NO_SPIKE_ON_RECORD);
+        assert_eq!(pair(&mut e, 0, 2000, NO_SPIKE_ON_RECORD), 1000);
+        // A post at the same tick as this pre is not before it and not after the previous
+        // one at the same tick: α alone.
+        let mut b = one_synapse(-1000, 1000);
+        assert_eq!(
+            pair_in(&mut b, 0, 1000, 1000, Polarity::Inhibitory),
+            -1000 + ALPHA
+        );
+        // The rule does not stamp, and an empty slot is untouched under either polarity.
+        assert_eq!(b.last_spike_tick, 1000);
+        assert_eq!(b.step_stdp(1, 2000, 1999, Polarity::Inhibitory), 0);
+        assert_eq!(b.eligibility_q1_15[1], 0);
+        // `step_stdp_all` and `consolidate_all` carry the polarity to every slot.
+        let mut b = SynapseBlock::new();
+        for slot in [0, 1, 3] {
+            assert!(b.set_synapse(slot, slot as u32, -1000, 1, false));
+        }
+        b.stamp_presynaptic(1000);
+        assert_eq!(
+            b.step_stdp_all(
+                3500,
+                [1500, NO_SPIKE_ON_RECORD, 9, 3000],
+                Polarity::Inhibitory
+            ),
+            [257 + 123 - ALPHA, -ALPHA, 0, 123 + 257 - ALPHA]
+        );
+        assert_eq!(
+            b.consolidate_all(MODULATION_ONE_Q16, Polarity::Inhibitory),
+            [-1000 - 313, -1000 + ALPHA, 0, -1000 - 313]
+        );
+        assert_eq!(b.eligibility_q1_15, [0; 4]);
+    }
+
+    #[test]
     fn stamps_pair_correctly_across_the_tick_wrap_and_a_stale_stamp_pairs_with_nothing() {
-        let mut wrapped = one_synapse(0, u32::MAX - 100);
-        let mut plain = one_synapse(0, 100);
+        let mut wrapped = one_synapse(1000, u32::MAX - 100);
+        let mut plain = one_synapse(1000, 100);
         assert_eq!(
             pair(&mut wrapped, 0, 20, u32::MAX - 50),
             pair(&mut plain, 0, 221, 150),
             "the same intervals across the wrap give the same weight"
         );
-        assert_ne!(plain.weights_q1_15[0], 0);
+        assert_ne!(plain.weights_q1_15[0], 1000);
         // A post stamp one tick in the future is older than 2^31 ticks: unpaired.
         let mut b = one_synapse(100, 1000);
         assert_eq!(pair(&mut b, 0, 2000, 2001), 100);
         // A previous presynaptic stamp in the future pairs with nothing for potentiation, but
         // the depression against a real post still applies.
         let mut b = one_synapse(100, 3000);
-        assert_eq!(pair(&mut b, 0, 2000, 1999), 100 - 344);
+        assert_eq!(
+            pair(&mut b, 0, 2000, 1999),
+            0,
+            "the depression of 344 outruns the weight of 100: zero, with 244 pending (ADR-0049)"
+        );
+        assert_eq!(b.eligibility_q1_15[0], -244);
         // No spike on record on either side changes nothing.
         let mut b = one_synapse(100, NO_SPIKE_ON_RECORD);
         assert_eq!(pair(&mut b, 0, 2000, NO_SPIKE_ON_RECORD), 100);
@@ -1078,7 +1400,11 @@ mod tests {
             assert!(b.set_synapse(slot, slot as u32, 1000, 1, false));
         }
         b.stamp_presynaptic(1000);
-        let traces = b.step_stdp_all(3500, [1500, NO_SPIKE_ON_RECORD, 9, 3000]);
+        let traces = b.step_stdp_all(
+            3500,
+            [1500, NO_SPIKE_ON_RECORD, 9, 3000],
+            Polarity::Excitatory,
+        );
         assert_eq!(
             traces,
             [257 - 129, 0, 0, 123 - 269],
@@ -1091,7 +1417,7 @@ mod tests {
         );
         assert_eq!(b.last_spike_tick, 3500);
         assert_eq!(
-            b.consolidate_all(MODULATION_ONE_Q16),
+            b.consolidate_all(MODULATION_ONE_Q16, Polarity::Excitatory),
             [1000 + 257 - 129, 1000, 0, 1000 + 123 - 269],
             "consolidated whole at 1.0"
         );
@@ -1110,9 +1436,20 @@ mod tests {
             now = now.wrapping_add(1 + (x >> 20));
             let posts: [u32; 4] =
                 core::array::from_fn(|k| now.wrapping_sub((x >> (k * 7)) & 0x3FFF));
-            assert_eq!(a.step_stdp_all(now, posts), b.step_stdp_all(now, posts));
+            let polarity = if x & 1 == 0 {
+                Polarity::Excitatory
+            } else {
+                Polarity::Inhibitory
+            };
+            assert_eq!(
+                a.step_stdp_all(now, posts, polarity),
+                b.step_stdp_all(now, posts, polarity)
+            );
             let m = (x >> 15) as i32;
-            assert_eq!(a.consolidate_all(m), b.consolidate_all(m));
+            assert_eq!(
+                a.consolidate_all(m, polarity),
+                b.consolidate_all(m, polarity)
+            );
             assert_eq!(a.release_all(STP_U, STP_MAX), b.release_all(STP_U, STP_MAX));
             assert_eq!(a, b);
         }
@@ -1120,9 +1457,10 @@ mod tests {
 }
 
 /// Property tests (ADR-0030): every encoding round-trips over its whole range, a plasticity step
-/// moves a trace by at most one window and a consolidated weight by at most one window plus
-/// what was pending, consolidation conserves the sum of weight and trace, decay never grows
-/// a trace, and the tick wrap changes nothing.
+/// moves a trace by at most one window (two and the constant for an inhibitory block) and a
+/// consolidated weight by at most that plus what was pending, a weight never leaves its
+/// polarity's half of the width and consolidation conserves the sum of magnitude and trace
+/// away from the rails, decay never grows a trace, and the tick wrap changes nothing.
 #[cfg(test)]
 mod prop {
     use super::*;
@@ -1173,35 +1511,57 @@ mod prop {
     }
 
     #[test]
-    fn a_plasticity_step_moves_a_weight_by_at_most_one_window_across_the_tick_wrap() {
+    fn a_plasticity_step_moves_a_weight_by_at_most_one_window_within_its_half_range_across_the_tick_wrap()
+     {
         let mut rng = Lcg::new(19);
-        let bound = STDP_A_PLUS_Q1_15 as i32 + STDP_A_MINUS_Q1_15 as i32;
         for start in [0u32, u32::MAX - 4_000, u32::MAX - 1, 1 << 31] {
-            let mut block = SynapseBlock::new();
-            assert!(block.set_synapse(0, 1, rng.next_i16(), 3, false));
-            let mut now = start;
-            let mut post = NO_SPIKE_ON_RECORD;
-            for _ in 0..20_000 {
-                now = now.wrapping_add(1 + rng.below(3_000));
-                if rng.below(3) == 0 {
-                    post = now.wrapping_sub(rng.below(2_500));
+            for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
+                let bound = match polarity {
+                    Polarity::Excitatory => STDP_A_PLUS_Q1_15 as i32 + STDP_A_MINUS_Q1_15 as i32,
+                    Polarity::Inhibitory => 2 * STDP_A_PLUS_Q1_15 as i32 + ISTDP_ALPHA_Q1_15 as i32,
+                };
+                let mut block = SynapseBlock::new();
+                // A weight on the polarity's side of zero, at most the magnitude's width.
+                let weight = polarity.weight((rng.next_i16() as i32).abs().min(i16::MAX as i32));
+                assert!(block.set_synapse(0, 1, weight, 3, false));
+                let mut now = start;
+                let mut post = NO_SPIKE_ON_RECORD;
+                for _ in 0..20_000 {
+                    now = now.wrapping_add(1 + rng.below(3_000));
+                    if rng.below(3) == 0 {
+                        post = now.wrapping_sub(rng.below(2_500));
+                    }
+                    let before = block.eligibility_q1_15[0];
+                    let after = block.step_stdp(0, now, post, polarity);
+                    assert_eq!(after, block.eligibility_q1_15[0]);
+                    let moved = (after as i32).saturating_sub(before as i32).abs();
+                    assert!(
+                        moved <= bound,
+                        "{polarity:?}: at most the windows and the constant into the trace: {before} -> {after}"
+                    );
+                    let weight = block.weights_q1_15[0];
+                    let magnitude = polarity.magnitude(weight);
+                    let pending = block.eligibility_q1_15[0] as i32;
+                    let consolidated = block.consolidate(0, MODULATION_ONE_Q16, polarity);
+                    let moved = (consolidated as i32).saturating_sub(weight as i32).abs();
+                    assert!(
+                        moved <= bound.saturating_add(before.unsigned_abs() as i32),
+                        "the weight moves by the pairing plus what was pending at most"
+                    );
+                    let magnitude_after = polarity.magnitude(consolidated);
+                    assert_eq!(
+                        polarity.weight(magnitude_after),
+                        consolidated,
+                        "{polarity:?}: the weight is on its polarity's side"
+                    );
+                    let left = block.eligibility_q1_15[0] as i32;
+                    assert_eq!(
+                        magnitude_after + left,
+                        magnitude + pending,
+                        "{polarity:?}: the magnitude and the trace conserve their sum, at a rail too"
+                    );
+                    block.stamp_presynaptic(now);
                 }
-                let before = block.eligibility_q1_15[0];
-                let after = block.step_stdp(0, now, post);
-                assert_eq!(after, block.eligibility_q1_15[0]);
-                let moved = (after as i32).saturating_sub(before as i32).abs();
-                assert!(
-                    moved <= bound,
-                    "one window each way at most into the trace: {before} -> {after}"
-                );
-                let weight = block.weights_q1_15[0];
-                let consolidated = block.consolidate(0, MODULATION_ONE_Q16);
-                let moved = (consolidated as i32).saturating_sub(weight as i32).abs();
-                assert!(
-                    moved <= bound.saturating_add(before.unsigned_abs() as i32),
-                    "the weight moves by the pairing plus what was pending at most"
-                );
-                block.stamp_presynaptic(now);
             }
         }
     }

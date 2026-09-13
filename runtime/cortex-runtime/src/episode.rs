@@ -1,14 +1,19 @@
-//! Episodes tagged from a spike train (whitepaper §5.2.15, §6.6, §6.10; ADR-0048). The rules
-//! are `cortex-hippocampus`'s (`burst`, `capture`); this module composes them with the
-//! executor's ledger and with a rewarded invention: the pattern active in the ripple before
-//! the reward becomes the invention's episode, and the pair is the caller's association
-//! between the invented predicate's id and the ledger's index. Between ticks; nothing here
-//! allocates. The train is a fork's of the same run ([`fork`](crate::branching::fork)), since
-//! a worker's spikes are its own until it stops.
+//! Episodes tagged from a spike train (whitepaper §5.2.15, §6.6, §6.10; ADR-0048, ADR-0050).
+//! The rules are `cortex-hippocampus`'s (`burst`, `capture`); this module composes them with
+//! the executor's ledger and with a rewarded invention: the pattern active in the ripple
+//! before the reward becomes the invention's episode, and the pair is the caller's
+//! association between the invented predicate's id and the ledger's index. Between ticks;
+//! nothing here allocates. The train is a caller's slice (a fork's of the same run,
+//! [`fork`](crate::branching::fork)) for the three functions of ADR-0048, and the executor's
+//! own ([`Executor::train`], ADR-0050) for the three `recent` forms and for [`discover`],
+//! which runs the search of ADR-0045, rewards the modulator and tags the coincidence before
+//! the reward in one call.
 
-use crate::discovery::Discovery;
+use crate::discovery::{Discovery, DiscoveryError, SearchReport, search};
 use crate::executor::{Executor, TagError};
+use cortex_affect::InteroceptiveState;
 use cortex_hippocampus::{Burst, PATTERN_MAX, burst, capture};
+use cortex_reasoning::InduceScratch;
 
 /// A rewarded invention's episode: the invented predicate's id, the ledger index of the
 /// pattern active in the ripple before its reward, the pattern itself, and the span it was
@@ -82,13 +87,8 @@ pub fn tag_discovery<const CAP: usize>(
     if discovery.reward_q16 <= 0 {
         return Ok(None);
     }
-    let from = at.saturating_sub(window);
-    // The train is sorted by tick: the spikes of `[from, at)` are one contiguous run, found
-    // by two binary searches.
-    let low = train.partition_point(|&(t, _)| t < from);
-    let high = train.partition_point(|&(t, _)| t < at);
-    let span = train.get(low..high).unwrap_or(&[]);
-    let (burst, episode, pattern, len) = tag_burst(exec, span, coincidence, priority)?;
+    let spikes = span(train, at.saturating_sub(window), at);
+    let (burst, episode, pattern, len) = tag_burst(exec, spikes, coincidence, priority)?;
     Ok(Some(Association {
         predicate: discovery.invention.predicate,
         episode,
@@ -96,6 +96,190 @@ pub fn tag_discovery<const CAP: usize>(
         len,
         burst,
     }))
+}
+
+/// The spikes of `[from, to)` in a train sorted by tick: one contiguous run, found by two
+/// binary searches; empty when `to` is at or before `from`.
+fn span(train: &[(u32, u32)], from: u32, to: u32) -> &[(u32, u32)] {
+    let low = train.partition_point(|&(t, _)| t < from);
+    let high = train.partition_point(|&(t, _)| t < to);
+    train.get(low..high).unwrap_or(&[])
+}
+
+/// [`tag_from_trace`] over the executor's own train (ADR-0050): the pattern of
+/// `[from, from + window)` of the spikes the ring holds, tagged with `priority`.
+pub fn tag_recent<const CAP: usize>(
+    exec: &mut Executor<CAP>,
+    from: u32,
+    window: u32,
+    priority: u8,
+) -> Result<(u32, [u32; PATTERN_MAX], u8), TagError> {
+    let mut pattern = [0u32; PATTERN_MAX];
+    let len = capture(exec.train(), from, window, &mut pattern);
+    let index = exec.tag_episode(&pattern[..(len as usize).min(PATTERN_MAX)], priority)?;
+    Ok((index, pattern, len))
+}
+
+/// [`tag_burst`] over the spikes of `[from, to)` of the executor's own train: the densest
+/// span of `window` ticks in them, tagged with `priority`. `InvalidPattern` when they hold
+/// no spike or the window is zero.
+pub fn tag_burst_in<const CAP: usize>(
+    exec: &mut Executor<CAP>,
+    from: u32,
+    to: u32,
+    window: u32,
+    priority: u8,
+) -> Result<(Burst, u32, [u32; PATTERN_MAX], u8), TagError> {
+    let mut pattern = [0u32; PATTERN_MAX];
+    let (found, len) = {
+        let spikes = span(exec.train(), from, to);
+        let found = burst(spikes, window).ok_or(TagError::InvalidPattern)?;
+        (found, capture(spikes, found.from, window, &mut pattern))
+    };
+    let index = exec.tag_episode(&pattern[..(len as usize).min(PATTERN_MAX)], priority)?;
+    Ok((found, index, pattern, len))
+}
+
+/// [`tag_discovery`] at the executor's clock over its own train: the reward's tick is now,
+/// the window the `window` ticks before it.
+pub fn tag_discovery_recent<const CAP: usize>(
+    exec: &mut Executor<CAP>,
+    window: u32,
+    coincidence: u32,
+    discovery: &Discovery,
+    priority: u8,
+) -> Result<Option<Association>, TagError> {
+    if discovery.reward_q16 <= 0 {
+        return Ok(None);
+    }
+    let at = exec.ticks() as u32;
+    let (burst, episode, pattern, len) =
+        tag_burst_in(exec, at.saturating_sub(window), at, coincidence, priority)?;
+    Ok(Some(Association {
+        predicate: discovery.invention.predicate,
+        episode,
+        pattern,
+        len,
+        burst,
+    }))
+}
+
+/// Why [`discover`] did not run to its report.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscoverError {
+    /// The search's own refusal (the store, the scratch, a bound).
+    Discovery(DiscoveryError),
+    /// The ledger's refusal of the rewarded moment's pattern (the reward is the modulator's
+    /// by then).
+    Tag(TagError),
+    /// Fewer association slots than discovery slots: refused before the search.
+    OutFull,
+}
+
+impl From<DiscoveryError> for DiscoverError {
+    fn from(e: DiscoveryError) -> Self {
+        Self::Discovery(e)
+    }
+}
+
+impl From<TagError> for DiscoverError {
+    fn from(e: TagError) -> Self {
+        Self::Tag(e)
+    }
+}
+
+/// What [`discover`] came to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DiscoverReport {
+    /// The search's report.
+    pub search: SearchReport,
+    /// The dopamine signal after the committed rewards' total went into the modulator, or
+    /// the signal as it stood when nothing was committed.
+    pub signal_q16: i32,
+    /// The ledger index and the span of the rewarded moment's pattern, when one was tagged.
+    pub tagged: Option<(u32, Burst)>,
+}
+
+/// What a search runs over (ADR-0045): the caller's clause store and its length, the
+/// induction scratch, the affect state primed to the store's length, and the attempts the
+/// search may spend.
+pub struct ClauseSearch<'c, 'a> {
+    pub store: &'c mut [u32],
+    pub len: &'c mut usize,
+    pub scratch: &'c mut InduceScratch<'a>,
+    pub affect: &'c mut InteroceptiveState,
+    pub budget: u32,
+}
+
+/// Where a rewarded moment's pattern is read and how it is tagged: the `window` ticks
+/// before now, its densest `coincidence` span, the tag's `priority`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tagging {
+    pub window: u32,
+    pub coincidence: u32,
+    pub priority: u8,
+}
+
+/// The discovery loop in one call between ticks (ADR-0050, the rule ADR-0048 composed by
+/// hand): the search of ADR-0045 over the caller's store, its committed rewards' total into
+/// the modulator when positive, and then, for a rewarded search, the pattern active in the
+/// window before now (its densest coincidence, from the executor's own train) tagged once,
+/// and one association per commit, to that episode, written to `associations` in the
+/// commits' order. `OutFull` before the search when `associations` has fewer slots than
+/// `discoveries`; the search's and the ledger's refusals as they give them, the search's
+/// commits standing in the store either way and the reward the modulator's once given.
+pub fn discover<const CAP: usize>(
+    exec: &mut Executor<CAP>,
+    clauses: ClauseSearch<'_, '_>,
+    tagging: Tagging,
+    discoveries: &mut [Discovery],
+    associations: &mut [Association],
+) -> Result<DiscoverReport, DiscoverError> {
+    if associations.len() < discoveries.len() {
+        return Err(DiscoverError::OutFull);
+    }
+    let report = search(
+        clauses.store,
+        clauses.len,
+        clauses.scratch,
+        clauses.affect,
+        clauses.budget,
+        discoveries,
+    )?;
+    if report.reward_total_q16 <= 0 {
+        return Ok(DiscoverReport {
+            search: report,
+            signal_q16: exec.modulator().dopamine_rpe,
+            tagged: None,
+        });
+    }
+    let signal_q16 = exec.reward(report.reward_total_q16);
+    let at = exec.ticks() as u32;
+    let (burst, episode, pattern, len) = tag_burst_in(
+        exec,
+        at.saturating_sub(tagging.window),
+        at,
+        tagging.coincidence,
+        tagging.priority,
+    )?;
+    let commits = (report.commits as usize).min(discoveries.len());
+    for (slot, discovery) in associations
+        .iter_mut()
+        .zip(discoveries.iter().take(commits))
+    {
+        *slot = Association {
+            predicate: discovery.invention.predicate,
+            episode,
+            pattern,
+            len,
+            burst,
+        };
+    }
+    Ok(DiscoverReport {
+        search: report,
+        signal_q16,
+        tagged: Some((episode, burst)),
+    })
 }
 
 #[cfg(test)]
@@ -135,6 +319,111 @@ mod tests {
         (200, 5),
         (201, 5),
     ];
+
+    /// A scratch and a store for a search over nothing: the search runs, attempts nothing
+    /// and rewards nothing.
+    fn nothing_to_search(
+        exec: &mut Executor<64>,
+        tagging: Tagging,
+        room: usize,
+    ) -> Result<DiscoverReport, DiscoverError> {
+        use cortex_reasoning::{Binding, TermNode};
+        let mut arena = [TermNode::default(); 4];
+        let mut bindings = [Binding::UNBOUND; 4];
+        let (mut trail, mut stack, mut pairs) = ([0u32; 4], [0u32; 8], [[0u32; 3]; 2]);
+        let mut scratch = InduceScratch {
+            arena: &mut arena,
+            free: 0,
+            bindings: &mut bindings,
+            trail: &mut trail,
+            trail_len: 0,
+            stack: &mut stack,
+            pairs: &mut pairs,
+            next_variable: 0,
+            next_invented: 0xFFFE_0000,
+        };
+        let mut store = [0u32; 2];
+        let mut len = 0usize;
+        let mut affect = InteroceptiveState::default();
+        let mut discoveries = [Discovery::default(); 2];
+        let mut associations = [Association::default(); 2];
+        discover(
+            exec,
+            ClauseSearch {
+                store: &mut store,
+                len: &mut len,
+                scratch: &mut scratch,
+                affect: &mut affect,
+                budget: 8,
+            },
+            tagging,
+            &mut discoveries,
+            &mut associations[..room],
+        )
+    }
+
+    #[test]
+    fn the_recent_forms_read_the_executor_s_own_train_and_refuse_an_empty_one() {
+        let mut exec = engine(2);
+        exec.run(3);
+        assert!(exec.train().is_empty(), "no unit fired: an empty train");
+        assert_eq!(
+            tag_recent(&mut exec, 0, 100, 5),
+            Err(TagError::InvalidPattern)
+        );
+        assert_eq!(
+            tag_burst_in(&mut exec, 0, 100, 10, 5),
+            Err(TagError::InvalidPattern)
+        );
+        assert_eq!(
+            tag_discovery_recent(&mut exec, 100, 10, &discovery(0x0001_0000), 5),
+            Err(TagError::InvalidPattern)
+        );
+        assert_eq!(
+            tag_discovery_recent(&mut exec, 100, 10, &discovery(0), 5),
+            Ok(None),
+            "a reward that is not positive tags nothing"
+        );
+        assert_eq!(exec.episodes().len(), 0);
+        // The span of the executor's train is the same rule as the caller's train's.
+        assert_eq!(span(&TRAIN, 100, 150), &TRAIN[1..4]);
+        assert_eq!(span(&TRAIN, 100, 151), &TRAIN[1..5]);
+        assert_eq!(span(&TRAIN, 150, 100), &[]);
+        assert_eq!(span(&TRAIN, 0, 90), &[]);
+        assert_eq!(span(&TRAIN, 201, u32::MAX), &TRAIN[6..]);
+    }
+
+    #[test]
+    fn discover_refuses_too_few_association_slots_before_the_search_and_a_search_with_nothing_tags_nothing()
+     {
+        let mut exec = engine(2);
+        exec.run(3);
+        let tagging = Tagging {
+            window: 100,
+            coincidence: 10,
+            priority: 5,
+        };
+        assert_eq!(
+            nothing_to_search(&mut exec, tagging, 1),
+            Err(DiscoverError::OutFull),
+            "two discovery slots, one association slot"
+        );
+        let report = nothing_to_search(&mut exec, tagging, 2).unwrap();
+        assert_eq!(
+            (report.search.attempts, report.search.commits, report.tagged),
+            (0, 0, None)
+        );
+        assert_eq!(report.signal_q16, 0, "the signal as it stood");
+        assert_eq!(exec.episodes().len(), 0);
+        assert_eq!(
+            DiscoverError::from(DiscoveryError::Length),
+            DiscoverError::Discovery(DiscoveryError::Length)
+        );
+        assert_eq!(
+            DiscoverError::from(TagError::LedgerFull),
+            DiscoverError::Tag(TagError::LedgerFull)
+        );
+    }
 
     #[test]
     fn a_span_is_tagged_in_rank_order_and_an_empty_span_is_refused() {

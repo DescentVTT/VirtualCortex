@@ -11,7 +11,7 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_core::{
-    MODULATION_ONE_Q16, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, spike_message,
+    MODULATION_ONE_Q16, Polarity, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE, spike_message,
     synaptic_efficacy_q16,
 };
 use cortex_runtime::{Config, ConfigError, Executor, Image};
@@ -90,8 +90,8 @@ fn pairings_accumulate_in_the_trace_and_a_reward_consolidates_them_at_the_next_s
     for _ in 0..3 {
         let (pre, post) = pairing(&mut exec);
         assert!(post > pre, "the post fired after the pre");
-        oracle.step_stdp_all(pre, [post_last, 0, 0, 0]);
-        oracle.consolidate_all(0);
+        oracle.step_stdp_all(pre, [post_last, 0, 0, 0], Polarity::Excitatory);
+        oracle.consolidate_all(0, Polarity::Excitatory);
         post_last = post;
     }
     let (weight, trace) = synapse(&exec);
@@ -116,7 +116,7 @@ fn pairings_accumulate_in_the_trace_and_a_reward_consolidates_them_at_the_next_s
     assert_eq!(exec.reward(MODULATION_ONE_Q16), MODULATION_ONE_Q16);
     let pre = fire(&mut exec, 0);
     let (weight_after, trace_after) = synapse(&exec);
-    oracle.step_stdp_all(pre, [post_last, 0, 0, 0]);
+    oracle.step_stdp_all(pre, [post_last, 0, 0, 0], Polarity::Excitatory);
     let pending = oracle.eligibility_q1_15[0];
     assert_eq!(
         (weight_after as i32) - (WEIGHT as i32) + (trace_after as i32),

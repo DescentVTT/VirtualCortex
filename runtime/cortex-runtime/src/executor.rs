@@ -25,7 +25,8 @@
 //!
 //! A message pushed in phase 2 or 3 of tick $t$ is integrated in phase 1 of tick $t + 1$, so a
 //! zero-delay synapse and a one-tick one arrive together; a delay $d$ scheduled in phase 2 is
-//! due at $t + d$. Between ticks the coordinator sums the workers' spike counts into the
+//! due at $t + d$. Between ticks the coordinator merges the units the workers fired, in unit
+//! order, into its own bounded train (ADR-0050), sums the workers' spike counts into the
 //! homeostasis record's open bin, closes the bin on its cadence, regulates the gain on the
 //! window's and steps the sleep stage (ADR-0035, ADR-0036, ADR-0037); before a tick's first
 //! barrier it decides the ripple (ADR-0038): a schedule that is a function of the tick, so it
@@ -41,9 +42,9 @@ use crate::injector::{self, Injector};
 use crate::pool::Pools;
 use cortex_core::{
     BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel,
-    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK,
-    SynapseBlock, THRESHOLD_BASE, WorkerWheel, message_efficacy_q16, message_is_apical,
-    spike_message, synapse_token, token_block, token_slot,
+    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS,
+    SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, WorkerWheel, message_efficacy_q16,
+    message_is_apical, spike_message, synapse_token, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
@@ -55,6 +56,7 @@ use cortex_homeostasis::{
     HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_REM, STAGE_SWS,
 };
 use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
+use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -111,6 +113,11 @@ pub struct Config {
     /// Room for episodes tagged into the ledger (ADR-0038) beyond those an image holds; 0
     /// leaves the engine unable to tag one.
     pub episodes: usize,
+    /// The spikes the executor's own train keeps (ADR-0050): after every tick the coordinator
+    /// merges the units every worker fired, in unit order, into a ring of this many
+    /// `(tick, unit)` entries, the oldest let go when it is full and counted; read between
+    /// ticks by [`Executor::train`]. 0 keeps none and adds nothing to the tick.
+    pub train_capacity: usize,
 }
 
 impl Default for Config {
@@ -129,6 +136,7 @@ impl Default for Config {
             control_step_q0_16: 0,
             sleep_shift: 0,
             episodes: 0,
+            train_capacity: 0,
         }
     }
 }
@@ -370,6 +378,11 @@ struct Shared {
     /// Per worker, the units that fired in its turns phase this tick: stored at the end of the
     /// phase, summed by the coordinator after the tick (ADR-0036).
     spikes: Box<[AtomicU32]>,
+    /// The units that fired this tick, one slot per unit, appended by every worker at the
+    /// spike through `fired_len` and taken by the coordinator after the tick into the train
+    /// (ADR-0050); empty when the executor keeps no train.
+    fired: Box<[AtomicU32]>,
+    fired_len: AtomicUsize,
     /// The episodic ledger (ADR-0038): written between ticks by the coordinator (a tag, a
     /// replay's count, a REM ripple's depotentiation), read by worker 0 in phase 3.
     episodes: Arena<Episode>,
@@ -473,6 +486,14 @@ pub struct Executor<const CAP: usize> {
     replays: u64,
     /// REM ripples that lowered an episode's tag so far.
     depotentiations: u64,
+    /// The executor's own spike train (ADR-0050): `(tick, unit)` in tick order and unit order
+    /// within a tick, the last `train_capacity` spikes.
+    train: VecDeque<(u32, u32)>,
+    train_capacity: usize,
+    /// Spikes the ring let go because it was full.
+    train_overwritten: u64,
+    /// The tick's spikes as the coordinator sorts them, one slot per unit.
+    merge: Vec<u32>,
 }
 
 impl<const CAP: usize> Executor<CAP> {
@@ -511,6 +532,12 @@ impl<const CAP: usize> Executor<CAP> {
             return Err(ConfigError::TooFewNodes);
         }
         let workers = config.workers;
+        // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
+        let fired_slots = if config.train_capacity == 0 {
+            0
+        } else {
+            config.units
+        };
         let deque_capacity = if config.deque_capacity == 0 {
             config.units
         } else {
@@ -539,6 +566,8 @@ impl<const CAP: usize> Executor<CAP> {
             modulation: AtomicI32::new(config.modulation_baseline_q16),
             gain: AtomicU32::new(GAIN_ONE_Q16),
             spikes: (0..workers).map(|_| AtomicU32::new(0)).collect(),
+            fired: (0..fired_slots).map(|_| AtomicU32::new(0)).collect(),
+            fired_len: AtomicUsize::new(0),
             episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
             replay: AtomicU32::new(0),
             stop: AtomicBool::new(false),
@@ -604,6 +633,10 @@ impl<const CAP: usize> Executor<CAP> {
             episode_capacity: config.episodes,
             replays: 0,
             depotentiations: 0,
+            train: VecDeque::with_capacity(config.train_capacity),
+            train_capacity: config.train_capacity,
+            train_overwritten: 0,
+            merge: Vec::with_capacity(fired_slots),
         })
     }
 
@@ -715,6 +748,47 @@ impl<const CAP: usize> Executor<CAP> {
     /// REM ripples that lowered an episode's tag so far (ADR-0038).
     pub fn depotentiations(&self) -> u64 {
         self.depotentiations
+    }
+
+    /// The executor's own spike train (ADR-0050), between ticks: the last
+    /// `Config::train_capacity` spikes as `(tick, unit)`, in tick order and unit order
+    /// within a tick, whichever worker ran the unit, so that the train is the same on every
+    /// worker count. A ring made contiguous, so the call may move its entries; nothing
+    /// allocates. Empty for an executor that keeps no train.
+    pub fn train(&mut self) -> &[(u32, u32)] {
+        self.train.make_contiguous()
+    }
+
+    /// The spikes the train let go because the ring was full.
+    pub fn train_overwritten(&self) -> u64 {
+        self.train_overwritten
+    }
+
+    /// `Config::train_capacity`.
+    pub fn train_capacity(&self) -> usize {
+        self.train_capacity
+    }
+
+    /// After a tick, between ticks (ADR-0050): the units the workers fired this tick, sorted,
+    /// into the ring at `now`, the oldest let go when the ring is full. Nothing for an
+    /// executor that keeps no train.
+    fn merge_spikes(&mut self, now: u32) {
+        if self.train_capacity == 0 {
+            return;
+        }
+        let fired = self.shared.fired_len.swap(0, Ordering::Relaxed);
+        self.merge.clear();
+        for slot in self.shared.fired.iter().take(fired) {
+            self.merge.push(slot.load(Ordering::Relaxed));
+        }
+        self.merge.sort_unstable();
+        for &unit in &self.merge {
+            if self.train.len() >= self.train_capacity {
+                self.train.pop_front();
+                self.train_overwritten = self.train_overwritten.saturating_add(1);
+            }
+            self.train.push_back((now, unit));
+        }
     }
 
     /// An input between ticks (ADR-0038): appends an episode of `units`, tagged at this tick
@@ -1221,6 +1295,7 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.barrier.wait();
         self.worker0.phase_deliveries(&self.shared);
         self.shared.barrier.wait();
+        self.merge_spikes(now);
         // A clock wraps by name (§8.1): the dynamics already see it as `tick as u32`.
         self.tick = self.tick.wrapping_add(1);
         self.rehydrate_pending();
@@ -1414,6 +1489,15 @@ impl<const CAP: usize> Worker<CAP> {
             } else if self.spike_trace.capacity() > 0 {
                 self.trace_dropped = self.trace_dropped.saturating_add(1);
             }
+            // The tick's spikes for the coordinator's train (ADR-0050): one slot per unit,
+            // taken in any order and sorted after the tick.
+            if !shared.fired.is_empty() {
+                let at = shared.fired_len.fetch_add(1, Ordering::Relaxed);
+                let Some(slot) = shared.fired.get(at) else {
+                    abort("more spikes than units in one tick");
+                };
+                slot.store(unit, Ordering::Relaxed);
+            }
         }
         if u.end_turn() {
             // A message arrived during the turn. No push overlaps a turn in this executor, so
@@ -1437,6 +1521,9 @@ impl<const CAP: usize> Worker<CAP> {
             let Some(pre) = (unsafe { shared.units.get(unit as usize) }) else {
                 abort("a spiked unit index is outside the arena");
             };
+            // The block's polarity is its presynaptic unit's (ADR-0049): every rule below
+            // moves a weight within that half of the width.
+            let polarity = Polarity::of_flags(pre.flags);
             let mut next = pre.synapse_slab_idx;
             let mut remaining = shared.blocks.len();
             while next != CHAIN_END && remaining > 0 {
@@ -1457,8 +1544,8 @@ impl<const CAP: usize> Worker<CAP> {
                         .and_then(|t| unsafe { shared.units.get(t as usize) })
                         .map_or(NO_SPIKE_ON_RECORD, |t| t.last_soma_spike_tick)
                 });
-                block.step_stdp_all(now, posts);
-                block.consolidate_all(modulation);
+                block.step_stdp_all(now, posts, polarity);
+                block.consolidate_all(modulation, polarity);
                 let released = block.release_all(release_u, release_r);
                 for (slot, &efficacy) in released.iter().enumerate() {
                     let Some(target) = block.target(slot) else {
@@ -1670,5 +1757,69 @@ mod tests {
         assert_eq!(reports[0].delivered, vec![spike_message(0x100, false)]);
         assert_eq!(reports[0].delivered_count, 1);
         assert!(reports[0].spikes.is_empty());
+    }
+
+    /// Two armed units fired by fourteen strong messages each, `rounds` times, 400 ticks
+    /// apart; returns the executor after the last round and the spikes its workers traced.
+    fn fired(train_capacity: usize, rounds: u32) -> (Executor<8>, Vec<(u32, u32)>) {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        let mut exec = Executor::<8>::new(Config {
+            units: 2,
+            nodes_per_worker: 64,
+            trace_capacity: 64,
+            train_capacity,
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+        let inject = exec.injector();
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        for _ in 0..rounds {
+            for unit in [1, 0] {
+                for _ in 0..14 {
+                    inject.inject(unit, strong).unwrap();
+                }
+            }
+            exec.run(400);
+        }
+        let traced: Vec<(u32, u32)> = exec
+            .worker0
+            .spike_trace
+            .iter()
+            .map(|&(u, t)| (t, u))
+            .collect();
+        (exec, traced)
+    }
+
+    #[test]
+    fn the_train_keeps_the_last_spikes_in_tick_and_unit_order_and_counts_what_it_let_go() {
+        // Three rounds fire both units three times: six spikes, of which a ring of four
+        // keeps the last four in tick order, both units of a tick in unit order although
+        // unit 1 was injected first, and counts the two it let go.
+        let (mut exec, traced) = fired(4, 3);
+        assert_eq!(traced.len(), 6, "{traced:?}");
+        let mut sorted = traced.clone();
+        sorted.sort_unstable();
+        assert_eq!(exec.train(), &sorted[2..], "the last four, sorted");
+        assert_eq!(exec.train_overwritten(), 2);
+        assert_eq!(exec.train_capacity(), 4);
+        let last = exec.train().to_vec();
+        assert_eq!(last[0].1, 0, "unit 0 before unit 1 at the same tick");
+        assert_eq!(last[0].0, last[1].0);
+        // A ring the size of the run keeps every spike and lets none go.
+        let (mut exec, traced) = fired(6, 3);
+        let mut sorted = traced;
+        sorted.sort_unstable();
+        assert_eq!(exec.train(), &sorted[..]);
+        assert_eq!(exec.train_overwritten(), 0);
+        // No train: nothing kept, nothing counted, and the tick has no slot to fill.
+        let (mut exec, traced) = fired(0, 3);
+        assert_eq!(traced.len(), 6);
+        assert!(exec.train().is_empty());
+        assert_eq!((exec.train_overwritten(), exec.train_capacity()), (0, 0));
     }
 }
