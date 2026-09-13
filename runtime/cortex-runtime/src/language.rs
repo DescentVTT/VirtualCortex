@@ -14,7 +14,7 @@ use cortex_linguistic::{
     LinguisticFrameSlot, Q16_ONE, ROLE_ACTION, ROLE_AFFECT, ROLE_OBJECT, ROLE_SUBJECT,
 };
 use cortex_reasoning::{
-    Binding, ParseError, ParseScratch, TERM_CONSTANT, TermNode, deref, head, reduce,
+    Binding, ParseError, ParseScratch, TERM_COMPOUND, TERM_CONSTANT, TermNode, deref, head, reduce,
 };
 use cortex_symbolic::{HypervectorBody, confidence_q16};
 
@@ -80,14 +80,23 @@ pub const fn role_slot(role: u8) -> Option<usize> {
     }
 }
 
-/// The role a reduction's role term names under the bindings: a constant in the band.
-fn role_of_term(term: u32, arena: &[TermNode], bindings: &[Binding]) -> Option<u8> {
+/// The role a reduction's role term names under the bindings, and the filler it names, if
+/// any: a constant in the band is a role whose filler is the argument's head; a compound of
+/// one child over a constant of the band, `ROLE(c)`, is a role whose filler is `c` itself (a
+/// modifier's own concept, which no argument's head is; ADR-0046). Anything else names no
+/// role.
+fn role_of_term(term: u32, arena: &[TermNode], bindings: &[Binding]) -> Option<(u8, Option<u32>)> {
     let index = deref(term, arena, bindings)?;
     let node = arena.get(index as usize)?;
-    if node.kind == TERM_CONSTANT {
-        role_of_concept(node.functor)
-    } else {
-        None
+    let role = role_of_concept(node.functor)?;
+    match node.kind {
+        TERM_CONSTANT => Some((role, None)),
+        TERM_COMPOUND if node.arity == 1 => {
+            let child = deref(node.child(0)?, arena, bindings)?;
+            let filler = arena.get(child as usize)?;
+            (filler.kind == TERM_CONSTANT).then_some((role, Some(filler.functor)))
+        }
+        _ => None,
     }
 }
 
@@ -95,11 +104,12 @@ fn role_of_term(term: u32, arena: &[TermNode], bindings: &[Binding]) -> Option<u
 /// each instantiated with fresh variables by the caller) to one category, which must be the
 /// sentence category `sentence` (the functor of the root's node under the bindings; a phrase
 /// such as `NP(dog)` is `NotASentence`), and binds into a new frame of `template` every role a
-/// reduction reports, with the head concept of the category that filled it, and the head of
-/// the root as the action, each at a confidence of 1.0; the root's head is bound last and has
-/// the last word on the action role. The frame is returned unsealed; a reduction whose role is
-/// not a role constant, or whose argument has no head, binds nothing. The reductions and the
-/// substitution are left in `scratch`.
+/// reduction reports, with the head concept of the category that filled it (or, for a role
+/// term `ROLE(c)`, with `c`: a modifier's own concept, ADR-0046), and the head of the root as
+/// the action, each at a confidence of 1.0; the root's head is bound last and has the last
+/// word on the action role. The frame is returned unsealed; a reduction whose role term names
+/// no role, or whose argument has no head, binds nothing. The reductions and the substitution
+/// are left in `scratch`.
 pub fn comprehend(
     categories: &[u32],
     scratch: &mut ParseScratch,
@@ -120,11 +130,15 @@ pub fn comprehend(
         return Err(LanguageError::NotASentence(root));
     }
     for step in scratch.steps.iter().take(scratch.step_count) {
-        let Some(role) = role_of_term(step.role, arena, bindings) else {
+        let Some((role, filler)) = role_of_term(step.role, arena, bindings) else {
             continue;
         };
-        let Some(concept) = head(step.argument, arena, bindings) else {
-            continue;
+        let concept = match filler {
+            Some(concept) => concept,
+            None => match head(step.argument, arena, bindings) {
+                Some(concept) => concept,
+                None => continue,
+            },
         };
         if !frame.bind_role(role, concept, Q16_ONE) {
             return Err(LanguageError::RoleRefused(role));

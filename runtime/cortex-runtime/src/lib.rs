@@ -12,7 +12,9 @@
 //! as a hypervector and read back through a codebook (ADR-0039, ADR-0040), and the discovery
 //! path of [`discovery`]: an invention's drop in a clause store's description length as the
 //! valence and the modulator's reward, and a prover frame's certificate into a theorem
-//! (ADR-0041, ADR-0043). Everything is allocated in [`Executor::new`];
+//! (ADR-0041, ADR-0043); the lexicon of [`lexicon`] between a host's token ids and the frame,
+//! in both directions (ADR-0046); and the episodes of [`episode`], tagged from a spike train
+//! and bound to a rewarded invention (ADR-0048). Everything is allocated in [`Executor::new`];
 //! nothing allocates, blocks or (apart from the barrier's yield) makes a system call in the
 //! loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
@@ -26,10 +28,12 @@ pub mod barrier;
 pub mod branching;
 pub mod deque;
 pub mod discovery;
+pub mod episode;
 pub mod executor;
 pub mod image;
 pub mod injector;
 pub mod language;
+pub mod lexicon;
 pub mod pool;
 pub mod synthesis;
 pub mod trial;
@@ -42,6 +46,7 @@ pub use discovery::{
     LENGTH_CEILING, SearchReport, certify_from_frame, conjecture_frame, description_length,
     free_energy_q16, invent, prime, reward_q16, search,
 };
+pub use episode::{Association, tag_burst, tag_discovery, tag_from_trace};
 pub use executor::{
     ACTIVATE, AmendError, Config, ConfigError, Executor, Inject, InjectError, Policy, TagError,
     WorkerReport,
@@ -50,6 +55,11 @@ pub use image::{Image, ImageError, WriteAheadLog};
 pub use language::{
     DECODE_FLOOR_Q16, LanguageError, ROLE_CONCEPT_BASE, ROLES, comprehend, concept_in,
     decode_frame, encode_frame, read_role, role_concept, role_of_concept, role_slot,
+};
+pub use lexicon::{
+    Entry, Lexicon, LexiconError, MAX_NESTING, Reading, SHAPE_ADJECTIVE, SHAPE_DETERMINER,
+    SHAPE_HEDGE, SHAPE_INTRANSITIVE, SHAPE_NOMINAL, SHAPE_NOUN, SHAPE_TAG, SHAPE_TRANSITIVE,
+    comprehend_tokens, realise,
 };
 pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};

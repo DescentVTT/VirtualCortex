@@ -10,7 +10,10 @@
 //! $g \leftarrow g\,(1 - \kappa\,\operatorname{clamp}(\hat\sigma - 1, -1, 1))$, bounded, which
 //! the turn holder applies to every unit's input sums: the whitepaper's
 //! $W_{ij} \leftarrow W_{ij}[1 - \kappa(\sigma - 1)]$ as one factor per unit instead of a sweep
-//! over every weight. At $\kappa = 0$ the gain is 1.0 and nothing moves.
+//! over every weight. At $\kappa = 0$ the gain is 1.0 and nothing moves. The same slope over
+//! a caller's series, at any lag and any bin a spike train is counted into, is
+//! [`regression`]'s (ADR-0047): what the record's window cannot hold, a caller that holds
+//! the train can read.
 //!
 //! Sleep (ADR-0037) is a state machine stepped once per window on the same cadence: a sleep
 //! pressure $S$ that rises while awake and falls while asleep (process S of Borbély's
@@ -25,6 +28,9 @@
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
 // here (ADR-0029; migrated under brief 016 on 2026-09-10).
 #![deny(clippy::arithmetic_side_effects)]
+
+pub mod regression;
+pub use regression::{count_bins, slope_at_lag};
 
 /// 1.0 in Q16.16.
 const Q16_ONE: i64 = 0x0001_0000;
