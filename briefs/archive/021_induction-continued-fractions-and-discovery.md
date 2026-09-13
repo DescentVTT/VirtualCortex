@@ -1,7 +1,15 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-13
 ---
+
+> **Executed 2026-09-13 in pull request #52.** Writes ADR-0041 (induction on the term
+> arena), ADR-0042 (exact continued fractions) and ADR-0043 (the discovery path); resolves
+> finding F-31; opens hypothesis H-11; image format 13 and the determinism pin untouched.
+> Every deliverable is done; notes under the boxes say where the tree departs from the text
+> (the polynomial never fails; a runtime `NotPrimed` guard; the small store's counts). The
+> report is in the pull request and in `CHANGELOG.md`. The body below describes the tree
+> before execution and is not maintained; its relative links gained one `../`.
 
 # Brief 021 — Induction on the term arena, exact continued fractions, and the discovery path: predicate invention by inverse resolution, a bounded search for a polynomial continued fraction, and the runtime's composition of a description-length drop into the modulator's reward and of a prover's certificate into a theorem
 
@@ -23,7 +31,7 @@ consolidates a discovery through three-factor plasticity; and a two-track verifi
 second track writes a prover's certificate into `SemanticOntologyNode` fail-closed. Four of its
 stated premises are not in the tree (the Context below says which), so the round begins by
 re-deriving them. When the round is done: **one ADR** puts definite clauses on the term arena
-of [ADR-0025](../docs/adr/0025-term-arena-and-unification.md) (a clause is a compound over a
+of [ADR-0025](../../docs/adr/0025-term-arena-and-unification.md) (a clause is a compound over a
 reserved functor: its head and up to seven body literals) and gives `cortex-reasoning` the
 inductive operators as bounded rules over caller slices: Plotkin's least general
 generalisation of two terms, absorption, identification, and intra-construction, which invents
@@ -60,33 +68,33 @@ all of this, and this brief is archived with every check green.
 - Every claim is Implemented, Specified, Target or Hypothesis. What a search over 2 401
   coefficient tuples reports for a rational near $e$ is stated as what it is; whether a
   description-length drop consolidating a trace is anything a later behaviour reads is a
-  hypothesis with a protocol ([ADR-0010](../docs/adr/0010-measured-or-target.md)). The words
+  hypothesis with a protocol ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). The words
   "discovers", "understands", "aesthetic" and "intuition" describe the proposal, never the tree.
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper
   §11, never a silent edit.
 - No `f32`/`f64`, in the crates and in the tests; a rational target is two integers. Q16.16 in
   `i32`/`u32`, widened to `i64` to multiply; every operation on a state field saturates or
   wraps by name (`clippy::arithmetic_side_effects` is denied everywhere,
-  [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
+  [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
   above the shift; exact arithmetic that must not saturate goes through
   `ArithmeticScratchpadSlot` or a `checked_*` operation whose `None` is a result.
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; no heap types, threads
   or `unsafe` in a state crate (`unsafe_code = "forbid"`, ADR-0029); no recursion whose depth
   the input decides: a walk uses a caller slice as its work stack and an exhausted slice is a
-  result ([ADR-0025](../docs/adr/0025-term-arena-and-unification.md)).
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+  result ([ADR-0025](../../docs/adr/0025-term-arena-and-unification.md)).
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   a clause is a term, so it lives in `cortex-reasoning`; a convergent is exact arithmetic, so
   it lives in `cortex-arithmetic`; a valence is `cortex-affect`'s, a reward `cortex-neuromod`'s,
   a certified theorem `cortex-knowledge`'s; what joins them lives in `runtime/cortex-runtime`,
-  the one crate that depends downward ([ADR-0023](../docs/adr/0023-executor.md)). No new crate;
+  the one crate that depends downward ([ADR-0023](../../docs/adr/0023-executor.md)). No new crate;
   no new record; the crate count stays 32.
 - A change to a record bumps `CortexFileHeader::FORMAT_VERSION` (rule L-6). This round changes
   no record and adds none to the image, so the format stays 13.
 - State crates declare no dependencies (TC-2).
 - Rule L-3: a term holds ids, never strings; a clause's predicate is a concept id.
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); an
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); an
   invented predicate is an id in a term, not a rule of the engine.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only
   with a stated reason; the mutation gate on the changed lines must pass; a new rule carries
   a test over the lattice of `testkit/prop.rs`; every pinned number is computed by an
   independent oracle before the test that asserts it is written.
@@ -161,10 +169,10 @@ quoted sentences are what to re-derive.
    three records; the proposal's Frontier I has no rule to write until the generative model
    exists, and that is the item §8.8 already calls Specified.
 6. **Three premises of the proposal's preamble.** "Closed-loop Self-Organized Criticality
-   ($\sigma \approx 1.0$)": [ADR-0036](../docs/adr/0036-criticality-control.md) says under
+   ($\sigma \approx 1.0$)": [ADR-0036](../../docs/adr/0036-criticality-control.md) says under
    "What is not claimed" that the branching ratio settles at 1 on a network; H-8 is open.
    "442 passing tests": `cargo test --workspace --locked` at `c4e99e8` runs 446 (445 passed,
-   1 ignored). "23.86-hour": [ADR-0037](../docs/adr/0037-sleep-regulation.md) says it.
+   1 ignored). "23.86-hour": [ADR-0037](../../docs/adr/0037-sleep-regulation.md) says it.
 7. **The reserved id bands.** `runtime/cortex-runtime/src/language.rs`: `ROLE_CONCEPT_BASE`
    `0xFFFF_FE00`; `category.rs`: `CATEGORY_RESERVED` `0xFFFF_FF00`. An invented predicate's id
    must sit below both, and a `const _` assertion in each place that can see both must say so.
@@ -175,13 +183,10 @@ quoted sentences are what to re-derive.
    gate's exclusions are in `.cargo/mutants.toml`; the determinism pin is
    `PINNED_ARENA_HASH` `0x1724f3486c1d674e` in `runtime/cortex-runtime/tests/differential.rs`.
 
-<!-- @assert-absence target="crates/cortex-reasoning" symbol="fn intra_construct" glob="*.rs" reason="brief 021 precondition: no inductive operator exists yet" -->
-<!-- @assert-absence target="crates/cortex-arithmetic" symbol="fn convergent" glob="*.rs" reason="brief 021 precondition: no continued fraction exists yet" -->
-<!-- @assert-absence target="runtime/cortex-runtime/src" symbol="fn certify_from_frame" glob="*.rs" reason="brief 021 precondition: no certification from a frame exists yet" -->
 
 ## Deliverables
 
-- [ ] **The induction ADR (the next free number), induction on the term arena** (`docs/adr/0041-induction-on-the-term-arena.md`,
+- [x] **The induction ADR (the next free number), induction on the term arena** (`docs/adr/0041-induction-on-the-term-arena.md`,
   `depends-on: ADR-0025`; `crates/cortex-reasoning/src/induce.rs`, re-exported from `lib.rs`).
   A definite clause is a compound over `CLAUSE` (`0xFFFF_FF03`, above `CATEGORY_RESERVED`,
   asserted at compile time distinct from the slashes) whose first child is the head and whose
@@ -215,7 +220,8 @@ quoted sentences are what to re-derive.
   counters unchanged after every failure; a property walk over random clause pairs from a
   small vocabulary holding the identities for every success and the restoration for every
   failure. Every number a test pins comes from an oracle outside the tree first.
-- [ ] **The fractions ADR (the number after it), exact continued fractions** (`docs/adr/0042-continued-fractions.md`,
+  **Departure:** `free_variables` takes the running length as a parameter and returns the new one; the generalisation's pair table is per call. The rest is as written.
+- [x] **The fractions ADR (the number after it), exact continued fractions** (`docs/adr/0042-continued-fractions.md`,
   `depends-on: ADR-0016`; `crates/cortex-arithmetic/src/fraction.rs`, re-exported). `Poly`
   = `[i64; 3]`, $c_0 + c_1 n + c_2 n^2$; `poly_at`. `Convergent { p, q, depth }`;
   `convergent(a, b, depth, slot)` runs $p_n = a_n p_{n-1} + b_n p_{n-2}$,
@@ -241,7 +247,8 @@ quoted sentences are what to re-derive.
   ($1 + \sqrt 2$); an overflow at the depth the oracle says with the flag set; a zero
   denominator; every `Bound` case; `OutFull`; a property walk comparing `convergent` against a
   checked `i128` reference over random small polynomials.
-- [ ] **The discovery ADR (the number after that), the discovery path** (`docs/adr/0043-discovery-path.md`, `depends-on:
+  **Departure:** `poly_at` cannot fail (every 64-bit tuple at every 32-bit depth fits 128 bits, shown in the code), so it returns the value, not an `Option`; `search` also refuses a non-positive tolerance denominator. The depth-31 overflow pin and the four loose matches are recorded in the ADR.
+- [x] **The discovery ADR (the number after that), the discovery path** (`docs/adr/0043-discovery-path.md`, `depends-on:
   ADR-0032`; `runtime/cortex-runtime/src/discovery.rs`, re-exported; runtime `Cargo.toml`
   gains path dependencies on `cortex-affect`, `cortex-tools` and `cortex-knowledge`).
   `description_length(store, arena, bindings, stack)` is the saturating sum of the sizes of a
@@ -270,19 +277,20 @@ quoted sentences are what to re-derive.
   invention's `term_hash` is pinned; a conjecture frame completed with that hash and a
   certificate certifies a node, and every refusal leaves it unchanged. Every pinned number is
   computed by an oracle outside the tree first.
-- [ ] **Finding F-31** in whitepaper §11: §6.10's "stores a certificate hash" against
+  **Departure:** `invent` refuses with `NotPrimed` unless the affect state's previous free energy is the store's length, so a stale state cannot read a stale drop; the unit test's small store is fourteen nodes becoming seventeen (arity-one literals), the exit test's eighteen becoming nineteen as written.
+- [x] **Finding F-31** in whitepaper §11: §6.10's "stores a certificate hash" against
   `certify(statement_hash)`; the payload bytes of a prover's result defined nowhere; the two
   statuses the proposal asserted that no document carried ("continued fractions Specified",
   "the certification callback Specified"). Disposition: resolved by the discovery ADR's payload layout
   and the corrected sentences; the certificate hash lives in the completed frame's payload,
   the node holds the statement's.
-- [ ] **Hypothesis H-11** in §11.1: that a description-length drop consolidating pending
+- [x] **Hypothesis H-11** in §11.1: that a description-length drop consolidating pending
   eligibility traces, on a network that computes anything, biases what a later behaviour reads
   toward the invention (compression progress as a reward: Schmidhuber's theory is about
   curiosity and aesthetics; what the tree holds is a mechanism whose exit test moves one
   weight); and that the first-fit matcher of the three operators finds the matchings the
   clause stores of a later round need (the greedy gap of H-10, restated for induction).
-- [ ] **The documents.** Whitepaper 4.9.0: the executive summary's sentence on what exists;
+- [x] **The documents.** Whitepaper 4.9.0: the executive summary's sentence on what exists;
   §1.6 rows (`cortex-reasoning`, `cortex-arithmetic`, `cortex-affect`, `cortex-tools`,
   `cortex-knowledge`, dates); §5.2.21 (the payload layout of a prover's result, under the
   frame's table); §5.2.23 (the description length as one free energy the rule reads, Partial);
@@ -300,7 +308,7 @@ quoted sentences are what to re-derive.
   Implemented row's clause; the reasoning and arithmetic rows' rule names), `CLAUDE.md` (the
   sentence on what exists), `docs/zh-TW/README.md` (§6 and §11 rows), `docs/adr/README.md`
   (three rows), `CHANGELOG.md` (one entry under Unreleased in the shape of brief 020's).
-- [ ] **Not adopted, with the reason in the ADR that is closest:** the geometric intuition
+- [x] **Not adopted, with the reason in the ADR that is closest:** the geometric intuition
   manifold and the "energy-based" attractor (no potential exists to descend; the generative
   model of the canvas is the Specified item, the discovery ADR's consequences); an interoceptive record
   in the image (nothing in the executor writes a free energy; a record the loop carries and
@@ -312,7 +320,7 @@ quoted sentences are what to re-derive.
   every frame; which conjectures to dispatch is the executive's Specified search, the discovery ADR);
   inverse substitution beyond `lgg` (the induction ADR: the operators produce instances, the
   generalisation is a separate rule the caller composes).
-- [ ] **This brief archived** under `briefs/archive/` with the frozen banner, every box
+- [x] **This brief archived** under `briefs/archive/` with the frozen banner, every box
   dispositioned, the precondition directives removed and the links rebased.
 
 ## Not empowered
