@@ -10,8 +10,8 @@
 use crate::executor::{Inject, InjectError};
 use cortex_connectome::{Census, Prior};
 use cortex_core::{
-    DendriticSuperNeuron, FLAG_INHIBITORY, STP_MAX, STP_U, SYNAPSES_PER_BLOCK, SynapseBlock,
-    THRESHOLD_BASE, WorkerWheel, spike_message,
+    DendriticSuperNeuron, FLAG_INHIBITORY, MAX_CHAIN_INDEX, STP_MAX, STP_U, SYNAPSES_PER_BLOCK,
+    SynapseBlock, THRESHOLD_BASE, WorkerWheel, spike_message,
 };
 
 /// Why a prior was not written.
@@ -21,7 +21,8 @@ pub enum SynthesisError {
     Prior,
     /// The unit arena is not the prior's size.
     Units,
-    /// The block arena holds fewer blocks than [`blocks_for`] the prior.
+    /// The block arena holds fewer blocks than [`blocks_for`] the prior, or more than a chain
+    /// index can name (`MAX_CHAIN_INDEX + 1`), which `link` would refuse part-way.
     Blocks,
     /// The prior's longest delay, in either band, is at or beyond the wheel's horizon, which
     /// the loader would refuse and the fan-out would abort on.
@@ -57,7 +58,9 @@ pub fn synthesize(
         return Err(SynthesisError::Units);
     }
     let per_unit = blocks_per_unit(prior);
-    if (blocks.len() as u64) < blocks_for(prior) {
+    if (blocks.len() as u64) < blocks_for(prior)
+        || blocks.len() as u64 > (MAX_CHAIN_INDEX as u64).saturating_add(1)
+    {
         return Err(SynthesisError::Blocks);
     }
     if prior.delay_max.max(prior.far_delay_max) as u64 >= WorkerWheel::horizon_ticks() {
@@ -142,8 +145,11 @@ impl Drive {
 
     /// The unit the `index`-th message of `tick` reaches.
     pub const fn unit_at(&self, tick: u64, index: u32) -> u32 {
-        let draw =
-            mix64(self.seed ^ tick.wrapping_mul(0x0000_0001_0000_0001) ^ ((index as u64) << 48));
+        // The index rotated into the high half: a bijection of the index's 32 bits, where a
+        // shift kept sixteen (the review of brief 022 found indices 65 536 apart colliding).
+        let draw = mix64(
+            self.seed ^ tick.wrapping_mul(0x0000_0001_0000_0001) ^ (index as u64).rotate_left(48),
+        );
         ((draw >> 32).wrapping_mul(self.units as u64) >> 32) as u32
     }
 
@@ -327,6 +333,17 @@ mod tests {
         }
         assert!(counts.iter().all(|&c| c > 900 && c < 1500), "{counts:?}");
         assert_ne!(d.unit_at(1, 0), Drive { seed: 6, ..d }.unit_at(1, 0));
+        let wide = Drive {
+            units: 1 << 20,
+            ..d
+        };
+        let collisions = (0..1000u64)
+            .filter(|&t| wide.unit_at(t, 0) == wide.unit_at(t, 65_536))
+            .count();
+        assert!(
+            collisions < 10,
+            "indices 65 536 apart are distinct draws: {collisions}"
+        );
         let mut exec = Executor::<8>::new(Config {
             units: 10,
             injector_capacity: 8,

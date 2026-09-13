@@ -68,4 +68,6 @@ exclude_re = [
     "executor\\.rs:\\d+:\\d+: replace <impl Drop for Executor<CAP>>::drop with \\(\\)",
     # `difference < 0` after the `== 0` arm has been taken: `<=` cannot see a zero there.
     "injector\\.rs:\\d+:\\d+: replace < with <= in Injector::(push|pop)",
+    # The shorter way round a ring: at equality both arms are the same distance.
+    "prior\\.rs:\\d+:\\d+: replace < with <= in ring_distance",
 ]

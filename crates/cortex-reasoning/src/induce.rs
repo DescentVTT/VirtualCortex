@@ -832,16 +832,21 @@ pub fn next_pair(
 ) -> Result<Option<(usize, usize)>, InduceError> {
     let (mut i, mut j) = match after {
         None => (0, 1),
-        Some((i, j)) => (i, j.saturating_add(1)),
+        // A malformed `after` with `j` at or below `i` continues from `(i, i + 1)`, so the
+        // walk never yields a pair that is not `i < j` (the review of brief 022).
+        Some((i, j)) => (i, j.max(i).saturating_add(1)),
     };
-    while i < store.len() {
-        if j >= store.len() {
+    loop {
+        let Some(&ci) = store.get(i) else {
+            return Ok(None);
+        };
+        let Some(&cj) = store.get(j) else {
             i = i.saturating_add(1);
             j = i.saturating_add(1);
             continue;
-        }
-        let a = clause_at(store[i], s)?;
-        let b = clause_at(store[j], s)?;
+        };
+        let a = clause_at(ci, s)?;
+        let b = clause_at(cj, s)?;
         if clause_body_len(&a) >= 2 && clause_body_len(&b) >= 2 {
             let (Some(ha), Some(hb)) = (clause_head(&a), clause_head(&b)) else {
                 return Err(InduceError::Malformed);
@@ -852,7 +857,6 @@ pub fn next_pair(
         }
         j = j.saturating_add(1);
     }
-    Ok(None)
 }
 
 /// True when the two terms, dereferenced, are constants of one id or compounds of one
@@ -2149,6 +2153,17 @@ mod tests {
             Ok(None),
             "one clause pairs with nothing"
         );
+        assert_eq!(
+            next_pair(&store, Some((2, 1)), &s),
+            Ok(Some((2, 4))),
+            "a malformed after: from (2, 3)"
+        );
+        assert_eq!(next_pair(&store, Some((2, 0)), &s), Ok(Some((2, 4))));
+        assert_eq!(
+            next_pair(&store, Some((0, 0)), &s),
+            Ok(Some((0, 2))),
+            "never a self-pair"
+        );
         assert_eq!(next_pair(&[], None, &s), Ok(None));
         assert_eq!(
             next_pair(&store, Some((5, 5)), &s),
@@ -2188,6 +2203,23 @@ mod tests {
             next_pair(&[c, d, 999], None, &s),
             Ok(Some((0, 1))),
             "the walk stops at the first pair, before the entry it never reaches"
+        );
+        // A clause whose head is an empty node (a slot in the arena nothing wrote) is
+        // malformed on either side of the pair.
+        let mut kit = Kit::<64>::new();
+        let c = rule(&mut kit, P, &[A, B]);
+        let x = kit.var();
+        let l1 = kit.compound(A, &[x]);
+        let l2 = kit.compound(B, &[x]);
+        let hollow = kit.clause(60, &[l1, l2]);
+        let s = kit.scratch();
+        assert_eq!(
+            next_pair(&[c, hollow], None, &s),
+            Err(InduceError::Malformed)
+        );
+        assert_eq!(
+            next_pair(&[hollow, c], None, &s),
+            Err(InduceError::Malformed)
         );
     }
 
