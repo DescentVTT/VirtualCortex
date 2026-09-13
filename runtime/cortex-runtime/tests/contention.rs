@@ -30,6 +30,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         control_step_q0_16: 0,
         sleep_shift: 0,
         episodes: 0,
+        train_capacity: 0,
     })
     .expect("a valid configuration");
     let inject = exec.injector();

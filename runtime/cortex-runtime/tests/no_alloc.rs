@@ -44,6 +44,7 @@ fn the_tick_loop_allocates_nothing_after_new() {
         nodes_per_worker: 256,
         injector_capacity: 64,
         trace_capacity: 1024,
+        train_capacity: 64,
         ..Config::default()
     })
     .unwrap();

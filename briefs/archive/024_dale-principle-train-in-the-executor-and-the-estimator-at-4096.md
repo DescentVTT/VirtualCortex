@@ -1,7 +1,17 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-14
 ---
+
+> **Executed 2026-09-14 in pull request #58.** Writes ADR-0049 (Dale's principle in plasticity),
+> ADR-0050 (the spike train inside the executor) and ADR-0051 (the estimator at 4 096 units);
+> resolves finding F-36 and closes the §11.1 items on the sign and on the 4 096-unit sweep; image
+> format 13 and the determinism pin untouched. Every deliverable is done; notes under the boxes
+> say where the tree departs from the text (the discovery composition takes two structs, not
+> eleven arguments; the forks read the executor's train, since the workers' traces share their
+> capacity with the delivered messages). The report is in the pull request and in
+> `CHANGELOG.md`. The body below describes the tree before execution and is not maintained;
+> its relative links gained one `../`.
 
 # Brief 024 — Dale's principle in the pair rule (F-36), the spike train inside the executor, and the estimator at 4 096 units
 
@@ -23,13 +33,13 @@ every exit test that consolidated an inhibitory or a zero-crossing synapse is pi
 the run, with the reason stated. **One ADR** gives the executor its own spike train: every
 worker's spikes of a tick are merged after the tick in unit order into a bounded ring the
 executor owns, bit-identical on every worker count, read between ticks as a sorted slice, so
-that the capture rules of [ADR-0048](../docs/adr/0048-episodes-tagged-from-the-train.md) run on
+that the capture rules of [ADR-0048](../../docs/adr/0048-episodes-tagged-from-the-train.md) run on
 the engine's own run without a fork, a rewarded search tags the coincidence before its reward
 from that train, and the composition that searches a clause store, rewards the modulator and
 tags the association runs in one call between ticks; the online capture inside the tick is
 Implemented for the train, and what would move the store, the affect state and the association
 into the image is Specified with its format bump. **One ADR** runs the estimator's measurement
-of [ADR-0047](../docs/adr/0047-second-prior-and-the-estimator.md) at 4 096 units on both priors
+of [ADR-0047](../../docs/adr/0047-second-prior-and-the-estimator.md) at 4 096 units on both priors
 as the weekly job's `exhaustive` test, with the decision rule written here before the run, and
 decides whether the record needs a line for a fine-bin estimate or whether the coarse
 estimate's noise stays the bin's at that size too. When the round is done: the whitepaper,
@@ -45,7 +55,7 @@ every check green.
 - Every claim is Implemented, Specified, Target or Hypothesis. What a test holds on a network
   of 256, 1 024 or 4 096 units is stated as what it is, with the prior's parameters; what the
   same rules do at Appendix A's scale is a Target with the same generator
-  ([ADR-0010](../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from
+  ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from
   a developer machine. A rule is what it does: no "validates", no "autonomous", no
   "reference-scale" for anything below Appendix A's counts.
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper
@@ -55,29 +65,29 @@ every check green.
 - No `f32`/`f64`, in the crates and in the tests; a ratio is Q16.16 in `u32`/`i32`, widened to
   `i64` to multiply; every operation on a state field saturates or wraps by name
   (`clippy::arithmetic_side_effects` is denied everywhere,
-  [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
+  [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
   above the shift.
 - Every loop ends by construction: a countdown, a range, a scan by `get`, a slice's iterator;
   never by a comparison alone that one operator flip turns into a walk without end.
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; no heap types, threads
   or `unsafe` in a state crate (`unsafe_code = "forbid"`, ADR-0029). A rule of `cortex-core`
   takes the polarity as an argument; it does not read a unit.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   the plasticity rule is `cortex-core`'s, the flag that says a unit is inhibitory is the
   unit's, the merge of the workers' spikes and the ring that holds them are the executor's
-  ([ADR-0023](../docs/adr/0023-executor.md)), the capture rules stay `cortex-hippocampus`'s and
+  ([ADR-0023](../../docs/adr/0023-executor.md)), the capture rules stay `cortex-hippocampus`'s and
   the estimator's rules `cortex-homeostasis`'s. No new crate; the crate count stays 32.
 - No new record and no field in a record unless an ADR of this round decides one with its
   format bump; the reserved bytes of every record stay zero. The clause store, the affect state
-  and the association stay the caller's this round ([ADR-0043](../docs/adr/0043-discovery-path.md)).
+  and the association stay the caller's this round ([ADR-0043](../../docs/adr/0043-discovery-path.md)).
 - Rule L-3 and §1.5: no word, no string and no language name enters a crate.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only
   with a stated reason; the mutation gate on the changed lines must pass; a new rule carries a
   test over the lattice of `testkit/prop.rs`; every pinned number an arithmetic oracle can
   produce is computed by that oracle before the test that asserts it is written (the
   inhibitory rule's amounts, the merge's order); a number only the engine produces is pinned
   from one run and stated as the engine's.
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); the
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); the
   inhibitory rule's target rate is a constant this round, stated with its derivation, and the
   round that tunes it makes it a `REGISTRY` entry by its own ADR.
 - A heavy exit test runs in the weekly job as an ignored test whose name contains
@@ -138,7 +148,7 @@ quoted sentences are what to re-derive.
    `capture_night` passes the total to `Executor::reward` once and tags for the first
    discovery. `Config` is spelled out in full in `tests/differential.rs` and
    `tests/contention.rs`: a new field is added there. `Executor::new` allocates every buffer
-   once; nothing allocates in the loop (`tests/no_alloc.rs`). [ADR-0048](../docs/adr/0048-episodes-tagged-from-the-train.md)'s
+   once; nothing allocates in the loop (`tests/no_alloc.rs`). [ADR-0048](../../docs/adr/0048-episodes-tagged-from-the-train.md)'s
    "Not adopted": "a per-tick merge of every worker's spikes in unit order, bit-identical on
    every worker count, and a cadence for the capture, taken by the round that also runs
    discoveries inside the loop".
@@ -151,7 +161,7 @@ quoted sentences are what to re-derive.
    machine (not admissible, not written anywhere but here): the three 1 024-unit `exhaustive`
    tests take about 140 s in the release profile; a 4 096-unit run costs about four times
    per tick. The weekly job has 300 minutes and runs the whole-tree mutation run after the
-   `exhaustive` tests. [ADR-0047](../docs/adr/0047-second-prior-and-the-estimator.md)'s decision:
+   `exhaustive` tests. [ADR-0047](../../docs/adr/0047-second-prior-and-the-estimator.md)'s decision:
    "the size at which the fine slope reads the gross ratio is not yet run"; whitepaper §11.1's
    resolution: "at 1 024 units within 0.15 of the gross ratio, so the size that would justify
    a line is the next one, 4 096, run before any line is added". ADR-0047's option 3 is the
@@ -170,7 +180,7 @@ quoted sentences are what to re-derive.
    homeostasis, hippocampus; `tests/modulation.rs` asserts `section_count` 5) and refuses a
    non-quiescent engine; the clause store is a caller's `TermNode` arena, the affect state a
    caller's `InteroceptiveState`, the association a caller's `Association`
-   ([ADR-0043](../docs/adr/0043-discovery-path.md), ADR-0048). Moving the three into the image is
+   ([ADR-0043](../../docs/adr/0043-discovery-path.md), ADR-0048). Moving the three into the image is
    three sections and format 14, with the loader's checks and every fixed offset of
    `tests/image.rs` moved: its own round, not this one. A capture on a cadence inside `tick()`
    needs the store inside the executor for the reward that triggers it; this round's trigger
@@ -187,13 +197,10 @@ quoted sentences are what to re-derive.
    today; no worker's spikes are visible to another before shutdown; no test runs above 1 024
    units; no section of the image holds a term.
 
-<!-- @assert-absence target="crates/cortex-core/src/dynamics/synapse.rs" symbol="Polarity" word="true" reason="brief 024 precondition: no rule of cortex-core reads a polarity yet" -->
-<!-- @assert-absence target="runtime/cortex-runtime/src/executor.rs" symbol="train_capacity" reason="brief 024 precondition: the executor holds no train of its own yet" -->
-<!-- @assert-absence target="runtime/cortex-runtime/tests/reference.rs" symbol="4096" reason="brief 024 precondition: no exit test runs at 4 096 units yet" -->
 
 ## Deliverables
 
-- [ ] **The polarity ADR (the next free number)** (`docs/adr/0049-*.md`, `depends-on:
+- [x] **The polarity ADR (the next free number)** (`docs/adr/0049-*.md`, `depends-on:
   ADR-0032`, ADR-0022 and ADR-0044 named). In `cortex-core` (`synapse.rs`): `Polarity {
   Excitatory, Inhibitory }` with `Polarity::of_flags(flags: u8)` from `FLAG_INHIBITORY`;
   `step_stdp(slot, pre_now_tick, post_last_tick, polarity)` and `step_stdp_all(now_tick,
@@ -230,7 +237,7 @@ quoted sentences are what to re-derive.
   mode), what the target rate is and that it is a constant until a `REGISTRY` entry, and what
   it does to the reference network's inhibitory weights over the waking bins of the exit
   tests. F-36 Resolved.
-- [ ] **The train ADR (the number after it)** (`docs/adr/0050-*.md`, `depends-on: ADR-0048`,
+- [x] **The train ADR (the number after it)** (`docs/adr/0050-*.md`, `depends-on: ADR-0048`,
   ADR-0023 and ADR-0036 named). In the executor: `Config::train_capacity` (the spikes the
   executor's ring keeps; 0 keeps none and adds nothing to the tick); a shared buffer of one
   slot per unit with an atomic cursor that every worker appends its spikes to in `turn` (a
@@ -260,7 +267,8 @@ quoted sentences are what to re-derive.
   affect state and the association in the image: three sections and format 14, taken by the
   round that gives the image a term arena, after which a cadence inside `tick()` can run the
   search on a rewarded moment).
-- [ ] **The 4 096-unit ADR (the number after that)** (`docs/adr/0051-*.md`, `depends-on:
+  **Departure:** `discover` takes `ClauseSearch { store, len, scratch, affect, budget }` and `Tagging { window, coincidence, priority }` and returns a `DiscoverReport { search, signal_q16, tagged }`; the burst form over the executor's train is `tag_burst_in(exec, from, to, window, priority)` over an explicit span; `fork` returns the executor's train (`train_of`, with `ForkError::NoTrain`), since the workers' traces share their capacity with the delivered messages and the drive alone fills them at 4 096 units.
+- [x] **The 4 096-unit ADR (the number after that)** (`docs/adr/0051-*.md`, `depends-on:
   ADR-0047`, ADR-0044 named). In `tests/reference.rs`: an `exhaustive` test at 4 096 units on
   both priors, three gains, two windows, thirty-two kicks and a twelve-window loop, the
   readings pinned from the run as at 1 024. The ADR's table holds, per prior and gain, the
@@ -269,12 +277,13 @@ quoted sentences are what to re-derive.
   (item 4), stated as the rule was written before the run; what a line would hold if it is
   justified, Specified with its bump; the ceiling's role at this size; and what the loop did
   in twelve windows.
-- [ ] **F-36 Resolved** in whitepaper §11 with the disposition (the polarity from the unit,
+  **Departure:** none in the deliverable; the rule's second condition proved unable to tell two windows agreeing on a wrong reading from two agreeing on a right one, which the ADR records as a reading beyond the rule.
+- [x] **F-36 Resolved** in whitepaper §11 with the disposition (the polarity from the unit,
   the magnitude within the half-range, the symmetric rule, the re-pinned nights); the §11.1
   item after it closed; the estimator's resolved item extended with the 4 096-unit reading and
   the line's decision; H-9's disposition carrying the numbers as the tree has them after the
   round, and H-11's where they moved.
-- [ ] **The documents.** Whitepaper 4.12.0: the executive summary's sentence on what exists
+- [x] **The documents.** Whitepaper 4.12.0: the executive summary's sentence on what exists
   (the online capture on the executor's train; a polarity read by the rule); §1.6 rows
   (`cortex-core`: the polarity; the date); §5.2.1 (Public API: `Polarity`, the two rules'
   signatures; the fan-out and STDP paragraph and the three-factor paragraph: the magnitude,
@@ -287,7 +296,7 @@ quoted sentences are what to re-derive.
   `CLAUDE.md` (the sentence on what exists and what does not), `docs/zh-TW/README.md` (§6 and
   §11 rows), `docs/adr/README.md` (three rows), `CHANGELOG.md` (one entry under Unreleased in
   the shape of brief 023's).
-- [ ] **Not adopted, with the reason in the ADR that is closest:** a per-synapse sign bit in
+- [x] **Not adopted, with the reason in the ADR that is closest:** a per-synapse sign bit in
   the block (the polarity ADR: the polarity is the unit's, and a bit would be a second owner
   of it); the target rate as a `REGISTRY` entry (the same ADR: its own ADR when a round tunes
   it); the store, the affect state and the association in the image, and a capture on a
@@ -297,7 +306,7 @@ quoted sentences are what to re-derive.
   protocol); a change to `estimate_branching_ratio`, `regulate`, the bin, the window or the
   ceiling on the strength of the sweep (the same ADR: a line is Specified, never made, this
   round).
-- [ ] **This brief archived** under `briefs/archive/` with the frozen banner, every box
+- [x] **This brief archived** under `briefs/archive/` with the frozen banner, every box
   dispositioned, the precondition directives removed and the links rebased.
 
 ## Not empowered

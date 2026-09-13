@@ -310,6 +310,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             control_step_q0_16: 0,
             sleep_shift: 0,
             episodes: 0,
+            train_capacity: 0,
         },
         wire_random,
         20_000,

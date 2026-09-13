@@ -20,7 +20,7 @@
 
 use cortex_connectome::{CortexFileHeader, SECTION_HOMEOSTASIS, SectionEntry, crc64};
 use cortex_core::{
-    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE,
+    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, Polarity, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE,
 };
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX, RIPPLE_SHIFT};
 use cortex_homeostasis::{
@@ -267,8 +267,9 @@ fn slow_wave_sleep_replays_a_tagged_episode_on_every_ripple_and_consolidates_its
                 NO_SPIKE_ON_RECORD,
                 NO_SPIKE_ON_RECORD,
             ],
+            Polarity::Excitatory,
         );
-        oracle.consolidate_all(MODULATION_ONE_Q16);
+        oracle.consolidate_all(MODULATION_ONE_Q16, Polarity::Excitatory);
     }
     assert_eq!(&weights[..4], &[oracle.weights_q1_15[0]; 4]);
     assert!(

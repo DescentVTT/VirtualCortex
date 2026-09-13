@@ -14,9 +14,10 @@
 //! valence and the modulator's reward, and a prover frame's certificate into a theorem
 //! (ADR-0041, ADR-0043); the lexicon of [`lexicon`] between a host's token ids and the frame,
 //! in both directions (ADR-0046); and the episodes of [`episode`], tagged from a spike train
-//! and bound to a rewarded invention (ADR-0048). Everything is allocated in [`Executor::new`];
-//! nothing allocates, blocks or (apart from the barrier's yield) makes a system call in the
-//! loop. This crate is `std`, is never published, and is the one place in the workspace with
+//! and bound to a rewarded invention (ADR-0048), from the executor's own train since ADR-0050
+//! (every worker's spikes of a tick merged in unit order into a bounded ring after the tick).
+//! Everything is allocated in [`Executor::new`]; nothing allocates, blocks or (apart from the
+//! barrier's yield) makes a system call in the loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
 
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -39,14 +40,17 @@ pub mod synthesis;
 pub mod trial;
 
 pub use branching::{
-    Attribution, Cascade, ForkError, Perturbation, cascade, fork, run_driven, trace,
+    Attribution, Cascade, ForkError, Perturbation, cascade, fork, run_driven, trace, train_of,
 };
 pub use discovery::{
     CERTIFICATE_BYTES, COMPRESSION_REWARD_SHIFT, CertifyError, Discovery, DiscoveryError,
     LENGTH_CEILING, SearchReport, certify_from_frame, conjecture_frame, description_length,
     free_energy_q16, invent, prime, reward_q16, search,
 };
-pub use episode::{Association, tag_burst, tag_discovery, tag_from_trace};
+pub use episode::{
+    Association, ClauseSearch, DiscoverError, DiscoverReport, Tagging, discover, tag_burst,
+    tag_burst_in, tag_discovery, tag_discovery_recent, tag_from_trace, tag_recent,
+};
 pub use executor::{
     ACTIVATE, AmendError, Config, ConfigError, Executor, Inject, InjectError, Policy, TagError,
     WorkerReport,
