@@ -56,17 +56,50 @@ pub const MODULATION_ONE_Q16: i32 = 0x0001_0000;
 /// The target rate of the inhibitory rule (ADR-0049; Vogels et al. 2011), as a period in
 /// ticks: 20 000 ticks is 5 Hz at the 10 µs tick.
 pub const ISTDP_TARGET_PERIOD_TICKS: u32 = 20_000;
-/// The depression of an inhibitory synapse's magnitude at every presynaptic spike,
-/// $\alpha = 2 \rho_0 \tau A_+$ with $\rho_0$ the target rate, $\tau$ the window's time
-/// constant and $A_+$ the amplitude both of the rule's potentiating terms use: 67/32 768 ≈
-/// 0.0020, a fifth of $A_+$; a target that fires at the rate is potentiated as much as it is
-/// depressed on average. A constant until a round tunes it by its own registry entry.
+/// The depression of an inhibitory synapse's magnitude at every presynaptic spike at the
+/// default target period, $\alpha = 2 \rho_0 \tau A_+$ with $\rho_0$ the target rate, $\tau$
+/// the window's time constant and $A_+$ the amplitude both of the rule's potentiating terms
+/// use: 67/32 768 ≈ 0.0020, a fifth of $A_+$; a target that fires at the rate is potentiated
+/// as much as it is depressed on average. The rules take the depression as an argument
+/// ([`istdp_alpha_q1_15`] of the engine's period, an image parameter since ADR-0053).
 pub const ISTDP_ALPHA_Q1_15: i16 = 67;
-const _: () = assert!(
-    ISTDP_ALPHA_Q1_15 as i64
-        == 2 * STDP_A_PLUS_Q1_15 as i64 * (1i64 << STDP_TAU_SHIFT)
-            / ISTDP_TARGET_PERIOD_TICKS as i64
-);
+/// The shortest target period the inhibitory rule takes: 100 ticks, 1 kHz at the fine tick,
+/// where the depression is 13 434 (≈ 0.41), the largest the width holds beside a window.
+pub const ISTDP_PERIOD_MIN_TICKS: u32 = 100;
+/// The longest: 1 000 000 ticks, 0.1 Hz, where the depression is one LSB; longer, the rule
+/// would never depress and a target could not fall below its rate.
+pub const ISTDP_PERIOD_MAX_TICKS: u32 = 1_000_000;
+
+/// The depression per presynaptic spike of the inhibitory rule at a target period
+/// (ADR-0053): $2 \rho_0 \tau A_+$ with $\rho_0 = 1 / \text{period}$, so
+/// $2 A_+ 2^{\tau} / \text{period}$, the period clamped to
+/// $[\text{ISTDP\_PERIOD\_MIN\_TICKS}, \text{ISTDP\_PERIOD\_MAX\_TICKS}]$ so that the
+/// quotient exists and fits. At [`ISTDP_TARGET_PERIOD_TICKS`] it is [`ISTDP_ALPHA_Q1_15`].
+pub const fn istdp_alpha_q1_15(target_period_ticks: u32) -> i16 {
+    let period = if target_period_ticks < ISTDP_PERIOD_MIN_TICKS {
+        ISTDP_PERIOD_MIN_TICKS
+    } else if target_period_ticks > ISTDP_PERIOD_MAX_TICKS {
+        ISTDP_PERIOD_MAX_TICKS
+    } else {
+        target_period_ticks
+    };
+    // The period is at least 100, so the quotient exists and is at most 13 434, which fits
+    // `i16`; a period of zero cannot reach the division.
+    match ISTDP_NUMERATOR.checked_div(period as i64) {
+        Some(alpha) => alpha as i16,
+        None => 0,
+    }
+}
+
+/// $2 A_+ 2^{\tau}$: the numerator of the depression per spike, 1 343 488.
+const ISTDP_NUMERATOR: i64 = 2 * STDP_A_PLUS_Q1_15 as i64 * (1i64 << STDP_TAU_SHIFT);
+const _: () = {
+    assert!(istdp_alpha_q1_15(ISTDP_TARGET_PERIOD_TICKS) == ISTDP_ALPHA_Q1_15);
+    assert!(istdp_alpha_q1_15(ISTDP_PERIOD_MIN_TICKS) == 13_434);
+    assert!(istdp_alpha_q1_15(ISTDP_PERIOD_MAX_TICKS) == 1);
+    assert!(ISTDP_PERIOD_MIN_TICKS < ISTDP_TARGET_PERIOD_TICKS);
+    assert!(ISTDP_TARGET_PERIOD_TICKS < ISTDP_PERIOD_MAX_TICKS);
+};
 
 /// The sign a block's synapses carry: its presynaptic unit's (Dale's principle, ADR-0049).
 /// Every synapse of an excitatory unit has a weight at or above zero and every synapse of an
@@ -135,6 +168,10 @@ const _: () = {
 pub const MAX_TOKEN_BLOCK: u32 = (1 << 26) - 1;
 /// Message bit 18: the efficacy lands in the apical compartment; clear, the basal one.
 pub const MESSAGE_APICAL: u32 = 1 << 18;
+/// Message bit 19: the message is a synapse's (ADR-0054), made by the executor's fan-out and
+/// deliveries; clear for the injector's and the replay's. The turn holder stamps the unit
+/// with the tick a synapse's message reached it, and the descendant rule reads the stamp.
+pub const MESSAGE_SYNAPTIC: u32 = 1 << 19;
 const MESSAGE_EFFICACY_BITS: u32 = 18;
 const MESSAGE_EFFICACY_MASK: u32 = (1 << MESSAGE_EFFICACY_BITS) - 1;
 const MESSAGE_EFFICACY_MAX: i32 = (1 << (MESSAGE_EFFICACY_BITS - 1)) - 1;
@@ -166,8 +203,9 @@ pub const fn token_slot(token: u32) -> u8 {
 
 /// The mailbox message of one delivery: the efficacy in 18-bit two's complement (bits 0–17;
 /// `synaptic_efficacy_q16` is below 1.0 in magnitude, so it fits; a wider value is clamped) and
-/// the compartment in bit 18. Bits 19–31 are zero. Messages sort by value, which is the batch
-/// order the executor uses (§8.3).
+/// the compartment in bit 18. Bit 19 is clear: the message is not a synapse's
+/// ([`synaptic_message`] sets it). Bits 20–31 are zero. Messages sort by value, which is the
+/// batch order the executor uses (§8.3).
 pub const fn spike_message(efficacy_q16: i32, apical: bool) -> u32 {
     let e = if efficacy_q16 > MESSAGE_EFFICACY_MAX {
         MESSAGE_EFFICACY_MAX
@@ -189,6 +227,18 @@ pub const fn message_efficacy_q16(message: u32) -> i32 {
 #[inline]
 pub const fn message_is_apical(message: u32) -> bool {
     message & MESSAGE_APICAL != 0
+}
+
+/// A synapse's message (ADR-0054): [`spike_message`] with [`MESSAGE_SYNAPTIC`] set.
+#[inline]
+pub const fn synaptic_message(efficacy_q16: i32, apical: bool) -> u32 {
+    spike_message(efficacy_q16, apical) | MESSAGE_SYNAPTIC
+}
+
+/// True when the message is a synapse's.
+#[inline]
+pub const fn message_is_synaptic(message: u32) -> bool {
+    message & MESSAGE_SYNAPTIC != 0
 }
 
 /// One synapse as the walk yields it: where it is and what it carries.
@@ -483,9 +533,11 @@ impl SynapseBlock {
     /// previous presynaptic spike, and the trace gains $A_+ (1 - 2^{-11})^{q - p}$; then, if
     /// $q < t$, the target fired before this one and the trace loses
     /// $A_- (1 - 2^{-11})^{t - q}$. An inhibitory block takes the symmetric rule of Vogels et
-    /// al. 2011: the trace loses [`ISTDP_ALPHA_Q1_15`] at every presynaptic spike, and gains
+    /// al. 2011: the trace loses `istdp_alpha_q1_15` at every presynaptic spike (the depression
+    /// of the engine's target period, [`istdp_alpha_q1_15`]; ADR-0053), and gains
     /// $A_+ (1 - 2^{-11})^{|\Delta t|}$ for each of the two pairings above, whichever way
-    /// round. Every comparison is a wrapping difference read as signed (§8.4), so a stamp
+    /// round; an excitatory block ignores the argument. Every comparison is a wrapping
+    /// difference read as signed (§8.4), so a stamp
     /// older than $2^{31}$ ticks reads as future and pairs with nothing; a stamp of zero is no
     /// spike on record. The trace saturates in $[-1, 1)$. Nothing reaches the weight here:
     /// [`consolidate`](Self::consolidate) does that under the modulator. Does not decay and
@@ -499,13 +551,14 @@ impl SynapseBlock {
         pre_now_tick: u32,
         post_last_tick: u32,
         polarity: Polarity,
+        istdp_alpha_q1_15: i16,
     ) -> i16 {
         if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
             return 0;
         }
         let mut e = self.eligibility_q1_15[slot];
         if polarity == Polarity::Inhibitory {
-            e = e.saturating_sub(ISTDP_ALPHA_Q1_15);
+            e = e.saturating_sub(istdp_alpha_q1_15);
         }
         if post_last_tick != NO_SPIKE_ON_RECORD {
             let since_post = pre_now_tick.wrapping_sub(post_last_tick) as i32;
@@ -603,18 +656,26 @@ impl SynapseBlock {
     /// The decay of every trace by the ticks since the block's stamp (a block with no spike on
     /// record has held its traces since tick 0, as `ticks_since_spike` counts), then
     /// [`step_stdp`](Self::step_stdp) for every slot against its target's last somatic spike,
-    /// then the stamp. Returns the traces; the caller consolidates them
+    /// then the stamp; `istdp_alpha_q1_15` is the inhibitory rule's depression per spike.
+    /// Returns the traces; the caller consolidates them
     /// ([`consolidate_all`](Self::consolidate_all)).
     pub fn step_stdp_all(
         &mut self,
         now_tick: u32,
         post_last_ticks: [u32; SYNAPSES_PER_BLOCK],
         polarity: Polarity,
+        istdp_alpha_q1_15: i16,
     ) -> [i16; SYNAPSES_PER_BLOCK] {
         self.decay_eligibility(now_tick.wrapping_sub(self.last_spike_tick));
         let mut out = [0; SYNAPSES_PER_BLOCK];
         for (slot, e) in out.iter_mut().enumerate() {
-            *e = self.step_stdp(slot, now_tick, post_last_ticks[slot], polarity);
+            *e = self.step_stdp(
+                slot,
+                now_tick,
+                post_last_ticks[slot],
+                polarity,
+                istdp_alpha_q1_15,
+            );
         }
         self.stamp_presynaptic(now_tick);
         out
@@ -946,7 +1007,7 @@ mod tests {
         post_last: u32,
         polarity: Polarity,
     ) -> i16 {
-        b.step_stdp(slot, pre_now, post_last, polarity);
+        b.step_stdp(slot, pre_now, post_last, polarity, ISTDP_ALPHA_Q1_15);
         b.consolidate(slot, MODULATION_ONE_Q16, polarity)
     }
 
@@ -964,7 +1025,13 @@ mod tests {
         for (delta, amount) in PLUS {
             let mut b = one_synapse(0, 1000);
             assert_eq!(
-                b.step_stdp(0, 1000 + delta, 1000 + delta, Polarity::Excitatory),
+                b.step_stdp(
+                    0,
+                    1000 + delta,
+                    1000 + delta,
+                    Polarity::Excitatory,
+                    ISTDP_ALPHA_Q1_15
+                ),
                 amount,
                 "delta {delta}: the amount enters the trace"
             );
@@ -1022,8 +1089,14 @@ mod tests {
         // A stray trace on an empty slot: the slot is empty, so nothing reads or moves it.
         b.eligibility_q1_15[1] = 50;
         let before = b;
-        assert_eq!(b.step_stdp(1, 1001, 1000, Polarity::Excitatory), 0);
-        assert_eq!(b.step_stdp(4, 1001, 1000, Polarity::Excitatory), 0);
+        assert_eq!(
+            b.step_stdp(1, 1001, 1000, Polarity::Excitatory, ISTDP_ALPHA_Q1_15),
+            0
+        );
+        assert_eq!(
+            b.step_stdp(4, 1001, 1000, Polarity::Excitatory, ISTDP_ALPHA_Q1_15),
+            0
+        );
         assert_eq!(
             b.consolidate(1, MODULATION_ONE_Q16, Polarity::Excitatory),
             0
@@ -1041,7 +1114,10 @@ mod tests {
         // applied, leaving 32 767 − 129. Since ADR-0032 the trace holds 257 − 129 = 128 and the
         // weight stays at the rail with 128 pending.
         let mut b = one_synapse(i16::MAX, 1000);
-        assert_eq!(b.step_stdp(0, 3500, 1500, Polarity::Excitatory), 257 - 129);
+        assert_eq!(
+            b.step_stdp(0, 3500, 1500, Polarity::Excitatory, ISTDP_ALPHA_Q1_15),
+            257 - 129
+        );
         assert_eq!(
             b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
             i16::MAX,
@@ -1052,7 +1128,12 @@ mod tests {
         // The pending change decays for 2 000 ticks (128 → 124), then a depression the rail
         // can absorb pairs with a post at the previous presynaptic spike (no potentiation).
         assert_eq!(
-            b.step_stdp_all(5500, [3500, 0, 0, 0], Polarity::Excitatory),
+            b.step_stdp_all(
+                5500,
+                [3500, 0, 0, 0],
+                Polarity::Excitatory,
+                ISTDP_ALPHA_Q1_15
+            ),
             [124 - 129, 0, 0, 0]
         );
         assert_eq!(
@@ -1114,7 +1195,12 @@ mod tests {
         b.stamp_presynaptic(1000);
         b.eligibility_q1_15 = [1000, 0, 0, -1000];
         assert_eq!(
-            b.step_stdp_all(1000 + 65_536, [NO_SPIKE_ON_RECORD; 4], Polarity::Excitatory),
+            b.step_stdp_all(
+                1000 + 65_536,
+                [NO_SPIKE_ON_RECORD; 4],
+                Polarity::Excitatory,
+                ISTDP_ALPHA_Q1_15
+            ),
             [367, 0, 0, -367],
             "decayed by the ticks since the stamp; nothing paired"
         );
@@ -1123,7 +1209,12 @@ mod tests {
         let mut b = full_block(0, 1);
         b.eligibility_q1_15 = [1000; 4];
         assert_eq!(
-            b.step_stdp_all(65_536, [NO_SPIKE_ON_RECORD; 4], Polarity::Excitatory),
+            b.step_stdp_all(
+                65_536,
+                [NO_SPIKE_ON_RECORD; 4],
+                Polarity::Excitatory,
+                ISTDP_ALPHA_Q1_15
+            ),
             [367; 4]
         );
         // The decay precedes the pairing: the new amount is not decayed (pairing first would
@@ -1131,14 +1222,24 @@ mod tests {
         let mut b = one_synapse(0, 1000);
         b.eligibility_q1_15[0] = 1000;
         assert_eq!(
-            b.step_stdp_all(3000, [3000, 0, 0, 0], Polarity::Excitatory),
+            b.step_stdp_all(
+                3000,
+                [3000, 0, 0, 0],
+                Polarity::Excitatory,
+                ISTDP_ALPHA_Q1_15
+            ),
             [970 + 123, 0, 0, 0]
         );
         // No time has passed: nothing decays, even a trace of one LSB.
         let mut b = one_synapse(0, 1000);
         b.eligibility_q1_15[0] = 1;
         assert_eq!(
-            b.step_stdp_all(1000, [NO_SPIKE_ON_RECORD; 4], Polarity::Excitatory),
+            b.step_stdp_all(
+                1000,
+                [NO_SPIKE_ON_RECORD; 4],
+                Polarity::Excitatory,
+                ISTDP_ALPHA_Q1_15
+            ),
             [1, 0, 0, 0]
         );
     }
@@ -1287,6 +1388,49 @@ mod tests {
     }
 
     #[test]
+    fn the_depression_per_spike_follows_the_target_period_within_its_bounds() {
+        // 2 · 328 · 2 048 / period, the period clamped to [100, 1 000 000]: the default's 67,
+        // 268 at 5 000 ticks (20 Hz, the reference regime), 13 434 at the shortest, one LSB
+        // at the longest, and the ends outside the bounds read as the bounds.
+        assert_eq!(istdp_alpha_q1_15(ISTDP_TARGET_PERIOD_TICKS), 67);
+        assert_eq!(istdp_alpha_q1_15(5_000), 268);
+        assert_eq!(istdp_alpha_q1_15(ISTDP_PERIOD_MIN_TICKS), 13_434);
+        assert_eq!(istdp_alpha_q1_15(0), 13_434);
+        assert_eq!(istdp_alpha_q1_15(ISTDP_PERIOD_MAX_TICKS), 1);
+        assert_eq!(istdp_alpha_q1_15(u32::MAX), 1);
+        assert_eq!(istdp_alpha_q1_15(20_001), 67, "the quotient rounds down");
+        assert_eq!(istdp_alpha_q1_15(19_999), 67);
+        assert_eq!(istdp_alpha_q1_15(19_000), 70);
+        // The rule takes it: at 5 000 ticks an inhibitory block alone loses 268 per spike,
+        // and an excitatory block ignores the argument.
+        let mut b = SynapseBlock::new();
+        assert!(b.set_synapse(0, 1, -1000, 1, false));
+        assert_eq!(
+            b.step_stdp(0, 2000, NO_SPIKE_ON_RECORD, Polarity::Inhibitory, 268),
+            -268
+        );
+        let mut e = SynapseBlock::new();
+        assert!(e.set_synapse(0, 1, 1000, 1, false));
+        assert_eq!(
+            e.step_stdp(0, 2000, NO_SPIKE_ON_RECORD, Polarity::Excitatory, 268),
+            0
+        );
+        // The message bit (ADR-0054): a synapse's message is the spike message with bit 19,
+        // sorts after every plain message of the same efficacy, and reads back the same
+        // efficacy and compartment.
+        let plain = spike_message(0x1234, true);
+        let synaptic = synaptic_message(0x1234, true);
+        assert_eq!(synaptic, plain | MESSAGE_SYNAPTIC);
+        assert_eq!(MESSAGE_SYNAPTIC, 1 << 19);
+        assert!(message_is_synaptic(synaptic) && !message_is_synaptic(plain));
+        assert!(message_is_apical(synaptic) && message_is_apical(plain));
+        assert_eq!(message_efficacy_q16(synaptic), 0x1234);
+        assert_eq!(message_efficacy_q16(synaptic_message(-5, false)), -5);
+        assert!(!message_is_synaptic(spike_message(i32::MAX, false)));
+        assert!(synaptic > plain);
+    }
+
+    #[test]
     fn the_inhibitory_rule_potentiates_both_orders_by_the_plus_window_and_loses_alpha_at_every_spike()
      {
         const ALPHA: i16 = ISTDP_ALPHA_Q1_15;
@@ -1296,7 +1440,13 @@ mod tests {
         for (delta, amount) in PLUS {
             let mut b = one_synapse(-1000, 1000);
             assert_eq!(
-                b.step_stdp(0, 1000 + delta, 1000 + delta, Polarity::Inhibitory),
+                b.step_stdp(
+                    0,
+                    1000 + delta,
+                    1000 + delta,
+                    Polarity::Inhibitory,
+                    ISTDP_ALPHA_Q1_15
+                ),
                 amount - ALPHA,
                 "delta {delta}"
             );
@@ -1343,7 +1493,10 @@ mod tests {
         );
         // The rule does not stamp, and an empty slot is untouched under either polarity.
         assert_eq!(b.last_spike_tick, 1000);
-        assert_eq!(b.step_stdp(1, 2000, 1999, Polarity::Inhibitory), 0);
+        assert_eq!(
+            b.step_stdp(1, 2000, 1999, Polarity::Inhibitory, ISTDP_ALPHA_Q1_15),
+            0
+        );
         assert_eq!(b.eligibility_q1_15[1], 0);
         // `step_stdp_all` and `consolidate_all` carry the polarity to every slot.
         let mut b = SynapseBlock::new();
@@ -1355,7 +1508,8 @@ mod tests {
             b.step_stdp_all(
                 3500,
                 [1500, NO_SPIKE_ON_RECORD, 9, 3000],
-                Polarity::Inhibitory
+                Polarity::Inhibitory,
+                ISTDP_ALPHA_Q1_15
             ),
             [257 + 123 - ALPHA, -ALPHA, 0, 123 + 257 - ALPHA]
         );
@@ -1404,6 +1558,7 @@ mod tests {
             3500,
             [1500, NO_SPIKE_ON_RECORD, 9, 3000],
             Polarity::Excitatory,
+            ISTDP_ALPHA_Q1_15,
         );
         assert_eq!(
             traces,
@@ -1442,8 +1597,8 @@ mod tests {
                 Polarity::Inhibitory
             };
             assert_eq!(
-                a.step_stdp_all(now, posts, polarity),
-                b.step_stdp_all(now, posts, polarity)
+                a.step_stdp_all(now, posts, polarity, ISTDP_ALPHA_Q1_15),
+                b.step_stdp_all(now, posts, polarity, ISTDP_ALPHA_Q1_15)
             );
             let m = (x >> 15) as i32;
             assert_eq!(
@@ -1532,7 +1687,7 @@ mod prop {
                         post = now.wrapping_sub(rng.below(2_500));
                     }
                     let before = block.eligibility_q1_15[0];
-                    let after = block.step_stdp(0, now, post, polarity);
+                    let after = block.step_stdp(0, now, post, polarity, ISTDP_ALPHA_Q1_15);
                     assert_eq!(after, block.eligibility_q1_15[0]);
                     let moved = (after as i32).saturating_sub(before as i32).abs();
                     assert!(

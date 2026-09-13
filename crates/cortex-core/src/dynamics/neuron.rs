@@ -98,13 +98,14 @@ impl Iterator for MailboxDrain<'_> {
 pub struct DendriticSuperNeuron {
     pub id: u64,                     // [0..8] Global neuron ID
     pub mailbox_head_ptr: AtomicU64, // [8..16] Mailbox head: node index + 1, MAILBOX_EMPTY when empty (an index despite the name; L-3 reserves the suffix for it)
-    pub mailbox_reserved: u64, // [16..24] Reserved; MUST be zero (the ABA tag of ADR-0006, removed by ADR-0017: a push-and-drain-whole stack needs none)
-    pub v_soma: i32,           // [24..28] Soma potential (Q16.16)
-    pub v_basal: i32,          // [28..32] Basal feedforward potential (Q16.16)
-    pub v_apical: i32,         // [32..36] Apical contextual potential (Q16.16)
-    pub v_thresh: i32,         // [36..40] Dynamic adaptive threshold (Q16.16)
-    pub bac_plateau_ticks: u16, // [40..42] Larkum BAC calcium burst countdown
-    pub refractory_ticks: u16, // [42..44] Absolute refractory countdown
+    pub last_synaptic_tick: u32, // [16..20] The tick a synapse's message last reached the unit; 0 = none (ADR-0054; the ABA tag of ADR-0006 lived at [16..24) until ADR-0017)
+    pub _reserved_20: u32,       // [20..24] Reserved; MUST be zero
+    pub v_soma: i32,             // [24..28] Soma potential (Q16.16)
+    pub v_basal: i32,            // [28..32] Basal feedforward potential (Q16.16)
+    pub v_apical: i32,           // [32..36] Apical contextual potential (Q16.16)
+    pub v_thresh: i32,           // [36..40] Dynamic adaptive threshold (Q16.16)
+    pub bac_plateau_ticks: u16,  // [40..42] Larkum BAC calcium burst countdown
+    pub refractory_ticks: u16,   // [42..44] Absolute refractory countdown
     pub last_soma_spike_tick: u32, // [44..48] Somatic action potential timestamp
     pub synapse_slab_idx: u32, // [48..52] First SynapseBlock of the fan-out, as index + 1; 0 = no fan-out (ADR-0022)
     pub _reserved: u16, // [52..54] Reserved; MUST be zero (the 16-bit delta head lived here until ADR-0024)
@@ -123,7 +124,8 @@ impl DendriticSuperNeuron {
         Self {
             id,
             mailbox_head_ptr: AtomicU64::new(MAILBOX_EMPTY),
-            mailbox_reserved: 0,
+            last_synaptic_tick: 0,
+            _reserved_20: 0,
             v_soma: 0,
             v_basal: 0,
             v_apical: 0,
@@ -382,7 +384,7 @@ mod tests {
         assert_eq!(u.id, 7);
         assert_eq!(u.gate(), Some(GateState::Idle));
         assert!(u.mailbox_is_empty());
-        assert_eq!(u.mailbox_reserved, 0);
+        assert_eq!((u.last_synaptic_tick, u._reserved_20), (0, 0));
         assert_eq!(GateState::from_u8(0), Some(GateState::Idle));
         assert_eq!(GateState::from_u8(1), Some(GateState::Scheduled));
         assert_eq!(GateState::from_u8(2), Some(GateState::Running));

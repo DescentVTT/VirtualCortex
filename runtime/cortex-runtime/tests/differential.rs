@@ -8,8 +8,8 @@
 
 use cortex_connectome::Crc64;
 use cortex_core::{
-    DendriticSuperNeuron, GateState, MODULATION_ONE_Q16, STP_MAX, STP_U, SynapseBlock,
-    THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
+    DendriticSuperNeuron, GateState, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, STP_MAX, STP_U,
+    SynapseBlock, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
 use cortex_runtime::{Config, Executor};
 
@@ -285,8 +285,11 @@ fn a_delayed_synapse_arrives_delay_ticks_after_the_spike_and_a_zero_delay_one_th
 /// Moved once, by ADR-0032 (from `0x7603c27186e59994`), for the block's bytes: the apical mask
 /// into the chain word, the eligibility trace at `[56..64)`. The dynamics of this network did
 /// not change: its weights stay within [8 180, 31 986] and never pair at a rail, which is the
-/// one place ADR-0032's rule differs from ADR-0022's. The spike count did not move.
-const PINNED_ARENA_HASH: u64 = 0x1724f3486c1d674e;
+/// one place ADR-0032's rule differs from ADR-0022's. The spike count did not move. Moved a
+/// second time, by ADR-0054 (from `0x1724f3486c1d674e`), for the unit's bytes: `[16..20)` is
+/// the tick a synapse's message last reached the unit, which the loop writes; the dynamics
+/// did not change and the spike count did not move.
+const PINNED_ARENA_HASH: u64 = 0x27e12eea1ee625a5;
 /// The spike count that goes with the hash: a moved hash with the same count is a change to
 /// the state, a moved count a change to the dynamics.
 const PINNED_SPIKE_COUNT: usize = 95;
@@ -316,6 +319,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             search_shift: 0,
             search_budget: 0,
             discovery_tag: 0,
+            istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
         },
         wire_random,
         20_000,

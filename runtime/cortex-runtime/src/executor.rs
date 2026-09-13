@@ -49,9 +49,10 @@ use crate::store::{Induction, TermError};
 use cortex_affect::InteroceptiveState;
 use cortex_core::{
     BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel,
-    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS,
-    SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, WorkerWheel, message_efficacy_q16,
-    message_is_apical, spike_message, synapse_token, token_block, token_slot,
+    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16,
+    NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SynapseBlock,
+    THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical,
+    message_is_synaptic, spike_message, synapse_token, synaptic_message, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
@@ -141,6 +142,12 @@ pub struct Config {
     /// The REM ripples an invention's episode survives (ADR-0048); at 0 a rewarded search
     /// tags nothing and is counted as untagged. The image's outranks this one.
     pub discovery_tag: u8,
+    /// The target period of the inhibitory rule (ADR-0049, ADR-0053), in ticks: the rate an
+    /// inhibitory synapse's target is driven toward, as the depression per presynaptic spike
+    /// `istdp_alpha_q1_15(period)`; 20 000 (the default) is 5 Hz at the fine tick. Refused
+    /// outside `[ISTDP_PERIOD_MIN_TICKS, ISTDP_PERIOD_MAX_TICKS]`. For an engine built from
+    /// an image, the image's outranks this one: it changes what the run does (§8.3).
+    pub istdp_target_period_ticks: u32,
 }
 
 impl Default for Config {
@@ -165,6 +172,7 @@ impl Default for Config {
             search_shift: 0,
             search_budget: 0,
             discovery_tag: 0,
+            istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
         }
     }
 }
@@ -272,6 +280,9 @@ pub enum ConfigError {
     ClausesWithoutArena,
     /// `search_shift` is above `SEARCH_SHIFT_MAX` (ADR-0052).
     SearchShiftOutOfRange,
+    /// `istdp_target_period_ticks` is outside `[ISTDP_PERIOD_MIN_TICKS,
+    /// ISTDP_PERIOD_MAX_TICKS]` (ADR-0053).
+    IstdpPeriodOutOfRange,
 }
 
 /// Why an episode could not be tagged (ADR-0038).
@@ -416,6 +427,11 @@ struct Shared {
     /// Per worker, the units that fired in its turns phase this tick: stored at the end of the
     /// phase, summed by the coordinator after the tick (ADR-0036).
     spikes: Box<[AtomicU32]>,
+    /// Descendants each worker fired this tick (ADR-0054), beside its spikes.
+    descendants: Box<[AtomicU32]>,
+    /// The inhibitory rule's depression per spike at the engine's target period (ADR-0053),
+    /// read by every worker in the fan-out phase.
+    istdp_alpha: AtomicI32,
     /// The units that fired this tick, one slot per unit, appended by every worker at the
     /// spike through `fired_len` and taken by the coordinator after the tick into the train
     /// (ADR-0050); empty when the executor keeps no train.
@@ -444,6 +460,8 @@ struct Worker<const CAP: usize> {
     spike_trace: Vec<(u32, u32)>,
     trace_dropped: u64,
     delivered: u64,
+    /// Descendants this worker fired this tick (ADR-0054).
+    descended: u32,
     in_flight: i64,
 }
 
@@ -538,6 +556,10 @@ pub struct Executor<const CAP: usize> {
     /// The search's cadence inside the tick, from the induction record's shift; `None` never
     /// searches.
     search_cadence: Option<Cadence>,
+    /// The inhibitory rule's target period (ADR-0053): the configuration's, or the image's.
+    istdp_target_period_ticks: u32,
+    /// Descendants tallied so far (ADR-0054).
+    descendants: u64,
 }
 
 /// The cadence of a search shift: none at zero.
@@ -593,6 +615,11 @@ impl<const CAP: usize> Executor<CAP> {
         if config.search_shift > SEARCH_SHIFT_MAX {
             return Err(ConfigError::SearchShiftOutOfRange);
         }
+        if !(ISTDP_PERIOD_MIN_TICKS..=ISTDP_PERIOD_MAX_TICKS)
+            .contains(&config.istdp_target_period_ticks)
+        {
+            return Err(ConfigError::IstdpPeriodOutOfRange);
+        }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -628,6 +655,10 @@ impl<const CAP: usize> Executor<CAP> {
             modulation: AtomicI32::new(config.modulation_baseline_q16),
             gain: AtomicU32::new(GAIN_ONE_Q16),
             spikes: (0..workers).map(|_| AtomicU32::new(0)).collect(),
+            descendants: (0..workers).map(|_| AtomicU32::new(0)).collect(),
+            istdp_alpha: AtomicI32::new(i32::from(istdp_alpha_q1_15(
+                config.istdp_target_period_ticks,
+            ))),
             fired: (0..fired_slots).map(|_| AtomicU32::new(0)).collect(),
             fired_len: AtomicUsize::new(0),
             episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
@@ -655,6 +686,7 @@ impl<const CAP: usize> Executor<CAP> {
                 trace_dropped: 0,
                 delivered: 0,
                 in_flight: 0,
+                descended: 0,
             })
             .collect();
         let worker0 = states.remove(0);
@@ -707,7 +739,38 @@ impl<const CAP: usize> Executor<CAP> {
                 config.discovery_tag,
             ),
             search_cadence: search_cadence_of(config.search_shift),
+            istdp_target_period_ticks: config.istdp_target_period_ticks,
+            descendants: 0,
         })
+    }
+
+    /// The target period of the inhibitory rule (ADR-0053), in ticks: the configuration's,
+    /// or the image's for an engine built from one.
+    pub fn istdp_target_period_ticks(&self) -> u32 {
+        self.istdp_target_period_ticks
+    }
+
+    /// The loader's: the target period an image holds, which outranks the configuration's
+    /// (the image defines the run, §8.3). Refused outside the bounds, as `new` refuses it;
+    /// the depression the workers read is published at once.
+    pub(crate) fn set_istdp_target_period(&mut self, period_ticks: u32) -> bool {
+        if !(ISTDP_PERIOD_MIN_TICKS..=ISTDP_PERIOD_MAX_TICKS).contains(&period_ticks) {
+            return false;
+        }
+        self.istdp_target_period_ticks = period_ticks;
+        self.shared.istdp_alpha.store(
+            i32::from(istdp_alpha_q1_15(period_ticks)),
+            Ordering::Relaxed,
+        );
+        true
+    }
+
+    /// Descendants so far (ADR-0054): the spikes that came within `CAUSAL_LATENCY_TICKS` of
+    /// a synapse's message reaching the unit, summed by the tally; beside the population's
+    /// spikes, the in-loop reading of the branching ratio, the oracle's first-generation
+    /// rule without its counterfactual.
+    pub fn descendants(&self) -> u64 {
+        self.descendants
     }
 
     /// The engine's modulator record (ADR-0032): one for the engine until macro-columns exist,
@@ -1169,6 +1232,12 @@ impl<const CAP: usize> Executor<CAP> {
             .spikes
             .iter()
             .fold(0u32, |sum, s| sum.saturating_add(s.load(Ordering::Relaxed)));
+        let descendants = self
+            .shared
+            .descendants
+            .iter()
+            .fold(0u32, |sum, d| sum.saturating_add(d.load(Ordering::Relaxed)));
+        self.descendants = self.descendants.saturating_add(u64::from(descendants));
         self.homeostasis.count_activity(spikes);
         if BIN_CADENCE.is_due(self.tick) {
             if self.homeostasis.close_bin().is_none() {
@@ -1672,6 +1741,7 @@ impl<const CAP: usize> Worker<CAP> {
 
     fn phase_turns(&mut self, shared: &Shared, now: u32) {
         let gain = shared.gain.load(Ordering::Relaxed);
+        self.descended = 0;
         loop {
             let unit = match self.local.pop() {
                 Some(unit) => unit,
@@ -1682,9 +1752,11 @@ impl<const CAP: usize> Worker<CAP> {
             };
             self.turn(shared, unit, now, gain);
         }
-        // The units this worker fired this tick, for the population tally (ADR-0036); a
-        // count below the unit count, which `Executor::new` bounded below `u32::MAX`.
+        // The units this worker fired this tick, for the population tally (ADR-0036), and
+        // how many of them were descendants (ADR-0054); counts below the unit count, which
+        // `Executor::new` bounded below `u32::MAX`.
         shared.spikes[self.id].store(self.spiked.len() as u32, Ordering::Relaxed);
+        shared.descendants[self.id].store(self.descended, Ordering::Relaxed);
     }
 
     fn steal(&mut self, shared: &Shared) -> Option<u32> {
@@ -1734,6 +1806,7 @@ impl<const CAP: usize> Worker<CAP> {
         // §8.3: the batch is applied in message order, never in arrival order.
         self.batch.sort_unstable();
         let (mut basal, mut apical) = (0i32, 0i32);
+        let mut synaptic = false;
         for &message in &self.batch {
             let efficacy = message_efficacy_q16(message);
             if message_is_apical(message) {
@@ -1741,6 +1814,12 @@ impl<const CAP: usize> Worker<CAP> {
             } else {
                 basal = basal.saturating_add(efficacy);
             }
+            synaptic |= message_is_synaptic(message);
+        }
+        // A synapse's message reached the unit this tick (ADR-0054): the stamp the
+        // descendant rule reads at the unit's next spikes.
+        if synaptic {
+            u.note_synaptic_input(now);
         }
         // The tick's synaptic gain on every input of the unit (ADR-0036): the whitepaper's
         // rescaling of every weight, as one factor per turn.
@@ -1753,6 +1832,10 @@ impl<const CAP: usize> Worker<CAP> {
                 now.wrapping_sub(previous_spike)
             };
             let (release_u, release_r) = u.step_stp(elapsed);
+            if u.is_descendant(now) {
+                // Below the unit count, as the spikes are.
+                self.descended = self.descended.wrapping_add(1);
+            }
             push_bounded(
                 &mut self.spiked,
                 (unit, release_u, release_r),
@@ -1788,6 +1871,10 @@ impl<const CAP: usize> Worker<CAP> {
 
     fn phase_fan_out(&mut self, shared: &Shared, now: u32) {
         let modulation = shared.modulation.load(Ordering::Relaxed);
+        // The inhibitory rule's depression per spike at the engine's target period
+        // (ADR-0053), published by the coordinator; within `i16`, as `istdp_alpha_q1_15`
+        // bounds it.
+        let istdp_alpha = shared.istdp_alpha.load(Ordering::Relaxed) as i16;
         for k in 0..self.spiked.len() {
             let (unit, release_u, release_r) = self.spiked[k];
             // SAFETY (phase 2): every turn ended at the barrier, so no `&mut` to any unit
@@ -1818,7 +1905,7 @@ impl<const CAP: usize> Worker<CAP> {
                         .and_then(|t| unsafe { shared.units.get(t as usize) })
                         .map_or(NO_SPIKE_ON_RECORD, |t| t.last_soma_spike_tick)
                 });
-                block.step_stdp_all(now, posts, polarity);
+                block.step_stdp_all(now, posts, polarity, istdp_alpha);
                 block.consolidate_all(modulation, polarity);
                 let released = block.release_all(release_u, release_r);
                 for (slot, &efficacy) in released.iter().enumerate() {
@@ -1827,7 +1914,7 @@ impl<const CAP: usize> Worker<CAP> {
                     };
                     let delay = block.delays_ticks[slot];
                     if delay == 0 {
-                        let message = spike_message(efficacy, block.is_apical(slot));
+                        let message = synaptic_message(efficacy, block.is_apical(slot));
                         self.deliver(shared, target, message);
                     } else {
                         let Some(token) = synapse_token(block_idx as u32, slot as u8) else {
@@ -1862,7 +1949,7 @@ impl<const CAP: usize> Worker<CAP> {
             let Some(target) = block.target(slot) else {
                 continue;
             };
-            let message = spike_message(block.last_release_q16[slot], block.is_apical(slot));
+            let message = synaptic_message(block.last_release_q16[slot], block.is_apical(slot));
             self.deliver(shared, target, message);
         }
         if self.id == 0 {
@@ -2029,6 +2116,37 @@ mod tests {
             })
             .err(),
             Some(ConfigError::SearchShiftOutOfRange)
+        );
+        // The inhibitory rule's target period (ADR-0053): within its bounds, at them.
+        for period in [ISTDP_PERIOD_MIN_TICKS - 1, ISTDP_PERIOD_MAX_TICKS + 1, 0] {
+            assert_eq!(
+                Executor::<8>::new(Config {
+                    istdp_target_period_ticks: period,
+                    ..ok.clone()
+                })
+                .err(),
+                Some(ConfigError::IstdpPeriodOutOfRange),
+                "{period}"
+            );
+        }
+        for period in [ISTDP_PERIOD_MIN_TICKS, ISTDP_PERIOD_MAX_TICKS] {
+            let at = Executor::<8>::new(Config {
+                istdp_target_period_ticks: period,
+                ..ok.clone()
+            })
+            .unwrap();
+            assert_eq!(at.istdp_target_period_ticks(), period);
+            assert_eq!(
+                at.shared.istdp_alpha.load(Ordering::Relaxed),
+                i32::from(istdp_alpha_q1_15(period)),
+                "the depression the workers read"
+            );
+        }
+        assert_eq!(
+            Executor::<8>::new(ok.clone())
+                .unwrap()
+                .istdp_target_period_ticks(),
+            ISTDP_TARGET_PERIOD_TICKS
         );
         let with_store = Executor::<8>::new(Config {
             terms: 4,
