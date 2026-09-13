@@ -612,6 +612,20 @@ mod tests {
             }
         );
         assert_eq!(out[0].statement_hash(), 0x4117_9fdf);
+        // At the depth bound itself the walk overflows at 32 and the comparison last fits at
+        // depth 21: the candidate carries that convergent.
+        assert_eq!(
+            search(E, TOLERANCE, 1, 3, MAX_DEPTH, &mut slot, &mut out),
+            Ok(1)
+        );
+        assert_eq!(
+            out[0].convergent,
+            Convergent {
+                p: 67_217_716_576_837_485_130_671,
+                q: 24_728_016_011_107_368_960_000,
+                depth: 21
+            }
+        );
         assert_eq!(
             search(SILVER, TOLERANCE, 0, 2, 40, &mut slot, &mut out),
             Ok(1)
