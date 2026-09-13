@@ -1,7 +1,16 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-13
 ---
+
+> **Executed 2026-09-13 in pull request #54.** Writes ADR-0044 (the reference network) and
+> ADR-0045 (the executive clause search); records finding F-33; dispositions H-8 and H-9 at
+> 256 and 1 024 units and H-11's symbolic half; image format 13 and the determinism pin
+> untouched. Every deliverable is done; notes under the boxes say where the tree departs from
+> the text (the gate's form of the H-8 test is one gain, one window and four kicks; the
+> proof search selects the leftmost literal; `resolve_literal` was added). The report is in
+> the pull request and in `CHANGELOG.md`. The body below describes the tree before execution
+> and is not maintained; its relative links gained one `../`.
 
 # Brief 022 — The reference network and its measurements: a seeded anatomical prior, the runtime's synthesis, drive and causal branching-ratio oracle, the executive clause search with a bounded proof search as its readback; hypotheses H-8, H-9 and the symbolic half of H-11 decided at a stated scale
 
@@ -17,7 +26,7 @@ Search, and Empirical Validation of Cognitive Hypotheses (H-8, H-9, H-11)", rece
 The proposal names three pillars: a procedural connectome synthesizer and a traced run that
 decide H-8 (the branching-ratio estimator's regime) and H-9 (replay and pattern completion
 after a night); an executive clause search that feeds the inductive operators of
-[ADR-0041](../docs/adr/0041-induction-on-the-term-arena.md) and decides H-11 (whether a
+[ADR-0041](../../docs/adr/0041-induction-on-the-term-arena.md) and decides H-11 (whether a
 rewarded invention is read back); and a runtime lexicon with a cortico-striatal gating
 circuit. Five of its premises are not in the tree (the Context says which), so the round
 begins by re-deriving them. When the round is done: **one ADR** puts the anatomical prior of a
@@ -32,7 +41,7 @@ through the kicked unit's synapses, so that the whitepaper's causal definition
 time; and records what the exit tests hold on that network at 256 units (a pull request's
 gate) and at 1 024 (the weekly job): the lag-one slope against the causal ratios at fixed
 gains, the controller's trajectory under a step of an eighth, and, after a night of the
-stages of [ADR-0037](../docs/adr/0037-sleep-regulation.md) with two episodes tagged, the
+stages of [ADR-0037](../../docs/adr/0037-sleep-regulation.md) with two episodes tagged, the
 weights among each pattern and whether a cue of half a pattern fires the rest. **One ADR**
 gives `cortex-reasoning` the candidate-pair walk intra-construction can take and a bounded
 proof search over a clause store (depth-first, backtracking over the clause, a frame slice as
@@ -56,7 +65,7 @@ archived with every check green.
 - Every claim is Implemented, Specified, Target or Hypothesis. What a test holds on a network
   of 256 or 1 024 units is stated as what it is, with the prior's parameters; what the same
   rules do at Appendix A's scale is a Target with the same generator
-  ([ADR-0010](../docs/adr/0010-measured-or-target.md)). No timing figure enters a document
+  ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). No timing figure enters a document
   from a developer machine (the sizing in the Context is not a measurement). The words
   "validates", "reference-scale" (for anything below Appendix A's counts), "associative
   memory" and "autonomous" describe the proposal, never the tree.
@@ -65,15 +74,15 @@ archived with every check green.
 - No `f32`/`f64`, in the crates and in the tests; a ratio is Q16.16 in `u32`/`i32`, widened
   to `i64` to multiply; every operation on a state field saturates or wraps by name
   (`clippy::arithmetic_side_effects` is denied everywhere,
-  [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
+  [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line
   above the shift.
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; no heap types, threads
   or `unsafe` in a state crate (`unsafe_code = "forbid"`, ADR-0029); the prior yields synapses
   through an iterator over its own state, never a slice it allocates.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   an anatomical prior is `cortex-connectome`'s (§5.2.2 names the priors as its responsibility)
   and, under TC-2, names no record of another crate; the synthesis, the drive, the forks and
-  the search over the store are the runtime's ([ADR-0023](../docs/adr/0023-executor.md)); a
+  the search over the store are the runtime's ([ADR-0023](../../docs/adr/0023-executor.md)); a
   candidate pair and a proof are rules over terms, so they are `cortex-reasoning`'s. No new
   crate; no new record; the crate count stays 32.
 - A change to a record bumps `CortexFileHeader::FORMAT_VERSION` (rule L-6). This round changes
@@ -82,9 +91,9 @@ archived with every check green.
 - State crates declare no dependencies (TC-2); `cortex-executive` therefore cannot hold a
   search over `TermNode`, whatever the proposal's module name.
 - Rule L-3: a term holds ids, never strings.
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); the
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); the
   search's budget is the caller's argument, not a registry entry, this round.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only
   with a stated reason; the mutation gate on the changed lines must pass; a new rule carries
   a test over the lattice of `testkit/prop.rs`; every pinned number that an arithmetic oracle
   can produce is computed by that oracle before the test that asserts it is written; a pinned
@@ -117,7 +126,7 @@ quoted sentences are what to re-derive.
    `runtime/cortex-runtime/tests/criticality.rs`: `const UNITS: usize = 64`, `wire_recurrent`
    (two blocks per unit, eight synapses to two targets, delays 2 000 to 2 558, weights near
    the rail); its module comment says "a 48-unit network with depleting synapses", a comment
-   defect against its own constant (part of F-33); [ADR-0036](../docs/adr/0036-criticality-control.md)
+   defect against its own constant (part of F-33); [ADR-0036](../../docs/adr/0036-criticality-control.md)
    "What is not claimed" and §11.1 H-8 say 64. The proposal's "128-unit `wire_random`" as the
    site of H-8 conflates the two files.
 3. **What decides a spike, and what a kick does.** `crates/cortex-core/src/dynamics/neuron.rs`:
@@ -127,7 +136,7 @@ quoted sentences are what to re-derive.
    inhibitory synapse and `FLAG_INHIBITORY` (`membrane.rs`) is defined and read by no rule
    (`grep -rn FLAG_INHIBITORY`: the definition and two re-exports). `membrane.rs::integrate`:
    the soma follows the basal potential with a coupling of $2^{-4}$ per tick, the basal leaks
-   with $2^{-9}$, the refractory window is 200 ticks; [ADR-0038](../docs/adr/0038-episodic-ledger-and-replay.md)
+   with $2^{-9}$, the refractory window is 200 ticks; [ADR-0038](../../docs/adr/0038-episodic-ledger-and-replay.md)
    probed a drive of 2.0 as no spike, 2.25 to 2.875 as one, 3.0 as two. The tests' kick
    (`criticality.rs::kick`, `modulation.rs::fire`) is three messages of 0.99. A unit a drive
    holds near its threshold fires on less and, since the basal potential outlives the
@@ -187,13 +196,10 @@ quoted sentences are what to re-derive.
    `testkit/prop.rs`; the mutation gate's exclusions are in `.cargo/mutants.toml`; the
    determinism pin is `PINNED_ARENA_HASH` in `runtime/cortex-runtime/tests/differential.rs`.
 
-<!-- @assert-absence target="crates/cortex-connectome/src" symbol="pub struct Prior" reason="precondition: the anatomical prior does not exist yet; archived with the brief" -->
-<!-- @assert-absence target="runtime/cortex-runtime/src" symbol="pub fn synthesize" reason="precondition: no synthesis from a prior exists yet; archived with the brief" -->
-<!-- @assert-absence target="crates/cortex-reasoning/src" symbol="pub fn prove" reason="precondition: no proof search exists yet; archived with the brief" -->
 
 ## Deliverables
 
-- [ ] **The reference-network ADR (the next free number)** (`docs/adr/0044-reference-network.md`,
+- [x] **The reference-network ADR (the next free number)** (`docs/adr/0044-reference-network.md`,
   `depends-on: ADR-0036`, ADR-0038 named). In `cortex-connectome`, module `prior`: `Lcg`
   (Knuth's MMIX generator, the property kit's, with `below` and `between`), `Prior { units,
   inhibitory_every, synapses_per_unit, window, rewire_q0_8, delay_min, delay_max,
@@ -236,7 +242,8 @@ quoted sentences are what to re-derive.
   fire, for both patterns, pinned. The same at 1 024 units with sixteen kicks per gain and
   twelve windows of closed loop as `#[ignore]` tests named `..._exhaustive`. The ADR records
   the numbers of both, labelled, and what they decide.
-- [ ] **The clause-search ADR (the number after it)** (`docs/adr/0045-clause-search.md`,
+  **Departure:** the gate's form is one fixed gain (2.0), one window and four kicks, and a loop of four windows from 2.0, so that the runtime's tests stay seconds long under the mutation gate; the three-gain, two-window, eight-kick sweep and the loop from 1.0 at 256 units run with the 1 024-unit tests as `exhaustive`. The prior's delay bands are two (local 100 to 300, far 1 400 to 2 559) because completion needs local delays within a basal time constant. The oracle attributes through the synapses (a latency of 128 ticks, an advance of 512), not by a time window.
+- [x] **The clause-search ADR (the number after it)** (`docs/adr/0045-clause-search.md`,
   `depends-on: ADR-0043`, ADR-0041 named). In `cortex-reasoning`'s `induce.rs`:
   `next_pair(store, after, scratch)` (the next `(i, j)`, `i < j`, in index order whose
   clauses both have two literals or more and heads of one shape through the bindings),
@@ -260,19 +267,20 @@ quoted sentences are what to re-derive.
   provable after it and no other is; the proof's steps go from the hand-counted 6 to 8, 8 and 7
   (the invented predicates read back on the path, one step each); the committed rewards passed
   to `Executor::reward` consolidate a pending trace in the two-unit network of `modulation.rs`.
-- [ ] **Finding F-33** in whitepaper §11: the causal form with no caller and the proposal's
+  **Departure:** the proof search selects the leftmost literal (SLD's selection) through a new `resolve_literal(goal, rule, index)`, since resolving whichever literal a clause's head unifies with searched a goal of five literals in every order and spent a budget of 4 096; the exit test's store holds the facts of four constants, the fourth unprovable, and the modulator check reuses the file's own helpers.
+- [x] **Finding F-33** in whitepaper §11: the causal form with no caller and the proposal's
   name for it; `criticality.rs`'s comment of 48 against its constant of 64; a clause search
   placed in a crate TC-2 forbids it; the frame's roles misnamed; "reference scale" used for a
   size the tree does not name; `FLAG_INHIBITORY` defined and read by no rule. Disposition:
   resolved by the two ADRs and the corrected comment; the flag written by the synthesis as the
   unit's annotation and read by the exit test's pattern choice, the dynamics reading the
   weight's sign.
-- [ ] **H-8 and H-9 dispositioned** in §11.1 at the stated scale with the numbers, the
+- [x] **H-8 and H-9 dispositioned** in §11.1 at the stated scale with the numbers, the
   Appendix-A scale a Target; **H-11's symbolic half decided** (the store shorter, every proof
   kept, the invented predicates read back) and its synaptic half open with the reason; an
   open question on the estimator's one-window noise and the ceiling as the controller's fixed
   point at this scale (a smoothed estimate needs a second record line).
-- [ ] **The documents.** Whitepaper 4.10.0: the executive summary's sentence on what exists;
+- [x] **The documents.** Whitepaper 4.10.0: the executive summary's sentence on what exists;
   §1.6 rows (`cortex-connectome`, `cortex-reasoning`, the date); §5.1 (the runtime's
   modules); §5.2.2 (Public API, Status: the prior Implemented, the laminar sheet Specified);
   §5.2.16 (the causal form's caller); §5.2.30 (Public API, Status, a "Clause search"
@@ -285,7 +293,7 @@ quoted sentences are what to re-derive.
   the connectome and reasoning rows), `CLAUDE.md` (the sentence on what exists),
   `docs/zh-TW/README.md` (§6 and §11 rows), `docs/adr/README.md` (two rows), `CHANGELOG.md`
   (one entry under Unreleased in the shape of brief 021's).
-- [ ] **Not adopted, with the reason in the ADR that is closest:** the runtime lexicon (the
+- [x] **Not adopted, with the reason in the ADR that is closest:** the runtime lexicon (the
   next brief's first item: a lookup from a token id to a category term is the whole of it
   and it is not on the path of any hypothesis this round decides; the clause-search ADR);
   the cortico-striatal gating circuit (no measurement asks for it, `compute_gating` is one
@@ -297,7 +305,7 @@ quoted sentences are what to re-derive.
   slope's noise is recorded and the record has no line for more sums); the synaptic half of
   H-11 (the clause-search ADR: no rule maps an id to a pattern of units, and the ledger's
   `Episode` is the record such a rule would write).
-- [ ] **This brief archived** under `briefs/archive/` with the frozen banner, every box
+- [x] **This brief archived** under `briefs/archive/` with the frozen banner, every box
   dispositioned, the precondition directives removed and the links rebased.
 
 ## Not empowered
