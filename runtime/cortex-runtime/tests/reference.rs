@@ -229,7 +229,8 @@ type DayWindow = (u64, u32, u32, u8, u64, i64, i64, u64, u32);
 /// twenty-six at 5 000), inclusive both ways; read from the executor's own train.
 fn at_target_q16(exec: &mut Engine, from: u64, to: u64, period: u32) -> u32 {
     let units = exec.units().len();
-    let target = (WINDOW / u64::from(period)) as u32;
+    // The period is at least `ISTDP_PERIOD_MIN_TICKS`, so the quotient exists.
+    let target = WINDOW.checked_div(u64::from(period)).unwrap_or(0) as u32;
     let mut counts = vec![0u32; units];
     for &(tick, unit) in exec.train() {
         // The day's ticks are below the width, so the train's stamp is the tick itself.
@@ -922,7 +923,7 @@ fn the_prior_is_written_and_read_back_whole_and_a_driven_run_is_bit_identical_on
         run_driven(&mut exec, &drive(units), 2 * BIN).unwrap();
         settle(&mut exec);
         assert_eq!((exec.searches(), exec.inventions()), (2, 2));
-        assert_eq!((exec.untagged(), exec.search_failures()), (0, 0 * 32_767));
+        assert_eq!((exec.untagged(), exec.search_failures()), (0, 0));
         assert_eq!(exec.episodes().len(), 1);
         assert_eq!(exec.episodes()[0].symbol(), Some(INVENTED_BASE));
         let units: Vec<[u8; 64]> = exec.units().iter().map(|u| u.encode()).collect();

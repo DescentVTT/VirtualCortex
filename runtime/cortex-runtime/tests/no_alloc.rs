@@ -74,25 +74,29 @@ fn network() -> Executor<64> {
     {
         let blocks = exec.blocks_mut();
         let delays = [300u16, 500, 700];
-        for i in 0..3 {
-            let target = ((i + 1) % 3) as u32;
-            for k in 0..13 {
-                assert!(blocks[4 * i + k / 4].set_synapse(
-                    k % 4,
+        // Every index is below the twelve blocks and the three units: the named operations
+        // are the lint's (§8.1), not a bound.
+        for (i, &delay) in delays.iter().enumerate() {
+            let target = i.wrapping_add(1).wrapping_rem(3) as u32;
+            let first = i.wrapping_mul(4);
+            for k in 0..13usize {
+                assert!(blocks[first.wrapping_add(k >> 2)].set_synapse(
+                    k & 3,
                     target,
                     i16::MAX,
-                    delays[i],
+                    delay,
                     false
                 ));
             }
-            for j in 0..3 {
-                assert!(blocks[4 * i + j].link((4 * i + j + 1) as u32));
+            for j in 0..3usize {
+                let block = first.wrapping_add(j);
+                assert!(blocks[block].link(block.wrapping_add(1) as u32));
             }
         }
     }
     for (i, unit) in exec.units_mut().iter_mut().enumerate() {
         unit.v_thresh = THRESHOLD_BASE;
-        assert!(unit.set_first_block((4 * i) as u32));
+        assert!(unit.set_first_block(i.wrapping_mul(4) as u32));
     }
     // The exit store of ADR-0045 in the engine's own arena: three rules of one head sharing
     // four literals and differing in a fifth, so that the loop's first search on its cadence
