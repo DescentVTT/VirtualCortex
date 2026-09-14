@@ -38,21 +38,26 @@ pub struct Compaction {
 /// The scratch's word for a node the roots do not reach.
 const DEAD: u32 = u32::MAX;
 /// The scratch's word for a marked node not yet moved; a moved node's word is its new index,
-/// which is below the cursor and so below both sentinels.
+/// which is below the cursor, and the cursor is refused at or above this word, so an index
+/// never reads as a sentinel.
 const LIVE: u32 = u32::MAX - 1;
 
 /// Compacts `arena[..free]` onto the nodes `roots` reach: the mark, the move, the roots
 /// remapped in place, the tail zeroed. `forward` is the caller's scratch of at least `free`
 /// entries (its contents are the rule's after). Returns the nodes kept and reclaimed;
 /// refused, with nothing changed, for a root at or beyond `free`, a child at or beyond its
-/// parent, a scratch shorter than `free` or a cursor beyond the arena. A compaction of an
-/// arena that holds no garbage moves nothing and reports nothing reclaimed.
+/// parent, a scratch shorter than `free`, a cursor beyond the arena or a cursor at or beyond
+/// the sentinels' words (an arena of $2^{32} - 2$ nodes, which no image can hold). A
+/// compaction of an arena that holds no garbage moves nothing and reports nothing reclaimed.
 pub fn compact(
     arena: &mut [TermNode],
     free: usize,
     roots: &mut [u32],
     forward: &mut [u32],
 ) -> Result<Compaction, CompactError> {
+    if free >= LIVE as usize {
+        return Err(CompactError::Scratch);
+    }
     let Some(nodes) = arena.get_mut(..free) else {
         return Err(CompactError::Scratch);
     };
@@ -253,6 +258,11 @@ mod tests {
             compact(&mut arena, 5, &mut roots, &mut [0u32; 8]),
             Err(CompactError::Scratch),
             "a cursor beyond the arena"
+        );
+        assert_eq!(
+            compact(&mut arena, u32::MAX as usize, &mut roots, &mut [0u32; 8]),
+            Err(CompactError::Scratch),
+            "a cursor at the sentinels' words"
         );
         let mut forward = arena;
         forward[1] = TermNode::compound(0x10, &[2]).unwrap();

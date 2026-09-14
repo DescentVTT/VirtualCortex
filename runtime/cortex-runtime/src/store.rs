@@ -268,11 +268,16 @@ impl Induction {
     /// reads the same node for node, so the affect state, primed to its description
     /// length, stands, and the search's cursor, which names store positions, stands too.
     /// The work stack is the rule's scratch: twice the arena's size, and empty between
-    /// walks. `NoArena` for an engine without one; `Malformed` if the rule refuses, which
-    /// the engine's own arena, bottom-up by construction, cannot make it do.
+    /// walks. `NoArena` for an engine without one; `Malformed` if a binding is bound (the
+    /// table is empty between searches, and a binding names an index, so a bound one would
+    /// name a moved node) or if the rule refuses, which the engine's own arena, bottom-up by
+    /// construction, cannot make it do.
     pub(crate) fn compact(&mut self) -> Result<Compaction, TermError> {
         if self.terms.is_empty() {
             return Err(TermError::NoArena);
+        }
+        if self.bindings.iter().any(|b| *b != Binding::UNBOUND) {
+            return Err(TermError::Malformed);
         }
         let free = (self.record.free as usize).min(self.terms.len());
         let len = (self.record.clauses as usize).min(self.store.len());
@@ -466,5 +471,30 @@ mod tests {
         affect._reserved[0] = 0;
         assert!(ind.set_affect(affect));
         assert_eq!(ind.length(), 8);
+    }
+
+    #[test]
+    fn a_compaction_refuses_a_bound_table_and_reclaims_nothing_from_a_host_s_store() {
+        let mut none = Induction::new(0, 0, 0, 0, 0);
+        assert_eq!(none.compact(), Err(TermError::NoArena));
+        let mut ind = Induction::new(8, 2, 0, 0, 3);
+        let a = ind.term(TermNode::constant(0x200)).unwrap();
+        let x = ind.term(TermNode::variable(0)).unwrap();
+        let px = ind.term(TermNode::compound(0x100, &[x]).unwrap()).unwrap();
+        let _ = ind.term(TermNode::compound(0x101, &[a]).unwrap()).unwrap();
+        ind.assert_clause(px, &[]).unwrap();
+        // A binding names an index: a bound table refuses, and nothing moves.
+        ind.bindings[0] = Binding(2);
+        assert_eq!(ind.compact(), Err(TermError::Malformed));
+        assert_eq!((ind.record.free, ind.compactions), (5, 0));
+        ind.bindings[0] = Binding::UNBOUND;
+        // The constant `a` and `q(a)` are reached by no clause: reclaimed; the clause, the
+        // literal and the variable stay, in order, and the length stands.
+        let report = ind.compact().unwrap();
+        assert_eq!((report.live, report.reclaimed), (3, 2));
+        assert_eq!(ind.clauses(), &[2]);
+        assert_eq!(ind.terms()[0], TermNode::variable(0));
+        assert_eq!(ind.length(), 3);
+        assert_eq!((ind.compactions, ind.reclaimed), (1, 2));
     }
 }

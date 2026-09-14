@@ -45,7 +45,9 @@ unsafe impl GlobalAlloc for Counting {
 static ALLOCATOR: Counting = Counting;
 
 /// The counter is the process's: the two tests run one at a time, each holding this for
-/// its whole body, so that neither's set-up is counted in the other's window.
+/// its whole body, so that neither's set-up is counted in the other's window (the
+/// harness's own line for a finished test is printed long before the next test's window
+/// opens, behind its set-up), and each resets the counter as its window opens.
 static SERIAL: Mutex<()> = Mutex::new(());
 
 fn config() -> Config {
@@ -133,6 +135,7 @@ fn the_tick_loop_allocates_nothing_after_new() {
     // Warm up: the worker thread has started and the first spikes have fanned out.
     exec.run(2000);
 
+    ALLOCATIONS.store(0, Ordering::SeqCst);
     COUNTING.store(true, Ordering::SeqCst);
     for round in 0..40u32 {
         // A kick of twenty messages into one unit every 500 ticks keeps the units firing and
@@ -200,6 +203,7 @@ fn a_night_inside_the_tick_allocates_nothing() {
     let window = 1u64 << (ACTIVITY_BIN_SHIFT + ACTIVITY_WINDOW_SHIFT);
     let to_boundary = window.wrapping_sub(exec.ticks().wrapping_rem(window));
 
+    ALLOCATIONS.store(0, Ordering::SeqCst);
     COUNTING.store(true, Ordering::SeqCst);
     exec.run(to_boundary.wrapping_add(window.wrapping_mul(2)));
     COUNTING.store(false, Ordering::SeqCst);

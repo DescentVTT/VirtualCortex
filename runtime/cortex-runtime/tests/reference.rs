@@ -286,9 +286,17 @@ fn day(p: &Prior, w: u64, step: u16, shift: u8, period: u32) -> Vec<DayWindow> {
     let mut out = Vec::new();
     for _ in 0..w {
         let from = exec.ticks();
+        let overwritten = exec.train_overwritten();
         let (gain, estimate, spikes, descendants) = windows(&mut exec, &drive, 1)[0];
         let to = exec.ticks();
         let (inhibitory, excitatory) = weights_by_polarity(&exec);
+        // The fraction is read from the train, which must hold the whole window: at these
+        // sizes it does (a window is at most 131 072 / 50 spikes per unit).
+        assert_eq!(
+            exec.train_overwritten(),
+            overwritten,
+            "the train held the window"
+        );
         let at_target = at_target_q16(&mut exec, from, to, period);
         out.push((
             spikes,
@@ -961,6 +969,71 @@ fn the_prior_is_written_and_read_back_whole_and_a_driven_run_is_bit_identical_on
     assert_eq!(
         one.4, four.4,
         "the arena, the store, the records and the ledger"
+    );
+    assert_eq!(one.4.1.len(), 26);
+}
+
+/// The compaction at a slow-wave onset runs on the coordinator between the window's
+/// regulation and the next tick (ADR-0056): the exit store searched once between ticks, the
+/// engine put at the edge of sleep through its image and run through the night on one and
+/// four workers, and everything the image holds compared after the wake.
+#[test]
+fn a_slow_wave_onset_compacts_the_arena_bit_identically_on_one_and_four_workers() {
+    let units = 256;
+    let p = prior(units);
+    let outcome = |workers: usize| {
+        let cfg = Config {
+            trace_capacity: 1 << 20,
+            ..config(units, workers, 0, 0)
+        };
+        let mut exec = at_gain(&p, cfg.clone(), 0x0002_0000);
+        exit_store(&mut exec);
+        run_driven(&mut exec, &drive(units), 2 * BIN).unwrap();
+        assert_eq!(exec.discover().unwrap().search.commits, 2);
+        settle(&mut exec);
+        let garbage = exec.terms().len();
+        let mut exec = reload_with(&exec, cfg, |h| {
+            h.sleep_shift = 5;
+            h.sleep_pressure_q16 = PRESSURE_MAX_Q16;
+        });
+        // The first window's step is the onset; the night runs quiet (the ripples replay
+        // the tagged coincidence, so the network is not quiescent until it wakes), and the
+        // second entry into slow-wave sleep after REM compacts again, reclaiming nothing.
+        assert_eq!(exec.sleep_stage(), STAGE_AWAKE);
+        let mut windows = 0u32;
+        loop {
+            exec.run(WINDOW);
+            windows = windows.wrapping_add(1);
+            if windows > 1 && exec.sleep_stage() == STAGE_AWAKE || windows > 20 {
+                break;
+            }
+        }
+        settle(&mut exec);
+        assert_eq!(exec.sleep_stage(), STAGE_AWAKE);
+        assert_eq!((exec.compactions(), exec.reclaimed()), (2, 30));
+        assert_eq!(exec.terms().len(), garbage.wrapping_sub(30));
+        let units: Vec<[u8; 64]> = exec.units().iter().map(|u| u.encode()).collect();
+        let blocks = exec.blocks().to_vec();
+        let pool = *exec.homeostasis();
+        let store = (
+            exec.terms().to_vec(),
+            exec.clauses().to_vec(),
+            *exec.induction(),
+            *exec.affect(),
+            exec.episodes().to_vec(),
+        );
+        let train = exec.train().to_vec();
+        (units, blocks, pool, train, store)
+    };
+    let one = outcome(1);
+    let four = outcome(4);
+    assert_eq!(one.0, four.0, "the unit arenas");
+    assert_eq!(one.1, four.1, "the synapse arenas");
+    assert_eq!(one.2, four.2, "the homeostasis record");
+    assert_eq!(one.3, four.3, "the spike trains");
+    assert_eq!(
+        one.4, four.4,
+        "the compacted arena, the store, the records and the ledger"
     );
     assert_eq!(one.4.1.len(), 26);
 }

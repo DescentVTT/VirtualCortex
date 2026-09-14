@@ -993,6 +993,10 @@ impl<const CAP: usize> Executor<CAP> {
     /// variable outside the binding table. A variable moves the record's `next_variable`
     /// above its number. Like an injection, a term is part of the trace: a run that asserts
     /// the same terms at the same ticks is the same run.
+    /// The index returned names the node until the next compaction (ADR-0056): a
+    /// slow-wave onset inside the tick, or [`compact`](Self::compact) between ticks, moves
+    /// every node the store does not reach, so a host builds a clause and asserts it
+    /// before letting the ticks cross an onset, or holds an index it will not use.
     pub fn term(&mut self, node: TermNode) -> Result<u32, TermError> {
         self.induction.term(node)
     }
@@ -1001,6 +1005,9 @@ impl<const CAP: usize> Executor<CAP> {
     /// index into the store, the affect state primed to the store's new length; returns the
     /// clause's index. Refused as `term` refuses, for a full store, for a body longer than
     /// `MAX_BODY`, and for a clause whose size cannot be measured.
+    /// The index returned, and every index the clause names, stand until the next
+    /// compaction (ADR-0056), when the store's nodes move; the store's positions and the
+    /// record's cursor do not.
     pub fn assert_clause(&mut self, head: u32, body: &[u32]) -> Result<u32, TermError> {
         self.induction.assert_clause(head, body)
     }
@@ -1034,6 +1041,8 @@ impl<const CAP: usize> Executor<CAP> {
     /// moment as `Tag`, the reward the modulator's by then. The same loop runs inside the
     /// tick on the record's cadence while the engine is awake, its refusals counted
     /// (`untagged`, `search_failures`) and never returned.
+    /// The report's indices name nodes until the next compaction (ADR-0056), which clears
+    /// the last search's discoveries for that reason.
     pub fn discover(&mut self) -> Result<DiscoverReport, DiscoverError> {
         self.induce()
     }
