@@ -288,8 +288,12 @@ fn a_delayed_synapse_arrives_delay_ticks_after_the_spike_and_a_zero_delay_one_th
 /// one place ADR-0032's rule differs from ADR-0022's. The spike count did not move. Moved a
 /// second time, by ADR-0054 (from `0x1724f3486c1d674e`), for the unit's bytes: `[16..20)` is
 /// the tick a synapse's message last reached the unit, which the loop writes; the dynamics
-/// did not change and the spike count did not move.
-const PINNED_ARENA_HASH: u64 = 0x27e12eea1ee625a5;
+/// did not change and the spike count did not move. Moved a third time, by ADR-0055 (from
+/// `0x27e12eea1ee625a5`), for the dynamics: an excitatory depression scales with the weight's
+/// magnitude, and this network's weights, within [8 180, 31 986], are depressed by more or
+/// less than the additive amount from the first pairing on, so the arena's weights and every
+/// unit's potentials differ; the spike count did not move.
+const PINNED_ARENA_HASH: u64 = 0x6c27858ece2dd412;
 /// The spike count that goes with the hash: a moved hash with the same count is a change to
 /// the state, a moved count a change to the dynamics.
 const PINNED_SPIKE_COUNT: usize = 95;
