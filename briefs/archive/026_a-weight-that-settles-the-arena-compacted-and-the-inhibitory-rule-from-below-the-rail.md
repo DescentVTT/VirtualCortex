@@ -1,7 +1,20 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-14
 ---
+
+> **Executed 2026-09-14 in pull request #62.** Writes ADR-0055 (a weight that settles: the
+> excitatory depression scaled by the weight's magnitude), ADR-0056 (a compaction of the term
+> arena at every slow-wave onset) and ADR-0057 (the inhibitory rule read from below the rail);
+> no finding closed and none opened; image format 14 unchanged; the determinism pin moved once,
+> for the depression's amount, with its reason. Every deliverable is done; notes under the boxes
+> say where the tree departs from the text (the stabilising rule's criterion held at 1 024 units
+> at both periods and at 256 units at one, so §11.1's item stays open with the reading; the
+> below-rail reading rule held at one period and the ADR says why the rise it read is not the
+> rule's; the night's reclaimed count is pinned as the store test's thirty; the compaction's
+> scratch is the executor's work stack). The report is in the pull request and in
+> `CHANGELOG.md`. The body below describes the tree before execution and is not maintained;
+> its relative links gained one `../`.
 
 # Brief 026 — A weight that settles: the excitatory depression scaled by the magnitude, a compaction of the term arena at slow-wave onset, and the inhibitory rule read from below the rail
 
@@ -17,7 +30,7 @@ weight a fixed point: the pair rule's depression scales with the weight's magnit
 Rossum, Bi and Turrigiano 2000; the $\mu = 1$ depression of Gütig et al. 2003, the potentiation
 additive as it is), so that under a stationary drive a magnitude settles where a pairing's
 depression equals its potentiation instead of draining to nothing, as the day of
-[ADR-0053](../docs/adr/0053-the-waking-day-and-the-target-period.md) read; the rule is measured
+[ADR-0053](../../docs/adr/0053-the-waking-day-and-the-target-period.md) read; the rule is measured
 on the same day harness at 256 units (sixteen windows, the gain held) and 1 024 units (eighty
 windows under the controller, a night inside them) under a criterion written in this brief
 before the run, every pin of the reference tests is taken again from the runs, and the
@@ -45,7 +58,7 @@ that change behaviour is not a brief's to open. When the round is done: the whit
 - Every claim is Implemented, Specified, Target or Hypothesis. What a test holds on a network
   of 256, 1 024 or 4 096 units is stated as what it is, with the prior's parameters; what the
   same rules do at Appendix A's scale is a Target with the same generator
-  ([ADR-0010](../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from a
+  ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from a
   developer machine. A rule is what it does: no "validates", no "autonomous", no "stable"
   without the quantity, the band and the windows it held over; "a day" is the engine's own
   (the pressure's time constant), stated in windows and in simulated seconds, never a clock's.
@@ -56,7 +69,7 @@ that change behaviour is not a brief's to open. When the round is done: the whit
 - No `f32`/`f64`, in the crates and in the tests; a ratio is Q16.16 in `u32`/`i32`, widened to
   `i64` to multiply; every operation on a state field saturates or wraps by name
   (`clippy::arithmetic_side_effects` is denied everywhere,
-  [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line above
+  [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line above
   the shift.
 - Every loop ends by construction: a countdown, a range, a scan by `get`, a slice's iterator,
   a recursion whose depth argument falls to a stated bound; never by a comparison alone that
@@ -66,10 +79,10 @@ that change behaviour is not a brief's to open. When the round is done: the whit
   or `unsafe` in a state crate (`unsafe_code = "forbid"`, ADR-0029). A rule of `cortex-core`
   takes what it needs as an argument; it does not read a unit's flag or a policy. A rule of
   `cortex-reasoning` runs over caller-provided slices and a caller-provided scratch.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   the pair rule and its constants are `cortex-core`'s, the arena and its compaction
   `cortex-reasoning`'s, the composition of both the executor's
-  ([ADR-0023](../docs/adr/0023-executor.md)); `cortex-immune`'s record is composed by nothing
+  ([ADR-0023](../../docs/adr/0023-executor.md)); `cortex-immune`'s record is composed by nothing
   and stays so unless an ADR of this round says otherwise. No new crate; the crate count
   stays 32.
 - No record changes and the image format stays 14: no field, no section, no reserved byte
@@ -77,7 +90,7 @@ that change behaviour is not a brief's to open. When the round is done: the whit
   format moves once for the round, with the table in whitepaper §5.2, every fixed offset of
   the image tests and a changelog entry.
 - Rule L-3 and §1.5: no word, no string and no language name enters a crate.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) moves only with
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) moves only with
   a stated reason (this round has one candidate: the depression's amount at a pairing whose
   magnitude is not the reference); the mutation gate on the changed lines must pass; a new
   rule carries a test over the lattice of `testkit/prop.rs`; every pinned number an arithmetic
@@ -88,9 +101,9 @@ that change behaviour is not a brief's to open. When the round is done: the whit
 - A decision rule for a measurement is written in this brief before the run and applied as
   written; what the numbers say beyond it is recorded as a reading, never folded into the rule
   after the fact; no constant of a rule is tuned after the run it was measured in (brief 024's
-  lesson, [ADR-0051](../docs/adr/0051-the-estimator-at-4096-units.md); brief 025's,
-  [ADR-0054](../docs/adr/0054-the-causal-count-inside-the-loop.md)).
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); a
+  lesson, [ADR-0051](../../docs/adr/0051-the-estimator-at-4096-units.md); brief 025's,
+  [ADR-0054](../../docs/adr/0054-the-causal-count-inside-the-loop.md)).
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); a
   parameter that changes what a run does is in the image or in the trace (§8.3), never in a
   configuration alone; what the engine may amend by itself passes a trial whose behaviour
   hashes are equal, and this round opens no other lane.
@@ -114,7 +127,7 @@ quoted sentences are what to re-derive.
    `STDP_A_PLUS_Q1_15` is 328 and `STDP_A_MINUS_Q1_15` 344 ("depression-dominant at equal
    windows"); `Polarity::magnitude` reads a weight's magnitude under its polarity in
    $[0, 32\,767]$ and `consolidate` keeps the magnitude in $[0, \mathtt{i16::MAX}]$ (ADR-0049).
-   The day of [ADR-0053](../docs/adr/0053-the-waking-day-and-the-target-period.md)
+   The day of [ADR-0053](../../docs/adr/0053-the-waking-day-and-the-target-period.md)
    (`tests/reference.rs::day`) read the excitatory sum at 1 024 units under the controller fall
    from 225.9 million to nothing within fifteen windows, and at 256 units with the gain held
    from 56.7 million to 47.0 million in eight (seventeen per cent), the rate from 9.1 to 6.9 Hz;
@@ -139,8 +152,8 @@ quoted sentences are what to re-derive.
    weak (the distribution stays unimodal). A depression that scales with the magnitude cannot
    reach zero from above (below $w_{\text{ref}} / (2 A_-)$ of magnitude the rounded amount is
    nothing), and an additive potentiation still reaches the rail, which the nights of
-   [ADR-0044](../docs/adr/0044-reference-network.md) and
-   [ADR-0048](../docs/adr/0048-episodes-tagged-from-the-train.md) pin ("every synapse among a
+   [ADR-0044](../../docs/adr/0044-reference-network.md) and
+   [ADR-0048](../../docs/adr/0048-episodes-tagged-from-the-train.md) pin ("every synapse among a
    tagged pattern at the rail after a night"). The form is the one NEST's `stdp_synapse` has
    carried as `mu_minus` since 2007; nothing newer is needed and nothing newer is admissible.
 2. **What the pins hold and what moves them.** The reference prior draws excitatory weights in
@@ -259,12 +272,10 @@ quoted sentences are what to re-derive.
    tests draws inhibition below the rail; no reading counts the units at a target; nothing
    writes `[52..54)` of the unit; the registry holds the sweep's two parameters and no other.
 
-<!-- @assert-absence target="crates/cortex-core" symbol="STDP_DEPRESSION_REFERENCE_Q1_15" reason="precondition: the excitatory depression is independent of the weight; the stabilising-rule ADR of this brief scales it by the magnitude" -->
-<!-- @assert-absence target="crates/cortex-reasoning" symbol="fn compact" reason="precondition: no rule reclaims an arena node the store does not reach; the compaction ADR of this brief adds one" -->
 
 ## Deliverables
 
-- [ ] **The stabilising-rule ADR (the next free number)** (`depends-on: ADR-0053`; ADR-0022,
+- [x] **The stabilising-rule ADR (the next free number)** (`depends-on: ADR-0053`; ADR-0022,
   ADR-0032, ADR-0036, ADR-0044 and ADR-0049 named). In `cortex-core`:
   `STDP_DEPRESSION_REFERENCE_Q1_15` (0x2000, a quarter of the width, inside the reference
   prior's band: the magnitude at which an excitatory depression is `STDP_A_MINUS_Q1_15`) and
@@ -293,7 +304,15 @@ quoted sentences are what to re-derive.
   population's typical intervals; §11.1's per-unit scaling item dispositioned; §8.8's STDP
   row carrying the equation; §8.8's Turrigiano row Specified with the reason a gain cannot
   answer a drain.
-- [ ] **The compaction ADR (the number after it)** (`depends-on: ADR-0052`; ADR-0037,
+  **Departure:** ADR-0055. The criterion as written did not hold in full: the 1 024-unit clause
+  held at both periods (the sum settles at 0.45 of the prior's within 0.75 per cent over the
+  last sixteen windows, a night inside them) and the 256-unit clause held at the 20 000-tick
+  period and failed at 5 000 by 0.27 points in one window (the sum still falling by 1.9 per
+  cent per window at the sixteenth, decelerating), so the rule stands, no constant moved, and
+  §11.1's item stays open with the reading; the reference magnitude is `0x2000`, a quarter of
+  the width; the fixed-point test walks into an oracle band rather than a point, since the
+  rounding makes a plateau.
+- [x] **The compaction ADR (the number after it)** (`depends-on: ADR-0052`; ADR-0037,
   ADR-0041 and ADR-0045 named). In `cortex-reasoning`: `compact(arena, free, roots, forward)
   -> Result<Compaction, CompactError>` over the caller's arena, its cursor, its roots (the
   store's indices, remapped in place) and a scratch of at least `free` entries: the mark in
@@ -335,7 +354,14 @@ quoted sentences are what to re-derive.
   a live arena while awake for nothing), what the image does with it (nothing: the loader
   reads a smaller arena), and what stays Specified (standardising apart; the checksum audit;
   the `cortex-immune` record's composition).
-- [ ] **The below-the-rail ADR (the number after that)** (`depends-on: ADR-0053`; ADR-0031,
+  **Departure:** ADR-0056. `CompactError::{Root, NotBottomUp, Scratch}`; the executor's scratch
+  is the work stack, twice the arena's size; `Executor::compact` returns `TermError` (`NoArena`
+  for an engine without one, `Malformed` for a refusal the engine's own arena cannot cause) so
+  that the inputs' error type stays one; the rule refuses a cursor beyond the arena as
+  `Scratch`; a night of two slow-wave bouts compacts twice, stated; the capture nights' reclaimed
+  count is the store test's thirty (the same store, the same two commits); the no-alloc test's
+  two bodies are serialised, since the counter is the process's.
+- [x] **The below-the-rail ADR (the number after that)** (`depends-on: ADR-0053`; ADR-0031,
   ADR-0044 and ADR-0049 named). In `tests/reference.rs`: `prior_below_rail(units)`, the
   reference prior with `inhibitory_gain_q4_4` 32 and nothing else changed; `day` returning a
   ninth element, the fraction of units at the target in the window in Q16.16 (Context item
@@ -351,12 +377,17 @@ quoted sentences are what to re-derive.
   this round to choose a target with, and where that choice would go: the default of
   `Config::istdp_target_period_ticks` and the image). No change to `Prior`, to the rule, to
   the registry or to the configuration's default.
-- [ ] **The findings and the items.** §11.1: the per-unit scaling item dispositioned by the
+  **Departure:** ADR-0057. The reading rule held at the 20 000-tick period at 256 units and
+  failed at 5 000; the rise it read at the slower period is read on the prior at the rail too,
+  where the inhibitory rule cannot grow, so the ADR states it as the rate's fall under
+  ADR-0055's drift and not the rule's work, which the rule as written did not distinguish;
+  the priors' sums before any window are pinned by a test of their own.
+- [x] **The findings and the items.** §11.1: the per-unit scaling item dispositioned by the
   stabilising-rule ADR under the criterion; the item after F-36 extended with the reading
   from below the rail; the registry item restated under the invariant; H-9 and H-11 extended
   with what the nights do under the new rule and what the arena holds after a night; a
   finding only if the re-derivation finds one.
-- [ ] **The documents.** Whitepaper 4.14.0: the executive summary's sentence on what exists;
+- [x] **The documents.** Whitepaper 4.14.0: the executive summary's sentence on what exists;
   §1.6 rows (`cortex-core`, `cortex-reasoning`; the date); §5.2.1 (the constant and the
   rule's form in the STDP paragraph and the public API); §5.2.13 (the immune row's status:
   the arena's compaction is the runtime's over `cortex-reasoning`'s rule, the record still
@@ -373,7 +404,7 @@ quoted sentences are what to re-derive.
   compaction move from "do not" to "exist"), `docs/zh-TW/README.md` (§6, §8 and §11 rows),
   `docs/adr/README.md` (three rows), `CHANGELOG.md` (one entry under Unreleased in the shape
   of brief 025's).
-- [ ] **Not adopted, with the reason in the ADR that is closest:** the per-unit gain at
+- [x] **Not adopted, with the reason in the ADR that is closest:** the per-unit gain at
   `[52..54)` (the stabilising-rule ADR: a gain cannot lift a weight from zero; it stays
   Specified with its precondition, the measurement of H-8); a weight-dependent potentiation
   ($\mu$ on $A_+$: the nights' rail is a pinned property, and the competition it would cost
@@ -387,7 +418,7 @@ quoted sentences are what to re-derive.
   ADR names where the item stands); a chosen target rate (no objective in the tree chooses
   one; the reading is what a choice needs); a change to `Prior`'s fields (the below-rail
   network is the same generator at another gain); anything at 4 096 units.
-- [ ] **This brief archived** under `briefs/archive/` with the frozen banner, every box
+- [x] **This brief archived** under `briefs/archive/` with the frozen banner, every box
   dispositioned, the precondition directives removed and the links rebased.
 
 ## Not empowered
