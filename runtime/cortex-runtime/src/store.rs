@@ -9,7 +9,12 @@
 //! first ones; a commit's outputs are instantiated through the bindings and the table
 //! unbound, so that between searches the table is empty and the store reads without it.
 //! The affect state is primed to the store's description length at every change (ADR-0043),
-//! so the length is read from it and kept nowhere else. Nothing here allocates after `new`.
+//! so the length is read from it and kept nowhere else. Since ADR-0056 the arena is
+//! compacted onto the store's clauses, between ticks on a call and inside the tick at every
+//! slow-wave onset: the nodes the store does not reach (a commit's replaced inputs, the
+//! operators' intermediate nodes) are reclaimed, the store's indices and the record's
+//! cursor moved, the store reading the same node for node. Nothing here allocates after
+//! `new`.
 
 use crate::discovery::{
     Discovery, DiscoveryError, SearchReport, description_length, free_energy_q16, prime,
@@ -17,8 +22,8 @@ use crate::discovery::{
 };
 use cortex_affect::InteroceptiveState;
 use cortex_reasoning::{
-    Binding, InduceScratch, InductionState, TERM_EMPTY, TERM_VARIABLE, TermNode, clause, is_clause,
-    size,
+    Binding, Compaction, InduceScratch, InductionState, TERM_EMPTY, TERM_VARIABLE, TermNode,
+    clause, compact, is_clause, size,
 };
 
 /// Why a term or a clause was refused (ADR-0052). Nothing changes on a refusal.
@@ -67,6 +72,10 @@ pub(crate) struct Induction {
     pub(crate) untagged: u64,
     /// Searches that ended in an error of their own (the store or the arena full, a bound).
     pub(crate) failures: u64,
+    /// Compactions run, between ticks and at slow-wave onsets (ADR-0056).
+    pub(crate) compactions: u64,
+    /// Nodes the compactions reclaimed.
+    pub(crate) reclaimed: u64,
 }
 
 impl Induction {
@@ -100,6 +109,8 @@ impl Induction {
             inventions: 0,
             untagged: 0,
             failures: 0,
+            compactions: 0,
+            reclaimed: 0,
         }
     }
 
@@ -248,6 +259,34 @@ impl Induction {
         if !self.record.set_resume(resume) {
             self.record.set_resume(None);
         }
+        Ok(report)
+    }
+
+    /// A compaction of the arena onto the store's clauses (ADR-0056): the nodes no clause
+    /// reaches are reclaimed, the store's indices and the record's cursor moved, the last
+    /// search's discoveries cleared (their indices moved), the counters stepped. The store
+    /// reads the same node for node, so the affect state, primed to its description
+    /// length, stands, and the search's cursor, which names store positions, stands too.
+    /// The work stack is the rule's scratch: twice the arena's size, and empty between
+    /// walks. `NoArena` for an engine without one; `Malformed` if the rule refuses, which
+    /// the engine's own arena, bottom-up by construction, cannot make it do.
+    pub(crate) fn compact(&mut self) -> Result<Compaction, TermError> {
+        if self.terms.is_empty() {
+            return Err(TermError::NoArena);
+        }
+        let free = (self.record.free as usize).min(self.terms.len());
+        let len = (self.record.clauses as usize).min(self.store.len());
+        let report = compact(
+            &mut self.terms,
+            free,
+            &mut self.store[..len],
+            &mut self.stack,
+        )
+        .map_err(|_| TermError::Malformed)?;
+        self.record.free = report.live;
+        self.last_commits = 0;
+        self.compactions = self.compactions.saturating_add(1);
+        self.reclaimed = self.reclaimed.saturating_add(u64::from(report.reclaimed));
         Ok(report)
     }
 

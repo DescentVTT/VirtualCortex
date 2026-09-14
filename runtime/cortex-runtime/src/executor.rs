@@ -64,7 +64,7 @@ use cortex_homeostasis::{
     HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_AWAKE, STAGE_REM, STAGE_SWS,
 };
 use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
-use cortex_reasoning::{InductionState, SEARCH_SHIFT_MAX, TermNode};
+use cortex_reasoning::{Compaction, InductionState, SEARCH_SHIFT_MAX, TermNode};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
@@ -948,6 +948,38 @@ impl<const CAP: usize> Executor<CAP> {
         self.induction.failures
     }
 
+    /// A compaction of the engine's arena between ticks (ADR-0056): the nodes the store does
+    /// not reach are reclaimed, the store's indices and the induction record's cursor moved,
+    /// the last search's discoveries cleared (their indices moved); the store reads the same
+    /// node for node, so the affect state and the search's cursor stand. The same runs
+    /// inside the tick at every entry into slow-wave sleep. `NoArena` for an engine without
+    /// one; `Malformed` if the rule refuses, which the engine's own arena, bottom-up by
+    /// construction, cannot make it do.
+    pub fn compact(&mut self) -> Result<Compaction, TermError> {
+        self.induction.compact()
+    }
+
+    /// Compactions run, between ticks and at slow-wave onsets (ADR-0056).
+    pub fn compactions(&self) -> u64 {
+        self.induction.compactions
+    }
+
+    /// Nodes the compactions reclaimed.
+    pub fn reclaimed(&self) -> u64 {
+        self.induction.reclaimed
+    }
+
+    /// The compaction at a slow-wave onset (ADR-0056; whitepaper §8.8's glymphatic row):
+    /// once per entry into the stage, between the window's regulation and the next tick.
+    /// An engine without an arena reclaims nothing; the engine's own arena cannot make the
+    /// rule refuse.
+    fn compact_at_onset(&mut self) {
+        match self.induction.compact() {
+            Ok(_) | Err(TermError::NoArena) => {}
+            Err(_) => abort("the engine's own arena refused a compaction"),
+        }
+    }
+
     /// The last search's commits, in order (ADR-0045): the invention, the store's length
     /// before and after it, its valence and its reward; the first is the one the rewarded
     /// moment's episode is bound to. Empty after a search that ended in an error.
@@ -1246,7 +1278,13 @@ impl<const CAP: usize> Executor<CAP> {
             if WINDOW_CADENCE.is_due(self.tick) {
                 self.homeostasis
                     .regulate(saturation_ceiling(self.shared.units.len()));
+                let before = self.homeostasis.sleep_stage;
                 self.homeostasis.step_sleep();
+                // The slow-wave onset (ADR-0056): the arena's garbage is reclaimed once per
+                // entry into the stage, the reclamation §8.8's glymphatic row places there.
+                if before != STAGE_SWS && self.homeostasis.sleep_stage == STAGE_SWS {
+                    self.compact_at_onset();
+                }
             }
         }
     }

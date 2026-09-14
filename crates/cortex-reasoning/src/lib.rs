@@ -16,8 +16,10 @@
 //! reads a sequence of lexical categories into one with a log of what it did; and, since
 //! ADR-0052, the record an engine carries its arena and its clause store across a restart
 //! with ([`state`]) and the copy of a term through the bindings that lets a committed
-//! invention's outputs stand without the table. Constraint propagation, type raising, a
-//! chart, standardising apart and a compaction of the arena are Specified.
+//! invention's outputs stand without the table; and, since ADR-0056, the compaction of the
+//! arena ([`compact`]): the nodes a store does not reach reclaimed in two passes, one
+//! descending to mark and one ascending to move, which the bottom-up arena allows.
+//! Constraint propagation, type raising, a chart and standardising apart are Specified.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -25,6 +27,7 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 pub mod category;
+pub mod compact;
 pub mod induce;
 pub mod state;
 pub mod term;
@@ -34,6 +37,7 @@ pub use category::{
     RULE_FORWARD_COMPOSITION, Reduction, SLASH_ARITY, argument, backward, forward, head,
     is_functor, reduce, result, role, slash,
 };
+pub use compact::{CompactError, Compaction, compact};
 pub use induce::{
     CLAUSE, Frame, INSTANTIATE_DEPTH, INVENTED_BASE, INVENTED_LIMIT, InduceError, InduceMark,
     InduceScratch, Invention, MAX_BODY, Proof, absorb, clause, clause_body_len, clause_head,
