@@ -21,7 +21,11 @@
 //! polarity's half of the width (an excitatory weight never falls below zero, an inhibitory one
 //! never rises above it; Dale's principle by construction), and an inhibitory block takes the
 //! symmetric window of Vogels et al. 2011, both orders potentiating and a constant depression
-//! at every presynaptic spike derived from a target rate.
+//! at every presynaptic spike derived from a target rate. Since ADR-0055 an excitatory
+//! block's depression scales with the weight's magnitude, $A_- (1 - 2^{-11})^{\Delta t}
+//! \cdot M / 2^{13}$ (van Rossum, Bi and Turrigiano 2000; the potentiation additive as it
+//! is), so that under stationary pairing a magnitude settles where the depression equals
+//! the potentiation instead of draining to nothing.
 
 use super::membrane::FLAG_INHIBITORY;
 use super::neuron::{DendriticSuperNeuron, SynapseBlock, synaptic_efficacy_q16};
@@ -43,9 +47,35 @@ pub const NO_SPIKE_ON_RECORD: u32 = 0;
 pub const STDP_TAU_SHIFT: u32 = 11;
 /// Potentiation amplitude $A_+$ = 328/32768 ≈ 0.0100 in Q1.15.
 pub const STDP_A_PLUS_Q1_15: i16 = 328;
-/// Depression amplitude $A_-$ = 344/32768 ≈ 0.0105 in Q1.15, so $A_- / A_+ = 1.05$ and the
-/// rule is depression-dominant at equal windows.
+/// Depression amplitude $A_-$ = 344/32768 ≈ 0.0105 in Q1.15 at the reference magnitude
+/// ([`STDP_DEPRESSION_REFERENCE_Q1_15`]), so $A_- / A_+ = 1.05$ there and the rule is
+/// depression-dominant at equal windows; an excitatory depression scales with the weight's
+/// magnitude (ADR-0055), four times this at the rail and nothing at zero.
 pub const STDP_A_MINUS_Q1_15: i16 = 344;
+/// The magnitude at which an excitatory pairing's depression is [`STDP_A_MINUS_Q1_15`]
+/// (ADR-0055): a quarter of the width, 0x2000. The depression is
+/// $\operatorname{round}(A_- (1 - 2^{-11})^{\Delta t} \cdot M / 2^{13})$ with $M$ the slot's
+/// magnitude before the pairing (van Rossum, Bi and Turrigiano 2000; the $\mu = 1$
+/// depression of Gütig et al. 2003), the potentiation additive as it is. Under stationary
+/// pairing a magnitude settles where the depression equals the potentiation,
+/// $M^* = 2^{13} A_+ f_+ / (A_- f_-)$ with $f_\pm$ the two windows' expected factors,
+/// positive and stable, instead of draining to nothing, which is what the day of ADR-0053
+/// read of the additive rule: 344 here, 1 376 at the rail, nothing below a magnitude of
+/// twelve, where the rounding takes it to zero, so a weight the rule depresses cannot reach
+/// zero from above; an additive potentiation still reaches the rail, which a night's replay
+/// does. The documented cost (Gütig et al. 2003): the competition among a unit's inputs is
+/// weaker than the additive rule's, since a weight's gain is not its rival's loss.
+pub const STDP_DEPRESSION_REFERENCE_Q1_15: i16 = 0x2000;
+/// The shift that divides by the reference magnitude: $2^{13}$.
+pub const STDP_DEPRESSION_REFERENCE_SHIFT: u32 = 13;
+/// Half of the reference magnitude: the rounding term of [`depression_at`].
+const DEPRESSION_HALF: i64 = 1 << (STDP_DEPRESSION_REFERENCE_SHIFT - 1);
+const _: () = {
+    assert!(1i32 << STDP_DEPRESSION_REFERENCE_SHIFT == STDP_DEPRESSION_REFERENCE_Q1_15 as i32);
+    assert!(DEPRESSION_HALF * 2 == STDP_DEPRESSION_REFERENCE_Q1_15 as i64);
+    // The largest depression, the window at the rail, fits the width beside a potentiation.
+    assert!(STDP_A_MINUS_Q1_15 as i32 * 4 + STDP_A_PLUS_Q1_15 as i32 <= i16::MAX as i32);
+};
 /// The eligibility trace's time constant, $2^{16}$ ticks (655 ms at 10 µs): between two
 /// presynaptic spikes a slot's trace decays by $(1 - 2^{-16})^{\Delta t}$ (ADR-0032; Izhikevich
 /// 2007 uses 1 s). The largest shift `stp_decay_factor_q16` resolves.
@@ -349,6 +379,17 @@ fn window(amplitude_q1_15: i16, delta_ticks: u32) -> i16 {
         >> 16) as i16
 }
 
+/// An excitatory depression at a magnitude (ADR-0055): `amount × magnitude / 2^13`, rounded
+/// to nearest. The amount is at most $A_-$ and the magnitude at most the width, so the
+/// product is below $2^{24}$ and the quotient at most four times the amount.
+#[inline]
+fn depression_at(amount_q1_15: i16, magnitude: i32) -> i16 {
+    ((amount_q1_15 as i64)
+        .saturating_mul(magnitude as i64)
+        .saturating_add(DEPRESSION_HALF)
+        >> STDP_DEPRESSION_REFERENCE_SHIFT) as i16
+}
+
 /// `trace × factor` (a Q16.16 factor below 1.0), rounded to nearest, and at least one LSB
 /// toward zero for a trace that is not zero, so that a trace reaches zero exactly.
 #[inline]
@@ -532,7 +573,9 @@ impl SynapseBlock {
     /// excitatory block takes the asymmetric rule: if $p < q \le t$ the target fired after the
     /// previous presynaptic spike, and the trace gains $A_+ (1 - 2^{-11})^{q - p}$; then, if
     /// $q < t$, the target fired before this one and the trace loses
-    /// $A_- (1 - 2^{-11})^{t - q}$. An inhibitory block takes the symmetric rule of Vogels et
+    /// $A_- (1 - 2^{-11})^{t - q} \cdot M / 2^{13}$, $M$ the slot's magnitude before the
+    /// pairing (ADR-0055: the window's amount at the reference magnitude, four times it at
+    /// the rail, nothing at zero). An inhibitory block takes the symmetric rule of Vogels et
     /// al. 2011: the trace loses `istdp_alpha_q1_15` at every presynaptic spike (the depression
     /// of the engine's target period, [`istdp_alpha_q1_15`]; ADR-0053), and gains
     /// $A_+ (1 - 2^{-11})^{|\Delta t|}$ for each of the two pairings above, whichever way
@@ -571,7 +614,13 @@ impl SynapseBlock {
             if since_post > 0 {
                 e = match polarity {
                     Polarity::Excitatory => {
-                        e.saturating_sub(window(STDP_A_MINUS_Q1_15, since_post as u32))
+                        // The depression scales with the magnitude before the pairing
+                        // (ADR-0055); the weight itself moves at consolidation.
+                        let magnitude = polarity.magnitude(self.weights_q1_15[slot]);
+                        e.saturating_sub(depression_at(
+                            window(STDP_A_MINUS_Q1_15, since_post as u32),
+                            magnitude,
+                        ))
                     }
                     Polarity::Inhibitory => {
                         e.saturating_add(window(STDP_A_PLUS_Q1_15, since_post as u32))
@@ -1042,20 +1091,23 @@ mod tests {
             );
             assert_eq!(b.eligibility_q1_15[0], 0, "consolidated whole at 1.0");
         }
-        // Depression alone: no previous presynaptic spike; the target fired `delta` before
-        // (from a weight of 1 000, since a weight never falls below zero: ADR-0049).
+        // Depression alone: no previous presynaptic spike; the target fired `delta` before,
+        // from the reference magnitude, where the depression is the window's (ADR-0055).
         for (delta, amount) in MINUS {
-            let mut b = one_synapse(1000, NO_SPIKE_ON_RECORD);
+            let mut b = one_synapse(STDP_DEPRESSION_REFERENCE_Q1_15, NO_SPIKE_ON_RECORD);
             assert_eq!(
                 pair(&mut b, 0, 5000 + delta, 5000),
-                1000 - amount,
+                STDP_DEPRESSION_REFERENCE_Q1_15 - amount,
                 "delta {delta}"
             );
             assert_eq!(b.eligibility_q1_15[0], 0, "consolidated whole at 1.0");
         }
-        // Both: previous pre at 1000, post at 1500, this pre at 3500.
-        let mut b = one_synapse(0, 1000);
-        assert_eq!(pair(&mut b, 0, 3500, 1500), 257 - 129);
+        // Both: previous pre at 1000, post at 1500, this pre at 3500, at the reference.
+        let mut b = one_synapse(STDP_DEPRESSION_REFERENCE_Q1_15, 1000);
+        assert_eq!(
+            pair(&mut b, 0, 3500, 1500),
+            STDP_DEPRESSION_REFERENCE_Q1_15 + 257 - 129
+        );
         // A post at the same tick as the previous pre is not after it; at the same tick as
         // this pre it is not before it.
         let mut b = one_synapse(100, 1000);
@@ -1110,37 +1162,88 @@ mod tests {
 
     #[test]
     fn at_the_rail_the_two_terms_sum_before_the_weight_saturates() {
-        // ADR-0022's sequence at a weight of 1.0: the gain of 257 clipped, then the loss of 129
-        // applied, leaving 32 767 − 129. Since ADR-0032 the trace holds 257 − 129 = 128 and the
-        // weight stays at the rail with 128 pending.
+        // At a weight of 1.0 the target fired one tick after the previous presynaptic spike
+        // (a gain of 328) and 10 000 ticks before this one (a window of 3, which is 12 at the
+        // rail: ADR-0055). ADR-0022's sequence clipped the gain and applied the loss; since
+        // ADR-0032 the trace holds 328 − 12 = 316 and the weight stays at the rail with 316
+        // pending.
         let mut b = one_synapse(i16::MAX, 1000);
         assert_eq!(
-            b.step_stdp(0, 3500, 1500, Polarity::Excitatory, ISTDP_ALPHA_Q1_15),
-            257 - 129
+            b.step_stdp(0, 11_001, 1001, Polarity::Excitatory, ISTDP_ALPHA_Q1_15),
+            328 - 12
         );
         assert_eq!(
             b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
             i16::MAX,
-            "not 32 767 − 129"
+            "not 32 767 + 316"
         );
-        assert_eq!(b.eligibility_q1_15[0], 128);
-        b.stamp_presynaptic(3500);
-        // The pending change decays for 2 000 ticks (128 → 124), then a depression the rail
-        // can absorb pairs with a post at the previous presynaptic spike (no potentiation).
+        assert_eq!(b.eligibility_q1_15[0], 316);
+        b.stamp_presynaptic(11_001);
+        // The pending change decays for one time constant (316 → 116, the 24 022/65 536 of
+        // the decay test), then a post one tick before this presynaptic spike depresses the
+        // rail's magnitude by 1 376 (no potentiation: the post is 65 535 ticks after the
+        // previous presynaptic spike), and the magnitude absorbs the sum whole.
         assert_eq!(
             b.step_stdp_all(
-                5500,
-                [3500, 0, 0, 0],
+                11_001 + 65_536,
+                [11_001 + 65_535, 0, 0, 0],
                 Polarity::Excitatory,
                 ISTDP_ALPHA_Q1_15
             ),
-            [124 - 129, 0, 0, 0]
+            [116 - 1376, 0, 0, 0]
         );
         assert_eq!(
             b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
-            i16::MAX - 5
+            i16::MAX - 1260
         );
         assert_eq!(b.eligibility_q1_15[0], 0);
+    }
+
+    #[test]
+    fn the_depression_scales_with_the_magnitude_and_a_magnitude_has_a_fixed_point() {
+        // A post one tick before the presynaptic spike: the window is A− (344). At the rail
+        // the depression is four times it (344 × 32 767 / 8 192 to nearest), at zero nothing,
+        // at eleven nothing and at twelve one LSB (344 × 12 / 8 192 = 0.504), at a hundred four
+        // (4.2), so a weight the rule depresses cannot reach zero from above (ADR-0055).
+        for (weight, after) in [
+            (i16::MAX, i16::MAX - 1376),
+            (0, 0),
+            (11, 11),
+            (12, 11),
+            (100, 96),
+            (
+                STDP_DEPRESSION_REFERENCE_Q1_15,
+                STDP_DEPRESSION_REFERENCE_Q1_15 - 344,
+            ),
+        ] {
+            let mut b = one_synapse(weight, NO_SPIKE_ON_RECORD);
+            assert_eq!(pair(&mut b, 0, 1001, 1000), after, "from {weight}");
+            assert_eq!(b.eligibility_q1_15[0], 0, "from {weight}: nothing pending");
+        }
+        // The fixed point under a repeated pairing: the target fires 500 ticks after the
+        // previous presynaptic spike (a gain of 257) and 2 000 ticks before the next one (a
+        // window of 129). A magnitude M is fixed when round(129 M / 8 192) = 257, that is
+        // when 129 M + 4 096 lies in [257 · 8 192, 258 · 8 192): M in [16 289, 16 352], the
+        // oracle's band around 2^13 · 257 / 129 = 16 322. From below the walk enters the band
+        // at its first magnitude and from above at its last, and stays.
+        for (start, settles_at) in [(1000i16, 16_289i16), (30_000, 16_352)] {
+            let mut b = one_synapse(start, 1000);
+            let mut now = 1000u32;
+            let mut weight = start;
+            for _ in 0..2000 {
+                let post = now.wrapping_add(500);
+                now = now.wrapping_add(2500);
+                weight = pair(&mut b, 0, now, post);
+                b.stamp_presynaptic(now);
+            }
+            assert_eq!(weight, settles_at, "from {start}");
+            for _ in 0..10 {
+                let post = now.wrapping_add(500);
+                now = now.wrapping_add(2500);
+                assert_eq!(pair(&mut b, 0, now, post), settles_at, "and stays");
+                b.stamp_presynaptic(now);
+            }
+        }
     }
 
     #[test]
@@ -1320,13 +1423,21 @@ mod tests {
 
     #[test]
     fn the_half_range_holds_a_weight_at_zero_and_a_weight_on_the_wrong_side_is_brought_to_it() {
-        // An excitatory weight at zero depressed stays at zero with the depression pending;
-        // one of 100 depressed by 344 ends at zero with 244 pending: nothing crosses.
+        // An excitatory weight at zero is depressed by nothing (ADR-0055) and one of 100 by
+        // four; a pending depression of 344 on a weight of 100 ends at zero with 244
+        // pending: nothing crosses.
         let mut b = one_synapse(0, NO_SPIKE_ON_RECORD);
         assert_eq!(pair(&mut b, 0, 1001, 1000), 0);
-        assert_eq!(b.eligibility_q1_15[0], -344);
+        assert_eq!(b.eligibility_q1_15[0], 0);
         let mut b = one_synapse(100, NO_SPIKE_ON_RECORD);
-        assert_eq!(pair(&mut b, 0, 1001, 1000), 0);
+        assert_eq!(pair(&mut b, 0, 1001, 1000), 96);
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        let mut b = one_synapse(100, NO_SPIKE_ON_RECORD);
+        b.eligibility_q1_15[0] = -344;
+        assert_eq!(
+            b.consolidate(0, MODULATION_ONE_Q16, Polarity::Excitatory),
+            0
+        );
         assert_eq!(b.eligibility_q1_15[0], -244);
         // An inhibitory weight of −1 with a depression of 10 pending ends at zero, nine
         // pending; one at the rail potentiated stays there with the whole amount pending.
@@ -1467,14 +1578,14 @@ mod tests {
             );
         }
         // Both: previous pre at 1000, post at 1500, this pre at 3500: 257 + 123 − 67, where
-        // the excitatory rule gives 257 − 129.
+        // the excitatory rule gives 257 − 16 at a magnitude of 1 000 (ADR-0055).
         let mut b = one_synapse(-1000, 1000);
         assert_eq!(
             pair_in(&mut b, 0, 3500, 1500, Polarity::Inhibitory),
             -1000 - (257 + 123 - ALPHA)
         );
         let mut e = one_synapse(1000, 1000);
-        assert_eq!(pair(&mut e, 0, 3500, 1500), 1000 + 257 - 129);
+        assert_eq!(pair(&mut e, 0, 3500, 1500), 1000 + 257 - 16);
         // No spike of the target on record: α alone, so an inhibitory synapse onto a silent
         // target weakens at every presynaptic spike; the excitatory rule leaves it.
         let mut b = one_synapse(-1000, NO_SPIKE_ON_RECORD);
@@ -1538,10 +1649,10 @@ mod tests {
         let mut b = one_synapse(100, 3000);
         assert_eq!(
             pair(&mut b, 0, 2000, 1999),
-            0,
-            "the depression of 344 outruns the weight of 100: zero, with 244 pending (ADR-0049)"
+            96,
+            "the depression at a magnitude of 100 is four (ADR-0055)"
         );
-        assert_eq!(b.eligibility_q1_15[0], -244);
+        assert_eq!(b.eligibility_q1_15[0], 0);
         // No spike on record on either side changes nothing.
         let mut b = one_synapse(100, NO_SPIKE_ON_RECORD);
         assert_eq!(pair(&mut b, 0, 2000, NO_SPIKE_ON_RECORD), 100);
@@ -1560,9 +1671,10 @@ mod tests {
             Polarity::Excitatory,
             ISTDP_ALPHA_Q1_15,
         );
+        // The depressions of 129 and 269 at a magnitude of 1 000 are 16 and 33 (ADR-0055).
         assert_eq!(
             traces,
-            [257 - 129, 0, 0, 123 - 269],
+            [257 - 16, 0, 0, 123 - 33],
             "slot 0 and slot 3 both ways at their own intervals, slot 1 nothing on record, slot 2 empty"
         );
         assert_eq!(
@@ -1573,7 +1685,7 @@ mod tests {
         assert_eq!(b.last_spike_tick, 3500);
         assert_eq!(
             b.consolidate_all(MODULATION_ONE_Q16, Polarity::Excitatory),
-            [1000 + 257 - 129, 1000, 0, 1000 + 123 - 269],
+            [1000 + 257 - 16, 1000, 0, 1000 + 123 - 33],
             "consolidated whole at 1.0"
         );
         assert_eq!(b.eligibility_q1_15, [0; 4]);
@@ -1612,7 +1724,8 @@ mod tests {
 }
 
 /// Property tests (ADR-0030): every encoding round-trips over its whole range, a plasticity step
-/// moves a trace by at most one window (two and the constant for an inhibitory block) and a
+/// moves a trace by at most the windows at the rail (a potentiation and four depressions
+/// for an excitatory block, two potentiations and the constant for an inhibitory one) and a
 /// consolidated weight by at most that plus what was pending, a weight never leaves its
 /// polarity's half of the width and consolidation conserves the sum of magnitude and trace
 /// away from the rails, decay never grows a trace, and the tick wrap changes nothing.
@@ -1666,13 +1779,48 @@ mod prop {
     }
 
     #[test]
-    fn a_plasticity_step_moves_a_weight_by_at_most_one_window_within_its_half_range_across_the_tick_wrap()
+    fn the_depression_is_the_window_at_the_reference_four_at_the_rail_nothing_at_zero_and_never_falls_as_the_magnitude_rises()
+     {
+        // The four windows of the `MINUS` table at the rail, to nearest.
+        for (amount, at_rail) in [(344i16, 1376i16), (269, 1076), (129, 516), (3, 12)] {
+            assert_eq!(depression_at(amount, 0), 0);
+            assert_eq!(
+                depression_at(amount, STDP_DEPRESSION_REFERENCE_Q1_15 as i32),
+                amount
+            );
+            assert_eq!(depression_at(amount, i16::MAX as i32), at_rail);
+            let mut previous = 0;
+            for &magnitude in I16_LATTICE.iter().filter(|&&m| m >= 0) {
+                let d = depression_at(amount, magnitude as i32);
+                assert!(d >= 0 && d <= at_rail, "{amount} at {magnitude}: {d}");
+                assert!(
+                    d >= previous || magnitude < 0,
+                    "{amount}: not monotone at {magnitude}"
+                );
+                previous = d.max(previous);
+            }
+            let mut previous = 0;
+            for magnitude in 0..=i16::MAX as i32 {
+                let d = depression_at(amount, magnitude);
+                assert!(d >= previous, "{amount}: not monotone at {magnitude}");
+                previous = d;
+            }
+        }
+    }
+
+    #[test]
+    fn a_plasticity_step_moves_a_weight_by_at_most_the_windows_at_the_rail_within_its_half_range_across_the_tick_wrap()
      {
         let mut rng = Lcg::new(19);
         for start in [0u32, u32::MAX - 4_000, u32::MAX - 1, 1 << 31] {
             for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
                 let bound = match polarity {
-                    Polarity::Excitatory => STDP_A_PLUS_Q1_15 as i32 + STDP_A_MINUS_Q1_15 as i32,
+                    // A potentiation and the depression at the rail, four windows (ADR-0055).
+                    Polarity::Excitatory => {
+                        STDP_A_PLUS_Q1_15 as i32
+                            + ((STDP_A_MINUS_Q1_15 as i32)
+                                << (15 - STDP_DEPRESSION_REFERENCE_SHIFT))
+                    }
                     Polarity::Inhibitory => 2 * STDP_A_PLUS_Q1_15 as i32 + ISTDP_ALPHA_Q1_15 as i32,
                 };
                 let mut block = SynapseBlock::new();
