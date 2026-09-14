@@ -17,7 +17,7 @@
 //! ADR-0052, the record an engine carries its arena and its clause store across a restart
 //! with ([`state`]) and the copy of a term through the bindings that lets a committed
 //! invention's outputs stand without the table; and, since ADR-0056, the compaction of the
-//! arena ([`compact`]): the nodes a store does not reach reclaimed in two passes, one
+//! arena ([`compact()`]): the nodes a store does not reach reclaimed in two passes, one
 //! descending to mark and one ascending to move, which the bottom-up arena allows.
 //! Constraint propagation, type raising, a chart and standardising apart are Specified.
 
