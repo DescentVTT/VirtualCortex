@@ -7,7 +7,10 @@
 //! refusals; a bounded budget resumes from the cursor; the image carries the arena, the
 //! store, the induction record and the affect state, a loaded engine searches as the
 //! un-loaded one does, and every clause of the loader's checks on the four sections refuses
-//! on its own.
+//! on its own. Brief 026 adds the compaction (ADR-0056): between ticks it reclaims what the
+//! commits left and the store reads the same node for node; the cursor stands; a loaded
+//! engine searches alike; and inside the tick every entry into slow-wave sleep compacts
+//! once.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -20,10 +23,13 @@ use cortex_core::{
     MODULATION_ONE_Q16, STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
 use cortex_hippocampus::Episode;
-use cortex_homeostasis::{HomeostaticDrivePool, PRESSURE_MAX_Q16, STAGE_SWS};
+use cortex_homeostasis::{
+    ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, HomeostaticDrivePool, PRESSURE_MAX_Q16, STAGE_AWAKE,
+    STAGE_REM, STAGE_SWS,
+};
 use cortex_reasoning::{
-    INVENTED_BASE, INVENTED_LIMIT, InductionState, MAX_BODY, TERM_COMPOUND, TERM_CONSTANT,
-    TERM_VARIABLE, TermNode,
+    Binding, Compaction, INVENTED_BASE, INVENTED_LIMIT, InductionState, MAX_BODY, TERM_COMPOUND,
+    TERM_CONSTANT, TERM_VARIABLE, TermNode, is_clause, term_hash,
 };
 use cortex_runtime::{
     Config, DiscoverError, DiscoveryError, Executor, Image, ImageError, TagError, TermError,
@@ -103,6 +109,22 @@ fn fact(exec: &mut Engine, literal: u32, k: u32) -> u32 {
         .unwrap();
     exec.assert_clause(h, &[]).unwrap()
 }
+
+/// The store's clauses as structural hashes through no binding, in the store's order: what
+/// a compaction must leave as it was.
+fn hashes(exec: &Engine) -> Vec<u32> {
+    let terms = exec.terms();
+    let (capacity, _) = exec.term_capacity();
+    let bindings = vec![Binding::UNBOUND; capacity];
+    let mut stack = vec![0u32; capacity.saturating_mul(2)];
+    exec.clauses()
+        .iter()
+        .map(|&c| term_hash(c, terms, &bindings, &mut stack).unwrap())
+        .collect()
+}
+
+/// A window of the tick, $2^{17}$ ticks (ADR-0035).
+const WINDOW: u64 = 1 << (ACTIVITY_BIN_SHIFT + ACTIVITY_WINDOW_SHIFT);
 
 /// The store of ADR-0045's exit test: three rules of `p` sharing `LIT[0..4]` and differing
 /// in `LIT[4]`, `LIT[5]`, `LIT[6]`; one rule of `r`; twenty facts. 106 nodes.
@@ -493,6 +515,201 @@ fn the_loop_inside_the_tick_runs_on_its_cadence_while_awake_and_never_asleep() {
     exit_store(&mut never);
     never.run(512);
     assert_eq!(never.searches(), 0);
+}
+
+#[test]
+fn a_compaction_between_ticks_reclaims_what_the_commits_left_and_the_store_reads_the_same() {
+    // An engine without an arena has nothing to compact.
+    let mut none = engine(0, 0, 0, 0, 0);
+    assert_eq!(none.compact(), Err(TermError::NoArena));
+    assert_eq!((none.compactions(), none.reclaimed()), (0, 0));
+    // The exit store, searched: two commits leave their four inputs and the operators'
+    // intermediate nodes below the cursor, reached by no clause.
+    let mut exec = engine(1024, 32, 0, 64, 5);
+    exit_store(&mut exec);
+    // A host builds no garbage: eight nodes per rule of five literals (the clause, the head,
+    // the shared variable and the five literals), five for the rule of two, three per fact;
+    // the description length of 106 counts the shared variable at every reach.
+    assert_eq!(exec.terms().len(), 89);
+    fire(&mut exec);
+    assert_eq!(exec.discover().unwrap().search.commits, 2);
+    let before = exec.terms().len();
+    let hashes_before = hashes(&exec);
+    let length = exec.affect().free_energy_prev_q16;
+    assert_eq!((exec.discoveries().len(), length), (2, 100 << 16));
+    let compaction = exec.compact().unwrap();
+    // Two commits appended their instantiated outputs, twelve nodes each, to the host's 89:
+    // the store's twenty-six clauses reach 83 of the 113, and the four replaced inputs with
+    // the operators' intermediates are the thirty reclaimed (pinned from the run).
+    assert_eq!(before, 113, "the cursor before");
+    assert_eq!(
+        compaction,
+        Compaction {
+            live: 83,
+            reclaimed: 30
+        }
+    );
+    assert_eq!(exec.terms().len(), compaction.live as usize);
+    assert_eq!(exec.induction().free, compaction.live);
+    assert_eq!(
+        hashes(&exec),
+        hashes_before,
+        "every clause reads the same, in the store's order"
+    );
+    assert!(
+        exec.clauses()
+            .iter()
+            .all(|&c| is_clause(&exec.terms()[c as usize])),
+        "every store index names a clause"
+    );
+    assert_eq!(
+        exec.affect().free_energy_prev_q16,
+        length,
+        "the length stands, so the affect state is not primed again"
+    );
+    assert_eq!(exec.discoveries(), &[], "the last search's indices moved");
+    assert_eq!(
+        (exec.compactions(), exec.reclaimed()),
+        (1, u64::from(compaction.reclaimed))
+    );
+    // Nothing left: a second compaction reclaims nothing; a search finds no pair and reads
+    // the store's length through the moved indices.
+    assert_eq!(
+        exec.compact().unwrap(),
+        Compaction {
+            live: compaction.live,
+            reclaimed: 0
+        }
+    );
+    let again = exec.discover().unwrap();
+    assert_eq!(
+        (
+            again.search.attempts,
+            again.search.commits,
+            again.search.length_before
+        ),
+        (0, 0, 100)
+    );
+    assert_eq!(
+        (exec.compactions(), exec.reclaimed()),
+        (2, u64::from(compaction.reclaimed))
+    );
+}
+
+#[test]
+fn a_compaction_leaves_the_cursor_and_a_loaded_engine_searches_alike_after_one() {
+    // Three narrow clauses under a budget of one: a host's store holds no garbage, and the
+    // cursor names store positions, so a compaction between two searches changes neither.
+    let mut exec = engine(256, 8, 0, 1, 5);
+    for own in [LIT[4], LIT[5], LIT[6]] {
+        narrow(&mut exec, own);
+    }
+    exec.discover().unwrap();
+    assert_eq!(exec.induction().resume(), Some((0, 1)));
+    assert_eq!(exec.compact().unwrap().reclaimed, 0);
+    assert_eq!(exec.induction().resume(), Some((0, 1)));
+    exec.discover().unwrap();
+    assert_eq!(exec.induction().resume(), Some((0, 2)));
+    // The exit store under a budget of one, with no spike on the train, so that every
+    // rewarded search commits and then reports the tag it could not make (a loaded unit is
+    // as adapted as the image left it, so firing both engines alike is not open): the first
+    // search commits one invention and leaves its garbage; compacted and written, the image
+    // loads to the same arena, and the two engines' next searches commit the same second
+    // invention.
+    let mut one = engine(1024, 32, 0, 1, 5);
+    exit_store(&mut one);
+    assert!(matches!(one.discover(), Err(DiscoverError::Tag(_))));
+    assert_eq!((one.inventions(), one.clauses().len()), (1, 25));
+    let compaction = one.compact().unwrap();
+    assert!(compaction.reclaimed > 0, "{compaction:?}");
+    let img = Image::encode(&one).unwrap();
+    let room = Config {
+        terms: 1024,
+        clauses: 32,
+        train_capacity: 256,
+        episodes: 2,
+        ..Config::default()
+    };
+    let mut loaded = Image::decode::<64>(&img, room).unwrap();
+    assert_eq!(loaded.terms(), one.terms());
+    assert_eq!(loaded.clauses(), one.clauses());
+    assert_eq!(loaded.induction(), one.induction());
+    assert_eq!(loaded.affect(), one.affect());
+    assert!(matches!(one.discover(), Err(DiscoverError::Tag(_))));
+    assert!(matches!(loaded.discover(), Err(DiscoverError::Tag(_))));
+    // The counters are the executor's, not the image's: the loaded engine counts its own.
+    assert_eq!((one.inventions(), loaded.inventions()), (2, 1));
+    assert_eq!((one.clauses().len(), loaded.clauses().len()), (26, 26));
+    assert_eq!(loaded.terms(), one.terms());
+    assert_eq!(loaded.clauses(), one.clauses());
+    assert_eq!(hashes(&loaded), hashes(&one));
+}
+
+#[test]
+fn every_entry_into_slow_wave_sleep_compacts_the_arena_once_inside_the_tick() {
+    // The exit store searched between ticks, so the arena holds garbage; then the engine
+    // is put at the edge of sleep through its image (the pressure at its maximum, awake,
+    // the shift 5), so that the first window's step is the onset.
+    let mut exec = engine(1024, 32, 0, 64, 5);
+    exit_store(&mut exec);
+    fire(&mut exec);
+    exec.discover().unwrap();
+    let garbage = exec.terms().len();
+    let hashes_before = hashes(&exec);
+    let img = with_record(
+        &exec,
+        SECTION_HOMEOSTASIS,
+        HomeostaticDrivePool::decode,
+        HomeostaticDrivePool::encode,
+        |h| {
+            h.sleep_shift = 5;
+            h.sleep_pressure_q16 = PRESSURE_MAX_Q16;
+        },
+    );
+    let room = Config {
+        terms: 1024,
+        clauses: 32,
+        train_capacity: 256,
+        episodes: 2,
+        ..Config::default()
+    };
+    let mut exec = Image::decode::<64>(&img, room).unwrap();
+    assert_eq!(exec.sleep_stage(), STAGE_AWAKE);
+    assert_eq!((exec.compactions(), exec.reclaimed()), (0, 0));
+    assert_eq!(exec.terms().len(), garbage);
+    // To the first window boundary: the onset, and one compaction.
+    let to_boundary = WINDOW.wrapping_sub(exec.ticks().wrapping_rem(WINDOW));
+    exec.run(to_boundary);
+    assert_eq!(exec.sleep_stage(), STAGE_SWS);
+    assert_eq!(exec.compactions(), 1);
+    let reclaimed = exec.reclaimed();
+    assert!(reclaimed > 0);
+    assert_eq!(exec.terms().len(), garbage.wrapping_sub(reclaimed as usize));
+    assert_eq!(hashes(&exec), hashes_before);
+    // Four windows of slow-wave sleep, two of REM: no second compaction until the stage
+    // comes back, which is a second entry and reclaims nothing.
+    exec.run(WINDOW.wrapping_mul(4));
+    assert_eq!(exec.sleep_stage(), STAGE_REM);
+    assert_eq!(exec.compactions(), 1);
+    exec.run(WINDOW.wrapping_mul(2));
+    assert_eq!(exec.sleep_stage(), STAGE_SWS);
+    assert_eq!((exec.compactions(), exec.reclaimed()), (2, reclaimed));
+    // An engine without an arena passes the onset with nothing to reclaim.
+    let mut none = engine(0, 0, 0, 0, 0);
+    let img = with_record(
+        &none,
+        SECTION_HOMEOSTASIS,
+        HomeostaticDrivePool::decode,
+        HomeostaticDrivePool::encode,
+        |h| {
+            h.sleep_shift = 5;
+            h.sleep_pressure_q16 = PRESSURE_MAX_Q16;
+        },
+    );
+    none = Image::decode::<64>(&img, Config::default()).unwrap();
+    none.run(WINDOW);
+    assert_eq!(none.sleep_stage(), STAGE_SWS);
+    assert_eq!((none.compactions(), none.reclaimed()), (0, 0));
 }
 
 #[test]
