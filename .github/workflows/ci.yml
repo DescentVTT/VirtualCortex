@@ -177,10 +177,10 @@ jobs:
           echo "no survivor; timeouts, if any, are listed in mutants.out/timeout.txt"
 
   weekly:
-    name: Weekly (exhaustive tests, whole-tree mutation run)
+    name: Weekly (exhaustive tests)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -196,23 +196,85 @@ jobs:
       - name: The whole-domain tests, in the release profile
         run: cargo test --workspace --release --locked -- --ignored exhaustive
 
+  mutants-weekly:
+    # One job per area, because the areas cost different things (ADR-0058): a state crate's
+    # suite is about a second and the runtime's is 140, so one automatic timeout - five times
+    # the *workspace* baseline, while a mutant runs only its own package's tests - paid for a
+    # hung one-second suite at thirty-six minutes, and fourteen such mutants were 96 % of the
+    # sweep that ran out of time on 2026-09-14. The two areas together are the whole tree,
+    # which the completeness check below asserts rather than assumes.
+    name: Weekly mutation sweep (${{ matrix.area }}, ADR-0058)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      # One area that fails must not hide what the other found; the completeness check is
+      # per area, so a missing area is a failed job and never a quiet gap.
+      fail-fast: false
+      matrix:
+        include:
+          # Sixty times the measured one-second suite of a state crate.
+          - area: crates
+            timeout: 60
+          # Three times the measured 140-second suite of the runtime.
+          - area: runtime
+            timeout: 420
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: mutants
+
       - name: Install cargo-mutants at its pin
         run: cargo install cargo-mutants --locked --version 27.1.0
 
-      - name: The whole tree under mutation (survivors are listed, nothing is blocked)
+      - name: The area under mutation (survivors are listed, nothing is blocked)
         run: |
           set +e
-          cargo mutants --workspace --jobs 2
-          echo "cargo-mutants exit code $?"
+          cargo mutants --file "${{ matrix.area }}/**" --timeout ${{ matrix.timeout }} --jobs 2
+          code=$?
           set -e
+          echo "MUTANTS_EXIT=$code" >> "$GITHUB_ENV"
+          echo "cargo-mutants exit code $code"
           echo "== survivors"; cat mutants.out/missed.txt || true
           echo "== timeouts"; cat mutants.out/timeout.txt || true
+
+      - name: "The sweep covered the area (ADR-0058: a partial sweep is a failed job)"
+        run: |
+          # 0 no survivor, 2 a survivor, 3 a timeout: the tool reached a verdict. Anything
+          # else (a cancelled step, the tool's own error) is not a sweep.
+          case "$MUTANTS_EXIT" in
+            0|2|3) ;;
+            *) echo "cargo-mutants ended with $MUTANTS_EXIT, which is not a verdict"; exit 1 ;;
+          esac
+          expected=$(cargo mutants --list --file "${{ matrix.area }}/**" | wc -l)
+          tested=0
+          for outcome in caught missed timeout unviable; do
+            n=$(wc -l < "mutants.out/$outcome.txt" 2>/dev/null || echo 0)
+            echo "$outcome: $n"
+            tested=$((tested + n))
+          done
+          echo "tested $tested of $expected mutants under ${{ matrix.area }}/**"
+          {
+            echo "### Mutation sweep: ${{ matrix.area }}"
+            echo "Tested $tested of $expected mutants; cargo-mutants exit $MUTANTS_EXIT."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$tested" -ne "$expected" ]; then
+            echo "an incomplete sweep is not a result (ADR-0058)"
+            exit 1
+          fi
 
       - name: Keep the run's outcome (survivors, timeouts, the log) for the round that reads it
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mutants-out
+          name: mutants-out-${{ matrix.area }}
           path: mutants.out
           retention-days: 90
 
