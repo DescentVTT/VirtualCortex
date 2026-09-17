@@ -205,7 +205,7 @@ jobs:
     # baseline to the area, which is half the fix; the other half is that the bound is measured
     # on the runner rather than written down. The two areas together are the whole tree, which
     # the completeness check below asserts rather than assumes.
-    name: Weekly mutation sweep (${{ matrix.area }}, ADR-0058)
+    name: Weekly mutation sweep (${{ matrix.label }}, ADR-0058)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 330
@@ -215,10 +215,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - area: crates
+          # 2 417 mutants, swept in 24 minutes: one job (run 35252449360).
+          - label: crates
+            area: crates
             packages: --workspace --exclude cortex-runtime --exclude cortex-bench
-          - area: runtime
+            shard: ""
+          # 979 mutants against a suite of 359 s on a hosted runner: 590 of them took 5 h 23 m,
+          # so the area is about nine hours and is sharded at ceil(9 h / 90 min). Round-robin,
+          # not the tool's default slice, because this tree's expensive mutants cluster by file.
+          - label: runtime-0
+            area: runtime
             packages: -p cortex-runtime
+            shard: --shard 0/6 --sharding round-robin
+          - label: runtime-1
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 1/6 --sharding round-robin
+          - label: runtime-2
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 2/6 --sharding round-robin
+          - label: runtime-3
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 3/6 --sharding round-robin
+          - label: runtime-4
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 4/6 --sharding round-robin
+          - label: runtime-5
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 5/6 --sharding round-robin
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -255,7 +283,7 @@ jobs:
         run: |
           echo "per-mutant timeout: ${MUTANT_TIMEOUT}s"
           set +e
-          cargo mutants --file "${{ matrix.area }}/**" --baseline=skip --timeout "$MUTANT_TIMEOUT" --jobs 2
+          cargo mutants --file "${{ matrix.area }}/**" ${{ matrix.shard }} --baseline=skip --timeout "$MUTANT_TIMEOUT" --jobs 2
           code=$?
           set -e
           echo "MUTANTS_EXIT=$code" >> "$GITHUB_ENV"
@@ -271,16 +299,18 @@ jobs:
             0|2|3) ;;
             *) echo "cargo-mutants ended with $MUTANTS_EXIT, which is not a verdict"; exit 1 ;;
           esac
-          expected=$(cargo mutants --list --file "${{ matrix.area }}/**" | wc -l)
+          # The same filter and the same shard arguments, which is what the tool requires of
+          # every shard of one sweep: an area is complete when each of its shards is.
+          expected=$(cargo mutants --list --file "${{ matrix.area }}/**" ${{ matrix.shard }} | wc -l)
           tested=0
           for outcome in caught missed timeout unviable; do
             n=$(wc -l < "mutants.out/$outcome.txt" 2>/dev/null || echo 0)
             echo "$outcome: $n"
             tested=$((tested + n))
           done
-          echo "tested $tested of $expected mutants under ${{ matrix.area }}/**"
+          echo "tested $tested of $expected mutants under ${{ matrix.area }}/** (${{ matrix.label }})"
           {
-            echo "### Mutation sweep: ${{ matrix.area }}"
+            echo "### Mutation sweep: ${{ matrix.label }}"
             echo "Tested $tested of $expected mutants at a ${MUTANT_TIMEOUT}s bound; cargo-mutants exit $MUTANTS_EXIT."
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$tested" -ne "$expected" ]; then
@@ -292,7 +322,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mutants-out-${{ matrix.area }}
+          name: mutants-out-${{ matrix.label }}
           path: mutants.out
           retention-days: 90
 
