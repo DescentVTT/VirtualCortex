@@ -201,8 +201,10 @@ jobs:
     # suite is about a second and the runtime's is 140, so one automatic timeout - five times
     # the *workspace* baseline, while a mutant runs only its own package's tests - paid for a
     # hung one-second suite at thirty-six minutes, and fourteen such mutants were 96 % of the
-    # sweep that ran out of time on 2026-09-14. The two areas together are the whole tree,
-    # which the completeness check below asserts rather than assumes.
+    # sweep that ran out of time on 2026-09-14. Splitting by area also scopes the tool's own
+    # baseline to the area, which is half the fix; the other half is that the bound is measured
+    # on the runner rather than written down. The two areas together are the whole tree, which
+    # the completeness check below asserts rather than assumes.
     name: Weekly mutation sweep (${{ matrix.area }}, ADR-0058)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -213,12 +215,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Sixty times the measured one-second suite of a state crate.
           - area: crates
-            timeout: 60
-          # Three times the measured 140-second suite of the runtime.
+            packages: --workspace --exclude cortex-runtime --exclude cortex-bench
           - area: runtime
-            timeout: 420
+            packages: -p cortex-runtime
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -234,10 +234,28 @@ jobs:
       - name: Install cargo-mutants at its pin
         run: cargo install cargo-mutants --locked --version 27.1.0
 
+      # The timeout is derived here rather than written down, because a number measured on a
+      # developer machine does not transfer: this area's suite is 140 s locally and was still
+      # running when a 420-second bound cut it on a hosted runner (run 35249647298). The step
+      # also stands in for the tool's own baseline, which `--timeout` would otherwise bound
+      # along with the mutants, and fails the job if the unmutated tests fail - the guarantee
+      # `--baseline=skip` gives up.
+      - name: The area's own tests, timed, as the bound this runner needs
+        run: |
+          started=$SECONDS
+          cargo test ${{ matrix.packages }} --locked
+          elapsed=$((SECONDS - started))
+          # Three times the area's own suite plus half a minute: the tool's own default is
+          # five times a baseline, and a bound below the suite would record a slow mutant as a
+          # timeout, which V-6 counts as caught - a survivor hidden by the clock.
+          echo "MUTANT_TIMEOUT=$((elapsed * 3 + 30))" >> "$GITHUB_ENV"
+          echo "the ${{ matrix.area }} suite took ${elapsed}s on this runner"
+
       - name: The area under mutation (survivors are listed, nothing is blocked)
         run: |
+          echo "per-mutant timeout: ${MUTANT_TIMEOUT}s"
           set +e
-          cargo mutants --file "${{ matrix.area }}/**" --timeout ${{ matrix.timeout }} --jobs 2
+          cargo mutants --file "${{ matrix.area }}/**" --baseline=skip --timeout "$MUTANT_TIMEOUT" --jobs 2
           code=$?
           set -e
           echo "MUTANTS_EXIT=$code" >> "$GITHUB_ENV"
@@ -263,7 +281,7 @@ jobs:
           echo "tested $tested of $expected mutants under ${{ matrix.area }}/**"
           {
             echo "### Mutation sweep: ${{ matrix.area }}"
-            echo "Tested $tested of $expected mutants; cargo-mutants exit $MUTANTS_EXIT."
+            echo "Tested $tested of $expected mutants at a ${MUTANT_TIMEOUT}s bound; cargo-mutants exit $MUTANTS_EXIT."
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$tested" -ne "$expected" ]; then
             echo "an incomplete sweep is not a result (ADR-0058)"
