@@ -2485,7 +2485,9 @@ Four independent document checks and eight build and test gates, each answering 
 | Release profile | Do the tests hold in the engine's profile, without overflow checks? | `cargo test --workspace --release` ([ADR-0030](adr/0030-verification-governance.md)) | CI, blocking |
 | Benchmarks | Do the benchmarks still build and execute? (No timing is asserted; see §10.2.) | `cargo bench -p cortex-bench --bench hot_path -- --test` | CI, blocking |
 
-Both spec tools are pinned to exact versions in `package.json` (spec-guard 0.5.0, spec-graph 0.3.0) and have no runtime dependencies; they require Node 22 or newer. The property tests ([ADR-0030](adr/0030-verification-governance.md)) share one generator and one lattice through `testkit/prop.rs`, which a crate `include!`s into a `#[cfg(test)] mod prop`, so no state crate gains a dependency; the exhaustive tests, `#[ignore]`d and named `exhaustive_…`, enumerate a whole domain and run before a release. To run everything locally:
+Both spec tools are pinned to exact versions in `package.json` (spec-guard 0.11.0, spec-graph 0.8.0) and have no runtime dependencies; they require Node 22 or newer. spec-guard runs with `--ignore-status`: since 0.6.0 it withholds the directives of a document whose status is `draft`, `proposed`, `rejected`, `deprecated` or `superseded`, and every live brief is `proposed`, so without the flag a brief's precondition directives (`briefs/README.md`) would be reported and never executed.
+
+<!-- @assert-count target="package.json" symbol="--ignore-status" min="1" reason="a live brief is proposed, and its precondition directives must execute" --> The property tests ([ADR-0030](adr/0030-verification-governance.md)) share one generator and one lattice through `testkit/prop.rs`, which a crate `include!`s into a `#[cfg(test)] mod prop`, so no state crate gains a dependency; the exhaustive tests, `#[ignore]`d and named `exhaustive_…`, enumerate a whole domain and run before a release. To run everything locally:
 
 ```bash
 cargo check --workspace --all-targets --locked

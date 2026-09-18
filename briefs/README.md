@@ -27,7 +27,9 @@ lacks one.
 
 A live brief may also carry `<!-- @assert-* -->` directives that state its **precondition** (the
 defect it fixes still exists). `spec-guard` runs them: when the precondition stops holding, CI fails
-until the brief is archived or rewritten, which is how a stale brief is caught.
+until the brief is archived or rewritten, which is how a stale brief is caught. It runs them because `npm run spec:guard` passes `--ignore-status`: a live brief is
+`proposed`, and spec-guard 0.6.0 and later otherwise report a proposed document's directives
+without executing them.
 
 ## What a brief is not
 
