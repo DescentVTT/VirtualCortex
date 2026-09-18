@@ -1,6 +1,6 @@
 # CI for VirtualCortex.
 #
-# Six jobs (one on pull requests only, one weekly or by hand), seven questions:
+# Seven jobs (one on pull requests only, two weekly or by hand), eight questions:
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
 #           is it formatted and lint-clean (the workspace lints of ADR-0029 included),
 #           does rustdoc build without a warning, do the tests also hold in the release
@@ -25,9 +25,12 @@
 #           The ruleset "Main Protect" requires the rust, msrv and specs checks by name
 #           before a merge; the other jobs are not required, so a rename of those three
 #           is a change to the ruleset first.
-#   weekly - on a schedule (or by hand): do the whole-domain tests still hold, and which
-#           mutants survive over the whole tree? Nothing is blocked; the survivors are the
-#           next round's list (ADR-0030). Whitepaper Appendix B describes the levels.
+#   weekly - on a schedule (or by hand): do the whole-domain tests still hold?
+#   mutants-weekly - on the same schedule: which mutants survive over the whole tree? One job
+#           per area, the runtime's in six shards, each deriving its per-mutant bound from its
+#           own suite timed on its runner and failing if it did not cover its slice (ADR-0058).
+#           Nothing is blocked; the survivors are the next round's list (ADR-0030).
+#           Whitepaper Appendix B describes the levels.
 
 name: CI
 
@@ -223,6 +226,7 @@ jobs:
           # 979 mutants against a suite of 359 s on a hosted runner: 590 of them took 5 h 23 m,
           # so the area is about nine hours and is sharded at ceil(9 h / 90 min). Round-robin,
           # not the tool's default slice, because this tree's expensive mutants cluster by file.
+          # Measured (run 35284722491): the six shards took 1 h 10 m to 1 h 58 m.
           - label: runtime-0
             area: runtime
             packages: -p cortex-runtime
