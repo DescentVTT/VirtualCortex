@@ -25,15 +25,18 @@ use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_core::{BURST_REFRACTORY_TICKS, MODULATION_ONE_Q16, REFRACTORY_TICKS, spike_message};
 
 /// The shortest interval between two spikes of one unit, in ticks: a spike opens a refractory
-/// window of `REFRACTORY_TICKS` (`BURST_REFRACTORY_TICKS` after a plateau, the shorter) during
-/// which the unit integrates nothing and cannot fire, so a unit fires at most once per this
-/// many ticks and the most spikes a trial can hold is a bound the caller's train is checked
-/// against.
-pub const MIN_INTERVAL_TICKS: u32 = if BURST_REFRACTORY_TICKS < REFRACTORY_TICKS {
-    BURST_REFRACTORY_TICKS as u32
-} else {
-    REFRACTORY_TICKS as u32
-};
+/// window during which the unit integrates nothing and cannot fire, `REFRACTORY_TICKS` long,
+/// or `BURST_REFRACTORY_TICKS` after a plateau, the shorter of the two; so a unit fires at most
+/// once per this many ticks and the most spikes a trial can hold is a bound the caller's train
+/// is checked against. That the burst window is not the longer is asserted at compile time,
+/// so the constant needs no comparison.
+pub const MIN_INTERVAL_TICKS: u32 = BURST_REFRACTORY_TICKS as u32;
+const _: () = assert!(
+    REFRACTORY_TICKS
+        .checked_sub(BURST_REFRACTORY_TICKS)
+        .is_some(),
+    "the burst refractory window is the shorter"
+);
 const _: () = assert!(MIN_INTERVAL_TICKS >= 1);
 
 /// The most spikes one unit can hold in `ticks` ticks: one per [`MIN_INTERVAL_TICKS`], the
