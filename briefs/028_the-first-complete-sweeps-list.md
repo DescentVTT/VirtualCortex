@@ -32,6 +32,11 @@ determinism pin has not moved; and this brief is archived.
 
 ## Standing directives
 
+- **Latest ≠ Newest** (whitepaper §2.1, `CLAUDE.md` principle 4): `cargo-mutants` stays at its pin
+  (27.1.0), and the options this round uses (`--file`, `--shard`, `--timeout`, `exclude_re`) are
+  years old. No new tool (a test runner, a mutation framework, the `mutants` crate), no version
+  bump and no newer technique enters this round, however recent its results; a restructuring uses
+  the language as the MSRV (1.85) has it, and `let` chains, which that floor refuses, are out.
 - Every claim is Implemented, Specified, Target or Hypothesis. A mutation outcome is stated with the
   run that produced it (its id and head), never from memory; a timing is CI's wall clock and is never
   a claim about the engine ([ADR-0010](../docs/adr/0010-measured-or-target.md)).

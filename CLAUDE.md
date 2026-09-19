@@ -144,7 +144,7 @@ figure is recorded there as not admissible and is never written into the whitepa
 
 `npm run spec` is `spec:guard` (executable assertions in the documents against `crates/`),
 `spec:graph` (cross-document consistency: links, ADR lifecycle, open obligations) and
-`spec:briefs` (every live brief carries its mandatory sections) and `spec:deps` (state crates declare
+`spec:briefs` (every live brief carries its mandatory sections, and from brief 028 a Latest ≠ Newest standing directive; `spec:briefs:test` tests the checker) and `spec:deps` (state crates declare
 no dependencies, TC-2). Each fails with a file and line.
 
 ## Workflow
