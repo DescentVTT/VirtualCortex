@@ -949,6 +949,27 @@ mod tests {
         exec.run(2);
         assert_eq!(exec.delivered(), 64, "what fitted was delivered");
     }
+
+    /// The two draws of a trial against an oracle written apart from the tree: SplitMix64's
+    /// finaliser (Steele, Lea and Flood 2014) implemented in another language, at seed 27, the
+    /// learning harness's. Its low bits overlap the trials', so a draw from `seed | trial`
+    /// differs from one from `seed ^ trial`; at seed zero the two agree, which is why the test
+    /// above cannot tell them apart and why the shuffled run was the only test that could
+    /// (ADR-0061). Bit `k` of each mask is trial `k`.
+    #[test]
+    fn the_stimulus_and_the_coin_of_the_first_sixteen_trials_at_seed_27() {
+        let t = Task {
+            seed: 27,
+            ..task(Feedback::Shuffled)
+        };
+        let (mut stimuli, mut coins) = (0u16, 0u16);
+        for k in 0..16u32 {
+            stimuli |= u16::from(t.stimulus_at(u64::from(k))).wrapping_shl(k);
+            coins |= u16::from(t.coin_at(u64::from(k))).wrapping_shl(k);
+        }
+        assert_eq!(stimuli, 0x4c04, "bit 0 of mix64(27 ^ k)");
+        assert_eq!(coins, 0x6050, "bit 32 of mix64(27 ^ k)");
+    }
 }
 
 /// The lattice property (ADR-0030): over seeded trains and seeded set pairs the selection is
