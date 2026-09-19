@@ -202,6 +202,7 @@ name = "cortex-runtime"
 version = "0.1.0"
 dependencies = [
  "cortex-affect",
+ "cortex-basal-ganglia",
  "cortex-connectome",
  "cortex-core",
  "cortex-ethics",

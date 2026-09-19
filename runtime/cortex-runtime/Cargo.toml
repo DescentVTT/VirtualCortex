@@ -33,6 +33,9 @@ cortex-linguistic = { path = "../../crates/cortex-linguistic" }
 cortex-affect = { path = "../../crates/cortex-affect" }
 cortex-tools = { path = "../../crates/cortex-tools" }
 cortex-knowledge = { path = "../../crates/cortex-knowledge" }
+# The readout of a task: the gating rule that turns a trial's spike counts into an action
+# (ADR-0059, brief 027).
+cortex-basal-ganglia = { path = "../../crates/cortex-basal-ganglia" }
 
 # Not the workspace table: the runtime holds the one `unsafe` (ADR-0023). The float rule
 # still applies (ADR-0029).
