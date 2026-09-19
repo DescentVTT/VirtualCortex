@@ -16,9 +16,11 @@
 //! pinned here as the engine's, whatever it is.
 //!
 //! Every number is the engine's own, pinned from one run and held on every worker count and
-//! every architecture, as the determinism pin is; the 1 024-unit form is the weekly job's
-//! `exhaustive` test. What the numbers decide, and at what scale, is stated in ADR-0060 and
-//! in whitepaper §11.1.
+//! every architecture, as the determinism pin is. Every full run, at 256 units and at 1 024,
+//! is the weekly job's `exhaustive` test; the pull request's gate runs the rewarded run's first
+//! block at 256 units and the criterion over the pinned tables (ADR-0061: a run in the gate is
+//! paid again by every runtime mutant of the weekly sweep). What the numbers decide, and at
+//! what scale, is stated in ADR-0060 and in whitepaper §11.1.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -381,10 +383,10 @@ fn pinned(name: &str, blocks: &[Block], trace: u64, table: &[Block], pin: u64) {
 
 // ------------------------------------------------------------------------------ the runs
 
-/// The gate's form: 512 trials (eight blocks, sixteen windows, 21 s simulated) at 256 units.
-/// Each run is its own test, so that the test harness runs them beside one another; the
-/// pinned tables below are the runs' as the engine produced them, and the criterion's test
-/// reads the tables.
+/// The 256-unit form: 512 trials (eight blocks, sixteen windows, 21 s simulated). Each run is
+/// its own test, so that the test harness runs them beside one another, and since ADR-0061
+/// each is a weekly `exhaustive` test; the pinned tables below are the runs' as the engine
+/// produced them, the criterion's test reads the tables, and the gate runs the first block.
 const TRIALS_256: usize = 8 * BLOCK;
 const REWARDED_256: &[Block] = &[
     (
@@ -724,8 +726,25 @@ const VERDICT_256: Verdict = Verdict {
     learned: false,
 };
 
+/// The gate's form since ADR-0061: the rewarded run's first block, sixty-four trials, held to
+/// the first row of the table the full run pinned. The trials do not read how many follow, so
+/// the first block of a short run is the first block of the long one; the loop runs end to end
+/// on every pull request at an eighth of one full run's ticks, and the full runs are weekly.
 #[test]
-fn the_rewarded_run_at_256_units_on_four_workers() {
+fn the_first_block_of_the_rewarded_run_at_256_units() {
+    let (blocks, trace) = run(256, 2, BASELINE_Q16, Feedback::Answer, false, BLOCK);
+    pinned(
+        "learn256 first block",
+        &blocks,
+        trace,
+        &REWARDED_256[..1],
+        0,
+    );
+}
+
+#[test]
+#[ignore]
+fn the_rewarded_run_at_256_units_on_four_workers_exhaustive() {
     let (blocks, trace) = run(256, 4, BASELINE_Q16, Feedback::Answer, false, TRIALS_256);
     pinned("learn256 rewarded", &blocks, trace, REWARDED_256, TRACE_256);
 }
@@ -733,7 +752,8 @@ fn the_rewarded_run_at_256_units_on_four_workers() {
 /// The second worker count: the same run, block for block and trial for trial (the table
 /// and the trace were pinned from four workers).
 #[test]
-fn the_rewarded_run_at_256_units_on_one_worker_is_the_same_run() {
+#[ignore]
+fn the_rewarded_run_at_256_units_on_one_worker_is_the_same_run_exhaustive() {
     let (blocks, trace) = run(256, 1, BASELINE_Q16, Feedback::Answer, false, TRIALS_256);
     pinned(
         "learn256 rewarded-1",
@@ -745,19 +765,22 @@ fn the_rewarded_run_at_256_units_on_one_worker_is_the_same_run() {
 }
 
 #[test]
-fn the_shuffled_reward_at_256_units() {
+#[ignore]
+fn the_shuffled_reward_at_256_units_exhaustive() {
     let (blocks, trace) = run(256, 2, BASELINE_Q16, Feedback::Shuffled, false, TRIALS_256);
     pinned("learn256 shuffled", &blocks, trace, SHUFFLED_256, 0);
 }
 
 #[test]
-fn the_fixed_modulation_at_256_units() {
+#[ignore]
+fn the_fixed_modulation_at_256_units_exhaustive() {
     let (blocks, trace) = run(256, 2, ONE, Feedback::Withheld, false, TRIALS_256);
     pinned("learn256 fixed", &blocks, trace, FIXED_256, 0);
 }
 
 #[test]
-fn the_mirrored_assignment_at_256_units() {
+#[ignore]
+fn the_mirrored_assignment_at_256_units_exhaustive() {
     let (blocks, trace) = run(256, 2, BASELINE_Q16, Feedback::Answer, true, TRIALS_256);
     pinned("learn256 mirrored", &blocks, trace, MIRRORED_256, 0);
 }
