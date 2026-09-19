@@ -1,7 +1,21 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-18
 ---
+
+> **Executed 2026-09-19 in pull request #68.** Writes ADR-0059 (a task, a readout and a reward:
+> the runtime's composition of a two-alternative task on the executor through
+> `cortex-basal-ganglia`'s gate) and ADR-0060 (the reward path measured at 256 and 1 024 units
+> under the criterion written here); finding F-40 recorded and resolved (whitepaper §9's table
+> lacked ADR-0058's row); hypothesis H-12 opened; image format 14 unchanged; the determinism pin
+> untouched. The criterion's outcome: the rewarded clause failed at both sizes (−3 and −7 of 64
+> between the last block and the first), the shuffled-reward and fixed-modulation clauses held,
+> the mirrored clause failed, and one worker reproduced four trial for trial; the engine did not
+> learn the task, and ADR-0060 says why (the behaviour is the background's, and the coupling from
+> a stimulus into a readout falls under every feedback) and what a next round would change. Every
+> deliverable is done; notes under the boxes say where the tree departs from the text. The report
+> is in the pull request and in `CHANGELOG.md`. The body below describes the tree before execution
+> and is not maintained; its relative links gained one `../`.
 
 # Brief 027 — A task, a readout and a learning curve: the reward path closed on a behaviour the engine reads back
 
@@ -15,15 +29,15 @@ Close the loop the tree has every piece of and has never run: a stimulus into th
 network, a behaviour read out of the engine's own spike train, a reward as an input, and a
 measurement that says whether the behaviour changed because of the reward or because of
 something else. **One ADR** composes it in the runtime: a stimulus that is a function of the
-tick and a seed (the `Drive`'s shape of [ADR-0044](../docs/adr/0044-reference-network.md)), a
+tick and a seed (the `Drive`'s shape of [ADR-0044](../../docs/adr/0044-reference-network.md)), a
 readout that turns a trial's spike counts into an action through `cortex-basal-ganglia`'s
 `compute_gating` — the crate that owns action selection
-([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)), composed by nothing until now —
+([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)), composed by nothing until now —
 and a reward the caller passes to `Executor::reward` between trials, inside the eligibility
 trace's window. Nothing is invented: the plasticity is
-[ADR-0032](../docs/adr/0032-three-factor-plasticity.md)'s, the selection is
+[ADR-0032](../../docs/adr/0032-three-factor-plasticity.md)'s, the selection is
 `cortex-basal-ganglia`'s, the composition is the runtime's
-([ADR-0023](../docs/adr/0023-executor.md)). **One ADR** measures it under the criterion written
+([ADR-0023](../../docs/adr/0023-executor.md)). **One ADR** measures it under the criterion written
 in this brief before the run, at 256 units on the pull request's gate and at 1 024 units in the
 weekly job, against four controls that each remove one thing the change could otherwise be: a
 shuffled reward, a fixed modulation, a mirrored assignment and a second worker count. When the
@@ -39,7 +53,7 @@ changes.
 - Every claim is Implemented, Specified, Target or Hypothesis. What a run holds on a network of
   256 or 1 024 units is stated as what it is, with the prior's parameters and the task's; what
   the same rules do at Appendix A's scale is a Target with the same generator
-  ([ADR-0010](../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from a
+  ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from a
   developer machine. A rule is what it does: no "learns", no "understands", no "generalises"
   without the task, the accuracy, the block size and the controls it held against; "a trial" is
   the engine's own, stated in ticks and in simulated milliseconds, never a clock's.
@@ -49,7 +63,7 @@ changes.
 - No `f32`/`f64`, in the crates and in the tests; an accuracy is a pair of counts or a Q16.16
   ratio in `i32`, widened to `i64` to multiply; every operation on a state field saturates or
   wraps by name (`clippy::arithmetic_side_effects` is denied everywhere,
-  [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line above
+  [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line above
   the shift.
 - Every loop ends by construction: a countdown, a range, a scan by `get`, a slice's iterator;
   never by a comparison alone that one operator flip turns into a walk without end.
@@ -57,18 +71,18 @@ changes.
   `unsafe` in a state crate (`unsafe_code = "forbid"`, ADR-0029). A rule of
   `cortex-basal-ganglia` reads its own fields and nothing else; what writes those fields is the
   runtime's.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   the selection is `cortex-basal-ganglia`'s, the modulation `cortex-neuromod`'s, the trace and
   its consolidation `cortex-core`'s, the spike train and the composition the executor's. No new
   crate; the crate count stays 32.
 - No record changes and the image format stays 14: no field, no section, no reserved byte taken.
   The harness's own state (the trial cursor, the counts, the seeds) is the caller's, as
   ADR-0043's affect state was the caller's until
-  [ADR-0052](../docs/adr/0052-the-term-arena-in-the-image.md) moved it in; that a learning run is
+  [ADR-0052](../../docs/adr/0052-the-term-arena-in-the-image.md) moved it in; that a learning run is
   therefore not resumable from an image is stated as accepted debt with that precedent, not
   hidden.
 - Rule L-3 and §1.5: no word, no string and no language name enters a crate.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) does not move
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) does not move
   this round: nothing here changes a rule of `cortex-core`. If a run says otherwise, the round
   stops and says why rather than re-pinning. The mutation gate on the changed lines must pass; a
   new rule carries a test over the lattice of `testkit/prop.rs`; every pinned number an
@@ -78,9 +92,9 @@ changes.
   written. What the numbers say beyond it is recorded as a reading, never folded into the rule
   after the fact. No constant of the task, the readout or any rule is tuned after the run it was
   measured in (brief 024's lesson,
-  [ADR-0051](../docs/adr/0051-the-estimator-at-4096-units.md); brief 025's,
-  [ADR-0054](../docs/adr/0054-the-causal-count-inside-the-loop.md)).
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); a
+  [ADR-0051](../../docs/adr/0051-the-estimator-at-4096-units.md); brief 025's,
+  [ADR-0054](../../docs/adr/0054-the-causal-count-inside-the-loop.md)).
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); a
   parameter that changes what a run does is in the image or in the trace (§8.3), never in a
   configuration alone. No registry entry is added: a plasticity parameter cannot pass the
   behaviour gate (F-37).
@@ -124,7 +138,7 @@ quoted sentences are what to re-derive.
    end of a trial shorter than the trace's window still finds that trial's pairings pending: the
    trial's length is bounded by this and by nothing else.
 4. **The drift a result must be told apart from.**
-   [ADR-0055](../docs/adr/0055-a-weight-that-settles.md): the excitatory depression scales with
+   [ADR-0055](../../docs/adr/0055-a-weight-that-settles.md): the excitatory depression scales with
    the weight's magnitude, and over eighty windows at 1 024 units under the controller the
    excitatory sum settles at 0.45 of the prior's, every one of the last sixteen windows within
    0.75 per cent of the sixty-fourth. That force acts on every synapse whose two units pair,
@@ -146,7 +160,7 @@ quoted sentences are what to re-derive.
    `grep -rn compute_gating runtime/` finds nothing and `runtime/cortex-runtime/Cargo.toml` does
    not name `cortex-basal-ganglia`: whitepaper §1.6's Logic column names the rule, and no runtime
    module has ever called it. The round therefore gains one path dependency on a workspace crate,
-   as [ADR-0043](../docs/adr/0043-discovery-path.md) gained three ("the runtime gains path
+   as [ADR-0043](../../docs/adr/0043-discovery-path.md) gained three ("the runtime gains path
    dependencies on `cortex-affect`, `cortex-tools` and `cortex-knowledge`"); `npm run spec:deps`
    allows it for the runtime and for no state crate. Whitepaper §5.2.5 says lateral inhibition
    and the dopamine-scaled D1/D2 balance are Specified; this round composes the linear gate and
@@ -156,7 +170,7 @@ quoted sentences are what to re-derive.
    `cortex_core::spike_message(efficacy_q16, apical)`; `train()` → `&[(tick, unit)]`, "the last
    `Config::train_capacity` spikes … in tick order and unit order within a tick, whichever worker
    ran the unit, so that the train is the same on every worker count"
-   ([ADR-0050](../docs/adr/0050-the-train-inside-the-executor.md)), with `train_overwritten()`
+   ([ADR-0050](../../docs/adr/0050-the-train-inside-the-executor.md)), with `train_overwritten()`
    counting what the ring let go; `reward(rpe)`; `units()`, `blocks()`, `homeostasis()`;
    `Config::{control_step_q0_16, sleep_shift}` at 0 meaning "the gain stays at 1.0 and the
    dynamics are the reference ones" and "the engine never sleeps". A trial whose spikes exceed
@@ -187,7 +201,7 @@ quoted sentences are what to re-derive.
    fails**, the round records the curve and the controls as a reading, names what the reading
    constrains, changes no constant of the task or of any rule, and the ADR says the loop as
    composed does not move this behaviour at these sizes — the outcome of
-   [ADR-0054](../docs/adr/0054-the-causal-count-inside-the-loop.md)'s class, which is a result.
+   [ADR-0054](../../docs/adr/0054-the-causal-count-inside-the-loop.md)'s class, which is a result.
 10. **What the gate can afford.** A window is 32 bins of $2^{12}$ ticks = 131 072 ticks = 1.31 s
     simulated; ADR-0044 records that "a window on a thousand units is 22 s in the debug profile
     on a developer machine", which is why the gate runs 256-unit forms and the weekly job runs
@@ -205,7 +219,7 @@ quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The task ADR (the next free number; `ls docs/adr`)** (`depends-on: ADR-0044`; ADR-0023,
+- [x] **The task ADR (the next free number; `ls docs/adr`)** (`depends-on: ADR-0044`; ADR-0023,
   ADR-0032, ADR-0050 and ADR-0016 named). A new runtime module
   `runtime/cortex-runtime/src/task.rs`, exported from `lib.rs`, with `cortex-basal-ganglia` added
   to the runtime's path dependencies (Context item 6), owning nothing but the composition:
@@ -232,7 +246,8 @@ quoted sentences are what to re-derive.
   - A lattice property over `testkit/prop.rs`: over seeded trains and seeded set pairs, the
     selection equals the sign of the count difference, and is no selection exactly when the
     counts are equal.
-- [ ] **The measurement ADR (the number after it)** (`depends-on:` the task ADR; ADR-0036,
+  **Done as [ADR-0059](../../docs/adr/0059-a-task-a-readout-and-a-reward.md).** Where the tree departs from the text: the assignment is a `mirrored` flag rather than a table, so an invalid assignment cannot be written; a `Feedback` enum carries the three ways a reward is signed (the answer, a coin from the trial's index, none), so the controls are the same `Task`; the refusals gained `NoStimulus` and `NoReward` beside the six named here, and `CountBeyondWidth` for a readout set whose count could reach the drive's width; the train's bound uses the shorter of the two refractory windows (`MIN_INTERVAL_TICKS`, 50 ticks) so that it holds for a bursting unit too.
+- [x] **The measurement ADR (the number after it)** (`depends-on:` the task ADR; ADR-0036,
   ADR-0049, ADR-0053 and ADR-0055 named). `runtime/cortex-runtime/tests/learning.rs`: the harness
   that runs the rewarded run and the four controls of Context item 9 on the ADR-0044 prior with
   `control_step_q0_16` at 0, `sleep_shift` at 0, the modulation baseline stated before the run
@@ -245,7 +260,8 @@ quoted sentences are what to re-derive.
   the mutation gate found; and, if the clause failed, what the reading constrains and what a next
   round would have to change (a per-unit learning signal, a structural rule, a different task),
   named without being built.
-- [ ] **The documents, in the same pull request.** Whitepaper: §1.6's `cortex-basal-ganglia` row
+  **Done as [ADR-0060](../../docs/adr/0060-the-reward-path-measured.md).** The criterion as written: the rewarded clause failed at both sizes (−3 and −7 of 64), the shuffled and fixed clauses held, the mirrored clause failed, the worker clause held; the ADR records the curve and the controls as a reading, what it constrains and what a next round would change, and no constant moved. Where the tree departs from the text: the four controls and the rewarded run are five tests of one harness rather than one test, so that they run beside one another; the controls run on two workers, the rewarded run on four and on one; the per-block readings gained the readout counts split by the stimulus presented and the stimulus quarters' own spikes, so that the ADR could say whether the stimulus reached the readouts; the 1 024-unit form was run locally in the release profile, the weekly job's, before the pull request.
+- [x] **The documents, in the same pull request.** Whitepaper: §1.6's `cortex-basal-ganglia` row
   and the runtime's row say the rule is composed; §5.2.5 says the linear gate is composed and
   lateral inhibition and the D1/D2 balance stay Specified; §8.8's three-factor row gains what the
   measurement read, with the task named; §6 gains a scenario for the loop, or an existing one
@@ -254,7 +270,8 @@ quoted sentences are what to re-derive.
   criterion. README's Implemented cell, `CLAUDE.md`'s opening paragraph, `docs/zh-TW`'s reader's
   guide, `docs/adr/README.md`'s index and `CHANGELOG.md` all say it. Executable directives under
   every sentence that claims the module or the test exists.
-- [ ] **The brief archived** as `briefs/README.md` says, with every deliverable dispositioned and
+  **Done.** Whitepaper 4.15.0: §6's existing scenario R-5 gained the loop as a paragraph rather than a new scenario; §11.1 gained H-12 beside H-11's disposition; §9 gained ADR-0058's row, which was missing (finding F-40, recorded and resolved in the same pass).
+- [x] **The brief archived** as `briefs/README.md` says, with every deliverable dispositioned and
   the frozen banner naming the pull request, the ADRs and the criterion's outcome.
 
 ## Not empowered
