@@ -17,7 +17,7 @@ lacks one.
 | Section | What it holds |
 | :--- | :--- |
 | `## Mission` | One paragraph: the state of the tree when the brief is done. |
-| `## Standing directives` | The repository's always-on rules, restated. |
+| `## Standing directives` | The repository's always-on rules, restated. Latest ≠ Newest is always among them (`CLAUDE.md` principle 4), applied to what the round could be tempted to adopt; from brief 028 `npm run spec:briefs` fails a brief whose section does not name it. |
 | `## Context` | Facts the brief rests on, each with a path, re-derived on the stated date. Line numbers move; symbol names and quoted sentences are what to re-derive. |
 | `## Deliverables` | A checkbox list. `spec-graph` reads each box as an obligation with real state. |
 | `## Not empowered` | The cheap wrong moves this round must not make. |

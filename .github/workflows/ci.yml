@@ -13,8 +13,9 @@
 #           manifest, so it lives in one place.
 #   specs - does the source tree still contain what the documents say it contains
 #           (spec-guard), are the documents consistent with one another
-#           (spec-graph), does every live brief carry its mandatory sections
-#           (scripts/check-briefs.mjs), and do the manifests keep TC-2, state crates
+#           (spec-graph), does every live brief carry its mandatory sections and, from
+#           brief 028, a Latest ≠ Newest standing directive (scripts/check-briefs.mjs, with
+#           its own node:test cases), and do the manifests keep TC-2, state crates
 #           without dependencies (scripts/check-deps.mjs)? All blocking. Actions are
 #           pinned to commits and the runner image to a release (ADR-0029).
 #   arm64 - do the tests hold on AArch64, and does the seeded network hash to the value
@@ -354,6 +355,9 @@ jobs:
 
       - name: Live briefs carry their mandatory sections
         run: npm run spec:briefs
+
+      - name: The brief checker's own tests (node:test, no dependency)
+        run: npm run spec:briefs:test
 
       - name: State crates declare no dependencies (TC-2)
         run: npm run spec:deps
