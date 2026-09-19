@@ -19,7 +19,12 @@
 //! Since ADR-0052 the executor owns a term arena and a clause store ([`store`]) that the
 //! image carries, and the discovery loop runs inside the tick on a cadence while awake: the
 //! search from its cursor, the reward into the modulator, the coincidence before the reward
-//! tagged and bound to the invented predicate. Everything is allocated in [`Executor::new`];
+//! tagged and bound to the invented predicate. Since ADR-0059 [`task`] composes a task on
+//! the executor between ticks: a stimulus drawn from the trial's index and a seed, a readout
+//! that counts a trial's spikes per set from the executor's own train and selects through
+//! `cortex-basal-ganglia`'s gating rule, and a reward whose sign is the outcome's, so that
+//! the reward path of ADR-0032 is closed on a behaviour the engine reads back.
+//! Everything is allocated in [`Executor::new`];
 //! nothing allocates, blocks or (apart from the barrier's yield) makes a system call in the
 //! loop. This crate is `std`, is never published, and is the one place in the workspace with
 //! `unsafe`: the arena access of [`arena`], under the invariant ADR-0023 names.
@@ -42,6 +47,7 @@ pub mod lexicon;
 pub mod pool;
 pub mod store;
 pub mod synthesis;
+pub mod task;
 pub mod trial;
 
 pub use branching::{
@@ -72,6 +78,9 @@ pub use lexicon::{
 };
 pub use store::TermError;
 pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
+pub use task::{
+    Feedback, MIN_INTERVAL_TICKS, Outcome, Readout, Set, Stimulus, Task, TaskError, spikes_per_unit,
+};
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};
 
 /// The executor with the production wheel geometry (2 048 tokens per slot, ADR-0013).
