@@ -172,7 +172,9 @@ pub fn convergent(
         return Err(FractionError::DepthExceeded);
     }
     let mut walk = Walk::start(a);
-    while walk.depth < depth {
+    // A range of `depth` steps, not a walk until `walk.depth < depth` fails: the loop ends by
+    // construction, so a step that does not move the walk cannot make it endless (ADR-0062).
+    for _ in 0..depth {
         walk.advance(a, b, slot)
             .map_err(FractionError::Arithmetic)?;
     }
@@ -191,7 +193,11 @@ pub fn deepest(
         return Err(FractionError::DepthExceeded);
     }
     let mut walk = Walk::start(a);
-    while walk.depth < depth && walk.advance(a, b, slot).is_ok() {}
+    for _ in 0..depth {
+        if walk.advance(a, b, slot).is_err() {
+            break;
+        }
+    }
     Ok(walk.current())
 }
 
@@ -329,14 +335,16 @@ fn deepest_verdict(
 ) -> Option<Convergent> {
     let mut walk = Walk::start(a);
     let mut verdict = None;
-    loop {
+    // The convergents at depths 0 to `depth` in turn, a range counted down to the last, the
+    // walk ending early at its first flag (ADR-0062).
+    for remaining in (0..=depth).rev() {
         let current = walk.current();
         if current.q != 0 {
             if let Ok(inside) = within(&current, target, tolerance, slot) {
                 verdict = Some((inside, current));
             }
         }
-        if walk.depth >= depth || walk.advance(a, b, slot).is_err() {
+        if remaining == 0 || walk.advance(a, b, slot).is_err() {
             break;
         }
     }
@@ -803,5 +811,135 @@ mod prop {
             }
         }
         assert!(flagged > 100, "flagged: {flagged}");
+    }
+
+    /// The three walks before ADR-0062, each ended by a comparison on the depth alone, kept
+    /// as the oracles the range forms are held to: the same convergent, the same verdict and
+    /// the same slot afterwards, operation for operation.
+    fn convergent_before_the_range(
+        a: &Poly,
+        b: &Poly,
+        depth: u32,
+        slot: &mut ArithmeticScratchpadSlot,
+    ) -> Result<Convergent, FractionError> {
+        if depth > MAX_DEPTH {
+            return Err(FractionError::DepthExceeded);
+        }
+        let mut walk = Walk::start(a);
+        while walk.depth < depth {
+            walk.advance(a, b, slot)
+                .map_err(FractionError::Arithmetic)?;
+        }
+        Ok(walk.current())
+    }
+
+    fn deepest_before_the_range(
+        a: &Poly,
+        b: &Poly,
+        depth: u32,
+        slot: &mut ArithmeticScratchpadSlot,
+    ) -> Result<Convergent, FractionError> {
+        if depth > MAX_DEPTH {
+            return Err(FractionError::DepthExceeded);
+        }
+        let mut walk = Walk::start(a);
+        while walk.depth < depth && walk.advance(a, b, slot).is_ok() {}
+        Ok(walk.current())
+    }
+
+    fn deepest_verdict_before_the_range(
+        a: &Poly,
+        b: &Poly,
+        target: (i128, i128),
+        tolerance: (i128, i128),
+        depth: u32,
+        slot: &mut ArithmeticScratchpadSlot,
+    ) -> Option<Convergent> {
+        let mut walk = Walk::start(a);
+        let mut verdict = None;
+        loop {
+            let current = walk.current();
+            if current.q != 0 {
+                if let Ok(inside) = within(&current, target, tolerance, slot) {
+                    verdict = Some((inside, current));
+                }
+            }
+            if walk.depth >= depth || walk.advance(a, b, slot).is_err() {
+                break;
+            }
+        }
+        match verdict {
+            Some((true, convergent)) => Some(convergent),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn the_walks_over_a_range_are_the_previous_forms_bit_for_bit_and_leave_the_same_slot() {
+        let mut rng = Lcg::new(0x0062);
+        let mut agreed = (0u32, 0u32);
+        for _ in 0..3_000 {
+            let coefficient = |rng: &mut Lcg| -> i64 {
+                match rng.below(8) {
+                    0 => i64::from(rng.next_i16()),
+                    1 => i64::from(rng.next_i32()) << 20,
+                    _ => i64::from(rng.next_u8() & 7).wrapping_sub(3),
+                }
+            };
+            let a: Poly = [
+                coefficient(&mut rng),
+                coefficient(&mut rng),
+                coefficient(&mut rng),
+            ];
+            let b: Poly = [
+                coefficient(&mut rng),
+                coefficient(&mut rng),
+                coefficient(&mut rng),
+            ];
+            let depth = rng.below(67);
+            let (mut now, mut before) = (
+                ArithmeticScratchpadSlot::default(),
+                ArithmeticScratchpadSlot::default(),
+            );
+            assert_eq!(
+                convergent(&a, &b, depth, &mut now),
+                convergent_before_the_range(&a, &b, depth, &mut before)
+            );
+            assert_eq!(now, before, "the slot after `convergent`");
+            assert_eq!(
+                deepest(&a, &b, depth, &mut now),
+                deepest_before_the_range(&a, &b, depth, &mut before)
+            );
+            assert_eq!(now, before, "the slot after `deepest`");
+            if depth > MAX_DEPTH {
+                continue;
+            }
+            // A target that is the walk's own deepest convergent half the time, so that the
+            // verdict is sometimes inside the tolerance; lattice values otherwise.
+            let target = match deepest(&a, &b, depth, &mut now) {
+                Ok(c) if c.q != 0 && rng.below(2) == 0 => (c.p, c.q),
+                _ => (rng.i128_edge_biased(), rng.i128_edge_biased()),
+            };
+            before = now;
+            let tolerance = (
+                i128::from(rng.next_u8()),
+                i128::from(rng.next_u32()).wrapping_add(1),
+            );
+            let verdict = deepest_verdict(&a, &b, target, tolerance, depth, &mut now);
+            assert_eq!(
+                verdict,
+                deepest_verdict_before_the_range(&a, &b, target, tolerance, depth, &mut before)
+            );
+            assert_eq!(now, before, "the slot after `deepest_verdict`");
+            if verdict.is_some() {
+                agreed.0 = agreed.0.wrapping_add(1);
+            } else {
+                agreed.1 = agreed.1.wrapping_add(1);
+            }
+        }
+        assert!(
+            agreed.0 > 100 && agreed.1 > 100,
+            "verdicts both ways: {agreed:?}"
+        );
     }
 }

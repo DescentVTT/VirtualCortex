@@ -479,7 +479,14 @@ mod tests {
         assert_eq!(n.register(), REGISTER_FORMAL);
         n.trust_score_q16 = Q16_ONE / 4;
         assert_eq!(n.register(), REGISTER_COURTEOUS);
+        // Inside the courteous band, not only at its floor: 0.5 and one LSB below 0.75, so
+        // that the familiar threshold is held at 0xC000 and not at a smaller number (ADR-0062).
+        n.trust_score_q16 = Q16_ONE / 2;
+        assert_eq!(n.register(), REGISTER_COURTEOUS, "half way is courteous");
+        n.trust_score_q16 = 0xBFFF;
+        assert_eq!(n.register(), REGISTER_COURTEOUS, "one LSB below familiar");
         n.trust_score_q16 = 3 * (Q16_ONE / 4);
+        assert_eq!(n.trust_score_q16, 0xC000, "the familiar threshold, 0.75");
         assert_eq!(n.register(), REGISTER_FAMILIAR);
     }
 

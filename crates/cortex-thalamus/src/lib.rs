@@ -187,5 +187,12 @@ mod tests {
         );
         assert!(n.set_gating_mode(GATING_TONIC));
         assert_eq!(n.burst_spikes_pending, 0);
+        // The last mode is a mode (ADR-0062).
+        assert!(
+            n.set_gating_mode(GATING_CLOSED),
+            "closed is the last valid mode"
+        );
+        assert_eq!(n.gating_mode, GATING_CLOSED);
+        assert_eq!(n.relay(1), None, "and it relays nothing");
     }
 }

@@ -39,6 +39,11 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
     })
     .expect("a valid configuration");
+    assert_eq!(
+        exec.workers(),
+        workers,
+        "the caller's thread and the spawned ones"
+    );
     let inject = exec.injector();
     let producers: Vec<_> = (0..PRODUCERS)
         .map(|p| {

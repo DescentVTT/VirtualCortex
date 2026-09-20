@@ -784,6 +784,15 @@ mod tests {
             (f.speech_act_type, f.intended_act()),
             (SPEECH_ACT_ASSERTIVE, SPEECH_ACT_DIRECTIVE)
         );
+        // The last act is an act, and one past it is not (ADR-0062).
+        assert!(f.mark_indirect(SPEECH_ACT_EXPRESSIVE), "the last valid act");
+        assert_eq!(f.intended_act(), SPEECH_ACT_EXPRESSIVE);
+        assert!(!f.mark_indirect(4), "one past the last is unknown");
+        assert_eq!(
+            f.intended_act(),
+            SPEECH_ACT_EXPRESSIVE,
+            "and changes nothing"
+        );
         assert!(f.bind_role(ROLE_SUBJECT, 1, Q16_ONE) && f.bind_role(ROLE_ACTION, 2, Q16_ONE));
         assert!(f.seal());
         assert!(!f.mark_indirect(SPEECH_ACT_EXPRESSIVE), "sealed");
@@ -817,6 +826,21 @@ mod tests {
         let mut capped = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, u8::MAX);
         capped.apply_face(2, -ONE);
         assert_eq!(capped.politeness_level, u8::MAX);
+        // The particle slot opens on a frame whose slot was closed, and the other gate bits
+        // stay: an `or` into the flags, not an `and` (ADR-0062).
+        let mut closed = LinguisticFrameSlot::new(TEMPLATE_STATE, SPEECH_ACT_ASSERTIVE, 1);
+        assert!(closed.attach_metaphor(5));
+        assert_eq!(
+            closed.syntax_gate_flags & GATE_PARTICLE_OPEN,
+            0,
+            "closed before the turn"
+        );
+        assert_eq!(closed.apply_face(2, -ONE), PROSODY_SOFTEN);
+        assert_eq!(
+            closed.syntax_gate_flags & (GATE_PARTICLE_OPEN | GATE_METAPHOR),
+            GATE_PARTICLE_OPEN | GATE_METAPHOR,
+            "the slot opened and the metaphor stayed"
+        );
     }
 
     #[test]

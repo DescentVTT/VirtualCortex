@@ -235,23 +235,53 @@ impl WriteAheadLog {
     }
 }
 
+// The positioned read and write are the platform's one call each, and nothing else is
+// gated: the loops around them, `read_at` and `write_at`, are one form on every platform, so
+// their tests run on every platform (ADR-0062). The Unix forms are `pread` and `pwrite`, the
+// Windows forms `seek_read` and `seek_write`, under distinct names so that an exclusion in
+// `.cargo/mutants.toml` can name the forms no CI runner compiles and nothing else.
+
+/// One positioned read: `Ok(n)` for the bytes moved, fewer than asked when the platform
+/// stops short, zero at the end of the file.
 #[cfg(unix)]
-fn read_at(file: &File, offset: u64, buf: &mut [u8]) -> io::Result<()> {
+fn pread(file: &File, offset: u64, buf: &mut [u8]) -> io::Result<usize> {
     use std::os::unix::fs::FileExt;
-    file.read_exact_at(buf, offset)
+    file.read_at(buf, offset)
 }
 
+/// One positioned write: `Ok(n)` for the bytes moved, fewer than asked when the platform
+/// stops short.
 #[cfg(unix)]
-fn write_at(file: &File, offset: u64, buf: &[u8]) -> io::Result<()> {
+fn pwrite(file: &File, offset: u64, buf: &[u8]) -> io::Result<usize> {
     use std::os::unix::fs::FileExt;
-    file.write_all_at(buf, offset)
+    file.write_at(buf, offset)
 }
 
 #[cfg(windows)]
-fn read_at(file: &File, mut offset: u64, mut buf: &mut [u8]) -> io::Result<()> {
+fn seek_read(file: &File, offset: u64, buf: &mut [u8]) -> io::Result<usize> {
     use std::os::windows::fs::FileExt;
+    file.seek_read(buf, offset)
+}
+
+#[cfg(windows)]
+fn seek_write(file: &File, offset: u64, buf: &[u8]) -> io::Result<usize> {
+    use std::os::windows::fs::FileExt;
+    file.seek_write(buf, offset)
+}
+
+#[cfg(unix)]
+use self::{pread as read_some_at, pwrite as write_some_at};
+#[cfg(windows)]
+use self::{seek_read as read_some_at, seek_write as write_some_at};
+
+/// Fills `buf` from `offset`: the platform's read repeated, each call taking what the last
+/// one moved off the buffer, which is the countdown the loop ends by; a read of nothing
+/// before the buffer is full is the file ending early (`UnexpectedEof`). An interrupted call
+/// is returned like any other error, not retried: the one branch no test can reach is not
+/// written.
+fn read_at(file: &File, mut offset: u64, mut buf: &mut [u8]) -> io::Result<()> {
     while !buf.is_empty() {
-        let n = file.seek_read(buf, offset)?;
+        let n = read_some_at(file, offset, buf)?;
         if n == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
@@ -264,11 +294,10 @@ fn read_at(file: &File, mut offset: u64, mut buf: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
+/// Writes all of `buf` at `offset`, the same way: a write of nothing is `WriteZero`.
 fn write_at(file: &File, mut offset: u64, mut buf: &[u8]) -> io::Result<()> {
-    use std::os::windows::fs::FileExt;
     while !buf.is_empty() {
-        let n = file.seek_write(buf, offset)?;
+        let n = write_some_at(file, offset, buf)?;
         if n == 0 {
             return Err(io::Error::new(io::ErrorKind::WriteZero, "nothing written"));
         }

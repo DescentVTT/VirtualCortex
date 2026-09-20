@@ -667,6 +667,34 @@ mod tests {
         assert!(VocalSynth::from_frame(&high).is_none());
     }
 
+    /// The period's bound is reached: `(sample_rate << 16) / f0` is exactly 65 535 at a
+    /// sample rate of 65 535 Hz and a fundamental of 1.0 Hz, the longest period the renderer
+    /// admits, and 65 536 one step of the fundamental below it (65 535 / 65 536 Hz), refused.
+    /// The quotients were worked by hand before they were pinned (ADR-0062).
+    #[test]
+    fn the_longest_period_the_bound_admits_renders_and_one_sample_longer_is_refused() {
+        let mut edge = VocalFrame::new(1);
+        edge.sample_rate_hz = u16::MAX;
+        edge.f0_hz_q16 = 1 << 16;
+        assert_eq!(
+            (u64::from(edge.sample_rate_hz) << 16) / u64::from(edge.f0_hz_q16),
+            65_535
+        );
+        let mut synth = VocalSynth::from_frame(&edge).expect("a period of 65 535 samples");
+        let mut buf = [0i32; 64];
+        synth.render(&mut buf);
+        let mut over = edge;
+        over.f0_hz_q16 = 0xFFFF;
+        assert_eq!(
+            (u64::from(over.sample_rate_hz) << 16) / u64::from(over.f0_hz_q16),
+            65_536
+        );
+        assert!(
+            VocalSynth::from_frame(&over).is_none(),
+            "a period of 65 536 samples is one the bound refuses"
+        );
+    }
+
     #[test]
     fn shape_moves_the_voice_by_tone_register_and_valence() {
         let neutral = VocalFrame::new(1);

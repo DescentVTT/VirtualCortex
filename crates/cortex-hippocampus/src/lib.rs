@@ -439,9 +439,13 @@ mod tests {
         // A spent, replayed episode keeps its symbol: the annotations touch the tag and the
         // count only.
         e.replay();
-        while !e.is_spent() {
+        // A range over the tag, not a wait on `is_spent`: a test's loop never ends by the
+        // rule it tests, and the assertion below is what a mutant of the annotations meets
+        // (ADR-0062).
+        for _ in 0..e.tag {
             e.depotentiate();
         }
+        assert!(e.is_spent(), "the tag's worth of ripples spends it");
         assert_eq!(e.symbol(), Some(0xFFFE_0000));
     }
 

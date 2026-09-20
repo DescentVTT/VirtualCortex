@@ -46,11 +46,9 @@ impl CerebellarMicrozone {
     /// delay line. A delay of 0 disables comparison and learning.
     #[inline]
     pub fn set_plant_delay(&mut self, d: u8) {
-        let d = if d > Self::MAX_PLANT_DELAY {
-            Self::MAX_PLANT_DELAY
-        } else {
-            d
-        };
+        // A clamp by `min`, not by a comparison: `>` and `>=` agree at the bound, so a
+        // comparison there is an equivalent mutant the shape creates (ADR-0062).
+        let d = d.min(Self::MAX_PLANT_DELAY);
         self.delay_ctl = (d as u32) << Self::DELAY_SHIFT;
         self.pred_ring = [0; 7];
         self.climbing_fiber_error = 0;
@@ -62,10 +60,11 @@ impl CerebellarMicrozone {
     #[inline]
     pub const fn plant_delay(&self) -> u8 {
         let d = ((self.delay_ctl >> Self::DELAY_SHIFT) & Self::BYTE) as u8;
-        if d > Self::MAX_PLANT_DELAY {
-            Self::MAX_PLANT_DELAY
-        } else {
-            d
+        // A range pattern, not a comparison: a `const fn` cannot call `min`, and a comparison
+        // at the bound is an equivalent mutant (ADR-0062).
+        match d {
+            0..=Self::MAX_PLANT_DELAY => d,
+            _ => Self::MAX_PLANT_DELAY,
         }
     }
 
@@ -73,10 +72,9 @@ impl CerebellarMicrozone {
     #[inline]
     pub const fn filled(&self) -> u8 {
         let filled = (self.delay_ctl >> Self::FILLED_SHIFT) & Self::BYTE;
-        if filled > Self::RING {
-            Self::RING as u8
-        } else {
-            filled as u8
+        match filled {
+            0..=Self::RING => filled as u8,
+            _ => Self::RING as u8,
         }
     }
 
@@ -165,13 +163,15 @@ impl CerebellarMicrozone {
 /// Q16.16 × Q16.16 → Q16.16, widened to `i64`, shifted once, clamped to `i32` (whitepaper §8.1).
 #[inline(always)]
 const fn mul_q16(a: i32, b: i32) -> i32 {
+    const LOW: i64 = i32::MIN as i64;
+    const HIGH: i64 = i32::MAX as i64;
     let p = (a as i64).saturating_mul(b as i64) >> 16;
-    if p > i32::MAX as i64 {
-        i32::MAX
-    } else if p < i32::MIN as i64 {
-        i32::MIN
-    } else {
-        p as i32
+    // Range patterns, not comparisons: a comparison at either bound is an equivalent mutant
+    // (ADR-0062).
+    match p {
+        LOW..=HIGH => p as i32,
+        i64::MIN..LOW => i32::MIN,
+        _ => i32::MAX,
     }
 }
 
@@ -329,6 +329,21 @@ mod tests {
     fn plant_delay_is_clamped_and_zero_disables_learning() {
         let mut z = zone(9);
         assert_eq!(z.plant_delay(), 7);
+        // The stored byte, not the getter, which clamps whatever it reads: the setter stores
+        // the clamped delay (ADR-0062).
+        assert_eq!(
+            (z.delay_ctl >> 8) & 0xFF,
+            7,
+            "the setter clamps before it stores"
+        );
+        z.set_plant_delay(7);
+        assert_eq!(
+            (z.delay_ctl >> 8) & 0xFF,
+            7,
+            "the bound itself is stored as it is"
+        );
+        z.set_plant_delay(6);
+        assert_eq!((z.delay_ctl >> 8) & 0xFF, 6);
         let (error, gain) = run(HALF, 0, 50, false);
         assert_eq!(error, 0);
         assert_eq!(gain, 0);

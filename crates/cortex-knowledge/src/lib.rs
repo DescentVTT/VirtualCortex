@@ -134,9 +134,9 @@ impl SemanticOntologyNode {
     /// and the count grows (saturating). Returns the count.
     pub fn consolidate(&mut self, affordance_bits: u32, hazard_level: u8) -> u32 {
         self.affordance_action_mask |= affordance_bits;
-        if hazard_level > self.safety_hazard_level {
-            self.safety_hazard_level = hazard_level;
-        }
+        // The maximum by `max`, not by a comparison: at equality `>` and `>=` write the same
+        // value, an equivalent mutant the shape creates (ADR-0062).
+        self.safety_hazard_level = self.safety_hazard_level.max(hazard_level);
         self.consolidation_count = self.consolidation_count.saturating_add(1);
         self.consolidation_count
     }
@@ -239,6 +239,10 @@ mod tests {
             n.safety_hazard_level, 3,
             "a later, milder replay does not lower the hazard"
         );
+        assert_eq!(n.consolidate(0, 3), 3, "the same level keeps it");
+        assert_eq!(n.safety_hazard_level, 3);
+        assert_eq!(n.consolidate(0, 4), 4);
+        assert_eq!(n.safety_hazard_level, 4, "a worse one raises it");
     }
 
     #[test]
