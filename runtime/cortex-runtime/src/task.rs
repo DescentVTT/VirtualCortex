@@ -23,7 +23,7 @@
 //! correct)` sequence is bit-identical on every worker count, since the train is (ADR-0023,
 //! ADR-0050).
 
-use crate::executor::{Executor, Inject, InjectError};
+use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_core::{BURST_REFRACTORY_TICKS, MODULATION_ONE_Q16, REFRACTORY_TICKS, spike_message};
@@ -137,8 +137,9 @@ impl Set {
     }
 
     /// The set's units in order, period by period and offset by offset within a period;
-    /// none for a set the rule refuses, so that no malformed period is walked.
-    pub fn units(&self) -> impl Iterator<Item = u32> + '_ {
+    /// none for a set the rule refuses, so that no malformed period is walked. The iterator
+    /// is `Clone`, so that an addressing can scan it before it writes (ADR-0068).
+    pub fn units(&self) -> impl Iterator<Item = u32> + Clone + '_ {
         let count = if self.is_well_formed() { self.count } else { 0 };
         (0..count).flat_map(move |k| {
             let base = self.first.wrapping_add(k.wrapping_mul(self.period));
@@ -334,6 +335,23 @@ pub enum Feedback {
     Withheld,
 }
 
+/// Where a trial's dopamine term reaches (ADR-0068): which synapses consolidate the next
+/// trial's traces under `clamp(baseline + dopamine, 0, 1)`, every other synapse consolidating
+/// under the baseline alone. The addressed set is a function of the trial's outcome only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Delivery {
+    /// Every synapse alike: the executor's rule before the addressing, ADR-0066's global
+    /// form, so that a run under it is the run before ADR-0068 bit for bit.
+    Global,
+    /// The synapses from the units of the stimulus presented onto the units of the readout
+    /// the engine selected through `cortex-basal-ganglia`'s gate; none at a tie, where
+    /// nothing was selected. The presynaptic side narrows the set because the reward is
+    /// consolidated at the next presynaptic spike, which is the next presentation of a
+    /// stimulus: without the narrowing the reward of one trial would reach the other
+    /// stimulus's synapses at half the trials (ADR-0068).
+    Addressed,
+}
+
 /// Why a task is refused, or a trial not run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskError {
@@ -371,11 +389,21 @@ pub enum TaskError {
     RewardAtCeiling,
     /// The injector refused a message of the stimulus or of the drive; the trial stopped there.
     Inject(InjectError),
+    /// The executor refused the addressed set (ADR-0068): a unit outside the arena. `check`
+    /// holds every readout inside the arena, so a trial's addressing is never refused; the
+    /// refusal is the executor's, surfaced here as the injector's is.
+    Address(AddressError),
 }
 
 impl From<InjectError> for TaskError {
     fn from(e: InjectError) -> Self {
         TaskError::Inject(e)
+    }
+}
+
+impl From<AddressError> for TaskError {
+    fn from(e: AddressError) -> Self {
+        TaskError::Address(e)
     }
 }
 
@@ -421,6 +449,8 @@ pub struct Task {
     /// Stimulus `s` is rewarded at readout `s` when false, at the other when true.
     pub mirrored: bool,
     pub feedback: Feedback,
+    /// Where the dopamine term reaches (ADR-0068).
+    pub delivery: Delivery,
 }
 
 impl Task {
@@ -543,6 +573,22 @@ impl Task {
         );
         let selection = self.readout.select(counts);
         let correct = selection == Some(self.answer(stimulus));
+        // Where the dopamine term reaches from the next tick (ADR-0068): under the addressed
+        // delivery the synapses from the stimulus presented onto the readout the engine
+        // selected, none at a tie; under the global one every synapse alike. Written whatever
+        // the feedback, so that the set is the outcome's and not the reward's.
+        match self.delivery {
+            Delivery::Global => exec.address_all(),
+            Delivery::Addressed => {
+                let sources = self.stimuli[usize::from(stimulus)].set.units();
+                match selection {
+                    Some(readout) => {
+                        exec.address(sources, self.readout.sets[usize::from(readout)].units())?
+                    }
+                    None => exec.address(sources, core::iter::empty())?,
+                }
+            }
+        }
         let positive = match self.feedback {
             Feedback::Answer => correct,
             Feedback::Shuffled => self.coin_at(trial),
@@ -648,6 +694,7 @@ mod tests {
             reward_q16: REWARD,
             mirrored: false,
             feedback,
+            delivery: Delivery::Global,
         }
     }
 
@@ -1420,6 +1467,89 @@ mod tests {
         let mut exec = exec;
         exec.run(2);
         assert_eq!(exec.delivered(), 64, "what fitted was delivered");
+    }
+
+    /// The delivery (ADR-0068): under the addressed one a trial leaves exactly the presented
+    /// stimulus's units as the sources and the selected readout's units as the targets, no
+    /// target at a tie, whatever the feedback; under the global one every unit on both sides,
+    /// whatever was addressed before. The executor's refusal is the task's by name.
+    #[test]
+    fn the_addressed_delivery_addresses_the_stimulus_onto_the_selected_readout_and_none_at_a_tie() {
+        let mut exec = network(2, ONE / 2);
+        let mut t = task(Feedback::Answer);
+        t.delivery = Delivery::Addressed;
+        let addressed = |exec: &Executor<8>| -> (Vec<u32>, Vec<u32>) {
+            (
+                (0..16).filter(|&u| exec.is_source(u)).collect(),
+                (0..16).filter(|&u| exec.is_target(u)).collect(),
+            )
+        };
+        let stimulus_units = |t: &Task, trial: u64| -> Vec<u32> {
+            t.stimuli[usize::from(t.stimulus_at(trial))]
+                .set
+                .units()
+                .collect()
+        };
+        assert_eq!(
+            exec.addressed_counts(),
+            (16, 16),
+            "every unit, both sides, before the first trial"
+        );
+        // Trial 0 ties: the stimulus's units are the sources, nothing is a target.
+        let tie = t.trial(&mut exec, 0).unwrap();
+        assert_eq!(tie.selection, None);
+        assert_eq!(addressed(&exec), (stimulus_units(&t, 0), vec![]));
+        assert_eq!(stimulus_units(&t, 0).len(), 4);
+        // Readout 0 cued and selected: the stimulus's four onto readout 0's four.
+        exec.run(400);
+        cue(&exec, t.readout.sets()[0]);
+        let one = t.trial(&mut exec, 1).unwrap();
+        assert_eq!(one.selection, Some(0));
+        assert_eq!(addressed(&exec), (stimulus_units(&t, 1), vec![4, 5, 6, 7]));
+        // Readout 1 cued and selected: onto readout 1's four.
+        exec.run(400);
+        cue(&exec, t.readout.sets()[1]);
+        let two = t.trial(&mut exec, 2).unwrap();
+        assert_eq!(two.selection, Some(1));
+        assert_eq!(
+            addressed(&exec),
+            (stimulus_units(&t, 2), vec![12, 13, 14, 15])
+        );
+        // The two stimuli of trials 1 and 2 differ at this seed, so the source side moved.
+        assert_ne!(stimulus_units(&t, 1), stimulus_units(&t, 2));
+        // Withheld feedback writes the set too: the set is the outcome's, not the reward's.
+        t.feedback = Feedback::Withheld;
+        exec.run(400);
+        cue(&exec, t.readout.sets()[0]);
+        let withheld = t.trial(&mut exec, 3).unwrap();
+        assert_eq!((withheld.selection, withheld.reward_q16), (Some(0), 0));
+        assert_eq!(addressed(&exec), (stimulus_units(&t, 3), vec![4, 5, 6, 7]));
+        // Both cued, a tie: no target.
+        exec.run(400);
+        cue(&exec, t.readout.sets()[0]);
+        cue(&exec, t.readout.sets()[1]);
+        let both = t.trial(&mut exec, 4).unwrap();
+        assert_eq!(both.selection, None);
+        assert_eq!(addressed(&exec), (stimulus_units(&t, 4), vec![]));
+        // The global delivery addresses every unit again, whatever was addressed before.
+        t.delivery = Delivery::Global;
+        exec.run(400);
+        cue(&exec, t.readout.sets()[1]);
+        let global = t.trial(&mut exec, 5).unwrap();
+        assert_eq!(global.selection, Some(1));
+        assert_eq!(exec.addressed_counts(), (16, 16));
+        // The executor's refusal surfaces by name; `check` holds every readout inside the
+        // arena, so a trial never meets it.
+        assert_eq!(
+            TaskError::from(AddressError::NoSuchUnit),
+            TaskError::Address(AddressError::NoSuchUnit)
+        );
+        assert_eq!(exec.address([16u32], [4u32]), Err(AddressError::NoSuchUnit));
+        assert_eq!(exec.address([0u32], [16u32]), Err(AddressError::NoSuchUnit));
+        let mut outside = t;
+        outside.delivery = Delivery::Addressed;
+        outside.readout = Readout::new([set(4, 4), set(13, 4)]);
+        assert_eq!(outside.trial(&mut exec, 6), Err(TaskError::SetOutsideArena));
     }
 
     /// The two draws of a trial against an oracle written apart from the tree: SplitMix64's

@@ -312,6 +312,64 @@ pub enum InjectError {
     Full,
 }
 
+/// Why an addressing is refused (ADR-0068).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AddressError {
+    /// A unit of the addressed set is outside the arena.
+    NoSuchUnit,
+}
+
+/// The two modulations of a tick (ADR-0068): the one an addressed synapse consolidates
+/// under, `clamp(baseline + dopamine, 0, 1)` (`cortex-neuromod`'s `modulation`, ADR-0032),
+/// and the one every other synapse consolidates under, the same rule with the signal at
+/// rest, `clamp(baseline, 0, 1)`. A synapse is addressed when its presynaptic unit is an
+/// addressed source and its target an addressed target. The addressing reaches the dopamine
+/// term only. With the signal at rest the two are one number, so a run with no reward is the
+/// same run whatever is addressed; with every unit a source and a target only the first is
+/// read, so a run that addresses every unit is the run before the addressing existed, bit
+/// for bit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Modulations {
+    pub addressed: i32,
+    pub at_rest: i32,
+}
+
+impl Modulations {
+    /// The two modulations from the modulator and the baseline: the rule is
+    /// `cortex-neuromod`'s in both, once with the signal as it stands and once at rest.
+    pub fn of(modulator: &NeuromodulatorState, baseline_q16: i32) -> Self {
+        Self {
+            addressed: modulator.modulation(baseline_q16),
+            at_rest: NeuromodulatorState::new().modulation(baseline_q16),
+        }
+    }
+
+    /// The modulation a synapse consolidates under: `addressed` when the synapse is
+    /// addressed, `at_rest` otherwise.
+    pub const fn for_synapse(&self, addressed: bool) -> i32 {
+        if addressed {
+            self.addressed
+        } else {
+            self.at_rest
+        }
+    }
+}
+
+/// [`SynapseBlock::consolidate`] for every slot in order, each under its own modulation
+/// (ADR-0068). Under one modulation for every slot it is `consolidate_all`, call for call,
+/// which `consolidate_each_under_one_modulation_is_consolidate_all` holds with the previous
+/// call as its oracle; an empty slot's modulation is not read, since `consolidate` moves
+/// nothing there.
+fn consolidate_each(
+    block: &mut SynapseBlock,
+    modulations: &[i32; SYNAPSES_PER_BLOCK],
+    polarity: Polarity,
+) {
+    for (slot, &modulation) in modulations.iter().enumerate() {
+        block.consolidate(slot, modulation, polarity);
+    }
+}
+
 /// The injector payload that asks for a turn without a message.
 pub const ACTIVATE: u32 = u32::MAX;
 
@@ -419,8 +477,19 @@ struct Shared {
     delivered: Box<[AtomicU64]>,
     now: AtomicU32,
     /// The modulation this tick's fan-out consolidates with (ADR-0032): stored by the
-    /// coordinator before the tick's first barrier, read by every worker after it.
+    /// coordinator before the tick's first barrier, read by every worker after it. Since
+    /// ADR-0068 it is the modulation of an addressed synapse.
     modulation: AtomicI32,
+    /// The modulation of a synapse that is not addressed (ADR-0068): the same rule with the
+    /// dopamine signal at rest, stored and read beside `modulation`.
+    modulation_at_rest: AtomicI32,
+    /// The addressed set (ADR-0068) as two flags per unit, a source and a target: a synapse
+    /// is addressed when its presynaptic unit is a source and its target a target. Written
+    /// between ticks by the coordinator, read by every worker in the fan-out phase, the
+    /// source once per spiked unit and the target once per slot. Every unit is both until
+    /// `Executor::address` narrows them.
+    sources: Box<[AtomicBool]>,
+    targets: Box<[AtomicBool]>,
     /// The synaptic gain this tick's turns scale their sums by (ADR-0036): stored by the
     /// coordinator before the tick's first barrier, read by every worker after it.
     gain: AtomicU32,
@@ -444,6 +513,24 @@ struct Shared {
     /// stored by the coordinator before the tick's first barrier (ADR-0038).
     replay: AtomicU32,
     stop: AtomicBool,
+}
+
+impl Shared {
+    /// True when `unit` is an addressed source (ADR-0068); false for a unit outside the
+    /// arena, which no spike names.
+    fn is_source(&self, unit: u32) -> bool {
+        self.sources
+            .get(unit as usize)
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }
+
+    /// True when `unit` is an addressed target (ADR-0068); false for a unit outside the
+    /// arena, which no synapse the loader admitted targets.
+    fn is_target(&self, unit: u32) -> bool {
+        self.targets
+            .get(unit as usize)
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }
 }
 
 /// One worker's private state.
@@ -653,6 +740,9 @@ impl<const CAP: usize> Executor<CAP> {
             delivered: (0..workers).map(|_| AtomicU64::new(0)).collect(),
             now: AtomicU32::new(0),
             modulation: AtomicI32::new(config.modulation_baseline_q16),
+            modulation_at_rest: AtomicI32::new(config.modulation_baseline_q16),
+            sources: (0..config.units).map(|_| AtomicBool::new(true)).collect(),
+            targets: (0..config.units).map(|_| AtomicBool::new(true)).collect(),
             gain: AtomicU32::new(GAIN_ONE_Q16),
             spikes: (0..workers).map(|_| AtomicU32::new(0)).collect(),
             descendants: (0..workers).map(|_| AtomicU32::new(0)).collect(),
@@ -790,6 +880,76 @@ impl<const CAP: usize> Executor<CAP> {
     /// by `DOPAMINE_TAU_SHIFT` per tick. Returns the signal.
     pub fn reward(&mut self, reward_prediction_error_q16: i32) -> i32 {
         self.modulator.reward(reward_prediction_error_q16)
+    }
+
+    /// Between ticks: the addressed set becomes the synapses from a unit of `sources` onto a
+    /// unit of `targets`, exactly (ADR-0068). From the next tick an addressed synapse
+    /// consolidates under `clamp(baseline + dopamine, 0, 1)` and every other synapse under
+    /// the baseline alone, until the set is written again; the dopamine signal itself is one
+    /// for the engine and is not addressed. Every unit is a source and a target until this is
+    /// called, which is the rule before the addressing existed. A set that names a unit
+    /// outside the arena, on either side, is refused whole, and the set stands as it was. An
+    /// input between ticks, like a reward: a run that replays its addressings at the same
+    /// ticks is the same run.
+    pub fn address<S, T>(&mut self, sources: S, targets: T) -> Result<(), AddressError>
+    where
+        S: IntoIterator<Item = u32>,
+        S::IntoIter: Clone,
+        T: IntoIterator<Item = u32>,
+        T::IntoIter: Clone,
+    {
+        let sources = sources.into_iter();
+        let targets = targets.into_iter();
+        let len = self.shared.sources.len();
+        if sources.clone().any(|unit| unit as usize >= len)
+            || targets.clone().any(|unit| unit as usize >= len)
+        {
+            return Err(AddressError::NoSuchUnit);
+        }
+        Self::write_side(&self.shared.sources, sources);
+        Self::write_side(&self.shared.targets, targets);
+        Ok(())
+    }
+
+    /// One side of the addressed set: every flag cleared, then the units named set. Every
+    /// unit is below the slice's length, which `address` held before it wrote either side.
+    fn write_side(side: &[AtomicBool], units: impl Iterator<Item = u32>) {
+        for flag in side {
+            flag.store(false, Ordering::Relaxed);
+        }
+        for unit in units {
+            if let Some(flag) = side.get(unit as usize) {
+                flag.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Between ticks: every unit a source and a target, the rule before ADR-0068 and the
+    /// state a new executor starts in.
+    pub fn address_all(&mut self) {
+        for flag in self.shared.sources.iter().chain(self.shared.targets.iter()) {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// True when `unit` is an addressed source (ADR-0068); false outside the arena.
+    pub fn is_source(&self, unit: u32) -> bool {
+        self.shared.is_source(unit)
+    }
+
+    /// True when `unit` is an addressed target (ADR-0068); false outside the arena.
+    pub fn is_target(&self, unit: u32) -> bool {
+        self.shared.is_target(unit)
+    }
+
+    /// The addressed sources and the addressed targets, counted (ADR-0068), between ticks.
+    pub fn addressed_counts(&self) -> (usize, usize) {
+        let count = |side: &[AtomicBool]| {
+            side.iter()
+                .filter(|flag| flag.load(Ordering::Relaxed))
+                .count()
+        };
+        (count(&self.shared.sources), count(&self.shared.targets))
     }
 
     /// The loader's: the modulator an image holds.
@@ -1661,13 +1821,17 @@ impl<const CAP: usize> Executor<CAP> {
     pub fn tick(&mut self) {
         let now = self.tick as u32;
         self.shared.now.store(now, Ordering::Relaxed);
-        // The modulation this tick's fan-out consolidates with, from the signal as it stands;
-        // then the signal decays by one tick (ADR-0032). Both before the barrier that starts
-        // the tick, so every worker reads the same value.
-        self.shared.modulation.store(
-            self.modulator.modulation(self.modulation_baseline_q16),
-            Ordering::Relaxed,
-        );
+        // The modulations this tick's fan-out consolidates with, from the signal as it
+        // stands (the addressed units' with the signal, every other's at rest; ADR-0032,
+        // ADR-0068); then the signal decays by one tick. All before the barrier that starts
+        // the tick, so every worker reads the same values.
+        let modulations = Modulations::of(&self.modulator, self.modulation_baseline_q16);
+        self.shared
+            .modulation
+            .store(modulations.addressed, Ordering::Relaxed);
+        self.shared
+            .modulation_at_rest
+            .store(modulations.at_rest, Ordering::Relaxed);
         self.modulator.decay_dopamine(DOPAMINE_TAU_SHIFT);
         // The gain this tick's turns scale by (ADR-0036), likewise before the barrier.
         self.shared
@@ -1917,7 +2081,10 @@ impl<const CAP: usize> Worker<CAP> {
     // ---------------------------------------------------------------- phase 2: fan-out
 
     fn phase_fan_out(&mut self, shared: &Shared, now: u32) {
-        let modulation = shared.modulation.load(Ordering::Relaxed);
+        let modulations = Modulations {
+            addressed: shared.modulation.load(Ordering::Relaxed),
+            at_rest: shared.modulation_at_rest.load(Ordering::Relaxed),
+        };
         // The inhibitory rule's depression per spike at the engine's target period
         // (ADR-0053), published by the coordinator; within `i16`, as `istdp_alpha_q1_15`
         // bounds it.
@@ -1932,6 +2099,9 @@ impl<const CAP: usize> Worker<CAP> {
             // The block's polarity is its presynaptic unit's (ADR-0049): every rule below
             // moves a weight within that half of the width.
             let polarity = Polarity::of_flags(pre.flags);
+            // Whether the chain's synapses are from an addressed source (ADR-0068), read once
+            // for the whole chain; the target side is read per slot below.
+            let from_source = shared.is_source(unit);
             let mut next = pre.synapse_slab_idx;
             let mut remaining = shared.blocks.len();
             while next != CHAIN_END && remaining > 0 {
@@ -1952,8 +2122,16 @@ impl<const CAP: usize> Worker<CAP> {
                         .and_then(|t| unsafe { shared.units.get(t as usize) })
                         .map_or(NO_SPIKE_ON_RECORD, |t| t.last_soma_spike_tick)
                 });
+                // The modulation per slot (ADR-0068): the addressed one for a synapse from an
+                // addressed source onto an addressed target, the one at rest for every other;
+                // an empty slot's is never read.
+                let per_slot: [i32; SYNAPSES_PER_BLOCK] = core::array::from_fn(|slot| {
+                    modulations.for_synapse(
+                        from_source && block.target(slot).is_some_and(|t| shared.is_target(t)),
+                    )
+                });
                 block.step_stdp_all(now, posts, polarity, istdp_alpha);
-                block.consolidate_all(modulation, polarity);
+                consolidate_each(block, &per_slot, polarity);
                 let released = block.release_all(release_u, release_r);
                 for (slot, &efficacy) in released.iter().enumerate() {
                     let Some(target) = block.target(slot) else {
@@ -2329,5 +2507,221 @@ mod tests {
         assert_eq!(traced.len(), 6);
         assert!(exec.train().is_empty());
         assert_eq!((exec.train_overwritten(), exec.train_capacity()), (0, 0));
+    }
+
+    /// The addressed set (ADR-0068): every unit a source and a target at birth; an addressing
+    /// is exactly the units named on each side, refused whole for a unit outside the arena on
+    /// either side with both sides left as they were, empty on a side asked for no unit;
+    /// `address_all` is the birth state again.
+    #[test]
+    fn an_addressing_is_exact_and_refused_whole_outside_the_arena() {
+        let mut exec = Executor::<8>::new(Config {
+            units: 4,
+            ..Config::default()
+        })
+        .unwrap();
+        let sides = |exec: &Executor<8>| {
+            (
+                (0..5).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                (0..5).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+            )
+        };
+        let all = vec![true, true, true, true, false];
+        assert_eq!(
+            exec.addressed_counts(),
+            (4, 4),
+            "every unit, both sides, at birth"
+        );
+        assert_eq!(sides(&exec), (all.clone(), all.clone()));
+        assert!(
+            !exec.is_source(u32::MAX) && !exec.is_target(u32::MAX),
+            "outside the arena is neither"
+        );
+        assert_eq!(exec.address([0u32], [1u32, 3]), Ok(()));
+        assert_eq!(exec.addressed_counts(), (1, 2));
+        let narrowed = (
+            vec![true, false, false, false, false],
+            vec![false, true, false, true, false],
+        );
+        assert_eq!(sides(&exec), narrowed);
+        assert_eq!(
+            exec.address([0u32], [1u32, 4]),
+            Err(AddressError::NoSuchUnit),
+            "refused whole for a target outside"
+        );
+        assert_eq!(sides(&exec), narrowed, "as it was");
+        assert_eq!(
+            exec.address([4u32], [1u32]),
+            Err(AddressError::NoSuchUnit),
+            "and for a source outside"
+        );
+        assert_eq!(sides(&exec), narrowed);
+        assert_eq!(
+            exec.address([0u32, u32::MAX], core::iter::empty()),
+            Err(AddressError::NoSuchUnit)
+        );
+        assert_eq!(sides(&exec), narrowed);
+        assert_eq!(exec.address([2u32], core::iter::empty()), Ok(()));
+        assert_eq!(exec.addressed_counts(), (1, 0), "a side of no unit");
+        assert_eq!(
+            sides(&exec),
+            (vec![false, false, true, false, false], vec![false; 5])
+        );
+        assert_eq!(
+            exec.address([2u32, 2], [2u32, 2]),
+            Ok(()),
+            "a unit named twice is addressed once"
+        );
+        assert_eq!(exec.addressed_counts(), (1, 1));
+        exec.address_all();
+        assert_eq!(exec.addressed_counts(), (4, 4));
+        assert_eq!(sides(&exec), (all.clone(), all.clone()));
+        assert_eq!(exec.address([4u32], [4u32]), Err(AddressError::NoSuchUnit));
+        assert_eq!(exec.addressed_counts(), (4, 4), "as it was: every unit");
+        assert_eq!(
+            exec.address(core::iter::empty(), core::iter::empty()),
+            Ok(())
+        );
+        assert_eq!(exec.addressed_counts(), (0, 0));
+    }
+}
+
+/// The lattice property (ADR-0030) of the addressing (ADR-0068): over the lattice and a
+/// seeded walk of baselines and dopamine signals, the modulation of an addressed unit is
+/// `clamp(baseline + dopamine, 0, 1)` and every other unit's is `clamp(baseline, 0, 1)`, one
+/// number when the signal is at rest; and the consolidation slot by slot under one
+/// modulation is `consolidate_all`, the previous call, bit for bit over seeded blocks.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    #[test]
+    fn the_addressed_modulation_is_the_baseline_with_the_signal_and_the_other_the_baseline_alone() {
+        let mut lcg = Lcg::new(0x68);
+        let mut cases: Vec<(i32, i32)> = Vec::new();
+        for &baseline in &I32_LATTICE {
+            for &dopamine in &I32_LATTICE {
+                cases.push((baseline, dopamine));
+            }
+        }
+        for _ in 0..4_000 {
+            cases.push((lcg.i32_edge_biased(), lcg.i32_edge_biased()));
+        }
+        let mut modulator = NeuromodulatorState::new();
+        for (baseline, dopamine) in cases {
+            modulator.dopamine_rpe = dopamine;
+            let m = Modulations::of(&modulator, baseline);
+            assert_eq!(
+                m.addressed,
+                baseline
+                    .saturating_add(dopamine)
+                    .clamp(0, MODULATION_ONE_Q16),
+                "{baseline} {dopamine}"
+            );
+            assert_eq!(m.at_rest, baseline.clamp(0, MODULATION_ONE_Q16));
+            assert_eq!(
+                m.addressed,
+                modulator.modulation(baseline),
+                "the rule is cortex-neuromod's"
+            );
+            assert_eq!(m.for_synapse(true), m.addressed);
+            assert_eq!(m.for_synapse(false), m.at_rest);
+            if dopamine == 0 {
+                assert_eq!(m.addressed, m.at_rest, "at rest the two are one number");
+            }
+        }
+        // The harness's baseline, a reward and a dip: the addressed modulation moves, the
+        // other stays at the baseline.
+        modulator.dopamine_rpe = 0x4000;
+        let m = Modulations::of(&modulator, 0x8000);
+        assert_eq!(
+            (m.for_synapse(true), m.for_synapse(false)),
+            (0xC000, 0x8000)
+        );
+        modulator.dopamine_rpe = -0x4000;
+        let m = Modulations::of(&modulator, 0x8000);
+        assert_eq!(
+            (m.for_synapse(true), m.for_synapse(false)),
+            (0x4000, 0x8000)
+        );
+        modulator.dopamine_rpe = MODULATION_ONE_Q16;
+        let m = Modulations::of(&modulator, 0x8000);
+        assert_eq!(
+            (m.for_synapse(true), m.for_synapse(false)),
+            (MODULATION_ONE_Q16, 0x8000),
+            "the reward of brief 027 carries the addressed to the ceiling"
+        );
+        modulator.dopamine_rpe = -MODULATION_ONE_Q16;
+        let m = Modulations::of(&modulator, 0x8000);
+        assert_eq!(
+            (m.for_synapse(true), m.for_synapse(false)),
+            (0, 0x8000),
+            "and the punishment to the floor"
+        );
+    }
+
+    /// A seeded block: three slots in four filled with a seeded target, weight and delay,
+    /// a seeded trace in every slot, empty ones included.
+    fn seeded_block(lcg: &mut Lcg) -> SynapseBlock {
+        let mut block = SynapseBlock::new();
+        for slot in 0..SYNAPSES_PER_BLOCK {
+            if lcg.below(4) != 0 {
+                let weight = if lcg.below(2) == 0 {
+                    lcg.pick(&I16_LATTICE)
+                } else {
+                    lcg.next_i16()
+                };
+                assert!(block.set_synapse(
+                    slot,
+                    lcg.below(1_000),
+                    weight,
+                    lcg.below(2_560) as u16,
+                    lcg.below(2) == 1
+                ));
+            }
+            block.eligibility_q1_15[slot] = if lcg.below(2) == 0 {
+                lcg.pick(&I16_LATTICE)
+            } else {
+                lcg.next_i16()
+            };
+        }
+        block
+    }
+
+    #[test]
+    fn consolidate_each_under_one_modulation_is_consolidate_all() {
+        let mut lcg = Lcg::new(0x69);
+        for round in 0..2_000u32 {
+            let block = seeded_block(&mut lcg);
+            let polarity = if lcg.below(2) == 0 {
+                Polarity::Excitatory
+            } else {
+                Polarity::Inhibitory
+            };
+            let modulation = lcg.i32_edge_biased();
+            let mut oracle = block;
+            let weights = oracle.consolidate_all(modulation, polarity);
+            let mut each = block;
+            consolidate_each(&mut each, &[modulation; SYNAPSES_PER_BLOCK], polarity);
+            assert_eq!(
+                each, oracle,
+                "round {round}: the previous call, bit for bit"
+            );
+            assert_eq!(each.weights_q1_15, weights);
+            // Under a modulation per slot, every slot is its own `consolidate`, in order.
+            let per_slot: [i32; SYNAPSES_PER_BLOCK] =
+                core::array::from_fn(|_| lcg.i32_edge_biased());
+            let mut expected = block;
+            for (slot, &m) in per_slot.iter().enumerate() {
+                expected.consolidate(slot, m, polarity);
+            }
+            let mut each = block;
+            consolidate_each(&mut each, &per_slot, polarity);
+            assert_eq!(each, expected, "round {round}: slot by slot");
+        }
     }
 }
