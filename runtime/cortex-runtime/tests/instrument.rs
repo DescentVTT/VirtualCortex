@@ -28,8 +28,8 @@ use cortex_core::{FLAG_INHIBITORY, MODULATION_ONE_Q16};
 use cortex_homeostasis::HomeostaticDrivePool;
 use cortex_neuromod::DOPAMINE_TAU_SHIFT;
 use cortex_runtime::{
-    Config, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError, Window,
-    blocks_for, spikes_per_unit, synthesize,
+    Config, Delivery, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError,
+    Window, blocks_for, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -251,7 +251,7 @@ fn gain(units: u32) -> u32 {
     }
 }
 
-fn task(units: u32, feedback: Feedback, mirrored: bool) -> Task {
+fn task(units: u32, feedback: Feedback, mirrored: bool, delivery: Delivery) -> Task {
     let [a, b, r0, r1] = geometry(units, rotation(units));
     let stimulus = |set| Stimulus {
         set,
@@ -268,6 +268,7 @@ fn task(units: u32, feedback: Feedback, mirrored: bool) -> Task {
         reward_q16: REWARD_Q16,
         mirrored,
         feedback,
+        delivery,
     }
 }
 
@@ -354,10 +355,12 @@ type Block = (
     u32,
 );
 
-/// A run of `trials` trials on the prior at `units` at `gain` on `workers` workers: the
+/// A run of `trials` trials on the prior at `units` at `gain` on `workers` workers under a
+/// delivery of the dopamine term (ADR-0068; `Delivery::Global` is ADR-0066's form): the
 /// blocks' readings, and the FNV-1a hash of every trial's `(stimulus, selection, correct)`,
 /// the accuracy sequence in one number. The first trial is preceded by a lead-in of one
 /// window under the drive.
+#[allow(clippy::too_many_arguments)]
 fn run(
     units: u32,
     workers: usize,
@@ -365,13 +368,19 @@ fn run(
     baseline_q16: i32,
     feedback: Feedback,
     mirrored: bool,
+    delivery: Delivery,
     trials: usize,
 ) -> (Vec<Block>, u64) {
     let p = prior(units);
     let mut exec = at_gain(&p, config(units, workers, baseline_q16), gain);
     assert_eq!(exec.homeostasis().synaptic_gain_q16, gain);
     assert_eq!(exec.modulation_baseline_q16(), baseline_q16);
-    let mut task = task(units, feedback, mirrored);
+    assert_eq!(
+        exec.addressed_counts(),
+        (units as usize, units as usize),
+        "every unit a source and a target before the first trial, whatever the delivery"
+    );
+    let mut task = task(units, feedback, mirrored, delivery);
     task.check(&exec).expect("the task fits the executor");
     let [a, b, r0, r1] = geometry(units, rotation(units));
     // The stimulus sets counted as a readout would count them: the same rule, the other
@@ -514,7 +523,16 @@ fn calibration(units: u32, gain: u32) -> (Block, u64) {
     let p = prior(units);
     let frozen = at_gain(&p, config(units, 2, 0), gain);
     let sums = weights_by_polarity(&frozen);
-    let (blocks, trace) = run(units, 2, gain, 0, Feedback::Withheld, false, BLOCK);
+    let (blocks, trace) = run(
+        units,
+        2,
+        gain,
+        0,
+        Feedback::Withheld,
+        false,
+        Delivery::Global,
+        BLOCK,
+    );
     let block = blocks[0];
     assert_eq!(
         (block.7, block.8),
@@ -794,18 +812,27 @@ fn the_geometry_holds_against_the_census_at_both_sizes() {
         // The task fits, for every feedback and both assignments.
         for feedback in [Feedback::Answer, Feedback::Shuffled] {
             let exec = Engine::new(config(units, 1, BASELINE_Q16)).unwrap();
-            assert_eq!(task(units, feedback, false).check(&exec), Ok(()));
-            assert_eq!(task(units, feedback, true).check(&exec), Ok(()));
+            assert_eq!(
+                task(units, feedback, false, Delivery::Global).check(&exec),
+                Ok(())
+            );
+            assert_eq!(
+                task(units, feedback, true, Delivery::Global).check(&exec),
+                Ok(())
+            );
         }
         let fixed = Engine::new(config(units, 1, ONE)).unwrap();
-        assert_eq!(task(units, Feedback::Withheld, false).check(&fixed), Ok(()));
         assert_eq!(
-            task(units, Feedback::Answer, false).check(&fixed),
+            task(units, Feedback::Withheld, false, Delivery::Global).check(&fixed),
+            Ok(())
+        );
+        assert_eq!(
+            task(units, Feedback::Answer, false, Delivery::Global).check(&fixed),
             Err(TaskError::RewardAtCeiling)
         );
         let frozen = Engine::new(config(units, 1, 0)).unwrap();
         assert_eq!(
-            task(units, Feedback::Withheld, false).check(&frozen),
+            task(units, Feedback::Withheld, false, Delivery::Global).check(&frozen),
             Ok(())
         );
     }
@@ -1483,6 +1510,7 @@ fn the_first_block_of_the_recalibrated_rewarded_run_at_256_units() {
         BASELINE_Q16,
         Feedback::Answer,
         false,
+        Delivery::Global,
         BLOCK,
     );
     pinned(
@@ -1504,6 +1532,7 @@ fn the_recalibrated_rewarded_run_at_256_units_on_four_workers_exhaustive() {
         BASELINE_Q16,
         Feedback::Answer,
         false,
+        Delivery::Global,
         TRIALS,
     );
     pinned(
@@ -1527,6 +1556,7 @@ fn the_recalibrated_rewarded_run_at_256_units_on_one_worker_is_the_same_run_exha
         BASELINE_Q16,
         Feedback::Answer,
         false,
+        Delivery::Global,
         TRIALS,
     );
     pinned(
@@ -1548,6 +1578,7 @@ fn the_recalibrated_mirrored_assignment_at_256_units_exhaustive() {
         BASELINE_Q16,
         Feedback::Answer,
         true,
+        Delivery::Global,
         TRIALS,
     );
     pinned("instrument256 mirrored", &blocks, trace, MIRRORED_256, 0);
@@ -1563,6 +1594,7 @@ fn the_recalibrated_shuffled_reward_at_256_units_exhaustive() {
         BASELINE_Q16,
         Feedback::Shuffled,
         false,
+        Delivery::Global,
         TRIALS,
     );
     pinned("instrument256 shuffled", &blocks, trace, SHUFFLED_256, 0);
@@ -1571,7 +1603,16 @@ fn the_recalibrated_shuffled_reward_at_256_units_exhaustive() {
 #[test]
 #[ignore]
 fn the_recalibrated_fixed_modulation_at_256_units_exhaustive() {
-    let (blocks, trace) = run(256, 2, GAIN_256, ONE, Feedback::Withheld, false, TRIALS);
+    let (blocks, trace) = run(
+        256,
+        2,
+        GAIN_256,
+        ONE,
+        Feedback::Withheld,
+        false,
+        Delivery::Global,
+        TRIALS,
+    );
     pinned("instrument256 fixed", &blocks, trace, FIXED_256, 0);
 }
 
@@ -2061,6 +2102,7 @@ fn the_recalibrated_rewarded_run_at_1024_units_on_four_workers_exhaustive() {
         BASELINE_Q16,
         Feedback::Answer,
         false,
+        Delivery::Global,
         TRIALS,
     );
     pinned(
@@ -2082,6 +2124,7 @@ fn the_recalibrated_rewarded_run_at_1024_units_on_one_worker_is_the_same_run_exh
         BASELINE_Q16,
         Feedback::Answer,
         false,
+        Delivery::Global,
         TRIALS,
     );
     pinned(
@@ -2103,6 +2146,7 @@ fn the_recalibrated_mirrored_assignment_at_1024_units_exhaustive() {
         BASELINE_Q16,
         Feedback::Answer,
         true,
+        Delivery::Global,
         TRIALS,
     );
     pinned("instrument1024 mirrored", &blocks, trace, MIRRORED_1024, 0);
@@ -2118,6 +2162,7 @@ fn the_recalibrated_shuffled_reward_at_1024_units_exhaustive() {
         BASELINE_Q16,
         Feedback::Shuffled,
         false,
+        Delivery::Global,
         TRIALS,
     );
     pinned("instrument1024 shuffled", &blocks, trace, SHUFFLED_1024, 0);
@@ -2126,7 +2171,16 @@ fn the_recalibrated_shuffled_reward_at_1024_units_exhaustive() {
 #[test]
 #[ignore]
 fn the_recalibrated_fixed_modulation_at_1024_units_exhaustive() {
-    let (blocks, trace) = run(1024, 2, GAIN_1024, ONE, Feedback::Withheld, false, TRIALS);
+    let (blocks, trace) = run(
+        1024,
+        2,
+        GAIN_1024,
+        ONE,
+        Feedback::Withheld,
+        false,
+        Delivery::Global,
+        TRIALS,
+    );
     pinned("instrument1024 fixed", &blocks, trace, FIXED_1024, 0);
 }
 
@@ -2142,4 +2196,177 @@ fn the_criterion_at_1024_units_through_the_instrument_as_written() {
     );
     eprintln!("DUMP instrument1024 verdict {v:?}");
     assert_eq!(v, VERDICT_1024);
+}
+
+// ------------------------------------------- the addressed delivery (ADR-0068, ADR-0069)
+//
+// Written before the run. The same instrument, the same controls, the same seeds and the
+// same counts as ADR-0066; the one variable is where the dopamine term reaches: under
+// `Delivery::Addressed` the synapses onto the readout the engine selected, none at a tie
+// (the addressed set is the outcome's, written by the task between the trial's last tick and
+// the reward; the presynaptic side does not narrow it, ADR-0068), under `Delivery::Global`
+// every synapse alike, ADR-0066's form, which reruns under this round's code as the
+// comparison the claim rests on. The criterion is at 1 024 units; 256 units is one reading
+// under the rule below.
+
+/// The rule for a size that stops seeing, written before the run: a size whose calibration
+/// measure (the trials of a block in which the window after the volley held more readout
+/// spikes than the window before the injection) falls below `SEEN_MIN` in any block before
+/// the criterion's window is recorded as not measured, never as a pass or a fail. ADR-0066
+/// read 256 units below the mark from its second block and 1 024 units above it throughout.
+fn sees_through(blocks: &[Block]) -> bool {
+    let before_window = blocks.len().saturating_sub(LAST_BLOCKS);
+    blocks
+        .iter()
+        .take(before_window)
+        .all(|block| block.6 >= SEEN_MIN)
+}
+
+/// The criterion under the addressed delivery (ADR-0069), ADR-0066's clause by clause with
+/// the global form beside the controls: the addressed rewarded run's correct trials over the
+/// last 128 at least `REWARDED_MIN`, in both assignments; the addressed shuffled reward's,
+/// the fixed modulation's and the global form's at most `CONTROL_MAX`; the addressed
+/// rewarded run's sequence the same on one worker and on four. `learned` is all six.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AddressedVerdict {
+    rewarded: bool,
+    mirrored: bool,
+    shuffled: bool,
+    fixed: bool,
+    global: bool,
+    workers: bool,
+    learned: bool,
+}
+
+fn addressed_verdict(
+    rewarded: &[Block],
+    mirrored: &[Block],
+    shuffled: &[Block],
+    fixed: &[Block],
+    global: &[Block],
+    workers: bool,
+) -> AddressedVerdict {
+    let v = AddressedVerdict {
+        rewarded: last_correct(rewarded) >= REWARDED_MIN,
+        mirrored: last_correct(mirrored) >= REWARDED_MIN,
+        shuffled: last_correct(shuffled) <= CONTROL_MAX,
+        fixed: last_correct(fixed) <= CONTROL_MAX,
+        global: last_correct(global) <= CONTROL_MAX,
+        workers,
+        learned: false,
+    };
+    AddressedVerdict {
+        learned: v.rewarded && v.mirrored && v.shuffled && v.fixed && v.global && v.workers,
+        ..v
+    }
+}
+
+/// The addressed criterion and the sees-through rule read as written, at their edges.
+#[test]
+fn the_addressed_criterion_and_the_sees_through_rule_read_as_written() {
+    let block = |correct: u32, seen: u32| -> Block {
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            seen,
+            0,
+            0,
+            0,
+            [[0; 2]; 2],
+            0,
+        )
+    };
+    let eight = |a: u32, b: u32| -> Vec<Block> {
+        let mut v = vec![block(32, 64); 6];
+        v.push(block(a, 64));
+        v.push(block(b, 64));
+        v
+    };
+    let up = eight(40, 40);
+    let short = eight(40, 39);
+    let flat = eight(38, 38);
+    let over = eight(38, 39);
+    let all = AddressedVerdict {
+        rewarded: true,
+        mirrored: true,
+        shuffled: true,
+        fixed: true,
+        global: true,
+        workers: true,
+        learned: true,
+    };
+    assert_eq!(addressed_verdict(&up, &up, &flat, &flat, &flat, true), all);
+    assert_eq!(
+        addressed_verdict(&short, &up, &flat, &over, &flat, true),
+        AddressedVerdict {
+            rewarded: false,
+            fixed: false,
+            learned: false,
+            ..all
+        },
+        "79 of 128 fails the rewarded clause and 77 fails a control's"
+    );
+    assert_eq!(
+        addressed_verdict(&up, &up, &flat, &flat, &over, true),
+        AddressedVerdict {
+            global: false,
+            learned: false,
+            ..all
+        },
+        "the global form is a control: 77 fails it"
+    );
+    assert_eq!(
+        addressed_verdict(&up, &up, &flat, &flat, &up, true),
+        AddressedVerdict {
+            global: false,
+            learned: false,
+            ..all
+        },
+        "a global form that learned would fail the addressed claim's comparison"
+    );
+    assert!(!addressed_verdict(&up, &short, &flat, &flat, &flat, true).learned);
+    assert!(!addressed_verdict(&up, &up, &over, &flat, &flat, true).shuffled);
+    assert!(!addressed_verdict(&up, &up, &flat, &flat, &flat, false).learned);
+    // The sees-through rule: every block before the criterion's window at the mark or
+    // above; a block below it before the window is a reading not measured, a block below it
+    // inside the window is not the rule's concern; a run shorter than the window sees.
+    assert!(sees_through(&eight(32, 32)));
+    let mut lost_early = eight(32, 32);
+    lost_early[0].6 = SEEN_MIN.wrapping_sub(1);
+    assert!(!sees_through(&lost_early), "55 in the first block");
+    let mut lost_sixth = eight(32, 32);
+    lost_sixth[5].6 = SEEN_MIN.wrapping_sub(1);
+    assert!(
+        !sees_through(&lost_sixth),
+        "55 in the sixth, the last before the window"
+    );
+    let mut at_mark = eight(32, 32);
+    at_mark[5].6 = SEEN_MIN;
+    assert!(sees_through(&at_mark), "56 is the mark");
+    let mut lost_in_window = eight(32, 32);
+    lost_in_window[6].6 = 0;
+    lost_in_window[7].6 = 0;
+    assert!(
+        sees_through(&lost_in_window),
+        "the window's own blocks are not the rule's"
+    );
+    assert!(sees_through(&[]), "nothing before the window");
+    assert!(sees_through(&[block(32, 0), block(32, 0)]));
+    assert!(!sees_through(&[block(32, 0), block(32, 64), block(32, 64)]));
+    // ADR-0066's runs under the rule: 1 024 units sees through every run, 256 units none.
+    for table in [REWARDED_1024, MIRRORED_1024, SHUFFLED_1024, FIXED_1024] {
+        assert!(sees_through(table));
+    }
+    for table in [REWARDED_256, MIRRORED_256, SHUFFLED_256, FIXED_256] {
+        assert!(!sees_through(table));
+    }
+    assert_eq!(
+        REWARDED_256.iter().map(|b| b.6).collect::<Vec<u32>>(),
+        [57, 46, 44, 42, 38, 42, 36, 31],
+        "ADR-0066's reading at 256 units: below the mark from the second block"
+    );
 }

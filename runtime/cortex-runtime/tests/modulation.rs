@@ -79,6 +79,188 @@ fn pairing(exec: &mut Executor<64>) -> (u32, u32) {
     (pre, post)
 }
 
+/// Unit 0 fans out to unit 1 through slot 0 and to unit 2 through slot 1 of block 0, both at
+/// `WEIGHT` with one tick of delay: the fork the addressing is read on (ADR-0068).
+fn fork(baseline_q16: i32) -> Executor<64> {
+    let mut exec = Executor::<64>::new(Config {
+        units: 3,
+        ..config(baseline_q16)
+    })
+    .expect("a valid configuration");
+    assert!(exec.blocks_mut()[0].set_synapse(0, 1, WEIGHT, 1, false));
+    assert!(exec.blocks_mut()[0].set_synapse(1, 2, WEIGHT, 1, false));
+    for unit in exec.units_mut() {
+        unit.v_thresh = THRESHOLD_BASE;
+        unit.stp_u_rel = STP_U;
+        unit.stp_r_ves = STP_MAX;
+    }
+    assert!(exec.units_mut()[0].set_first_block(0));
+    exec
+}
+
+/// The addressing (ADR-0068): three pairings on each branch of the fork with the baseline at
+/// 0, so both traces are pending and neither weight has moved. A source that is not unit 0
+/// with unit 1 as the target, a reward, the next presynaptic spike: neither branch
+/// consolidates, since a synapse is addressed by both ends. Unit 0 as the source and unit 1
+/// as the target, a reward, the next spike: the synapse onto unit 1 consolidates its whole
+/// pending trace and the synapse onto unit 2 nothing, its trace kept, since the dopamine
+/// term reaches the addressed synapse alone and the baseline is zero. Every unit addressed
+/// again and a reward: the synapse onto unit 2 consolidates too. The oracle is the rule on a
+/// block of its own, an unaddressed slot consolidated under zero.
+#[test]
+fn a_reward_reaches_the_addressed_synapse_and_no_other() {
+    let mut exec = fork(0);
+    let mut oracle = SynapseBlock::new();
+    assert!(oracle.set_synapse(0, 1, WEIGHT, 1, false));
+    assert!(oracle.set_synapse(1, 2, WEIGHT, 1, false));
+    let mut post_last = [0u32; 2];
+    for _ in 0..3 {
+        let pre = fire(&mut exec, 0);
+        exec.run(20);
+        let post_1 = fire(&mut exec, 1);
+        let post_2 = fire(&mut exec, 2);
+        exec.run(4000);
+        oracle.step_stdp_all(
+            pre,
+            [post_last[0], post_last[1], 0, 0],
+            Polarity::Excitatory,
+            ISTDP_ALPHA_Q1_15,
+        );
+        oracle.consolidate_all(0, Polarity::Excitatory);
+        post_last = [post_1, post_2];
+    }
+    let block = exec.blocks()[0];
+    assert_eq!(
+        &block.weights_q1_15[..2],
+        &[WEIGHT, WEIGHT],
+        "nothing moved"
+    );
+    assert!(
+        block.eligibility_q1_15[0] > 300 && block.eligibility_q1_15[1] > 300,
+        "both traces pending: {:?}",
+        block.eligibility_q1_15
+    );
+    assert_eq!(
+        (block.weights_q1_15, block.eligibility_q1_15),
+        (oracle.weights_q1_15, oracle.eligibility_q1_15)
+    );
+    assert_eq!(
+        exec.addressed_counts(),
+        (3, 3),
+        "every unit a source and a target until narrowed"
+    );
+    /// The oracle's step at unit 0's spike, both slots.
+    fn step(oracle: &mut SynapseBlock, pre: u32, post_last: [u32; 2]) {
+        oracle.step_stdp_all(
+            pre,
+            [post_last[0], post_last[1], 0, 0],
+            Polarity::Excitatory,
+            ISTDP_ALPHA_Q1_15,
+        );
+    }
+    /// The conservation on `slot`: the weight gained what the trace lost, `pending` being the
+    /// oracle's trace after the step.
+    fn conserved(block: &SynapseBlock, slot: usize, pending: i16) -> bool {
+        (block.weights_q1_15[slot] as i32) - (WEIGHT as i32)
+            + (block.eligibility_q1_15[slot] as i32)
+            == pending as i32
+    }
+    /// Consolidated nearly whole: a trace of at most one and a weight well above its start.
+    fn whole(block: &SynapseBlock, slot: usize) -> bool {
+        block.eligibility_q1_15[slot] <= 1 && block.weights_q1_15[slot] > WEIGHT + 300
+    }
+
+    // A source that is not the presynaptic unit: the target alone addresses nothing.
+    assert_eq!(exec.address([2u32], [1u32]), Ok(()));
+    assert_eq!(
+        (exec.is_source(0), exec.is_source(2), exec.is_target(1)),
+        (false, true, true)
+    );
+    assert_eq!(exec.reward(MODULATION_ONE_Q16), MODULATION_ONE_Q16);
+    let pre = fire(&mut exec, 0);
+    step(&mut oracle, pre, post_last);
+    oracle.consolidate_all(0, Polarity::Excitatory);
+    let none = exec.blocks()[0];
+    assert_eq!(
+        (none.weights_q1_15, none.eligibility_q1_15),
+        (oracle.weights_q1_15, oracle.eligibility_q1_15),
+        "neither branch consolidated: both under the baseline of zero"
+    );
+    assert_eq!(&none.weights_q1_15[..2], &[WEIGHT, WEIGHT]);
+
+    // Unit 0 as the source and unit 1 as the target, the signal still above the ceiling
+    // after another reward, the next presynaptic spike once unit 0 is out of its refractory
+    // window.
+    exec.run(200);
+    assert_eq!(exec.address([0u32], [1u32]), Ok(()));
+    assert_eq!(
+        (
+            exec.is_source(0),
+            exec.is_target(0),
+            exec.is_target(1),
+            exec.is_target(2)
+        ),
+        (true, false, true, false)
+    );
+    exec.reward(MODULATION_ONE_Q16);
+    let pre = fire(&mut exec, 0);
+    step(&mut oracle, pre, post_last);
+    let pending = oracle.eligibility_q1_15;
+    let after = exec.blocks()[0];
+    assert!(
+        conserved(&after, 0, pending[0]),
+        "conserved on the addressed branch: {after:?} against {pending:?}"
+    );
+    assert!(
+        whole(&after, 0),
+        "the synapse onto unit 1 consolidated nearly whole: {:?}",
+        (after.weights_q1_15[0], after.eligibility_q1_15[0])
+    );
+    // The other branch under the baseline alone, which is zero: nothing moves, and the
+    // block is the oracle's on that slot exactly.
+    oracle.consolidate(1, 0, Polarity::Excitatory);
+    assert_eq!(
+        (after.weights_q1_15[1], after.eligibility_q1_15[1]),
+        (oracle.weights_q1_15[1], oracle.eligibility_q1_15[1]),
+        "the synapse onto unit 2 kept its weight and its trace"
+    );
+    assert_eq!(after.weights_q1_15[1], WEIGHT);
+    assert!(
+        after.eligibility_q1_15[1] > 300,
+        "{}",
+        after.eligibility_q1_15[1]
+    );
+
+    // Every unit addressed again, a reward, the next presynaptic spike: the branch that
+    // waited consolidates now.
+    exec.run(200);
+    exec.address_all();
+    assert_eq!(exec.addressed_counts(), (3, 3));
+    exec.reward(MODULATION_ONE_Q16);
+    let pre = fire(&mut exec, 0);
+    step(&mut oracle, pre, post_last);
+    let pending = oracle.eligibility_q1_15[1];
+    let again = exec.blocks()[0];
+    assert!(
+        conserved(&again, 1, pending),
+        "conserved on the other branch once every unit was addressed: {again:?}"
+    );
+    assert!(
+        whole(&again, 1),
+        "the synapse onto unit 2 consolidated nearly whole: {:?}",
+        (again.weights_q1_15[1], again.eligibility_q1_15[1])
+    );
+    // The image does not carry the addressed set: a loaded engine addresses every unit,
+    // the rule before the addressing (ADR-0059's debt, restated in ADR-0068). Written
+    // once the network is quiescent, as an image must be.
+    exec.run(4000);
+    assert_eq!(exec.address([0u32], [2u32]), Ok(()));
+    let img = Image::encode(&exec).unwrap();
+    let loaded = Image::decode::<64>(&img, config(0)).unwrap();
+    assert_eq!(loaded.addressed_counts(), (3, 3));
+    assert_eq!(exec.addressed_counts(), (1, 1));
+}
+
 /// The descendant rule inside the loop (ADR-0054): unit 0 is fired by the injector, so its
 /// spike is no descendant; unit 1 fires from unit 0's synapse's message within the latency,
 /// so its spike is one; the tally counts one per pairing.

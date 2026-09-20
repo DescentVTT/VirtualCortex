@@ -28,8 +28,8 @@ use cortex_connectome::{CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SectionEnt
 use cortex_core::{FLAG_INHIBITORY, MODULATION_ONE_Q16};
 use cortex_homeostasis::HomeostaticDrivePool;
 use cortex_runtime::{
-    Config, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError, Window,
-    blocks_for, spikes_per_unit, synthesize,
+    Config, Delivery, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError,
+    Window, blocks_for, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -180,6 +180,7 @@ fn task(units: u32, feedback: Feedback, mirrored: bool) -> Task {
         reward_q16: REWARD_Q16,
         mirrored,
         feedback,
+        delivery: Delivery::Global,
     }
 }
 

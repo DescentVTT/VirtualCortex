@@ -63,8 +63,8 @@ pub use episode::{
     tag_burst_in, tag_discovery, tag_discovery_recent, tag_from_trace, tag_recent,
 };
 pub use executor::{
-    ACTIVATE, AmendError, Config, ConfigError, Executor, Inject, InjectError, Policy, TagError,
-    WorkerReport,
+    ACTIVATE, AddressError, AmendError, Config, ConfigError, Executor, Inject, InjectError,
+    Modulations, Policy, TagError, WorkerReport,
 };
 pub use image::{Image, ImageError, WriteAheadLog};
 pub use language::{
@@ -79,8 +79,8 @@ pub use lexicon::{
 pub use store::TermError;
 pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
 pub use task::{
-    Feedback, MAX_PERIOD, MIN_INTERVAL_TICKS, Outcome, Readout, Set, Stimulus, Task, TaskError,
-    Window, spikes_per_unit,
+    Delivery, Feedback, MAX_PERIOD, MIN_INTERVAL_TICKS, Outcome, Readout, Set, Stimulus, Task,
+    TaskError, Window, spikes_per_unit,
 };
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};
 
