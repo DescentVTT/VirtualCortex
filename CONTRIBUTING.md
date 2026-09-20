@@ -60,6 +60,13 @@ The whitepaper is the canonical architecture document and is governed by [ADR-00
 - **Make claims executable.** When you write that something exists in the tree, add a `<!-- @assert-count ... min="1" -->` directive under the sentence; when you write that something is gone, add `<!-- @assert-absence ... -->`. See the [spec-guard README](https://www.npmjs.com/package/@descent-vtt/spec-guard) for the directive syntax.
 - **English is canonical.** The Traditional Chinese file is a reader's guide; do not add layouts, figures or new claims to it.
 - **Findings, not silent fixes.** If the document and the tree disagree, record a numbered finding in §11 and fix it in a separate, visible step.
+- **The whitepaper's version moves with it** ([ADR-0064](docs/adr/0064-the-documentation-gate-and-the-version.md)).
+  A pull request that changes `docs/WHITEPAPER.md` bumps its version: **patch** for a correction
+  that changes no claim (a typo, a link, formatting), **minor** for new or changed content (a
+  finding, a row, a section, a status, a number), **major** for a restructuring that supersedes.
+  The document declares its version and its date twice — in the front matter and in the Document
+  control table — and both move together (F-43). `npm run spec:version` checks the agreement; CI
+  checks the bump against the base of the pull request.
 
 ### Briefs
 
@@ -89,7 +96,7 @@ git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff tar
 cargo test --workspace --release --locked -- --ignored exhaustive   # before a release: the whole-domain tests
 ```
 
-`npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks; `npm run spec:briefs` alone checks the live briefs; `npm run spec:decisions` alone checks that every ADR has its row in whitepaper §9 and in `docs/adr/README.md` (F-41); `npm run spec:deps` alone checks the manifests (TC-2). All exit non-zero with a file and line number when something is wrong.
+`npm run spec` is the whole documentation gate and is the single step CI runs, so a check added to it is enforced and a check outside it is enforced nowhere (F-44). The parts run alone: `npm run spec:guard` the executable assertions; `npm run spec:graph` the cross-document checks; `npm run spec:briefs` the live briefs; `npm run spec:decisions` that every ADR has its row in whitepaper §9 and in `docs/adr/README.md` (F-41); `npm run spec:version` the whitepaper's two version declarations (F-43); `npm run spec:deps` the manifests (TC-2). All exit non-zero with a file and line number when something is wrong. `npm run mutants:timeouts <mutants.out>` is not part of the gate: it reads a weekly sweep's own output and says what each of its timeouts was doing when the bound cut it ([ADR-0063](docs/adr/0063-the-sweep-reads-its-own-timeouts.md)).
 
 ## Definition of done
 

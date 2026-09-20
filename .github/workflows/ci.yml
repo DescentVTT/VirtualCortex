@@ -264,6 +264,12 @@ jobs:
         with:
           shared-key: mutants
 
+      # For the timeout reader below; the runner image ships a Node, but which one is not this
+      # repository's to assume.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "22"
+
       - name: Install cargo-mutants at its pin
         run: cargo install cargo-mutants --locked --version 27.1.0
 
@@ -323,6 +329,23 @@ jobs:
             exit 1
           fi
 
+      # `timeout.txt` is a list of names and no more, and telling a hang from a mutant that was
+      # passing slowly beside one took a round an afternoon of reading `debug.log` and the
+      # per-mutant logs by hand (F-42). The job already keeps all of it; this reads it into the
+      # artifact the next round opens. It reports and does not classify: the verdict is the
+      # triage rule of ADR-0062, applied by that round.
+      - name: What the timeouts were doing when the bound cut them (F-42, ADR-0063)
+        if: always()
+        run: |
+          mkdir -p mutants.out
+          node scripts/read-timeouts.mjs mutants.out | tee mutants.out/timeout-evidence.txt
+          {
+            echo "### Timeouts: ${{ matrix.label }}"
+            echo '```'
+            cat mutants.out/timeout-evidence.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Keep the run's outcome (survivors, timeouts, the log) for the round that reads it
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -338,6 +361,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # The base's copy of the whitepaper is read below, so the base commit must be here.
+          fetch-depth: 0
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
@@ -347,17 +373,20 @@ jobs:
       - name: Install pinned tools
         run: npm ci
 
-      - name: Executable architecture assertions
-        run: npm run spec:guard
+      # One step, not one per check. A list here and a list in `package.json` drift, and they
+      # did: `spec:decisions` was added to `npm run spec`, to CONTRIBUTING.md and to CLAUDE.md
+      # on 2026-09-20 and to this file not at all, so for two days a check three documents
+      # called blocking ran on a developer machine only (F-44). `npm run spec` is the command
+      # CONTRIBUTING.md names; every check inside it prints its own name, file and line, and
+      # `spec:scripts:test` holds the list to containing them all.
+      - name: The documentation gate (spec-guard, spec-graph, briefs, decisions, version, deps)
+        run: npm run spec
 
-      - name: Cross-document consistency
-        run: npm run spec:graph
-
-      - name: Live briefs carry their mandatory sections
-        run: npm run spec:briefs
-
-      - name: The brief checker's own tests (node:test, no dependency)
-        run: npm run spec:briefs:test
-
-      - name: State crates declare no dependencies (TC-2)
-        run: npm run spec:deps
+      # Only a pull request has a base to compare the whitepaper with; `npm run spec` above
+      # checked that its two version declarations agree, and this that the version moved with
+      # the document's content (ADR-0064).
+      - name: "The whitepaper's version moved with its content (ADR-0064)"
+        if: github.event_name == 'pull_request'
+        run: |
+          git show "${{ github.event.pull_request.base.sha }}:docs/WHITEPAPER.md" > "$RUNNER_TEMP/base-whitepaper.md"
+          npm run spec:version -- --base "$RUNNER_TEMP/base-whitepaper.md"

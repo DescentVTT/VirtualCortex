@@ -8,14 +8,19 @@
     "node": ">=22"
   },
   "scripts": {
-    "spec": "npm run spec:guard && npm run spec:graph && npm run spec:briefs && npm run spec:briefs:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:deps",
+    "spec": "npm run spec:guard && npm run spec:graph && npm run spec:briefs && npm run spec:briefs:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:version && npm run spec:version:test && npm run spec:scripts:test && npm run spec:deps && npm run mutants:timeouts:test",
     "spec:guard": "spec-guard \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --verbose --ignore-status",
     "spec:graph": "spec-graph check",
     "spec:briefs": "node scripts/check-briefs.mjs",
     "spec:briefs:test": "node --test scripts/check-briefs.test.mjs",
     "spec:decisions": "node scripts/check-decisions.mjs",
     "spec:decisions:test": "node --test scripts/check-decisions.test.mjs",
-    "spec:deps": "node scripts/check-deps.mjs"
+    "spec:version": "node scripts/check-version.mjs",
+    "spec:version:test": "node --test scripts/check-version.test.mjs",
+    "spec:scripts:test": "node --test scripts/check-scripts.test.mjs",
+    "spec:deps": "node scripts/check-deps.mjs",
+    "mutants:timeouts": "node scripts/read-timeouts.mjs",
+    "mutants:timeouts:test": "node --test scripts/read-timeouts.test.mjs"
   },
   "devDependencies": {
     "@descent-vtt/spec-graph": "0.8.0",
