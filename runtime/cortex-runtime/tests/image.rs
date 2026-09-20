@@ -942,12 +942,41 @@ fn the_log_refuses_a_unit_outside_it_before_writing() {
         "nothing was written"
     );
     assert!(matches!(log.read(5), Err(ImageError::LogCorrupt(5))));
+    assert!(!log.holds(1) && !log.holds(0), "nothing logged yet");
     assert!(log.append(1, &[7; 64]).is_ok());
+    assert!(log.holds(1), "a logged unit is held");
+    assert!(!log.holds(0), "and only that one");
     assert_eq!(log.read(1).unwrap(), [7; 64]);
     assert_eq!(log.entries(), 1);
     assert!(log.append(0, &[8; 64]).is_ok());
+    assert!(log.holds(0));
     assert_eq!(log.entries(), 2, "one entry per append");
     assert_eq!(log.read(0).unwrap(), [8; 64]);
+}
+
+/// The positioned read fills its buffer from repeated reads and reports a file that ends
+/// first as `UnexpectedEof`, on every platform (ADR-0062): the entry is cut in half behind
+/// the log's back, and the read of it fails closed instead of returning a short record.
+#[test]
+fn a_log_entry_the_file_no_longer_holds_in_full_is_an_early_end_not_a_short_record() {
+    let path = scratch("short.wal");
+    let mut log = WriteAheadLog::create(&path, 2).unwrap();
+    assert!(log.append(1, &[9; 64]).is_ok());
+    assert_eq!(log.read(1).unwrap(), [9; 64]);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(40)
+        .unwrap();
+    assert!(
+        matches!(
+            log.read(1),
+            Err(ImageError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof
+        ),
+        "a half entry is an early end"
+    );
+    assert!(log.holds(1), "the log's own index is unchanged");
 }
 
 #[test]

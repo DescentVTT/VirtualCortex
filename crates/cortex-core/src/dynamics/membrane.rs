@@ -356,6 +356,29 @@ mod tests {
         );
     }
 
+    /// The rule is "at or above": a soma that lands exactly on the threshold fires. From every
+    /// compartment at 1.0 with no input, one tick leaves the soma at 1.0 less its own leak
+    /// (2^-11) and the two couplings' share of the compartments' leaks (2^-13 and 2^-14),
+    /// which is 0xFFD4, worked by hand from the rule before the number was pinned (ADR-0062).
+    #[test]
+    fn a_soma_that_lands_exactly_on_a_positive_threshold_fires_and_one_lsb_short_does_not() {
+        const LANDING: i32 = 0xFFD4;
+        for (thresh, fires) in [(LANDING, true), (0xFFD5, false)] {
+            let mut u = unit();
+            u.v_thresh = thresh;
+            u.v_soma = Q16_ONE;
+            u.v_basal = Q16_ONE;
+            u.v_apical = Q16_ONE;
+            assert_eq!(u.integrate(0, 0, 7), fires, "threshold {thresh:#x}");
+            if fires {
+                assert_eq!(u.v_soma, V_RESET);
+                assert_eq!(u.last_soma_spike_tick, 7);
+            } else {
+                assert_eq!(u.v_soma, LANDING, "the soma landed one LSB short");
+            }
+        }
+    }
+
     #[test]
     fn inputs_during_the_refractory_window_are_dropped_and_the_window_ends_on_time() {
         let mut u = unit();

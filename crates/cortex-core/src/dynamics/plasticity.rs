@@ -31,13 +31,15 @@ pub const STP_TAU_D_SHIFT: u32 = 15;
 pub fn stp_decay_factor_q16(elapsed_ticks: u32, tau_shift: u32) -> u32 {
     let mut base = Q16_ONE.saturating_sub(Q16_ONE >> tau_shift.min(16));
     let mut result = Q16_ONE;
-    let mut exp = elapsed_ticks;
-    while exp > 0 && result > 0 {
-        if exp & 1 == 1 {
+    // Binary exponentiation over the interval's significant bits, a range: the loop ends by
+    // construction, not by `exp > 0 && result > 0` (ADR-0062). A result that has reached zero
+    // stays zero through the bits that remain, so the early exit it had is not a result.
+    let bits = u32::BITS.saturating_sub(elapsed_ticks.leading_zeros());
+    for bit in 0..bits {
+        if (elapsed_ticks >> bit) & 1 == 1 {
             result = result.saturating_mul(base) >> 16;
         }
         base = base.saturating_mul(base) >> 16;
-        exp >>= 1;
     }
     result as u32
 }
@@ -291,6 +293,50 @@ mod prop {
         for &tau in [0u32, 1, 11, 14, 15, 16, 31, 63, u32::MAX].iter() {
             assert_eq!(stp_decay_factor_q16(0, tau), 0x0001_0000);
             assert_eq!(stp_decay_factor_q16(u32::MAX, tau), 0);
+        }
+    }
+
+    /// The decay factor before ADR-0062: the same exponentiation ended by a comparison alone,
+    /// `exp > 0 && result > 0`, kept here as the oracle the range form is held to.
+    fn decay_factor_before_the_range(elapsed_ticks: u32, tau_shift: u32) -> u32 {
+        let mut base = Q16_ONE.saturating_sub(Q16_ONE >> tau_shift.min(16));
+        let mut result = Q16_ONE;
+        let mut exp = elapsed_ticks;
+        while exp > 0 && result > 0 {
+            if exp & 1 == 1 {
+                result = result.saturating_mul(base) >> 16;
+            }
+            base = base.saturating_mul(base) >> 16;
+            exp >>= 1;
+        }
+        result as u32
+    }
+
+    #[test]
+    fn the_decay_factor_over_a_range_of_bits_is_the_previous_form_bit_for_bit() {
+        let taus = [0u32, 1, 11, 14, 15, 16, 17, 31, 63, u32::MAX];
+        for &elapsed in U32_LATTICE.iter() {
+            for &tau in taus.iter() {
+                assert_eq!(
+                    stp_decay_factor_q16(elapsed, tau),
+                    decay_factor_before_the_range(elapsed, tau),
+                    "{elapsed} {tau}"
+                );
+            }
+        }
+        let mut rng = Lcg::new(0x0062);
+        for _ in 0..200_000 {
+            let elapsed = rng.u32_edge_biased();
+            let tau = if rng.below(4) == 0 {
+                rng.next_u32()
+            } else {
+                rng.below(20)
+            };
+            assert_eq!(
+                stp_decay_factor_q16(elapsed, tau),
+                decay_factor_before_the_range(elapsed, tau),
+                "{elapsed} {tau}"
+            );
         }
     }
 
