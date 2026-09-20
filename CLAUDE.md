@@ -87,7 +87,11 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
   tests. A wait on another thread is the runtime's protocol and lives there only. The weekly
   sweep's `timeout.txt` is the evidence, read by the triage rule of
   [ADR-0062](docs/adr/0062-the-first-complete-sweeps-list.md): a directive-class timeout is a
-  rewrite held to its previous form bit for bit, an inherent one is a detection and stays.
+  rewrite held to its previous form bit for bit, an inherent one is a detection and stays. The job
+  writes `timeout-evidence.txt` beside it — each timeout's window, what ran in the shard's other
+  slot and whether its test run was still finishing tests
+  ([ADR-0063](docs/adr/0063-the-sweep-reads-its-own-timeouts.md), F-42); `npm run mutants:timeouts`
+  is the same reading on a downloaded artifact.
 - State crates declare no dependencies (`npm run spec:deps` holds it). The runtime crate `runtime/cortex-runtime` composes
   them ([ADR-0023](docs/adr/0023-executor.md)) and is the only place `unsafe` is allowed, under
   that ADR's invariant: a `&mut` to a record never overlaps another reference to it.
@@ -151,8 +155,10 @@ figure is recorded there as not admissible and is never written into the whitepa
 
 `npm run spec` is `spec:guard` (executable assertions in the documents against `crates/`),
 `spec:graph` (cross-document consistency: links, ADR lifecycle, open obligations) and
-`spec:briefs` (every live brief carries its mandatory sections, and from brief 028 a Latest ≠ Newest standing directive; `spec:briefs:test` tests the checker), `spec:decisions` (every ADR has its row in whitepaper §9 and in `docs/adr/README.md`, F-41; `spec:decisions:test` tests the checker) and `spec:deps` (state crates declare
+`spec:briefs` (every live brief carries its mandatory sections, and from brief 028 a Latest ≠ Newest standing directive; `spec:briefs:test` tests the checker), `spec:decisions` (every ADR has its row in whitepaper §9 and in `docs/adr/README.md`, F-41; `spec:decisions:test` tests the checker), `spec:version` (the whitepaper's front matter and its Document control table declare the same version and date, F-43; on a pull request CI runs it again against the base, and a change to the document with its version left behind fails, [ADR-0064](docs/adr/0064-the-documentation-gate-and-the-version.md)) and `spec:deps` (state crates declare
 no dependencies, TC-2). Each fails with a file and line.
+
+CI runs `npm run spec`, one step and the same command, so a check inside it is enforced and a check outside it is enforced nowhere: `spec:decisions` was added to the gate and to three documents on 2026-09-20 and to the workflow not at all (F-44). `spec:scripts:test` holds the list to running every `spec:*` and every `*:test` script.
 
 ## Workflow
 
