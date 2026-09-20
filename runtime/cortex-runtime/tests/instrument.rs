@@ -18,6 +18,15 @@
 //! test; the pull request's gate runs the geometry against the census, the rewarded run's
 //! first block at 256 units and the criterion over the pinned tables (ADR-0061). What the
 //! numbers decide, and at what scale, is stated in ADR-0066 and in whitepaper §11.1.
+//!
+//! Brief 031 (ADR-0070) asks where 256 units settle: the executor of the rewarded runs at
+//! 256 units run under the drive alone for eighty windows, the sums by polarity read per
+//! window, brief 026's clause as an integer rule over the table, and a lead-in in windows
+//! derived from it and not chosen; then the rewarded run again behind that lead-in, under
+//! a criterion written before the run (the calibration's measure at least fifty-six of
+//! sixty-four in every block). The settling and the run behind the lead-in are weekly
+//! `exhaustive` tests; the gate runs the first four windows of the settling and the rules
+//! over the pinned tables.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -3372,6 +3381,13 @@ fn the_first_four_windows_of_the_settling_at_256_units_and_the_rules_over_its_ta
     assert!(holds_through(REWARDED_1024));
     assert!(!holds_through(REWARDED_256));
     assert!(!holds_through(&[]));
+    // The criterion over the pinned run behind the lead-in, as the engine produced it.
+    assert_eq!(holds_through(LEAD_IN_256), LEAD_IN_HOLDS);
+    assert_eq!(LEAD_IN_256.len(), TRIALS / BLOCK);
+    eprintln!(
+        "DUMP leadin256 holds {LEAD_IN_HOLDS} seen {:?}",
+        LEAD_IN_256.iter().map(|b| b.6).collect::<Vec<u32>>()
+    );
     // The first four windows, run.
     let table = settling(256, SETTLING_CLAUSE_WINDOWS as u64);
     eprintln!("DUMP settling256 first four {table:?}");
@@ -3379,5 +3395,163 @@ fn the_first_four_windows_of_the_settling_at_256_units_and_the_rules_over_its_ta
         table.as_slice(),
         &SETTLING_256[..SETTLING_CLAUSE_WINDOWS],
         "settling256 first four"
+    );
+}
+
+/// The rewarded run at 256 units behind the lead-in (brief 031): ADR-0066's rewarded run in
+/// the task's order — the same prior, gain, geometry, window, trial, block, baseline,
+/// reward, seeds and four workers — with `LEAD_IN_WINDOWS` whole windows under the drive
+/// alone before the instrument's own lead-in. The run without them is
+/// `the_recalibrated_rewarded_run_at_256_units_on_four_workers_exhaustive`, held to
+/// `REWARDED_256`, ADR-0066's table, so the windows are the only difference between the
+/// two. Pinned from one run, with the trace of every trial's stimulus, selection and
+/// outcome.
+const LEAD_IN_256: &[Block] = &[
+    (
+        36,
+        34,
+        [[189, 184], [125, 172]],
+        [370, 324],
+        [1860, 1778],
+        [219, 213],
+        50,
+        51_087_300,
+        42_302_966,
+        86_187,
+        [[914_350, 828_681], [866_868, 893_382]],
+        7,
+    ),
+    (
+        29,
+        31,
+        [[151, 144], [138, 158]],
+        [338, 363],
+        [1709, 1783],
+        [197, 216],
+        44,
+        50_089_181,
+        39_078_798,
+        103_842,
+        [[760_717, 707_823], [706_612, 734_776]],
+        12,
+    ),
+    (
+        30,
+        31,
+        [[128, 124], [131, 133]],
+        [337, 359],
+        [1696, 1746],
+        [189, 180],
+        43,
+        48_848_769,
+        36_580_685,
+        -43_878,
+        [[635_297, 610_438], [618_391, 626_872]],
+        14,
+    ),
+    (
+        32,
+        28,
+        [[94, 112], [99, 140]],
+        [306, 392],
+        [1542, 1833],
+        [181, 205],
+        35,
+        47_558_929,
+        34_948_120,
+        39_078,
+        [[574_253, 570_099], [567_596, 572_557]],
+        6,
+    ),
+    (
+        26,
+        30,
+        [[106, 118], [125, 132]],
+        [328, 371],
+        [1604, 1819],
+        [189, 172],
+        41,
+        46_405_804,
+        33_764_237,
+        -39_813,
+        [[538_332, 547_718], [551_144, 564_469]],
+        12,
+    ),
+    (
+        30,
+        36,
+        [[122, 147], [80, 115]],
+        [394, 305],
+        [1798, 1599],
+        [191, 219],
+        34,
+        45_123_980,
+        32_828_499,
+        43_056,
+        [[501_695, 500_964], [538_489, 547_462]],
+        11,
+    ),
+    (
+        21,
+        30,
+        [[103, 120], [131, 126]],
+        [329, 371],
+        [1537, 1796],
+        [176, 218],
+        36,
+        44_206_626,
+        32_233_480,
+        -112_225,
+        [[496_818, 477_874], [530_668, 535_936]],
+        13,
+    ),
+    (
+        29,
+        32,
+        [[111, 126], [101, 116]],
+        [350, 349],
+        [1648, 1684],
+        [194, 197],
+        36,
+        42_882_344,
+        31_666_316,
+        27_149,
+        [[489_599, 486_545], [527_159, 509_825]],
+        7,
+    ),
+];
+const LEAD_IN_TRACE_256: u64 = 0x379636313802f88d;
+
+/// The criterion's outcome behind the lead-in, as the engine produced it: the calibration's
+/// measure is 50 of 64 in the first block, below the mark from the start, and 34 to 44
+/// after it, so it holds in no block of the run; 256 units is not usable for this task
+/// behind the lead-in the rule derived. The gate reads the rule over the pinned table.
+const LEAD_IN_HOLDS: bool = false;
+
+#[test]
+#[ignore]
+fn the_recalibrated_rewarded_run_at_256_units_behind_the_lead_in_exhaustive() {
+    let (blocks, trace) = run_behind(
+        LEAD_IN_WINDOWS,
+        256,
+        4,
+        GAIN_256,
+        BASELINE_Q16,
+        Feedback::Answer,
+        false,
+        Delivery::Global,
+        TRIALS,
+    );
+    eprintln!(
+        "DUMP leadin256 holds {} seen {:?}",
+        holds_through(&blocks),
+        blocks.iter().map(|b| b.6).collect::<Vec<u32>>()
+    );
+    pinned(
+        "instrument256 rewarded behind the lead-in",
+        &blocks,
+        trace,
+        LEAD_IN_256,
+        LEAD_IN_TRACE_256,
     );
 }
