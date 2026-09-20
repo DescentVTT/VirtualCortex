@@ -81,6 +81,13 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
   control record and derives `Debug` only (whitepaper §8.2, L-5).
 - No `unsafe` without an ADR naming the invariant and the test; `unsafe_code` is forbidden by
   `[workspace.lints]` in every state crate and the benchmark crate (ADR-0029).
+- Every loop ends by construction: a `for` over a range or a slice, a countdown by one tested for
+  zero, a scan by `get`, a recursion whose depth argument falls to a stated bound; never by an
+  ordering comparison alone on a value the body moves, and a test's loop never by the function it
+  tests. A wait on another thread is the runtime's protocol and lives there only. The weekly
+  sweep's `timeout.txt` is the evidence, read by the triage rule of
+  [ADR-0062](docs/adr/0062-the-first-complete-sweeps-list.md): a directive-class timeout is a
+  rewrite held to its previous form bit for bit, an inherent one is a detection and stays.
 - State crates declare no dependencies (`npm run spec:deps` holds it). The runtime crate `runtime/cortex-runtime` composes
   them ([ADR-0023](docs/adr/0023-executor.md)) and is the only place `unsafe` is allowed, under
   that ADR's invariant: a `&mut` to a record never overlaps another reference to it.
@@ -144,7 +151,7 @@ figure is recorded there as not admissible and is never written into the whitepa
 
 `npm run spec` is `spec:guard` (executable assertions in the documents against `crates/`),
 `spec:graph` (cross-document consistency: links, ADR lifecycle, open obligations) and
-`spec:briefs` (every live brief carries its mandatory sections, and from brief 028 a Latest ≠ Newest standing directive; `spec:briefs:test` tests the checker) and `spec:deps` (state crates declare
+`spec:briefs` (every live brief carries its mandatory sections, and from brief 028 a Latest ≠ Newest standing directive; `spec:briefs:test` tests the checker), `spec:decisions` (every ADR has its row in whitepaper §9 and in `docs/adr/README.md`, F-41; `spec:decisions:test` tests the checker) and `spec:deps` (state crates declare
 no dependencies, TC-2). Each fails with a file and line.
 
 ## Workflow

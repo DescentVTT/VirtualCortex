@@ -1,7 +1,22 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-19
 ---
+
+> **Executed 2026-09-20 in pull request #PR_NUMBER.** Writes ADR-0062 (the triage rule that tells an
+> inherent timeout from a directive-class one; the thirty-six timeouts of weekly run `35459078284`
+> classified by it, twenty-five inherent and left alone, ten directive-class and now ranges bit for
+> bit, one the instrument's; the twenty-one survivors dispositioned, ten by a test, ten by a shape
+> that has no equivalent, one by a named exclusion; the decode timeout read as a slow pass starved
+> by the hang the sweep ran beside it). Findings F-41 (§9's table lacked ADR-0061's row) resolved
+> and F-42 (a timeout that is a slow pass under a concurrent hang) recorded and left open; image
+> format 14 unchanged; the determinism pin untouched. Every deliverable is done; notes under the
+> boxes say where the tree departs from the text: the first reading was overruled at survivors 1
+> to 4 and 9 (a shape, not a test alone or an exclusion) and 18 to 21 (the loop moved into one
+> form), `convergent` was rewritten by the rule though no timeout named it, and the twenty-second
+> survivor of the latest run, `Task::coin_at`, was ADR-0061's. The report is in the pull request and
+> in `CHANGELOG.md`. The body below describes the tree before execution and is not maintained; its
+> relative links gained one `../`.
 
 # Brief 028 — The first complete sweep's list: twenty-one survivors dispositioned, and the loops whose end one operator can undo
 
@@ -11,8 +26,8 @@ date: 2026-09-19
 
 ## Mission
 
-The weekly mutation level of [ADR-0030](../docs/adr/0030-verification-governance.md) produced its
-first complete sweep on 2026-09-18 ([ADR-0058](../docs/adr/0058-the-weekly-sweep-and-its-timeouts.md)):
+The weekly mutation level of [ADR-0030](../../docs/adr/0030-verification-governance.md) produced its
+first complete sweep on 2026-09-18 ([ADR-0058](../../docs/adr/0058-the-weekly-sweep-and-its-timeouts.md)):
 3 396 of 3 396 mutants, **21 missed** and **35 timeouts**. ADR-0030 makes the survivors the next
 round's list and whitepaper §11.1 carries them as an open item; this is that round. Every survivor
 leaves it **dispositioned** — killed by a test, removed by a restructuring that leaves no
@@ -39,12 +54,12 @@ determinism pin has not moved; and this brief is archived.
   the language as the MSRV (1.85) has it, and `let` chains, which that floor refuses, are out.
 - Every claim is Implemented, Specified, Target or Hypothesis. A mutation outcome is stated with the
   run that produced it (its id and head), never from memory; a timing is CI's wall clock and is never
-  a claim about the engine ([ADR-0010](../docs/adr/0010-measured-or-target.md)).
+  a claim about the engine ([ADR-0010](../../docs/adr/0010-measured-or-target.md)).
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper §11,
   never a silent edit. An accepted ADR is history: ADR-0058's figures stay in it.
 - No `f32`/`f64`, in the crates and in the tests; every operation on a state field saturates or wraps
   by name (`clippy::arithmetic_side_effects` is denied everywhere,
-  [ADR-0029](../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line above the
+  [ADR-0029](../../docs/adr/0029-structural-enforcement.md)); a shift amount is bounded a line above the
   shift.
 - **Every loop ends by construction**: a countdown, a range, a scan by `get`, a slice's iterator, a
   recursion whose depth argument falls to a stated bound; never by a comparison alone that one
@@ -52,11 +67,11 @@ determinism pin has not moved; and this brief is archived.
   sentence with evidence, and the evidence is Context item 4.
 - 64-byte `#[repr(C, align(64))]` records with compile-time assertions; no heap types, threads or
   `unsafe` in a state crate (`unsafe_code = "forbid"`, ADR-0029).
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)). No new
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)). No new
   crate; the crate count stays 32. No dependency in a state crate (`npm run spec:deps`).
 - No record changes and the image format stays 14. **No rule's result changes**: a restructured loop
   returns bit for bit what it returned before, which its existing tests and the determinism pin of
-  [ADR-0030](../docs/adr/0030-verification-governance.md) (`PINNED_ARENA_HASH` in
+  [ADR-0030](../../docs/adr/0030-verification-governance.md) (`PINNED_ARENA_HASH` in
   `runtime/cortex-runtime/tests/differential.rs`) hold. If a change moves the pin, it is not this
   round's change.
 - A survivor's disposition follows ADR-0030 and the routine the repository already uses: **a test
@@ -66,7 +81,7 @@ determinism pin has not moved; and this brief is archived.
   reason in the file beside the pattern, the function name in the pattern, and no pattern broader
   than the mutants it names. Every pinned number an arithmetic oracle can produce is computed by that
   oracle before the test that asserts it is written.
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)).
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)).
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their
   names; no product name enters a crate.
 
@@ -158,13 +173,17 @@ move, so re-derive the two lists from the latest weekly run's `mutants-out-*` ar
 
 ## Deliverables
 
-- [ ] **The triage ADR (the next free number; `ls docs/adr`)** (`depends-on: ADR-0058`; ADR-0030 and
+- [x] **The triage ADR (the next free number; `ls docs/adr`)** (`depends-on: ADR-0058`; ADR-0030 and
   ADR-0029 named). The rule that separates an inherent timeout from a directive-class one, written
   before the classification is applied, and the classification of all 35 by it in a table (site,
   mutant, class, reason); for every directive-class loop the rewrite or the reason it keeps its
   shape; the image decode timeout explained and classified. The per-survivor dispositions, one row
   each, with the test, restructuring or exclusion that settled it and the run that shows it.
-- [ ] **Each of the 21 survivors dispositioned**, in the order the first reading suggests and
+  **Done:** [ADR-0062](../../../docs/adr/0062-the-first-complete-sweeps-list.md). The rule has five
+  kinds, in order (another thread; a test's own loop; an ordering comparison on moved state; a
+  bound the mutant removed; none of these), and was applied to the thirty-six timeouts of the
+  latest run rather than the thirty-five named here: `barrier.rs:41` had joined the list.
+- [x] **Each of the 21 survivors dispositioned**, in the order the first reading suggests and
   overruling it wherever the code says otherwise:
   - the test gaps get tests in their own crate (a runtime test never kills a state-crate mutant:
     `.cargo/mutants.toml`), each naming the boundary or behaviour it holds, with its numbers from an
@@ -178,22 +197,39 @@ move, so re-derive the two lists from the latest weekly run's `mutants-out-*` ar
     pattern that names them and nothing Linux compiles, or the loop moved into one
     platform-independent function tested on every platform, with only the positioned read and write
     gated.
-- [ ] **The directive-class loops rewritten** as ranges or countdowns where the domain gives one
+  **Done**, with the first reading overruled where the code said so: survivors 1 to 4 and 9 by a
+  shape that has no equivalent (`min`, range patterns, `max`) rather than by a test or an
+  exclusion; 8 reached by a test (65 535 samples); 15 excluded beside its entry; 18 to 21 by the
+  second answer, the loop moved into one form, with the Windows calls under distinct names so that
+  the exclusion can name nothing Linux compiles, and the old `Ok(())` entry, which silenced the
+  Unix forms, removed. The twenty-second survivor of the latest run, `Task::coin_at`, was
+  [ADR-0061](../../../docs/adr/0061-the-learning-runs-leave-the-gate.md)'s and is not this round's.
+- [x] **The directive-class loops rewritten** as ranges or countdowns where the domain gives one
   (`stp_decay_factor_q16`, `deepest`, `deepest_verdict`, the hippocampus test), every result
   bit-identical: the existing exact-step and property tests of each function hold unchanged, a
   property test over the lattice of `testkit/prop.rs` compares each rewritten function with its
   previous form over seeded inputs (the previous form kept in the test as the oracle), and the
   determinism pin does not move.
-- [ ] **The evidence.** A weekly dispatch on the round's branch after the last change: every job
+  **Done**, and `convergent` with them: the rule named it, the sweep had not, because its own
+  mutants were all caught. The pin did not move.
+- [x] **The evidence.** A weekly dispatch on the round's branch after the last change: every job
   green; the survivors only those the ADR records as findings; the timeouts only those it classifies
   as inherent or keeps with a reason. Its run id, the counts beside `35284722491`'s, and each list's
   difference are in the ADR.
-- [ ] **The documents, in the same pull request.** Whitepaper §11.1's item "The first complete
+  **Done:** the dispatched run's id, its counts and the two lists' differences are in ADR-0062's
+  section "The evidence". The decode timeout stays in `timeout.txt` by the instrument's nature
+  (F-42), recorded with its reason as this box allows.
+- [x] **The documents, in the same pull request.** Whitepaper §11.1's item "The first complete
   mutation sweep's survivors" closed with its disposition and the ADR; Appendix B's V-6 row, if the
   triage rule changes what it says; `CHANGELOG.md`; the ADR index; `CLAUDE.md` if its sentence about
   loops or the mutation gate changes. Executable directives under every sentence that claims a test
   or an exclusion exists.
-- [ ] **The brief archived** as `briefs/README.md` says, with every deliverable dispositioned.
+  **Done:** whitepaper 4.16.0 (§9's rows for ADR-0061, F-41, and ADR-0062, every ADR's row now
+  held by `scripts/check-decisions.mjs` in `npm run spec`; §11 F-41 and F-42; §11.1's item closed with eight directives under it;
+  Appendix B's V-6 row), `CHANGELOG.md`, the ADR index, `CLAUDE.md` (the loop invariant, which it
+  had not carried) and `CONTRIBUTING.md`'s code rules.
+- [x] **The brief archived** as `briefs/README.md` says, with every deliverable dispositioned.
+  **Done:** this file.
 
 ## Not empowered
 
