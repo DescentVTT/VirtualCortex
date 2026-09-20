@@ -1,7 +1,23 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-20
 ---
+
+> **Executed 2026-09-20 in pull request #73.** Writes ADR-0065 (the instrument: a set as a
+> periodic pattern of units, a readout window derived from the prior's delay band, a trial of one
+> dopamine time constant, the geometry checked against the census at both sizes, and the
+> calibration with the weights frozen: at 256 units 1.75 fails at 50 of 64 and 2.0 passes at 58,
+> at 1 024 units 1.75 passes first at 62) and ADR-0066 (the measurement through it: the rewarded
+> run reads 53 and 49 correct of the last 128 against the 80 the criterion asks for, the mirrored
+> assignment 53 and 65, the controls 51, 51, 55 and 60, the run the same on one worker and on
+> four; the rewarded clause fails at both sizes with the calibration passed, and no constant
+> moves). No finding; H-12 and H-11's synaptic half carry the outcome; image format 14 unchanged;
+> the determinism pin untouched. Every deliverable is done; notes under the boxes say where the
+> tree departs from the text: the set shape is a periodic pattern rather than a stride, since a
+> stride alone cannot name a readout that surrounds every stimulus unit on both sides, and the
+> rotation the census picks is part of the geometry's rule. The report is in the pull request
+> and in `CHANGELOG.md`. The body below describes the tree before execution and is not
+> maintained; its relative links gained one `../`.
 
 # Brief 029 — The instrument recalibrated: the same rule and the same controls, a stimulus that fires once, a readout that looks where it lands, one reward per trial, and a check that the readout can see before any reward is given
 
@@ -11,7 +27,7 @@ date: 2026-09-20
 
 ## Mission
 
-[ADR-0060](../docs/adr/0060-the-reward-path-measured.md) answered brief 027's question with a
+[ADR-0060](../../docs/adr/0060-the-reward-path-measured.md) answered brief 027's question with a
 no, and located the no in the instrument rather than in the rule: the readout counted a whole
 trial of background, the stimulus reverberated through its own quarter so that its synapses
 paired as depression under every feedback, and five trials shared one dopamine window. It named
@@ -19,7 +35,7 @@ four changes and built none. This round builds them, **changes nothing else**, a
 question again — whitepaper §11.1's **H-12**, whose own entry lists these four changes as the
 next round's protocol: does a reward change a behaviour the engine reads back from its own spike
 train?
-The rule is [ADR-0032](../docs/adr/0032-three-factor-plasticity.md)'s, untouched; the controls
+The rule is [ADR-0032](../../docs/adr/0032-three-factor-plasticity.md)'s, untouched; the controls
 are brief 027's four; the variable under test is still the reward. What is new is a step brief
 027 did not have: **before any reward is given**, the readout is shown to see the stimulus at
 all, by a calibration whose measure cannot see the answer (the weights frozen, no reward), whose
@@ -48,7 +64,7 @@ rule on this task, not about the readout. The image format stays 14 and no recor
 - Every claim is Implemented, Specified, Target or Hypothesis. What a run holds on 256 or 1 024
   units is stated as what it is, with the prior's parameters and the task's; what the same loop
   does at Appendix A's scale is a Target with the same generator
-  ([ADR-0010](../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from a
+  ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). No timing figure enters a document from a
   developer machine. No "learns", "understands" or "generalises" without the task, the accuracy,
   the trials it was counted over and the controls it held against.
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper §11.
@@ -56,10 +72,10 @@ rule on this task, not about the readout. The image format stays 14 and no recor
   tests keep pinning them; this round is compared with them, never folded into them.
 - No `f32`/`f64`, in the crates, the tests and the oracles; an accuracy is a count of trials; every
   operation on a state field saturates or wraps by name (`clippy::arithmetic_side_effects` is
-  denied everywhere, [ADR-0029](../docs/adr/0029-structural-enforcement.md)).
+  denied everywhere, [ADR-0029](../../docs/adr/0029-structural-enforcement.md)).
 - Every loop ends by construction: a countdown, a range, a scan by `get`, a slice's iterator; never
   by a comparison alone that one operator flip turns into a walk without end.
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)): the
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)): the
   selection is `cortex-basal-ganglia`'s, the modulation `cortex-neuromod`'s, the trace
   `cortex-core`'s, the task and its sets the runtime's (`runtime/cortex-runtime/src/task.rs`). No
   new crate; the crate count stays 32; no record changes; the image format stays 14.
@@ -67,19 +83,19 @@ rule on this task, not about the readout. The image format stays 14 and no recor
   rule from the prior's parameters, or picked by the calibration below from the candidates listed
   here by the measure written here; all of them are committed before the first rewarded run. What
   a rewarded run says beyond the criterion is a reading, never a reason to move a constant (brief
-  024's lesson, [ADR-0051](../docs/adr/0051-the-estimator-at-4096-units.md); brief 025's,
-  [ADR-0054](../docs/adr/0054-the-causal-count-inside-the-loop.md); brief 027's,
-  [ADR-0060](../docs/adr/0060-the-reward-path-measured.md)).
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) does not move:
+  024's lesson, [ADR-0051](../../docs/adr/0051-the-estimator-at-4096-units.md); brief 025's,
+  [ADR-0054](../../docs/adr/0054-the-causal-count-inside-the-loop.md); brief 027's,
+  [ADR-0060](../../docs/adr/0060-the-reward-path-measured.md)).
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) does not move:
   nothing here changes a rule of `cortex-core`. The mutation gate on the changed lines must pass; a
   new rule of the task module carries a test over the lattice of `testkit/prop.rs`; every number an
   arithmetic oracle can produce is computed by that oracle before the test that asserts it; a
   number only the engine produces is pinned from one run and stated as the engine's.
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive` and runs in the weekly job;
   the pull request's gate grows by at most one run (Context item 8), because the runtime's gate
-  suite is what [ADR-0058](../docs/adr/0058-the-weekly-sweep-and-its-timeouts.md)'s mutation sweep
+  suite is what [ADR-0058](../../docs/adr/0058-the-weekly-sweep-and-its-timeouts.md)'s mutation sweep
   times and multiplies.
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); no
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); no
   registry entry (F-37). Conventional Commits with a real body; never commit on `main`; the
   required checks keep their names; no product name enters a crate.
 
@@ -123,7 +139,7 @@ sentences are what to re-derive.
    `the_criterion_at_1024_units_as_written_exhaustive`), and the gate runs
    `the_first_block_of_the_rewarded_run_at_256_units` — sixty-four trials held to the first row of
    the full run's pinned table — and the criterion over the tables
-   ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+   ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
 4. **The prior's geometry and delays.** `crates/cortex-connectome/src/prior.rs`: "a local synapse
    reaches a unit within this many places on the ring" — the window is eight places on each side
    (`place = between(1, 2 × window)`); a quarter of the synapses are rewired and may land anywhere.
@@ -138,7 +154,7 @@ sentences are what to re-derive.
    `clamp(baseline + dopamine, 0, 1)`. With the baseline at zero and no reward, no weight of either
    polarity moves: the traces fill and decay and are never written. That is what lets a
    calibration read the prior's own response to a stimulus without teaching it anything.
-6. **The gain.** [ADR-0044](../docs/adr/0044-reference-network.md)'s table, spikes per window:
+6. **The gain.** [ADR-0044](../../docs/adr/0044-reference-network.md)'s table, spikes per window:
    at 256 units 555 and 489 at a gain of 1.75 against 3 156 and 2 563 at 2.0; at 1 024 units
    2 406 and 2 297 against 12 757 and 11 328 — five to six times quieter at 1.75. A quieter
    background leaves more room for a stimulus's spikes and also carries a stimulus less far;
@@ -153,7 +169,7 @@ sentences are what to re-derive.
    runtime's 1 060 mutants every week. Brief 027 put five runs of $2^{21}$ ticks at 256 units in
    the gate and the runtime suite went from 216–464 s to 709–854 s on the hosted runners, the six
    runtime shards from under two hours to 3 h 27 m – 4 h 19 m (run `35444829805`);
-   [ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md) moved those runs to the weekly
+   [ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md) moved those runs to the weekly
    job, and the suite is back at 230–437 s and the shards at 56 m – 2 h 00 m (run `35459078284`).
    This round keeps it there. A run of 512 trials of $2^{14}$ ticks is $2^{23}$ ticks, the size of
    brief 027's 1 024-unit weekly runs: the criterion's runs belong in the weekly job at both sizes,
@@ -188,7 +204,8 @@ sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The instrument ADR (the next free number; `ls docs/adr`)** (`depends-on: ADR-0060`;
+- [x] **The instrument ADR (the next free number; `ls docs/adr`)**
+  **Done as [ADR-0065](../../docs/adr/0065-the-instrument-recalibrated.md).** The set is a periodic pattern (`first`, `period`, `mask`, `count`), not a stride: a stride names a stimulus of spaced units but not a readout that surrounds every stimulus unit on both sides, which (b) needs; the geometry is periods of twenty from a rotation the census picks, and (a) to (d) are held by `the_geometry_holds_against_the_census_at_both_sizes` in the gate. One refusal for the shape (`MalformedSet`) and two for the window (`EmptyWindow`, `WindowOutsideTrial`); the lattice property is `a_set_s_units_are_exactly_the_ones_it_names`. (`depends-on: ADR-0060`;
   ADR-0059, ADR-0044, ADR-0032 and ADR-0016 named). In `runtime/cortex-runtime/src/task.rs`, sets
   that need not be contiguous — a first unit, a count and a stride, or the shape the round argues
   for — with every refusal of ADR-0059 kept and one more for a stride or shape that would place a
@@ -205,7 +222,8 @@ sentences are what to re-derive.
     within ten per cent, and none zero;
   - (d) a readout window derived from the volley's tick and the delay bands of Context item 4, the
     same window for both readouts and every trial, never adjusted from a run.
-- [ ] **The calibration, in the same ADR, before any rewarded run.** At each size and for each
+- [x] **The calibration, in the same ADR, before any rewarded run.**
+  **Done.** At 256 units 1.75 fails (50 of 64) and 2.0 passes (58); at 1 024 units 1.75 passes first (62). Both sizes have a rewarded run. At each size and for each
   candidate gain, **1.75 then 2.0**, one run of 64 trials of $2^{14}$ ticks with the stimuli in the
   task's order, the modulation baseline at **zero** and no reward (Context item 5: no weight
   moves). The measure, per trial: the two readouts' spikes in the readout window after the volley
@@ -217,13 +235,15 @@ sentences are what to re-derive.
   that no preference chooses. If neither passes at a size, the round runs no rewarded run at that
   size, records the calibration as a reading, and the ADR says what the instrument would need —
   a rewarded run through a readout that cannot see is ADR-0060 again.
-- [ ] **The constants commit.** One commit holding the whole block "written before the run": the
+- [x] **The constants commit.**
+  **Done:** `4f2da6a`, before `1780b38`, the first commit that holds a rewarded run's outcome; ADR-0066 cites both. One commit holding the whole block "written before the run": the
   geometry, the readout window, the gain the calibration picked at each size, the trial
   ($2^{14}$ ticks), the block (64), the run (512 trials), the baseline (0.5) and the reward (1.0)
   as brief 027 had them, the seeds as brief 027 had them (the prior at 22, the trials at 27), and
   the criterion's counts below. It precedes the first commit that holds a rewarded run's outcome,
   and the measurement ADR cites both commits.
-- [ ] **The measurement ADR (the number after it)** (`depends-on:` the instrument ADR; ADR-0060
+- [x] **The measurement ADR (the number after it)**
+  **Done as [ADR-0066](../../docs/adr/0066-the-reward-path-measured-again.md)**, in `runtime/cortex-runtime/tests/instrument.rs`. The rewarded clause fails at both sizes (53 and 49 of 128), the mirrored assignment 53 and 65, the controls hold (51, 51, 55, 60), the worker clause holds; the readings carry the ties per block beside ADR-0060's, since a tie is an error and the chance level of a count of a few spikes is below one half. (`depends-on:` the instrument ADR; ADR-0060
   named). In `runtime/cortex-runtime/tests/learning.rs` or a sibling test file, at both sizes, as
   weekly `exhaustive` tests: the rewarded run, the rewarded run with the assignment mirrored, the
   shuffled reward, the fixed modulation (baseline 1.0, no reward: the pair rule alone), and the
@@ -245,22 +265,26 @@ sentences are what to re-derive.
   passed, the ADR says the rule, on this task at these sizes, does not turn a reward into this
   behaviour, and names what a next round would change (a per-unit learning signal, a structural
   rule, a different task) without building it.
-- [ ] **The gate.** One test at 256 units: the rewarded run's first block, 64 trials of $2^{14}$
+- [x] **The gate.**
+  **Done:** `the_first_block_of_the_recalibrated_rewarded_run_at_256_units`, held to `REWARDED_256[..1]`; the geometry's census check, the picked gains and the criterion's oracle run nothing heavy. The suite's time before and after is in ADR-0066. One test at 256 units: the rewarded run's first block, 64 trials of $2^{14}$
   ticks, held to the first row of the weekly run's pinned table as ADR-0061's gate test is, so that
   no number is pinned twice; nothing else added to the gate. The runtime suite's time before
   and after the round, from the weekly sweep's timed step, stated in the measurement ADR.
-- [ ] **The evidence.** A weekly dispatch on the round's branch (`gh workflow run ci.yml --ref
+- [x] **The evidence.**
+  **Done:** the run ids and times are in ADR-0066. A weekly dispatch on the round's branch (`gh workflow run ci.yml --ref
   <branch>`) in which every pinned number of the exhaustive runs holds on the hosted runner and the
   mutation sweep is green; its run id, the six runtime shards' times and the weekly exhaustive
   job's time against its 120-minute bound in the measurement ADR.
-- [ ] **The documents, in the same pull request.** Whitepaper §8.8's three-factor row and §11.1's
+- [x] **The documents, in the same pull request.**
+  **Done:** whitepaper 4.17.0 (§5.2.5, §6.5 with eight directives, §8.8, §9, §11.1's H-11 and H-12), README, `CLAUDE.md`, the reader's guide, the ADR index, `CHANGELOG.md`. Whitepaper §8.8's three-factor row and §11.1's
   **H-12** (and H-11's synaptic half, which waits on it) say what is now known, with the sizes, the
   calibration and the criterion; §6.5's "The loop as the runtime composes it" gains the
   calibration and the spaced stimulus; README's
   Implemented cell, `CLAUDE.md`'s opening paragraph, `docs/zh-TW`'s reader's guide, the ADR index
   and `CHANGELOG.md`. Executable directives under every sentence that claims a module, a test or a
   constant exists.
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the
+- [x] **The brief archived**
+  **Done:** this file. as `briefs/README.md` says, every deliverable dispositioned, the
   frozen banner naming the pull request, the ADRs, the calibration's outcome and the criterion's.
 
 ## Not empowered
