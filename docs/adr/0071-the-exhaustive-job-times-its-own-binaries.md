@@ -52,7 +52,7 @@ So the question — is this job growing, and where — is open, and **it is open
 - Good: the question becomes answerable, per binary, at no cost in wall clock — the lines are already printed and thrown away.
 - Good: the artifact makes the series readable across weeks, which is the form the question needs; a round comparing two totals could not have separated content from runner.
 - Good: a round that adds runs can now state what its own runs cost, which is what briefs 029 to 032 each ask for and none could give beyond the total.
-- Neutral: the parser depends on cargo's output — the `Running` line, the `test result:` line and their order. That is the test harness's format on a pinned toolchain, not an interface; a version that changes it makes the table empty, not wrong, and the totals in the job summary would show it.
+- Neutral: the parser depends on cargo's output — the `Running` line, the `test result:` line and their order. That is the test harness's format on a pinned toolchain, not an interface; a version that changes it makes the table empty, not wrong, and the totals in the job summary would show it. A doc-test section carries no binary of its own, so it is named rather than left to inherit the previous binary's name; under `--ignored exhaustive` all thirty-three of them report none, and the naming is insurance rather than a correction.
 - Bad: nothing is fixed. If the job is growing, this round has not slowed it; it has only made the growth visible, and the next round on it pays what this one did not.
 - Bad: the step has not yet run in CI. It is written against the shape of the job's output and run end to end locally against a reconstruction of it (a total of 4 144.60 s against the 4 143 s run `35528304550` reported); its first execution in the job is the next weekly, and `if: always()` keeps it from failing one.
 
@@ -66,6 +66,6 @@ So the question — is this job growing, and where — is open, and **it is open
 ## Confirmation
 
 - `.github/workflows/ci.yml`: the `weekly` job's tee, the "What each binary of the whole-domain tests took" step and its artifact.
-- The step's own shell, extracted from the workflow and run against a reconstruction of the job's output, printing `instrument`, `reference`, `learning` and `cortex_core` with their counts and seconds and leaving out the binaries that ran none.
+- The step's own shell, extracted from the workflow and run end to end twice. Against **real** output (`cargo test --workspace --exclude cortex-runtime --release --locked -- --ignored exhaustive`, fifty binaries and thirty-three doc-test sections): one row, `cortex_core`, and nothing from the doc-tests. Against a reconstruction carrying the runtime's heavy binaries with a doc-test between two of them: `instrument` 12 in 2 480.55 s, `reference` 6 in 1 238.02 s, `cortex_core` 2 in 41.13 s and the doc-test named as its own row, totalling 21 tests in 3 759.71 s. The first pass of that second case put the doc-test's seconds in the wrong column, because its name held a space and the summary splits on fields; the name is now `doc-tests:<crate>`.
 - Whitepaper §11's F-45 and Appendix B's row for the whole-domain tests.
 - The first weekly run after this change, whose table is the first entry of the series this decision exists to build.

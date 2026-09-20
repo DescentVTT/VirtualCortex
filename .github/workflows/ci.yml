@@ -235,8 +235,14 @@ jobs:
             sub(/^[^(]*\(/, "", bin)
             sub(/\).*$/, "", bin)
             sub(/.*\//, "", bin)
+            sub(/\.exe$/, "", bin)
             sub(/-[0-9a-f]+$/, "", bin)
           }
+          # The job runs on ubuntu, so the separator is "/"; a Windows log read locally keeps
+          # its directories in the name, which is cosmetic. A doc-test section has no binary of
+          # its own, and naming it keeps the previous binary's name off it if one ever runs
+          # these tests: under `--ignored exhaustive` all thirty-three of them report none.
+          /^[[:space:]]*Doc-tests/ { bin = "doc-tests:" $2 }   # no space: the table splits on fields
           /^test result:/ {
             secs = $NF
             sub(/s$/, "", secs)
