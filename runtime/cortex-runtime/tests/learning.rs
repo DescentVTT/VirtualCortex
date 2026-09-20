@@ -28,8 +28,8 @@ use cortex_connectome::{CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SectionEnt
 use cortex_core::{FLAG_INHIBITORY, MODULATION_ONE_Q16};
 use cortex_homeostasis::HomeostaticDrivePool;
 use cortex_runtime::{
-    Config, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError, blocks_for,
-    spikes_per_unit, synthesize,
+    Config, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError, Window,
+    blocks_for, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -156,16 +156,10 @@ fn at_gain(p: &Prior, config: Config, gain: u32) -> Engine {
 fn quarters(units: u32) -> [Set; 4] {
     let len = units / 4;
     [
-        Set { first: 0, len },
-        Set { first: len, len },
-        Set {
-            first: len.saturating_mul(2),
-            len,
-        },
-        Set {
-            first: len.saturating_mul(3),
-            len,
-        },
+        Set::contiguous(0, len),
+        Set::contiguous(len, len),
+        Set::contiguous(len.saturating_mul(2), len),
+        Set::contiguous(len.saturating_mul(3), len),
     ]
 }
 
@@ -181,6 +175,7 @@ fn task(units: u32, feedback: Feedback, mirrored: bool) -> Task {
         readout: Readout::new([r0, r1]),
         drive: drive(units),
         ticks: TRIAL_TICKS,
+        window: Window::whole(TRIAL_TICKS),
         seed: SEED,
         reward_q16: REWARD_Q16,
         mirrored,

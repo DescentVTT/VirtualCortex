@@ -13,11 +13,15 @@
 //! A trial is `ticks` fine ticks: the stimulus set's units each receive the stimulus's
 //! messages before the first tick (integrated on the tick after the one that drains the
 //! injector ring, so the set fires together about twelve ticks on, as a replay does,
-//! ADR-0038), the background drive runs every tick, the train is read once at the end, the
-//! two channels select, and the reward is delivered before the next trial's first tick, inside
-//! the eligibility trace's window ([`cortex_core::ELIGIBILITY_TAU_SHIFT`]) whatever the
-//! trial's length below it. A run's `(stimulus, selection, correct)` sequence is bit-identical
-//! on every worker count, since the train is (ADR-0023, ADR-0050).
+//! ADR-0038), the background drive runs every tick, the train is read once at the end over
+//! the task's [`Window`] of the trial (the whole trial, or the ticks in which a stimulus's
+//! local synapses land; ADR-0065), the two channels select, and the reward is delivered
+//! before the next trial's first tick, inside the eligibility trace's window
+//! ([`cortex_core::ELIGIBILITY_TAU_SHIFT`]) whatever the trial's length below it. A [`Set`]
+//! is a periodic pattern of units since ADR-0065, so that a stimulus can be units spaced
+//! beyond the prior's local window, each firing once. A run's `(stimulus, selection,
+//! correct)` sequence is bit-identical on every worker count, since the train is (ADR-0023,
+//! ADR-0050).
 
 use crate::executor::{Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -45,30 +49,111 @@ pub const fn spikes_per_unit(ticks: u32) -> u32 {
     ticks.div_ceil(MIN_INTERVAL_TICKS)
 }
 
-/// A contiguous set of units, `first..first + len`.
+/// The longest period a set's pattern can have: the width of its mask.
+pub const MAX_PERIOD: u32 = 32;
+
+/// A set of units as a periodic pattern (ADR-0065): the units `first + k × period + b` for
+/// every `k` below `count` and every offset `b` below `period` whose bit of `mask` is set, in
+/// that order. A contiguous run is a period of one (`mask` 1, `count` its length), a lattice
+/// of one unit every `stride` is a period of `stride` with `mask` 1, and several roles
+/// interleaved in one period are one mask each over the same `first` and `period`; all are
+/// one shape, so the readout and the refusals read one rule. The period is at most
+/// [`MAX_PERIOD`]; a mask with a bit at or beyond the period would name a unit of the next
+/// period twice, and [`Task::check`] refuses it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Set {
     pub first: u32,
-    pub len: u32,
+    pub period: u32,
+    pub mask: u32,
+    pub count: u32,
 }
 
 impl Set {
-    /// One past the last unit, widened so that a set at the top of the index space has an end.
+    /// The contiguous run `first..first + len` (ADR-0059's shape).
+    pub const fn contiguous(first: u32, len: u32) -> Self {
+        Self {
+            first,
+            period: 1,
+            mask: 1,
+            count: len,
+        }
+    }
+
+    /// A period of at least one and at most [`MAX_PERIOD`], and a non-empty mask with no bit
+    /// at or beyond the period. `count` may be zero: an empty set, refused as one.
+    pub const fn is_well_formed(&self) -> bool {
+        self.period >= 1
+            && self.period <= MAX_PERIOD
+            && self.mask != 0
+            // `checked_shr` is `None` at a shift of the whole width, where any mask fits.
+            && matches!(self.mask.checked_shr(self.period), None | Some(0))
+    }
+
+    /// The units of one period: the set bits of the mask.
+    pub const fn per_period(&self) -> u32 {
+        self.mask.count_ones()
+    }
+
+    /// The units the set names, widened.
+    pub const fn len(&self) -> u64 {
+        (self.count as u64).saturating_mul(self.per_period() as u64)
+    }
+
+    /// True for a set that names no unit.
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// One past the last unit, widened so that a set at the top of the index space has an
+    /// end; `first` for an empty set.
     pub const fn end(&self) -> u64 {
-        (self.first as u64).wrapping_add(self.len as u64)
+        let Some(last_period) = self.count.checked_sub(1) else {
+            return self.first as u64;
+        };
+        if self.mask == 0 {
+            return self.first as u64;
+        }
+        let top = 31u32.wrapping_sub(self.mask.leading_zeros());
+        (self.first as u64)
+            .saturating_add((last_period as u64).saturating_mul(self.period as u64))
+            .saturating_add(top as u64)
+            .saturating_add(1)
     }
 
-    /// True for a unit of the set.
+    /// True for a unit of the set: at or after `first`, in a period below `count`, at an
+    /// offset the mask names. A set with no period names nothing.
     pub const fn contains(&self, unit: u32) -> bool {
-        unit >= self.first && (unit as u64) < self.end()
+        let Some(offset) = unit.checked_sub(self.first) else {
+            return false;
+        };
+        // `checked_div` and `checked_rem` are `None` at a period of zero.
+        let (Some(k), Some(b)) = (
+            offset.checked_div(self.period),
+            offset.checked_rem(self.period),
+        ) else {
+            return false;
+        };
+        k < self.count && matches!(self.mask.checked_shr(b), Some(bit) if bit & 1 == 1)
     }
 
-    /// True when the two sets share a unit; an empty set shares none.
-    pub const fn overlaps(&self, other: &Set) -> bool {
-        self.len != 0
-            && other.len != 0
-            && (self.first as u64) < other.end()
-            && (other.first as u64) < self.end()
+    /// The set's units in order, period by period and offset by offset within a period;
+    /// none for a set the rule refuses, so that no malformed period is walked.
+    pub fn units(&self) -> impl Iterator<Item = u32> + '_ {
+        let count = if self.is_well_formed() { self.count } else { 0 };
+        (0..count).flat_map(move |k| {
+            let base = self.first.wrapping_add(k.wrapping_mul(self.period));
+            (0..self.period)
+                .filter(move |&b| matches!(self.mask.checked_shr(b), Some(bit) if bit & 1 == 1))
+                .map(move |b| base.wrapping_add(b))
+        })
+    }
+
+    /// True when the two sets share a unit; an empty set shares none. This set's units are
+    /// tested against the other's membership, so the scan is bounded by this set's length,
+    /// and a caller that knows the smaller set asks it (as [`Task::check`] does, the stimuli
+    /// before the readouts).
+    pub fn overlaps(&self, other: &Set) -> bool {
+        self.units().any(|unit| other.contains(unit))
     }
 }
 
@@ -88,15 +173,36 @@ impl Stimulus {
     pub fn inject(&self, inject: &Inject) -> Result<u32, InjectError> {
         let message = spike_message(self.efficacy_q16, false);
         let mut sent = 0u32;
-        for k in 0..self.set.len {
-            // Below the arena, which `Task::check` bounded below `u32::MAX`.
-            let unit = self.set.first.wrapping_add(k);
+        // Every unit below the arena, which `Task::check` bounded.
+        for unit in self.set.units() {
             for _ in 0..self.messages {
                 inject.inject(unit, message)?;
                 sent = sent.saturating_add(1);
             }
         }
         Ok(sent)
+    }
+}
+
+/// The sub-window of a trial the readout counts (ADR-0065): the ticks from `from` after the
+/// trial's first tick, `ticks` long. [`Window::whole`] is the trial itself, ADR-0059's readout;
+/// a window derived from the prior's delay bands reads the ticks in which a stimulus's local
+/// synapses land and leaves the rest of the trial's background out of the count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Window {
+    pub from: u32,
+    pub ticks: u32,
+}
+
+impl Window {
+    /// The whole trial of `ticks` ticks.
+    pub const fn whole(ticks: u32) -> Self {
+        Self { from: 0, ticks }
+    }
+
+    /// One past the window's last tick, from the trial's first, widened.
+    pub const fn end(&self) -> u64 {
+        (self.from as u64).wrapping_add(self.ticks as u64)
     }
 }
 
@@ -167,6 +273,32 @@ impl Readout {
         counts
     }
 
+    /// The spikes of each set among the entries of `train` whose tick is within `ticks` of
+    /// `start`, where the train may hold entries after the window (ADR-0065): the scan runs
+    /// from the newest entry back, passes over the entries after the window and stops at the
+    /// first one before it. Which side an entry is on is the sign of its wrapping distance
+    /// from `start` read as `i32`, so the train's span must be below $2^{31}$ ticks (§8.4).
+    /// On a train read at the trial's end with the whole trial as the window, this is
+    /// [`count`](Self::count).
+    pub fn count_window(&self, train: &[(u32, u32)], start: u32, ticks: u32) -> [u32; 2] {
+        let mut counts = [0u32; 2];
+        for &(tick, unit) in train.iter().rev() {
+            let distance = tick.wrapping_sub(start);
+            if (distance as i32) < 0 {
+                break;
+            }
+            if distance >= ticks {
+                continue;
+            }
+            for (count, set) in counts.iter_mut().zip(self.sets.iter()) {
+                if set.contains(unit) {
+                    *count = count.saturating_add(1);
+                }
+            }
+        }
+        counts
+    }
+
     /// The selection from two counts: each channel's own count into its direct drive, the
     /// other's into its indirect drive, and `compute_gating` on both; the channel selected, or
     /// none when neither is or both are.
@@ -209,17 +341,25 @@ pub enum TaskError {
     NoStimulus,
     /// A stimulus or readout set of no units.
     EmptySet,
+    /// A set whose pattern the rule refuses (ADR-0065): a period of zero or beyond the mask's
+    /// width, a mask of no bit, or a mask with a bit at or beyond the period, which would name
+    /// a unit of the next period twice.
+    MalformedSet,
     /// A set that reaches past the unit arena.
     SetOutsideArena,
     /// Two of the four sets share a unit.
     SetsOverlap,
     /// A trial of no ticks.
     NoTicks,
+    /// A readout window of no ticks: every trial a tie.
+    EmptyWindow,
+    /// A readout window that ends after the trial, where the train holds nothing yet.
+    WindowOutsideTrial,
     /// The executor's train holds fewer spikes than a trial can produce
     /// (`units × spikes_per_unit(ticks)`), so a trial could be mis-read rather than read.
     TrainTooSmall,
-    /// A readout set whose count could reach the drive's width (`i16::MAX` spikes), where two
-    /// counts would tie at the saturation.
+    /// A readout set whose count over the window could reach the drive's width (`i16::MAX`
+    /// spikes), where two counts would tie at the saturation.
     CountBeyondWidth,
     /// A reward magnitude below zero: the sign is the outcome's, never the constant's.
     NegativeReward,
@@ -246,7 +386,7 @@ pub struct Outcome {
     pub trial: u64,
     /// The stimulus presented, 0 or 1.
     pub stimulus: u8,
-    /// The trial's spikes in each readout set.
+    /// The spikes in each readout set within the task's window of the trial.
     pub counts: [u32; 2],
     /// The readout selected, or none at a tie.
     pub selection: Option<u8>,
@@ -271,6 +411,9 @@ pub struct Task {
     pub drive: Drive,
     /// Ticks per trial, at least one.
     pub ticks: u32,
+    /// The sub-window of the trial the readout counts, inside the trial and at least one tick
+    /// long; [`Window::whole`] of `ticks` counts the whole trial.
+    pub window: Window,
     /// The seed the trial's stimulus and the shuffled coin are drawn from.
     pub seed: u64,
     /// The reward's magnitude, Q16.16, at least zero; the sign is the outcome's.
@@ -301,10 +444,11 @@ impl Task {
         (mix64(self.seed ^ trial) >> 32) & 1 == 1
     }
 
-    /// What a run needs: every set non-empty and inside `exec`'s arena, no two sharing a
-    /// unit, a stimulus with a message, a trial with a tick, a train that holds the most
-    /// spikes a trial can produce, a readout count that cannot reach the drive's width, and
-    /// a reward that is delivered only where it can do something.
+    /// What a run needs: every set well-formed, non-empty and inside `exec`'s arena, no two
+    /// sharing a unit, a stimulus with a message, a trial with a tick, a readout window with a
+    /// tick and inside the trial, a train that holds the most spikes a trial can produce, a
+    /// readout count that cannot reach the drive's width, and a reward that is delivered
+    /// only where it can do something.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
         let sets = [
@@ -314,7 +458,10 @@ impl Task {
             self.readout.sets[1],
         ];
         for set in &sets {
-            if set.len == 0 {
+            if !set.is_well_formed() {
+                return Err(TaskError::MalformedSet);
+            }
+            if set.is_empty() {
                 return Err(TaskError::EmptySet);
             }
             if set.end() > units {
@@ -334,15 +481,24 @@ impl Task {
         if self.ticks == 0 {
             return Err(TaskError::NoTicks);
         }
+        if self.window.ticks == 0 {
+            return Err(TaskError::EmptyWindow);
+        }
+        if self.window.end() > u64::from(self.ticks) {
+            return Err(TaskError::WindowOutsideTrial);
+        }
         let per_unit = u64::from(spikes_per_unit(self.ticks));
         if (exec.train_capacity() as u64) < units.saturating_mul(per_unit) {
             return Err(TaskError::TrainTooSmall);
         }
+        // The count is the window's, so its bound is one spike per refractory interval of
+        // the window per unit; for the whole trial it is the trial's.
+        let per_window = u64::from(spikes_per_unit(self.window.ticks));
         if self
             .readout
             .sets
             .iter()
-            .any(|set| u64::from(set.len).saturating_mul(per_unit) > i16::MAX as u64)
+            .any(|set| set.len().saturating_mul(per_window) > i16::MAX as u64)
         {
             return Err(TaskError::CountBeyondWidth);
         }
@@ -360,9 +516,10 @@ impl Task {
         Ok(())
     }
 
-    /// One trial: the stimulus injected, `ticks` ticks under the drive, the train read once,
-    /// the selection, and the reward delivered between ticks, its sign by `feedback`. Refused
-    /// as `check` refuses, and when the injector refuses a message.
+    /// One trial: the stimulus injected, `ticks` ticks under the drive, the train read once
+    /// over the task's window of the trial, the selection, and the reward delivered between
+    /// ticks, its sign by `feedback`. Refused as `check` refuses, and when the injector
+    /// refuses a message.
     pub fn trial<const CAP: usize>(
         &mut self,
         exec: &mut Executor<CAP>,
@@ -377,8 +534,13 @@ impl Task {
             self.drive.step(&inject, exec.ticks())?;
             exec.tick();
         }
-        // The train's stamp is the tick's low word (§8.4), as `start` is read here.
-        let counts = self.readout.count(exec.train(), start as u32, self.ticks);
+        // The train's stamp is the tick's low word (§8.4), as `start` is read here; the
+        // window's first tick is inside the trial, which `check` held.
+        let counts = self.readout.count_window(
+            exec.train(),
+            (start as u32).wrapping_add(self.window.from),
+            self.window.ticks,
+        );
         let selection = self.readout.select(counts);
         let correct = selection == Some(self.answer(stimulus));
         let positive = match self.feedback {
@@ -428,7 +590,17 @@ mod tests {
     const REWARD: i32 = 0x4000;
 
     fn set(first: u32, len: u32) -> Set {
-        Set { first, len }
+        Set::contiguous(first, len)
+    }
+
+    /// A lattice of `len` units, one every `stride` from `first`.
+    fn lattice(first: u32, len: u32, stride: u32) -> Set {
+        Set {
+            first,
+            period: stride,
+            mask: 1,
+            count: len,
+        }
     }
 
     fn stimulus(first: u32) -> Stimulus {
@@ -471,6 +643,7 @@ mod tests {
                 seed: 0,
             },
             ticks: TICKS,
+            window: Window::whole(TICKS),
             seed: 0,
             reward_q16: REWARD,
             mirrored: false,
@@ -481,11 +654,9 @@ mod tests {
     /// Cues every unit of `set` through the injector, as a stimulus would.
     fn cue(exec: &Executor<8>, set: Set) {
         let inject = exec.injector();
-        for k in 0..set.len {
+        for unit in set.units() {
             for _ in 0..2 {
-                inject
-                    .inject(set.first.wrapping_add(k), spike_message(CUE_Q16, false))
-                    .unwrap();
+                inject.inject(unit, spike_message(CUE_Q16, false)).unwrap();
             }
         }
     }
@@ -517,6 +688,116 @@ mod tests {
             "the end past the index space is widened"
         );
         assert!(top.contains(u32::MAX) && !top.contains(u32::MAX - 2));
+        assert_eq!(s.len(), 4);
+        assert!(!s.is_empty() && set(5, 0).is_empty());
+        assert_eq!(s.units().collect::<Vec<u32>>(), [4, 5, 6, 7]);
+        assert_eq!(set(5, 0).units().count(), 0);
+        assert_eq!(set(5, 0).end(), 5, "an empty set ends where it starts");
+    }
+
+    /// The periodic shape (ADR-0065): a lattice names one unit every stride, a mask names
+    /// several offsets of one period, and two masks over one period interleave without
+    /// sharing a unit.
+    #[test]
+    fn a_periodic_set_names_exactly_the_units_of_its_pattern() {
+        let a = lattice(0, 3, 20);
+        assert_eq!(a.units().collect::<Vec<u32>>(), [0, 20, 40]);
+        assert_eq!((a.len(), a.per_period(), a.end()), (3, 1, 41));
+        assert!(a.contains(0) && a.contains(20) && a.contains(40));
+        assert!(!a.contains(1) && !a.contains(19) && !a.contains(21) && !a.contains(60));
+        let b = lattice(11, 3, 20);
+        assert_eq!(b.units().collect::<Vec<u32>>(), [11, 31, 51]);
+        assert!(!a.overlaps(&b) && !b.overlaps(&a));
+        // Odd offsets but 11, and even offsets but 0, over the same period: the two
+        // readouts of brief 029's geometry, disjoint from the lattices and from each other.
+        let odd = Set {
+            first: 0,
+            period: 20,
+            mask: 0xAA2AA,
+            count: 3,
+        };
+        let even = Set {
+            first: 0,
+            period: 20,
+            mask: 0x55554,
+            count: 3,
+        };
+        assert_eq!(
+            odd.units().take(10).collect::<Vec<u32>>(),
+            [1, 3, 5, 7, 9, 13, 15, 17, 19, 21]
+        );
+        assert_eq!(
+            even.units().take(10).collect::<Vec<u32>>(),
+            [2, 4, 6, 8, 10, 12, 14, 16, 18, 22]
+        );
+        assert_eq!((odd.len(), even.len()), (27, 27));
+        assert_eq!((odd.per_period(), even.per_period()), (9, 9));
+        assert_eq!((odd.end(), even.end()), (60, 59));
+        assert!(odd.contains(59) && !odd.contains(60) && !odd.contains(51));
+        assert!(even.contains(58) && !even.contains(59) && !even.contains(40));
+        for (x, y) in [
+            (&a, &odd),
+            (&a, &even),
+            (&b, &odd),
+            (&b, &even),
+            (&odd, &even),
+        ] {
+            assert!(!x.overlaps(y) && !y.overlaps(x), "{x:?} {y:?}");
+        }
+        assert!(odd.overlaps(&set(0, 2)), "a run over unit 1");
+        assert!(!odd.overlaps(&set(0, 1)), "a run of unit 0 alone");
+        assert!(a.overlaps(&lattice(20, 1, 7)), "one unit in common");
+        assert!(!a.overlaps(&lattice(21, 4, 20)));
+        assert!(
+            lattice(0, 4, 6).overlaps(&lattice(3, 4, 9)),
+            "12 is on both lattices"
+        );
+        assert!(
+            !lattice(0, 2, 6).overlaps(&lattice(3, 2, 9)),
+            "one period short of 12"
+        );
+        // The rule's bounds.
+        assert!(a.is_well_formed() && odd.is_well_formed() && set(5, 0).is_well_formed());
+        let malformed = [
+            Set { period: 0, ..a },
+            Set { period: 33, ..a },
+            Set { mask: 0, ..a },
+            Set {
+                period: 2,
+                mask: 0b100,
+                ..a
+            },
+            Set {
+                period: 20,
+                mask: 1 << 20,
+                ..a
+            },
+        ];
+        for s in malformed {
+            assert!(!s.is_well_formed(), "{s:?}");
+            assert_eq!(s.units().count(), 0, "a refused set is not walked: {s:?}");
+        }
+        let widest = Set {
+            first: 0,
+            period: 32,
+            mask: u32::MAX,
+            count: 2,
+        };
+        assert!(widest.is_well_formed(), "every offset of a period of 32");
+        assert_eq!((widest.len(), widest.end()), (64, 64));
+        assert_eq!(widest.units().count(), 64);
+        assert!(
+            Set {
+                period: 2,
+                mask: 0b11,
+                ..a
+            }
+            .is_well_formed()
+        );
+        assert!(
+            !Set { period: 0, ..a }.contains(0),
+            "no period names nothing"
+        );
     }
 
     #[test]
@@ -564,7 +845,65 @@ mod tests {
         t.ticks = 0;
         assert_eq!(t.check(&exec), Err(TaskError::NoTicks));
         let mut t = ok;
+        t.stimuli[0].set = Set {
+            period: 0,
+            ..t.stimuli[0].set
+        };
+        assert_eq!(t.check(&exec), Err(TaskError::MalformedSet), "no period");
+        let mut t = ok;
+        t.readout = Readout::new([
+            Set {
+                period: 2,
+                mask: 0b100,
+                ..set(4, 2)
+            },
+            set(12, 4),
+        ]);
+        assert_eq!(
+            t.check(&exec),
+            Err(TaskError::MalformedSet),
+            "a mask bit at the period would name a unit of the next period twice"
+        );
+        let mut t = ok;
+        t.readout = Readout::new([
+            Set {
+                mask: 0,
+                ..set(4, 4)
+            },
+            set(12, 4),
+        ]);
+        assert_eq!(t.check(&exec), Err(TaskError::MalformedSet), "no bit");
+        let mut t = ok;
+        t.window = Window { from: 0, ticks: 0 };
+        assert_eq!(t.check(&exec), Err(TaskError::EmptyWindow));
+        let mut t = ok;
+        t.window = Window {
+            from: TICKS - 8,
+            ticks: 8,
+        };
+        assert_eq!(t.check(&exec), Ok(()), "a window that ends with the trial");
+        t.window = Window {
+            from: TICKS - 8,
+            ticks: 9,
+        };
+        assert_eq!(t.check(&exec), Err(TaskError::WindowOutsideTrial));
+        t.window = Window {
+            from: TICKS,
+            ticks: 1,
+        };
+        assert_eq!(t.check(&exec), Err(TaskError::WindowOutsideTrial));
+        t.window = Window {
+            from: u32::MAX,
+            ticks: u32::MAX,
+        };
+        assert_eq!(
+            t.check(&exec),
+            Err(TaskError::WindowOutsideTrial),
+            "the end is widened, not wrapped"
+        );
+        let mut t = ok;
         t.ticks = 2 * MIN_INTERVAL_TICKS;
+        t.window = Window::whole(t.ticks);
         assert_eq!(
             t.check(&exec),
             Ok(()),
@@ -591,6 +930,7 @@ mod tests {
         let mut t = ok;
         t.readout = Readout::new([set(4, 4), set(16, 32_768)]);
         t.ticks = 1;
+        t.window = Window::whole(1);
         assert_eq!(
             t.check(&wide),
             Err(TaskError::CountBeyondWidth),
@@ -598,12 +938,30 @@ mod tests {
         );
         t.readout = Readout::new([set(4, 4), set(16, 32_767)]);
         assert_eq!(t.check(&wide), Ok(()), "one fewer fits");
+        // A lattice's count is its units', not its span's: 10 923 units at three spikes
+        // each reach the width and 10 922 do not.
+        t.ticks = 2 * MIN_INTERVAL_TICKS + 1;
+        t.window = Window::whole(t.ticks);
+        t.readout = Readout::new([set(4, 4), lattice(16, 10_923, 4)]);
+        assert_eq!(t.check(&wide), Err(TaskError::CountBeyondWidth));
+        t.readout = Readout::new([set(4, 4), lattice(16, 10_922, 4)]);
+        assert_eq!(t.check(&wide), Ok(()));
+        t.readout = Readout::new([set(4, 4), set(16, 32_767)]);
         t.ticks = 51;
+        t.window = Window::whole(51);
         assert_eq!(
             t.check(&wide),
             Err(TaskError::CountBeyondWidth),
             "two spikes per unit double the bound"
         );
+        t.window = Window { from: 1, ticks: 50 };
+        assert_eq!(
+            t.check(&wide),
+            Ok(()),
+            "the bound is the window's: one refractory interval, one spike per unit"
+        );
+        t.window = Window { from: 0, ticks: 51 };
+        assert_eq!(t.check(&wide), Err(TaskError::CountBeyondWidth));
         let mut t = ok;
         t.reward_q16 = -1;
         assert_eq!(t.check(&exec), Err(TaskError::NegativeReward));
@@ -793,6 +1151,120 @@ mod tests {
             [0, 0],
             "an entry after the trial stops the scan: the contract is a train read at the trial's end"
         );
+        // The window's count (ADR-0065) passes over the entries after the window and stops
+        // at the first before it: the same train, read over its sub-windows.
+        assert_eq!(
+            readout.count_window(&train, start, 8),
+            [3, 3],
+            "the whole trial: the trial's count"
+        );
+        assert_eq!(
+            readout.count_window(&train, start, 7),
+            [3, 2],
+            "the last tick left out, the entry there passed over"
+        );
+        assert_eq!(
+            readout.count_window(&train, start + 3, 2),
+            [1, 1],
+            "ticks 3 and 4 after the start: one entry each side of the wrap"
+        );
+        assert_eq!(
+            readout.count_window(&train, 3, 1),
+            [0, 1],
+            "the last tick alone: set 1's entry at unit 13"
+        );
+        assert_eq!(
+            readout.count_window(&train, start - 1, 1),
+            [1, 1],
+            "the tick before"
+        );
+        assert_eq!(
+            readout.count_window(&train, start - 9, 8),
+            [0, 0],
+            "a window before every entry"
+        );
+        assert_eq!(
+            readout.count_window(&train, 4, 8),
+            [0, 0],
+            "a window after every entry"
+        );
+        assert_eq!(readout.count_window(&[], start, 8), [0, 0]);
+        assert_eq!(
+            readout.count_window(&train, start, 0),
+            [0, 0],
+            "a window of no ticks counts nothing"
+        );
+    }
+
+    /// A trial whose window is a sub-window of the trial counts the spikes in it and no
+    /// other: a readout cued before the trial fires within the first ticks, inside a window
+    /// that opens at the trial's first tick and outside one that opens later.
+    #[test]
+    fn a_trial_counts_its_window_of_the_trial_alone() {
+        let mut exec = network(1, ONE / 2);
+        let mut t = task(Feedback::Answer);
+        t.window = Window {
+            from: 0,
+            ticks: TICKS / 2,
+        };
+        cue(&exec, t.readout.sets()[0]);
+        let early = t.trial(&mut exec, 1).unwrap();
+        assert_eq!(
+            early.counts,
+            [4, 0],
+            "the cued readout fires in the first half"
+        );
+        assert_eq!(early.selection, Some(0));
+        exec.run(400);
+        t.window = Window {
+            from: TICKS / 2,
+            ticks: TICKS / 2,
+        };
+        cue(&exec, t.readout.sets()[0]);
+        let late = t.trial(&mut exec, 1).unwrap();
+        assert_eq!(
+            late.counts,
+            [0, 0],
+            "the same spikes fall before a window that opens at the trial's midpoint"
+        );
+        assert_eq!(late.selection, None);
+        assert!(!late.correct, "a tie is an error");
+        // The whole trial reads them, as ADR-0059's readout did.
+        exec.run(400);
+        t.window = Window::whole(TICKS);
+        cue(&exec, t.readout.sets()[0]);
+        let whole = t.trial(&mut exec, 1).unwrap();
+        assert_eq!(whole.counts, [4, 0]);
+    }
+
+    /// A stimulus over a lattice injects into the lattice's units and no other: the train
+    /// of a trial holds exactly those units' spikes.
+    #[test]
+    fn a_stimulus_over_a_lattice_fires_the_lattice_s_units() {
+        let mut exec = network(1, ONE / 2);
+        let mut t = task(Feedback::Answer);
+        // Stimulus 1 on every fourth unit from 8 (8 and 12), readout 1 on 9, 13, 14 and 15.
+        t.stimuli[1].set = lattice(8, 2, 4);
+        t.readout = Readout::new([
+            set(4, 4),
+            Set {
+                first: 8,
+                period: 4,
+                mask: 0b1110,
+                count: 2,
+            },
+        ]);
+        assert_eq!(t.check(&exec), Ok(()));
+        let trial = (0..8u64).find(|&k| t.stimulus_at(k) == 1).unwrap();
+        let outcome = t.trial(&mut exec, trial).unwrap();
+        assert_eq!(outcome.stimulus, 1);
+        assert_eq!(
+            outcome.counts,
+            [0, 0],
+            "no synapses: the readouts hold nothing"
+        );
+        let fired: Vec<u32> = exec.train().iter().map(|&(_, u)| u).collect();
+        assert_eq!(fired, [8, 12], "the lattice's units, once each");
     }
 
     #[test]
@@ -973,7 +1445,8 @@ mod tests {
 }
 
 /// The lattice property (ADR-0030): over seeded trains and seeded set pairs the selection is
-/// the sign of the count difference, none exactly at equal counts.
+/// the sign of the count difference, none exactly at equal counts; over seeded periodic sets
+/// the units a set walks are exactly the ones its membership test names (ADR-0065).
 #[cfg(test)]
 mod prop {
     use super::*;
@@ -981,6 +1454,52 @@ mod prop {
         env!("CARGO_MANIFEST_DIR"),
         "/../../testkit/prop.rs"
     ));
+
+    /// A seeded well-formed set: a period in `1..=32`, a mask of bits below it, a count
+    /// below eight, a first unit below 200.
+    fn seeded_set(lcg: &mut Lcg) -> Set {
+        let period = lcg.below(MAX_PERIOD).saturating_add(1);
+        let width = if period == 32 {
+            u32::MAX
+        } else {
+            (1u32 << period).wrapping_sub(1)
+        };
+        let mask = lcg.next_u32() & width;
+        Set {
+            first: lcg.below(200),
+            period,
+            mask: if mask == 0 { 1 } else { mask },
+            count: lcg.below(8),
+        }
+    }
+
+    #[test]
+    fn a_set_s_units_are_exactly_the_ones_it_names() {
+        let mut lcg = Lcg::new(29);
+        for _ in 0..2000 {
+            let s = seeded_set(&mut lcg);
+            assert!(s.is_well_formed(), "{s:?}");
+            let units: Vec<u32> = s.units().collect();
+            // Ascending and distinct: each unit named once.
+            for pair in units.windows(2) {
+                assert!(pair[0] < pair[1], "{s:?}: {units:?}");
+            }
+            assert_eq!(units.len() as u64, s.len(), "{s:?}");
+            // The membership test over the whole range agrees with the walk.
+            let named: Vec<u32> = (0..600).filter(|&u| s.contains(u)).collect();
+            assert_eq!(named, units, "{s:?}");
+            let end = units
+                .last()
+                .map_or(u64::from(s.first), |&u| u64::from(u) + 1);
+            assert_eq!(s.end(), end, "{s:?}");
+            assert_eq!(s.is_empty(), units.is_empty());
+            // Overlap is a shared unit.
+            let o = seeded_set(&mut lcg);
+            let shared = o.units().any(|u| units.contains(&u));
+            assert_eq!(s.overlaps(&o), shared, "{s:?} {o:?}");
+            assert_eq!(o.overlaps(&s), shared);
+        }
+    }
 
     #[test]
     fn the_selection_is_the_sign_of_the_count_difference() {
@@ -992,14 +1511,8 @@ mod prop {
             let b_first = a_first.saturating_add(a_len).saturating_add(lcg.below(32));
             let b_len = lcg.below(32).saturating_add(1);
             let readout = Readout::new([
-                Set {
-                    first: a_first,
-                    len: a_len,
-                },
-                Set {
-                    first: b_first,
-                    len: b_len,
-                },
+                Set::contiguous(a_first, a_len),
+                Set::contiguous(b_first, b_len),
             ]);
             // A tick-ordered train: some entries before the trial, the rest inside it.
             let start = lcg.next_u32();
@@ -1033,6 +1546,35 @@ mod prop {
                     .count() as u32,
             ];
             assert_eq!(counts, expected);
+            assert_eq!(
+                readout.count_window(&train, start, ticks),
+                expected,
+                "the whole trial as a window is the trial's count"
+            );
+            // A sub-window of the trial: the filter over it, with entries after it in the
+            // train.
+            let from = lcg.below(ticks);
+            let len = lcg.below(ticks.wrapping_sub(from)).saturating_add(1);
+            let window_start = start.wrapping_add(from);
+            let expected = [
+                train
+                    .iter()
+                    .filter(|&&(t, u)| {
+                        t.wrapping_sub(window_start) < len && readout.sets()[0].contains(u)
+                    })
+                    .count() as u32,
+                train
+                    .iter()
+                    .filter(|&&(t, u)| {
+                        t.wrapping_sub(window_start) < len && readout.sets()[1].contains(u)
+                    })
+                    .count() as u32,
+            ];
+            assert_eq!(
+                readout.count_window(&train, window_start, len),
+                expected,
+                "{from} {len}"
+            );
             let mut readout = readout;
             let selection = readout.select(counts);
             let expected = match counts[0].cmp(&counts[1]) {
@@ -1043,7 +1585,7 @@ mod prop {
             assert_eq!(selection, expected, "{counts:?}");
         }
         // The lattice of counts within the width.
-        let mut readout = Readout::new([Set { first: 0, len: 1 }, Set { first: 1, len: 1 }]);
+        let mut readout = Readout::new([Set::contiguous(0, 1), Set::contiguous(1, 1)]);
         for &a in &[0u32, 1, 2, 3, 32_766, 32_767] {
             for &b in &[0u32, 1, 2, 3, 32_766, 32_767] {
                 let expected = match a.cmp(&b) {
