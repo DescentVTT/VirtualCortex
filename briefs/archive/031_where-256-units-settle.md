@@ -169,14 +169,16 @@ quoted sentences are what to re-derive.
     any run of Deliverable C.
   - The ADR states, beside the reading, whether the sum is still falling at the eightieth window
     and at what rate per window, so that §11.1's item is discharged with a number either way.
-  - **Done as ADR-0070**, `the_settling_at_256_units_exhaustive` (`f99bd64`): the clause first
+  - **Done as ADR-0070**, `the_settling_at_256_units_exhaustive` (`8f370b7` on `main`, `f99bd64`
+    on the branch before the rebase): the clause first
     holds at the ninth window (1.82, 1.79, 1.58 and 1.44 per cent of the fifth's; the sum
     0.818 of the prior's); the lead-in derived is nine; at the eightieth the sum is 0.551 of
     the prior's and still falling by 0.24 per cent per window, decelerating from 3.86.
 - [x] **The constants commit**, preceding the first commit that holds a run of Deliverable C: the
   lead-in in windows, and the instrument's constants restated unchanged.
-  - **Done:** `b3b3cab` (`LEAD_IN_WINDOWS`, nine; the criterion's rule; `run_behind`), before
-    `4a655c7`, the first commit that holds a run behind it.
+  - **Done:** `5149dbe` on `main` (`b3b3cab` on the branch before the rebase; `LEAD_IN_WINDOWS`,
+    nine; the criterion's rule; `run_behind`), before `20da91c` (`4a655c7`), the first commit
+    that holds a run behind it; ADR-0070 cites both.
 - [x] **The instrument behind the lead-in (the same ADR or the next)**. At **256 units**, two
   runs of the task as ADR-0066 composed it, the rewarded run in the task's order, 512 trials:
   - **with** the lead-in before the first trial, and
@@ -196,7 +198,8 @@ quoted sentences are what to re-derive.
     instrument, not learning, and no clause of ADR-0066's criterion is restated or re-decided
     here.
   - **Done in ADR-0070**, `the_recalibrated_rewarded_run_at_256_units_behind_the_lead_in_exhaustive`
-    (`4a655c7`): the measure reads 50, 44, 43, 35, 41, 34, 36, 36 of 64, so the criterion
+    (`20da91c` on `main`, `4a655c7` before the rebase): the measure reads 50, 44, 43, 35, 41,
+    34, 36, 36 of 64, so the criterion
     fails at the first block and 256 units is not usable behind the lead-in; what would be
     needed is named and not built. The run **without** the lead-in is the existing weekly
     test `the_recalibrated_rewarded_run_at_256_units_on_four_workers_exhaustive`, held to
