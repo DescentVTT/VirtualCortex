@@ -25,11 +25,11 @@ use cortex_connectome::{
     CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SectionEntry, crc64, ring_distance,
 };
 use cortex_core::{FLAG_INHIBITORY, MODULATION_ONE_Q16};
-use cortex_homeostasis::HomeostaticDrivePool;
+use cortex_homeostasis::{ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, HomeostaticDrivePool};
 use cortex_neuromod::DOPAMINE_TAU_SHIFT;
 use cortex_runtime::{
     Config, Delivery, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError,
-    Window, blocks_for, spikes_per_unit, synthesize,
+    Window, blocks_for, run_driven, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -132,6 +132,23 @@ const GAIN_1024: u32 = 0x0001_C000;
 /// `the_criterion_reads_as_written` computes both from the binomial's tail in integers.
 const REWARDED_MIN: u32 = 80;
 const CONTROL_MAX: u32 = 76;
+
+// ------------------------------------------------- written before the run (brief 031)
+
+/// A window of the population tally: $2^{12 + 5}$ ticks, the cadence at which ADR-0055
+/// read the day and at which the settling is read here.
+const WINDOW_TICKS: u64 = 1 << (ACTIVITY_BIN_SHIFT + ACTIVITY_WINDOW_SHIFT);
+const _: () = assert!(WINDOW_TICKS == 1 << 17);
+/// The settling measurement's length: eighty windows, the length ADR-0055 gave 1 024 units;
+/// a run of the task is sixty-four.
+const SETTLING_WINDOWS: u64 = 80;
+/// Brief 026's clause, unchanged (ADR-0055): a window satisfies it when each of the last
+/// four windows up to and including it moved the excitatory sum by less than two per cent
+/// of the sum before those four, the prior's sum standing before the first window. The
+/// lead-in is the smallest window that satisfies it, or `SETTLING_WINDOWS` when none does
+/// up to the bound; derived, never chosen.
+const SETTLING_CLAUSE_WINDOWS: usize = 4;
+const SETTLING_CLAUSE_PER_CENT: u64 = 2;
 
 // ------------------------------------------------------------------------- the network
 
@@ -3036,4 +3053,226 @@ fn the_reading_at_256_units_under_the_addressed_delivery() {
         ADDRESSED_256.iter().map(|b| b.6).collect::<Vec<u32>>()
     );
     assert_eq!(sees, ADDRESSED_256_SEES);
+}
+
+// ------------------------------------------------ where 256 units settle (brief 031)
+
+/// One window of the settling measurement: the population's spikes over the window, read
+/// from the executor's train; the sum of the inhibitory magnitudes and the sum of the
+/// excitatory weights over the arena after it; and the fraction of units at the inhibitory
+/// rule's target over it (ADR-0057's rule at the image's period, Q16.16).
+type SettlingWindow = (u64, i64, i64, u32);
+
+/// Runs `windows` whole windows under `drive` from the executor's clock: brief 031's
+/// lead-in, in windows, which precedes the instrument's own lead-in of one readout window
+/// (`LEAD_IN`); a countdown, so it ends by construction. Not `settle`, which in
+/// `reference.rs` runs quiet until the network is quiescent.
+fn lead_in(exec: &mut Engine, drive: &Drive, windows: u64) {
+    for _ in 0..windows {
+        let until = exec.ticks().wrapping_add(WINDOW_TICKS);
+        run_driven(exec, drive, until).expect("the drive runs");
+    }
+}
+
+/// The population's spikes over `[from, to)` and the fraction of units at the target over
+/// it, read from the train, which must hold the whole window: a unit is at the target when
+/// its spikes in the window are within a factor of two of the target's count per window,
+/// `WINDOW_TICKS / period` (six at the default period of 20 000 ticks), inclusive both
+/// ways (ADR-0057). The run's ticks stay below the stamp's width, so the stamp is the tick.
+fn spikes_and_at_target(exec: &mut Engine, from: u64, to: u64) -> (u64, u32) {
+    let units = exec.units().len();
+    let period = exec.istdp_target_period_ticks();
+    // The period is at least `ISTDP_PERIOD_MIN_TICKS`, so the quotient exists.
+    let target = WINDOW_TICKS.checked_div(u64::from(period)).unwrap_or(0) as u32;
+    let mut counts = vec![0u32; units];
+    let mut spikes = 0u64;
+    for &(tick, unit) in exec.train() {
+        let tick = u64::from(tick);
+        if tick >= from && tick < to {
+            spikes = spikes.saturating_add(1);
+            if let Some(count) = counts.get_mut(unit as usize) {
+                *count = count.saturating_add(1);
+            }
+        }
+    }
+    let at_target = counts
+        .iter()
+        .filter(|&&count| count.saturating_mul(2) >= target && count <= target.saturating_mul(2))
+        .count() as u64;
+    // At most the unit count, which is below 2^16: the shift cannot wrap.
+    let fraction = (at_target << 16).checked_div(units as u64).unwrap_or(0) as u32;
+    (spikes, fraction)
+}
+
+/// The excitatory sums of a settling table, window by window.
+fn excitatory_sums(table: &[SettlingWindow]) -> Vec<i64> {
+    table.iter().map(|w| w.2).collect()
+}
+
+/// Brief 026's clause over the excitatory sums of a settling table, `prior` the sum before
+/// the first window: the smallest window (from one) at which each of the last
+/// `SETTLING_CLAUSE_WINDOWS` windows up to and including it moved the sum by less than
+/// `SETTLING_CLAUSE_PER_CENT` per cent of the sum before those windows; none when no window
+/// of the table does. Integers throughout: a move of `m` against a reference of `r` is under
+/// `p` per cent when `100 m < p r`.
+fn settled_at(prior: i64, sums: &[i64]) -> Option<usize> {
+    let sum_after = |window: usize| -> Option<i64> {
+        window
+            .checked_sub(1)
+            .map_or(Some(prior), |k| sums.get(k).copied())
+    };
+    (SETTLING_CLAUSE_WINDOWS..=sums.len()).find(|&window| {
+        let first = window.wrapping_sub(SETTLING_CLAUSE_WINDOWS);
+        let Some(reference) = sum_after(first) else {
+            return false;
+        };
+        let bound = u64::try_from(reference)
+            .unwrap_or(0)
+            .saturating_mul(SETTLING_CLAUSE_PER_CENT);
+        (first.wrapping_add(1)..=window).all(|k| {
+            match (sum_after(k), sum_after(k.wrapping_sub(1))) {
+                (Some(now), Some(before)) => now.abs_diff(before).saturating_mul(100) < bound,
+                _ => false,
+            }
+        })
+    })
+}
+
+/// The lead-in the rule derives from a settling table of `bound` windows: the window at
+/// which the clause first holds, or the bound.
+fn derived_lead_in(prior: i64, table: &[SettlingWindow], bound: u64) -> u64 {
+    settled_at(prior, &excitatory_sums(table)).map_or(bound, |window| window as u64)
+}
+
+/// The settling measurement (brief 031): the executor of the task at `units`, as `run`
+/// builds it for the rewarded runs (the prior of ADR-0044 at seed 22, the gain the
+/// calibration picked held through the image, the modulation baseline 0.5, no controller,
+/// no sleep, the inhibitory period at its default), run under the drive alone, no task and
+/// no stimulus, for `windows` whole windows from the first tick; per window the reading
+/// above. The sums before the first window are the prior's, as the calibration pinned them.
+fn settling(units: u32, windows: u64) -> Vec<SettlingWindow> {
+    let p = prior(units);
+    let mut exec = at_gain(&p, config(units, 2, BASELINE_Q16), gain(units));
+    assert_eq!(exec.homeostasis().synaptic_gain_q16, gain(units));
+    assert_eq!(exec.modulation_baseline_q16(), BASELINE_Q16);
+    let drive = drive(units);
+    let mut out = Vec::new();
+    for _ in 0..windows {
+        let from = exec.ticks();
+        let held = exec.train().len() as u64;
+        let overwritten = exec.train_overwritten();
+        lead_in(&mut exec, &drive, 1);
+        let to = exec.ticks();
+        // The ring lets go of its oldest entries once full (about 27 windows in at this
+        // size): the window is held whole when nothing let go was younger than it, that
+        // is, no more than the ring held before it.
+        assert!(
+            exec.train_overwritten().wrapping_sub(overwritten) <= held,
+            "the train held the window"
+        );
+        let (spikes, at_target) = spikes_and_at_target(&mut exec, from, to);
+        let (inhibitory, excitatory) = weights_by_polarity(&exec);
+        out.push((spikes, inhibitory, excitatory, at_target));
+    }
+    out
+}
+
+/// The prior's sums at 256 units before any window, as the calibration pinned them with
+/// the weights frozen: (inhibitory, excitatory).
+const PRIOR_SUMS_256: (i64, i64) = (CALIBRATION_256[1].0.7, CALIBRATION_256[1].0.8);
+
+/// The settling at 256 units over eighty windows, pinned from one run.
+const SETTLING_256: &[SettlingWindow] = &[
+    (3_090, 53_264_642, 56_693_908, 38_656),
+    (2_506, 53_098_805, 55_376_488, 50_944),
+    (2_656, 52_941_813, 53_987_339, 47_104),
+    (2_595, 52_826_485, 52_729_916, 48_128),
+    (2_563, 52_694_975, 51_628_294, 51_200),
+    (2_487, 52_522_141, 50_691_256, 50_944),
+    (2_481, 52_382_720, 49_769_277, 50_688),
+    (2_453, 52_253_156, 48_953_681, 51_968),
+    (2_352, 52_143_204, 48_210_448, 52_224),
+    (2_480, 52_044_866, 47_404_654, 52_480),
+    (2_371, 51_896_212, 46_688_151, 53_248),
+    (2_421, 51_755_304, 46_025_327, 50_688),
+    (2_294, 51_580_011, 45_439_030, 55_808),
+    (2_338, 51_412_291, 44_905_736, 54_016),
+    (2_225, 51_213_362, 44_393_555, 55_040),
+    (2_352, 51_077_296, 43_862_956, 54_784),
+    (2_232, 50_936_006, 43_438_627, 55_296),
+    (2_241, 50_793_923, 43_008_702, 56_832),
+    (2_182, 50_609_680, 42_622_827, 58_112),
+    (2_270, 50_460_955, 42_216_613, 56_320),
+    (2_231, 50_287_690, 41_762_576, 55_296),
+    (2_183, 50_113_080, 41_407_926, 56_064),
+    (2_228, 49_954_210, 41_091_863, 56_320),
+    (2_199, 49_811_562, 40_715_016, 57_856),
+    (2_197, 49_657_873, 40_371_087, 54_784),
+    (2_104, 49_464_144, 40_011_682, 58_112),
+    (2_236, 49_319_257, 39_669_924, 57_856),
+    (2_182, 49_077_710, 39_389_616, 56_064),
+    (2_122, 48_881_959, 39_101_242, 57_856),
+    (2_187, 48_710_409, 38_820_609, 56_320),
+    (2_102, 48_542_690, 38_573_708, 57_344),
+    (2_139, 48_373_885, 38_321_850, 58_368),
+    (2_180, 48_226_961, 38_092_697, 58_112),
+    (2_193, 48_052_772, 37_819_065, 57_344),
+    (2_033, 47_864_074, 37_591_169, 57_600),
+    (2_066, 47_670_482, 37_413_730, 58_880),
+    (2_148, 47_480_584, 37_211_645, 56_064),
+    (2_033, 47_255_921, 37_019_781, 57_600),
+    (2_180, 47_074_219, 36_819_756, 58_112),
+    (2_067, 46_845_222, 36_630_250, 59_136),
+    (2_092, 46_615_556, 36_462_159, 57_856),
+    (2_070, 46_462_487, 36_282_041, 58_880),
+    (2_110, 46_322_331, 36_112_512, 59_648),
+    (2_098, 46_128_940, 35_962_763, 59_904),
+    (2_132, 45_967_418, 35_836_423, 57_344),
+    (2_069, 45_774_994, 35_700_717, 59_392),
+    (2_122, 45_591_778, 35_540_372, 58_368),
+    (2_127, 45_405_859, 35_376_910, 57_856),
+    (2_053, 45_176_056, 35_242_937, 57_856),
+    (2_049, 45_012_321, 35_103_513, 59_904),
+    (2_105, 44_829_653, 34_983_990, 58_880),
+    (2_079, 44_638_991, 34_866_758, 59_136),
+    (1_986, 44_419_882, 34_779_473, 58_368),
+    (2_108, 44_222_708, 34_629_361, 58_368),
+    (2_025, 44_027_980, 34_503_692, 59_904),
+    (2_024, 43_793_594, 34_409_536, 58_368),
+    (2_114, 43_617_556, 34_285_231, 59_136),
+    (2_028, 43_423_068, 34_171_957, 58_624),
+    (2_034, 43_202_652, 34_074_752, 58_368),
+    (2_065, 43_029_689, 34_010_524, 59_136),
+    (2_111, 42_835_647, 33_899_485, 59_648),
+    (1_965, 42_623_357, 33_826_291, 59_392),
+    (2_090, 42_474_661, 33_741_523, 57_088),
+    (2_037, 42_257_106, 33_632_752, 60_416),
+    (2_058, 42_044_259, 33_529_204, 57_856),
+    (1_982, 41_827_754, 33_470_054, 58_112),
+    (1_952, 41_606_594, 33_381_882, 59_136),
+    (2_000, 41_402_480, 33_285_922, 58_112),
+    (2_027, 41_193_201, 33_148_561, 58_624),
+    (2_054, 40_997_922, 33_082_612, 59_648),
+    (2_055, 40_824_662, 33_027_666, 60_160),
+    (2_039, 40_611_438, 32_950_616, 57_088),
+    (2_078, 40_403_489, 32_834_325, 57_856),
+    (2_118, 40_201_031, 32_787_524, 59_136),
+    (2_145, 40_021_536, 32_740_288, 58_880),
+    (2_056, 39_824_386, 32_725_565, 59_136),
+    (2_058, 39_613_863, 32_669_906, 58_112),
+    (2_087, 39_401_641, 32_618_796, 56_832),
+    (2_035, 39_243_885, 32_595_157, 59_392),
+    (2_024, 39_053_140, 32_515_504, 56_832),
+];
+
+#[test]
+#[ignore]
+fn the_settling_at_256_units_exhaustive() {
+    let table = settling(256, SETTLING_WINDOWS);
+    eprintln!(
+        "DUMP settling256 {table:?} settled {:?} lead-in {}",
+        settled_at(PRIOR_SUMS_256.1, &excitatory_sums(&table)),
+        derived_lead_in(PRIOR_SUMS_256.1, &table, SETTLING_WINDOWS)
+    );
+    assert_eq!(table.as_slice(), SETTLING_256, "settling256");
 }
