@@ -2370,3 +2370,670 @@ fn the_addressed_criterion_and_the_sees_through_rule_read_as_written() {
         "ADR-0066's reading at 256 units: below the mark from the second block"
     );
 }
+
+// ------------------------------------------------- the measurement, addressed (ADR-0069)
+
+/// The addressed rewarded run at 1 024 units, the gain 1.75: 512 trials, eight blocks, on
+/// four workers; the same run on one worker. The other runs at 1 024 units and the one
+/// reading at 256 follow. Every table is the engine's own, pinned from one run.
+const ADDRESSED_1024: &[Block] = &[
+    (
+        24,
+        34,
+        [[363, 359], [363, 339]],
+        [1727, 1525],
+        [6138, 5469],
+        [251, 232],
+        61,
+        209840321,
+        230036999,
+        -91922,
+        [[6352193, 6767883], [6695954, 6741722]],
+        8,
+    ),
+    (
+        20,
+        31,
+        [[299, 320], [350, 328]],
+        [1572, 1676],
+        [5636, 5869],
+        [240, 263],
+        64,
+        206116890,
+        225361098,
+        -112151,
+        [[6034948, 6364842], [6315559, 6274589]],
+        8,
+    ),
+    (
+        29,
+        31,
+        [[324, 345], [291, 300]],
+        [1577, 1679],
+        [5601, 5840],
+        [251, 238],
+        62,
+        202335976,
+        221198844,
+        -87406,
+        [[5638657, 6057918], [5949954, 5968162]],
+        5,
+    ),
+    (
+        30,
+        28,
+        [[270, 248], [301, 317]],
+        [1423, 1828],
+        [5098, 6224],
+        [273, 220],
+        62,
+        198336847,
+        217793631,
+        87077,
+        [[5374260, 5860103], [5611568, 5676560]],
+        9,
+    ),
+    (
+        32,
+        30,
+        [[251, 243], [275, 276]],
+        [1530, 1732],
+        [5453, 5935],
+        [219, 225],
+        59,
+        194479928,
+        214719302,
+        80936,
+        [[5091101, 5671035], [5322333, 5360730]],
+        9,
+    ),
+    (
+        25,
+        36,
+        [[253, 247], [230, 206]],
+        [1833, 1425],
+        [6291, 5083],
+        [239, 260],
+        58,
+        190556391,
+        212037088,
+        -88451,
+        [[4808504, 5382082], [5139875, 5115799]],
+        6,
+    ),
+    (
+        29,
+        30,
+        [[245, 243], [278, 272]],
+        [1525, 1730],
+        [5328, 5911],
+        [250, 233],
+        57,
+        186505360,
+        209547846,
+        92165,
+        [[4577601, 5220432], [4896016, 4867378]],
+        3,
+    ),
+    (
+        27,
+        32,
+        [[226, 274], [246, 239]],
+        [1628, 1629],
+        [5657, 5602],
+        [228, 244],
+        58,
+        182495646,
+        207400983,
+        31411,
+        [[4416757, 5031874], [4698487, 4700314]],
+        5,
+    ),
+];
+const ADDRESSED_TRACE_1024: u64 = 0x35238a0892c87363;
+const ADDRESSED_MIRRORED_1024: &[Block] = &[
+    (
+        31,
+        34,
+        [[365, 358], [361, 342]],
+        [1727, 1525],
+        [6137, 5469],
+        [251, 232],
+        60,
+        209843510,
+        229951437,
+        84733,
+        [[6387363, 6666469], [6639144, 6784676]],
+        7,
+    ),
+    (
+        35,
+        31,
+        [[298, 312], [343, 332]],
+        [1572, 1677],
+        [5632, 5873],
+        [239, 263],
+        64,
+        206124863,
+        225217502,
+        112093,
+        [[6070946, 6240702], [6199346, 6327555]],
+        9,
+    ),
+    (
+        30,
+        31,
+        [[322, 345], [286, 296]],
+        [1577, 1679],
+        [5597, 5839],
+        [250, 240],
+        62,
+        202353296,
+        221015892,
+        27863,
+        [[5691518, 5897219], [5810546, 6047872]],
+        4,
+    ),
+    (
+        22,
+        28,
+        [[272, 237], [295, 316]],
+        [1423, 1828],
+        [5095, 6229],
+        [272, 219],
+        63,
+        198360989,
+        217641444,
+        -109934,
+        [[5439822, 5687188], [5466490, 5769290]],
+        9,
+    ),
+    (
+        22,
+        30,
+        [[259, 233], [273, 271]],
+        [1530, 1732],
+        [5451, 5935],
+        [218, 227],
+        59,
+        194505947,
+        214630001,
+        -80939,
+        [[5191866, 5472155], [5180974, 5503674]],
+        11,
+    ),
+    (
+        31,
+        36,
+        [[261, 237], [225, 213]],
+        [1833, 1425],
+        [6293, 5083],
+        [236, 255],
+        58,
+        190597661,
+        211950344,
+        86813,
+        [[4947506, 5168378], [4997364, 5266694]],
+        7,
+    ),
+    (
+        33,
+        30,
+        [[239, 235], [285, 274]],
+        [1525, 1730],
+        [5323, 5910],
+        [245, 236],
+        56,
+        186553543,
+        209439531,
+        -92165,
+        [[4711272, 4994859], [4732740, 5016482]],
+        6,
+    ),
+    (
+        32,
+        32,
+        [[236, 269], [240, 240]],
+        [1628, 1629],
+        [5652, 5592],
+        [230, 248],
+        58,
+        182553563,
+        207266033,
+        -91027,
+        [[4543951, 4792801], [4519381, 4854166]],
+        6,
+    ),
+];
+const ADDRESSED_SHUFFLED_1024: &[Block] = &[
+    (
+        25,
+        34,
+        [[365, 358], [363, 341]],
+        [1727, 1525],
+        [6138, 5469],
+        [251, 231],
+        61,
+        209836061,
+        230015138,
+        105959,
+        [[6367139, 6743062], [6659622, 6760931]],
+        7,
+    ),
+    (
+        21,
+        31,
+        [[299, 319], [344, 328]],
+        [1572, 1677],
+        [5633, 5872],
+        [240, 263],
+        64,
+        206117930,
+        225293328,
+        -47354,
+        [[6048682, 6332423], [6244718, 6296918]],
+        8,
+    ),
+    (
+        31,
+        31,
+        [[325, 347], [289, 299]],
+        [1577, 1679],
+        [5601, 5841],
+        [251, 240],
+        62,
+        202332944,
+        221115510,
+        49150,
+        [[5651943, 6023395], [5860626, 6001721]],
+        3,
+    ),
+    (
+        33,
+        28,
+        [[270, 246], [296, 317]],
+        [1423, 1829],
+        [5096, 6226],
+        [271, 220],
+        62,
+        198344261,
+        217709708,
+        111552,
+        [[5396395, 5818960], [5517275, 5713211]],
+        7,
+    ),
+    (
+        33,
+        30,
+        [[257, 244], [272, 276]],
+        [1530, 1732],
+        [5454, 5940],
+        [219, 225],
+        60,
+        194494267,
+        214590843,
+        -25029,
+        [[5131871, 5597278], [5224073, 5413314]],
+        9,
+    ),
+    (
+        25,
+        36,
+        [[256, 247], [228, 212]],
+        [1833, 1425],
+        [6290, 5079],
+        [238, 254],
+        58,
+        190568856,
+        211952745,
+        19035,
+        [[4865707, 5317038], [5048221, 5173250]],
+        6,
+    ),
+    (
+        26,
+        30,
+        [[244, 238], [285, 272]],
+        [1525, 1730],
+        [5325, 5911],
+        [251, 235],
+        57,
+        186507189,
+        209458063,
+        94524,
+        [[4625870, 5132276], [4795081, 4939273]],
+        5,
+    ),
+    (
+        27,
+        32,
+        [[228, 274], [240, 240]],
+        [1629, 1629],
+        [5658, 5600],
+        [231, 251],
+        57,
+        182504612,
+        207261475,
+        -47100,
+        [[4458442, 4929297], [4581524, 4760296]],
+        5,
+    ),
+];
+const ADDRESSED_256: &[Block] = &[
+    (
+        29,
+        34,
+        [[194, 214], [193, 196]],
+        [371, 325],
+        [1889, 1855],
+        [230, 239],
+        55,
+        52318657,
+        47323437,
+        -110011,
+        [[913694, 936764], [945767, 950517]],
+        6,
+    ),
+    (
+        21,
+        31,
+        [[132, 159], [145, 135]],
+        [337, 354],
+        [1722, 1819],
+        [233, 198],
+        44,
+        51222726,
+        41858984,
+        -112167,
+        [[711414, 712805], [753918, 729555]],
+        7,
+    ),
+    (
+        22,
+        31,
+        [[133, 151], [121, 150]],
+        [335, 362],
+        [1661, 1745],
+        [196, 223],
+        43,
+        49988841,
+        38571473,
+        19763,
+        [[619518, 639091], [630845, 612368]],
+        14,
+    ),
+    (
+        28,
+        28,
+        [[119, 114], [116, 127]],
+        [305, 392],
+        [1551, 1834],
+        [192, 163],
+        40,
+        48645459,
+        36201873,
+        -98136,
+        [[554662, 587762], [547639, 555299]],
+        13,
+    ),
+    (
+        38,
+        30,
+        [[105, 117], [92, 131]],
+        [327, 371],
+        [1593, 1787],
+        [176, 214],
+        34,
+        47196507,
+        34606708,
+        69209,
+        [[529727, 551881], [532705, 533423]],
+        7,
+    ),
+    (
+        29,
+        36,
+        [[124, 137], [95, 115]],
+        [395, 308],
+        [1797, 1595],
+        [192, 170],
+        38,
+        45894396,
+        33421695,
+        31485,
+        [[508055, 527113], [531193, 537457]],
+        8,
+    ),
+    (
+        22,
+        30,
+        [[107, 138], [105, 129]],
+        [327, 370],
+        [1590, 1786],
+        [186, 216],
+        38,
+        44392493,
+        32468169,
+        24959,
+        [[495266, 522135], [509156, 518023]],
+        12,
+    ),
+    (
+        33,
+        32,
+        [[134, 126], [100, 127]],
+        [349, 350],
+        [1592, 1702],
+        [190, 215],
+        31,
+        42961889,
+        31729687,
+        68263,
+        [[479084, 488171], [505446, 502122]],
+        6,
+    ),
+];
+
+#[test]
+#[ignore]
+fn the_addressed_rewarded_run_at_1024_units_on_four_workers_exhaustive() {
+    let (blocks, trace) = run(
+        1024,
+        4,
+        GAIN_1024,
+        BASELINE_Q16,
+        Feedback::Answer,
+        false,
+        Delivery::Addressed,
+        TRIALS,
+    );
+    pinned(
+        "addressed1024 rewarded",
+        &blocks,
+        trace,
+        ADDRESSED_1024,
+        ADDRESSED_TRACE_1024,
+    );
+}
+
+#[test]
+#[ignore]
+fn the_addressed_rewarded_run_at_1024_units_on_one_worker_is_the_same_run_exhaustive() {
+    let (blocks, trace) = run(
+        1024,
+        1,
+        GAIN_1024,
+        BASELINE_Q16,
+        Feedback::Answer,
+        false,
+        Delivery::Addressed,
+        TRIALS,
+    );
+    pinned(
+        "addressed1024 rewarded-1",
+        &blocks,
+        trace,
+        ADDRESSED_1024,
+        ADDRESSED_TRACE_1024,
+    );
+}
+
+#[test]
+#[ignore]
+fn the_addressed_mirrored_assignment_at_1024_units_exhaustive() {
+    let (blocks, trace) = run(
+        1024,
+        2,
+        GAIN_1024,
+        BASELINE_Q16,
+        Feedback::Answer,
+        true,
+        Delivery::Addressed,
+        TRIALS,
+    );
+    pinned(
+        "addressed1024 mirrored",
+        &blocks,
+        trace,
+        ADDRESSED_MIRRORED_1024,
+        0,
+    );
+}
+
+#[test]
+#[ignore]
+fn the_addressed_shuffled_reward_at_1024_units_exhaustive() {
+    let (blocks, trace) = run(
+        1024,
+        2,
+        GAIN_1024,
+        BASELINE_Q16,
+        Feedback::Shuffled,
+        false,
+        Delivery::Addressed,
+        TRIALS,
+    );
+    pinned(
+        "addressed1024 shuffled",
+        &blocks,
+        trace,
+        ADDRESSED_SHUFFLED_1024,
+        0,
+    );
+}
+
+/// The fixed modulation under the addressed delivery: no signal, so the two modulations are
+/// one number and the run is ADR-0066's fixed-modulation run, held to its table; no number
+/// is pinned twice.
+#[test]
+#[ignore]
+fn the_fixed_modulation_under_the_addressed_delivery_at_1024_units_is_the_global_form_exhaustive() {
+    let (blocks, trace) = run(
+        1024,
+        2,
+        GAIN_1024,
+        ONE,
+        Feedback::Withheld,
+        false,
+        Delivery::Addressed,
+        TRIALS,
+    );
+    pinned("addressed1024 fixed", &blocks, trace, FIXED_1024, 0);
+}
+
+/// The one reading at 256 units: the addressed rewarded run, under the sees-through rule.
+#[test]
+#[ignore]
+fn the_addressed_rewarded_run_at_256_units_exhaustive() {
+    let (blocks, trace) = run(
+        256,
+        2,
+        GAIN_256,
+        BASELINE_Q16,
+        Feedback::Answer,
+        false,
+        Delivery::Addressed,
+        TRIALS,
+    );
+    pinned("addressed256 rewarded", &blocks, trace, ADDRESSED_256, 0);
+}
+
+/// The criterion's outcome at 1 024 units under the addressed delivery, as the engine
+/// produced it: the addressed rewarded run reads 56 correct of the last 128 and the mirrored
+/// assignment 65, against the 80 the clause asks for; the addressed shuffled reward 53, the
+/// fixed modulation 60 and the global form 49, at or below 76; the run the same on one worker
+/// and on four. The rewarded clause fails at 1 024 units with the global form reproduced.
+const ADDRESSED_VERDICT_1024: AddressedVerdict = AddressedVerdict {
+    rewarded: false,
+    mirrored: false,
+    shuffled: true,
+    fixed: true,
+    global: true,
+    workers: true,
+    learned: false,
+};
+/// The reading at 256 units: the calibration's measure is 55 of 64 in the first block, below
+/// the mark, so the size is not measured under the rule written before the run, as
+/// ADR-0066's run was not.
+const ADDRESSED_256_SEES: bool = false;
+/// The gate's run: the addressed rewarded run's first block at 256 units, sixty-four trials
+/// of $2^{14}$ ticks, held to the first row of the table the full run pinned; no number is
+/// pinned twice (ADR-0061).
+#[test]
+fn the_first_block_of_the_addressed_rewarded_run_at_256_units() {
+    let (blocks, trace) = run(
+        256,
+        2,
+        GAIN_256,
+        BASELINE_Q16,
+        Feedback::Answer,
+        false,
+        Delivery::Addressed,
+        BLOCK,
+    );
+    pinned(
+        "addressed256 first block",
+        &blocks,
+        trace,
+        &ADDRESSED_256[..1],
+        0,
+    );
+}
+
+/// The criterion at 1 024 units under the addressed delivery, over the pinned tables, clause
+/// by clause; the global form is ADR-0066's rewarded run, rerun under this round's code by
+/// its own weekly test and held to its table; the worker clause is the test above that holds
+/// one worker to four workers' table.
+#[test]
+fn the_criterion_at_1024_units_under_the_addressed_delivery_as_written() {
+    let v = addressed_verdict(
+        ADDRESSED_1024,
+        ADDRESSED_MIRRORED_1024,
+        ADDRESSED_SHUFFLED_1024,
+        FIXED_1024,
+        REWARDED_1024,
+        true,
+    );
+    eprintln!("DUMP addressed1024 verdict {v:?}");
+    assert_eq!(v, ADDRESSED_VERDICT_1024);
+    assert!(
+        sees_through(ADDRESSED_1024),
+        "1 024 units sees through the run"
+    );
+    assert!(sees_through(ADDRESSED_MIRRORED_1024));
+    assert!(sees_through(ADDRESSED_SHUFFLED_1024));
+}
+
+/// The reading at 256 units under the sees-through rule: recorded as not measured when the
+/// calibration's measure falls below the mark before the criterion's window, as ADR-0066's
+/// run did; otherwise as a reading of the clause.
+#[test]
+fn the_reading_at_256_units_under_the_addressed_delivery() {
+    let sees = sees_through(ADDRESSED_256);
+    eprintln!(
+        "DUMP addressed256 sees {sees} last {} seen {:?}",
+        last_correct(ADDRESSED_256),
+        ADDRESSED_256.iter().map(|b| b.6).collect::<Vec<u32>>()
+    );
+    assert_eq!(sees, ADDRESSED_256_SEES);
+}
