@@ -813,6 +813,28 @@ mod prop {
         assert!(flagged > 100, "flagged: {flagged}");
     }
 
+    /// `Walk::advance` as the oracles below step, a copy: an oracle's loop must not end by a
+    /// function under mutation, or a mutant that stops the walk hangs the oracle instead of
+    /// failing the test, which is the rule's second kind and what the first dispatched sweep
+    /// of ADR-0062 found in this very test.
+    fn step_before_the_range(
+        walk: &mut Walk,
+        a: &Poly,
+        b: &Poly,
+        slot: &mut ArithmeticScratchpadSlot,
+    ) -> Result<(), u16> {
+        let n = walk.depth.wrapping_add(1);
+        let (an, bn) = (poly_at(a, n), poly_at(b, n));
+        let p = mul_add(slot, an, walk.p, bn, walk.p_prev)?;
+        let q = mul_add(slot, an, walk.q, bn, walk.q_prev)?;
+        walk.p_prev = walk.p;
+        walk.p = p;
+        walk.q_prev = walk.q;
+        walk.q = q;
+        walk.depth = n;
+        Ok(())
+    }
+
     /// The three walks before ADR-0062, each ended by a comparison on the depth alone, kept
     /// as the oracles the range forms are held to: the same convergent, the same verdict and
     /// the same slot afterwards, operation for operation.
@@ -827,8 +849,7 @@ mod prop {
         }
         let mut walk = Walk::start(a);
         while walk.depth < depth {
-            walk.advance(a, b, slot)
-                .map_err(FractionError::Arithmetic)?;
+            step_before_the_range(&mut walk, a, b, slot).map_err(FractionError::Arithmetic)?;
         }
         Ok(walk.current())
     }
@@ -843,7 +864,7 @@ mod prop {
             return Err(FractionError::DepthExceeded);
         }
         let mut walk = Walk::start(a);
-        while walk.depth < depth && walk.advance(a, b, slot).is_ok() {}
+        while walk.depth < depth && step_before_the_range(&mut walk, a, b, slot).is_ok() {}
         Ok(walk.current())
     }
 
@@ -864,7 +885,7 @@ mod prop {
                     verdict = Some((inside, current));
                 }
             }
-            if walk.depth >= depth || walk.advance(a, b, slot).is_err() {
+            if walk.depth >= depth || step_before_the_range(&mut walk, a, b, slot).is_err() {
                 break;
             }
         }
