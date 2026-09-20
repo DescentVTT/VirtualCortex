@@ -2502,7 +2502,7 @@ Four independent document checks and eight build and test gates, each answering 
 | :--- | :--- | :--- | :--- |
 | V-1 Layout | Do the records have the size and alignment the ABI requires? | `const _` assertions compiled by `cargo check`; layout unit tests by `cargo test` | CI, blocking |
 | V-2 Vertical | Does the source tree still contain what this document says it contains? | [`@descent-vtt/spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard) executing the `@assert-*` directives in every file under `docs/`, the README, `CONTRIBUTING.md`, `CLAUDE.md` and the live briefs | CI, blocking |
-| V-3 Horizontal | Are the documents consistent with each other: do links resolve, are ADR statuses coherent, is any open question delegated to a retired decision? | [`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) over `docs/**/*.md`, `briefs/**/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CLAUDE.md` and, as history, `CHANGELOG.md` | CI, blocking |
+| V-3 Horizontal | Are the documents consistent with each other: do links resolve, are ADR statuses coherent, is any open question delegated to a retired decision? | [`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) over `docs/**/*.md`, `briefs/**/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CLAUDE.md` and, as history, `CHANGELOG.md`; and `scripts/check-decisions.mjs` (zero dependencies; F-41), which holds every ADR to its row in §9 and in `docs/adr/README.md`, a count spec-guard cannot make inside a document it checks | CI, blocking |
 | Hygiene | Formatting and lints | `cargo fmt --check`, `cargo clippy -D warnings` | CI, blocking |
 | MSRV | Does the workspace still build and test on the minimum supported Rust version it declares? | `cargo check --all-targets` and `cargo test` on the `rust-version` read from `Cargo.toml` (1.85), selected with `rustup override` so that the pin in `rust-toolchain.toml` does not apply ([ADR-0009](adr/0009-rust-edition-and-msrv.md)) | CI, blocking |
 | V-4 Intake | Does every live brief in `briefs/` carry its mandatory sections, so that a round handed to a fresh session is complete? | `scripts/check-briefs.mjs` (zero dependencies; from brief 028 it also requires a Latest ≠ Newest standing directive, F-39), tested by `scripts/check-briefs.test.mjs` under `node:test` | CI, blocking |
@@ -2545,7 +2545,7 @@ The block is the one in `CLAUDE.md`, which is canonical; the `arm64` and `weekly
 
 Planned, not yet present: T-1 at its full length on a reference image (the 20 000-tick two-architecture form runs in CI), and fault injection on the fabric and the sensory path. The micro-benchmarks that exist are listed in the benchmarks README; none has an admissible run (F-13).
 
-<!-- @assert-present file="LICENSE-APACHE,LICENSE-MIT,Cargo.toml,rust-toolchain.toml,clippy.toml,.gitattributes,.editorconfig,package.json,.spec-graph.json,.github/workflows/ci.yml,docs/adr/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md,CLAUDE.md,briefs/README.md,scripts/check-briefs.mjs,scripts/check-deps.mjs" -->
+<!-- @assert-present file="LICENSE-APACHE,LICENSE-MIT,Cargo.toml,rust-toolchain.toml,clippy.toml,.gitattributes,.editorconfig,package.json,.spec-graph.json,.github/workflows/ci.yml,docs/adr/README.md,CONTRIBUTING.md,SECURITY.md,CHANGELOG.md,CLAUDE.md,briefs/README.md,scripts/check-briefs.mjs,scripts/check-decisions.mjs,scripts/check-deps.mjs" -->
 
 ---
 

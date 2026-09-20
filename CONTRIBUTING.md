@@ -84,12 +84,12 @@ cargo bench -p cortex-bench --bench hot_path --locked -- --test   # benchmarks e
 cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor (ADR-0009); rustup toolchain install 1.85 once
 cargo +1.85 test --workspace --locked
 npm ci
-npm run spec                        # spec-guard + spec-graph + check-briefs + check-deps
+npm run spec                        # spec-guard + spec-graph + check-briefs + check-decisions + check-deps
 git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0
 cargo test --workspace --release --locked -- --ignored exhaustive   # before a release: the whole-domain tests
 ```
 
-`npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks; `npm run spec:briefs` alone checks the live briefs; `npm run spec:deps` alone checks the manifests (TC-2). All exit non-zero with a file and line number when something is wrong.
+`npm run spec:guard` alone runs the executable assertions; `npm run spec:graph` alone runs the cross-document checks; `npm run spec:briefs` alone checks the live briefs; `npm run spec:decisions` alone checks that every ADR has its row in whitepaper §9 and in `docs/adr/README.md` (F-41); `npm run spec:deps` alone checks the manifests (TC-2). All exit non-zero with a file and line number when something is wrong.
 
 ## Definition of done
 
