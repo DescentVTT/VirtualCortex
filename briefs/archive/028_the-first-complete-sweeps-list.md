@@ -179,7 +179,7 @@ move, so re-derive the two lists from the latest weekly run's `mutants-out-*` ar
   mutant, class, reason); for every directive-class loop the rewrite or the reason it keeps its
   shape; the image decode timeout explained and classified. The per-survivor dispositions, one row
   each, with the test, restructuring or exclusion that settled it and the run that shows it.
-  **Done:** [ADR-0062](../../../docs/adr/0062-the-first-complete-sweeps-list.md). The rule has five
+  **Done:** [ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md). The rule has five
   kinds, in order (another thread; a test's own loop; an ordering comparison on moved state; a
   bound the mutant removed; none of these), and was applied to the thirty-six timeouts of the
   latest run rather than the thirty-five named here: `barrier.rs:41` had joined the list.
@@ -203,7 +203,7 @@ move, so re-derive the two lists from the latest weekly run's `mutants-out-*` ar
   second answer, the loop moved into one form, with the Windows calls under distinct names so that
   the exclusion can name nothing Linux compiles, and the old `Ok(())` entry, which silenced the
   Unix forms, removed. The twenty-second survivor of the latest run, `Task::coin_at`, was
-  [ADR-0061](../../../docs/adr/0061-the-learning-runs-leave-the-gate.md)'s and is not this round's.
+  [ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)'s and is not this round's.
 - [x] **The directive-class loops rewritten** as ranges or countdowns where the domain gives one
   (`stp_decay_factor_q16`, `deepest`, `deepest_verdict`, the hippocampus test), every result
   bit-identical: the existing exact-step and property tests of each function hold unchanged, a
