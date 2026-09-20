@@ -205,7 +205,7 @@ quoted sentences are what to re-derive.
     `testkit/prop.rs` that the addressed modulation of a unit is the baseline when the unit is
     not addressed and `clamp(baseline + dopamine, 0, 1)` when it is.
 - [x] **The constants commit**
-  **Done:** `c5b125c`, before `d3c5d8d`, the first commit that holds an addressed run's outcome; ADR-0069 cites both. Preceding the first commit that holds a rewarded outcome: the
+  **Done:** `3733c08` on `main` (`c5b125c` on the branch before the rebase), before `8ad02e3` (`d3c5d8d`), the first commit that holds an addressed run's outcome; ADR-0069 cites both. Preceding the first commit that holds a rewarded outcome: the
   addressed set's definition, the instrument's constants restated unchanged, the seeds, and the
   criterion's counts. The measurement ADR cites both commits.
 - [x] **The measurement ADR (the number after it)**
