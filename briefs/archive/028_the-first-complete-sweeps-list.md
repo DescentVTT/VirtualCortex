@@ -3,7 +3,7 @@ status: archived
 date: 2026-09-19
 ---
 
-> **Executed 2026-09-20 in pull request #PR_NUMBER.** Writes ADR-0062 (the triage rule that tells an
+> **Executed 2026-09-20 in pull request #71.** Writes ADR-0062 (the triage rule that tells an
 > inherent timeout from a directive-class one; the thirty-six timeouts of weekly run `35459078284`
 > classified by it, twenty-five inherent and left alone, ten directive-class and now ranges bit for
 > bit, one the instrument's; the twenty-one survivors dispositioned, ten by a test, ten by a shape
