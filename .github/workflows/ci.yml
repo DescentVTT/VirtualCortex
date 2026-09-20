@@ -43,8 +43,20 @@ on:
     # Weekly, Monday 03:00 UTC: the whole-domain tests and the whole-tree mutation run
     # (ADR-0030). Nothing to block; the survivors are the next round's list.
     - cron: "0 3 * * 1"
-  # The weekly job by hand: `gh workflow run ci.yml`.
+  # The weekly jobs by hand: `gh workflow run ci.yml --ref <branch> -f scope=<scope>`. A round
+  # dispatches `exhaustive`, where its own measurement lives; `mutants` as well only when it
+  # added or removed a test, moved one between the gate and the weekly job, or changed the
+  # sweep itself (ADR-0067). A scheduled run always does both.
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Which weekly jobs to run
+        type: choice
+        default: both
+        options:
+          - both
+          - exhaustive
+          - mutants
 
 permissions:
   contents: read
@@ -182,7 +194,9 @@ jobs:
 
   weekly:
     name: Weekly (exhaustive tests)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # `inputs` is empty on a push or a pull request, so those skip this as before; on a
+    # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
+    if: github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'exhaustive'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -210,7 +224,7 @@ jobs:
     # on the runner rather than written down. The two areas together are the whole tree, which
     # the completeness check below asserts rather than assumes.
     name: Weekly mutation sweep (${{ matrix.label }}, ADR-0058)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'mutants'
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     strategy:
