@@ -119,6 +119,7 @@ The in-diff gate of the pull request holds every test and restructuring above (e
 - Good: the log's I/O loop is tested on every platform for the first time, and an exclusion that silenced tested code is gone.
 - Bad: `stp_decay_factor_q16` no longer exits early on a zero result, so an interval whose factor reaches zero pays the remaining squarings of the base, at most a handful; a result, never, which the oracle test says over 200 000 pairs and the lattice.
 - Bad: the Unix log I/O returns `Interrupted` instead of retrying; a caller that meets it retries the append or the read, and no caller in the tree has.
+- Neutral: a Windows developer machine sees the mirror image of the exclusion: `pread` and `pwrite` are not compiled there, so a local in-diff run reports their `Ok(1)` replacements missed (this round's local run did, 2 of 43, with 21 unviable on the linker's file lock); CI's runner is the gate's truth (ADR-0030).
 - Bad: a slow pass under a spinning neighbour still lands in `timeout.txt`, indistinguishable there from a hang; F-42 says how to tell them apart (the per-mutant log and `debug.log`) and what a next change to the sweep would do. That change is not this round's.
 
 ## Alternatives considered and why rejected

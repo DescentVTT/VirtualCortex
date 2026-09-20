@@ -70,7 +70,8 @@ exclude_re = [
     # and `seek_write` are the Windows forms, which no CI runner compiles, so their mutants
     # meet no test there; the Unix forms, `pread` and `pwrite`, and the loop around both,
     # `read_at` and `write_at`, are compiled and tested by every runner and have no entry
-    # (ADR-0062).
+    # (ADR-0062). A Windows developer machine sees the mirror image, `pread` and `pwrite`
+    # missed; CI's runner is the gate's truth (ADR-0030).
     "image\\.rs:\\d+:\\d+: replace (seek_read|seek_write) -> io::Result<usize> with Ok\\(\\d+\\)",
     # Dropping the executor stops its workers; a mutant that leaks them is hidden by the end
     # of the test process.
