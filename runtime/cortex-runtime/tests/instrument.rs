@@ -149,6 +149,12 @@ const SETTLING_WINDOWS: u64 = 80;
 /// up to the bound; derived, never chosen.
 const SETTLING_CLAUSE_WINDOWS: usize = 4;
 const SETTLING_CLAUSE_PER_CENT: u64 = 2;
+/// The lead-in in windows, derived from `SETTLING_256` by the rule above and not chosen:
+/// the clause first holds at the ninth window (the last four moving the sum by 1.82, 1.79,
+/// 1.58 and 1.44 per cent of the fifth's; the sum 0.818 of the prior's), so the run behind
+/// the lead-in starts its first trial nine windows in. The gate holds the constant to the
+/// rule over the pinned table; it was committed before the first run behind it.
+const LEAD_IN_WINDOWS: u64 = 9;
 
 // ------------------------------------------------------------------------- the network
 
@@ -376,9 +382,37 @@ type Block = (
 /// delivery of the dopamine term (ADR-0068; `Delivery::Global` is ADR-0066's form): the
 /// blocks' readings, and the FNV-1a hash of every trial's `(stimulus, selection, correct)`,
 /// the accuracy sequence in one number. The first trial is preceded by a lead-in of one
-/// window under the drive.
+/// window under the drive: `run_behind` with no whole windows before it.
 #[allow(clippy::too_many_arguments)]
 fn run(
+    units: u32,
+    workers: usize,
+    gain: u32,
+    baseline_q16: i32,
+    feedback: Feedback,
+    mirrored: bool,
+    delivery: Delivery,
+    trials: usize,
+) -> (Vec<Block>, u64) {
+    run_behind(
+        0,
+        units,
+        workers,
+        gain,
+        baseline_q16,
+        feedback,
+        mirrored,
+        delivery,
+        trials,
+    )
+}
+
+/// `run` behind a lead-in of `lead_in_windows` whole windows under the drive alone
+/// (brief 031), before the instrument's own lead-in of one readout window; the executor,
+/// the task and every constant are `run`'s, and the windows are the only difference.
+#[allow(clippy::too_many_arguments)]
+fn run_behind(
+    lead_in_windows: u64,
     units: u32,
     workers: usize,
     gain: u32,
@@ -403,6 +437,7 @@ fn run(
     // The stimulus sets counted as a readout would count them: the same rule, the other
     // two sets.
     let stimuli = Readout::new([a, b]);
+    lead_in(&mut exec, &task.drive, lead_in_windows);
     let inject = exec.injector();
     for _ in 0..LEAD_IN {
         task.drive
@@ -3275,4 +3310,74 @@ fn the_settling_at_256_units_exhaustive() {
         derived_lead_in(PRIOR_SUMS_256.1, &table, SETTLING_WINDOWS)
     );
     assert_eq!(table.as_slice(), SETTLING_256, "settling256");
+}
+
+/// The criterion behind the lead-in (brief 031), written before the run: the calibration's
+/// measure (the trials of a block in which the window after the volley held more readout
+/// spikes than the window before the injection) at least `SEEN_MIN` of 64 in every block of
+/// the run; false for no blocks. Holding, 256 units is usable for this task behind the
+/// lead-in and a later round may carry a criterion there; failing, it is not, and the block
+/// at which the measure crosses is the reading. The correct trials are a reading, never a
+/// clause: the run measures the instrument, not learning.
+fn holds_through(blocks: &[Block]) -> bool {
+    !blocks.is_empty() && blocks.iter().all(|block| block.6 >= SEEN_MIN)
+}
+
+/// The gate's test (ADR-0061's class; brief 031): the clause at its edges against tables
+/// written by hand, the lead-in as the rule derives it from the pinned settling table, and
+/// the first four windows of the settling, run and held to the first four rows of the table
+/// the weekly run pinned; no number is pinned twice.
+#[test]
+fn the_first_four_windows_of_the_settling_at_256_units_and_the_rules_over_its_tables() {
+    // The clause at its edges: four moves of exactly two per cent of the prior's sum fail
+    // it (the comparison is strict) and four of just under pass it at the fourth window; a
+    // first window's move of three per cent fails the fourth window, and the fifth, whose
+    // reference is the first window's sum, holds; a rise is a move; a table shorter than
+    // the clause's windows has no window.
+    assert_eq!(settled_at(10_000, &[9_800, 9_600, 9_400, 9_200]), None);
+    assert_eq!(settled_at(10_000, &[9_801, 9_602, 9_403, 9_204]), Some(4));
+    assert_eq!(
+        settled_at(10_000, &[9_700, 9_600, 9_500, 9_400, 9_300]),
+        Some(5)
+    );
+    assert_eq!(
+        settled_at(10_000, &[10_199, 10_398, 10_597, 10_796]),
+        Some(4)
+    );
+    assert_eq!(settled_at(10_000, &[10_200, 10_398, 10_597, 10_796]), None);
+    assert_eq!(settled_at(10_000, &[9_999, 9_998, 9_997]), None);
+    assert_eq!(settled_at(10_000, &[]), None);
+    // A table on which the clause never holds derives the bound.
+    let falling = [
+        (0, 0, 9_000, 0),
+        (0, 0, 8_000, 0),
+        (0, 0, 7_000, 0),
+        (0, 0, 6_000, 0),
+    ];
+    assert_eq!(settled_at(10_000, &excitatory_sums(&falling)), None);
+    assert_eq!(derived_lead_in(10_000, &falling, 4), 4);
+    // The lead-in is derived, not chosen: the ninth window of the pinned table.
+    assert_eq!(SETTLING_256.len() as u64, SETTLING_WINDOWS);
+    assert_eq!(
+        settled_at(PRIOR_SUMS_256.1, &excitatory_sums(SETTLING_256)),
+        Some(9)
+    );
+    assert_eq!(
+        derived_lead_in(PRIOR_SUMS_256.1, SETTLING_256, SETTLING_WINDOWS),
+        LEAD_IN_WINDOWS
+    );
+    // The criterion behind the lead-in at its edges over ADR-0066's pinned runs: 1 024
+    // units held the measure at 57 to 64 of 64 through the run and 256 fell to 46 in the
+    // second block; no blocks hold nothing.
+    assert!(holds_through(REWARDED_1024));
+    assert!(!holds_through(REWARDED_256));
+    assert!(!holds_through(&[]));
+    // The first four windows, run.
+    let table = settling(256, SETTLING_CLAUSE_WINDOWS as u64);
+    eprintln!("DUMP settling256 first four {table:?}");
+    assert_eq!(
+        table.as_slice(),
+        &SETTLING_256[..SETTLING_CLAUSE_WINDOWS],
+        "settling256 first four"
+    );
 }
