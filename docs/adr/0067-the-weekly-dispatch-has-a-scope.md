@@ -20,7 +20,7 @@ Since [ADR-0061](0061-the-learning-runs-leave-the-gate.md) moved the learning ru
 | `runtime-2`, `runtime-3`, `runtime-1` | 1 h 19 m, 1 h 37 m, 1 h 49 m |
 | `runtime-0`, `runtime-4`, `runtime-5` | 2 h 00 m, 2 h 05 m, **2 h 06 m** |
 
-The seven sweep jobs run in parallel, so the wall clock they add is the slowest of them: a round waits about two hours for a result that arrives in forty minutes.
+The seven sweep jobs run in parallel, so the wall clock they add is the slowest of them: a round waits about two hours for a result that arrives in about an hour. The exhaustive job's own time is a range and not a figure — 33 m and 56 m before brief 029 ([ADR-0061](0061-the-learning-runs-leave-the-gate.md), runs `35444829805` and `35459078284`), 40 m in the run above and **1 h 11 m** in this decision's own confirmation dispatch below, the same tests on a different runner — because runner variance of about two to one dominates it, as ADR-0061 already measured on an unchanged `reference.rs` (1 238 s to 2 118 s). Against a 120-minute bound that range is what a round has to watch, and it is a second reason not to spend the sweep's two hours beside it.
 
 The sweep is worth that wait when it can find something the pull request's gate cannot. The gate is `cargo mutants --in-diff`: it makes mutants only in the lines the change touches. What it structurally cannot see is a mutant in **unchanged** code that the change has left uncaught — and that is a real defect, not a hypothetical. [ADR-0061](0061-the-learning-runs-leave-the-gate.md) moved five tests from the gate to the weekly job and the sweep dispatched on that branch exposed `task.rs:301:26: replace ^ with | in Task::coin_at`, which only those five runs had been catching; the gate was green, because `coin_at` was not in the diff.
 
@@ -73,7 +73,7 @@ A brief's evidence deliverable names the scope it asks for and why, so the choic
 
 ### Consequences
 
-- Good: a round that shifts no coverage waits about forty minutes instead of about two hours, and the seven sweep jobs are not spent re-proving what the schedule proves.
+- Good: a round that shifts no coverage waits on the exhaustive job alone — 33 m to 1 h 11 m over the four runs on record — instead of about two hours, and the seven sweep jobs are not spent re-proving what the schedule proves.
 - Good: the rounds that historically found something — ADR-0061's, which moved five tests, and brief 028's, which rewrote ten loops and removed exclusions — are exactly the ones the rule still sends to the sweep.
 - Good: the default is `both`, so a dispatch that names no scope behaves as every dispatch did before this decision.
 - Neutral: `scope=mutants` alone exists for the case where a round needs the sweep and has no new pinned number to check; no round has needed it yet.
@@ -90,5 +90,5 @@ A brief's evidence deliverable names the scope it asks for and why, so the choic
 ## Confirmation
 
 - `.github/workflows/ci.yml`: the `scope` input, the two `if` expressions, and the comment above the input that states the rule.
-- Two dispatches on this change's branch, which are the evidence that the conditions select: one at `scope=mutants` in which `Weekly (exhaustive tests)` is skipped, and one at `scope=exhaustive` in which the seven `Weekly mutation sweep` jobs are skipped and the exhaustive job is green; their run ids in the changelog entry.
+- Three cases, all dispatched on this change's branch and all as the conditions predict: `scope=mutants` ([35509529267](https://github.com/DescentVTT/VirtualCortex/actions/runs/35509529267)) queued the seven sweep jobs and skipped `Weekly (exhaustive tests)`, and was cancelled once its job list was read, being a probe of the condition and not a sweep; `scope=exhaustive` ([35509558631](https://github.com/DescentVTT/VirtualCortex/actions/runs/35509558631)) skipped the whole `Weekly mutation sweep` matrix and ran the exhaustive job green in 1 h 11 m (4 294 s); and the pull request's own run ([35509597563](https://github.com/DescentVTT/VirtualCortex/actions/runs/35509597563)) skipped both, which is what a pull request did before this change and what the empty `inputs` context keeps it doing.
 - Whitepaper Appendix B's V-6 row and §9; [ADR-0030](0030-verification-governance.md)'s weekly bullet is the sentence this decision applies rather than changes.
