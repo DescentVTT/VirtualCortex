@@ -212,7 +212,57 @@ jobs:
           shared-key: mutants
 
       - name: The whole-domain tests, in the release profile
-        run: cargo test --workspace --release --locked -- --ignored exhaustive
+        run: |
+          set -o pipefail
+          cargo test --workspace --release --locked -- --ignored exhaustive 2>&1 | tee exhaustive.log
+
+      # This job reported one number for every `exhaustive` test in the tree, so what a round
+      # added to it could not be seen: the job read 32, 55, 33, 40, 71, 69 and 69 minutes over
+      # seven runs while about twenty-one heavy runs were added, and two runs of identical
+      # content read 40 and 71 (F-45, ADR-0071). `--report-time` is nightly-only on the pinned
+      # toolchain (ADR-0009), but cargo already prints a result line per test binary and that
+      # line carries the seconds; this reads them. It decides nothing: sharding the job the way
+      # ADR-0058 sharded the sweep is a decision for a round that has these numbers.
+      - name: What each binary of the whole-domain tests took (F-45, ADR-0071)
+        if: always()
+        run: |
+          cat > times.awk <<'AWK'
+          # Pairs cargo's "Running <source> (<binary>)" line with the "test result:" line after
+          # it; cargo runs test binaries one after another, so the order is the pairing. A
+          # binary that ran none of them is left out.
+          /^[[:space:]]*Running/ {
+            bin = $0
+            sub(/^[^(]*\(/, "", bin)
+            sub(/\).*$/, "", bin)
+            sub(/.*\//, "", bin)
+            sub(/-[0-9a-f]+$/, "", bin)
+          }
+          /^test result:/ {
+            secs = $NF
+            sub(/s$/, "", secs)
+            if ($4 + 0 > 0) printf "%s\t%s\t%s\n", bin, $4, secs
+          }
+          AWK
+          awk -f times.awk exhaustive.log | sort -k3 -rn > exhaustive-times.txt
+          {
+            echo "### The whole-domain tests, per binary"
+            echo
+            echo "| Binary | Exhaustive tests | Seconds |"
+            echo "| :--- | ---: | ---: |"
+            awk '{ printf "| `%s` | %s | %s |\n", $1, $2, $3 }' exhaustive-times.txt
+            awk '{ n += $2; s += $3 } END { printf "| **the tests** | **%d** | **%.2f** |\n", n, s }' exhaustive-times.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat exhaustive-times.txt
+
+      - name: Keep the per-binary times for the round that reads them
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: exhaustive-times
+          path: |
+            exhaustive-times.txt
+            exhaustive.log
+          retention-days: 90
 
   mutants-weekly:
     # One job per area, because the areas cost different things (ADR-0058): a state crate's
