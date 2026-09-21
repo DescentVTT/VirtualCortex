@@ -193,12 +193,24 @@ jobs:
           echo "no survivor; timeouts, if any, are listed in mutants.out/timeout.txt"
 
   weekly:
-    name: Weekly (exhaustive tests)
+    # One job per shard of the whole-domain tests (ADR-0073). They were one job, which read
+    # 1 h 43 m of its 120-minute bound on 2026-09-21 with half of it in one binary
+    # (`instrument` 22 tests in 3 007 s, `reference` 7 in 2 081, `learning` 11 in 1 084,
+    # `cortex-core` 1 in 2; ADR-0071's table, run 35548410926). The shards are taken from the
+    # binaries `--list` names at run time, never from a list written here, because a list here
+    # and a list in the tree drift (F-44, F-45); each shard checks what it ran against what the
+    # list counted, as ADR-0058's completeness check does for the sweep.
+    name: Weekly (exhaustive tests ${{ matrix.shard }}/3, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
     if: github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'exhaustive'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    strategy:
+      # One shard that fails must not hide what the others found.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -209,65 +221,35 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: mutants
+          shared-key: exhaustive
 
-      - name: The whole-domain tests, in the release profile
-        run: |
-          set -o pipefail
-          cargo test --workspace --release --locked -- --ignored exhaustive 2>&1 | tee exhaustive.log
+      - name: This shard of the whole-domain tests, in the release profile (ADR-0073)
+        run: bash scripts/exhaustive-shard.sh ${{ matrix.shard }} 3
 
-      # This job reported one number for every `exhaustive` test in the tree, so what a round
-      # added to it could not be seen: the job read 32, 55, 33, 40, 71, 69 and 69 minutes over
-      # seven runs while about twenty-one heavy runs were added, and two runs of identical
-      # content read 40 and 71 (F-45, ADR-0071). `--report-time` is nightly-only on the pinned
-      # toolchain (ADR-0009), but cargo already prints a result line per test binary and that
-      # line carries the seconds; this reads them. It decides nothing: sharding the job the way
-      # ADR-0058 sharded the sweep is a decision for a round that has these numbers.
-      - name: What each binary of the whole-domain tests took (F-45, ADR-0071)
+      # The seconds per binary that ADR-0071 read out of cargo's own lines; the shard script
+      # writes them directly now, so the table is what it wrote.
+      - name: What each binary of this shard took (F-45, ADR-0071)
         if: always()
         run: |
-          cat > times.awk <<'AWK'
-          # Pairs cargo's "Running <source> (<binary>)" line with the "test result:" line after
-          # it; cargo runs test binaries one after another, so the order is the pairing. A
-          # binary that ran none of them is left out.
-          /^[[:space:]]*Running/ {
-            bin = $0
-            sub(/^[^(]*\(/, "", bin)
-            sub(/\).*$/, "", bin)
-            sub(/.*\//, "", bin)
-            sub(/\.exe$/, "", bin)
-            sub(/-[0-9a-f]+$/, "", bin)
-          }
-          # The job runs on ubuntu, so the separator is "/"; a Windows log read locally keeps
-          # its directories in the name, which is cosmetic. A doc-test section has no binary of
-          # its own, and naming it keeps the previous binary's name off it if one ever runs
-          # these tests: under `--ignored exhaustive` all thirty-three of them report none.
-          /^[[:space:]]*Doc-tests/ { bin = "doc-tests:" $2 }   # no space: the table splits on fields
-          /^test result:/ {
-            secs = $NF
-            sub(/s$/, "", secs)
-            if ($4 + 0 > 0) printf "%s\t%s\t%s\n", bin, $4, secs
-          }
-          AWK
-          awk -f times.awk exhaustive.log | sort -k3 -rn > exhaustive-times.txt
+          f="exhaustive-times-${{ matrix.shard }}.txt"
+          [ -s "$f" ] || { echo "this shard recorded no binary"; exit 0; }
           {
-            echo "### The whole-domain tests, per binary"
+            echo "### The whole-domain tests, shard ${{ matrix.shard }} of 3"
             echo
             echo "| Binary | Exhaustive tests | Seconds |"
             echo "| :--- | ---: | ---: |"
-            awk '{ printf "| `%s` | %s | %s |\n", $1, $2, $3 }' exhaustive-times.txt
-            awk '{ n += $2; s += $3 } END { printf "| **the tests** | **%d** | **%.2f** |\n", n, s }' exhaustive-times.txt
+            awk '{ print "| `" $1 "` | " $2 " | " $3 " |" }' "$f"
+            awk '{ n += $2; s += $3 } END { print "| **this shard** | **" n "** | **" s "** |" }' "$f"
           } >> "$GITHUB_STEP_SUMMARY"
-          cat exhaustive-times.txt
 
-      - name: Keep the per-binary times for the round that reads them
+      - name: Keep this shard's times for the round that reads them
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: exhaustive-times
+          name: exhaustive-times-${{ matrix.shard }}
           path: |
-            exhaustive-times.txt
-            exhaustive.log
+            exhaustive-times-${{ matrix.shard }}.txt
+            list.log
           retention-days: 90
 
   mutants-weekly:
