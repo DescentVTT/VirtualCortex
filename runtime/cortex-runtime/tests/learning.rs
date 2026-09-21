@@ -169,6 +169,7 @@ fn task(units: u32, feedback: Feedback, mirrored: bool) -> Task {
         set,
         messages: STIMULUS_MESSAGES,
         efficacy_q16: STIMULUS_Q16,
+        cancel: None,
     };
     Task {
         stimuli: [stimulus(a), stimulus(b)],

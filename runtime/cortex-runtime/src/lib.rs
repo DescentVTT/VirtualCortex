@@ -79,8 +79,8 @@ pub use lexicon::{
 pub use store::TermError;
 pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
 pub use task::{
-    Delivery, Feedback, MAX_PERIOD, MIN_INTERVAL_TICKS, Outcome, Readout, Set, Stimulus, Task,
-    TaskError, Window, spikes_per_unit,
+    Cancel, Delivery, Feedback, MAX_PERIOD, MIN_INTERVAL_TICKS, Outcome, Readout, Set, Stimulus,
+    Task, TaskError, Window, spikes_per_unit,
 };
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};
 

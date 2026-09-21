@@ -22,6 +22,15 @@
 //! beyond the prior's local window, each firing once. A run's `(stimulus, selection,
 //! correct)` sequence is bit-identical on every worker count, since the train is (ADR-0023,
 //! ADR-0050).
+//!
+//! A stimulus may carry a [`Cancel`] (ADR-0076): basal messages of negative efficacy into the
+//! same units, injected between ticks inside the trial from an offset, for as many consecutive
+//! ticks as the cancel says. The membrane rule drops an input that lands inside a unit's
+//! refractory window (ADR-0018), so a cancel meant to stop a unit firing again at the window's
+//! end lands on the first tick the unit integrates again, `REFRACTORY_TICKS + 1` after its
+//! spike; a set whose volley spreads over several ticks is covered by as many ticks of the
+//! cancel. A stimulus with no cancel injects what it injected before the cancel existed, and
+//! every run pinned before ADR-0076 reruns unchanged.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -158,25 +167,89 @@ impl Set {
     }
 }
 
+/// A cancel (ADR-0076): `messages` basal messages of a negative `efficacy_q16` into every unit
+/// of the stimulus's set, injected between ticks before each of `ticks` consecutive ticks of
+/// the trial from `offset` (the trial's ticks counted from zero), so that the first lands on
+/// the tick after `offset` and the last on the tick after `offset + ticks - 1`, as the first
+/// injection, made before tick zero, lands on tick one. The membrane rule drops an input that
+/// lands inside a unit's refractory window (ADR-0018), so a cancel meant for the end of the
+/// window lands on the first tick the unit integrates again, `REFRACTORY_TICKS + 1` after its
+/// spike, and a set whose spikes spread over several ticks is covered by as many ticks. The
+/// executor scales the message by the tick's synaptic gain as it scales a synapse's (F-47), and
+/// clamps one message's efficacy at −2.0 (`spike_message`), so a larger cancel is more
+/// messages. [`Task::check`] refuses a cancel of no message or no tick, one at offset zero (it
+/// would be the first injection), one whose last message would land after the trial's last
+/// tick, and one whose efficacy is not negative (a second drive, not a cancel).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cancel {
+    pub offset: u32,
+    pub ticks: u32,
+    pub messages: u32,
+    pub efficacy_q16: i32,
+}
+
+impl Cancel {
+    /// True when a message is due before trial tick `k`: `offset <= k < offset + ticks`,
+    /// widened.
+    pub const fn is_due(&self, k: u32) -> bool {
+        (k as u64) >= (self.offset as u64) && (k as u64) < self.end()
+    }
+
+    /// One past the last tick before which a message is due, widened so that a cancel at the
+    /// top of the tick space has an end.
+    pub const fn end(&self) -> u64 {
+        (self.offset as u64).wrapping_add(self.ticks as u64)
+    }
+}
+
 /// A stimulus: `messages` basal messages of `efficacy_q16` into every unit of `set`, injected
-/// between ticks before a trial's first tick. Two messages of 1.25 (the replay drive's,
-/// ADR-0038) fire a unit at its base threshold exactly once.
+/// between ticks before a trial's first tick, and the [`Cancel`] it carries, if any, injected
+/// inside the trial (ADR-0076). The executor scales an injected message by the tick's synaptic
+/// gain as it scales a synapse's (F-47), so what two messages of 1.25 (the replay drive's,
+/// ADR-0038) do depends on the gain: at a gain of 1.0 they fire a unit at its base threshold
+/// exactly once, and at the 1.75 the reference network runs at they arrive as 4.375 and fire
+/// a unit at rest twice, at 5 and 206 ticks, the second at the end of the refractory window
+/// from what the basal compartment still holds (ADR-0074's probe).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stimulus {
     pub set: Set,
     pub messages: u32,
     pub efficacy_q16: i32,
+    /// The cancel, when the stimulus carries one; none injects nothing inside the trial.
+    pub cancel: Option<Cancel>,
 }
 
 impl Stimulus {
     /// Injects the stimulus; returns the messages injected. An injector that refuses one stops
     /// the stimulus there, as [`Drive::step`] stops.
     pub fn inject(&self, inject: &Inject) -> Result<u32, InjectError> {
-        let message = spike_message(self.efficacy_q16, false);
+        self.send(
+            inject,
+            self.messages,
+            spike_message(self.efficacy_q16, false),
+        )
+    }
+
+    /// Injects the cancel's messages before trial tick `k` when the stimulus carries a cancel
+    /// that is due there; returns the messages injected, none otherwise. An injector that
+    /// refuses one stops the cancel there, as [`inject`](Self::inject) stops.
+    pub fn cancel_at(&self, inject: &Inject, k: u32) -> Result<u32, InjectError> {
+        match self.cancel {
+            Some(cancel) if cancel.is_due(k) => self.send(
+                inject,
+                cancel.messages,
+                spike_message(cancel.efficacy_q16, false),
+            ),
+            _ => Ok(0),
+        }
+    }
+
+    /// `messages` of `message` into every unit of the set, in the set's order.
+    fn send(&self, inject: &Inject, messages: u32, message: u32) -> Result<u32, InjectError> {
         let mut sent = 0u32;
         // Every unit below the arena, which `Task::check` bounded.
         for unit in self.set.units() {
-            for _ in 0..self.messages {
+            for _ in 0..messages {
                 inject.inject(unit, message)?;
                 sent = sent.saturating_add(1);
             }
@@ -357,6 +430,15 @@ pub enum Delivery {
 pub enum TaskError {
     /// A stimulus with no message would present nothing.
     NoStimulus,
+    /// A cancel of no message or no tick would cancel nothing (ADR-0076).
+    EmptyCancel,
+    /// A cancel at offset zero: it would land with the first injection and be part of it.
+    CancelAtInjection,
+    /// A cancel whose last message would land after the trial's last tick, where the trial is
+    /// over and the next trial's train begins.
+    CancelOutsideTrial,
+    /// A cancel whose efficacy is not negative: a second drive, not a cancel.
+    CancelNotNegative,
     /// A stimulus or readout set of no units.
     EmptySet,
     /// A set whose pattern the rule refuses (ADR-0065): a period of zero or beyond the mask's
@@ -475,10 +557,11 @@ impl Task {
     }
 
     /// What a run needs: every set well-formed, non-empty and inside `exec`'s arena, no two
-    /// sharing a unit, a stimulus with a message, a trial with a tick, a readout window with a
-    /// tick and inside the trial, a train that holds the most spikes a trial can produce, a
-    /// readout count that cannot reach the drive's width, and a reward that is delivered
-    /// only where it can do something.
+    /// sharing a unit, a stimulus with a message, a trial with a tick, a cancel (where a
+    /// stimulus carries one) with a message and a tick, after the first injection, inside the
+    /// trial and negative, a readout window with a tick and inside the trial, a train that
+    /// holds the most spikes a trial can produce, a readout count that cannot reach the
+    /// drive's width, and a reward that is delivered only where it can do something.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
         let sets = [
@@ -510,6 +593,22 @@ impl Task {
         }
         if self.ticks == 0 {
             return Err(TaskError::NoTicks);
+        }
+        for cancel in self.stimuli.iter().filter_map(|s| s.cancel) {
+            if cancel.messages == 0 || cancel.ticks == 0 {
+                return Err(TaskError::EmptyCancel);
+            }
+            if cancel.offset == 0 {
+                return Err(TaskError::CancelAtInjection);
+            }
+            // The last message is injected before tick `end - 1` and lands on tick `end`,
+            // which must be inside the trial.
+            if cancel.end() >= u64::from(self.ticks) {
+                return Err(TaskError::CancelOutsideTrial);
+            }
+            if cancel.efficacy_q16 >= 0 {
+                return Err(TaskError::CancelNotNegative);
+            }
         }
         if self.window.ticks == 0 {
             return Err(TaskError::EmptyWindow);
@@ -546,7 +645,8 @@ impl Task {
         Ok(())
     }
 
-    /// One trial: the stimulus injected, `ticks` ticks under the drive, the train read once
+    /// One trial: the stimulus injected, `ticks` ticks under the drive with the stimulus's
+    /// cancel, if it carries one, injected before each tick it is due at, the train read once
     /// over the task's window of the trial, the selection, and the reward delivered between
     /// ticks, its sign by `feedback`. Refused as `check` refuses, and when the injector
     /// refuses a message.
@@ -559,8 +659,10 @@ impl Task {
         let start = exec.ticks();
         let stimulus = self.stimulus_at(trial);
         let inject = exec.injector();
-        self.stimuli[stimulus as usize].inject(&inject)?;
-        for _ in 0..self.ticks {
+        let presented = self.stimuli[usize::from(stimulus)];
+        presented.inject(&inject)?;
+        for k in 0..self.ticks {
+            presented.cancel_at(&inject, k)?;
             self.drive.step(&inject, exec.ticks())?;
             exec.tick();
         }
@@ -654,6 +756,7 @@ mod tests {
             set: set(first, 4),
             messages: 2,
             efficacy_q16: CUE_Q16,
+            cancel: None,
         }
     }
 
@@ -1036,6 +1139,133 @@ mod tests {
             Ok(()),
             "one LSB below the ceiling has room"
         );
+        // The cancel's refusals (ADR-0076), at their edges.
+        let cancel = Cancel {
+            offset: 1,
+            ticks: 1,
+            messages: 1,
+            efficacy_q16: -1,
+        };
+        let with = |c: Cancel| {
+            let mut t = ok;
+            t.stimuli[0].cancel = Some(c);
+            t
+        };
+        assert_eq!(
+            with(cancel).check(&exec),
+            Ok(()),
+            "the earliest cancel: one tick after the injection's"
+        );
+        assert_eq!(
+            with(Cancel {
+                offset: 0,
+                ..cancel
+            })
+            .check(&exec),
+            Err(TaskError::CancelAtInjection)
+        );
+        assert_eq!(
+            with(Cancel {
+                offset: TICKS - 2,
+                ..cancel
+            })
+            .check(&exec),
+            Ok(()),
+            "lands on the trial's last tick"
+        );
+        assert_eq!(
+            with(Cancel {
+                offset: TICKS - 1,
+                ..cancel
+            })
+            .check(&exec),
+            Err(TaskError::CancelOutsideTrial),
+            "would land after the trial's last tick"
+        );
+        assert_eq!(
+            with(Cancel {
+                offset: TICKS - 3,
+                ticks: 2,
+                ..cancel
+            })
+            .check(&exec),
+            Ok(()),
+            "two ticks, the last landing on the trial's last"
+        );
+        assert_eq!(
+            with(Cancel {
+                offset: TICKS - 3,
+                ticks: 3,
+                ..cancel
+            })
+            .check(&exec),
+            Err(TaskError::CancelOutsideTrial)
+        );
+        assert_eq!(
+            with(Cancel {
+                offset: u32::MAX,
+                ticks: u32::MAX,
+                ..cancel
+            })
+            .check(&exec),
+            Err(TaskError::CancelOutsideTrial),
+            "the end is widened, not wrapped"
+        );
+        assert_eq!(
+            with(Cancel {
+                efficacy_q16: 0,
+                ..cancel
+            })
+            .check(&exec),
+            Err(TaskError::CancelNotNegative),
+            "zero is not negative"
+        );
+        assert_eq!(
+            with(Cancel {
+                efficacy_q16: 1,
+                ..cancel
+            })
+            .check(&exec),
+            Err(TaskError::CancelNotNegative)
+        );
+        assert_eq!(
+            with(Cancel {
+                efficacy_q16: i32::MIN,
+                ..cancel
+            })
+            .check(&exec),
+            Ok(()),
+            "the most negative is a cancel; the message clamps it"
+        );
+        assert_eq!(
+            with(Cancel {
+                messages: 0,
+                ..cancel
+            })
+            .check(&exec),
+            Err(TaskError::EmptyCancel)
+        );
+        assert_eq!(
+            with(Cancel { ticks: 0, ..cancel }).check(&exec),
+            Err(TaskError::EmptyCancel)
+        );
+        let mut t = ok;
+        t.stimuli[1].cancel = Some(Cancel {
+            offset: 0,
+            ..cancel
+        });
+        assert_eq!(
+            t.check(&exec),
+            Err(TaskError::CancelAtInjection),
+            "the other stimulus's cancel is checked too"
+        );
+        let mut exec = network(1, ONE / 2);
+        let mut t = with(Cancel {
+            efficacy_q16: 0,
+            ..cancel
+        });
+        assert_eq!(t.trial(&mut exec, 0), Err(TaskError::CancelNotNegative));
+        assert!(exec.is_quiescent(), "a refused cancel injects nothing");
         // A trial refuses as `check` refuses, before it injects anything.
         let mut exec = network(1, ONE / 2);
         let mut t = ok;
@@ -1458,6 +1688,7 @@ mod tests {
             set: set(0, 16),
             messages: 4,
             efficacy_q16: CUE_Q16,
+            cancel: None,
         };
         assert_eq!(
             big.inject(&inject),
@@ -1552,6 +1783,218 @@ mod tests {
         assert_eq!(outside.trial(&mut exec, 6), Err(TaskError::SetOutsideArena));
     }
 
+    /// The cancel's rule at its edges (ADR-0076): due from its offset for its ticks, widened
+    /// at the top of the tick space, and never with no tick.
+    #[test]
+    fn a_cancel_is_due_at_its_ticks_and_at_no_other() {
+        let c = Cancel {
+            offset: 201,
+            ticks: 10,
+            messages: 6,
+            efficacy_q16: -ONE,
+        };
+        assert_eq!(c.end(), 211);
+        assert!(!c.is_due(0) && !c.is_due(200));
+        assert!(c.is_due(201) && c.is_due(205) && c.is_due(210));
+        assert!(!c.is_due(211) && !c.is_due(u32::MAX));
+        let one = Cancel { ticks: 1, ..c };
+        assert_eq!(one.end(), 202);
+        assert!(!one.is_due(200) && one.is_due(201) && !one.is_due(202));
+        let top = Cancel {
+            offset: u32::MAX,
+            ticks: u32::MAX,
+            ..c
+        };
+        assert_eq!(top.end(), 0x1_FFFF_FFFE, "widened, not wrapped");
+        assert!(top.is_due(u32::MAX) && !top.is_due(u32::MAX - 1));
+        let none = Cancel { ticks: 0, ..c };
+        assert_eq!(none.end(), 201);
+        assert!(!none.is_due(201) && !none.is_due(200), "no tick is due");
+    }
+
+    /// A stimulus with no cancel injects what it injected before the cancel existed
+    /// (ADR-0076): `inject` against the loop ADR-0059 wrote, message for message through the
+    /// ring and tick for tick on the units, and `cancel_at` nothing at any tick, so a trial's
+    /// injections are the first injection's and the drive's, as they were.
+    #[test]
+    fn a_stimulus_with_no_cancel_injects_what_it_injected_before() {
+        let traced = || {
+            let mut exec = Executor::<8>::new(Config {
+                workers: 1,
+                units: 16,
+                injector_capacity: 64,
+                trace_capacity: 64,
+                train_capacity: spikes_per_unit(TICKS).saturating_mul(16) as usize,
+                modulation_baseline_q16: ONE / 2,
+                ..Config::default()
+            })
+            .unwrap();
+            for unit in exec.units_mut() {
+                unit.v_thresh = THRESHOLD_BASE;
+                unit.stp_u_rel = STP_U;
+                unit.stp_r_ves = STP_MAX;
+            }
+            exec
+        };
+        let s = stimulus(0);
+        assert_eq!(s.cancel, None);
+        let mut now = traced();
+        let mut before = traced();
+        assert_eq!(s.inject(&now.injector()), Ok(8));
+        // `Stimulus::inject` as ADR-0059 wrote it: the oracle.
+        let inject = before.injector();
+        let message = spike_message(s.efficacy_q16, false);
+        let mut sent = 0u32;
+        for unit in s.set.units() {
+            for _ in 0..s.messages {
+                inject.inject(unit, message).unwrap();
+                sent = sent.saturating_add(1);
+            }
+        }
+        assert_eq!(sent, 8);
+        let fields = |exec: &Executor<8>| -> Vec<(i32, i32, i32, u16, u32)> {
+            exec.units()
+                .iter()
+                .map(|u| {
+                    (
+                        u.v_soma,
+                        u.v_basal,
+                        u.v_thresh,
+                        u.refractory_ticks,
+                        u.last_soma_spike_tick,
+                    )
+                })
+                .collect()
+        };
+        for k in 0..TICKS {
+            assert_eq!(
+                s.cancel_at(&now.injector(), k),
+                Ok(0),
+                "tick {k}: no cancel, nothing due"
+            );
+            now.tick();
+            before.tick();
+            assert_eq!(fields(&now), fields(&before), "tick {k}");
+        }
+        assert_eq!(now.train(), before.train());
+        assert_eq!(now.delivered(), 8);
+        let now = now.shutdown();
+        let before = before.shutdown();
+        assert_eq!(
+            now[0].delivered, before[0].delivered,
+            "the same messages, in order"
+        );
+        assert_eq!(now[0].delivered.len(), 8);
+        // A trial with no cancel injects the stimulus and nothing else: eight messages, as
+        // ADR-0059's trial injected.
+        let mut exec = network(1, ONE / 2);
+        let mut t = task(Feedback::Answer);
+        t.trial(&mut exec, 0).unwrap();
+        assert_eq!(exec.delivered(), 8);
+    }
+
+    /// The cancel on the engine (ADR-0076; the numbers computed apart from the tree by an
+    /// oracle over the membrane rule first and held to the engine here). At a gain of 1.0 four
+    /// messages of 1.25 fire an armed unit at rest at 4, at 205 and at 406 ticks: once on the
+    /// drive and again at the end of each refractory window, from what the basal compartment
+    /// still holds. A cancel of six messages at the bound (−2.0 each) injected at offset 204
+    /// lands on tick 205, the first tick the unit integrates again, and the unit fires once;
+    /// injected one tick earlier it lands inside the window, which drops it, and the unit
+    /// fires three times; one tick later it lands after the second spike, inside the next
+    /// window, and the unit fires three times; five messages on time leave the unit its second
+    /// spike and take its third; a cancel over three ticks from 203 lands on 205 among them.
+    #[test]
+    fn a_cancel_lands_on_the_tick_after_its_offset_and_the_refractory_window_drops_one_inside_it() {
+        const PROBE: u32 = 1024;
+        let run = |cancel: Option<Cancel>| -> Vec<Vec<u32>> {
+            let mut exec = Executor::<8>::new(Config {
+                workers: 1,
+                units: 16,
+                injector_capacity: 256,
+                train_capacity: spikes_per_unit(PROBE).saturating_mul(16) as usize,
+                modulation_baseline_q16: ONE,
+                ..Config::default()
+            })
+            .unwrap();
+            for unit in exec.units_mut() {
+                unit.v_thresh = THRESHOLD_BASE;
+                unit.stp_u_rel = STP_U;
+                unit.stp_r_ves = STP_MAX;
+            }
+            let mut t = task(Feedback::Withheld);
+            t.ticks = PROBE;
+            t.window = Window::whole(PROBE);
+            t.stimuli = [
+                Stimulus {
+                    set: set(0, 4),
+                    messages: 4,
+                    efficacy_q16: CUE_Q16,
+                    cancel,
+                },
+                Stimulus {
+                    set: set(8, 4),
+                    messages: 4,
+                    efficacy_q16: CUE_Q16,
+                    cancel,
+                },
+            ];
+            let trial = (0..8u64).find(|&k| t.stimulus_at(k) == 0).unwrap();
+            let start = exec.ticks() as u32;
+            t.trial(&mut exec, trial).unwrap();
+            let train: Vec<(u32, u32)> = exec.train().to_vec();
+            (0..4u32)
+                .map(|u| {
+                    train
+                        .iter()
+                        .filter(|&&(_, unit)| unit == u)
+                        .map(|&(tick, _)| tick.wrapping_sub(start))
+                        .collect()
+                })
+                .collect()
+        };
+        let bound = Cancel {
+            offset: 204,
+            ticks: 1,
+            messages: 6,
+            efficacy_q16: -0x0002_0000,
+        };
+        assert_eq!(run(None), vec![vec![4, 205, 406]; 4], "no cancel");
+        assert_eq!(run(Some(bound)), vec![vec![4]; 4], "on time");
+        assert_eq!(
+            run(Some(Cancel {
+                offset: 203,
+                ..bound
+            })),
+            vec![vec![4, 205, 406]; 4],
+            "inside the window: dropped"
+        );
+        assert_eq!(
+            run(Some(Cancel {
+                offset: 205,
+                ..bound
+            })),
+            vec![vec![4, 205, 406]; 4],
+            "after the second spike: inside the next window"
+        );
+        assert_eq!(
+            run(Some(Cancel {
+                messages: 5,
+                ..bound
+            })),
+            vec![vec![4, 205]; 4],
+            "five under-cancel the second spike and take the third"
+        );
+        assert_eq!(
+            run(Some(Cancel {
+                offset: 203,
+                ticks: 3,
+                ..bound
+            })),
+            vec![vec![4]; 4],
+            "a span over 203..206 lands on 205 among its ticks"
+        );
+    }
+
     /// The two draws of a trial against an oracle written apart from the tree: SplitMix64's
     /// finaliser (Steele, Lea and Flood 2014) implemented in another language, at seed 27, the
     /// learning harness's. Its low bits overlap the trials', so a draw from `seed | trial`
@@ -1580,6 +2023,7 @@ mod tests {
 #[cfg(test)]
 mod prop {
     use super::*;
+    use crate::executor::Config;
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../testkit/prop.rs"
@@ -1628,6 +2072,88 @@ mod prop {
             let shared = o.units().any(|u| units.contains(&u));
             assert_eq!(s.overlaps(&o), shared, "{s:?} {o:?}");
             assert_eq!(o.overlaps(&s), shared);
+        }
+    }
+
+    /// A cancel injects at its ticks and at no other (ADR-0076): over seeded cancels, before
+    /// every tick of a trial `cancel_at` sends the set's units times the messages when the tick
+    /// is within the cancel's ticks from its offset, by a hand rule, and nothing otherwise; the
+    /// ring drains what was sent and no more; a stimulus with no cancel sends nothing at any
+    /// tick; and the rule over the lattice of offsets, ticks and tick counts.
+    #[test]
+    fn a_cancel_injects_at_its_ticks_and_at_no_other() {
+        let mut lcg = Lcg::new(31);
+        let cue = 0x0001_4000;
+        for _ in 0..64 {
+            let offset = lcg.below(40).saturating_add(1);
+            let ticks = lcg.below(6).saturating_add(1);
+            let messages = lcg.below(3).saturating_add(1);
+            let cancel = Cancel {
+                offset,
+                ticks,
+                messages,
+                efficacy_q16: (lcg.below(0x0002_0000) as i32)
+                    .saturating_neg()
+                    .saturating_sub(1),
+            };
+            let set = Set::contiguous(lcg.below(12), lcg.below(4).saturating_add(1));
+            let with = Stimulus {
+                set,
+                messages: 2,
+                efficacy_q16: cue,
+                cancel: Some(cancel),
+            };
+            let without = Stimulus {
+                cancel: None,
+                ..with
+            };
+            let mut exec = Executor::<8>::new(Config {
+                workers: 1,
+                units: 16,
+                injector_capacity: 64,
+                modulation_baseline_q16: 0,
+                ..Config::default()
+            })
+            .unwrap();
+            let inject = exec.injector();
+            let mut expected = 0u32;
+            for k in 0..48u32 {
+                let due = k.checked_sub(offset).is_some_and(|d| d < ticks);
+                assert_eq!(cancel.is_due(k), due, "{cancel:?} at {k}");
+                let count = if due {
+                    (set.len() as u32).saturating_mul(messages)
+                } else {
+                    0
+                };
+                assert_eq!(with.cancel_at(&inject, k), Ok(count), "{cancel:?} at {k}");
+                assert_eq!(without.cancel_at(&inject, k), Ok(0));
+                expected = expected.saturating_add(count);
+                exec.tick();
+            }
+            exec.tick();
+            assert_eq!(
+                exec.delivered(),
+                u64::from(expected),
+                "{cancel:?}: the ring drained what was sent"
+            );
+        }
+        for &k in U32_LATTICE.iter() {
+            for &offset in U32_LATTICE.iter() {
+                for &ticks in U32_LATTICE.iter() {
+                    let c = Cancel {
+                        offset,
+                        ticks,
+                        messages: 1,
+                        efficacy_q16: -1,
+                    };
+                    assert_eq!(
+                        c.is_due(k),
+                        k.checked_sub(offset).is_some_and(|d| d < ticks),
+                        "{c:?} at {k}"
+                    );
+                    assert_eq!(c.end(), u64::from(offset).saturating_add(u64::from(ticks)));
+                }
+            }
         }
     }
 
