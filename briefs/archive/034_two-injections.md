@@ -1,7 +1,31 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-21
 ---
+
+> **Executed 2026-09-21 in pull request #93.** Writes ADR-0076 (two injections: F-46's drive
+> kept whole and a cancel, a negative basal message into the same units inside the trial, as a
+> field of the task's stimulus with its refusals and a bit-for-bit pin; the brief's offset,
+> `REFRACTORY_TICKS`, lands inside the refractory window, which the membrane rule drops, and
+> its three sizes are too small for the soma the coupling has primed, so the cancel was
+> derived from the engine's rule instead — the tick after the window, over the nine ticks the
+> volley spreads, six messages at the bound per tick, each step by an integer oracle over
+> `integrate` held to the engine's own probe through the task; under it every unit of the
+> presented set fires once and not again, the volley's depression goes to nothing and the
+> background's halves, but the volley's potentiation halves too, because the response
+> ADR-0072 measured was the response to three volleys, and the terms sum to −2.0 per synapse
+> per trial against the +5 hypothesised; the sight passes at 62 of 64 and the sign reads 13,
+> so there is no rewarded run); F-46 resolved and F-47 narrowed; H-12's stopping rule at its
+> first step, the stimulus side exhausted. Image format 14 unchanged; the determinism pin
+> untouched; no constant of the engine or the instrument moved; the gain 1.75. Every
+> deliverable is done or dispositioned; notes under the boxes say where the tree departs from
+> the text: the offset and the sizes, which the membrane rule and the oracle overruled under
+> the brief's empowerment and which are probed as written beside the derived ones; the
+> criterion's runs were not made, because the sign passed under no candidate and the brief's
+> own rule for that case is no rewarded run. The report is in the pull request and in
+> `CHANGELOG.md`. Relative links gained one `../` so that they resolve from `archive/`; no
+> word, claim or figure changed. The body below describes the tree before execution and is
+> not maintained.
 
 # Brief 034 — Two injections: F-46's drive kept whole, so the response it evokes keeps its strength, and a cancelling message at the end of the refractory window, so the unit does not fire again; each clause of the measure gets a knob of its own
 
@@ -11,7 +35,7 @@ date: 2026-09-21
 
 ## Mission
 
-[ADR-0074](../docs/adr/0074-a-stimulus-that-fires-once.md) proved that no stimulus of **one**
+[ADR-0074](../../docs/adr/0074-a-stimulus-that-fires-once.md) proved that no stimulus of **one**
 message can fire each unit of the presented set once inside the pair window. It is not that the
 right value was missed: "One message adds the same amount to every unit while the units' standing
 basal potentials spread wider than the band between the drive that fires once and the drive that
@@ -19,7 +43,7 @@ fires twice … the after-count is monotone in the drive, so the two clauses do 
 drive small enough that no unit fires twice leaves units out of the volley; a drive large enough
 for every unit to join the volley fires some of them again. One knob, two clauses, no overlap.
 
-The same decision explained why [ADR-0072](../docs/adr/0072-what-the-trace-is-made-of.md)'s
+The same decision explained why [ADR-0072](../../docs/adr/0072-what-the-trace-is-made-of.md)'s
 estimate of **+5 per synapse per trial** was not met: the estimate took the volley's depression to
 nothing and held the volley's potentiation at 17.2, and under a weaker stimulus "the volley's
 potentiation fell with the response it pairs (10.6–13.5 against 17.2)". The candidates removed
@@ -40,7 +64,7 @@ first time, under the assumption it was built on.
 
 A negative message is what an inhibitory synapse delivers every tick; the executor already
 carries one (`spike_message` sign-extends the efficacy). What changes is **when** the task
-injects, which is the runtime's composition ([ADR-0059](../docs/adr/0059-a-task-a-readout-and-a-reward.md)),
+injects, which is the runtime's composition ([ADR-0059](../../docs/adr/0059-a-task-a-readout-and-a-reward.md)),
 not a rule of `cortex-core`. The rule, the gain, the geometry, the readout window, the trial, the
 block, the baseline, the reward and both seeds are untouched. If both calibrations pass, ADR-0069's
 criterion runs with ADR-0068's addressed delivery, as brief 033 would have run it.
@@ -57,16 +81,16 @@ criterion runs with ADR-0068's addressed delivery, as brief 033 would have run i
   against $A_+$, controller, or 2025–2026 method; no dependency, no new tool, no version bump of a
   tool. A constant of the *engine* may not be touched at all.
 - Every claim is Implemented, Specified, Target or Hypothesis. ADR-0072's +5 is a **Hypothesis**,
-  named as one wherever it is compared with ([ADR-0010](../docs/adr/0010-measured-or-target.md)).
+  named as one wherever it is compared with ([ADR-0010](../../docs/adr/0010-measured-or-target.md)).
   Nothing here says anything about 256 units (ADR-0070) or Appendix A's scale. No timing figure
   from a developer machine.
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper §11.
   Every number of ADR-0065, ADR-0066, ADR-0069, ADR-0070, ADR-0072 and ADR-0074 stays in them and
   their tests keep pinning them; a run under the new stimulus is a new run with new pins.
 - No `f32`/`f64`, in the crates, the tests and the oracles; every operation on a state field
-  saturates or wraps by name ([ADR-0029](../docs/adr/0029-structural-enforcement.md)).
-- Every loop ends by construction ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+  saturates or wraps by name ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)).
+- Every loop ends by construction ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   the membrane, its threshold, its leak and its refractory window are `cortex-core`'s; the gain's
   scaling of an injected message is the executor's (F-47); the task, its stimulus and **when it
   injects** are the runtime's. **No new crate**; the crate count stays 32; no record changes; the
@@ -74,7 +98,7 @@ criterion runs with ADR-0068's addressed delivery, as brief 033 would have run i
 - **Nothing is chosen after a rewarded run.** The cancel is picked by the measure of Deliverable A
   from the candidates listed there, in their order, derived by a rule written there; the measure
   reads no selection, reward or outcome; all of it is committed before the first rewarded run.
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) does not move: a
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) does not move: a
   `Stimulus` with no cancel must inject exactly what it injects today, bit for bit, held by a test.
   The mutation gate on the changed lines must pass; the new rule of the task module carries a test
   over the lattice of `testkit/prop.rs`; every number an arithmetic oracle can produce is computed
@@ -82,8 +106,8 @@ criterion runs with ADR-0068's addressed delivery, as brief 033 would have run i
   because ADR-0074's oracle disagreed with the engine on exactly the gain's scaling (F-47).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive` and runs in the weekly job;
   the pull request's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); no
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); no
   registry entry (F-37). Conventional Commits with a real body; never commit on `main`; the
   required checks keep their names.
 
@@ -92,7 +116,7 @@ criterion runs with ADR-0068's addressed delivery, as brief 033 would have run i
 Re-derived on 2026-09-21 against `main` at `17e06c6`. Line numbers move; the symbols and the
 quoted sentences are what to re-derive.
 
-1. **Why one message cannot do it** ([ADR-0074](../docs/adr/0074-a-stimulus-that-fires-once.md),
+1. **Why one message cannot do it** ([ADR-0074](../../docs/adr/0074-a-stimulus-that-fires-once.md),
    `tests/instrument.rs`, `ONCE_1024`): against the measure's two clauses — one spike per unit
    within two before the readout window opens (`VOLLEY_TOLERANCE_TENTHS = 20`) and at most a tenth
    per unit in the pair window after it (`AFTER_MAX_TENTHS = 1`) — the candidates read:
@@ -109,7 +133,7 @@ quoted sentences are what to re-derive.
    the background's to 15–18 (not 11), and the volley's potentiation fell with the response it
    pairs (10.6–13.5 against 17.2)." ADR-0072's estimate had held that potentiation at 17.2.
 3. **The membrane that sets the timing** (`crates/cortex-core/src/dynamics/membrane.rs`,
-   [ADR-0018](../docs/adr/0018-membrane-integration.md)): `REFRACTORY_TICKS = 200`,
+   [ADR-0018](../../docs/adr/0018-membrane-integration.md)): `REFRACTORY_TICKS = 200`,
    `BASAL_LEAK_SHIFT = 9` (a basal time constant of $2^9 = 512$ ticks). The engine's own probe of
    one injection into a unit at rest at the gain 1.75 (`PROBED_1024`): F-46's two messages of 1.25
    fire it **at 5 and at 206 ticks** — once on the drive and again as the refractory window ends on
@@ -138,8 +162,8 @@ quoted sentences are what to re-derive.
    **0.4 to 0.8 of a spike per trial, downward**; the instrument's bias is ±0.53. "The sign is the
    obstacle first; the magnitude is within a small factor of enough." The machinery (`bias`,
    `offset`, `block_bias` in `tests/instrument.rs`) exists and costs nothing to run again.
-8. **The budget and the evidence** ([ADR-0073](../docs/adr/0073-the-whole-domain-tests-sharded.md),
-   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). `instrument.rs` is a shard
+8. **The budget and the evidence** ([ADR-0073](../../docs/adr/0073-the-whole-domain-tests-sharded.md),
+   [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). `instrument.rs` is a shard
    of the whole-domain tests by itself and this round adds to it; the round states that shard's time
    against its 120-minute bound, and if it nears the bound says what would come out rather than
    raising it. **This brief names no dispatch scope**: under ADR-0075 the executing round decides
@@ -151,7 +175,7 @@ quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The two-injection stimulus (the next free ADR number; `ls docs/adr`)** (`depends-on:
+- [x] **The two-injection stimulus (the next free ADR number; `ls docs/adr`)** (`depends-on:
   ADR-0074`; ADR-0018, ADR-0059, ADR-0065, F-46 and F-47 named). In
   `runtime/cortex-runtime/src/task.rs`, a stimulus may carry a **cancel**: a basal message of
   **negative** efficacy into every unit of the set, injected between ticks at an offset from the
@@ -171,7 +195,9 @@ quoted sentences are what to re-derive.
     in the same compartment at the same rate from there;
   - (d) the `Stimulus` comment F-47 shows false is corrected to what the probe reads, since this
     round edits the type.
-- [ ] **The cancel, and the measure that picks it (the same ADR).** The first injection is **F-46's,
+
+  **Done, with (c) overruled by the tree** (ADR-0076): `Cancel { offset, ticks, messages, efficacy_q16 }` on `Stimulus::cancel`, a list of timed injections over a span, the empowerment's shape; (a) held by `a_stimulus_with_no_cancel_injects_what_it_injected_before` against ADR-0059's loop, and every pinned run reruns unchanged; (b) four refusals (`EmptyCancel` added for no message or no tick) each at its edges, the lattice property `a_cancel_injects_at_its_ticks_and_at_no_other`, and the engine held to the oracle's timing at a gain of 1.0; (c) **rejected as written**: the membrane rule drops an input inside the refractory window (ADR-0018), so a cancel at `REFRACTORY_TICKS` lands on tick 201, inside the window of every unit that fired in the volley, and is dropped — probed as written on the engine, `PROBED_CANCEL_1024` — and the offset is `REFRACTORY_TICKS + 1` over a span of nine ticks derived from the volley's census; (d) done.
+- [x] **The cancel, and the measure that picks it (the same ADR).** The first injection is **F-46's,
   unchanged** (`STIMULUS_MESSAGES = 2`, `STIMULUS_Q16`). The cancel's magnitude, **derived after the
   gain** (Context item 4) by an integer oracle from `BASAL_LEAK_SHIFT` and `REFRACTORY_TICKS`, and
   **checked against the engine's probe of a unit at rest before it is used** — the candidates, in
@@ -191,7 +217,9 @@ quoted sentences are what to re-derive.
   1.75. The first candidate passing the probe and both clauses is the stimulus; if none does, there
   is no rewarded run, and the ADR records every candidate's probe and census and says which clause
   each failed.
-- [ ] **The composition re-read, against the condition the +5 assumed.** Under the chosen stimulus,
+
+  **Done, with the candidates re-derived under the empowerment** (ADR-0076): the brief's three — the residual (one message of −111 082, the 2.97 after the gain on tick 200 divided by it), twice it, the bound — were probed as written at the brief's offset (dropped: 5 and 206 each) and at the derived span (too small for the soma: 5 and 206 each), the oracle reading the residual as 2.94 after the gain on tick 205 and the least cancel on tick 206 as 7.41, 2.5 times it; the derived candidates in messages at the bound per tick, in order, 3 (the least at rest), 6 (the least at the extreme standing state) and 12 (twice it), each probed (5 alone) and run: 3 leaves 0.83 spikes per unit after the opening and fails the after clause; **6 fires every unit once and not again and is the pick** (`CANCEL_PICKED_1024`); 12 reads the same. The measure read no outcome.
+- [x] **The composition re-read, against the condition the +5 assumed.** Under the chosen stimulus,
   ADR-0072's composition by its own test at no extra cost: the volley's potentiation and depression,
   the background's, their sum per trial and the standing trace after the block, beside ADR-0072's
   17.2, 10.4, 7.5, 26.8, −15.7 and −66.6 and ADR-0074's three candidates. **The expectation, written
@@ -202,17 +230,25 @@ quoted sentences are what to re-derive.
   the response itself changed and the ADR says what the census shows changed it; if the sum stays
   negative with the potentiation held, the background's depression is what remains, and the ADR says
   by how much.
-- [ ] **The two calibrations at 1.75, unchanged.** ADR-0065's **sight** and ADR-0072's **sign**, each
+
+  **Done, and the expectation not met** (ADR-0076's table): under the pick the volley's potentiation is 8.0 against 17.2, its depression −0.2 against −10.4, the background's potentiation 6.6 against 7.5 and its depression −12.7 against −26.8; the terms sum to −2.0 per synapse per trial against the +5 Hypothesis, the standing trace −9.0 against −66.6. The potentiation fell although the first injection is F-46's, and the census says what changed it: the response ADR-0072 measured in the pair window after the opening was the response to three volleys (the after-spikes were volleys too), 19.2 spikes per readout set per trial against 8.9 to one, and the potentiation fell in the same proportion; the background's depression is what remains, halved and not gone.
+- [x] **The two calibrations at 1.75, unchanged.** ADR-0065's **sight** and ADR-0072's **sign**, each
   56 of 64, weights frozen, neither reading a selection, a reward or an outcome. **The gain does not
   move and the ladder is not walked.** If the sign fails, there is no rewarded run.
-- [ ] **What the criterion requires, read off the trials again.** ADR-0074's three integer readings —
+
+  **Done, with the outcome the box names:** the sight 63, 62 and 62 of 64 and the sign 2, 13 and 13 under the three candidates; the gain did not move and the ladder was not walked; the sign failed under the pick (13), so there is no rewarded run (`CANCEL_CALIBRATED_1024` is false).
+- [x] **What the criterion requires, read off the trials again.** ADR-0074's three integer readings —
   the instrument's bias, the offset the criterion needs, what a delivery moved — under the chosen
   stimulus, beside ADR-0074's, in every branch of this round. If the bias exceeds what a delivery
   moves, a numbered finding, as brief 033 asked; nothing moves on these numbers.
-- [ ] **The constants commit**, preceding the first commit that holds a rewarded outcome: the chosen
+
+  **Done** in the branch the round took: (a) the bias under the pick +6/34 and +3/30, toward the answer on both stimuli (+14/34 and +9/30 under 3, +5/34 and +4/30 under 12), against +18/34 and −16/30 under F-46's stimulus; (b) the offset 1 under the pick (2 and 1 under the others) at 40 of 64; (c) ADR-0074's reading of ADR-0069's blocks, 0.4 to 0.8 of a spike per trial downward, quoted. The bias is below what the delivery moved, so no finding fires and nothing moves.
+- [x] **The constants commit**, preceding the first commit that holds a rewarded outcome: the chosen
   cancel with its derivation, its probe and its census, and every constant of ADR-0065, ADR-0068 and
   ADR-0069 restated unchanged.
-- [ ] **The criterion, ADR-0069's, unchanged**, run only if both calibrations pass: at 1 024 units
+
+  **Done as the round's shape allows:** there is no rewarded outcome for it to precede. `418b8fd` on the branch holds the mechanism, the oracle, the derived constants, the probes and both expectations, written before any run; `e2971eb` holds the census and the pick; every constant of ADR-0065, ADR-0068 and ADR-0069 is restated unchanged by the pinned runs, which pass `None` as the cancel and rerun bit for bit.
+- [x] **The criterion, ADR-0069's, unchanged**, run only if both calibrations pass: at 1 024 units
   with ADR-0068's addressed delivery, the addressed rewarded run, the mirrored assignment, the
   addressed shuffled reward and the fixed modulation, as weekly `exhaustive` tests; ADR-0069's own
   runs are the comparison. Over the last 128 trials: rewarded **at least 80** in both assignments;
@@ -221,24 +257,34 @@ quoted sentences are what to re-derive.
   ratio ADR-0069 read as 0.937 goes above the census's 0.992; a failure with the ratio above 1 is a
   magnitude problem, and with Deliverable D's offset beside it the ADR says how far short; a failure
   with the ratio below 1 means the sign did not reach the couplings.
-- [ ] **The gate.** At most one test, running no whole run: the probe of every candidate on a unit at
+
+  **Rejected** by the brief's own rule: both calibrations must pass first and the sign passed under no candidate; the expectation written for a positive trace stays untested.
+- [x] **The gate.** At most one test, running no whole run: the probe of every candidate on a unit at
   rest, and the chosen stimulus's first block held to the first row of its pinned table (or, if
   none is chosen, candidate (iii)'s). Nothing else added to the gate.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at the scope
-  [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md) gives **this round's own
+
+  **Done:** one test, `the_first_eight_trials_of_the_two_injections_at_1024_units_and_the_rules_over_their_tables`, the eleven probes through the task held to their table and to the oracle, the rules over the pinned tables, and the first eight trials of the pick held to the first eight rows and counts of its tables (the first eight trials rather than the first block, as ADR-0072's and ADR-0074's gate tests are).
+- [x] **The evidence.** A weekly dispatched on this round's branch at the scope
+  [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md) gives **this round's own
   diff**, the clause that applied stated in the ADR; green in every job it runs, every pinned number
   reproduced, no survivor; its run id, the three exhaustive shards' times with `instrument.rs`'s
   against its bound, and — if the sweep ran — the six runtime shards' times, all in the ADR.
-- [ ] **The documents, in the same pull request.** Whitepaper §11's **F-46** (resolved, or narrowed
+
+  **Done:** the diff changes `runtime/cortex-runtime/src/task.rs` and `src/lib.rs`, ADR-0075's first clause, so the weekly was dispatched at `scope=both`; the run id, the shards' times and what the sweep found are in ADR-0076's evidence.
+- [x] **The documents, in the same pull request.** Whitepaper §11's **F-46** (resolved, or narrowed
   with what remains) and **F-47** (the `Stimulus` comment corrected; the replay question left open
   and said to be left); §11.1's **H-12** and H-11's synaptic half; §8.8's three-factor row; §6.5's
   "The loop as the runtime composes it"; §9, the ADR index, `CHANGELOG.md`, `README.md`, `CLAUDE.md`'s
   opening paragraph and `docs/zh-TW`'s reader's guide as the result requires. The whitepaper's
   version moves in **both** declarations with its date
-  ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)). Executable directives
+  ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)). Executable directives
   under every sentence that claims a test, a type or a constant exists.
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the frozen
+
+  **Done:** F-46 resolved and F-47 narrowed in §11, H-11 and H-12 and the stopping rule's first step in §11.1, §8.8's three-factor row (§5.2.1's paragraph), §6.5, §9, the ADR index, `CHANGELOG.md`, `README.md`, `CLAUDE.md` and the reader's guide; the whitepaper at 4.28.0 in both declarations; directives under the type, the injection, the oracle, the two tests, the pick and the calibration.
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the frozen
   banner naming the pull request, the ADRs and the outcome of each measure.
+
+  **Done:** this file.
 
 ## Not empowered
 
