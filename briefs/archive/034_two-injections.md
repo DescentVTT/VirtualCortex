@@ -247,7 +247,7 @@ quoted sentences are what to re-derive.
   cancel with its derivation, its probe and its census, and every constant of ADR-0065, ADR-0068 and
   ADR-0069 restated unchanged.
 
-  **Done as the round's shape allows:** there is no rewarded outcome for it to precede. `418b8fd` on the branch holds the mechanism, the oracle, the derived constants, the probes and both expectations, written before any run; `e2971eb` holds the census and the pick; every constant of ADR-0065, ADR-0068 and ADR-0069 is restated unchanged by the pinned runs, which pass `None` as the cancel and rerun bit for bit.
+  **Done as the round's shape allows:** there is no rewarded outcome for it to precede. `e092ee3` on `main` (`418b8fd` on the branch before the rebase that merged pull request #93) holds the mechanism, the oracle, the derived constants, the probes and both expectations, written before any run; `ac624ae` (`e2971eb` on the branch) holds the census and the pick; every constant of ADR-0065, ADR-0068 and ADR-0069 is restated unchanged by the pinned runs, which pass `None` as the cancel and rerun bit for bit.
 - [x] **The criterion, ADR-0069's, unchanged**, run only if both calibrations pass: at 1 024 units
   with ADR-0068's addressed delivery, the addressed rewarded run, the mirrored assignment, the
   addressed shuffled reward and the fixed modulation, as weekly `exhaustive` tests; ADR-0069's own
