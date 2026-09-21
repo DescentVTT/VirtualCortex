@@ -196,7 +196,7 @@ move; the symbols and the quoted sentences are what to re-derive.
     −15.7 and −66.6. The ADR states whether the volley's depression went "to nothing" and whether
     the sum met the **+5 per synapse per trial** ADR-0072 estimated, **naming that number as the
     Hypothesis it is** and not adjusting anything to it.
-  **Done as written**, with the outcome that no candidate passes. The candidates (a), (b) and (c) were run in that order (`ONCE_1024`), (c) argued in ADR-0074 and committed in `d38db55` before it was measured; the measure `fires_once` reads no outcome; the composition was re-read under every candidate against ADR-0072's 17.2, 10.4, 7.5, 26.8, −15.7 and −66.6, and the +5 is named as the Hypothesis it is and not met (−3.7, −5.5, −4.7). The volley's depression went to about 3 per presentation, not to nothing.
+  **Done as written**, with the outcome that no candidate passes. The candidates (a), (b) and (c) were run in that order (`ONCE_1024`), (c) argued in ADR-0074 and committed in `d38db55` (`0c8c29a` on `main`) before it was measured; the measure `fires_once` reads no outcome; the composition was re-read under every candidate against ADR-0072's 17.2, 10.4, 7.5, 26.8, −15.7 and −66.6, and the +5 is named as the Hypothesis it is and not met (−3.7, −5.5, −4.7). The volley's depression went to about 3 per presentation, not to nothing.
 - [x] **The two calibrations, at the gain 1.75, unchanged.** ADR-0065's **sight** (56 of 64) and
   ADR-0072's **sign** (the presented stimulus's summed eligibility onto both readouts positive in
   56 of 64), both with the weights frozen and no reward, both written first and neither reading a
@@ -207,7 +207,7 @@ move; the symbols and the quoted sentences are what to re-derive.
 - [x] **The constants commit**, preceding the first commit that holds a rewarded outcome: the
   chosen stimulus with its census, and every constant of ADR-0065, ADR-0068 and ADR-0069 restated
   unchanged.
-  **Done as the round's shape allows:** there is no rewarded outcome for it to precede. `d38db55` holds the candidates (a) and (b) with their censuses, the measure and candidate (c) written before its run; `025486f` holds (c)'s census and the pick (none); every constant of ADR-0065, ADR-0068 and ADR-0069 is restated unchanged by the pinned runs, which pass `SHAPE_F46`.
+  **Done as the round's shape allows:** there is no rewarded outcome for it to precede. `d38db55` (`0c8c29a` on `main`) holds the candidates (a) and (b) with their censuses, the measure and candidate (c) written before its run; `025486f` (`f09e759` on `main`) holds (c)'s census and the pick (none); every constant of ADR-0065, ADR-0068 and ADR-0069 is restated unchanged by the pinned runs, which pass `SHAPE_F46`.
 - [x] **What the criterion requires, read off the trials (the same ADR).** Three numbers, in spikes per
   trial, from the counts the runs already record — no model, no distribution assumed, and **integers
   throughout** (a count is a count; the standing directives forbid a float in an oracle):
