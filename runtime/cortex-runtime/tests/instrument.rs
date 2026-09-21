@@ -4090,15 +4090,13 @@ fn compose_counting(
 /// A trial's readout counts as the task read them (brief 033): the stimulus presented and
 /// the spikes of each readout set in the readout window.
 type Counted = (u8, [u32; 2]);
+/// A frozen run read under a shape: the sight's blocks and trace, the composed trials, the
+/// synapses from each stimulus set onto each readout set, and every trial's counts.
+type Shaped = (Vec<Block>, u64, Vec<Composed>, [[u32; 2]; 2], Vec<Counted>);
 
 /// `compose_counting` with the stimulus of `shape` (brief 033), and every trial's readout
 /// counts beside the composition; under `SHAPE_F46` it is `compose_counting`.
-fn compose_shaped(
-    shape: Shape,
-    units: u32,
-    gain: u32,
-    trials: usize,
-) -> (Vec<Block>, u64, Vec<Composed>, [[u32; 2]; 2], Vec<Counted>) {
+fn compose_shaped(shape: Shape, units: u32, gain: u32, trials: usize) -> Shaped {
     let p = prior(units);
     let frozen = at_gain(&p, config(units, 2, 0), gain);
     let sums = weights_by_polarity(&frozen);
@@ -4558,8 +4556,10 @@ const SYNAPSES_1024: [[u32; 2]; 2] = [[775, 806], [798, 809]];
 #[test]
 #[ignore]
 fn the_composition_at_1024_units_exhaustive() {
-    let (blocks, trace, trials) = compose(1024, LADDER[0], BLOCK);
+    let (blocks, trace, trials, counts, counted) =
+        compose_shaped(SHAPE_F46, 1024, LADDER[0], BLOCK);
     dump_composition("composition1024", &blocks, trace, &trials);
+    dump_requires("composition1024", &counted, false, OFFSET_MARK_64);
     let (block, pin, composed) = &LADDER_1024[0];
     pinned("composition1024 sight", &blocks, trace, &[*block], *pin);
     pinned_composition(
@@ -4567,6 +4567,12 @@ fn the_composition_at_1024_units_exhaustive() {
         &trials,
         &LADDER_ROWS_1024[0],
         Some(composed),
+    );
+    assert_eq!(counts, SYNAPSES_1024);
+    assert_eq!(
+        counted.as_slice(),
+        COUNTED_1024,
+        "composition1024: the counts"
     );
 }
 
@@ -4946,7 +4952,7 @@ fn dump_requires(name: &str, counted: &[Counted], mirrored: bool, mark: u32) {
 /// The candidates at 1 024 units, in the candidates' order, each a frozen run of
 /// sixty-four trials at the present gain read by the sight, the sign and the measure that
 /// picks: the sight's block and trace, and the composition. Pinned from one run each.
-const ONCE_1024: [(Block, u64, Composition); 2] = [
+const ONCE_1024: [(Block, u64, Composition); 3] = [
     (
         (
             32,
@@ -5013,9 +5019,42 @@ const ONCE_1024: [(Block, u64, Composition); 2] = [
             1732380210409406099,
         ),
     ),
+    (
+        (
+            30,
+            34,
+            [[365, 350], [353, 350]],
+            [1702, 1497],
+            [3381, 3026],
+            [253, 237],
+            62,
+            213902976,
+            235822619,
+            0,
+            [[6986739, 7212710], [7146878, 7257384]],
+            6,
+        ),
+        0xef44f6eee8436967,
+        (
+            [[-13221, -22593], [-6238, -10911]],
+            [
+                [
+                    [311063, -93437, 357001, -806596],
+                    [295797, -75992, 392519, -792305],
+                ],
+                [
+                    [277828, -68645, 321778, -688156],
+                    [270162, -83202, 373574, -710051],
+                ],
+            ],
+            [[1045, 1905], [1038, 1936], [3304, 1502]],
+            0,
+            11588833636741486556,
+        ),
+    ),
 ];
 /// The rows of every candidate's sixty-four trials, in the candidates' order.
-const ONCE_ROWS_1024: [[Row; BLOCK]; 2] = [
+const ONCE_ROWS_1024: [[Row; BLOCK]; 3] = [
     [
         (0, -5859, [13299, -8565, 10063, -20768]),
         (0, -80, [17533, -1124, 20316, -32032]),
@@ -5148,9 +5187,75 @@ const ONCE_ROWS_1024: [[Row; BLOCK]; 2] = [
         (1, -30158, [9220, -4085, 19686, -36523]),
         (1, -30439, [15417, -5592, 13296, -29833]),
     ],
+    [
+        (0, -6113, [15928, -9026, 8047, -21194]),
+        (0, -11945, [20835, -3424, 19311, -44218]),
+        (1, -42295, [12599, -11634, 25107, -48030]),
+        (0, -16307, [15284, -2536, 22021, -36884]),
+        (0, -3619, [20318, -874, 18226, -30130]),
+        (0, -13950, [15829, -3301, 13833, -37274]),
+        (0, -19089, [11025, -1751, 11727, -29174]),
+        (0, -19067, [13191, -1523, 14775, -32188]),
+        (0, -18309, [17900, -7211, 17653, -29188]),
+        (0, -33332, [14154, -2391, 25759, -57727]),
+        (1, -22590, [12415, -9235, 23084, -29753]),
+        (1, -7734, [25800, -5990, 13965, -24389]),
+        (0, -29152, [19170, -7859, 22648, -41497]),
+        (0, -17295, [30408, -8383, 29153, -44779]),
+        (1, -18419, [8943, -3461, 17956, -34494]),
+        (0, -18640, [15895, -9689, 14070, -29915]),
+        (1, -14774, [12097, -3142, 21672, -34851]),
+        (0, -35011, [11454, -766, 21724, -51737]),
+        (0, -42262, [23945, -5201, 15059, -48476]),
+        (0, -51165, [15334, -3758, 14280, -42983]),
+        (1, -22627, [10502, -10705, 21378, -28195]),
+        (0, -51484, [11942, -2781, 16837, -45089]),
+        (1, -19506, [17439, -4481, 20172, -43468]),
+        (1, -16215, [19512, -6439, 16998, -31045]),
+        (1, -34567, [19939, -9175, 20620, -51101]),
+        (0, -37507, [10515, -8618, 14074, -28331]),
+        (1, -33248, [16878, -5852, 12327, -39212]),
+        (1, -36858, [16768, -3280, 12923, -37787]),
+        (1, -33269, [15750, -3146, 14108, -31168]),
+        (0, -33428, [20580, -12935, 21428, -41746]),
+        (0, -28403, [17266, -2262, 21083, -38259]),
+        (0, -35821, [18136, -9714, 12137, -34621]),
+        (0, -31243, [23143, -7517, 13152, -32376]),
+        (0, -38559, [17588, -3815, 13992, -43129]),
+        (1, -24170, [5423, -5602, 18683, -30249]),
+        (1, -20431, [24452, -4681, 14878, -36846]),
+        (1, -14899, [18277, -978, 13038, -29076]),
+        (0, -39889, [11796, -11406, 26932, -43043]),
+        (1, -19311, [16290, -6875, 26905, -38089]),
+        (1, -14318, [23135, -3658, 17806, -37291]),
+        (0, -25667, [9204, -5291, 22132, -30292]),
+        (1, -25201, [13420, -3687, 15538, -33049]),
+        (0, -20407, [16317, -3528, 20675, -38364]),
+        (1, -24194, [12085, -2546, 19232, -36375]),
+        (0, -20817, [13719, -4315, 22548, -40000]),
+        (1, -20776, [18693, -6517, 16258, -34527]),
+        (0, -39642, [9496, -2161, 13475, -42009]),
+        (0, -29222, [19088, -3970, 21251, -33802]),
+        (0, -25329, [20714, -6071, 12140, -28287]),
+        (1, -16932, [16161, -9982, 29865, -38025]),
+        (1, -22798, [17220, -5524, 20112, -41425]),
+        (0, -31911, [6088, -1882, 21521, -38950]),
+        (1, -13437, [17966, -907, 18675, -37303]),
+        (1, -12973, [15826, -3653, 15503, -31546]),
+        (0, -34414, [11576, -5422, 21443, -43426]),
+        (1, -32019, [11378, -2653, 13216, -43047]),
+        (1, -24573, [19438, -1105, 16226, -33595]),
+        (1, -29734, [18864, -3660, 17749, -43812]),
+        (0, -32527, [7750, -2252, 25047, -44905]),
+        (1, -13483, [14537, -4002, 17136, -28140]),
+        (0, -28575, [21894, -5374, 20424, -39690]),
+        (0, -32072, [13984, -2422, 15730, -39414]),
+        (1, -16857, [11749, -4340, 21095, -34411]),
+        (1, -17149, [15365, -4936, 12978, -27479]),
+    ],
 ];
 /// Every trial's readout counts under every candidate, in the candidates' order.
-const ONCE_COUNTED_1024: [[Counted; BLOCK]; 2] = [
+const ONCE_COUNTED_1024: [[Counted; BLOCK]; 3] = [
     [
         (0, [6, 10]),
         (0, [14, 12]),
@@ -5283,14 +5388,169 @@ const ONCE_COUNTED_1024: [[Counted; BLOCK]; 2] = [
         (1, [12, 9]),
         (1, [12, 14]),
     ],
+    [
+        (0, [7, 11]),
+        (0, [15, 13]),
+        (1, [18, 28]),
+        (0, [13, 10]),
+        (0, [5, 6]),
+        (0, [5, 9]),
+        (0, [7, 4]),
+        (0, [10, 7]),
+        (0, [12, 13]),
+        (0, [5, 5]),
+        (1, [14, 15]),
+        (1, [10, 13]),
+        (0, [16, 14]),
+        (0, [15, 14]),
+        (1, [15, 26]),
+        (0, [12, 10]),
+        (1, [10, 10]),
+        (0, [6, 13]),
+        (0, [12, 16]),
+        (0, [15, 12]),
+        (1, [17, 15]),
+        (0, [8, 4]),
+        (1, [9, 14]),
+        (1, [7, 4]),
+        (1, [8, 15]),
+        (0, [9, 10]),
+        (1, [8, 11]),
+        (1, [10, 5]),
+        (1, [12, 6]),
+        (0, [14, 14]),
+        (0, [9, 13]),
+        (0, [9, 13]),
+        (0, [16, 10]),
+        (0, [6, 3]),
+        (1, [14, 12]),
+        (1, [19, 10]),
+        (1, [12, 6]),
+        (0, [15, 11]),
+        (1, [12, 18]),
+        (1, [5, 10]),
+        (0, [13, 8]),
+        (1, [15, 6]),
+        (0, [16, 11]),
+        (1, [15, 13]),
+        (0, [9, 4]),
+        (1, [13, 11]),
+        (0, [7, 10]),
+        (0, [8, 15]),
+        (0, [9, 6]),
+        (1, [12, 10]),
+        (1, [7, 11]),
+        (0, [9, 13]),
+        (1, [11, 8]),
+        (1, [9, 9]),
+        (0, [13, 16]),
+        (1, [12, 13]),
+        (1, [13, 11]),
+        (1, [11, 6]),
+        (0, [13, 11]),
+        (1, [11, 11]),
+        (0, [11, 11]),
+        (0, [16, 10]),
+        (1, [12, 10]),
+        (1, [12, 13]),
+    ],
 ];
+
+/// The stimulus the round picked, as `candidate_pick` reads the pinned tables: none, no
+/// candidate having fired every unit once and added under a tenth of a spike after.
+const SHAPE_PICKED_1024: Option<Shape> = None;
+/// The ticks at which unit 0 of the instrument's network at 1 024 units, at rest at the
+/// gain 1.75 with no drive, fires within one pair window after one injection of each
+/// shape (`probe`): F-46's two messages of 1.25 fire it twice, at the end of the
+/// refractory window from what the basal compartment still holds; (a) not at all; (b)
+/// once; (c) not at all. The engine's own reading of what one message does to a unit at
+/// rest, pinned; the executor scales an injected message by the synaptic gain (F-47).
+const PROBED_1024: [(Shape, &[u32]); 4] = [
+    (SHAPE_F46, &[5, 206]),
+    (CANDIDATE_A, &[]),
+    (CANDIDATE_B, &[22]),
+    (CANDIDATE_C, &[]),
+];
+/// Every trial's readout counts of ADR-0072's composition run, F-46's stimulus at 1 024
+/// units and the gain 1.75 with the weights frozen (`the_composition_at_1024_units_exhaustive`,
+/// `CALIBRATION_1024[0]`'s run): Deliverable D's readings of the instrument as it stands.
+const COUNTED_1024: &[Counted] = &[
+    (0, [16, 19]),
+    (0, [11, 12]),
+    (1, [29, 31]),
+    (0, [14, 9]),
+    (0, [2, 3]),
+    (0, [5, 9]),
+    (0, [5, 5]),
+    (0, [9, 5]),
+    (0, [9, 12]),
+    (0, [6, 6]),
+    (1, [25, 24]),
+    (1, [6, 8]),
+    (0, [18, 18]),
+    (0, [13, 8]),
+    (1, [15, 31]),
+    (0, [15, 8]),
+    (1, [11, 9]),
+    (0, [7, 13]),
+    (0, [10, 12]),
+    (0, [12, 11]),
+    (1, [24, 20]),
+    (0, [12, 7]),
+    (1, [14, 15]),
+    (1, [5, 4]),
+    (1, [8, 12]),
+    (0, [10, 12]),
+    (1, [9, 12]),
+    (1, [8, 4]),
+    (1, [11, 5]),
+    (0, [19, 18]),
+    (0, [8, 14]),
+    (0, [9, 11]),
+    (0, [14, 10]),
+    (0, [8, 3]),
+    (1, [26, 26]),
+    (1, [15, 8]),
+    (1, [10, 4]),
+    (0, [20, 18]),
+    (1, [15, 15]),
+    (1, [6, 7]),
+    (0, [17, 8]),
+    (1, [16, 7]),
+    (0, [15, 15]),
+    (1, [13, 12]),
+    (0, [12, 3]),
+    (1, [13, 15]),
+    (0, [9, 11]),
+    (0, [8, 13]),
+    (0, [8, 6]),
+    (1, [11, 15]),
+    (1, [7, 7]),
+    (0, [10, 19]),
+    (1, [13, 8]),
+    (1, [5, 6]),
+    (0, [16, 18]),
+    (1, [12, 12]),
+    (1, [9, 12]),
+    (1, [7, 5]),
+    (0, [20, 21]),
+    (1, [12, 13]),
+    (0, [14, 12]),
+    (0, [15, 9]),
+    (1, [14, 8]),
+    (1, [10, 8]),
+];
+
+/// A candidate's frozen run: the sight's blocks and trace, the composed trials and every
+/// trial's counts.
+type CandidateRun = (Vec<Block>, u64, Vec<Composed>, Vec<Counted>);
 
 /// The candidates, each run and dumped before any is held to its table, so that one
 /// candidate's failure still shows the others' readings.
 #[test]
 #[ignore]
 fn the_candidate_stimuli_at_1024_units_exhaustive() {
-    let runs: Vec<(Vec<Block>, u64, Vec<Composed>, Vec<Counted>)> = CANDIDATES
+    let runs: Vec<CandidateRun> = CANDIDATES
         .iter()
         .map(|&shape| {
             let (blocks, trace, trials, counts, counted) =
@@ -5317,9 +5577,7 @@ fn the_candidate_stimuli_at_1024_units_exhaustive() {
     for (k, (blocks, trace, trials, counted)) in runs.iter().enumerate() {
         let shape = CANDIDATES[k];
         let name = format!("once1024 {k} {shape:?}");
-        let Some((block, pin, composed)) = ONCE_1024.get(k) else {
-            continue;
-        };
+        let (block, pin, composed) = &ONCE_1024[k];
         pinned(&format!("{name} sight"), blocks, *trace, &[*block], *pin);
         pinned_composition(&name, trials, &ONCE_ROWS_1024[k], Some(composed));
         assert_eq!(
@@ -5328,4 +5586,232 @@ fn the_candidate_stimuli_at_1024_units_exhaustive() {
             "{name}: the counts"
         );
     }
+}
+
+/// The gate's test (ADR-0061's class): the selection rule, the two clauses, the measure
+/// and the pick at their edges over readings written by hand; Deliverable D's three
+/// readings at theirs and over the pinned tables; the pick over the pinned candidates as
+/// written; the engine's probe of one message into a unit at rest, held to its table; and
+/// the first eight trials of candidate (a), run and held to the first eight rows and
+/// counts of its pinned tables; no number is pinned twice.
+#[test]
+fn the_first_eight_trials_of_candidate_a_at_1024_units_and_the_rules_over_its_tables() {
+    // The selection is the sign of the count difference, none at equal counts.
+    assert_eq!(selected([3, 2]), Some(0));
+    assert_eq!(selected([2, 3]), Some(1));
+    assert_eq!(selected([3, 3]), None);
+    assert_eq!(selected([0, 0]), None);
+    // The volley clause at its edges: 51 units, 34 A trials and 30 B trials; one per unit
+    // within two spikes per presentation, in tenths.
+    let mut block = CALIBRATION_1024[0].0;
+    assert!(
+        volley_once(1024, &block),
+        "ADR-0065's calibration fires once in the volley"
+    );
+    block.3 = [34 * 51, 30 * 51];
+    assert!(volley_once(1024, &block), "exactly one per unit");
+    block.3 = [34 * 51 - 68, 30 * 51 - 60];
+    assert!(
+        volley_once(1024, &block),
+        "two spikes short of the set, each"
+    );
+    block.3 = [34 * 51 - 69, 30 * 51 - 60];
+    assert!(
+        !volley_once(1024, &block),
+        "a tenth more than two short on A fails"
+    );
+    block.3 = [34 * 51, 30 * 51 - 61];
+    assert!(!volley_once(1024, &block), "on B");
+    block.3 = [34 * 51 + 4, 30 * 51];
+    assert!(!volley_once(1024, &block), "more than one per unit fails");
+    block.1 = 0;
+    block.3 = [0, 64 * 51];
+    assert!(
+        !volley_once(1024, &block),
+        "no A trial: no reading, no pass"
+    );
+    block.1 = 64;
+    block.3 = [64 * 51, 0];
+    assert!(!volley_once(1024, &block), "no B trial");
+    // The after clause at its edges: at most a tenth per unit per presentation over the
+    // block, 326 spikes of 64 × 51 × 0.1 = 326.4.
+    let after = |spikes: u64| -> Composition {
+        (
+            [[0; 2]; 2],
+            [[[0; 4]; 2]; 2],
+            [[0, 0], [0, 0], [0, spikes]],
+            0,
+            0,
+        )
+    };
+    assert!(after_quiet(1024, &after(326)));
+    assert!(!after_quiet(1024, &after(327)));
+    assert!(after_quiet(1024, &after(0)));
+    // The measure is both clauses; the pick is the first candidate that passes.
+    let seen = CALIBRATION_1024[0].0;
+    assert!(fires_once(1024, &seen, &after(326)));
+    assert!(!fires_once(1024, &seen, &after(327)));
+    let mut short = seen;
+    short.3 = [34 * 51 - 69, 30 * 51];
+    assert!(!fires_once(1024, &short, &after(0)));
+    let passing = (seen, 0u64, after(0));
+    let loud = (seen, 0u64, after(327));
+    let missing = (short, 0u64, after(0));
+    assert_eq!(
+        candidate_pick(&[passing, passing, passing]),
+        Some(CANDIDATE_A)
+    );
+    assert_eq!(candidate_pick(&[loud, passing, loud]), Some(CANDIDATE_B));
+    assert_eq!(candidate_pick(&[missing, loud, passing]), Some(CANDIDATE_C));
+    assert_eq!(candidate_pick(&[loud, missing, loud]), None);
+    assert_eq!(candidate_pick(&[]), None);
+    // Deliverable D's rules at their edges over rows written by hand.
+    let rows: [Counted; 6] = [
+        (0, [10, 8]),
+        (0, [7, 7]),
+        (0, [5, 9]),
+        (1, [8, 10]),
+        (1, [12, 12]),
+        (1, [9, 4]),
+    ];
+    assert_eq!(
+        bias(&rows, false),
+        [(-2, 3), (-3, 3)],
+        "A +2 +0 −4; B +2 +0 −5"
+    );
+    assert_eq!(
+        bias(&rows, true),
+        [(2, 3), (3, 3)],
+        "mirrored: the answers swap"
+    );
+    assert_eq!(bias(&[], false), [(0, 0), (0, 0)]);
+    assert_eq!(
+        correct_with(&rows, false, 0),
+        2,
+        "10>8 and 8<10: A's first and B's first"
+    );
+    assert_eq!(
+        correct_with(&rows, false, 1),
+        4,
+        "the ties go to the answer"
+    );
+    assert_eq!(
+        correct_with(&rows, false, 4),
+        4,
+        "5+4 ties 9 and 4+4 is still below 9: two errors"
+    );
+    assert_eq!(correct_with(&rows, false, 5), 5, "4+5 ties 9: one error");
+    assert_eq!(correct_with(&rows, false, 6), 6);
+    assert_eq!(offset(&rows, false, 2), Some(0));
+    assert_eq!(offset(&rows, false, 3), Some(1));
+    assert_eq!(offset(&rows, false, 4), Some(1));
+    assert_eq!(offset(&rows, false, 5), Some(5));
+    assert_eq!(offset(&rows, false, 6), Some(6));
+    assert_eq!(
+        offset(&rows, false, 7),
+        None,
+        "seven of six is out of reach"
+    );
+    assert_eq!(offset(&[], false, 0), Some(0));
+    assert_eq!(offset(&[], false, 1), None);
+    let mut with_a_trials = CALIBRATION_1024[0].0;
+    with_a_trials.1 = 34;
+    with_a_trials.2 = [[396, 378], [379, 363]];
+    assert_eq!(
+        block_bias(&with_a_trials, false),
+        [(18, 34), (-16, 30)],
+        "ADR-0065's calibration: readout 0 leads on either stimulus"
+    );
+    assert_eq!(block_bias(&with_a_trials, true), [(-18, 34), (16, 30)]);
+    // Over the pinned tables: the candidates' readings as the constants say, the pick as
+    // written, and ADR-0069's addressed run and the fixed modulation, eighth block
+    // against first.
+    for (k, (block, _, composed)) in ONCE_1024.iter().enumerate() {
+        let shape = CANDIDATES[k];
+        let rows = &ONCE_ROWS_1024[k];
+        let counted = &ONCE_COUNTED_1024[k];
+        let signs = rows.iter().filter(|r| r.1 > 0).count() as u32;
+        assert_eq!(signs, composed.3, "candidate {k}: the signs are the rows'");
+        assert_eq!(
+            counted.iter().filter(|c| c.0 == 0).count() as u32,
+            block.1,
+            "candidate {k}: the A trials"
+        );
+        let [a, _, _, _] = geometry(1024, ROTATION_1024);
+        eprintln!(
+            "DUMP once1024 {k} {shape:?} volley {:?} after {} per unit {} tenths seen {} signs {} fires_once {} bias {:?} offset {:?}",
+            block.3,
+            composed.2[2][1],
+            composed.2[2][1] * 10 / (64 * a.len()),
+            block.6,
+            composed.3,
+            fires_once(1024, block, composed),
+            bias(counted, false),
+            offset(counted, false, OFFSET_MARK_64)
+        );
+        assert!(calibrated(block), "candidate {k}: the sight passes");
+        assert!(composed.3 < SIGN_MIN, "candidate {k}: the sign fails");
+        assert!(!fires_once(1024, block, composed), "candidate {k}");
+    }
+    assert!(
+        volley_once(1024, &ONCE_1024[1].0),
+        "(b) fires the volley whole"
+    );
+    assert!(volley_once(1024, &ONCE_1024[2].0), "(c) too");
+    assert!(
+        !volley_once(1024, &ONCE_1024[0].0),
+        "(a) misses units of the volley"
+    );
+    assert_eq!(
+        candidate_pick(&ONCE_1024),
+        SHAPE_PICKED_1024,
+        "the pick as written"
+    );
+    assert_eq!(
+        [
+            offset(&ONCE_COUNTED_1024[0], false, OFFSET_MARK_64),
+            offset(&ONCE_COUNTED_1024[1], false, OFFSET_MARK_64),
+            offset(&ONCE_COUNTED_1024[2], false, OFFSET_MARK_64),
+        ],
+        [Some(2), Some(1), Some(3)],
+        "the offset the criterion needs over the candidates' calibrations"
+    );
+    assert_eq!(
+        (
+            block_bias(&ADDRESSED_1024[7], false),
+            block_bias(&ADDRESSED_1024[0], false),
+            block_bias(&FIXED_1024[7], false),
+            block_bias(&FIXED_1024[0], false),
+        ),
+        (
+            [(-48, 32), (-7, 32)],
+            [(4, 34), (-24, 30)],
+            [(-34, 32), (15, 32)],
+            [(6, 34), (-27, 30)],
+        ),
+        "ADR-0069's addressed rewarded run and the fixed modulation, last block and first"
+    );
+    // The engine's probe of one message into a unit at rest, held to its table.
+    for (shape, ticks) in PROBED_1024 {
+        let read = probe(shape);
+        eprintln!("DUMP probe1024 {shape:?} -> {read:?}");
+        assert_eq!(
+            read.as_slice(),
+            ticks,
+            "one message of {shape:?} into a unit at rest"
+        );
+    }
+    // The first eight trials of candidate (a), run.
+    let (blocks, trace, trials, counts, counted) =
+        compose_shaped(CANDIDATE_A, 1024, GAIN_1024, GATE_TRIALS);
+    dump_composition("once1024 0 first eight", &blocks, trace, &trials);
+    assert_eq!(counts, SYNAPSES_1024);
+    assert!(blocks.is_empty(), "no whole block");
+    pinned_composition(
+        "once1024 0 first eight",
+        &trials,
+        &ONCE_ROWS_1024[0][..GATE_TRIALS],
+        None,
+    );
+    assert_eq!(counted.as_slice(), &ONCE_COUNTED_1024[0][..GATE_TRIALS]);
 }
