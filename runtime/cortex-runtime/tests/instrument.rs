@@ -44,7 +44,7 @@ use cortex_connectome::{
 };
 use cortex_core::{
     ELIGIBILITY_TAU_SHIFT, FLAG_INHIBITORY, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
-    STDP_A_MINUS_Q1_15, STDP_A_PLUS_Q1_15, STDP_TAU_SHIFT, stp_decay_factor_q16,
+    STDP_A_MINUS_Q1_15, STDP_A_PLUS_Q1_15, STDP_TAU_SHIFT, THRESHOLD_BASE, stp_decay_factor_q16,
 };
 use cortex_homeostasis::{ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, HomeostaticDrivePool};
 use cortex_neuromod::DOPAMINE_TAU_SHIFT;
@@ -295,12 +295,18 @@ fn gain(units: u32) -> u32 {
     }
 }
 
-fn task(units: u32, feedback: Feedback, mirrored: bool, delivery: Delivery) -> Task {
+/// A stimulus's shape: the messages into every unit of the set and each message's efficacy
+/// (brief 033; `SHAPE_F46` is the shape every run before it used).
+type Shape = (u32, i32);
+/// The shape of ADR-0065's stimulus, F-46's: two messages of 1.25.
+const SHAPE_F46: Shape = (STIMULUS_MESSAGES, STIMULUS_Q16);
+
+fn task(shape: Shape, units: u32, feedback: Feedback, mirrored: bool, delivery: Delivery) -> Task {
     let [a, b, r0, r1] = geometry(units, rotation(units));
     let stimulus = |set| Stimulus {
         set,
-        messages: STIMULUS_MESSAGES,
-        efficacy_q16: STIMULUS_Q16,
+        messages: shape.0,
+        efficacy_q16: shape.1,
     };
     Task {
         stimuli: [stimulus(a), stimulus(b)],
@@ -417,6 +423,7 @@ fn run(
 ) -> (Vec<Block>, u64) {
     run_behind(
         0,
+        SHAPE_F46,
         units,
         workers,
         gain,
@@ -430,14 +437,16 @@ fn run(
 }
 
 /// `run` behind a lead-in of `lead_in_windows` whole windows under the drive alone
-/// (brief 031), before the instrument's own lead-in of one readout window; the executor,
-/// the task and every constant are `run`'s, and the windows are the only difference.
+/// (brief 031), before the instrument's own lead-in of one readout window, with the
+/// stimulus of `shape` (brief 033; `run` passes `SHAPE_F46`); the executor, the task and
+/// every constant are `run`'s, and the windows and the shape are the only differences.
 /// `observe` is called after every trial with the executor, the trial's index, its first
 /// tick and its outcome (brief 032's composition reads the arena and the train through it);
 /// it reads and never writes, so a run that observes nothing is the run before it.
 #[allow(clippy::too_many_arguments)]
 fn run_behind(
     lead_in_windows: u64,
+    shape: Shape,
     units: u32,
     workers: usize,
     gain: u32,
@@ -457,7 +466,7 @@ fn run_behind(
         (units as usize, units as usize),
         "every unit a source and a target before the first trial, whatever the delivery"
     );
-    let mut task = task(units, feedback, mirrored, delivery);
+    let mut task = task(shape, units, feedback, mirrored, delivery);
     task.check(&exec).expect("the task fits the executor");
     let [a, b, r0, r1] = geometry(units, rotation(units));
     // The stimulus sets counted as a readout would count them: the same rule, the other
@@ -892,26 +901,40 @@ fn the_geometry_holds_against_the_census_at_both_sizes() {
         for feedback in [Feedback::Answer, Feedback::Shuffled] {
             let exec = Engine::new(config(units, 1, BASELINE_Q16)).unwrap();
             assert_eq!(
-                task(units, feedback, false, Delivery::Global).check(&exec),
+                task(SHAPE_F46, units, feedback, false, Delivery::Global).check(&exec),
                 Ok(())
             );
             assert_eq!(
-                task(units, feedback, true, Delivery::Global).check(&exec),
+                task(SHAPE_F46, units, feedback, true, Delivery::Global).check(&exec),
                 Ok(())
             );
         }
         let fixed = Engine::new(config(units, 1, ONE)).unwrap();
         assert_eq!(
-            task(units, Feedback::Withheld, false, Delivery::Global).check(&fixed),
+            task(
+                SHAPE_F46,
+                units,
+                Feedback::Withheld,
+                false,
+                Delivery::Global
+            )
+            .check(&fixed),
             Ok(())
         );
         assert_eq!(
-            task(units, Feedback::Answer, false, Delivery::Global).check(&fixed),
+            task(SHAPE_F46, units, Feedback::Answer, false, Delivery::Global).check(&fixed),
             Err(TaskError::RewardAtCeiling)
         );
         let frozen = Engine::new(config(units, 1, 0)).unwrap();
         assert_eq!(
-            task(units, Feedback::Withheld, false, Delivery::Global).check(&frozen),
+            task(
+                SHAPE_F46,
+                units,
+                Feedback::Withheld,
+                false,
+                Delivery::Global
+            )
+            .check(&frozen),
             Ok(())
         );
     }
@@ -3551,6 +3574,7 @@ const LEAD_IN_HOLDS: bool = false;
 fn the_recalibrated_rewarded_run_at_256_units_behind_the_lead_in_exhaustive() {
     let (blocks, trace) = run_behind(
         LEAD_IN_WINDOWS,
+        SHAPE_F46,
         256,
         4,
         GAIN_256,
@@ -4059,12 +4083,30 @@ fn compose_counting(
     gain: u32,
     trials: usize,
 ) -> (Vec<Block>, u64, Vec<Composed>, [[u32; 2]; 2]) {
+    let (blocks, trace, trials, counts, _) = compose_shaped(SHAPE_F46, units, gain, trials);
+    (blocks, trace, trials, counts)
+}
+
+/// A trial's readout counts as the task read them (brief 033): the stimulus presented and
+/// the spikes of each readout set in the readout window.
+type Counted = (u8, [u32; 2]);
+
+/// `compose_counting` with the stimulus of `shape` (brief 033), and every trial's readout
+/// counts beside the composition; under `SHAPE_F46` it is `compose_counting`.
+fn compose_shaped(
+    shape: Shape,
+    units: u32,
+    gain: u32,
+    trials: usize,
+) -> (Vec<Block>, u64, Vec<Composed>, [[u32; 2]; 2], Vec<Counted>) {
     let p = prior(units);
     let frozen = at_gain(&p, config(units, 2, 0), gain);
     let sums = weights_by_polarity(&frozen);
     let mut composer = Composer::new(units);
+    let mut counted: Vec<Counted> = Vec::with_capacity(trials);
     let (blocks, trace) = run_behind(
         0,
+        shape,
         units,
         2,
         gain,
@@ -4073,7 +4115,15 @@ fn compose_counting(
         false,
         Delivery::Global,
         trials,
-        &mut |exec, trial, start, outcome| composer.observe(exec, trial, start, outcome),
+        &mut |exec, trial, start, outcome| {
+            composer.observe(exec, trial, start, outcome);
+            assert_eq!(
+                outcome.selection,
+                selected(outcome.counts),
+                "trial {trial}: the selection is the sign of the count difference"
+            );
+            counted.push((outcome.stimulus, outcome.counts));
+        },
     );
     for block in &blocks {
         assert_eq!(
@@ -4084,7 +4134,7 @@ fn compose_counting(
     }
     assert_eq!(composer.out.len(), trials);
     let counts = composer.counts();
-    (blocks, trace, composer.out, counts)
+    (blocks, trace, composer.out, counts, counted)
 }
 
 /// Dumps a composed run: the sight's blocks and trace, the rows and the composition.
@@ -4671,4 +4721,611 @@ fn the_first_eight_trials_of_the_composition_at_1024_units_and_the_rules_over_it
         &LADDER_ROWS_1024[0][..GATE_TRIALS],
         None,
     );
+}
+
+// ------------------------------------------ a stimulus that fires once (brief 033)
+//
+// Written before the run. F-46 (ADR-0072): the stimulus of ADR-0065 fires each of its
+// units about three times within one pair window of the volley, once before the readout
+// window opens and 2.06 more inside the pair window after it, and the pair rule enters a
+// depression at every presynaptic spike. The executor scales every input of a unit by the
+// tick's synaptic gain (ADR-0036; `scaled` in `executor.rs`), the injected stimulus
+// included, so at the present gain of 1.75 the two messages of 1.25 arrive as 4.375 of
+// basal drive, above the 3.0 at which ADR-0038 read a second spike. This round changes the
+// stimulus and nothing else. The candidates below, in this order and no other, are each
+// read by the measure below over one frozen run of sixty-four trials at the present gain,
+// the calibration's run with the shape the one difference; the measure reads no selection,
+// no reward and no outcome. The first candidate that passes is the stimulus; if none passes
+// there is no rewarded run and the candidates are recorded with their censuses. Under the
+// chosen stimulus the composition is read again by ADR-0072's oracle at no extra cost, and
+// both calibrations, the sight (ADR-0065's) and the sign (ADR-0072's), are read from the
+// same run at the gain 1.75, which does not move.
+//
+// What the membrane rule says of one message, computed apart from the tree before any run
+// (an oracle over `integrate` in `membrane.rs` on a unit at rest at the base threshold with
+// no other input; a Hypothesis about the instrument, whose units carry the drive's standing
+// potential besides): a basal drive of $D$ after the gain fires the unit once when $D$ is
+// between about 1.13 and 1.53, twice from 1.53 (the second spike about 200 ticks after the
+// first, at the end of the refractory window, from what the basal compartment, whose time
+// constant is 512 ticks, still holds), three times from 2.27 and four from 3.38; so 4.375
+// is four spikes at rest, and F-46's three are that under the instrument's inhibition.
+// Candidate (a), one message at the unit's threshold, is 1.75 after the gain: two spikes at
+// rest, at 13 and 214 ticks. Candidate (b), one message of 1.25, is 2.19: two spikes at
+// rest, at 9 and 210. The gate holds the engine's own unit at rest to these on the
+// instrument's network at the gain (`the_candidates_rules_over_their_tables_...`).
+
+/// Candidate (a): one message at the unit's threshold, `THRESHOLD_BASE` (1.0), the value
+/// the record's threshold gives and no other; 1.75 of basal drive after the gain.
+const CANDIDATE_A: Shape = (1, THRESHOLD_BASE);
+/// Candidate (b): one message of 1.25, half of F-46's stimulus; 2.19 after the gain.
+const CANDIDATE_B: Shape = (1, STIMULUS_Q16);
+/// Candidate (c), the shape this round argues for, written after (a) and (b) were read and
+/// before it was measured (ADR-0074): one message of 1.125, the midpoint of (a) and (b),
+/// 1.97 after the gain. (a) read the volley short by 2.4 units of 51 and 0.28 spikes per
+/// unit after the opening; (b) read the volley whole and 0.70 after; so the after clause's
+/// tenth lies below the drive at which the volley clause first holds, if the after-count
+/// is monotone in the drive between them, and (c) reads whether it is. The expectation,
+/// written first: the volley at about 0.97 per unit and about 0.5 spikes per unit after,
+/// so (c) fails the after clause and no one-message shape passes both.
+const CANDIDATE_C: Shape = (1, 0x0001_2000);
+/// The candidates in the order tried and no other.
+const CANDIDATES: [Shape; 3] = [CANDIDATE_A, CANDIDATE_B, CANDIDATE_C];
+const _: () = assert!(CANDIDATES[0].0 == 1 && CANDIDATES[1].0 == 1 && CANDIDATES[2].0 == 1);
+const _: () = assert!(CANDIDATES[1].1 == SHAPE_F46.1 && SHAPE_F46.0 == 2);
+const _: () = assert!(CANDIDATE_C.1 * 2 == CANDIDATE_A.1 + CANDIDATE_B.1);
+/// The measure's second clause: the presented set's spikes in the pair window after the
+/// readout window's opening, per unit per presentation, at most this many tenths of a
+/// spike (a tenth), against the 2.06 F-46 records.
+const AFTER_MAX_TENTHS: u64 = 1;
+/// The volley clause's tolerance, ADR-0065's: one spike per unit within two spikes of the
+/// set, in tenths of a spike per presentation.
+const VOLLEY_TOLERANCE_TENTHS: u64 = 20;
+/// The criterion's mark over the calibration's sixty-four trials, for the offset of
+/// Deliverable D read there: the rewarded clause's 80 of 128 at the same proportion, 40.
+const OFFSET_MARK_64: u32 = REWARDED_MIN * BLOCK as u32 / (LAST_BLOCKS * BLOCK) as u32;
+const _: () = assert!(OFFSET_MARK_64 == 40);
+/// The ticks the probe of a unit at rest runs after one message: one pair window.
+const PROBE_TICKS: u32 = PAIR_WINDOW;
+
+/// The selection as the task's readout makes it (ADR-0059; the property in `task.rs`): the
+/// sign of the count difference, none at equal counts.
+fn selected(counts: [u32; 2]) -> Option<u8> {
+    match counts[0].cmp(&counts[1]) {
+        core::cmp::Ordering::Greater => Some(0),
+        core::cmp::Ordering::Less => Some(1),
+        core::cmp::Ordering::Equal => None,
+    }
+}
+
+/// The volley clause: over the block, the presented set's spikes before the readout window
+/// opens are one per unit within `VOLLEY_TOLERANCE_TENTHS` tenths per presentation, for
+/// each stimulus (ADR-0065's reading of the calibration, kept as it was read there).
+fn volley_once(units: u32, block: &Block) -> bool {
+    let [a, _, _, _] = geometry(units, rotation(units));
+    let once = a.len().saturating_mul(10);
+    let a_trials = u64::from(block.1);
+    let b_trials = (BLOCK as u64).saturating_sub(a_trials);
+    let per = |spikes: u64, trials: u64| spikes.saturating_mul(10).checked_div(trials);
+    [per(block.3[0], a_trials), per(block.3[1], b_trials)]
+        .iter()
+        .all(|per| {
+            per.is_some_and(|per| {
+                per <= once && per >= once.saturating_sub(VOLLEY_TOLERANCE_TENTHS)
+            })
+        })
+}
+
+/// The after clause: over the block, the presented set's spikes in the pair window after
+/// the readout window's opening are at most `AFTER_MAX_TENTHS` tenths per unit per
+/// presentation.
+fn after_quiet(units: u32, composition: &Composition) -> bool {
+    let [a, _, _, _] = geometry(units, rotation(units));
+    let after = composition.2[2][1];
+    after.saturating_mul(10)
+        <= (BLOCK as u64)
+            .saturating_mul(a.len())
+            .saturating_mul(AFTER_MAX_TENTHS)
+}
+
+/// A candidate passes when it fires once: the volley clause and the after clause both.
+fn fires_once(units: u32, block: &Block, composition: &Composition) -> bool {
+    volley_once(units, block) && after_quiet(units, composition)
+}
+
+/// The stimulus the round picks: the first candidate, in the candidates' order, whose
+/// frozen run fires once; none when none does.
+fn candidate_pick(runs: &[(Block, u64, Composition)]) -> Option<Shape> {
+    CANDIDATES
+        .iter()
+        .zip(runs.iter())
+        .find(|(_, (block, _, composition))| fires_once(1024, block, composition))
+        .map(|(&shape, _)| shape)
+}
+
+/// One message of `shape` into unit 0 of the instrument's network at 1 024 units, at rest
+/// at the gain, with no drive: the ticks at which unit 0 fires within `PROBE_TICKS`, read
+/// from the train. The engine's own reading of what the oracle above computed.
+fn probe(shape: Shape) -> Vec<u32> {
+    let p = prior(1024);
+    let mut exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    assert!(exec.is_quiescent());
+    let inject = exec.injector();
+    for _ in 0..shape.0 {
+        inject
+            .inject(0, cortex_core::spike_message(shape.1, false))
+            .expect("the ring has room");
+    }
+    let start = exec.ticks() as u32;
+    for _ in 0..PROBE_TICKS {
+        exec.tick();
+    }
+    exec.train()
+        .iter()
+        .filter(|&&(_, unit)| unit == 0)
+        .map(|&(tick, _)| tick.wrapping_sub(start))
+        .collect()
+}
+
+// --------------------------------------------- what the criterion requires (deliverable D)
+
+/// The answer readout of a stimulus, as `Task::answer` has it.
+fn answer_of(stimulus: u8, mirrored: bool) -> usize {
+    usize::from(if mirrored { stimulus ^ 1 } else { stimulus })
+}
+
+/// (a) The instrument's bias, per stimulus: the sum over the trials that presented it of
+/// the answer readout's count less the other readout's, and those trials, as an integer
+/// ratio `(difference, trials)`; a negative difference favours the readout that is not the
+/// answer.
+fn bias(counted: &[Counted], mirrored: bool) -> [(i64, u32); 2] {
+    let mut out = [(0i64, 0u32); 2];
+    for &(stimulus, counts) in counted {
+        let answer = answer_of(stimulus, mirrored);
+        let other = answer ^ 1;
+        let difference = i64::from(counts[answer]).saturating_sub(i64::from(counts[other]));
+        let into = &mut out[usize::from(stimulus)];
+        into.0 = into.0.saturating_add(difference);
+        into.1 = into.1.saturating_add(1);
+    }
+    out
+}
+
+/// The correct trials of `counted` when `delta` is added to the answer readout's count on
+/// every trial, the selection as `Task` makes it and a tie an error.
+fn correct_with(counted: &[Counted], mirrored: bool, delta: u32) -> u32 {
+    counted.iter().fold(0u32, |sum, &(stimulus, counts)| {
+        let answer = answer_of(stimulus, mirrored);
+        let mut shifted = counts;
+        shifted[answer] = shifted[answer].saturating_add(delta);
+        sum.saturating_add(u32::from(selected(shifted) == Some(answer as u8)))
+    })
+}
+
+/// (b) The offset the criterion needs: the smallest whole `delta` such that adding it to
+/// the answer readout's count on every trial carries the correct trials to `mark`, found by
+/// a scan from zero to one past the largest count difference, at which every trial is
+/// correct; none when `mark` exceeds the trials, which no scan reaches.
+fn offset(counted: &[Counted], mirrored: bool, mark: u32) -> Option<u32> {
+    let widest = counted
+        .iter()
+        .fold(0u32, |w, &(_, counts)| w.max(counts[0].abs_diff(counts[1])));
+    (0..=widest.saturating_add(1)).find(|&delta| correct_with(counted, mirrored, delta) >= mark)
+}
+
+/// (c) The difference a block holds, per stimulus, from its summed counts: the answer
+/// readout's spikes over the block's trials that presented the stimulus less the other
+/// readout's, and those trials, as `(difference, trials)`; what the delivery moved is this
+/// in a run's last block against its first.
+fn block_bias(block: &Block, mirrored: bool) -> [(i64, u32); 2] {
+    let a_trials = block.1;
+    let b_trials = (BLOCK as u32).saturating_sub(a_trials);
+    let of = |stimulus: u8, trials: u32| {
+        let answer = answer_of(stimulus, mirrored);
+        let s = usize::from(stimulus);
+        (
+            (block.2[s][answer] as i64).saturating_sub(block.2[s][answer ^ 1] as i64),
+            trials,
+        )
+    };
+    [of(0, a_trials), of(1, b_trials)]
+}
+
+/// The dump of Deliverable D's readings over a run's per-trial counts: the bias and the
+/// offset at `mark`.
+fn dump_requires(name: &str, counted: &[Counted], mirrored: bool, mark: u32) {
+    eprintln!(
+        "DUMP {name} requires bias {:?} offset {:?} at {mark} of {} counted {counted:?}",
+        bias(counted, mirrored),
+        offset(counted, mirrored, mark),
+        counted.len()
+    );
+}
+
+// ------------------------------------------------------------ the measurement (brief 033)
+
+/// The candidates at 1 024 units, in the candidates' order, each a frozen run of
+/// sixty-four trials at the present gain read by the sight, the sign and the measure that
+/// picks: the sight's block and trace, and the composition. Pinned from one run each.
+const ONCE_1024: [(Block, u64, Composition); 2] = [
+    (
+        (
+            32,
+            34,
+            [[352, 327], [330, 338]],
+            [1651, 1461],
+            [3012, 2709],
+            [257, 239],
+            63,
+            213902976,
+            235822619,
+            0,
+            [[6986739, 7212710], [7146878, 7257384]],
+            6,
+        ),
+        0x42c488fa8370cd67,
+        (
+            [[-11202, -17464], [-9421, -6182]],
+            [
+                [
+                    [280098, -80914, 354009, -736327],
+                    [265688, -60844, 389347, -713873],
+                ],
+                [
+                    [244715, -57031, 313006, -632692],
+                    [254062, -67362, 367226, -660112],
+                ],
+            ],
+            [[1059, 1807], [1049, 1832], [3217, 911]],
+            2,
+            3075011394120061531,
+        ),
+    ),
+    (
+        (
+            31,
+            34,
+            [[390, 374], [374, 378]],
+            [1715, 1514],
+            [3822, 3392],
+            [257, 232],
+            63,
+            213902976,
+            235822619,
+            0,
+            [[6986739, 7212710], [7146878, 7257384]],
+            9,
+        ),
+        0xd39ec55203c68a8b,
+        (
+            [[-15256, -25370], [-14720, -15719]],
+            [
+                [
+                    [355325, -102799, 350608, -873999],
+                    [332868, -88384, 387923, -876730],
+                ],
+                [
+                    [313081, -97315, 336729, -781233],
+                    [299550, -96603, 380003, -781616],
+                ],
+            ],
+            [[1049, 2037], [1042, 2052], [3332, 2277]],
+            1,
+            1732380210409406099,
+        ),
+    ),
+];
+/// The rows of every candidate's sixty-four trials, in the candidates' order.
+const ONCE_ROWS_1024: [[Row; BLOCK]; 2] = [
+    [
+        (0, -5859, [13299, -8565, 10063, -20768]),
+        (0, -80, [17533, -1124, 20316, -32032]),
+        (1, -37841, [12659, -11371, 23933, -42364]),
+        (0, -7194, [13770, -1206, 19032, -32056]),
+        (0, 5495, [18915, -865, 19854, -27580]),
+        (0, -2870, [15274, -3024, 12988, -31779]),
+        (0, -8467, [10889, -1780, 11702, -26942]),
+        (0, -11109, [12195, -1475, 16840, -33377]),
+        (0, -9986, [18469, -7843, 17086, -27104]),
+        (0, -20111, [13679, -2925, 26231, -49717]),
+        (1, -18567, [11696, -7698, 23306, -26119]),
+        (1, -3867, [24621, -5200, 13953, -23043]),
+        (0, -26768, [12385, -6371, 24000, -40404]),
+        (0, -13380, [26698, -8359, 27509, -38315]),
+        (1, -14258, [9657, -4454, 17550, -30166]),
+        (0, -13904, [15442, -10663, 13673, -24744]),
+        (1, -12039, [10475, -3108, 18660, -29928]),
+        (0, -31957, [10135, -2260, 24264, -51216]),
+        (0, -41530, [15806, -5346, 12121, -38996]),
+        (0, -45919, [13301, -3126, 14978, -37270]),
+        (1, -16644, [3978, -1038, 18557, -25170]),
+        (0, -46986, [13865, -7049, 15776, -41262]),
+        (1, -15411, [15285, -2907, 18179, -40940]),
+        (1, -6363, [18775, -2029, 17928, -29074]),
+        (1, -23266, [21199, -10212, 19998, -46791]),
+        (0, -34435, [4875, -5982, 16903, -26332]),
+        (1, -26599, [17408, -6938, 12301, -36943]),
+        (1, -24583, [16458, -1785, 12804, -31574]),
+        (1, -23486, [11234, -2878, 13851, -26373]),
+        (0, -28708, [18012, -8327, 20519, -36370]),
+        (0, -25385, [12513, -1297, 16065, -30688]),
+        (0, -25396, [15439, -6154, 14513, -30272]),
+        (0, -23607, [20560, -3115, 13602, -35392]),
+        (0, -28015, [17339, -2355, 13707, -38599]),
+        (1, -24247, [4190, -3331, 16384, -30790]),
+        (1, -19042, [20990, -2674, 12950, -31869]),
+        (1, -5713, [22413, -978, 13212, -24795]),
+        (0, -30833, [5722, -2025, 23931, -39541]),
+        (1, -5285, [18290, -5486, 30517, -36747]),
+        (1, 1873, [21808, -2670, 15869, -30160]),
+        (0, -17157, [8605, -4161, 24569, -29835]),
+        (1, -13901, [14028, -4255, 15376, -31263]),
+        (0, -16165, [20894, -7886, 20443, -35867]),
+        (1, -18952, [7962, -2174, 15959, -30174]),
+        (0, -10768, [11568, -2968, 24702, -36736]),
+        (1, -17621, [16807, -6727, 16148, -32566]),
+        (0, -31069, [5071, -933, 12161, -35531]),
+        (0, -13281, [23135, -4722, 21150, -26667]),
+        (0, -6737, [20073, -5132, 13784, -25006]),
+        (1, -13504, [16431, -10506, 28357, -33677]),
+        (1, -15278, [15851, -4285, 16392, -32640]),
+        (0, -19168, [5222, -2217, 21403, -33989]),
+        (1, -9027, [15696, -386, 20498, -35827]),
+        (1, -8105, [14958, -3392, 16168, -30489]),
+        (0, -21872, [9452, -2685, 21860, -37361]),
+        (1, -22163, [10569, -1959, 14265, -34054]),
+        (1, -21159, [14012, -1906, 14918, -30457]),
+        (1, -24423, [20034, -4903, 16179, -39597]),
+        (0, -29715, [7794, -2789, 24615, -42715]),
+        (1, -10399, [12497, -2618, 15564, -23628]),
+        (0, -26717, [16760, -3760, 19729, -36944]),
+        (0, -24133, [18095, -3269, 15365, -33388]),
+        (1, -15497, [5055, -2579, 22602, -32091]),
+        (1, -15603, [12947, -3945, 13088, -25706]),
+    ],
+    [
+        (0, -1761, [21400, -11325, 8348, -20237]),
+        (0, -3205, [19862, -483, 25230, -46990]),
+        (1, -48589, [14342, -12429, 31620, -58757]),
+        (0, -7949, [17296, -2604, 22164, -42677]),
+        (0, 8274, [27187, -2966, 21497, -31863]),
+        (0, -5297, [17301, -2806, 13492, -39957]),
+        (0, -15065, [12593, -2364, 11182, -32304]),
+        (0, -21320, [14792, -4377, 14656, -36080]),
+        (0, -27850, [14361, -4670, 18457, -37287]),
+        (0, -45317, [16566, -2350, 23670, -62636]),
+        (1, -23043, [19357, -10400, 24329, -34788]),
+        (1, -14251, [31210, -15476, 15324, -27971]),
+        (0, -41153, [17098, -5552, 23176, -48436]),
+        (0, -22087, [36761, -9501, 30468, -46620]),
+        (1, -24460, [11915, -5428, 19456, -38388]),
+        (0, -26712, [17030, -11679, 16127, -33615]),
+        (1, -15212, [20328, -6889, 20355, -36154]),
+        (0, -43953, [14462, -2195, 21532, -57715]),
+        (0, -58370, [21420, -4168, 13475, -55044]),
+        (0, -69675, [15785, -3783, 13723, -49432]),
+        (1, -22296, [13043, -13322, 23137, -30726]),
+        (0, -67218, [15405, -4960, 18442, -52716]),
+        (1, -19768, [19568, -4520, 20889, -46929]),
+        (1, -14267, [22524, -4946, 17872, -34581]),
+        (1, -38852, [21220, -9483, 22298, -60272]),
+        (0, -48158, [13031, -8629, 14333, -36635]),
+        (1, -42282, [17300, -12050, 18173, -44727]),
+        (1, -46657, [18908, -3374, 13730, -42444]),
+        (1, -55012, [10243, -1544, 13554, -41051]),
+        (0, -47100, [22329, -14914, 18289, -49802]),
+        (0, -40766, [20917, -2680, 17986, -40123]),
+        (0, -51419, [17556, -8616, 14468, -43760]),
+        (0, -46379, [24110, -5898, 11403, -36884]),
+        (0, -57402, [17999, -4978, 13208, -48714]),
+        (1, -27358, [10412, -6483, 18235, -32285]),
+        (1, -24030, [29387, -4533, 15039, -44161]),
+        (1, -21067, [18303, -989, 14164, -33851]),
+        (0, -51411, [13405, -11527, 21977, -49536]),
+        (1, -26993, [17516, -4887, 26931, -45437]),
+        (1, -22758, [23997, -3597, 19427, -41895]),
+        (0, -30494, [11936, -6470, 21278, -32379]),
+        (1, -37763, [18769, -8813, 13628, -38200]),
+        (0, -22329, [26016, -11823, 23340, -41438]),
+        (1, -40296, [13420, -4477, 19599, -44430]),
+        (0, -21352, [16497, -5742, 24742, -43554]),
+        (1, -32234, [24946, -13729, 17431, -37791]),
+        (0, -41067, [10317, -1022, 12869, -44886]),
+        (0, -34055, [21130, -3979, 22414, -40963]),
+        (0, -34689, [20667, -6512, 12586, -34442]),
+        (1, -28431, [17865, -11750, 30342, -43289]),
+        (1, -33006, [20005, -4976, 19857, -45699]),
+        (0, -45935, [9591, -5238, 20496, -45990]),
+        (1, -21329, [18947, -1894, 19991, -40644]),
+        (1, -24428, [16899, -5206, 12851, -33406]),
+        (0, -44646, [12858, -4364, 20125, -48230]),
+        (1, -38084, [12325, -2747, 12414, -42495]),
+        (1, -34346, [21793, -1950, 17114, -42080]),
+        (1, -41986, [20659, -4286, 19220, -51439]),
+        (0, -42278, [11249, -5160, 23658, -48872]),
+        (1, -29033, [16360, -4062, 16411, -34266]),
+        (0, -42542, [22343, -4700, 20311, -49086]),
+        (0, -40677, [17512, -3148, 15877, -39500]),
+        (1, -30158, [9220, -4085, 19686, -36523]),
+        (1, -30439, [15417, -5592, 13296, -29833]),
+    ],
+];
+/// Every trial's readout counts under every candidate, in the candidates' order.
+const ONCE_COUNTED_1024: [[Counted; BLOCK]; 2] = [
+    [
+        (0, [6, 10]),
+        (0, [14, 12]),
+        (1, [15, 23]),
+        (0, [13, 9]),
+        (0, [5, 5]),
+        (0, [5, 9]),
+        (0, [7, 4]),
+        (0, [10, 5]),
+        (0, [12, 13]),
+        (0, [6, 4]),
+        (1, [12, 15]),
+        (1, [10, 13]),
+        (0, [15, 11]),
+        (0, [15, 12]),
+        (1, [14, 25]),
+        (0, [10, 10]),
+        (1, [10, 10]),
+        (0, [5, 9]),
+        (0, [12, 13]),
+        (0, [15, 12]),
+        (1, [16, 14]),
+        (0, [8, 4]),
+        (1, [11, 14]),
+        (1, [5, 4]),
+        (1, [8, 14]),
+        (0, [7, 7]),
+        (1, [9, 12]),
+        (1, [10, 4]),
+        (1, [11, 7]),
+        (0, [13, 12]),
+        (0, [9, 13]),
+        (0, [10, 12]),
+        (0, [16, 12]),
+        (0, [6, 5]),
+        (1, [14, 12]),
+        (1, [18, 12]),
+        (1, [12, 6]),
+        (0, [14, 10]),
+        (1, [12, 15]),
+        (1, [5, 10]),
+        (0, [13, 8]),
+        (1, [13, 6]),
+        (0, [16, 12]),
+        (1, [12, 12]),
+        (0, [9, 5]),
+        (1, [14, 10]),
+        (0, [8, 10]),
+        (0, [8, 15]),
+        (0, [8, 5]),
+        (1, [11, 10]),
+        (1, [7, 10]),
+        (0, [7, 12]),
+        (1, [10, 8]),
+        (1, [6, 9]),
+        (0, [13, 16]),
+        (1, [9, 13]),
+        (1, [14, 12]),
+        (1, [10, 7]),
+        (0, [9, 11]),
+        (1, [10, 12]),
+        (0, [13, 11]),
+        (0, [15, 9]),
+        (1, [11, 8]),
+        (1, [11, 11]),
+    ],
+    [
+        (0, [8, 12]),
+        (0, [12, 11]),
+        (1, [24, 33]),
+        (0, [15, 13]),
+        (0, [6, 6]),
+        (0, [5, 9]),
+        (0, [8, 4]),
+        (0, [11, 6]),
+        (0, [12, 12]),
+        (0, [5, 6]),
+        (1, [15, 16]),
+        (1, [10, 15]),
+        (0, [16, 14]),
+        (0, [14, 12]),
+        (1, [17, 28]),
+        (0, [14, 10]),
+        (1, [12, 9]),
+        (0, [5, 13]),
+        (0, [10, 17]),
+        (0, [15, 13]),
+        (1, [19, 17]),
+        (0, [8, 4]),
+        (1, [10, 16]),
+        (1, [7, 5]),
+        (1, [8, 15]),
+        (0, [11, 15]),
+        (1, [8, 11]),
+        (1, [10, 4]),
+        (1, [10, 6]),
+        (0, [18, 15]),
+        (0, [10, 14]),
+        (0, [9, 12]),
+        (0, [16, 10]),
+        (0, [8, 3]),
+        (1, [18, 18]),
+        (1, [17, 9]),
+        (1, [13, 6]),
+        (0, [19, 13]),
+        (1, [13, 19]),
+        (1, [6, 10]),
+        (0, [15, 9]),
+        (1, [15, 7]),
+        (0, [19, 13]),
+        (1, [15, 15]),
+        (0, [11, 4]),
+        (1, [13, 12]),
+        (0, [6, 10]),
+        (0, [7, 14]),
+        (0, [10, 7]),
+        (1, [13, 13]),
+        (1, [10, 11]),
+        (0, [11, 18]),
+        (1, [13, 8]),
+        (1, [8, 8]),
+        (0, [13, 17]),
+        (1, [12, 12]),
+        (1, [13, 13]),
+        (1, [10, 6]),
+        (0, [13, 13]),
+        (1, [11, 13]),
+        (0, [14, 11]),
+        (0, [16, 14]),
+        (1, [12, 9]),
+        (1, [12, 14]),
+    ],
+];
+
+/// The candidates, each run and dumped before any is held to its table, so that one
+/// candidate's failure still shows the others' readings.
+#[test]
+#[ignore]
+fn the_candidate_stimuli_at_1024_units_exhaustive() {
+    let runs: Vec<(Vec<Block>, u64, Vec<Composed>, Vec<Counted>)> = CANDIDATES
+        .iter()
+        .map(|&shape| {
+            let (blocks, trace, trials, counts, counted) =
+                compose_shaped(shape, 1024, GAIN_1024, BLOCK);
+            assert_eq!(counts, SYNAPSES_1024);
+            (blocks, trace, trials, counted)
+        })
+        .collect();
+    for (k, (blocks, trace, trials, counted)) in runs.iter().enumerate() {
+        let shape = CANDIDATES[k];
+        let name = format!("once1024 {k} {shape:?}");
+        dump_composition(&name, blocks, *trace, trials);
+        dump_requires(&name, counted, false, OFFSET_MARK_64);
+        let composed = composition(trials);
+        eprintln!(
+            "DUMP {name} volley {} after {} fires_once {} sight {} sign {}",
+            volley_once(1024, &blocks[0]),
+            after_quiet(1024, &composed),
+            fires_once(1024, &blocks[0], &composed),
+            calibrated(&blocks[0]),
+            composed.3
+        );
+    }
+    for (k, (blocks, trace, trials, counted)) in runs.iter().enumerate() {
+        let shape = CANDIDATES[k];
+        let name = format!("once1024 {k} {shape:?}");
+        let Some((block, pin, composed)) = ONCE_1024.get(k) else {
+            continue;
+        };
+        pinned(&format!("{name} sight"), blocks, *trace, &[*block], *pin);
+        pinned_composition(&name, trials, &ONCE_ROWS_1024[k], Some(composed));
+        assert_eq!(
+            counted.as_slice(),
+            &ONCE_COUNTED_1024[k],
+            "{name}: the counts"
+        );
+    }
 }
