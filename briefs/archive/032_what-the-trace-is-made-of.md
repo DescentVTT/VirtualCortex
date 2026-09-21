@@ -214,8 +214,8 @@ quoted sentences are what to re-derive.
 - [x] **The constants commit**, preceding the first commit that holds a rewarded outcome: the
   chosen gain, the ladder and both pass marks, and every other constant of ADR-0065 and ADR-0068
   restated unchanged.
-  **Done:** `3b368f7` holds the ladder, both marks, the split rule, the oracle, the pick (none)
-  and every reading; no commit of the round holds a rewarded outcome, since none was run.
+  **Done:** `7597a50` on `main` (`3b368f7` on the branch before the rebase that merged it) holds
+  the ladder, both marks, the split rule, the oracle, the pick (none) and every reading; no commit of the round holds a rewarded outcome, since none was run.
 
 - [x] **The criterion, ADR-0069's, unchanged** (the next ADR number, or the same). At **1 024
   units** at the chosen gain, with ADR-0068's addressed delivery and every other thing held: the
@@ -250,7 +250,8 @@ quoted sentences are what to re-derive.
   in every job, every pinned number reproduced on the hosted runner, no survivor; its run id, the
   six runtime shards' times, the runtime suite's time before and after, and the weekly exhaustive
   job's time against its 120-minute bound, all in the ADR.
-  **Done:** run 35548410926 at `3b368f7`, `scope=both`; the numbers are in ADR-0072's evidence.
+  **Done:** run 35548410926 at `3b368f7` (`7597a50` on `main`), `scope=both`; the numbers are in
+  ADR-0072's evidence.
 
 - [x] **The documents, in the same pull request.** Whitepaper §8.8's three-factor row gains the
   trace's composition as a measurement rather than a sentence; §11.1's **H-12** says what is now
