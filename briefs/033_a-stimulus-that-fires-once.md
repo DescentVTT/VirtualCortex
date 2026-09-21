@@ -134,7 +134,18 @@ move; the symbols and the quoted sentences are what to re-derive.
    nears its bound the round says so and names what would come out — it does not raise the bound.
    This round **adds tests**, which is ADR-0067's class, so its evidence dispatch is
    `-f scope=both`.
-8. **What waits on this.** Whitepaper §11.1's **H-12** carries three no's and, since ADR-0069, a
+8. **What no round has computed.** Four rounds have asked whether the criterion passed and none has
+   asked **how large an effect it needs**. The quantities to compare it with are all measured:
+   ADR-0069 reads the readouts' response at about eight spikes per trial with a trial-to-trial spread
+   of about 3.3, the delivery's effect at "half a spike of a response of eight" for a coupling moved
+   by five per cent, and the two readouts' responses differing "by under 1.5 spikes per trial in every
+   block" — in its eighth block, 7.1 against 8.6 per A trial and 7.7 against 7.5 per B trial, so on A
+   trials the readout that is not the answer leads by about 1.5. ADR-0065's geometry admits the four
+   couplings differing by **ten per cent** and the census gave A→R1 above A→R0 by three per cent before
+   any trial, which is a bias the criterion must be overcome **against**, not with. Whether that bias is
+   larger than anything a reward has moved is a reading this round can take at no cost, and it decides
+   what a next round should attack; it is Deliverable D.
+9. **What waits on this.** Whitepaper §11.1's **H-12** carries three no's and, since ADR-0069, a
    delivery that works into a trace with the wrong sign. **H-11**'s synaptic half still waits on a
    reward that changes a behaviour at all.
 
@@ -171,6 +182,32 @@ move; the symbols and the quoted sentences are what to re-derive.
 - [ ] **The constants commit**, preceding the first commit that holds a rewarded outcome: the
   chosen stimulus with its census, and every constant of ADR-0065, ADR-0068 and ADR-0069 restated
   unchanged.
+- [ ] **What the criterion requires, read off the trials (the same ADR).** Three numbers, in spikes per
+  trial, from the counts the runs already record — no model, no distribution assumed, and **integers
+  throughout** (a count is a count; the standing directives forbid a float in an oracle):
+  - (a) **The instrument's bias.** From the calibration's run, whose weights are frozen and which
+    therefore reads the instrument before anything is learned: per stimulus, the mean difference
+    between the answer readout's count in the readout window and the other's, as an integer ratio of
+    summed counts to trials. A difference favouring the readout that is **not** the answer is a bias
+    the reward must overcome before it can be read as learning.
+  - (b) **The offset the criterion needs.** Over the window the criterion reads, the smallest whole
+    number $\delta \ge 0$ such that adding $\delta$ to the answer readout's count on every trial would
+    carry the correct trials to the criterion's mark, ties resolved as `Task` resolves them. It is found
+    by a scan over $\delta$ on the recorded counts and is exact for those counts. Read it over the last
+    128 trials of the addressed rewarded run if the criterion ran, and over the calibration's 64 trials
+    otherwise, saying which and over how many trials.
+  - (c) **What the delivery moved.** The same difference in the rewarded run's last block minus its
+    first, if the criterion ran; otherwise ADR-0069's half a spike, quoted as the measurement it is,
+    under the stimulus F-46 describes.
+
+  The ADR states the three together and what they imply: whether the criterion is out of reach because
+  what a reward moves is too small, because the instrument's own bias points the other way and is the
+  larger, or both — and **if (a) exceeds (c), it records that as a numbered finding**, because a
+  geometry admitting a bias larger than the effect it is used to measure is a defect of the instrument
+  of the kind F-46 already is. **Nothing moves on the strength of these numbers in this round**: they
+  are a reading, no constant is chosen from them, and the geometry, whose tolerance is the suspected
+  source of (a), is not touched here. They are produced in **every** branch of this round, including the
+  one where no candidate stimulus passes.
 - [ ] **The criterion, ADR-0069's, unchanged**, run only if both calibrations pass. At **1 024
   units** with ADR-0068's addressed delivery: the addressed rewarded run, the mirrored assignment,
   the addressed shuffled reward and the fixed modulation, as weekly `exhaustive` tests. The
@@ -275,7 +312,9 @@ F-46's 2.06; the composition under it, term by term beside ADR-0072's, and wheth
 +5 that decision estimated, said as the Hypothesis it was; both calibrations at 1.75; the
 constants commit and the first outcome commit; if the criterion ran, its clauses at 1 024 units
 beside ADR-0069's 56, 65, 53 and 60, and the couplings' ratio against the 0.937 and the expectation
-written first; if it did not, which measure stopped it and what the terms say remains; the three
+written first; if it did not, which measure stopped it and what the terms say remains; **the three numbers of
+Deliverable D — the instrument's bias, the offset the criterion needs and what the delivery moved — and
+which of them is the obstacle**; the three
 exhaustive shards' times with `instrument.rs`'s against its bound; the runtime suite's time before
 and after, and what the mutation gate and the sweep found; what was not done and why; and what the
 re-examination after the round recommends next.
