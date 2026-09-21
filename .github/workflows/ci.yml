@@ -44,9 +44,11 @@ on:
     # (ADR-0030). Nothing to block; the survivors are the next round's list.
     - cron: "0 3 * * 1"
   # The weekly jobs by hand: `gh workflow run ci.yml --ref <branch> -f scope=<scope>`. A round
-  # dispatches `exhaustive`, where its own measurement lives; `mutants` as well only when it
-  # added or removed a test, moved one between the gate and the weekly job, or changed the
-  # sweep itself (ADR-0067). A scheduled run always does both.
+  # dispatches `exhaustive`, where its own measurement lives, and `both` only when its own diff
+  # changes a file under a `src/` directory, deletes a test or takes one out of the suite the
+  # sweep runs, or changes `.cargo/mutants.toml` or the `mutants-weekly` job (ADR-0075, which
+  # amends ADR-0067). Adding a test never qualifies: it can only catch more. The executing
+  # round decides from the diff it has, not the brief. A scheduled run always does both.
   workflow_dispatch:
     inputs:
       scope:
