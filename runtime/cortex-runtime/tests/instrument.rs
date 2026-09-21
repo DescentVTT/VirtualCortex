@@ -36,6 +36,15 @@
 //! before the run, the first rung that passes both the gain a rewarded run would use. The
 //! composition and the ladder are weekly `exhaustive` tests; the gate runs the first eight
 //! trials of the composition and the rules over the pinned tables.
+//!
+//! Brief 034 (ADR-0076) asks for two injections: F-46's stimulus kept whole and a cancel, a
+//! negative basal message into the same units inside the trial, so that a unit fires its
+//! volley spike and not again at the end of its refractory window. The cancel's offset, its
+//! span and its size are derived by an integer oracle over the membrane rule and the volley's
+//! census, checked against the engine's own probe through the task, and read over frozen runs
+//! by ADR-0074's measure, the sight and the sign. The candidates are a weekly `exhaustive`
+//! test; the gate runs the probes, the rules over the pinned tables and the first eight trials
+//! of the candidate the rules pick.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -43,14 +52,15 @@ use cortex_connectome::{
     CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SectionEntry, crc64, ring_distance,
 };
 use cortex_core::{
-    ELIGIBILITY_TAU_SHIFT, FLAG_INHIBITORY, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
-    STDP_A_MINUS_Q1_15, STDP_A_PLUS_Q1_15, STDP_TAU_SHIFT, THRESHOLD_BASE, stp_decay_factor_q16,
+    DendriticSuperNeuron, ELIGIBILITY_TAU_SHIFT, FLAG_INHIBITORY, MODULATION_ONE_Q16,
+    NO_SPIKE_ON_RECORD, REFRACTORY_TICKS, STDP_A_MINUS_Q1_15, STDP_A_PLUS_Q1_15, STDP_TAU_SHIFT,
+    THRESHOLD_BASE, message_efficacy_q16, spike_message, stp_decay_factor_q16,
 };
 use cortex_homeostasis::{ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, HomeostaticDrivePool};
 use cortex_neuromod::DOPAMINE_TAU_SHIFT;
 use cortex_runtime::{
-    Config, Delivery, Drive, Executor, Feedback, Image, Outcome, Readout, Set, Stimulus, Task,
-    TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
+    Cancel, Config, Delivery, Drive, Executor, Feedback, Image, Outcome, Readout, Set, Stimulus,
+    Task, TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -301,12 +311,22 @@ type Shape = (u32, i32);
 /// The shape of ADR-0065's stimulus, F-46's: two messages of 1.25.
 const SHAPE_F46: Shape = (STIMULUS_MESSAGES, STIMULUS_Q16);
 
-fn task(shape: Shape, units: u32, feedback: Feedback, mirrored: bool, delivery: Delivery) -> Task {
+/// The task at `units` with the stimulus of `shape` and, when one is given, its cancel
+/// (brief 034; every run before it passes `None`, so its task is the task it was).
+fn task(
+    shape: Shape,
+    cancel: Option<Cancel>,
+    units: u32,
+    feedback: Feedback,
+    mirrored: bool,
+    delivery: Delivery,
+) -> Task {
     let [a, b, r0, r1] = geometry(units, rotation(units));
     let stimulus = |set| Stimulus {
         set,
         messages: shape.0,
         efficacy_q16: shape.1,
+        cancel,
     };
     Task {
         stimuli: [stimulus(a), stimulus(b)],
@@ -424,6 +444,7 @@ fn run(
     run_behind(
         0,
         SHAPE_F46,
+        None,
         units,
         workers,
         gain,
@@ -438,15 +459,17 @@ fn run(
 
 /// `run` behind a lead-in of `lead_in_windows` whole windows under the drive alone
 /// (brief 031), before the instrument's own lead-in of one readout window, with the
-/// stimulus of `shape` (brief 033; `run` passes `SHAPE_F46`); the executor, the task and
-/// every constant are `run`'s, and the windows and the shape are the only differences.
-/// `observe` is called after every trial with the executor, the trial's index, its first
-/// tick and its outcome (brief 032's composition reads the arena and the train through it);
-/// it reads and never writes, so a run that observes nothing is the run before it.
+/// stimulus of `shape` (brief 033; `run` passes `SHAPE_F46`) and its cancel (brief 034;
+/// `run` passes `None`); the executor, the task and every constant are `run`'s, and the
+/// windows, the shape and the cancel are the only differences. `observe` is called after
+/// every trial with the executor, the trial's index, its first tick and its outcome
+/// (brief 032's composition reads the arena and the train through it); it reads and never
+/// writes, so a run that observes nothing is the run before it.
 #[allow(clippy::too_many_arguments)]
 fn run_behind(
     lead_in_windows: u64,
     shape: Shape,
+    cancel: Option<Cancel>,
     units: u32,
     workers: usize,
     gain: u32,
@@ -466,7 +489,7 @@ fn run_behind(
         (units as usize, units as usize),
         "every unit a source and a target before the first trial, whatever the delivery"
     );
-    let mut task = task(shape, units, feedback, mirrored, delivery);
+    let mut task = task(shape, cancel, units, feedback, mirrored, delivery);
     task.check(&exec).expect("the task fits the executor");
     let [a, b, r0, r1] = geometry(units, rotation(units));
     // The stimulus sets counted as a readout would count them: the same rule, the other
@@ -901,11 +924,11 @@ fn the_geometry_holds_against_the_census_at_both_sizes() {
         for feedback in [Feedback::Answer, Feedback::Shuffled] {
             let exec = Engine::new(config(units, 1, BASELINE_Q16)).unwrap();
             assert_eq!(
-                task(SHAPE_F46, units, feedback, false, Delivery::Global).check(&exec),
+                task(SHAPE_F46, None, units, feedback, false, Delivery::Global).check(&exec),
                 Ok(())
             );
             assert_eq!(
-                task(SHAPE_F46, units, feedback, true, Delivery::Global).check(&exec),
+                task(SHAPE_F46, None, units, feedback, true, Delivery::Global).check(&exec),
                 Ok(())
             );
         }
@@ -913,6 +936,7 @@ fn the_geometry_holds_against_the_census_at_both_sizes() {
         assert_eq!(
             task(
                 SHAPE_F46,
+                None,
                 units,
                 Feedback::Withheld,
                 false,
@@ -922,13 +946,22 @@ fn the_geometry_holds_against_the_census_at_both_sizes() {
             Ok(())
         );
         assert_eq!(
-            task(SHAPE_F46, units, Feedback::Answer, false, Delivery::Global).check(&fixed),
+            task(
+                SHAPE_F46,
+                None,
+                units,
+                Feedback::Answer,
+                false,
+                Delivery::Global
+            )
+            .check(&fixed),
             Err(TaskError::RewardAtCeiling)
         );
         let frozen = Engine::new(config(units, 1, 0)).unwrap();
         assert_eq!(
             task(
                 SHAPE_F46,
+                None,
                 units,
                 Feedback::Withheld,
                 false,
@@ -3575,6 +3608,7 @@ fn the_recalibrated_rewarded_run_at_256_units_behind_the_lead_in_exhaustive() {
     let (blocks, trace) = run_behind(
         LEAD_IN_WINDOWS,
         SHAPE_F46,
+        None,
         256,
         4,
         GAIN_256,
@@ -3753,6 +3787,10 @@ struct Composer {
     stimuli: Readout,
     spikes: Vec<Vec<u32>>,
     volleys: Vec<Vec<u32>>,
+    /// The presented set's volley spikes by their tick after the trial's first, over the run
+    /// (brief 034): index `k` counts the units whose volley spike fell on trial tick `k`, for
+    /// every `k` before the readout window opens.
+    volley_ticks: Vec<u64>,
     synapses: Vec<Replayed>,
     cursor: u32,
     out: Vec<Composed>,
@@ -3768,6 +3806,7 @@ impl Composer {
             stimuli: Readout::new([a, b]),
             spikes: vec![Vec::new(); units as usize],
             volleys: vec![Vec::new(); units as usize],
+            volley_ticks: vec![0; WINDOW.from as usize],
             synapses: Vec::new(),
             cursor: 0,
             out: Vec::new(),
@@ -3865,6 +3904,9 @@ impl Composer {
                 if v < start.wrapping_add(WINDOW.from) {
                     if let Some(volleys) = self.volleys.get_mut(s as usize) {
                         volleys.push(v);
+                    }
+                    if let Some(count) = self.volley_ticks.get_mut(v.wrapping_sub(start) as usize) {
+                        *count = count.saturating_add(1);
                     }
                 }
             }
@@ -4083,7 +4125,8 @@ fn compose_counting(
     gain: u32,
     trials: usize,
 ) -> (Vec<Block>, u64, Vec<Composed>, [[u32; 2]; 2]) {
-    let (blocks, trace, trials, counts, _) = compose_shaped(SHAPE_F46, units, gain, trials);
+    let (blocks, trace, trials, counts, _, _) =
+        compose_shaped(SHAPE_F46, None, units, gain, trials);
     (blocks, trace, trials, counts)
 }
 
@@ -4091,12 +4134,27 @@ fn compose_counting(
 /// the spikes of each readout set in the readout window.
 type Counted = (u8, [u32; 2]);
 /// A frozen run read under a shape: the sight's blocks and trace, the composed trials, the
-/// synapses from each stimulus set onto each readout set, and every trial's counts.
-type Shaped = (Vec<Block>, u64, Vec<Composed>, [[u32; 2]; 2], Vec<Counted>);
+/// synapses from each stimulus set onto each readout set, every trial's counts, and the
+/// presented set's volley spikes by their tick after the trial's first (brief 034).
+type Shaped = (
+    Vec<Block>,
+    u64,
+    Vec<Composed>,
+    [[u32; 2]; 2],
+    Vec<Counted>,
+    Vec<u64>,
+);
 
-/// `compose_counting` with the stimulus of `shape` (brief 033), and every trial's readout
-/// counts beside the composition; under `SHAPE_F46` it is `compose_counting`.
-fn compose_shaped(shape: Shape, units: u32, gain: u32, trials: usize) -> Shaped {
+/// `compose_counting` with the stimulus of `shape` (brief 033) and its cancel (brief 034),
+/// and every trial's readout counts beside the composition; under `SHAPE_F46` with no cancel
+/// it is `compose_counting`.
+fn compose_shaped(
+    shape: Shape,
+    cancel: Option<Cancel>,
+    units: u32,
+    gain: u32,
+    trials: usize,
+) -> Shaped {
     let p = prior(units);
     let frozen = at_gain(&p, config(units, 2, 0), gain);
     let sums = weights_by_polarity(&frozen);
@@ -4105,6 +4163,7 @@ fn compose_shaped(shape: Shape, units: u32, gain: u32, trials: usize) -> Shaped 
     let (blocks, trace) = run_behind(
         0,
         shape,
+        cancel,
         units,
         2,
         gain,
@@ -4132,7 +4191,14 @@ fn compose_shaped(shape: Shape, units: u32, gain: u32, trials: usize) -> Shaped 
     }
     assert_eq!(composer.out.len(), trials);
     let counts = composer.counts();
-    (blocks, trace, composer.out, counts, counted)
+    (
+        blocks,
+        trace,
+        composer.out,
+        counts,
+        counted,
+        composer.volley_ticks,
+    )
 }
 
 /// Dumps a composed run: the sight's blocks and trace, the rows and the composition.
@@ -4556,9 +4622,18 @@ const SYNAPSES_1024: [[u32; 2]; 2] = [[775, 806], [798, 809]];
 #[test]
 #[ignore]
 fn the_composition_at_1024_units_exhaustive() {
-    let (blocks, trace, trials, counts, counted) =
-        compose_shaped(SHAPE_F46, 1024, LADDER[0], BLOCK);
+    let (blocks, trace, trials, counts, counted, volley_ticks) =
+        compose_shaped(SHAPE_F46, None, 1024, LADDER[0], BLOCK);
     dump_composition("composition1024", &blocks, trace, &trials);
+    eprintln!(
+        "DUMP composition1024 volley ticks {:?}",
+        census_of(&volley_ticks)
+    );
+    assert_eq!(
+        census_of(&volley_ticks),
+        VOLLEY_TICKS_1024.to_vec(),
+        "composition1024: the volley's ticks"
+    );
     dump_requires("composition1024", &counted, false, OFFSET_MARK_64);
     let (block, pin, composed) = &LADDER_1024[0];
     pinned("composition1024 sight", &blocks, trace, &[*block], *pin);
@@ -4858,7 +4933,7 @@ fn probe(shape: Shape) -> Vec<u32> {
     let inject = exec.injector();
     for _ in 0..shape.0 {
         inject
-            .inject(0, cortex_core::spike_message(shape.1, false))
+            .inject(0, spike_message(shape.1, false))
             .expect("the ring has room");
     }
     let start = exec.ticks() as u32;
@@ -5553,8 +5628,8 @@ fn the_candidate_stimuli_at_1024_units_exhaustive() {
     let runs: Vec<CandidateRun> = CANDIDATES
         .iter()
         .map(|&shape| {
-            let (blocks, trace, trials, counts, counted) =
-                compose_shaped(shape, 1024, GAIN_1024, BLOCK);
+            let (blocks, trace, trials, counts, counted, _) =
+                compose_shaped(shape, None, 1024, GAIN_1024, BLOCK);
             assert_eq!(counts, SYNAPSES_1024);
             (blocks, trace, trials, counted)
         })
@@ -5802,8 +5877,8 @@ fn the_first_eight_trials_of_candidate_a_at_1024_units_and_the_rules_over_its_ta
         );
     }
     // The first eight trials of candidate (a), run.
-    let (blocks, trace, trials, counts, counted) =
-        compose_shaped(CANDIDATE_A, 1024, GAIN_1024, GATE_TRIALS);
+    let (blocks, trace, trials, counts, counted, _) =
+        compose_shaped(CANDIDATE_A, None, 1024, GAIN_1024, GATE_TRIALS);
     dump_composition("once1024 0 first eight", &blocks, trace, &trials);
     assert_eq!(counts, SYNAPSES_1024);
     assert!(blocks.is_empty(), "no whole block");
@@ -5814,4 +5889,645 @@ fn the_first_eight_trials_of_candidate_a_at_1024_units_and_the_rules_over_its_ta
         None,
     );
     assert_eq!(counted.as_slice(), &ONCE_COUNTED_1024[0][..GATE_TRIALS]);
+}
+
+// ------------------------------------------------ two injections (brief 034)
+//
+// Written before the run. ADR-0074 named the shape that neither weakens the response nor
+// leaves the stimulus units their spikes at the end of the refractory window: F-46's drive,
+// then a message that cancels what the basal compartment holds when the window ends. Brief
+// 034 asks for it and nothing else: a `Cancel` on the task's stimulus (`task.rs`), a
+// negative basal message into the presented set injected inside the trial; the offset
+// `REFRACTORY_TICKS` from the trial's first tick, "not searched"; the cancel's size from
+// three candidates in a fixed order — the residual the drive leaves in the basal
+// compartment of a unit at rest, twice it, and the bound one message carries — each
+// derived after the gain (F-47) by an integer oracle from `BASAL_LEAK_SHIFT` and
+// `REFRACTORY_TICKS` and probed on a unit at rest before it is used; the first candidate
+// passing the probe and ADR-0074's two clauses over a frozen run is the stimulus.
+//
+// The tree says two things the brief's arithmetic did not (principle 1: the repository
+// wins). *First*, the membrane rule drops an input that lands inside the refractory window
+// (`integrate` in `membrane.rs`: `basal_in` is zero while `refractory_ticks` is above
+// zero; ADR-0018 chose that so that a burst of input cannot fire the unit the tick the
+// window ends). A unit that fires its volley spike on trial tick `k` drops every input on
+// ticks `k + 1 ..= k + 200` and integrates again on `k + 201`; F-46's drive lands on tick
+// one, the earliest volley spike is on tick one, so the earliest tick any volley unit can
+// integrate again is 202, and the brief's cancel — injected at offset 200, landing on tick
+// 201 — lands inside the window of every unit that fired in the volley and is dropped.
+// *Second*, what fires the unit again is not the basal residual but the soma, which the
+// coupling has pulled toward half of the residual through the whole window: on the first
+// tick the unit integrates again the soma stands above the threshold already, and a cancel
+// that lands then must pull it back below the threshold within that one tick through the
+// coupling's sixteenth, so it must take the basal compartment well below rest rather than
+// to it. The oracle below (`alone`: `cortex-core`'s `integrate` stepped alone on one unit,
+// with the executor's scaling by the gain and its timing, a message injected before trial
+// tick `k` landing on tick `k + 1`) reads for a unit at rest: F-46's drive fires it on tick
+// 5 and again on 206; the basal residual on tick 205 is 2.94 after the gain; a cancel on
+// tick 206 must be at least 7.41 after the gain to leave the unit its one spike, 2.5 times
+// the residual; and a cancel on any tick from 201 to 205 is dropped whatever its size.
+// So the brief's three candidates at the brief's offset are all dropped, and at the tick
+// the unit integrates again the residual and twice the residual and one message at the
+// bound (−3.5 after the gain) are all too small. They are probed below as written, and
+// the probe is the record.
+//
+// What the engine's rule gives instead, derived and not searched. *The offset* is
+// `REFRACTORY_TICKS + 1`, 201: the cancel lands on tick 202, the first tick a unit that
+// fired on tick one integrates again. *The span*: the volley's spikes fall on several
+// ticks, because every unit carries the drive's standing potential and the drive adds the
+// same 4.375 to each, so one tick of cancel serves the units freed on that tick and no
+// other; the cancel is one message per tick over as many consecutive ticks as the volley
+// spreads, read from the census of ADR-0072's composition run (the calibration's, F-46's
+// stimulus, no cancel; `VOLLEY_TICKS_1024`, the presented set's volley spikes by their
+// tick after the trial's first): ticks 1 to 9, so the span is 9 and the cancel lands on
+// ticks 202 to 210, every unit freed on one of them receiving it on that tick and on every
+// later tick of the span. A cancel that lands after a unit's first free tick is dropped in
+// its next window if it fired, and takes the basal compartment further below rest if it
+// did not; ADR-0074's Context said what erring large costs — the stimulus units' own later
+// firing, which is F-46's excess — and nothing else within the trial, the basal
+// compartment returning to rest within a few thousand ticks of a trial of 16 384. *The
+// size*, in messages at the bound per tick (`spike_message` clamps one message at −2.0,
+// −3.5 after the gain, so a larger cancel is more messages): (i) the least count that
+// leaves a unit at rest firing once, by the oracle, 3 (−10.5 after the gain; 2 leaves it
+// its second spike); (ii) the least count that leaves a unit at the most standing
+// potential it can carry without firing — the basal compartment one LSB below twice the
+// threshold and the soma one LSB below it — firing once, by the oracle, 6, which is twice
+// (i); (iii) twice (ii), 12, for the standing states the oracle does not model (a
+// synapse's message landing on the same tick), the candidate that cannot under-cancel and
+// so tests whether the mechanism works at all, apart from its size. In this order and no
+// other; each probed on a unit at rest through the task before any run (`probe_task`,
+// `PROBED_CANCEL_1024`, in the gate, and held to the oracle); then the pick, ADR-0074's
+// measure unchanged (`fires_once`: the volley one spike per unit within two before the
+// readout window opens, at most a tenth of a spike per unit in the pair window after it),
+// over one frozen run of sixty-four trials at 1 024 units and the gain 1.75, the
+// calibration's run with the cancel the one difference, the modulation baseline at zero and
+// no reward, so no weight moves; the first candidate passing the probe and both clauses is
+// the stimulus; none, and there is no rewarded run. The sight (ADR-0065's) and the sign
+// (ADR-0072's) are read from the same run; the criterion runs only when both pass.
+//
+// The expectations, written before the run. *The brief's*: the volley's potentiation stays
+// near ADR-0072's 17.2 per synapse per presentation, because the first injection is F-46's
+// and the response it evokes is F-46's; the volley's depression falls toward zero, because
+// the stimulus units do not fire again to pair the response as depression; and the terms
+// reach ADR-0072's +5 per synapse per trial, named as the Hypothesis it is. *This round's,
+// from the pair rule*: the rule enters a potentiation at the presynaptic spike for the
+// target's last spike only, and the spike at which the response was entered under F-46's
+// stimulus was the stimulus unit's own spike at the end of its window, 201 ticks after the
+// volley; with that spike gone the response is entered at the unit's next spike, its next
+// presentation two trials later on average or a background spike before it, and only where
+// no background spike of the readout unit (0.28 per trial) displaced the response as its
+// last spike. So the volley's potentiation falls below 17.2 by about the displaced share
+// (a Hypothesis: to about 10), and part of it moves into later trials' rows; the volley's
+// depression falls toward zero; the background's depression falls to about a third of 26.8,
+// one presynaptic spike per presentation where there were three; the background's
+// potentiation stays near 7.5; the terms sum net positive, between +5 and +10; the sign
+// turns positive once the standing trace has integrated a few trials of that flow; and the
+// sight stays at 62 or 63, the readouts' response being F-46's.
+
+/// The cancel's message: the most negative efficacy one message carries, −2.0
+/// (`spike_message`'s clamp, held below), −3.5 after the gain of 1.75.
+const CANCEL_MESSAGE_Q16: i32 = -0x0002_0000;
+/// The brief's offset: `REFRACTORY_TICKS` from the trial's first tick, landing on tick
+/// 201, inside the window of every unit that fired in the volley.
+const BRIEF_OFFSET: u32 = REFRACTORY_TICKS as u32;
+/// The cancel's offset as the engine's rule gives it: `REFRACTORY_TICKS + 1`, landing on
+/// tick 202, the first tick a unit that fired on tick one integrates again.
+const CANCEL_OFFSET: u32 = REFRACTORY_TICKS as u32 + 1;
+const _: () = assert!(BRIEF_OFFSET == 200 && CANCEL_OFFSET == 201);
+/// The presented set's volley spikes by their tick after the trial's first, over the
+/// sixty-four trials of ADR-0072's composition run (F-46's stimulus, no cancel; 3 253 of
+/// 64 × 51), as `(tick, units)`; every other tick before the readout window opens holds
+/// none. Pinned from that run, which `the_composition_at_1024_units_exhaustive` holds.
+const VOLLEY_TICKS_1024: [(u32, u64); 9] = [
+    (1, 142),
+    (2, 944),
+    (3, 1613),
+    (4, 484),
+    (5, 49),
+    (6, 12),
+    (7, 4),
+    (8, 4),
+    (9, 1),
+];
+/// The cancel's span in ticks, derived from `VOLLEY_TICKS_1024` by `span_of` and not
+/// chosen: the last tick a volley spike fell on, so that the cancel lands on the first free
+/// tick of every unit of the volley. The gate holds the constant to the rule.
+const CANCEL_TICKS: u32 = 9;
+/// The most messages the oracle scans to for a least count.
+const LEAST_SCAN: u32 = 32;
+/// The most standing potential a unit carries without firing, for the oracle: the basal
+/// compartment one LSB below twice the threshold (the soma's fixed point is half of it)
+/// and the soma one LSB below the threshold.
+const EXTREME_STANDING: (i32, i32) = (2 * THRESHOLD_BASE - 1, THRESHOLD_BASE - 1);
+/// Candidate (i): the least count of messages at the bound per tick that leaves a unit at
+/// rest firing once, by the oracle.
+const CANCEL_ONCE_AT_REST: u32 = 3;
+/// Candidate (ii): the least count that leaves a unit at `EXTREME_STANDING` firing once, by
+/// the oracle.
+const CANCEL_AT_THE_EXTREME: u32 = 6;
+/// The candidates, as counts of messages at the bound per tick, in the order tried and no
+/// other: (i), (ii) and twice (ii).
+const CANCELS: [u32; 3] = [
+    CANCEL_ONCE_AT_REST,
+    CANCEL_AT_THE_EXTREME,
+    2 * CANCEL_AT_THE_EXTREME,
+];
+const _: () = assert!(CANCELS[0] < CANCELS[1] && CANCELS[1] < CANCELS[2]);
+
+/// The cancel of `messages` messages at the bound per tick over the derived span from the
+/// derived offset.
+const fn cancel_of(messages: u32) -> Cancel {
+    Cancel {
+        offset: CANCEL_OFFSET,
+        ticks: CANCEL_TICKS,
+        messages,
+        efficacy_q16: CANCEL_MESSAGE_Q16,
+    }
+}
+
+/// The span the census gives: the last tick a volley spike fell on; zero for no spike.
+fn span_of(volley_ticks: &[(u32, u64)]) -> u32 {
+    volley_ticks
+        .iter()
+        .filter(|&&(_, units)| units > 0)
+        .map(|&(tick, _)| tick)
+        .max()
+        .unwrap_or(0)
+}
+
+/// The nonzero entries of a run's volley-tick census, as the constant holds them.
+fn census_of(volley_ticks: &[u64]) -> Vec<(u32, u64)> {
+    volley_ticks
+        .iter()
+        .enumerate()
+        .filter(|&(_, &units)| units > 0)
+        .map(|(tick, &units)| (tick as u32, units))
+        .collect()
+}
+
+// ------------------------------------------------------------------------- the oracle
+
+/// A turn's sum under the tick's gain, as the executor scales it (`scaled` in
+/// `executor.rs`, ADR-0036; the injected messages among the sum, F-47): `sum × gain`,
+/// Q16.16, rounded to nearest and clamped to the width; written a second time as the
+/// oracle's.
+fn scaled_q16(sum: i32, gain_q16: u32) -> i32 {
+    (i64::from(sum)
+        .saturating_mul(i64::from(gain_q16))
+        .saturating_add(0x8000)
+        >> 16)
+        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+/// What `messages` messages of `efficacy_q16` sum to in a unit's batch: each clamped as
+/// `spike_message` clamps it, then summed, clamped to the width.
+fn batch_q16(messages: u32, efficacy_q16: i32) -> i32 {
+    i64::from(message_efficacy_q16(spike_message(efficacy_q16, false)))
+        .saturating_mul(i64::from(messages))
+        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+/// The membrane rule stepped alone: `cortex-core`'s `integrate` on one unit at the base
+/// threshold with no synapse and no drive, from `standing` basal and somatic potentials,
+/// under `shape`'s messages landing on tick one and `cancel`'s on the tick after each
+/// offset it is due at (the executor's timing: a message injected before trial tick `k`
+/// lands on tick `k + 1`), each tick's batch scaled by `gain` as the executor scales it.
+/// Returns the ticks the unit fires on within `ticks`, and its basal potential after every
+/// tick.
+fn alone(
+    standing: (i32, i32),
+    shape: Shape,
+    cancel: Option<Cancel>,
+    gain: u32,
+    ticks: u32,
+) -> (Vec<u32>, Vec<i32>) {
+    let mut unit = DendriticSuperNeuron::new(0);
+    unit.v_thresh = THRESHOLD_BASE;
+    unit.v_basal = standing.0;
+    unit.v_soma = standing.1;
+    let mut fires = Vec::new();
+    let mut basal = Vec::with_capacity(ticks as usize);
+    for k in 0..ticks {
+        let mut sum = if k == 0 {
+            batch_q16(shape.0, shape.1)
+        } else {
+            0
+        };
+        if let Some(c) = cancel {
+            if c.is_due(k) {
+                sum = sum.saturating_add(batch_q16(c.messages, c.efficacy_q16));
+            }
+        }
+        let now = k.saturating_add(1);
+        if unit.integrate(scaled_q16(sum, gain), 0, now) {
+            fires.push(now);
+        }
+        basal.push(unit.v_basal);
+    }
+    (fires, basal)
+}
+
+/// The residual: the basal potential, after the gain, that `shape` alone leaves in a unit
+/// at rest after trial tick `tick`, by the oracle; zero for a tick before the first.
+fn residual(shape: Shape, gain: u32, tick: u32) -> i32 {
+    let (_, basal) = alone((0, 0), shape, None, gain, tick);
+    basal.last().copied().unwrap_or(0)
+}
+
+/// The least count of messages at the bound per tick, as one cancel over the derived span
+/// from the derived offset, that leaves a unit with `standing` potentials firing exactly
+/// once within one pair window of F-46's drive, by the oracle; none up to `LEAST_SCAN`.
+fn least_cancel(standing: (i32, i32), gain: u32) -> Option<u32> {
+    (1..=LEAST_SCAN).find(|&n| {
+        alone(standing, SHAPE_F46, Some(cancel_of(n)), gain, PROBE_TICKS)
+            .0
+            .len()
+            == 1
+    })
+}
+
+/// The brief's three candidates as it wrote them, one injection each at `offset` over
+/// `ticks`: (i) the residual, one message carrying what F-46's drive leaves in the basal
+/// compartment of a unit at rest after tick `residual_tick` divided by the gain; (ii) twice
+/// it, two such messages; (iii) the bound, one message at −2.0.
+fn brief_cancels(offset: u32, ticks: u32, residual_tick: u32) -> [Cancel; 3] {
+    let after_gain = i64::from(residual(SHAPE_F46, GAIN_1024, residual_tick));
+    let before_gain = (after_gain << 16)
+        .checked_div(i64::from(GAIN_1024))
+        .unwrap_or(0);
+    let of = |messages: u32, efficacy_q16: i64| Cancel {
+        offset,
+        ticks,
+        messages,
+        efficacy_q16: efficacy_q16.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+    };
+    [
+        of(1, before_gain.saturating_neg()),
+        of(2, before_gain.saturating_neg()),
+        of(1, i64::from(CANCEL_MESSAGE_Q16)),
+    ]
+}
+
+/// `probe` through the task (the composition the runs use, on one unit): the instrument's
+/// network at 1 024 units at rest at the gain 1.75 with no drive, a task whose stimulus A
+/// is unit 0 alone with `shape` and `cancel`, one trial of `PROBE_TICKS` ticks, and the
+/// ticks after the trial's first on which unit 0 fires, read from the train.
+fn probe_task(shape: Shape, cancel: Option<Cancel>) -> Vec<u32> {
+    let p = prior(1024);
+    let mut exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    assert!(exec.is_quiescent());
+    let stimulus = |first| Stimulus {
+        set: Set::contiguous(first, 1),
+        messages: shape.0,
+        efficacy_q16: shape.1,
+        cancel,
+    };
+    let mut t = Task {
+        stimuli: [stimulus(0), stimulus(1)],
+        readout: Readout::new([Set::contiguous(2, 1), Set::contiguous(3, 1)]),
+        drive: Drive {
+            every: 0,
+            messages: 0,
+            efficacy_q16: 0,
+            units: 1024,
+            seed: 0,
+        },
+        ticks: PROBE_TICKS,
+        window: Window::whole(PROBE_TICKS),
+        seed: SEED,
+        reward_q16: 0,
+        mirrored: false,
+        feedback: Feedback::Withheld,
+        delivery: Delivery::Global,
+    };
+    let trial = (0..8u64)
+        .find(|&k| t.stimulus_at(k) == 0)
+        .expect("a trial presents A");
+    let start = exec.ticks() as u32;
+    t.trial(&mut exec, trial).expect("the probe runs");
+    exec.train()
+        .iter()
+        .filter(|&&(_, unit)| unit == 0)
+        .map(|&(tick, _)| tick.wrapping_sub(start))
+        .collect()
+}
+
+/// The cancel the round picks: the first candidate, in the candidates' order, whose probe
+/// passed (`probed[k]`: a unit at rest fires once) and whose frozen run fires once by
+/// ADR-0074's measure; none when none does.
+fn cancel_pick(probed: &[bool], runs: &[(Block, u64, Composition)]) -> Option<u32> {
+    CANCELS
+        .iter()
+        .zip(probed.iter())
+        .zip(runs.iter())
+        .find(|&((_, &probed), (block, _, composition))| {
+            probed && fires_once(1024, block, composition)
+        })
+        .map(|((&messages, _), _)| messages)
+}
+
+// ------------------------------------------------------------- the probes (brief 034)
+
+/// The probes, each F-46's drive into unit 0 of the instrument's network at rest at the
+/// gain 1.75 with a cancel, through the task: the ticks unit 0 fires on within one pair
+/// window, pinned from the engine and held to the oracle. The brief's three at the brief's
+/// offset land inside the window and are dropped; at the derived span they land on tick 206
+/// for a unit at rest and are too small; two messages at the bound are one below the least;
+/// the three candidates leave the unit its one spike.
+const PROBED_CANCEL_1024: [(&str, Option<Cancel>, &[u32]); 11] = [
+    ("F-46's drive alone", None, &[5, 206]),
+    (
+        "the brief's (i), the residual, at the brief's offset",
+        Some(Cancel {
+            offset: BRIEF_OFFSET,
+            ticks: 1,
+            messages: 1,
+            efficacy_q16: -111_082,
+        }),
+        &[5, 206],
+    ),
+    (
+        "the brief's (ii), twice the residual, at the brief's offset",
+        Some(Cancel {
+            offset: BRIEF_OFFSET,
+            ticks: 1,
+            messages: 2,
+            efficacy_q16: -111_082,
+        }),
+        &[5, 206],
+    ),
+    (
+        "the brief's (iii), the bound, at the brief's offset",
+        Some(Cancel {
+            offset: BRIEF_OFFSET,
+            ticks: 1,
+            messages: 1,
+            efficacy_q16: CANCEL_MESSAGE_Q16,
+        }),
+        &[5, 206],
+    ),
+    (
+        "the brief's (i) at the derived span",
+        Some(Cancel {
+            offset: CANCEL_OFFSET,
+            ticks: CANCEL_TICKS,
+            messages: 1,
+            efficacy_q16: -110_004,
+        }),
+        &[5, 206],
+    ),
+    (
+        "the brief's (ii) at the derived span",
+        Some(Cancel {
+            offset: CANCEL_OFFSET,
+            ticks: CANCEL_TICKS,
+            messages: 2,
+            efficacy_q16: -110_004,
+        }),
+        &[5, 206],
+    ),
+    (
+        "the brief's (iii) at the derived span",
+        Some(Cancel {
+            offset: CANCEL_OFFSET,
+            ticks: CANCEL_TICKS,
+            messages: 1,
+            efficacy_q16: CANCEL_MESSAGE_Q16,
+        }),
+        &[5, 206],
+    ),
+    (
+        "two at the bound, one below the least",
+        Some(cancel_of(2)),
+        &[5, 206],
+    ),
+    ("(i) three at the bound", Some(cancel_of(CANCELS[0])), &[5]),
+    ("(ii) six at the bound", Some(cancel_of(CANCELS[1])), &[5]),
+    (
+        "(iii) twelve at the bound",
+        Some(cancel_of(CANCELS[2])),
+        &[5],
+    ),
+];
+/// The residual after the gain on tick 200 and on tick 205, by the oracle: what stands
+/// when the brief's cancel would land on tick 201, and when the derived span's message
+/// lands on tick 206 for a unit at rest.
+const RESIDUAL_200_Q16: i32 = 194_395;
+const RESIDUAL_205_Q16: i32 = 192_507;
+
+// ---------------------------------------------------------- the measurement (brief 034)
+
+/// The gate's test (ADR-0061's class): the message's clamp, the oracle's scaling at its
+/// edges, the oracle on a unit at rest and at the extreme held to the constants (the
+/// residuals, the least counts), the span rule over the pinned census, the brief's three
+/// cancels as the oracle sizes them, every probe through the task held to its table and to
+/// the oracle, and the pick rule at its edges; no whole run.
+#[test]
+fn the_probes_of_the_two_injections_at_1024_units_and_the_rules_over_their_tables() {
+    // One message carries at most −2.0: the clamp is the bound.
+    assert_eq!(
+        message_efficacy_q16(spike_message(CANCEL_MESSAGE_Q16, false)),
+        CANCEL_MESSAGE_Q16
+    );
+    assert_eq!(
+        message_efficacy_q16(spike_message(i32::MIN, false)),
+        CANCEL_MESSAGE_Q16,
+        "below the bound, clamped"
+    );
+    assert_eq!(batch_q16(3, i32::MIN), 3 * CANCEL_MESSAGE_Q16);
+    assert_eq!(batch_q16(2, STIMULUS_Q16), 2 * STIMULUS_Q16);
+    // The scaling: exact at 1.0, F-46's 4.375 at 1.75, the bound's −3.5, the width held.
+    assert_eq!(scaled_q16(2 * STIMULUS_Q16, ONE as u32), 2 * STIMULUS_Q16);
+    assert_eq!(
+        scaled_q16(2 * STIMULUS_Q16, GAIN_1024),
+        0x0004_6000,
+        "4.375"
+    );
+    assert_eq!(
+        scaled_q16(CANCEL_MESSAGE_Q16, GAIN_1024),
+        -0x0003_8000,
+        "−3.5"
+    );
+    assert_eq!(scaled_q16(i32::MAX, GAIN_1024), i32::MAX);
+    assert_eq!(scaled_q16(i32::MIN, GAIN_1024), i32::MIN);
+    assert_eq!(scaled_q16(0, GAIN_1024), 0);
+    // The oracle on a unit at rest: ADR-0074's probe, the residuals, the least count.
+    let (fires, _) = alone((0, 0), SHAPE_F46, None, GAIN_1024, PROBE_TICKS);
+    assert_eq!(fires, [5, 206], "F-46's drive fires a unit at rest twice");
+    assert_eq!(residual(SHAPE_F46, GAIN_1024, 200), RESIDUAL_200_Q16);
+    assert_eq!(residual(SHAPE_F46, GAIN_1024, 205), RESIDUAL_205_Q16);
+    assert_eq!(
+        residual(SHAPE_F46, GAIN_1024, 0),
+        0,
+        "before the drive lands"
+    );
+    assert_eq!(least_cancel((0, 0), GAIN_1024), Some(CANCEL_ONCE_AT_REST));
+    assert_eq!(
+        least_cancel(EXTREME_STANDING, GAIN_1024),
+        Some(CANCEL_AT_THE_EXTREME)
+    );
+    assert_eq!(
+        alone(
+            (0, 0),
+            SHAPE_F46,
+            Some(cancel_of(2)),
+            GAIN_1024,
+            PROBE_TICKS
+        )
+        .0,
+        [5, 206],
+        "two at the bound leave the second spike"
+    );
+    let (extreme, _) = alone(EXTREME_STANDING, SHAPE_F46, None, GAIN_1024, PROBE_TICKS);
+    assert_eq!(
+        extreme,
+        [1, 202, 403],
+        "at the extreme the unit fires on the drive's tick"
+    );
+    assert_eq!(
+        alone(
+            EXTREME_STANDING,
+            SHAPE_F46,
+            Some(cancel_of(5)),
+            GAIN_1024,
+            PROBE_TICKS
+        )
+        .0,
+        [1, 202],
+        "five leave the extreme its second spike"
+    );
+    // A cancel that lands inside the window is dropped whatever its size.
+    for offset in [BRIEF_OFFSET, 202, 204] {
+        let inside = Cancel {
+            offset,
+            ticks: 1,
+            messages: LEAST_SCAN,
+            efficacy_q16: CANCEL_MESSAGE_Q16,
+        };
+        assert_eq!(
+            alone((0, 0), SHAPE_F46, Some(inside), GAIN_1024, PROBE_TICKS).0,
+            [5, 206],
+            "offset {offset}: inside the window"
+        );
+    }
+    // The span rule over the pinned census, and the census's sum.
+    assert_eq!(
+        span_of(&VOLLEY_TICKS_1024),
+        CANCEL_TICKS,
+        "the span as derived"
+    );
+    assert_eq!(span_of(&[]), 0);
+    assert_eq!(
+        span_of(&[(3, 0), (2, 1)]),
+        2,
+        "a tick of no unit does not count"
+    );
+    assert_eq!(
+        VOLLEY_TICKS_1024
+            .iter()
+            .map(|&(_, units)| units)
+            .sum::<u64>(),
+        3253
+    );
+    let mut census = vec![0u64; WINDOW.from as usize];
+    for &(tick, units) in &VOLLEY_TICKS_1024 {
+        census[tick as usize] = units;
+    }
+    assert_eq!(census_of(&census), VOLLEY_TICKS_1024.to_vec());
+    assert_eq!(cancel_of(3).end(), 210, "lands on 202 to 210");
+    // The brief's three cancels as the oracle sizes them.
+    assert_eq!(
+        brief_cancels(BRIEF_OFFSET, 1, 200).map(|c| (c.messages, c.efficacy_q16)),
+        [(1, -111_082), (2, -111_082), (1, CANCEL_MESSAGE_Q16)],
+        "the residual on tick 200, 2.966 after the gain, is 1.695 before it"
+    );
+    assert_eq!(
+        brief_cancels(CANCEL_OFFSET, CANCEL_TICKS, 205).map(|c| (c.messages, c.efficacy_q16)),
+        [(1, -110_004), (2, -110_004), (1, CANCEL_MESSAGE_Q16)]
+    );
+    // The probes through the task, each held to its table and to the oracle.
+    for (name, cancel, ticks) in PROBED_CANCEL_1024 {
+        let read = probe_task(SHAPE_F46, cancel);
+        eprintln!("DUMP probe1024 cancel {name}: {cancel:?} -> {read:?}");
+        assert_eq!(read.as_slice(), ticks, "{name}");
+        assert_eq!(
+            alone((0, 0), SHAPE_F46, cancel, GAIN_1024, PROBE_TICKS).0,
+            ticks,
+            "{name}: the oracle"
+        );
+    }
+    assert_eq!(
+        probe_task(SHAPE_F46, None).as_slice(),
+        PROBED_1024[0].1,
+        "the task's probe is the injector's (ADR-0074)"
+    );
+    // The pick at its edges: the first candidate whose probe passed and whose run fires
+    // once.
+    let seen = CALIBRATION_1024[0].0;
+    let after = |spikes: u64| -> Composition {
+        (
+            [[0; 2]; 2],
+            [[[0; 4]; 2]; 2],
+            [[0, 0], [0, 0], [0, spikes]],
+            0,
+            0,
+        )
+    };
+    let passing = (seen, 0u64, after(0));
+    let loud = (seen, 0u64, after(327));
+    assert_eq!(
+        cancel_pick(&[true, true, true], &[passing, passing, passing]),
+        Some(CANCELS[0])
+    );
+    assert_eq!(
+        cancel_pick(&[false, true, true], &[passing, passing, passing]),
+        Some(CANCELS[1]),
+        "a failed probe is skipped"
+    );
+    assert_eq!(
+        cancel_pick(&[true, true, true], &[loud, loud, passing]),
+        Some(CANCELS[2])
+    );
+    assert_eq!(cancel_pick(&[true, true, true], &[loud, loud, loud]), None);
+    assert_eq!(
+        cancel_pick(&[false, false, false], &[passing, passing, passing]),
+        None
+    );
+    assert_eq!(cancel_pick(&[], &[]), None);
+}
+
+/// A candidate's frozen run with its cancel: the sight's blocks and trace, the composed
+/// trials, every trial's counts and the volley-tick census.
+type CancelledRun = (Vec<Block>, u64, Vec<Composed>, Vec<Counted>, Vec<u64>);
+
+/// The candidates, each a frozen run of sixty-four trials with its cancel, run and dumped
+/// before any is held to its table, so that one candidate's failure still shows the
+/// others' readings.
+#[test]
+#[ignore]
+fn the_two_injections_at_1024_units_exhaustive() {
+    let runs: Vec<CancelledRun> = CANCELS
+        .iter()
+        .map(|&messages| {
+            let (blocks, trace, trials, counts, counted, volley_ticks) =
+                compose_shaped(SHAPE_F46, Some(cancel_of(messages)), 1024, GAIN_1024, BLOCK);
+            assert_eq!(counts, SYNAPSES_1024);
+            (blocks, trace, trials, counted, volley_ticks)
+        })
+        .collect();
+    for (k, (blocks, trace, trials, counted, volley_ticks)) in runs.iter().enumerate() {
+        let name = format!("cancelled1024 {k} {}", CANCELS[k]);
+        dump_composition(&name, blocks, *trace, trials);
+        dump_requires(&name, counted, false, OFFSET_MARK_64);
+        let composed = composition(trials);
+        eprintln!(
+            "DUMP {name} volley {} after {} fires_once {} sight {} sign {} passes {} census {:?}",
+            volley_once(1024, &blocks[0]),
+            after_quiet(1024, &composed),
+            fires_once(1024, &blocks[0], &composed),
+            calibrated(&blocks[0]),
+            composed.3,
+            passes(&blocks[0], &composed),
+            census_of(volley_ticks)
+        );
+    }
 }
