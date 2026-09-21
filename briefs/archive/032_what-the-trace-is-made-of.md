@@ -1,7 +1,28 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-21
 ---
+
+> **Executed 2026-09-21 in pull request #83.** Writes ADR-0072 (what the trace is made of:
+> the eligibility on a stimulus's synapses into a readout, read from the record at 1 024
+> units with the weights frozen and split by what paired it through an oracle that replays
+> the pair rule over the executor's own train and agrees with the record at every reading;
+> at the present gain the volley's pairing is net potentiation and the background's net
+> depression of four to five times it, so ADR-0066's sentence is a measurement, and its
+> mechanism is in the census: each stimulus unit fires about twice more within one pair
+> window after its volley, and the rule depresses once per presynaptic spike and potentiates
+> at most once per postsynaptic one; the ladder of 1.75, 1.5, 1.25 and 1.0 under the sight
+> and the sign, both written first, passes at no rung — at 1.5 the trace turns net
+> potentiation while the readout stops seeing the stimulus — so there is no rewarded run
+> and no constant moves) and finding F-46 (the instrument's stimulus fires each unit three
+> times within the pair window, not once). Image format 14 unchanged; the determinism pin
+> untouched; no constant of the engine or the instrument moved. Every deliverable is done;
+> notes under the boxes say where the tree departs from the text: the criterion's runs were
+> not made, because no rung passed both measures and the brief's own rule for that case is
+> no rewarded run; the gate's test runs the first eight trials against the first eight rows,
+> the composition being one block; the ladder was not walked at 256 units. The report is in
+> the pull request and in `CHANGELOG.md`. The body below describes the tree before execution
+> and is not maintained.
 
 # Brief 032 — What the trace is made of: the first measurement of the sentence three decisions have reasoned from, and the first background, chosen by a measure that cannot see the answer, under which the pairings rise
 
@@ -11,14 +32,14 @@ date: 2026-09-21
 
 ## Mission
 
-[ADR-0069](../docs/adr/0069-the-addressed-reward-measured.md) reduced the learning question to one
+[ADR-0069](../../docs/adr/0069-the-addressed-reward-measured.md) reduced the learning question to one
 sentence: **"What the rule cannot do is turn a net-depression trace into a coupling that rises;
 the reward's addressing changes which synapses fall faster and not whether they fall."** The
-delivery of [ADR-0068](../docs/adr/0068-the-reward-addressed.md) was shown to work — the answer
+delivery of [ADR-0068](../../docs/adr/0068-the-reward-addressed.md) was shown to work — the answer
 couplings parted from the other two by four to five per cent, downward, in the direction written
 before the run — and to be beside the point while the trace it consolidates is negative.
 
-Why the trace is negative is stated in [ADR-0066](../docs/adr/0066-the-reward-path-measured-again.md)
+Why the trace is negative is stated in [ADR-0066](../../docs/adr/0066-the-reward-path-measured-again.md)
 and has never been measured: "a readout unit's background spike within the pair window before the
 volley is depression, and the background's are the more." Three decisions have reasoned from that
 sentence. Nothing in the tree holds a number for it.
@@ -43,7 +64,7 @@ mark kept beside the new one.
 
 - **Latest ≠ Newest** (whitepaper §2.1, `CLAUDE.md` principle 4). This round adds **no
   mechanism**. Its first half is a measurement of the tree's own pair rule
-  ([ADR-0022](../docs/adr/0022-synapse-fan-out-and-stdp.md), [ADR-0032](../docs/adr/0032-three-factor-plasticity.md);
+  ([ADR-0022](../../docs/adr/0022-synapse-fan-out-and-stdp.md), [ADR-0032](../../docs/adr/0032-three-factor-plasticity.md);
   Bi and Poo 1998; Izhikevich 2007), and its second is a choice among values of a constant the
   instrument already has. **No** new learning rule, gradient, surrogate gradient, e-prop, reward
   predictor, critic, structural plasticity, per-unit synaptic scaling (still gated on H-8), rate
@@ -52,18 +73,18 @@ mark kept beside the new one.
   of the *engine* may not be touched at all.
 - Every claim is Implemented, Specified, Target or Hypothesis. What a run holds at 1 024 units is
   stated with the prior's parameters and the configuration; nothing here says anything about
-  Appendix A's scale ([ADR-0010](../docs/adr/0010-measured-or-target.md)). No timing figure from a
+  Appendix A's scale ([ADR-0010](../../docs/adr/0010-measured-or-target.md)). No timing figure from a
   developer machine. No "learns" without the task, the accuracy, the trials and the controls.
 - The repository wins over the document; a disagreement is a numbered finding in whitepaper §11.
   ADR-0066's, ADR-0068's and ADR-0069's numbers stay in them and their tests keep pinning them;
   this round is compared with them, never folded into them.
 - No `f32`/`f64`, in the crates, the tests and the oracles; a sum of traces is an `i64` of Q1.15
   terms and a ratio is an integer ratio in Q16.16; every operation on a state field saturates or
-  wraps by name ([ADR-0029](../docs/adr/0029-structural-enforcement.md)).
+  wraps by name ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)).
 - Every loop ends by construction: a countdown, a range, a scan by `get`, a slice's iterator;
   never by a comparison alone that one operator flip turns into a walk without end
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
-- Every quantity has one owner ([ADR-0016](../docs/adr/0016-thirty-two-crate-architecture.md)):
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
+- Every quantity has one owner ([ADR-0016](../../docs/adr/0016-thirty-two-crate-architecture.md)):
   the trace is `cortex-core`'s, the modulation `cortex-neuromod`'s, the gain
   `cortex-homeostasis`'s, the task and its sets the runtime's. **No new crate**; the crate count
   stays 32; no record changes; the image format stays 14; no reserved byte is taken.
@@ -71,15 +92,15 @@ mark kept beside the new one.
   Deliverable B from the ladder in Deliverable B, both of which read no selection, no reward and
   no outcome, and it is committed before the first rewarded run. What a rewarded run says beyond
   the criterion is a reading (ADR-0051, ADR-0054, ADR-0060, ADR-0066, ADR-0069).
-- The determinism pin of [ADR-0030](../docs/adr/0030-verification-governance.md) does not move,
+- The determinism pin of [ADR-0030](../../docs/adr/0030-verification-governance.md) does not move,
   and neither does any pinned number of ADR-0065, ADR-0066, ADR-0068 or ADR-0069: nothing here
   changes a rule. A run at a new gain is a **new** run with its own pins beside them. The mutation
   gate on the changed lines must pass; every number an arithmetic oracle can produce is computed
   by that oracle before the test that asserts it.
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive` and runs in the weekly job;
   the pull request's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
-- The engine never amends its own code ([ADR-0031](../docs/adr/0031-policy-amendment.md)); no
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+- The engine never amends its own code ([ADR-0031](../../docs/adr/0031-policy-amendment.md)); no
   registry entry (F-37). Conventional Commits with a real body; never commit on `main`; the
   required checks keep their names.
 
@@ -131,8 +152,8 @@ quoted sentences are what to re-derive.
    (`instrument.rs`: `control_step_q0_16: 0`, the gain held, `sleep_shift: 0`). Turning the
    controller on moves the gain during the run and would make a calibrated gain meaningless, so
    it is **not** this round's variable; it is named in the ADR as what a next round would try.
-6. **The budget** ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md),
-   [ADR-0067](../docs/adr/0067-the-weekly-dispatch-has-a-scope.md)). The weekly `exhaustive` job's
+6. **The budget** ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md),
+   [ADR-0067](../../docs/adr/0067-the-weekly-dispatch-has-a-scope.md)). The weekly `exhaustive` job's
    time is a range — 33 m, 56 m, 40 m and 1 h 11 m on the runs on record, runner variance of about
    two to one — against a 120-minute bound, and briefs 029, 030 and 031 have each added runs that
    stay. **The comparison at the present gain is free**: ADR-0069's runs are already in the suite
@@ -140,7 +161,7 @@ quoted sentences are what to re-derive.
    **measures the job's time and states it**, and if it would near the bound it drops the
    controls it names as droppable in Deliverable D and says so, rather than raising the bound.
    This round **adds tests**, which is
-   [ADR-0067](../docs/adr/0067-the-weekly-dispatch-has-a-scope.md)'s class, so its evidence
+   [ADR-0067](../../docs/adr/0067-the-weekly-dispatch-has-a-scope.md)'s class, so its evidence
    dispatch is `-f scope=both`.
 7. **What the answer decides.** If a gain on the ladder makes the trace net potentiation and the
    criterion passes, H-12 closes with a yes and H-11's synaptic half unblocks. If it makes the
@@ -152,7 +173,7 @@ quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The decomposition (the next free ADR number; `ls docs/adr`)** (`depends-on: ADR-0069`;
+- [x] **The decomposition (the next free ADR number; `ls docs/adr`)** (`depends-on: ADR-0069`;
   ADR-0022, ADR-0032, ADR-0055, ADR-0065 named). At **1 024 units**, in ADR-0065's configuration
   with the **weights frozen** (the modulation baseline at zero, no reward: the traces fill and
   decay and are never written) and the gain at its present 1.75, over **64 trials**, read and pin
@@ -169,7 +190,12 @@ quoted sentences are what to re-derive.
   The round states, as the first measurement of ADR-0066's sentence, whether the background's
   terms outnumber the volley's and by how much. **This is a reading**, in the sense of ADR-0047,
   ADR-0051 and ADR-0054: it stands whatever the rest of the round finds.
-- [ ] **The two calibrations and the ladder, in the same ADR.** The ladder, in this order and no
+  **Done as ADR-0072**, with (b) split further by sign into four classes (the volley's
+  potentiation and depression, the background's potentiation and depression), a term
+  attributed to the readout spike that paired it, and (c) extended to the presented set's own
+  spikes, which is where the mechanism turned out to be.
+
+- [x] **The two calibrations and the ladder, in the same ADR.** The ladder, in this order and no
   other: **1.75 (the present), 1.5 (`0x0001_8000`), 1.25 (`0x0001_4000`), 1.0 (`0x0001_0000`)**.
   At each, with the weights frozen and no reward, over 64 trials, both measures:
   - **Sight** — ADR-0065's, unchanged: the window after the volley holds more readout spikes than
@@ -182,10 +208,16 @@ quoted sentences are what to re-derive.
   is **no rewarded run** and the round records the ladder with both measures at every rung.
   Neither measure reads a selection, a reward or an outcome, which is what makes this a
   calibration and not a tuning; the order is fixed so that no preference chooses.
-- [ ] **The constants commit**, preceding the first commit that holds a rewarded outcome: the
+  **Done:** 1.75 reads sight 62 and sign 1; 1.5 reads 49 and 45; 1.25 reads 10 and 32; 1.0
+  reads 0 and 0. No rung passes both; `GAIN_PICKED_1024` is none.
+
+- [x] **The constants commit**, preceding the first commit that holds a rewarded outcome: the
   chosen gain, the ladder and both pass marks, and every other constant of ADR-0065 and ADR-0068
   restated unchanged.
-- [ ] **The criterion, ADR-0069's, unchanged** (the next ADR number, or the same). At **1 024
+  **Done:** `3b368f7` holds the ladder, both marks, the split rule, the oracle, the pick (none)
+  and every reading; no commit of the round holds a rewarded outcome, since none was run.
+
+- [x] **The criterion, ADR-0069's, unchanged** (the next ADR number, or the same). At **1 024
   units** at the chosen gain, with ADR-0068's addressed delivery and every other thing held: the
   addressed rewarded run, the mirrored assignment, the addressed shuffled reward and the fixed
   modulation. The comparison at the present gain is **ADR-0069's own runs**, already in the suite,
@@ -201,24 +233,40 @@ quoted sentences are what to re-derive.
   - If the exhaustive job would near its bound, the droppable runs, in this order, are the
     addressed shuffled reward and then the mirrored assignment; the rewarded run, the fixed
     modulation and the worker clause are not droppable, and whatever is dropped is stated.
-- [ ] **The gate.** One test at 1 024 units running no whole run: the decomposition's first block,
+  **Discharged by the ladder's outcome:** no rung passed both measures, and the deliverable
+  above says that then there is no rewarded run. ADR-0069's runs stand as the criterion's
+  comparison at the present gain, unchanged in the suite and still reading 56, 65, 53 and 60;
+  the expectation about the couplings' ratio was not tested, and ADR-0072 says so.
+
+- [x] **The gate.** One test at 1 024 units running no whole run: the decomposition's first block,
   held to the first row of its pinned table, as ADR-0061's gate test is held to its own. Nothing
   else added to the gate.
-- [ ] **The evidence.** `gh workflow run ci.yml --ref <branch> -f scope=both`
-  ([ADR-0067](../docs/adr/0067-the-weekly-dispatch-has-a-scope.md): this round adds tests), green
+  **Done**, as the first eight trials held to the first eight rows of the per-trial table (the
+  composition is one block, so its "first block" is the whole run), beside the rules over the
+  pinned tables; 19 s in the debug profile on a developer machine.
+
+- [x] **The evidence.** `gh workflow run ci.yml --ref <branch> -f scope=both`
+  ([ADR-0067](../../docs/adr/0067-the-weekly-dispatch-has-a-scope.md): this round adds tests), green
   in every job, every pinned number reproduced on the hosted runner, no survivor; its run id, the
   six runtime shards' times, the runtime suite's time before and after, and the weekly exhaustive
   job's time against its 120-minute bound, all in the ADR.
-- [ ] **The documents, in the same pull request.** Whitepaper §8.8's three-factor row gains the
+  **Done:** run 35548410926 at `3b368f7`, `scope=both`; the numbers are in ADR-0072's evidence.
+
+- [x] **The documents, in the same pull request.** Whitepaper §8.8's three-factor row gains the
   trace's composition as a measurement rather than a sentence; §11.1's **H-12** says what is now
   known, with the ladder and the criterion; §6.5's "The loop as the runtime composes it" if the
   gain moved; §9, the ADR index, `CHANGELOG.md`, `README.md`, `CLAUDE.md`'s opening paragraph and
   `docs/zh-TW`'s reader's guide as the round's result requires. The whitepaper's version moves in
   **both** declarations with its date
-  ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)). Executable directives
+  ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)). Executable directives
   under every sentence that claims a test or a constant exists.
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the
+  **Done:** whitepaper 4.23.0; §6.5 (the gain did not move, and the ladder is stated there),
+  §8.8, §9, §11.1's H-11, H-12 and F-46; the ADR index, `CHANGELOG.md`, `README.md`,
+  `CLAUDE.md` and the reader's guide.
+
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the
   frozen banner naming the pull request, the ADRs, the ladder's outcome and the criterion's.
+  **Done.**
 
 ## Not empowered
 
