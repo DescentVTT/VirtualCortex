@@ -27,18 +27,30 @@
 //! sixty-four in every block). The settling and the run behind the lead-in are weekly
 //! `exhaustive` tests; the gate runs the first four windows of the settling and the rules
 //! over the pinned tables.
+//!
+//! Brief 032 (ADR-0072) asks what the trace is made of: the eligibility on a stimulus's
+//! synapses into a readout, read from the record with the weights frozen, split by what
+//! paired it through an oracle that replays the pair rule over the executor's own train and
+//! must agree with the record at every reading; then a ladder of gains below the present
+//! one, each rung read by the calibration's measure and by the trace's sign, both written
+//! before the run, the first rung that passes both the gain a rewarded run would use. The
+//! composition and the ladder are weekly `exhaustive` tests; the gate runs the first eight
+//! trials of the composition and the rules over the pinned tables.
 
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_connectome::{
     CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SectionEntry, crc64, ring_distance,
 };
-use cortex_core::{FLAG_INHIBITORY, MODULATION_ONE_Q16};
+use cortex_core::{
+    ELIGIBILITY_TAU_SHIFT, FLAG_INHIBITORY, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
+    STDP_A_MINUS_Q1_15, STDP_A_PLUS_Q1_15, STDP_TAU_SHIFT, stp_decay_factor_q16,
+};
 use cortex_homeostasis::{ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, HomeostaticDrivePool};
 use cortex_neuromod::DOPAMINE_TAU_SHIFT;
 use cortex_runtime::{
-    Config, Delivery, Drive, Executor, Feedback, Image, Readout, Set, Stimulus, Task, TaskError,
-    Window, blocks_for, run_driven, spikes_per_unit, synthesize,
+    Config, Delivery, Drive, Executor, Feedback, Image, Outcome, Readout, Set, Stimulus, Task,
+    TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -413,12 +425,16 @@ fn run(
         mirrored,
         delivery,
         trials,
+        &mut |_, _, _, _| {},
     )
 }
 
 /// `run` behind a lead-in of `lead_in_windows` whole windows under the drive alone
 /// (brief 031), before the instrument's own lead-in of one readout window; the executor,
 /// the task and every constant are `run`'s, and the windows are the only difference.
+/// `observe` is called after every trial with the executor, the trial's index, its first
+/// tick and its outcome (brief 032's composition reads the arena and the train through it);
+/// it reads and never writes, so a run that observes nothing is the run before it.
 #[allow(clippy::too_many_arguments)]
 fn run_behind(
     lead_in_windows: u64,
@@ -430,6 +446,7 @@ fn run_behind(
     mirrored: bool,
     delivery: Delivery,
     trials: usize,
+    observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
 ) -> (Vec<Block>, u64) {
     let p = prior(units);
     let mut exec = at_gain(&p, config(units, workers, baseline_q16), gain);
@@ -492,6 +509,7 @@ fn run_behind(
         let before_total = before[0].saturating_add(before[1]);
         seen = seen.saturating_add(u32::from(after_total > before_total));
         ties = ties.saturating_add(u32::from(outcome.selection.is_none()));
+        observe(&mut exec, trial, start, &outcome);
         sequence.push(
             i32::from(outcome.stimulus)
                 | i32::from(outcome.selection.map_or(3, |r| r)) << 1
@@ -3541,6 +3559,7 @@ fn the_recalibrated_rewarded_run_at_256_units_behind_the_lead_in_exhaustive() {
         false,
         Delivery::Global,
         TRIALS,
+        &mut |_, _, _, _| {},
     );
     eprintln!(
         "DUMP leadin256 holds {} seen {:?}",
@@ -3553,5 +3572,1103 @@ fn the_recalibrated_rewarded_run_at_256_units_behind_the_lead_in_exhaustive() {
         trace,
         LEAD_IN_256,
         LEAD_IN_TRACE_256,
+    );
+}
+
+// ------------------------------------------ what the trace is made of (brief 032)
+//
+// Written before the run. Three decisions (ADR-0066, ADR-0068, ADR-0069) reasoned from one
+// sentence about the eligibility trace on a stimulus's synapses into a readout — "a readout
+// unit's background spike within the pair window before the volley is depression, and the
+// background's are the more" — and nothing in the tree held a number for it. The
+// composition reads it at 1 024 units, in the calibration's configuration (the weights
+// frozen: the modulation baseline at zero and no reward, so the traces fill and decay and
+// are never written into a weight), over sixty-four trials, per trial: (a) the record's
+// summed `eligibility_q1_15` over the synapses from each stimulus set onto each readout
+// set; (b) the terms that entered those traces since the previous reading, split by what
+// paired them and by their sign; (c) the readouts' spikes in the pair window before the
+// volley's arrival and in the pair window after it. The terms are an oracle's: the pair
+// rule of `cortex-core` (ADR-0022, ADR-0032, ADR-0049, ADR-0055) replayed over the
+// executor's own train, synapse by synapse, whose trace must equal the record's at every
+// reading, so that the split is of the numbers the engine computed and of nothing else.
+//
+// The split, a rule of `STDP_TAU_SHIFT` and the volley's arrival: the rule enters a term at
+// a presynaptic spike for the target's last somatic spike $q$, a potentiation when $q$
+// followed the block's previous presynaptic spike and a depression when $q$ preceded this
+// one; a term is **the volley's** when $q$ lies within one pair window ($2^{11}$ ticks) from
+// the arrival of that synapse's volley message at the readout — the presented stimulus
+// unit's volley spike plus the synapse's own delay — and **the background's** otherwise.
+// The census (c) reads the readouts around the readout window's opening, the trial's first
+// tick plus the prior's `delay_min`, before which no local message of the volley can have
+// landed (ADR-0065's rule).
+//
+// Then the ladder: the gain, the one handle the calibration turns (ADR-0065), tried
+// downward from the present in a fixed order, each rung a frozen run of sixty-four trials
+// read by two measures that see no selection, reward or outcome — *sight*, ADR-0065's,
+// unchanged, and *sign*, this round's: the presented stimulus's summed eligibility onto
+// both readouts positive in at least fifty-six trials of sixty-four. A rung passes only
+// when both pass; the first that does is the gain, and if none does there is no rewarded
+// run. The expectation, written first: the background's terms are the product of two
+// rates, the stimulus units' and the readouts', and the volley's the product of one and a
+// response, so a quieter gain shrinks the background's faster than the volley's; whether a
+// rung reaches net potentiation before the sight fails is the measurement.
+
+/// The pair window, one STDP time constant: $2^{11}$ ticks (20.48 ms).
+const PAIR_WINDOW: u32 = 1 << STDP_TAU_SHIFT;
+const _: () = assert!(PAIR_WINDOW == 2048);
+/// The pair window after the readout window's opening lies inside the trial.
+const _: () = assert!(WINDOW.from + PAIR_WINDOW < TRIAL_TICKS);
+/// The ladder of gains, in the order tried and no other: 1.75 (the present), 1.5, 1.25
+/// and 1.0.
+const LADDER: [u32; 4] = [0x0001_C000, 0x0001_8000, 0x0001_4000, 0x0001_0000];
+const _: () = assert!(LADDER[0] == GAIN_1024 && LADDER[0] == GAINS[0]);
+const _: () = assert!(LADDER[0] > LADDER[1] && LADDER[1] > LADDER[2] && LADDER[2] > LADDER[3]);
+/// The sign calibration's pass mark: trials of sixty-four in which the presented stimulus's
+/// summed eligibility onto both readouts, read from the record after the trial, is
+/// positive; as strict as the sight's.
+const SIGN_MIN: u32 = 56;
+const _: () = assert!(SIGN_MIN == SEEN_MIN);
+/// The excitatory depression's reference magnitude, $2^{13}$ (ADR-0055), as the shift that
+/// divides by it in the oracle below; the gate holds the oracle to the amounts the rule
+/// documents at the reference, at the rail and at the magnitude below which it rounds to
+/// nothing, and every reading holds the oracle to the record.
+const DEPRESSION_REFERENCE_SHIFT: u32 = 13;
+const _: () = assert!(1 << DEPRESSION_REFERENCE_SHIFT == 0x2000);
+/// The trials the gate runs of the composition at the present gain, held to the first rows
+/// of the pinned table: eight, $2^{17}$ ticks at 1 024 units.
+const GATE_TRIALS: usize = 8;
+
+// ------------------------------------------------------------------------- the oracle
+
+/// The pair rule's window at a distance, $A (1 - 2^{-11})^{\Delta t}$ rounded to nearest
+/// (`cortex-core`'s `window`, written a second time as the oracle).
+fn pair_window(amplitude_q1_15: i16, delta_ticks: u32) -> i16 {
+    let factor = i64::from(stp_decay_factor_q16(delta_ticks, STDP_TAU_SHIFT));
+    (i64::from(amplitude_q1_15)
+        .saturating_mul(factor)
+        .saturating_add(0x8000)
+        >> 16) as i16
+}
+
+/// An excitatory depression at a magnitude (ADR-0055): `amount × magnitude / 2^13`, rounded
+/// to nearest (`cortex-core`'s `depression_at`).
+fn depression_at(amount_q1_15: i16, magnitude: i32) -> i16 {
+    (i64::from(amount_q1_15)
+        .saturating_mul(i64::from(magnitude))
+        .saturating_add(1 << (DEPRESSION_REFERENCE_SHIFT - 1))
+        >> DEPRESSION_REFERENCE_SHIFT) as i16
+}
+
+/// A trace decayed by a Q16.16 factor below 1.0, rounded to nearest and by at least one LSB
+/// toward zero for a trace that is not zero (`cortex-core`'s `decayed`).
+fn decayed(trace: i16, factor_q16: i64) -> i16 {
+    if trace == 0 {
+        return 0;
+    }
+    let magnitude = i64::from(trace).abs();
+    let kept = (magnitude.saturating_mul(factor_q16).saturating_add(0x8000) >> 16)
+        .min(magnitude.saturating_sub(1));
+    kept.saturating_mul(i64::from(trace).signum()) as i16
+}
+
+/// Whether a readout unit's spike at `q` is the volley's: within one pair window from the
+/// arrival of a volley message over a synapse of delay `delay`, `volleys` the presynaptic
+/// unit's volley spikes in tick order. Ticks compare as numbers: the run is far below the
+/// stamp's width.
+fn volleyed(volleys: &[u32], delay: u32, q: u32) -> bool {
+    let at = volleys.partition_point(|&v| v.saturating_add(delay) <= q);
+    at.checked_sub(1)
+        .and_then(|k| volleys.get(k))
+        .is_some_and(|&v| q < v.saturating_add(delay).saturating_add(PAIR_WINDOW))
+}
+
+/// One synapse from a stimulus unit onto a readout unit as the oracle replays it: where it
+/// is in the arena, its ends and the sets they are in, its delay, its magnitude (frozen),
+/// and the block's presynaptic stamp and the slot's trace as the rule would hold them.
+struct Replayed {
+    block_idx: usize,
+    slot: usize,
+    source: u32,
+    target: u32,
+    stimulus: usize,
+    readout: usize,
+    delay: u32,
+    magnitude: i32,
+    stamp: u32,
+    trace: i16,
+}
+
+/// One trial's reading of the trace's composition: the stimulus presented; (a) the record's
+/// summed eligibility after the trial over the synapses from each stimulus set onto each
+/// readout set, `[stimulus][readout]`; (b) the terms that entered those traces since the
+/// previous reading (for the first trial, since the run's first tick), by stimulus and
+/// readout, as the volley's potentiation, the volley's depression, the background's
+/// potentiation and the background's depression, signed as they entered; (c) the spikes in
+/// the pair window before the readout window's opening and in the pair window after it, of
+/// readout 0, of readout 1 and of the presented stimulus set (whose before is the volley
+/// and whose after is what its units fire beyond it), `[set][before, after]`.
+type Composed = (u8, [[i64; 2]; 2], [[[i64; 4]; 2]; 2], [[u32; 2]; 3]);
+
+/// The pinned row of a trial: the stimulus presented, the presented stimulus's summed
+/// eligibility onto both readouts after the trial (the sign measure reads its sign), and its
+/// four classes of terms since the previous reading over both readouts.
+type Row = (u8, i64, [i64; 4]);
+
+/// A block of the composition: the sums after the block's last trial; the block's terms by
+/// stimulus, readout and class; the census summed over the block; the trials in which the
+/// presented stimulus's sum onto both readouts was positive (the sign measure); and the
+/// FNV-1a hash of every trial's whole reading.
+type Composition = ([[i64; 2]; 2], [[[i64; 4]; 2]; 2], [[u64; 2]; 3], u32, u64);
+
+/// The reader of the composition: the executor's train collected per unit since the run's
+/// first tick, the volley spikes of the stimulus units, the synapses from the stimulus sets
+/// onto the readout sets with their replayed traces, and the readings.
+struct Composer {
+    sets: [Set; 4],
+    readout: Readout,
+    stimuli: Readout,
+    spikes: Vec<Vec<u32>>,
+    volleys: Vec<Vec<u32>>,
+    synapses: Vec<Replayed>,
+    cursor: u32,
+    out: Vec<Composed>,
+}
+
+impl Composer {
+    fn new(units: u32) -> Self {
+        let sets = geometry(units, rotation(units));
+        let [a, b, r0, r1] = sets;
+        Self {
+            sets,
+            readout: Readout::new([r0, r1]),
+            stimuli: Readout::new([a, b]),
+            spikes: vec![Vec::new(); units as usize],
+            volleys: vec![Vec::new(); units as usize],
+            synapses: Vec::new(),
+            cursor: 0,
+            out: Vec::new(),
+        }
+    }
+
+    /// The synapses from a stimulus unit onto a readout unit, from the arena, in the walk's
+    /// order; a stimulus unit is excitatory, as the geometry holds.
+    fn enumerate(&mut self, exec: &Engine) {
+        let [a, b, r0, r1] = self.sets;
+        for unit in exec.units() {
+            let id = unit.id as u32;
+            let stimulus = if a.contains(id) {
+                0
+            } else if b.contains(id) {
+                1
+            } else {
+                continue;
+            };
+            assert_eq!(unit.flags & FLAG_INHIBITORY, 0, "stimulus unit {id}");
+            for s in unit.fan_out(exec.blocks()) {
+                let readout = if r0.contains(s.target) {
+                    0
+                } else if r1.contains(s.target) {
+                    1
+                } else {
+                    continue;
+                };
+                self.synapses.push(Replayed {
+                    block_idx: s.block_idx as usize,
+                    slot: usize::from(s.slot),
+                    source: id,
+                    target: s.target,
+                    stimulus,
+                    readout,
+                    delay: u32::from(s.delay_ticks),
+                    magnitude: i32::from(s.weight_q1_15).max(0),
+                    stamp: NO_SPIKE_ON_RECORD,
+                    trace: 0,
+                });
+            }
+        }
+        assert!(!self.synapses.is_empty());
+    }
+
+    /// The synapses from each stimulus set onto each readout set, `[stimulus][readout]`.
+    fn counts(&self) -> [[u32; 2]; 2] {
+        let mut counts = [[0u32; 2]; 2];
+        for syn in &self.synapses {
+            let into = &mut counts[syn.stimulus][syn.readout];
+            *into = into.saturating_add(1);
+        }
+        counts
+    }
+
+    /// After a trial: the train since the last reading collected, the presented set's
+    /// volleys noted, the oracle advanced over the stimulus units' spikes since the last
+    /// reading with every term classed, the record read and held to the oracle, the census
+    /// counted.
+    fn observe(&mut self, exec: &mut Engine, trial: usize, start: u32, outcome: &Outcome) {
+        if self.synapses.is_empty() {
+            self.enumerate(exec);
+        }
+        let end = start.wrapping_add(TRIAL_TICKS);
+        let cursor = self.cursor;
+        // The train since the last reading. The ring holds a trial's most spikes, so what
+        // it let go is older than the reading before this one; asserted.
+        let overwritten = exec.train_overwritten();
+        let train = exec.train();
+        assert!(
+            overwritten == 0 || train.first().is_some_and(|&(t, _)| t <= cursor),
+            "trial {trial}: the train held every spike since the last reading"
+        );
+        for &(tick, unit) in train {
+            if tick < cursor {
+                continue;
+            }
+            if tick >= end {
+                break;
+            }
+            if let Some(list) = self.spikes.get_mut(unit as usize) {
+                list.push(tick);
+            }
+        }
+        // The presented set's volleys: each unit's first spike before the readout window
+        // opens; a unit the background fired within its refractory window before the
+        // injection has none this trial.
+        let presented = self.sets[usize::from(outcome.stimulus)];
+        for s in presented.units() {
+            let Some(list) = self.spikes.get(s as usize) else {
+                continue;
+            };
+            let at = list.partition_point(|&t| t < start);
+            if let Some(&v) = list.get(at) {
+                if v < start.wrapping_add(WINDOW.from) {
+                    if let Some(volleys) = self.volleys.get_mut(s as usize) {
+                        volleys.push(v);
+                    }
+                }
+            }
+        }
+        // The oracle over the stimulus units' spikes since the last reading, synapse by
+        // synapse: the block's decay since its stamp, then the rule's two terms for the
+        // target's last spike, each classed by that spike, then the stamp.
+        let mut terms = [[[0i64; 4]; 2]; 2];
+        let Self {
+            synapses,
+            spikes,
+            volleys,
+            ..
+        } = self;
+        for syn in synapses.iter_mut() {
+            let (Some(pre), Some(post), Some(volleys)) = (
+                spikes.get(syn.source as usize),
+                spikes.get(syn.target as usize),
+                volleys.get(syn.source as usize),
+            ) else {
+                panic!("a synapse's end is outside the arena");
+            };
+            let from = pre.partition_point(|&t| t < cursor);
+            for &t in pre.iter().skip(from) {
+                let elapsed = t.wrapping_sub(syn.stamp);
+                if elapsed != 0 {
+                    let factor = i64::from(stp_decay_factor_q16(elapsed, ELIGIBILITY_TAU_SHIFT));
+                    syn.trace = decayed(syn.trace, factor);
+                }
+                let at = post.partition_point(|&q| q <= t);
+                if let Some(&q) = at.checked_sub(1).and_then(|k| post.get(k)) {
+                    let since_post = t.wrapping_sub(q) as i32;
+                    let class = if volleyed(volleys, syn.delay, q) {
+                        0
+                    } else {
+                        2
+                    };
+                    let into = &mut terms[syn.stimulus][syn.readout];
+                    if syn.stamp != NO_SPIKE_ON_RECORD {
+                        let post_after_prev = q.wrapping_sub(syn.stamp) as i32;
+                        if post_after_prev > 0 && since_post >= 0 {
+                            let pot = pair_window(STDP_A_PLUS_Q1_15, post_after_prev as u32);
+                            syn.trace = syn.trace.saturating_add(pot);
+                            into[class] = into[class].saturating_add(i64::from(pot));
+                        }
+                    }
+                    if since_post > 0 {
+                        let dep = depression_at(
+                            pair_window(STDP_A_MINUS_Q1_15, since_post as u32),
+                            syn.magnitude,
+                        );
+                        syn.trace = syn.trace.saturating_sub(dep);
+                        let k = class.wrapping_add(1);
+                        into[k] = into[k].saturating_sub(i64::from(dep));
+                    }
+                }
+                syn.stamp = t;
+            }
+        }
+        // The record: (a), each slot held to the oracle and each weight to the prior's.
+        let blocks = exec.blocks();
+        let mut sums = [[0i64; 2]; 2];
+        for syn in synapses.iter() {
+            let block = blocks.get(syn.block_idx).expect("a block of the arena");
+            let e = block.eligibility_q1_15[syn.slot];
+            assert_eq!(
+                e, syn.trace,
+                "trial {trial}: the record's trace of {}→{} is the oracle's",
+                syn.source, syn.target
+            );
+            assert_eq!(
+                i32::from(block.weights_q1_15[syn.slot]),
+                syn.magnitude,
+                "trial {trial}: the weight of {}→{} is frozen",
+                syn.source,
+                syn.target
+            );
+            let into = &mut sums[syn.stimulus][syn.readout];
+            *into = into.saturating_add(i64::from(e));
+        }
+        // The census around the readout window's opening: the readouts and the presented
+        // set, counted as a readout counts.
+        let arrival = start.wrapping_add(WINDOW.from);
+        let opening = arrival.wrapping_sub(PAIR_WINDOW);
+        let before = self
+            .readout
+            .count_window(exec.train(), opening, PAIR_WINDOW);
+        let after = self
+            .readout
+            .count_window(exec.train(), arrival, PAIR_WINDOW);
+        let s = usize::from(outcome.stimulus);
+        let own_before = self
+            .stimuli
+            .count_window(exec.train(), opening, PAIR_WINDOW)[s];
+        let own_after = self
+            .stimuli
+            .count_window(exec.train(), arrival, PAIR_WINDOW)[s];
+        self.out.push((
+            outcome.stimulus,
+            sums,
+            terms,
+            [
+                [before[0], after[0]],
+                [before[1], after[1]],
+                [own_before, own_after],
+            ],
+        ));
+        self.cursor = end;
+    }
+}
+
+// ----------------------------------------------------------------------- the readings
+
+/// A trial's pinned row.
+fn trial_row(t: &Composed) -> Row {
+    let s = usize::from(t.0);
+    let sum = t.1[s][0].saturating_add(t.1[s][1]);
+    let mut terms = [0i64; 4];
+    for readout in &t.2[s] {
+        for (k, term) in readout.iter().enumerate() {
+            terms[k] = terms[k].saturating_add(*term);
+        }
+    }
+    (t.0, sum, terms)
+}
+
+/// The sign measure of a trial: the presented stimulus's summed eligibility onto both
+/// readouts, read from the record after the trial, is positive.
+fn positive(t: &Composed) -> bool {
+    trial_row(t).1 > 0
+}
+
+/// The FNV-1a hash of every trial's whole reading, each number as its `i32` words.
+fn hash_of(trials: &[Composed]) -> u64 {
+    let mut words: Vec<i32> = Vec::new();
+    let mut wide = |x: i64| {
+        words.push(x as i32);
+        words.push((x >> 32) as i32);
+    };
+    for t in trials {
+        wide(i64::from(t.0));
+        for readouts in &t.1 {
+            for &sum in readouts {
+                wide(sum);
+            }
+        }
+        for readouts in &t.2 {
+            for classes in readouts {
+                for &term in classes {
+                    wide(term);
+                }
+            }
+        }
+        for readout in &t.3 {
+            for &count in readout {
+                wide(i64::from(count));
+            }
+        }
+    }
+    fnv1a_64(&words)
+}
+
+/// A block's composition from its trials' readings.
+fn composition(trials: &[Composed]) -> Composition {
+    let sums = trials.last().map_or([[0; 2]; 2], |t| t.1);
+    let mut terms = [[[0i64; 4]; 2]; 2];
+    let mut census = [[0u64; 2]; 3];
+    let mut signs = 0u32;
+    for t in trials {
+        for (s, readouts) in t.2.iter().enumerate() {
+            for (r, classes) in readouts.iter().enumerate() {
+                for (k, term) in classes.iter().enumerate() {
+                    terms[s][r][k] = terms[s][r][k].saturating_add(*term);
+                }
+            }
+        }
+        for (r, counts) in t.3.iter().enumerate() {
+            for (k, count) in counts.iter().enumerate() {
+                census[r][k] = census[r][k].saturating_add(u64::from(*count));
+            }
+        }
+        signs = signs.saturating_add(u32::from(positive(t)));
+    }
+    (sums, terms, census, signs, hash_of(trials))
+}
+
+/// A rung passes when both measures pass: the sight (`calibrated`, ADR-0065's) and the
+/// sign, at least `SIGN_MIN` trials of the block positive.
+fn passes(block: &Block, composition: &Composition) -> bool {
+    calibrated(block) && composition.3 >= SIGN_MIN
+}
+
+/// The gain the ladder picks: the first rung, in the ladder's order, that passes both
+/// measures; none when no rung does.
+fn ladder_pick(rungs: &[(Block, u64, Composition)]) -> Option<u32> {
+    LADDER
+        .iter()
+        .zip(rungs.iter())
+        .find(|(_, (block, _, composition))| passes(block, composition))
+        .map(|(&gain, _)| gain)
+}
+
+/// One frozen run of `trials` trials at `gain`, read through the composer: the calibration's
+/// run (the modulation baseline at zero, no reward, two workers), so that at the present
+/// gain over a block it is `CALIBRATION_1024[0]`'s run bit for bit, with the composition
+/// read after every trial. The sums by polarity are asserted unchanged after a whole block,
+/// as the calibration asserts them.
+fn compose(units: u32, gain: u32, trials: usize) -> (Vec<Block>, u64, Vec<Composed>) {
+    let (blocks, trace, trials, _) = compose_counting(units, gain, trials);
+    (blocks, trace, trials)
+}
+
+/// `compose`, with the count of synapses from each stimulus set onto each readout set.
+fn compose_counting(
+    units: u32,
+    gain: u32,
+    trials: usize,
+) -> (Vec<Block>, u64, Vec<Composed>, [[u32; 2]; 2]) {
+    let p = prior(units);
+    let frozen = at_gain(&p, config(units, 2, 0), gain);
+    let sums = weights_by_polarity(&frozen);
+    let mut composer = Composer::new(units);
+    let (blocks, trace) = run_behind(
+        0,
+        units,
+        2,
+        gain,
+        0,
+        Feedback::Withheld,
+        false,
+        Delivery::Global,
+        trials,
+        &mut |exec, trial, start, outcome| composer.observe(exec, trial, start, outcome),
+    );
+    for block in &blocks {
+        assert_eq!(
+            (block.7, block.8),
+            sums,
+            "no weight moves at a modulation of zero"
+        );
+    }
+    assert_eq!(composer.out.len(), trials);
+    let counts = composer.counts();
+    (blocks, trace, composer.out, counts)
+}
+
+/// Dumps a composed run: the sight's blocks and trace, the rows and the composition.
+fn dump_composition(name: &str, blocks: &[Block], trace: u64, trials: &[Composed]) {
+    let rows: Vec<Row> = trials.iter().map(trial_row).collect();
+    eprintln!("DUMP {name} sight {blocks:?} trace {trace:#018x}");
+    eprintln!("DUMP {name} rows {rows:?}");
+    eprintln!("DUMP {name} composition {:?}", composition(trials));
+}
+
+/// Holds a composition's rows and, where a whole block was run, its block to their pinned
+/// tables.
+fn pinned_composition(name: &str, trials: &[Composed], rows: &[Row], block: Option<&Composition>) {
+    let read: Vec<Row> = trials.iter().map(trial_row).collect();
+    assert_eq!(read, rows, "{name}: the rows");
+    if let Some(block) = block {
+        assert_eq!(&composition(trials), block, "{name}: the block");
+    }
+}
+
+// ------------------------------------------------------------ the measurement (ADR-0072)
+
+/// The composition and the ladder at 1 024 units, rung by rung in the ladder's order, each
+/// a frozen run of sixty-four trials: the sight's block and trace (at the present gain,
+/// `CALIBRATION_1024[0]`'s), and the composition. Pinned from one run each.
+const LADDER_1024: [(Block, u64, Composition); 4] = [
+    (
+        (
+            27,
+            34,
+            [[396, 378], [379, 363]],
+            [1727, 1526],
+            [6171, 5504],
+            [255, 241],
+            62,
+            213902976,
+            235822619,
+            0,
+            [[6986739, 7212710], [7146878, 7257384]],
+            8,
+        ),
+        0xa84553d901278f4f,
+        (
+            [[-51652, -55823], [-42894, -46658]],
+            [
+                [
+                    [453094, -273496, 372055, -1330229],
+                    [461454, -231820, 401769, -1314171],
+                ],
+                [
+                    [433249, -239333, 364647, -1196198],
+                    [415580, -234738, 381002, -1226100],
+                ],
+            ],
+            [[1038, 2265], [1035, 2270], [3358, 6737]],
+            1,
+            11256068980148820643,
+        ),
+    ),
+    (
+        (
+            25,
+            34,
+            [[63, 56], [48, 52]],
+            [1734, 1529],
+            [4463, 3966],
+            [15, 22],
+            49,
+            213902976,
+            235822619,
+            0,
+            [[6986739, 7212710], [7146878, 7257384]],
+            17,
+        ),
+        0xd1a3a314d585fdcb,
+        (
+            [[7354, 5844], [991, 1416]],
+            [
+                [
+                    [72257, -21448, 18293, -57382],
+                    [82430, -17452, 21756, -62247],
+                ],
+                [
+                    [65958, -16157, 21609, -47132],
+                    [69522, -25426, 26529, -66552],
+                ],
+            ],
+            [[57, 218], [73, 223], [3273, 5045]],
+            45,
+            2876531214492687737,
+        ),
+    ),
+    (
+        (
+            4,
+            34,
+            [[2, 4], [2, 3]],
+            [1734, 1530],
+            [3487, 3078],
+            [1, 1],
+            10,
+            213902976,
+            235822619,
+            0,
+            [[6986739, 7212710], [7146878, 7257384]],
+            54,
+        ),
+        0xf4bd9f85758e39e5,
+        (
+            [[88, 1709], [-173, 0]],
+            [
+                [[1770, 0, 352, -240], [5303, 0, 1574, -3447]],
+                [[1854, 0, 387, -1426], [3449, 0, 1468, -1509]],
+            ],
+            [[1, 4], [4, 10], [3264, 3300]],
+            32,
+            13527546449650777006,
+        ),
+    ),
+    (
+        (
+            0,
+            34,
+            [[0, 0], [0, 0]],
+            [1734, 1530],
+            [2527, 2251],
+            [0, 0],
+            0,
+            213902976,
+            235822619,
+            0,
+            [[6986739, 7212710], [7146878, 7257384]],
+            64,
+        ),
+        0x420a6b796a3a6725,
+        (
+            [[0, 0], [0, 0]],
+            [[[0, 0, 0, 0], [0, 0, 0, 0]], [[0, 0, 0, 0], [0, 0, 0, 0]]],
+            [[0, 0], [0, 0], [3264, 1514]],
+            0,
+            1431228405596711687,
+        ),
+    ),
+];
+/// The rows of every rung's sixty-four trials, in the ladder's order.
+const LADDER_ROWS_1024: [[Row; BLOCK]; 4] = [
+    [
+        (0, 4351, [39500, -27437, 11767, -19732]),
+        (0, -15516, [38260, -7400, 19473, -71119]),
+        (1, -88961, [33439, -41843, 27108, -92702]),
+        (0, -52656, [23321, -14896, 23194, -74132]),
+        (0, -54695, [25052, -3478, 20577, -56279]),
+        (0, -85952, [19395, -7961, 13421, -69410]),
+        (0, -99666, [14580, -5212, 13206, -55800]),
+        (0, -96614, [18256, -6071, 14928, -48693]),
+        (0, -110919, [17971, -11849, 18427, -58165]),
+        (0, -140667, [15004, -9144, 24106, -87411]),
+        (1, -44149, [49532, -38665, 27111, -58618]),
+        (1, -32438, [34244, -9136, 22037, -47435]),
+        (0, -130937, [30841, -28673, 29700, -86403]),
+        (0, -118955, [40124, -13949, 25172, -67092]),
+        (1, -71524, [24891, -22383, 23803, -74969]),
+        (0, -108754, [23135, -21497, 20767, -58341]),
+        (1, -72153, [22889, -14786, 20027, -59292]),
+        (0, -124145, [20755, -7924, 21387, -91940]),
+        (0, -145336, [29612, -6560, 16774, -87912]),
+        (0, -175808, [17222, -7982, 14883, -86923]),
+        (1, -68593, [22659, -24894, 27624, -59189]),
+        (0, -153711, [22209, -13532, 16795, -72094]),
+        (1, -75206, [41016, -20391, 21560, -83711]),
+        (1, -85629, [25851, -10566, 21384, -63575]),
+        (1, -130549, [19720, -15426, 20149, -89478]),
+        (0, -104593, [21604, -19623, 18608, -61928]),
+        (1, -133222, [17934, -16143, 18076, -76288]),
+        (1, -140469, [26468, -7051, 13245, -69780]),
+        (1, -157654, [8799, -6243, 15362, -66741]),
+        (0, -99453, [33339, -22427, 20578, -85729]),
+        (0, -109293, [24563, -7415, 20110, -70334]),
+        (0, -128654, [27249, -20342, 16562, -67343]),
+        (0, -136254, [21014, -13555, 12936, -59530]),
+        (0, -151754, [16014, -5581, 13485, -73383]),
+        (1, -73945, [36302, -35583, 18756, -54837]),
+        (1, -85516, [39430, -10148, 19286, -79086]),
+        (1, -98720, [18841, -3718, 13412, -60167]),
+        (0, -113908, [30167, -34057, 23889, -67695]),
+        (1, -107873, [25423, -17176, 29961, -84463]),
+        (1, -120074, [24040, -6977, 20537, -73873]),
+        (0, -88213, [23899, -21466, 20667, -54839]),
+        (1, -113369, [18896, -12367, 15187, -54332]),
+        (0, -79959, [28922, -15956, 26612, -68976]),
+        (1, -108306, [26201, -20299, 20537, -65219]),
+        (0, -80853, [21452, -12803, 18927, -59854]),
+        (1, -99837, [30574, -21208, 16234, -63947]),
+        (0, -104501, [20796, -12145, 20667, -70120]),
+        (0, -109353, [27229, -16497, 19386, -56995]),
+        (0, -113572, [18445, -7885, 14379, -53999]),
+        (1, -86353, [36676, -29568, 30257, -83035]),
+        (1, -105370, [23500, -11405, 21915, -72470]),
+        (0, -112699, [26420, -24359, 24130, -72766]),
+        (1, -110437, [20577, -9843, 25166, -84533]),
+        (1, -115894, [17875, -5522, 14712, -55546]),
+        (0, -104534, [29291, -27705, 21471, -77413]),
+        (1, -133071, [14379, -11138, 13785, -77839]),
+        (1, -152763, [30120, -10947, 16608, -85417]),
+        (1, -167995, [17365, -4765, 14076, -78093]),
+        (0, -89200, [30425, -22783, 22368, -75092]),
+        (1, -139386, [17483, -11394, 18783, -65170]),
+        (0, -101184, [30678, -17096, 21999, -81083]),
+        (0, -117893, [19497, -10056, 16616, -67623]),
+        (1, -91000, [25961, -14107, 21364, -58421]),
+        (1, -89552, [21619, -10378, 16549, -47788]),
+    ],
+    [
+        (0, 1042, [2581, -1557, 295, -277]),
+        (0, 7859, [8098, -482, 2177, -2930]),
+        (1, -3563, [1869, -1685, 937, -4718]),
+        (0, -4571, [2566, -743, 443, -11660]),
+        (0, -1523, [2151, -3, 742, -736]),
+        (0, -3000, [0, 0, 107, -1874]),
+        (0, -1594, [3872, -1163, 1584, -3467]),
+        (0, -1550, [0, 0, 303, -554]),
+        (0, -740, [3979, -1029, 702, -3120]),
+        (0, -3095, [2037, -2, 1967, -6425]),
+        (1, 5803, [12132, -4415, 2076, -3761]),
+        (1, 9089, [4614, 0, 1296, -1410]),
+        (0, -4841, [3971, -4975, 1527, -3894]),
+        (0, 1471, [5782, 0, 1467, -1984]),
+        (1, 1277, [5187, -7036, 1480, -2605]),
+        (0, 110, [1820, -996, 1142, -2798]),
+        (1, 8505, [7395, -1741, 4123, -2007]),
+        (0, -7592, [1097, 0, 371, -9188]),
+        (0, 1979, [7395, -3, 2322, -1793]),
+        (0, 1800, [3632, -386, 1500, -4484]),
+        (1, 8636, [4996, -30, 1976, -1193]),
+        (0, 3815, [2860, 0, 768, -776]),
+        (1, 10504, [9782, -4443, 2952, -3672]),
+        (1, 11948, [5172, -781, 2630, -3156]),
+        (1, 9364, [1230, -1197, 324, -195]),
+        (0, 659, [3298, -1057, 1203, -4071]),
+        (1, -2064, [2205, -1836, 2574, -10598]),
+        (1, 1790, [2648, 0, 1281, -347]),
+        (1, 496, [1773, -1301, 1583, -2845]),
+        (0, 6274, [10485, -2527, 1266, -3230]),
+        (0, 3599, [9263, -402, 1558, -11482]),
+        (0, 1818, [5167, -3782, 1083, -3441]),
+        (0, 920, [4521, 0, 501, -5456]),
+        (0, 3753, [2909, 0, 1650, -1411]),
+        (1, 1715, [2754, -816, 1271, -1535]),
+        (1, 3848, [7990, -1430, 2154, -6128]),
+        (1, 4964, [3528, 0, 1482, -2906]),
+        (0, 2552, [3957, -768, 1098, -2711]),
+        (1, -2710, [2428, 0, 1118, -9212]),
+        (1, -6988, [1840, -1304, 1955, -7158]),
+        (0, 3645, [5460, -1057, 1205, -3545]),
+        (1, -6168, [2937, 0, 934, -5727]),
+        (0, 7845, [7759, -1941, 930, -1000]),
+        (1, -3718, [2185, -1750, 1686, -2094]),
+        (0, 2381, [4317, -3933, 1326, -3878]),
+        (1, 3299, [8438, -1323, 1890, -3363]),
+        (0, 613, [3222, -1839, 1661, -3680]),
+        (0, 3985, [6792, -1291, 1314, -3183]),
+        (0, 3121, [3786, -552, 877, -4009]),
+        (1, 2632, [9649, -3956, 2007, -6111]),
+        (1, 5313, [3642, -739, 1736, -1334]),
+        (0, -2165, [4089, -3318, 818, -5173]),
+        (1, 4233, [1638, -14, 1182, -1668]),
+        (1, 5435, [3515, -75, 751, -2126]),
+        (0, 2381, [4092, 0, 714, -1502]),
+        (1, -1400, [1308, 0, 1297, -7221]),
+        (1, 1687, [6271, -613, 920, -3794]),
+        (1, -893, [2503, -737, 187, -4047]),
+        (0, 5603, [3656, 0, 1809, -552]),
+        (1, -2616, [2889, -2836, 1350, -3426]),
+        (0, 13544, [12577, -2858, 1211, -652]),
+        (0, 13104, [6573, -2236, 1929, -3371]),
+        (1, 1372, [6757, -1525, 1887, -4582]),
+        (1, 2407, [4955, 0, 1034, -4435]),
+    ],
+    [
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 1122, [812, 0, 314, 0]),
+        (0, 872, [0, 0, 0, 0]),
+        (0, 678, [0, 0, 0, 0]),
+        (0, -897, [0, 0, 0, -1427]),
+        (0, -698, [0, 0, 0, 0]),
+        (0, -600, [0, 0, 1, -57]),
+        (0, -468, [0, 0, 0, 0]),
+        (1, -1, [0, 0, 0, -2]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, -203, [0, 0, 70, -51]),
+        (0, 707, [867, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 428, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, -801, [590, 0, 296, -1945]),
+        (0, -629, [0, 0, 0, 0]),
+        (0, -492, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, -302, [0, 0, 0, 0]),
+        (1, 2446, [2284, 0, 571, -402]),
+        (1, 1902, [0, 0, 0, 0]),
+        (1, 1478, [0, 0, 0, 0]),
+        (0, -110, [0, 0, 3, 0]),
+        (1, 844, [0, 0, 299, -344]),
+        (1, 1817, [897, 0, 309, -40]),
+        (1, 1411, [0, 0, 0, 0]),
+        (0, -42, [0, 0, 0, 0]),
+        (0, -37, [0, 0, 0, 0]),
+        (0, -198, [0, 0, 2, -169]),
+        (0, -99, [0, 0, 56, -2]),
+        (0, 967, [786, 0, 262, 0]),
+        (1, 846, [268, 0, 268, 0]),
+        (1, 1417, [873, 0, 2, -106]),
+        (1, 1090, [0, 0, 0, 0]),
+        (0, 354, [0, 0, 0, 0]),
+        (1, 655, [0, 0, 0, 0]),
+        (1, -302, [0, 0, 0, -794]),
+        (0, 148, [0, 0, 0, -22]),
+        (1, -176, [0, 0, 21, 0]),
+        (0, 90, [0, 0, 0, 0]),
+        (1, -114, [0, 0, 0, 0]),
+        (0, 55, [0, 0, 0, 0]),
+        (1, -79, [0, 0, 0, -3]),
+        (0, 2096, [1734, 0, 339, 0]),
+        (0, 1624, [0, 0, 0, 0]),
+        (0, 1256, [0, 0, 0, 0]),
+        (1, -32, [0, 0, 0, 0]),
+        (1, 1274, [981, 0, 327, 0]),
+        (0, 1741, [1180, 0, 0, -14]),
+        (1, 807, [0, 0, 44, 0]),
+        (1, 624, [0, 0, 0, 0]),
+        (0, 812, [0, 0, 0, 0]),
+        (1, 375, [0, 0, 0, 0]),
+        (1, -941, [0, 0, 14, -1244]),
+        (1, -734, [0, 0, 0, 0]),
+        (0, 291, [0, 0, 0, 0]),
+        (1, -447, [0, 0, 0, 0]),
+        (0, 165, [0, 0, 0, 0]),
+        (0, 1797, [1104, 0, 583, 0]),
+        (1, -214, [0, 0, 0, 0]),
+        (1, -173, [0, 0, 0, 0]),
+    ],
+    [
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (0, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+        (1, 0, [0, 0, 0, 0]),
+    ],
+];
+/// The gain the ladder picked, as `ladder_pick` reads the pinned tables; none when no rung
+/// passed both measures.
+const GAIN_PICKED_1024: Option<u32> = None;
+/// The synapses from each stimulus set onto each readout set at 1 024 units,
+/// `[stimulus][readout]`, as the composer walks them: the census behind the couplings.
+const SYNAPSES_1024: [[u32; 2]; 2] = [[775, 806], [798, 809]];
+
+/// The composition at the present gain: rung 1 of the ladder, `CALIBRATION_1024[0]`'s run
+/// with the trace read after every trial.
+#[test]
+#[ignore]
+fn the_composition_at_1024_units_exhaustive() {
+    let (blocks, trace, trials) = compose(1024, LADDER[0], BLOCK);
+    dump_composition("composition1024", &blocks, trace, &trials);
+    let (block, pin, composed) = &LADDER_1024[0];
+    pinned("composition1024 sight", &blocks, trace, &[*block], *pin);
+    pinned_composition(
+        "composition1024",
+        &trials,
+        &LADDER_ROWS_1024[0],
+        Some(composed),
+    );
+}
+
+/// The ladder below the present gain: rungs 2 to 4, each a frozen run read by both
+/// measures; every rung is run and dumped before any is held to its table, so that one
+/// rung's failure still shows the others' readings.
+#[test]
+#[ignore]
+fn the_ladder_below_the_present_gain_at_1024_units_exhaustive() {
+    let runs: Vec<(Vec<Block>, u64, Vec<Composed>)> = LADDER
+        .iter()
+        .skip(1)
+        .map(|&gain| compose(1024, gain, BLOCK))
+        .collect();
+    for (k, (blocks, trace, trials)) in runs.iter().enumerate() {
+        let gain = LADDER[k.wrapping_add(1)];
+        dump_composition(&format!("ladder1024 {gain:#x}"), blocks, *trace, trials);
+    }
+    for (k, (blocks, trace, trials)) in runs.iter().enumerate() {
+        let rung = k.wrapping_add(1);
+        let gain = LADDER[rung];
+        let (block, pin, composed) = &LADDER_1024[rung];
+        let name = format!("ladder1024 {gain:#x}");
+        pinned(&format!("{name} sight"), blocks, *trace, &[*block], *pin);
+        pinned_composition(&name, trials, &LADDER_ROWS_1024[rung], Some(composed));
+    }
+}
+
+/// The gate's test (ADR-0061's class): the oracle's arithmetic and the class rule at their
+/// edges, the measures and the pick at theirs, the pick over the pinned ladder as written,
+/// and the first eight trials of the composition at the present gain, run and held to the
+/// first eight rows of the pinned table; no number is pinned twice.
+#[test]
+fn the_first_eight_trials_of_the_composition_at_1024_units_and_the_rules_over_its_tables() {
+    // The window: the amplitude at no distance, $e^{-1}$ of it at one time constant, and
+    // nothing far away; the depression at the reference magnitude is the window's amount,
+    // four times it at the rail and nothing below a magnitude of twelve (ADR-0055); a
+    // decayed trace loses at least one LSB and reaches zero exactly.
+    assert_eq!(pair_window(STDP_A_PLUS_Q1_15, 0), STDP_A_PLUS_Q1_15);
+    assert_eq!(pair_window(STDP_A_MINUS_Q1_15, 0), STDP_A_MINUS_Q1_15);
+    assert_eq!(pair_window(STDP_A_PLUS_Q1_15, PAIR_WINDOW), 120);
+    assert_eq!(pair_window(STDP_A_MINUS_Q1_15, PAIR_WINDOW), 126);
+    assert_eq!(pair_window(STDP_A_PLUS_Q1_15, 1 << 16), 0);
+    assert_eq!(
+        depression_at(STDP_A_MINUS_Q1_15, 0x2000),
+        STDP_A_MINUS_Q1_15
+    );
+    assert_eq!(depression_at(STDP_A_MINUS_Q1_15, i32::from(i16::MAX)), 1376);
+    assert_eq!(depression_at(STDP_A_MINUS_Q1_15, 12), 1);
+    assert_eq!(depression_at(STDP_A_MINUS_Q1_15, 11), 0);
+    assert_eq!(decayed(0, 0xFFFF), 0);
+    assert_eq!(decayed(1, 0xFFFF), 0, "one LSB toward zero");
+    assert_eq!(decayed(-1, 0xFFFF), 0);
+    assert_eq!(decayed(1000, 0xFFFF), 999);
+    assert_eq!(decayed(-1000, 0x8000), -500);
+    assert_eq!(
+        decayed(
+            1000,
+            i64::from(stp_decay_factor_q16(1000, ELIGIBILITY_TAU_SHIFT))
+        ),
+        985,
+        "as the block's own test reads it"
+    );
+    // The class rule at its edges: a spike at the arrival is the volley's, one at the
+    // window's last tick is, one at the window's end is the background's, as is one before
+    // the arrival and one with no volley on record; the latest volley is the one read.
+    let volleys = [1000u32, 20_000];
+    assert!(volleyed(&volleys, 200, 1200));
+    assert!(volleyed(&volleys, 200, 1200 + PAIR_WINDOW - 1));
+    assert!(!volleyed(&volleys, 200, 1200 + PAIR_WINDOW));
+    assert!(!volleyed(&volleys, 200, 1199));
+    assert!(!volleyed(&[], 200, 1200));
+    assert!(volleyed(&volleys, 100, 20_100));
+    assert!(!volleyed(&volleys, 100, 20_099));
+    assert!(!volleyed(&volleys, 100, 20_100 + PAIR_WINDOW));
+    // The measures and the pick at their edges over readings written by hand.
+    let composed = |stimulus: u8, sum: i64| -> Composed {
+        let s = usize::from(stimulus);
+        let mut sums = [[0i64; 2]; 2];
+        sums[s][0] = sum;
+        sums[s][1] = 1;
+        (stimulus, sums, [[[0; 4]; 2]; 2], [[0; 2]; 3])
+    };
+    assert!(positive(&composed(0, 0)), "1 is positive");
+    assert!(!positive(&composed(1, -1)), "0 is not");
+    assert!(!positive(&composed(1, -2)));
+    let trials: Vec<Composed> = (0..64)
+        .map(|k| composed(0, if k < 56 { 5 } else { -5 }))
+        .collect();
+    let block = composition(&trials);
+    assert_eq!(block.3, 56);
+    assert_eq!(block.0, [[-5, 1], [0, 0]], "the sums are the last trial's");
+    let mut sight = CALIBRATION_1024[0].0;
+    assert!(calibrated(&sight));
+    assert!(passes(&sight, &block), "56 signs and 62 seen pass");
+    let mut short = trials.clone();
+    short[0] = composed(0, -5);
+    let below = composition(&short);
+    assert_eq!(below.3, 55);
+    assert!(!passes(&sight, &below), "55 signs fail");
+    sight.6 = SEEN_MIN.wrapping_sub(1);
+    assert!(!passes(&sight, &block), "55 seen fail with the sign passed");
+    let blind = (sight, 0, block);
+    let seeing = (CALIBRATION_1024[0].0, 0, block);
+    let wrong = (CALIBRATION_1024[0].0, 0, below);
+    assert_eq!(
+        ladder_pick(&[seeing, seeing, seeing, seeing]),
+        Some(LADDER[0])
+    );
+    assert_eq!(
+        ladder_pick(&[blind, seeing, wrong, seeing]),
+        Some(LADDER[1])
+    );
+    assert_eq!(ladder_pick(&[blind, wrong, wrong, seeing]), Some(LADDER[3]));
+    assert_eq!(ladder_pick(&[blind, wrong, blind, wrong]), None);
+    assert_eq!(ladder_pick(&[]), None);
+    // The rows and the block agree: a block's signs are its rows' positive sums, and the
+    // first rung's sight is the calibration's run.
+    for (k, (block, pin, composed)) in LADDER_1024.iter().enumerate() {
+        let signs = LADDER_ROWS_1024[k].iter().filter(|r| r.1 > 0).count() as u32;
+        assert_eq!(signs, composed.3, "rung {k}: the signs are the rows'");
+        eprintln!(
+            "DUMP ladder1024 rung {k} gain {:#x} seen {} signs {} passes {}",
+            LADDER[k],
+            block.6,
+            composed.3,
+            passes(block, composed)
+        );
+        if k == 0 {
+            assert_eq!(
+                (*block, *pin),
+                CALIBRATION_1024[0],
+                "rung 1 is the calibration"
+            );
+        }
+    }
+    assert_eq!(
+        ladder_pick(&LADDER_1024),
+        GAIN_PICKED_1024,
+        "the pick as written"
+    );
+    // The first eight trials, run; the synapses from each stimulus set onto each readout
+    // set are the census's.
+    let (blocks, trace, trials, counts) = compose_counting(1024, LADDER[0], GATE_TRIALS);
+    dump_composition("composition1024 first eight", &blocks, trace, &trials);
+    eprintln!("DUMP composition1024 synapses {counts:?}");
+    assert_eq!(counts, SYNAPSES_1024);
+    assert!(blocks.is_empty(), "no whole block");
+    pinned_composition(
+        "composition1024 first eight",
+        &trials,
+        &LADDER_ROWS_1024[0][..GATE_TRIALS],
+        None,
     );
 }
