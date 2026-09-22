@@ -11,8 +11,8 @@ use cortex_connectome::{
     SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
-    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, PlasticDelta,
-    STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
+    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16,
+    PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
 };
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX};
 use cortex_homeostasis::{
@@ -312,7 +312,7 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
         })
     ));
     let mut img = small_image_with_modulator();
-    patch_section(&mut img, SECTION_MODULATOR, |s| s[24] = 1);
+    patch_section(&mut img, SECTION_MODULATOR, |s| s[25] = 1);
     assert!(matches!(
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::ReservedNotZero {
@@ -1070,4 +1070,139 @@ fn evict_spike_rehydrate_preserves_every_unit_bit_for_bit() {
         }
     }
     let _ = std::fs::remove_file(&log_path);
+}
+
+/// The bytes of section `kind`, copied out.
+fn section_bytes(img: &[u8], kind: u32) -> Vec<u8> {
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        if entry.kind == kind {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            return img[offset..][..length].to_vec();
+        }
+    }
+    panic!("no section {kind}");
+}
+
+/// The inhibitory baseline in the modulator section (ADR-0086; format 15): a flag byte at
+/// `[24]` and the value at `[28..32)`. Unset, both are zero — the bytes a format-14 writer
+/// left there — and read as unset whatever the configuration says; set, the flag is 1 and
+/// the value is read back, whatever the configuration says, zero and 1.0 included. Refused:
+/// a set value outside [0, 1], as the baseline's is; a flag of zero with a value that is
+/// not, a flag that is neither zero nor one, and a reserved byte between or after them,
+/// which the writer never produces; and a header stamped with the previous version, as
+/// every foreign version is.
+#[test]
+fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads_as_unset()
+ {
+    let unset = small_image_with_modulator();
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(&section[24..64], &[0u8; 40], "unset writes zeros");
+    let loaded = Image::decode::<8>(
+        &unset,
+        Config {
+            inhibitory_baseline_q16: Some(0x4000),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        loaded.inhibitory_baseline_q16(),
+        None,
+        "the image's unset outranks the configuration's"
+    );
+    let exec = Executor::<8>::new(Config {
+        units: 2,
+        blocks: 1,
+        inhibitory_baseline_q16: Some(0x8000),
+        ..Config::default()
+    })
+    .unwrap();
+    let set = Image::encode(&exec).unwrap();
+    let section = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(section[24], 1, "the flag");
+    assert_eq!(&section[25..28], &[0u8; 3]);
+    assert_eq!(&section[28..32], &0x8000i32.to_le_bytes(), "the value");
+    assert_eq!(&section[32..64], &[0u8; 32]);
+    assert_eq!(
+        Image::decode::<8>(&set, Config::default())
+            .unwrap()
+            .inhibitory_baseline_q16(),
+        Some(0x8000),
+        "the image's set outranks the configuration's unset"
+    );
+    let with_value = |flag: u8, value: i32| {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[24] = flag;
+            s[28..32].copy_from_slice(&value.to_le_bytes());
+        });
+        img
+    };
+    for value in [0, 1, MODULATION_ONE_Q16 - 1, MODULATION_ONE_Q16] {
+        assert_eq!(
+            Image::decode::<8>(&with_value(1, value), Config::default())
+                .unwrap()
+                .inhibitory_baseline_q16(),
+            Some(value),
+            "set at {value} is set"
+        );
+    }
+    for value in [-1, MODULATION_ONE_Q16 + 1, i32::MIN, i32::MAX] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_value(1, value), Config::default()),
+                Err(ImageError::Config(
+                    ConfigError::InhibitoryBaselineOutOfRange
+                ))
+            ),
+            "{value}: refused as the baseline's is"
+        );
+    }
+    for (flag, value) in [(0, 1), (0, 0x8000), (0, -1), (2, 0), (2, 0x8000), (0xFF, 0)] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_value(flag, value), Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "flag {flag} value {value}: bytes the writer never produces"
+        );
+    }
+    assert_eq!(
+        Image::decode::<8>(&with_value(0, 0), Config::default())
+            .unwrap()
+            .inhibitory_baseline_q16(),
+        None,
+        "the flag and the value zero, as a format-14 writer left them, read as unset"
+    );
+    for at in [25, 26, 27, 32, 40, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    let mut older = set.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = CortexFileHeader::FORMAT_VERSION - 1;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, Config::default()),
+            Err(ImageError::Header(HeaderError::ForeignVersion(14)))
+        ),
+        "a format-14 header fails closed, as every foreign version does"
+    );
 }

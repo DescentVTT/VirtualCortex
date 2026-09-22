@@ -10,7 +10,8 @@
 //! quiescent point: every mailbox empty, no token in flight; a scheduled unit with an empty
 //! mailbox is written idle and woken again on load; the executor's clock is written with it
 //! and resumed by the loader, so the stamps keep their meaning (ADR-0033). The engine's
-//! modulation state (ADR-0032: the modulator record and the baseline), its homeostasis state
+//! modulation state (ADR-0032: the modulator record and the baseline; since ADR-0086 the
+//! inhibitory baseline beside them, set or unset), its homeostasis state
 //! (ADR-0036, ADR-0037) and its hippocampal state (ADR-0038) are sections of their own, always
 //! written, and the episodic ledger a section written when it is not empty, so that the image
 //! defines the run (§8.3); since ADR-0052 so are the engine's affect state and induction
@@ -130,6 +131,15 @@ const _: () = assert!(MAX_BLOCKS == MAX_TOKEN_BLOCK as u64 + 1);
 pub(crate) fn too_many_blocks(count: u64) -> bool {
     count > MAX_BLOCKS
 }
+
+/// The modulator section's inhibitory baseline (ADR-0086; format 15): a flag byte at
+/// `[24]`, `INHIBITORY_BASELINE_SET` while the baseline is set and zero while it is unset,
+/// and the baseline at `[28..32)`, an `i32` in Q16.16 that is zero while unset. The bytes
+/// between and after are reserved and must be zero. A record a format-14 writer left zero
+/// there reads as unset, which is the rule before ADR-0086 bit for bit.
+const INHIBITORY_FLAG: usize = 24;
+const INHIBITORY_VALUE: core::ops::Range<usize> = 28..32;
+const INHIBITORY_BASELINE_SET: u8 = 1;
 
 impl From<io::Error> for ImageError {
     fn from(e: io::Error) -> Self {
@@ -373,12 +383,17 @@ impl Image {
         }
         // The engine's modulation state, always: one 64-byte record holding the modulator's 16
         // bytes, the baseline at `[16..20)`, the inhibitory rule's target period at `[20..24)`
-        // (ADR-0053) and 40 reserved bytes. The baseline and the period change what a run
-        // does, so they are in the image, not in a configuration (§8.3).
+        // (ADR-0053), the inhibitory baseline's flag at `[24]` and its value at `[28..32)`
+        // (ADR-0086; format 15) and 35 reserved bytes. The baselines and the period change
+        // what a run does, so they are in the image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
         modulator_bytes[20..24].copy_from_slice(&exec.istdp_target_period_ticks().to_le_bytes());
+        if let Some(inhibitory) = exec.inhibitory_baseline_q16() {
+            modulator_bytes[INHIBITORY_FLAG] = INHIBITORY_BASELINE_SET;
+            modulator_bytes[INHIBITORY_VALUE].copy_from_slice(&inhibitory.to_le_bytes());
+        }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
         // what a run does, so they are in the image (ADR-0036).
@@ -660,18 +675,20 @@ impl Image {
             }
         }
         {
-            // One record, the engine's: the modulator's 16 bytes, the baseline at `[16..20)`
-            // and the inhibitory rule's target period at `[20..24)` (each within its bounds,
-            // as `Executor::new` would have demanded), 40 reserved bytes.
+            // One record, the engine's: the modulator's 16 bytes, the baseline at `[16..20)`,
+            // the inhibitory rule's target period at `[20..24)` (each within its bounds, as
+            // `Executor::new` would have demanded), the inhibitory baseline's flag at `[24]`
+            // and its value at `[28..32)` (ADR-0086), 35 reserved bytes.
             if modulator.record_count() != 1 {
                 return Err(ImageError::Directory(SECTION_MODULATOR));
             }
             let record = section_of(bytes, &modulator)?;
-            if record[24..64].iter().any(|&b| b != 0) {
-                return Err(ImageError::ReservedNotZero {
-                    section: SECTION_MODULATOR,
-                    index: 0,
-                });
+            let reserved_not_zero = || ImageError::ReservedNotZero {
+                section: SECTION_MODULATOR,
+                index: 0,
+            };
+            if record[25..28].iter().any(|&b| b != 0) || record[32..64].iter().any(|&b| b != 0) {
+                return Err(reserved_not_zero());
             }
             let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));
             if !exec.set_modulation_baseline(baseline) {
@@ -680,6 +697,22 @@ impl Image {
             let period = u32::from_le_bytes(record[20..24].try_into().unwrap_or([0; 4]));
             if !exec.set_istdp_target_period(period) {
                 return Err(ImageError::Config(ConfigError::IstdpPeriodOutOfRange));
+            }
+            // The inhibitory baseline (ADR-0086): unset while its flag is zero, where a value
+            // that is not zero is a byte the writer never produces; set while its flag is
+            // `INHIBITORY_BASELINE_SET`, where the value is refused outside [0, 1] as the
+            // configuration's is; any other flag is a byte the writer never produces. The
+            // image's, set or unset, outranks the configuration's (§8.3).
+            let value = i32::from_le_bytes(record[INHIBITORY_VALUE].try_into().unwrap_or([0; 4]));
+            let inhibitory = match record[INHIBITORY_FLAG] {
+                0 if value == 0 => None,
+                INHIBITORY_BASELINE_SET => Some(value),
+                _ => return Err(reserved_not_zero()),
+            };
+            if !exec.set_inhibitory_baseline(inhibitory) {
+                return Err(ImageError::Config(
+                    ConfigError::InhibitoryBaselineOutOfRange,
+                ));
             }
             exec.set_modulator(NeuromodulatorState::decode(
                 record[0..16].try_into().unwrap_or(&[0; 16]),

@@ -148,6 +148,15 @@ pub struct Config {
     /// outside `[ISTDP_PERIOD_MIN_TICKS, ISTDP_PERIOD_MAX_TICKS]`. For an engine built from
     /// an image, the image's outranks this one: it changes what the run does (§8.3).
     pub istdp_target_period_ticks: u32,
+    /// The inhibitory baseline (ADR-0085, ADR-0086): while set, the modulation every slot of
+    /// an inhibitory block consolidates under, `clamp(inhibitory baseline, 0, 1)`, whether or
+    /// not the synapse is addressed — the dopamine term never reaches it — while every
+    /// excitatory synapse consolidates under `modulation_baseline_q16` and the signal as
+    /// before; unset (the default), every synapse consolidates as before, bit for bit.
+    /// Q16.16 in [0, 1] when set; refused outside it. For an engine built from an image, the
+    /// image's outranks this one: it changes what the run does, so it is part of the image
+    /// (§8.3).
+    pub inhibitory_baseline_q16: Option<i32>,
 }
 
 impl Default for Config {
@@ -173,6 +182,7 @@ impl Default for Config {
             search_budget: 0,
             discovery_tag: 0,
             istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
+            inhibitory_baseline_q16: None,
         }
     }
 }
@@ -283,6 +293,8 @@ pub enum ConfigError {
     /// `istdp_target_period_ticks` is outside `[ISTDP_PERIOD_MIN_TICKS,
     /// ISTDP_PERIOD_MAX_TICKS]` (ADR-0053).
     IstdpPeriodOutOfRange,
+    /// `inhibitory_baseline_q16` is set outside [0, 1] (ADR-0086).
+    InhibitoryBaselineOutOfRange,
 }
 
 /// Why an episode could not be tagged (ADR-0038).
@@ -319,40 +331,77 @@ pub enum AddressError {
     NoSuchUnit,
 }
 
-/// The two modulations of a tick (ADR-0068): the one an addressed synapse consolidates
-/// under, `clamp(baseline + dopamine, 0, 1)` (`cortex-neuromod`'s `modulation`, ADR-0032),
-/// and the one every other synapse consolidates under, the same rule with the signal at
-/// rest, `clamp(baseline, 0, 1)`. A synapse is addressed when its presynaptic unit is an
-/// addressed source and its target an addressed target. The addressing reaches the dopamine
-/// term only. With the signal at rest the two are one number, so a run with no reward is the
-/// same run whatever is addressed; with every unit a source and a target only the first is
-/// read, so a run that addresses every unit is the run before the addressing existed, bit
-/// for bit.
+/// The modulations of a tick (ADR-0068, ADR-0086): the one an addressed synapse consolidates
+/// under, `clamp(baseline + dopamine, 0, 1)` (`cortex-neuromod`'s `modulation`, ADR-0032);
+/// the one every other synapse consolidates under, the same rule with the signal at rest,
+/// `clamp(baseline, 0, 1)`; and, when the inhibitory baseline is set, the one every slot of
+/// an inhibitory block consolidates under, `clamp(inhibitory baseline, 0, 1)`, addressed or
+/// not — the dopamine term never reaches it (ADR-0085). A synapse is addressed when its
+/// presynaptic unit is an addressed source and its target an addressed target. The
+/// addressing reaches the dopamine term only. With the signal at rest the first two are one
+/// number, so a run with no reward is the same run whatever is addressed; with every unit a
+/// source and a target only the first is read, so a run that addresses every unit is the run
+/// before the addressing existed, bit for bit; with the inhibitory baseline unset the third
+/// is never read, so every run before ADR-0086 is the run it was, bit for bit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Modulations {
     pub addressed: i32,
     pub at_rest: i32,
+    /// The modulation of every slot of an inhibitory block while the inhibitory baseline is
+    /// set; none while it is unset, where an inhibitory slot's is `addressed` or `at_rest`
+    /// as an excitatory one's is.
+    pub inhibitory: Option<i32>,
 }
 
 impl Modulations {
-    /// The two modulations from the modulator and the baseline: the rule is
-    /// `cortex-neuromod`'s in both, once with the signal as it stands and once at rest.
-    pub fn of(modulator: &NeuromodulatorState, baseline_q16: i32) -> Self {
+    /// The modulations from the modulator, the baseline and the inhibitory baseline: the rule
+    /// is `cortex-neuromod`'s in the first two, once with the signal as it stands and once at
+    /// rest; the third is the inhibitory baseline clamped to $[0, 1]$, the signal never
+    /// entering it, and none when the baseline is unset.
+    pub fn of(
+        modulator: &NeuromodulatorState,
+        baseline_q16: i32,
+        inhibitory_baseline_q16: Option<i32>,
+    ) -> Self {
         Self {
             addressed: modulator.modulation(baseline_q16),
             at_rest: NeuromodulatorState::new().modulation(baseline_q16),
+            inhibitory: inhibitory_baseline_q16.map(|b| b.clamp(0, MODULATION_ONE_Q16)),
         }
     }
 
-    /// The modulation a synapse consolidates under: `addressed` when the synapse is
-    /// addressed, `at_rest` otherwise.
-    pub const fn for_synapse(&self, addressed: bool) -> i32 {
-        if addressed {
-            self.addressed
-        } else {
-            self.at_rest
+    /// The modulation a synapse consolidates under: `inhibitory` for a slot of an inhibitory
+    /// block while the inhibitory baseline is set, whatever the addressing; otherwise
+    /// `addressed` when the synapse is addressed and `at_rest` when it is not.
+    pub const fn for_synapse(&self, addressed: bool, polarity: Polarity) -> i32 {
+        match (polarity, self.inhibitory) {
+            (Polarity::Inhibitory, Some(modulation)) => modulation,
+            _ => {
+                if addressed {
+                    self.addressed
+                } else {
+                    self.at_rest
+                }
+            }
         }
     }
+}
+
+/// The word the coordinator publishes for the inhibitory modulation (ADR-0086): the
+/// modulation itself while the inhibitory baseline is set — within $[0, 1]$, as
+/// `Modulations::of` clamps it — and `INHIBITORY_UNSET`, below zero, while it is unset. One
+/// atomic beside the other two, read once per tick per worker.
+const INHIBITORY_UNSET: i32 = -1;
+
+const _: () = assert!(INHIBITORY_UNSET < 0);
+
+fn inhibitory_word(modulation: Option<i32>) -> i32 {
+    modulation.unwrap_or(INHIBITORY_UNSET)
+}
+
+/// The modulation a published word names: none for a word below zero.
+fn inhibitory_of_word(word: i32) -> Option<i32> {
+    if word < 0 { None } else { Some(word) }
 }
 
 /// [`SynapseBlock::consolidate`] for every slot in order, each under its own modulation
@@ -483,6 +532,10 @@ struct Shared {
     /// The modulation of a synapse that is not addressed (ADR-0068): the same rule with the
     /// dopamine signal at rest, stored and read beside `modulation`.
     modulation_at_rest: AtomicI32,
+    /// The inhibitory modulation's word (ADR-0086): the modulation every slot of an
+    /// inhibitory block consolidates under while the inhibitory baseline is set, or
+    /// `INHIBITORY_UNSET` while it is unset; stored and read beside `modulation`.
+    modulation_inhibitory: AtomicI32,
     /// The addressed set (ADR-0068) as two flags per unit, a source and a target: a synapse
     /// is addressed when its presynaptic unit is a source and its target a target. Written
     /// between ticks by the coordinator, read by every worker in the fan-out phase, the
@@ -617,6 +670,9 @@ pub struct Executor<const CAP: usize> {
     /// The engine's modulator record (ADR-0032): one for the engine until macro-columns exist.
     modulator: NeuromodulatorState,
     modulation_baseline_q16: i32,
+    /// The inhibitory baseline (ADR-0086): the configuration's, or the image's; none while
+    /// unset.
+    inhibitory_baseline_q16: Option<i32>,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -707,6 +763,12 @@ impl<const CAP: usize> Executor<CAP> {
         {
             return Err(ConfigError::IstdpPeriodOutOfRange);
         }
+        if config
+            .inhibitory_baseline_q16
+            .is_some_and(|b| !(0..=MODULATION_ONE_Q16).contains(&b))
+        {
+            return Err(ConfigError::InhibitoryBaselineOutOfRange);
+        }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -741,6 +803,7 @@ impl<const CAP: usize> Executor<CAP> {
             now: AtomicU32::new(0),
             modulation: AtomicI32::new(config.modulation_baseline_q16),
             modulation_at_rest: AtomicI32::new(config.modulation_baseline_q16),
+            modulation_inhibitory: AtomicI32::new(INHIBITORY_UNSET),
             sources: (0..config.units).map(|_| AtomicBool::new(true)).collect(),
             targets: (0..config.units).map(|_| AtomicBool::new(true)).collect(),
             gain: AtomicU32::new(GAIN_ONE_Q16),
@@ -808,6 +871,7 @@ impl<const CAP: usize> Executor<CAP> {
             amendment_capacity: config.amendments,
             modulator: NeuromodulatorState::new(),
             modulation_baseline_q16: config.modulation_baseline_q16,
+            inhibitory_baseline_q16: config.inhibitory_baseline_q16,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -872,6 +936,12 @@ impl<const CAP: usize> Executor<CAP> {
     /// The modulation with the dopamine signal at rest, from the configuration (ADR-0032).
     pub fn modulation_baseline_q16(&self) -> i32 {
         self.modulation_baseline_q16
+    }
+
+    /// The inhibitory baseline (ADR-0086), from the configuration or the image; none while
+    /// unset, where every synapse consolidates as before ADR-0086.
+    pub fn inhibitory_baseline_q16(&self) -> Option<i32> {
+        self.inhibitory_baseline_q16
     }
 
     /// A reward-prediction error into the dopamine signal, between ticks (ADR-0032): an input,
@@ -964,6 +1034,17 @@ impl<const CAP: usize> Executor<CAP> {
             return false;
         }
         self.modulation_baseline_q16 = baseline_q16;
+        true
+    }
+
+    /// The loader's: the inhibitory baseline an image holds, set or unset, which outranks the
+    /// configuration's (§8.3). Refused when set outside [0, 1], as `new` refuses it, the
+    /// baseline standing as it was.
+    pub(crate) fn set_inhibitory_baseline(&mut self, baseline_q16: Option<i32>) -> bool {
+        if baseline_q16.is_some_and(|b| !(0..=MODULATION_ONE_Q16).contains(&b)) {
+            return false;
+        }
+        self.inhibitory_baseline_q16 = baseline_q16;
         true
     }
 
@@ -1823,15 +1904,23 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.now.store(now, Ordering::Relaxed);
         // The modulations this tick's fan-out consolidates with, from the signal as it
         // stands (the addressed units' with the signal, every other's at rest; ADR-0032,
-        // ADR-0068); then the signal decays by one tick. All before the barrier that starts
+        // ADR-0068; the inhibitory blocks' under their own baseline while it is set,
+        // ADR-0086); then the signal decays by one tick. All before the barrier that starts
         // the tick, so every worker reads the same values.
-        let modulations = Modulations::of(&self.modulator, self.modulation_baseline_q16);
+        let modulations = Modulations::of(
+            &self.modulator,
+            self.modulation_baseline_q16,
+            self.inhibitory_baseline_q16,
+        );
         self.shared
             .modulation
             .store(modulations.addressed, Ordering::Relaxed);
         self.shared
             .modulation_at_rest
             .store(modulations.at_rest, Ordering::Relaxed);
+        self.shared
+            .modulation_inhibitory
+            .store(inhibitory_word(modulations.inhibitory), Ordering::Relaxed);
         self.modulator.decay_dopamine(DOPAMINE_TAU_SHIFT);
         // The gain this tick's turns scale by (ADR-0036), likewise before the barrier.
         self.shared
@@ -2084,6 +2173,7 @@ impl<const CAP: usize> Worker<CAP> {
         let modulations = Modulations {
             addressed: shared.modulation.load(Ordering::Relaxed),
             at_rest: shared.modulation_at_rest.load(Ordering::Relaxed),
+            inhibitory: inhibitory_of_word(shared.modulation_inhibitory.load(Ordering::Relaxed)),
         };
         // The inhibitory rule's depression per spike at the engine's target period
         // (ADR-0053), published by the coordinator; within `i16`, as `istdp_alpha_q1_15`
@@ -2124,10 +2214,12 @@ impl<const CAP: usize> Worker<CAP> {
                 });
                 // The modulation per slot (ADR-0068): the addressed one for a synapse from an
                 // addressed source onto an addressed target, the one at rest for every other;
-                // an empty slot's is never read.
+                // for every slot of an inhibitory block the inhibitory one while the
+                // inhibitory baseline is set (ADR-0086); an empty slot's is never read.
                 let per_slot: [i32; SYNAPSES_PER_BLOCK] = core::array::from_fn(|slot| {
                     modulations.for_synapse(
                         from_source && block.target(slot).is_some_and(|t| shared.is_target(t)),
+                        polarity,
                     )
                 });
                 block.step_stdp_all(now, posts, polarity, istdp_alpha);
@@ -2584,6 +2676,86 @@ mod tests {
         );
         assert_eq!(exec.addressed_counts(), (0, 0));
     }
+
+    /// The inhibitory baseline (ADR-0086): unset by default; refused when set outside
+    /// $[0, 1]$, at both edges, by `new` and by the loader's setter, which leaves the baseline
+    /// as it was; accepted at the edges and unset again.
+    #[test]
+    fn the_inhibitory_baseline_is_unset_by_default_and_refused_when_set_outside_the_unit_interval()
+    {
+        let ok = Config {
+            units: 2,
+            ..Config::default()
+        };
+        assert_eq!(ok.inhibitory_baseline_q16, None);
+        let unset = Executor::<8>::new(ok.clone()).unwrap();
+        assert_eq!(unset.inhibitory_baseline_q16(), None);
+        assert_eq!(
+            unset.shared.modulation_inhibitory.load(Ordering::Relaxed),
+            INHIBITORY_UNSET
+        );
+        for outside in [-1, MODULATION_ONE_Q16 + 1, i32::MIN, i32::MAX] {
+            assert_eq!(
+                Executor::<8>::new(Config {
+                    inhibitory_baseline_q16: Some(outside),
+                    ..ok.clone()
+                })
+                .err(),
+                Some(ConfigError::InhibitoryBaselineOutOfRange),
+                "{outside}"
+            );
+        }
+        for inside in [0, 1, 0x8000, MODULATION_ONE_Q16 - 1, MODULATION_ONE_Q16] {
+            let set = Executor::<8>::new(Config {
+                inhibitory_baseline_q16: Some(inside),
+                ..ok.clone()
+            })
+            .unwrap();
+            assert_eq!(set.inhibitory_baseline_q16(), Some(inside), "{inside}");
+        }
+        let mut exec = Executor::<8>::new(ok).unwrap();
+        assert!(exec.set_inhibitory_baseline(Some(0x8000)));
+        assert_eq!(exec.inhibitory_baseline_q16(), Some(0x8000));
+        for outside in [-1, MODULATION_ONE_Q16 + 1] {
+            assert!(!exec.set_inhibitory_baseline(Some(outside)), "{outside}");
+            assert_eq!(
+                exec.inhibitory_baseline_q16(),
+                Some(0x8000),
+                "refused whole: the baseline stands"
+            );
+        }
+        assert!(exec.set_inhibitory_baseline(Some(0)));
+        assert_eq!(
+            exec.inhibitory_baseline_q16(),
+            Some(0),
+            "set at zero is set"
+        );
+        assert!(exec.set_inhibitory_baseline(Some(MODULATION_ONE_Q16)));
+        assert_eq!(exec.inhibitory_baseline_q16(), Some(MODULATION_ONE_Q16));
+        assert!(exec.set_inhibitory_baseline(None));
+        assert_eq!(exec.inhibitory_baseline_q16(), None, "unset again");
+        // The tick publishes the word the workers read: the modulation while set, the
+        // sentinel while unset.
+        assert!(exec.set_inhibitory_baseline(Some(0x4000)));
+        exec.tick();
+        assert_eq!(
+            exec.shared.modulation_inhibitory.load(Ordering::Relaxed),
+            0x4000
+        );
+        assert!(exec.set_inhibitory_baseline(Some(0)));
+        exec.tick();
+        assert_eq!(
+            exec.shared.modulation_inhibitory.load(Ordering::Relaxed),
+            0,
+            "set at zero publishes zero, which is not the sentinel"
+        );
+        assert!(exec.set_inhibitory_baseline(None));
+        exec.tick();
+        assert_eq!(
+            exec.shared.modulation_inhibitory.load(Ordering::Relaxed),
+            INHIBITORY_UNSET
+        );
+    }
 }
 
 /// The lattice property (ADR-0030) of the addressing (ADR-0068): over the lattice and a
@@ -2614,7 +2786,7 @@ mod prop {
         let mut modulator = NeuromodulatorState::new();
         for (baseline, dopamine) in cases {
             modulator.dopamine_rpe = dopamine;
-            let m = Modulations::of(&modulator, baseline);
+            let m = Modulations::of(&modulator, baseline, None);
             assert_eq!(
                 m.addressed,
                 baseline
@@ -2628,8 +2800,8 @@ mod prop {
                 modulator.modulation(baseline),
                 "the rule is cortex-neuromod's"
             );
-            assert_eq!(m.for_synapse(true), m.addressed);
-            assert_eq!(m.for_synapse(false), m.at_rest);
+            assert_eq!(m.for_synapse(true, Polarity::Excitatory), m.addressed);
+            assert_eq!(m.for_synapse(false, Polarity::Excitatory), m.at_rest);
             if dopamine == 0 {
                 assert_eq!(m.addressed, m.at_rest, "at rest the two are one number");
             }
@@ -2637,28 +2809,40 @@ mod prop {
         // The harness's baseline, a reward and a dip: the addressed modulation moves, the
         // other stays at the baseline.
         modulator.dopamine_rpe = 0x4000;
-        let m = Modulations::of(&modulator, 0x8000);
+        let m = Modulations::of(&modulator, 0x8000, None);
         assert_eq!(
-            (m.for_synapse(true), m.for_synapse(false)),
+            (
+                m.for_synapse(true, Polarity::Excitatory),
+                m.for_synapse(false, Polarity::Excitatory)
+            ),
             (0xC000, 0x8000)
         );
         modulator.dopamine_rpe = -0x4000;
-        let m = Modulations::of(&modulator, 0x8000);
+        let m = Modulations::of(&modulator, 0x8000, None);
         assert_eq!(
-            (m.for_synapse(true), m.for_synapse(false)),
+            (
+                m.for_synapse(true, Polarity::Excitatory),
+                m.for_synapse(false, Polarity::Excitatory)
+            ),
             (0x4000, 0x8000)
         );
         modulator.dopamine_rpe = MODULATION_ONE_Q16;
-        let m = Modulations::of(&modulator, 0x8000);
+        let m = Modulations::of(&modulator, 0x8000, None);
         assert_eq!(
-            (m.for_synapse(true), m.for_synapse(false)),
+            (
+                m.for_synapse(true, Polarity::Excitatory),
+                m.for_synapse(false, Polarity::Excitatory)
+            ),
             (MODULATION_ONE_Q16, 0x8000),
             "the reward of brief 027 carries the addressed to the ceiling"
         );
         modulator.dopamine_rpe = -MODULATION_ONE_Q16;
-        let m = Modulations::of(&modulator, 0x8000);
+        let m = Modulations::of(&modulator, 0x8000, None);
         assert_eq!(
-            (m.for_synapse(true), m.for_synapse(false)),
+            (
+                m.for_synapse(true, Polarity::Excitatory),
+                m.for_synapse(false, Polarity::Excitatory)
+            ),
             (0, 0x8000),
             "and the punishment to the floor"
         );
@@ -2722,6 +2906,112 @@ mod prop {
             let mut each = block;
             consolidate_each(&mut each, &per_slot, polarity);
             assert_eq!(each, expected, "round {round}: slot by slot");
+        }
+    }
+
+    /// The lattice property of the inhibitory baseline (ADR-0086): over the lattice and a
+    /// seeded walk of baselines, dopamine signals and inhibitory baselines, while the
+    /// inhibitory baseline is set every slot of an inhibitory block consolidates under
+    /// `clamp(inhibitory baseline, 0, 1)` whatever the addressing and the signal, and every
+    /// slot of an excitatory block under the two modulations as before; while it is unset
+    /// the third modulation is none and an inhibitory slot's is an excitatory slot's; and the
+    /// word the coordinator publishes round-trips, the sentinel for unset and the modulation
+    /// itself — zero included — for set.
+    #[test]
+    fn an_inhibitory_block_consolidates_under_the_inhibitory_baseline_alone_while_it_is_set() {
+        let mut lcg = Lcg::new(0x86);
+        let mut cases: Vec<(i32, i32, i32)> = Vec::new();
+        for &baseline in &I32_LATTICE {
+            for &dopamine in &I32_LATTICE {
+                for &inhibitory in &I32_LATTICE {
+                    cases.push((baseline, dopamine, inhibitory));
+                }
+            }
+        }
+        for _ in 0..4_000 {
+            cases.push((
+                lcg.i32_edge_biased(),
+                lcg.i32_edge_biased(),
+                lcg.i32_edge_biased(),
+            ));
+        }
+        let mut modulator = NeuromodulatorState::new();
+        for (baseline, dopamine, inhibitory) in cases {
+            modulator.dopamine_rpe = dopamine;
+            let unset = Modulations::of(&modulator, baseline, None);
+            let set = Modulations::of(&modulator, baseline, Some(inhibitory));
+            let clamped = inhibitory.clamp(0, MODULATION_ONE_Q16);
+            assert_eq!(unset.inhibitory, None, "{baseline} {dopamine} {inhibitory}");
+            assert_eq!(set.inhibitory, Some(clamped));
+            assert_eq!(
+                (set.addressed, set.at_rest),
+                (unset.addressed, unset.at_rest),
+                "the inhibitory baseline moves neither of the other two"
+            );
+            for addressed in [false, true] {
+                let excitatory = unset.for_synapse(addressed, Polarity::Excitatory);
+                assert_eq!(
+                    excitatory,
+                    if addressed {
+                        unset.addressed
+                    } else {
+                        unset.at_rest
+                    }
+                );
+                assert_eq!(
+                    unset.for_synapse(addressed, Polarity::Inhibitory),
+                    excitatory,
+                    "unset: an inhibitory slot's modulation is an excitatory slot's"
+                );
+                assert_eq!(
+                    set.for_synapse(addressed, Polarity::Excitatory),
+                    excitatory,
+                    "set: an excitatory slot's is as before"
+                );
+                assert_eq!(
+                    set.for_synapse(addressed, Polarity::Inhibitory),
+                    clamped,
+                    "set: an inhibitory slot's is the inhibitory baseline, clamped, whatever the addressing and the signal"
+                );
+            }
+            assert_eq!(
+                inhibitory_of_word(inhibitory_word(set.inhibitory)),
+                set.inhibitory
+            );
+            assert_eq!(inhibitory_word(set.inhibitory), clamped);
+        }
+        assert_eq!(inhibitory_word(None), INHIBITORY_UNSET);
+        assert_eq!(inhibitory_of_word(INHIBITORY_UNSET), None);
+        assert_eq!(
+            inhibitory_of_word(0),
+            Some(0),
+            "zero is set, not the sentinel"
+        );
+        assert_eq!(
+            inhibitory_of_word(MODULATION_ONE_Q16),
+            Some(MODULATION_ONE_Q16)
+        );
+        assert_eq!(inhibitory_of_word(i32::MIN), None);
+        // The harness's baselines: the reward's gate at zero with the inhibitory baseline at
+        // 0.5 (H-16), a reward and a punishment.
+        for (dopamine, addressed_excitatory) in [
+            (MODULATION_ONE_Q16, MODULATION_ONE_Q16),
+            (-MODULATION_ONE_Q16, 0),
+            (0x4000, 0x4000),
+            (0, 0),
+        ] {
+            modulator.dopamine_rpe = dopamine;
+            let m = Modulations::of(&modulator, 0, Some(0x8000));
+            assert_eq!(
+                (
+                    m.for_synapse(true, Polarity::Excitatory),
+                    m.for_synapse(false, Polarity::Excitatory),
+                    m.for_synapse(true, Polarity::Inhibitory),
+                    m.for_synapse(false, Polarity::Inhibitory),
+                ),
+                (addressed_excitatory, 0, 0x8000, 0x8000),
+                "{dopamine}: the signal reaches the addressed excitatory slot and no inhibitory one"
+            );
         }
     }
 }

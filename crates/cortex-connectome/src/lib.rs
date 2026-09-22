@@ -221,7 +221,14 @@ impl CortexFileHeader {
     ///   the unit (ADR-0054); the modulator section's `[20..24)` is the inhibitory rule's
     ///   target period (ADR-0053). A version-13 image has no affect or induction section, so
     ///   its loader would refuse it; its unit records read a stamp of zero, which is none.
-    pub const FORMAT_VERSION: u32 = 14;
+    /// - 15: the modulator section's `[24]` is the inhibitory baseline's flag (0 unset, 1 set) and
+    ///   its `[28..32)` the inhibitory baseline, Q16.16 in [0, 1], the modulation every synapse
+    ///   of an inhibitory block consolidates under when the flag is set, the dopamine term
+    ///   never reaching it (ADR-0085, ADR-0086); `[25..28)` and `[32..64)` stay reserved. A
+    ///   version-14 image's zeros there read as unset, which is the rule before this version
+    ///   bit for bit; the loader still refuses a version-14 header, as it refuses every
+    ///   foreign version.
+    pub const FORMAT_VERSION: u32 = 15;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -405,7 +412,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 14);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 15);
     }
 
     #[test]
@@ -451,8 +458,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            14,
-            "ADR-0052 to ADR-0054: the term arena in the image, the symbol, the stamp, the period"
+            15,
+            "ADR-0086: the inhibitory baseline in the modulator section"
         );
     }
 
