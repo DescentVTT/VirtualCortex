@@ -156,7 +156,7 @@ the quoted sentences are what to re-derive.
   baseline zero and the inhibitory baseline 0.5, the arms and their feedback, ADR-0085's prediction and its
   predicted readings written as constants, the assertion's shape, and every constant of ADR-0065, ADR-0076,
   ADR-0077, ADR-0080 and ADR-0085 restated unchanged.
-  **Done**: `aa35d22`, `tests/inhibition.rs` with its constants, its rules and its gate and every table empty, before the first rewarded run.
+  **Done**: `5094704` on `main` (`aa35d22` on the branch before the rebase that merged pull request #109), `tests/inhibition.rs` with its constants, its rules and its gate and every table empty, before the first rewarded run.
 - [x] **The three arms** — the assignment, the mirrored assignment, the reward withheld — each 1 536 trials from the
   one image with the inhibitory baseline set to 0.5, as weekly `exhaustive` tests, their tables pinned per block:
   the correct selections and the selections per stimulus and readout, the four stimulus–readout couplings, the
