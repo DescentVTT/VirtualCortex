@@ -199,9 +199,11 @@ jobs:
     # 1 h 43 m of its 120-minute bound on 2026-09-21 with half of it in one binary
     # (`instrument` 22 tests in 3 007 s, `reference` 7 in 2 081, `learning` 11 in 1 084,
     # `cortex-core` 1 in 2; ADR-0071's table, run 35548410926). The shards are taken from the
-    # binaries `--list` names at run time, never from a list written here, because a list here
+    # tests `--list` names at run time, never from a list written here, because a list here
     # and a list in the tree drift (F-44, F-45); each shard checks what it ran against what the
-    # list counted, as ADR-0058's completeness check does for the sweep.
+    # list gave it, as ADR-0058's completeness check does for the sweep. The unit is a test, not
+    # a binary (ADR-0084): `instrument` alone read 61 per cent of a shard's bound, so a binary's
+    # tests are spread over the shards and each binary's share runs in one process.
     name: Weekly (exhaustive tests ${{ matrix.shard }}/3, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
@@ -230,7 +232,7 @@ jobs:
 
       # The seconds per binary that ADR-0071 read out of cargo's own lines; the shard script
       # writes them directly now, so the table is what it wrote.
-      - name: What each binary of this shard took (F-45, ADR-0071)
+      - name: What each binary's share of this shard took (F-45, ADR-0071, ADR-0084)
         if: always()
         run: |
           f="exhaustive-times-${{ matrix.shard }}.txt"
@@ -238,7 +240,7 @@ jobs:
           {
             echo "### The whole-domain tests, shard ${{ matrix.shard }} of 3"
             echo
-            echo "| Binary | Exhaustive tests | Seconds |"
+            echo "| Binary | Its exhaustive tests in this shard | Seconds |"
             echo "| :--- | ---: | ---: |"
             awk '{ print "| `" $1 "` | " $2 " | " $3 " |" }' "$f"
             awk '{ n += $2; s += $3 } END { print "| **this shard** | **" n "** | **" s "** |" }' "$f"

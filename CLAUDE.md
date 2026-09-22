@@ -141,7 +141,7 @@ cargo +1.85 test --workspace --locked
 npm ci
 npm run spec
 git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0
-cargo test --workspace --release --locked -- --ignored exhaustive   # before a release; the weekly job runs it in three shards (ADR-0073)
+cargo test --workspace --release --locked -- --ignored exhaustive   # before a release; the weekly job runs it in three shards, by test (ADR-0073, ADR-0084)
 ```
 
 The mutation line is the gate a pull request meets: every mutant `cargo-mutants` can make in the
