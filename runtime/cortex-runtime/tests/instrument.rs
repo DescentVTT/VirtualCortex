@@ -66,6 +66,19 @@
 //! rewarded arms — as integer rules written before the run. The three arms are one weekly
 //! `exhaustive` test; the gate runs the rules at their edges and the delivery's reach over the
 //! first eight trials.
+//!
+//! Brief 037 (ADR-0081) runs H-14 as ADR-0080 wrote it: ADR-0077's settled image, held to its
+//! tables, and a frozen block from it held to ADR-0077's frozen run before any rewarded run;
+//! then the task as ADR-0059 and ADR-0068 built it — `Delivery::Addressed`, the reward reaching
+//! the synapses from the presented stimulus onto the readout the engine selected, its sign the
+//! outcome's — in the assignment, the mirrored assignment and, as a reading of lock-in, the
+//! shuffled reward, each 1 536 trials from the one image, the oracle replaying the
+//! consolidation under the pair the task addressed and the signal its reward left; the
+//! criterion — the correct selections over the last 128 trials at least 80 in both rewarded
+//! arms — as an integer rule written before the run, and ADR-0080's derivation (a wrong
+//! selection's pair never consolidates) read after every run as an assertion beside the
+//! verdict. The three arms are one weekly `exhaustive` test; the gate runs the rules at their
+//! edges and the delivery over the first eight trials.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -3831,14 +3844,18 @@ struct Composer {
     synapses: Vec<Replayed>,
     cursor: u32,
     out: Vec<Composed>,
-    /// The taught delivery as the oracle replays it (brief 036): the pair the last trial's
-    /// delivery addressed and the signal its reward left, so that the oracle consolidates
-    /// where and by as much as the engine does; none in a frozen run, where nothing
-    /// consolidates and the weights are held to the record as they were.
+    /// The delivery as the oracle replays it (brief 036; the task's own since brief 037): the
+    /// pair the last trial's delivery addressed and the signal its reward left, so that the
+    /// oracle consolidates where and by as much as the engine does; none in a frozen run,
+    /// where nothing consolidates and the weights are held to the record as they were.
     taught: Option<Taught>,
     /// What each trial consolidated into the weights, `[stimulus][readout]`, by the oracle
     /// (brief 036); zero in a frozen run.
     transferred: Vec<[[i64; 2]; 2]>,
+    /// The reward the task itself delivered at the trial's end, before the reading
+    /// (brief 037): the record's signal at the reading is the course's end plus it. Zero
+    /// where the harness rewards after the reading (brief 036) or nothing rewards.
+    rewarded: i32,
 }
 
 impl Composer {
@@ -3857,6 +3874,7 @@ impl Composer {
             out: Vec::new(),
             taught: None,
             transferred: Vec::new(),
+            rewarded: 0,
         }
     }
 
@@ -4076,12 +4094,13 @@ impl Composer {
             let into = &mut sums[syn.stimulus][syn.readout];
             *into = into.saturating_add(i64::from(e));
         }
-        // The signal at the trial's end, held to its course (brief 036); at rest in a frozen
-        // run.
+        // The signal at the trial's end, held to its course (brief 036), plus the reward the
+        // task itself delivered before this reading (brief 037; zero otherwise); at rest in
+        // a frozen run.
         let end_signal = course.as_ref().map_or(0, |c| signal_end(c));
         assert_eq!(
             exec.modulator().dopamine_rpe,
-            end_signal,
+            end_signal.saturating_add(self.rewarded),
             "trial {trial}: the record's signal at the trial's end is the course's"
         );
         self.transferred.push(transferred);
@@ -9120,10 +9139,11 @@ fn consolidated(trace: i16, magnitude: i32, modulation_q16: i32) -> (i16, i32, i
     (trace.saturating_sub(absorbed) as i16, after, absorbed)
 }
 
-/// The taught delivery as the oracle replays it (brief 036): the pair the last trial's
-/// delivery addressed — the stimulus presented and its assigned readout — and the signal that
-/// delivery's reward left, which is the signal at the next trial's first tick; before the
-/// first delivery none and zero.
+/// The delivery as the oracle replays it (brief 036): the pair the last trial's delivery
+/// addressed — the stimulus presented and its assigned readout under the taught delivery,
+/// the readout the engine selected under the task's own (brief 037), none at a tie — and the
+/// signal that delivery's reward left, which is the signal at the next trial's first tick;
+/// before the first delivery none and zero.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Taught {
     addressed: Option<(usize, usize)>,
@@ -11001,4 +11021,826 @@ fn the_first_eight_trials_of_the_taught_delivery_at_1024_units_and_the_rules_ove
             }
         }
     }
+}
+
+// ------------------------------------------------ written before the run (brief 037)
+
+/// H-14's run (ADR-0080): three of the instrument's runs, twenty-four blocks, the length
+/// derived from H-13's blocks before any run and not this round's to move.
+const REINFORCED_TRIALS: usize = 3 * TRIALS;
+const _: () = assert!(REINFORCED_TRIALS == 1_536 && REINFORCED_TRIALS / BLOCK == 24);
+/// The arms of H-14 (ADR-0080), in the order run and no other, every one `Delivery::Addressed`
+/// from the one image — the task as ADR-0059 and ADR-0068 built it, the reward reaching the
+/// synapses from the presented stimulus onto the readout the engine selected: the assignment
+/// (`Feedback::Answer`, A's answer readout 0 and B's readout 1), the mirrored assignment
+/// (`Feedback::Answer`, `mirrored`), and the shuffled reward (`Feedback::Shuffled`, the
+/// reward's sign a coin the stimulus does not read), a reading of lock-in and no clause.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Earned {
+    Assignment,
+    Mirrored,
+    Shuffled,
+}
+const EARNED_ARMS: [Earned; 3] = [Earned::Assignment, Earned::Mirrored, Earned::Shuffled];
+/// The rewarded arms in `EARNED_ARMS`'s order, the criterion's `[assignment, mirrored]`.
+const EARNED_REWARDED: [Earned; 2] = [Earned::Assignment, Earned::Mirrored];
+/// ADR-0080's prediction, a Hypothesis written before the run: H-14 is yes.
+const REINFORCED_PREDICTED: bool = true;
+/// ADR-0080's Hypothesis for the course, from arithmetic on H-13's blocks and not held to
+/// the run: the selection passes `CROSSING_MARK` per block (40 of 64, the criterion's rate
+/// over one block) by about trial `CROSSING_PREDICTED_BY_TRIAL` in both assignments, the
+/// mirrored first. Read beside the run, never asserted.
+const CROSSING_MARK: u32 = OFFSET_MARK_64;
+const _: () = assert!(CROSSING_MARK == 40);
+const CROSSING_PREDICTED_BY_TRIAL: usize = 900;
+const MIRRORED_CROSSES_FIRST_PREDICTED: bool = true;
+const _: () = assert!(REINFORCED_PREDICTED && MIRRORED_CROSSES_FIRST_PREDICTED);
+const _: () = assert!(CROSSING_PREDICTED_BY_TRIAL < REINFORCED_TRIALS - LAST_BLOCKS * BLOCK);
+/// The four stimulus–readout pairs, `(stimulus, readout)`: the shuffled arm's reach, since a
+/// reward without information addresses whichever readout the engine selected.
+const ALL_PAIRS: [(usize, usize); 4] = [(0, 0), (0, 1), (1, 0), (1, 1)];
+
+// ------------------------------------------------------------- the readings (brief 037)
+
+/// One trial's reading under an arm (brief 037): the stimulus presented; the readouts'
+/// counts in the task's window, as the task read them; the selection; whether it was
+/// correct (the stimulus's answer; a tie is not); the reward the task delivered, signed; the
+/// trace consolidated into the weights over the trial, `[stimulus][readout]`, by the oracle;
+/// and the dopamine signal at the trial's end, before the reward, and after it.
+type EarnedTrial = (u8, [u32; 2], Option<u8>, bool, i32, [[i64; 2]; 2], i32, i32);
+
+/// One block of an arm (brief 037): the selections per stimulus, `[stimulus][readout 0,
+/// readout 1, tie]`; the positive rewards; the trace consolidated into the weights over the
+/// block, `[stimulus][readout]`; and the signal at the block's last trial's end and after
+/// its reward.
+type EarnedBlock = ([[u32; 3]; 2], u32, [[i64; 2]; 2], i32, i32);
+
+/// Where an arm's reward takes its sign from: the answer, or the shuffled coin.
+fn feedback_of(arm: Earned) -> Feedback {
+    if arm == Earned::Shuffled {
+        Feedback::Shuffled
+    } else {
+        Feedback::Answer
+    }
+}
+
+/// Whether an arm mirrors the assignment.
+fn earned_mirrors(arm: Earned) -> bool {
+    arm == Earned::Mirrored
+}
+
+/// True for an arm whose reward carries the answer, the criterion's two.
+fn answers(arm: Earned) -> bool {
+    arm != Earned::Shuffled
+}
+
+/// The pairs an arm's delivery can reach: the two answer pairs where the reward carries the
+/// answer — ADR-0080's derivation, a wrong selection's pair spending the next trial under a
+/// signal below zero and consolidating nothing — and all four under the shuffled reward.
+fn reachable_pairs(arm: Earned) -> Vec<(usize, usize)> {
+    if answers(arm) {
+        assigned_pairs(earned_mirrors(arm)).to_vec()
+    } else {
+        ALL_PAIRS.to_vec()
+    }
+}
+
+/// The selections per stimulus over `read`: to readout 0, to readout 1, and the ties.
+fn splits(read: &[EarnedTrial]) -> [[u32; 3]; 2] {
+    let mut out = [[0u32; 3]; 2];
+    for t in read {
+        let into = &mut out[usize::from(t.0)][t.2.map_or(2, usize::from)];
+        *into = into.saturating_add(1);
+    }
+    out
+}
+
+/// The selections per stimulus over the last `LAST_BLOCKS` blocks, the criterion's window.
+fn last_splits(read: &[EarnedTrial]) -> [[u32; 3]; 2] {
+    let from = read.len().saturating_sub(LAST_BLOCKS.saturating_mul(BLOCK));
+    splits(read.get(from..).unwrap_or(&[]))
+}
+
+/// An arm's blocks from its trials, `BLOCK` trials each: the splits, the positive rewards,
+/// the consolidation summed and the last trial's signals.
+fn earned_blocks(read: &[EarnedTrial]) -> Vec<EarnedBlock> {
+    read.chunks(BLOCK)
+        .map(|mine| {
+            let mut positive = 0u32;
+            let mut transferred = [[0i64; 2]; 2];
+            for t in mine {
+                positive = positive.saturating_add(u32::from(t.4 > 0));
+                for (s, readouts) in t.5.iter().enumerate() {
+                    for (k, &amount) in readouts.iter().enumerate() {
+                        transferred[s][k] = transferred[s][k].saturating_add(amount);
+                    }
+                }
+            }
+            let last = mine.last().expect("a block holds a trial");
+            (splits(mine), positive, transferred, last.6, last.7)
+        })
+        .collect()
+}
+
+/// Where the selection first passes `CROSSING_MARK` per block, as the trial at that block's
+/// end; none when no block does.
+fn crossing(blocks: &[Block]) -> Option<usize> {
+    blocks
+        .iter()
+        .position(|b| b.0 >= CROSSING_MARK)
+        .map(|k| k.saturating_add(1).saturating_mul(BLOCK))
+}
+
+/// The lock-in reading (ADR-0080): per stimulus, the shuffled arm goes to one readout over
+/// the last 128 trials as often as a rewarded arm goes to that stimulus's answer — the larger
+/// of its two readouts' counts at least the smaller of the two rewarded arms' correct counts
+/// for the stimulus (the same trials present the same stimuli in every arm). A reading, not a
+/// clause.
+fn locked_in(shuffled: [[u32; 3]; 2], rewarded: [[[u32; 3]; 2]; 2]) -> [bool; 2] {
+    let mut out = [false; 2];
+    for (s, into) in out.iter_mut().enumerate() {
+        let dominant = shuffled[s][0].max(shuffled[s][1]);
+        let answered = EARNED_REWARDED
+            .iter()
+            .zip(rewarded.iter())
+            .map(|(&arm, split)| split[s][answer_of(s as u8, earned_mirrors(arm))])
+            .min()
+            .unwrap_or(0);
+        *into = dominant >= answered;
+    }
+    out
+}
+
+/// ADR-0080's derivation read over an arm's trials, clause by clause: the signal at every
+/// trial's end at most the fixed point's (`SIGNAL_END_FIXED_Q16`, 0.712); after every
+/// negative reward the signal below zero; and nothing consolidated in the trial after a
+/// negative reward, the addressed pair — a wrong selection's, or none at a tie — spending
+/// it under a signal below zero. Every clause true on every arm is the assertion; a false
+/// one is a finding against the derivation, reported beside the verdict.
+fn derivation(read: &[EarnedTrial]) -> [bool; 3] {
+    let bounded = read.iter().all(|t| t.6 <= SIGNAL_END_FIXED_Q16);
+    let negative = read.iter().filter(|t| t.4 < 0).all(|t| t.7 < 0);
+    let nothing = read
+        .windows(2)
+        .filter(|w| w[0].4 < 0)
+        .all(|w| w[1].5 == [[0; 2]; 2]);
+    [bounded, negative, nothing]
+}
+
+// ------------------------------------------------------------ the criterion (brief 037)
+
+/// H-14's criterion (ADR-0080), per rewarded arm `[assignment, mirrored]`: the correct
+/// selections over the last `LAST_BLOCKS` blocks at least `REWARDED_MIN` — `last_correct`,
+/// ADR-0066's rule over the same shape, the task counting a trial correct only when the
+/// selection is the stimulus's answer, a tie not. `yes` is both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Reinforced {
+    correct: [bool; 2],
+    yes: bool,
+}
+
+fn reinforced(arms: [&[Block]; 2]) -> Reinforced {
+    let correct = [
+        last_correct(arms[0]) >= REWARDED_MIN,
+        last_correct(arms[1]) >= REWARDED_MIN,
+    ];
+    Reinforced {
+        correct,
+        yes: correct[0] && correct[1],
+    }
+}
+
+// ---------------------------------------------------------------- the run (brief 037)
+
+/// An arm's run: the blocks, the accuracy-sequence trace, the composed trials, every trial's
+/// reading and the volley-tick census over the run.
+type EarnedRun = (Vec<Block>, u64, Vec<Composed>, Vec<EarnedTrial>, Vec<u64>);
+
+/// The FNV-1a hash of every trial's reading, each number as its `i32` words.
+fn earned_hash(read: &[EarnedTrial]) -> u64 {
+    let mut words: Vec<i32> = Vec::new();
+    let mut wide = |x: i64| {
+        words.push(x as i32);
+        words.push((x >> 32) as i32);
+    };
+    for t in read {
+        wide(i64::from(t.0));
+        wide(i64::from(t.1[0]));
+        wide(i64::from(t.1[1]));
+        wide(t.2.map_or(3, i64::from));
+        wide(i64::from(t.3));
+        wide(i64::from(t.4));
+        for readouts in &t.5 {
+            for &amount in readouts {
+                wide(amount);
+            }
+        }
+        wide(i64::from(t.6));
+        wide(i64::from(t.7));
+    }
+    fnv1a_64(&words)
+}
+
+/// An arm's run from the frozen engine (brief 037): `trials` trials of the calibration's task
+/// with ADR-0076's stimulus, `Delivery::Addressed` and the arm's feedback — the task itself
+/// writing the addressed set after every trial to the presented stimulus's units onto the
+/// selected readout's units, none at a tie, and delivering the reward, `REWARD_Q16` signed by
+/// the outcome or by the coin — the composer seeded from the record and replaying the
+/// consolidation under the pair the task addressed and the signal its reward left. At every
+/// trial the record's traces and weights are held to the oracle and the record's signal, read
+/// after the task's reward, to the course's end plus that reward; the task's contract is
+/// asserted trial by trial — the selection the sign of the count difference, correct the
+/// answer and a tie not, the reward's sign the outcome's, the addressed set the presented
+/// stimulus onto the selected readout, the signal the task read the record's. Nothing of
+/// ADR-0080's derivation is asserted here: it is read after the run (`derivation`) so that a
+/// failure is reported beside the verdict and not in place of it.
+fn earned_run(exec: &mut Engine, arm: Earned, units: u32, trials: usize) -> EarnedRun {
+    assert_eq!(
+        units, 1024,
+        "the cancel and the synapse counts below are pinned at 1 024 units"
+    );
+    assert_eq!(
+        exec.modulation_baseline_q16(),
+        0,
+        "the baseline is the image's zero"
+    );
+    assert_eq!(
+        exec.modulator().dopamine_rpe,
+        0,
+        "the signal is at rest before the first trial"
+    );
+    let sets = geometry(units, rotation(units));
+    let mut composer = Composer::new(units);
+    composer.enumerate(exec);
+    composer.cursor = exec.ticks() as u32;
+    composer.taught = Some(Taught {
+        addressed: None,
+        signal: 0,
+    });
+    let mirrored = earned_mirrors(arm);
+    let feedback = feedback_of(arm);
+    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
+    let task = task(
+        SHAPE_F46,
+        Some(cancel_of(picked)),
+        units,
+        feedback,
+        mirrored,
+        Delivery::Addressed,
+    );
+    // The task is `Copy`: a copy reads the coin the run's own task drew.
+    let probe = task;
+    let mut read: Vec<EarnedTrial> = Vec::with_capacity(trials);
+    let (blocks, trace) = run_on(
+        exec,
+        task,
+        units,
+        trials,
+        &mut |exec, trial, start, outcome| {
+            // The task rewarded at the trial's end, before this reading: the oracle holds the
+            // record's signal to the course's end plus it.
+            composer.rewarded = outcome.reward_q16;
+            composer.observe(exec, trial, start, outcome);
+            assert_eq!(
+                outcome.selection,
+                selected(outcome.counts),
+                "trial {trial}: the selection is the sign of the count difference"
+            );
+            let answer = answer_of(outcome.stimulus, mirrored) as u8;
+            assert_eq!(
+                outcome.correct,
+                outcome.selection == Some(answer),
+                "trial {trial}: correct is the answer, a tie not"
+            );
+            let positive = match feedback {
+                Feedback::Answer => outcome.correct,
+                Feedback::Shuffled => probe.coin_at(trial as u64),
+                Feedback::Withheld => unreachable!("every arm of H-14 rewards"),
+            };
+            let expected = if positive {
+                REWARD_Q16
+            } else {
+                REWARD_Q16.saturating_neg()
+            };
+            assert_eq!(
+                outcome.reward_q16, expected,
+                "trial {trial}: the reward's sign is the outcome's"
+            );
+            let stimulus = usize::from(outcome.stimulus);
+            let targets = outcome
+                .selection
+                .map_or(0, |r| readout_set(&sets, usize::from(r)).len() as usize);
+            assert_eq!(
+                exec.addressed_counts(),
+                (sets[stimulus].len() as usize, targets),
+                "trial {trial}: the addressed set is the presented stimulus onto the selected readout, onto none at a tie"
+            );
+            let after = exec.modulator().dopamine_rpe;
+            assert_eq!(
+                outcome.signal_q16, after,
+                "trial {trial}: the task read the signal after its reward"
+            );
+            let end = after.saturating_sub(outcome.reward_q16);
+            let transferred = composer.transferred.last().copied().unwrap_or([[0; 2]; 2]);
+            composer.taught = Some(Taught {
+                addressed: outcome.selection.map(|r| (stimulus, usize::from(r))),
+                signal: after,
+            });
+            read.push((
+                outcome.stimulus,
+                outcome.counts,
+                outcome.selection,
+                outcome.correct,
+                outcome.reward_q16,
+                transferred,
+                end,
+                after,
+            ));
+        },
+    );
+    assert_eq!(composer.out.len(), trials);
+    assert_eq!(composer.counts(), SYNAPSES_1024);
+    (blocks, trace, composer.out, read, composer.volley_ticks)
+}
+
+/// Dumps an arm's run: the sight's blocks and trace, the rows, the composition per block, the
+/// earned blocks, every trial's reading with its hash, the census, the crossing and the last
+/// blocks' splits.
+fn dump_earned(name: &str, run: &EarnedRun, earned: &[EarnedBlock]) {
+    let (blocks, trace, trials, read, volley_ticks) = run;
+    eprintln!(
+        "DUMP {name} sight {blocks:?} trace {trace:#018x} curve {:?}",
+        curve(blocks)
+    );
+    let rows: Vec<Row> = trials.iter().map(trial_row).collect();
+    eprintln!("DUMP {name} rows {rows:?}");
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    eprintln!("DUMP {name} compositions {compositions:?}");
+    eprintln!("DUMP {name} earned {earned:?}");
+    eprintln!("DUMP {name} read {read:?} hash {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} census {:?}", census_of(volley_ticks));
+    eprintln!(
+        "DUMP {name} crossing {:?} last splits {:?} last correct {}",
+        crossing(blocks),
+        last_splits(read),
+        last_correct(blocks)
+    );
+}
+
+/// Holds an arm's run to its pinned tables: the blocks and the trace, the composition per
+/// block, the earned blocks, the readings' hash and the census.
+fn pinned_earned(name: &str, k: usize, run: &EarnedRun, earned: &[EarnedBlock]) {
+    let (blocks, trace, trials, read, volley_ticks) = run;
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        REINFORCED_BLOCKS_1024[k],
+        REINFORCED_TRACES_1024[k],
+    );
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    assert_eq!(
+        compositions.as_slice(),
+        REINFORCED_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned, REINFORCED_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        REINFORCED_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        REINFORCED_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+}
+
+/// H-14 at 1 024 units (brief 037): the settled image, held to ADR-0077 step by step; the
+/// calibration — a frozen block from the image, the reward withheld, held to ADR-0077's
+/// frozen run — before any rewarded run (H-14's stopping rule, step 2); then the assignment,
+/// the mirrored assignment and the shuffled reward, each `REINFORCED_TRIALS` trials from the
+/// one image under the task's own delivery, each dumped and the verdict computed by the rules
+/// before anything is held; then the assertion — every synapse outside the pairs the arm's
+/// delivery can reach as the image holds it, bit for bit, a synapse inside moved, ADR-0080's
+/// derivation true on every arm and the wrong pairs' couplings the image's in every block of
+/// the rewarded arms — and the pinned tables.
+#[test]
+#[ignore]
+fn the_reinforced_form_at_1024_units_exhaustive() {
+    let name = "reinforced1024";
+    let image = settled_image(name);
+    {
+        let mut frozen = frozen_from(&image, 1024);
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+        eprintln!("DUMP {name} calibration holds: ADR-0077's settled candidate reproduced");
+    }
+    let sets = geometry(1024, ROTATION_1024);
+    let mut runs: Vec<EarnedRun> = Vec::with_capacity(EARNED_ARMS.len());
+    let mut reaches = [(0u64, 0u64); 3];
+    for (k, &arm) in EARNED_ARMS.iter().enumerate() {
+        let arm_name = format!("{name} {arm:?}");
+        let mut exec = frozen_from(&image, 1024);
+        let before = weights_of(&exec);
+        let couplings_before = [
+            [
+                coupling(&exec, sets[0], sets[2]),
+                coupling(&exec, sets[0], sets[3]),
+            ],
+            [
+                coupling(&exec, sets[1], sets[2]),
+                coupling(&exec, sets[1], sets[3]),
+            ],
+        ];
+        assert_eq!(
+            couplings_before, IMAGE_COUPLINGS_1024,
+            "{arm_name}: the same image"
+        );
+        let run = earned_run(&mut exec, arm, 1024, REINFORCED_TRIALS);
+        let (inside, outside) = reach(&exec, &before, 1024, &reachable_pairs(arm));
+        eprintln!(
+            "DUMP {arm_name} reach inside {inside} outside {outside} signal after the run {:#x}",
+            exec.modulator().dopamine_rpe
+        );
+        reaches[k] = (inside, outside);
+        runs.push(run);
+    }
+    // Every arm dumped and the verdict computed before anything is held.
+    let mut tables: Vec<Vec<EarnedBlock>> = Vec::with_capacity(EARNED_ARMS.len());
+    for (k, &arm) in EARNED_ARMS.iter().enumerate() {
+        let earned = earned_blocks(&runs[k].3);
+        dump_earned(&format!("{name} {arm:?}"), &runs[k], &earned);
+        tables.push(earned);
+    }
+    let verdict = reinforced([&runs[0].0, &runs[1].0]);
+    let last = [
+        last_splits(&runs[0].3),
+        last_splits(&runs[1].3),
+        last_splits(&runs[2].3),
+    ];
+    let locked = locked_in(last[2], [last[0], last[1]]);
+    let crossed = [
+        crossing(&runs[0].0),
+        crossing(&runs[1].0),
+        crossing(&runs[2].0),
+    ];
+    let derivations = [
+        derivation(&runs[0].3),
+        derivation(&runs[1].3),
+        derivation(&runs[2].3),
+    ];
+    eprintln!(
+        "DUMP {name} verdict {verdict:?} predicted {REINFORCED_PREDICTED} correct last {:?} crossed {crossed:?} predicted by {CROSSING_PREDICTED_BY_TRIAL} mirrored first {MIRRORED_CROSSES_FIRST_PREDICTED} splits last {last:?} locked {locked:?} derivation {derivations:?} reach {reaches:?}",
+        [last_correct(&runs[0].0), last_correct(&runs[1].0)]
+    );
+    // The assertion (ADR-0080's derivation), after the verdict and beside it.
+    for (k, &arm) in EARNED_ARMS.iter().enumerate() {
+        assert_eq!(
+            reaches[k].1, 0,
+            "{arm:?}: every synapse outside the pairs the delivery can reach is the image's"
+        );
+        assert!(reaches[k].0 > 0, "{arm:?}: the delivery reached a synapse");
+        assert_eq!(derivations[k], [true; 3], "{arm:?}: ADR-0080's derivation");
+        if answers(arm) {
+            let pairs = assigned_pairs(earned_mirrors(arm));
+            for (j, block) in runs[k].0.iter().enumerate() {
+                for &(s, r) in &ALL_PAIRS {
+                    if !pairs.contains(&(s, r)) {
+                        assert_eq!(
+                            block.10[s][r], IMAGE_COUPLINGS_1024[s][r],
+                            "{arm:?} block {j}: the wrong pair {s}→{r} is the image's"
+                        );
+                        assert_eq!(tables[k][j].2[s][r], 0);
+                    }
+                }
+            }
+        }
+    }
+    for (k, &arm) in EARNED_ARMS.iter().enumerate() {
+        pinned_earned(&format!("{name} {arm:?}"), k, &runs[k], &tables[k]);
+    }
+    assert_eq!(verdict, REINFORCED_1024, "the verdict as written");
+    assert_eq!(
+        [last_correct(&runs[0].0), last_correct(&runs[1].0)],
+        CORRECT_LAST_1024
+    );
+    assert_eq!(crossed, CROSSED_1024);
+    assert_eq!(last, SPLITS_LAST_1024);
+    assert_eq!(locked, LOCKED_1024);
+    assert_eq!(reaches, REINFORCED_REACH_1024);
+    assert_eq!(derivations, DERIVATION_1024);
+}
+
+// ----------------------------------------------------------- the measurement (brief 037)
+
+/// The three arms at 1 024 units, in `EARNED_ARMS`'s order, each pinned from one run: the
+/// sight's blocks and trace, the composition per block, the earned blocks, the readings' hash
+/// and the volley's census.
+const REINFORCED_BLOCKS_1024: [&[Block]; 3] = [&[], &[], &[]];
+const REINFORCED_TRACES_1024: [u64; 3] = [0; 3];
+const REINFORCED_COMPOSITIONS_1024: [&[Composition]; 3] = [&[], &[], &[]];
+const REINFORCED_EARNED_1024: [&[EarnedBlock]; 3] = [&[], &[], &[]];
+const REINFORCED_READ_1024: [u64; 3] = [0; 3];
+const REINFORCED_CENSUS_1024: [&[(u32, u64)]; 3] = [&[], &[], &[]];
+/// The verdict, as the rules compute it over the pinned tables; written from the run.
+const REINFORCED_1024: Reinforced = Reinforced {
+    correct: [false, false],
+    yes: false,
+};
+/// The correct selections over the last 128 trials, per rewarded arm, against `REWARDED_MIN`.
+const CORRECT_LAST_1024: [u32; 2] = [0; 2];
+/// Where each arm's selection first passed 40 of 64 per block, as read, beside ADR-0080's
+/// estimate of about trial 900, the mirrored first.
+const CROSSED_1024: [Option<usize>; 3] = [None; 3];
+/// The selections per stimulus over the last 128 trials, per arm, `[stimulus][readout 0,
+/// readout 1, tie]`.
+const SPLITS_LAST_1024: [[[u32; 3]; 2]; 3] = [[[0; 3]; 2]; 3];
+/// The lock-in reading of the shuffled arm, per stimulus.
+const LOCKED_1024: [bool; 2] = [false; 2];
+/// The reach of each arm's delivery, `(inside the pairs it can reach, outside)`.
+const REINFORCED_REACH_1024: [(u64, u64); 3] = [(0, 0); 3];
+/// ADR-0080's derivation as read on each arm, clause by clause.
+const DERIVATION_1024: [[bool; 3]; 3] = [[false; 3]; 3];
+
+/// The gate's test (ADR-0061's class; brief 037): the arms, their feedback and their pairs;
+/// the criterion's rule at its edges over tables written by hand — 80 and 79 of the last
+/// 128, one arm failing, an arm of no block; the readings' rules (the crossing, the splits,
+/// the earned blocks, the lock-in, the derivation) over trials written by hand; and the
+/// task's own delivery over the first `GATE_TRIALS` trials on the instrument's network at
+/// 1 024 units with the baseline at zero — the record's traces, weights and signal held to
+/// the oracle at every trial, every synapse outside the answer pairs (the wrong pairs among
+/// them) unmoved bit for bit, the derivation true, a synapse inside moved. No whole run, and
+/// nothing else added to the gate. The settled network's lead-in of ninety-six windows is the
+/// weekly test's; the rules the derivation rests on read the same on any network with the
+/// baseline at zero.
+#[test]
+fn the_first_eight_trials_of_the_reinforced_form_at_1024_units_and_the_rules_over_their_tables() {
+    // The arms, their feedback and their pairs.
+    assert_eq!(EARNED_REWARDED, [EARNED_ARMS[0], EARNED_ARMS[1]]);
+    assert_eq!(feedback_of(Earned::Assignment), Feedback::Answer);
+    assert_eq!(feedback_of(Earned::Mirrored), Feedback::Answer);
+    assert_eq!(feedback_of(Earned::Shuffled), Feedback::Shuffled);
+    assert!(
+        !earned_mirrors(Earned::Assignment)
+            && earned_mirrors(Earned::Mirrored)
+            && !earned_mirrors(Earned::Shuffled)
+    );
+    assert!(answers(Earned::Assignment) && answers(Earned::Mirrored) && !answers(Earned::Shuffled));
+    assert_eq!(reachable_pairs(Earned::Assignment), vec![(0, 0), (1, 1)]);
+    assert_eq!(reachable_pairs(Earned::Mirrored), vec![(0, 1), (1, 0)]);
+    assert_eq!(reachable_pairs(Earned::Shuffled), ALL_PAIRS.to_vec());
+    assert_eq!(REINFORCED_TRIALS, 3 * TRIALS);
+    assert_eq!(REINFORCED_TRIALS / BLOCK, 24);
+    assert_eq!(CROSSING_MARK, REWARDED_MIN / LAST_BLOCKS as u32);
+    // The criterion at its edges over tables written by hand: 80 and 79 of the last 128,
+    // one arm failing, an arm of no block.
+    let block_with = |correct: u32| -> Block {
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            0,
+            0,
+            [[0; 2]; 2],
+            0,
+        )
+    };
+    let blocks_with = |last: [u32; 2]| -> Vec<Block> {
+        let mut v = vec![block_with(0); 6];
+        v.push(block_with(last[0]));
+        v.push(block_with(last[1]));
+        v
+    };
+    let eighty = blocks_with([40, 40]);
+    let seventy_nine = blocks_with([40, 39]);
+    assert_eq!(last_correct(&eighty), REWARDED_MIN);
+    assert_eq!(last_correct(&seventy_nine), REWARDED_MIN - 1);
+    assert_eq!(
+        reinforced([&eighty, &eighty]),
+        Reinforced {
+            correct: [true, true],
+            yes: true
+        }
+    );
+    assert_eq!(
+        reinforced([&seventy_nine, &eighty]),
+        Reinforced {
+            correct: [false, true],
+            yes: false
+        },
+        "79 of the last 128 fails the assignment"
+    );
+    assert_eq!(
+        reinforced([&eighty, &seventy_nine]),
+        Reinforced {
+            correct: [true, false],
+            yes: false
+        },
+        "and the mirrored arm"
+    );
+    assert_eq!(
+        reinforced([&[], &eighty]),
+        Reinforced {
+            correct: [false, true],
+            yes: false
+        },
+        "an arm of no block"
+    );
+    // The crossing.
+    assert_eq!(crossing(&[]), None);
+    assert_eq!(crossing(&blocks_with([39, 39])), None);
+    assert_eq!(crossing(&[block_with(40)]), Some(BLOCK));
+    assert_eq!(
+        crossing(&[block_with(39), block_with(40), block_with(64)]),
+        Some(2 * BLOCK)
+    );
+    assert_eq!(crossing(&blocks_with([40, 39])), Some(7 * BLOCK));
+    // The splits, the earned blocks and the lock-in over trials written by hand.
+    let trial = |stimulus: u8, selection: Option<u8>, reward: i32| -> EarnedTrial {
+        let correct = selection == Some(stimulus);
+        (
+            stimulus,
+            [0; 2],
+            selection,
+            correct,
+            reward,
+            [[0; 2]; 2],
+            0,
+            reward,
+        )
+    };
+    assert_eq!(splits(&[]), [[0; 3]; 2]);
+    assert_eq!(
+        splits(&[
+            trial(0, Some(0), ONE),
+            trial(0, Some(1), -ONE),
+            trial(0, None, -ONE),
+            trial(1, Some(1), ONE),
+        ]),
+        [[1, 1, 1], [0, 1, 0]]
+    );
+    let mut three_blocks: Vec<EarnedTrial> = Vec::with_capacity(3 * BLOCK);
+    for k in 0..3 * BLOCK {
+        let stimulus = (k % 2) as u8;
+        let selection = if k < BLOCK {
+            Some(stimulus ^ 1)
+        } else {
+            Some(stimulus)
+        };
+        three_blocks.push(trial(
+            stimulus,
+            selection,
+            if k < BLOCK { -ONE } else { ONE },
+        ));
+    }
+    assert_eq!(
+        last_splits(&three_blocks),
+        [[64, 0, 0], [0, 64, 0]],
+        "the first block is outside the last 128"
+    );
+    assert_eq!(
+        last_splits(&three_blocks[..BLOCK]),
+        [[0, 32, 0], [32, 0, 0]]
+    );
+    assert_eq!(last_splits(&[]), [[0; 3]; 2]);
+    let mut with_transfer = three_blocks.clone();
+    with_transfer[BLOCK].5 = [[1, 2], [3, 4]];
+    with_transfer[BLOCK + 1].5 = [[10, 20], [30, 40]];
+    with_transfer[2 * BLOCK - 1].6 = 7;
+    with_transfer[2 * BLOCK - 1].7 = 8;
+    let earned = earned_blocks(&with_transfer);
+    assert_eq!(earned.len(), 3);
+    assert_eq!(
+        earned[0],
+        ([[0, 32, 0], [32, 0, 0]], 0, [[0; 2]; 2], 0, -ONE)
+    );
+    assert_eq!(
+        earned[1],
+        ([[32, 0, 0], [0, 32, 0]], 64, [[11, 22], [33, 44]], 7, 8),
+        "the splits, the positive rewards, the transfer summed, the last trial's signals"
+    );
+    assert_eq!(
+        earned[2],
+        ([[32, 0, 0], [0, 32, 0]], 64, [[0; 2]; 2], 0, ONE)
+    );
+    assert_eq!(earned_blocks(&[]), Vec::<EarnedBlock>::new());
+    let rewarded = [[[45, 5, 0], [5, 45, 0]], [[5, 45, 0], [45, 5, 0]]];
+    assert_eq!(
+        locked_in([[40, 10, 0], [5, 45, 0]], rewarded),
+        [false, true],
+        "A at 40 of 50 is under the rewarded arms' 45; B at 45 is as often"
+    );
+    assert_eq!(locked_in([[46, 4, 0], [46, 4, 0]], rewarded), [true, true]);
+    assert_eq!(
+        locked_in([[44, 0, 6], [0, 44, 6]], rewarded),
+        [false, false],
+        "a tie goes to no readout"
+    );
+    assert_eq!(
+        locked_in(
+            [[45, 5, 0], [0, 0, 0]],
+            [[[45, 5, 0], [0, 0, 0]], [[5, 46, 0], [0, 0, 0]]]
+        ),
+        [true, true],
+        "the smaller of the two rewarded arms' counts"
+    );
+    // The derivation's rule over trials written by hand.
+    assert_eq!(derivation(&[]), [true; 3]);
+    let mut course = vec![
+        trial(0, Some(0), ONE),
+        trial(1, Some(0), -ONE),
+        trial(1, Some(1), ONE),
+    ];
+    course[0].6 = 0;
+    course[0].7 = ONE;
+    course[1].6 = SIGNAL_END_FIRST_Q16;
+    course[1].7 = SIGNAL_END_FIRST_Q16 - ONE;
+    course[2].6 = -1;
+    course[2].7 = ONE - 1;
+    course[1].5 = [[5, 0], [0, 0]];
+    assert_eq!(
+        derivation(&course),
+        [true; 3],
+        "a transfer after a positive reward is not the clause's"
+    );
+    let mut over = course.clone();
+    over[1].6 = SIGNAL_END_FIXED_Q16 + 1;
+    assert_eq!(derivation(&over), [false, true, true]);
+    let mut still_positive = course.clone();
+    still_positive[1].7 = 0;
+    assert_eq!(derivation(&still_positive), [true, false, true]);
+    let mut moved = course.clone();
+    moved[2].5 = [[0, 0], [1, 0]];
+    assert_eq!(
+        derivation(&moved),
+        [true, true, false],
+        "a transfer in the trial after a negative reward"
+    );
+    // The task's own delivery over the first trials on the instrument's network at 1 024
+    // units with the baseline at zero: the oracle held at every trial inside `earned_run`;
+    // then the arena against the weights before, outside the answer pairs bit for bit and
+    // inside moved, and the derivation read over the trials.
+    let p = prior(1024);
+    let mut exec = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    let before = weights_of(&exec);
+    let run = earned_run(&mut exec, Earned::Assignment, 1024, GATE_TRIALS);
+    let (blocks, trace, trials, read, _) = &run;
+    assert!(blocks.is_empty(), "eight trials are no whole block");
+    assert_eq!(trials.len(), GATE_TRIALS);
+    eprintln!("DUMP reinforced1024 first eight trace {trace:#018x} read {read:?}");
+    let (inside, outside) = reach(&exec, &before, 1024, &assigned_pairs(false));
+    eprintln!("DUMP reinforced1024 first eight reach inside {inside} outside {outside}");
+    assert_eq!(
+        outside, 0,
+        "every synapse outside the answer pairs, the wrong pairs among them, is as it was"
+    );
+    assert!(inside > 0, "the delivery reached a synapse inside them");
+    assert_eq!(
+        derivation(read),
+        [true; 3],
+        "ADR-0080's derivation over the trials"
+    );
+    assert_eq!(
+        read[0].6, 0,
+        "the signal at the first trial's end is at rest"
+    );
+    assert_eq!(
+        read[0].5, [[0; 2]; 2],
+        "nothing consolidates before the first delivery"
+    );
+    assert!(
+        read.iter().all(|t| t.4.abs() == REWARD_Q16),
+        "every reward is 1.0 in magnitude"
+    );
+    assert!(
+        read.iter().all(|t| t.7 == t.6.saturating_add(t.4)),
+        "the signal after the reward is the end's plus it"
+    );
+    assert!(
+        read.iter()
+            .all(|t| t.3 == (t.2 == Some(answer_of(t.0, false) as u8))),
+        "correct is the answer, a tie not"
+    );
+    assert!(
+        read.iter().all(|t| (t.4 > 0) == t.3),
+        "the reward's sign is the outcome's"
+    );
+    assert!(
+        read.iter().any(|t| !t.3),
+        "a selection was wrong within eight trials"
+    );
+    assert!(
+        read.iter().all(|t| t.5[0][1] == 0 && t.5[1][0] == 0),
+        "nothing consolidates on the wrong pairs"
+    );
 }
