@@ -2850,6 +2850,12 @@ pub(crate) struct Composer {
     /// (brief 037): the record's signal at the reading is the course's end plus it. Zero
     /// where the harness rewards after the reading (brief 036) or nothing rewards.
     pub(crate) rewarded: i32,
+    /// The modulation baseline the engine consolidates under where a synapse is not
+    /// addressed, and beneath the signal where it is (brief 038): zero in every run before
+    /// it, so that the oracle consolidates nothing but the addressed pair under the signal,
+    /// and 0.5 under H-15, where every synapse consolidates half its trace at each
+    /// presynaptic spike.
+    pub(crate) baseline: i32,
 }
 
 impl Composer {
@@ -2869,6 +2875,7 @@ impl Composer {
             taught: None,
             transferred: Vec::new(),
             rewarded: 0,
+            baseline: 0,
         }
     }
 
@@ -2995,11 +3002,13 @@ impl Composer {
         // taught delivery (brief 036), the consolidation at that spike under the signal the
         // executor published at its tick where the synapse is addressed — its source in the
         // stimulus the last trial presented and its target in that stimulus's assigned
-        // readout — and under nothing otherwise, the baseline being zero.
+        // readout — and under the baseline alone otherwise (brief 038): zero in every run
+        // before it, 0.5 under H-15.
         let mut terms = [[[0i64; 4]; 2]; 2];
         let mut transferred = [[0i64; 2]; 2];
         let course = self.taught.as_ref().map(|t| signal_course(t.signal));
         let addressed = self.taught.as_ref().and_then(|t| t.addressed);
+        let baseline = self.baseline;
         let Self {
             synapses,
             spikes,
@@ -3054,7 +3063,7 @@ impl Composer {
                     // written at a trial's end, so the lead-in's spikes before the first
                     // trial, the only ones before `start` the oracle replays, are never
                     // addressed.
-                    let modulation = if addressed == Some((syn.stimulus, syn.readout)) {
+                    let signal = if addressed == Some((syn.stimulus, syn.readout)) {
                         course
                             .get(t.wrapping_sub(start) as usize)
                             .copied()
@@ -3062,6 +3071,11 @@ impl Composer {
                     } else {
                         0
                     };
+                    // The engine's rule (`Modulations::of`, `NeuromodulatorState::modulation`):
+                    // the baseline plus the signal where the synapse is addressed, the
+                    // baseline alone elsewhere, saturating; `consolidated` clamps it to
+                    // [0, 1] as the engine does.
+                    let modulation = baseline.saturating_add(signal);
                     let (trace, magnitude, absorbed) =
                         consolidated(syn.trace, syn.magnitude, modulation);
                     syn.trace = trace;
@@ -7533,12 +7547,13 @@ pub(crate) fn reach(
     (inside, outside)
 }
 
-/// The settled image (brief 036): ADR-0077's settled candidate built as `background_candidate`
-/// builds it, each step held to ADR-0077's pinned tables — the lead-in to its table and its
-/// length, the quiet run to its ticks and sums, the image's sums, gain and step carried — and
-/// its bytes, the one image every arm decodes. A mismatch stops the round here, before any
-/// rewarded run (H-13's stopping rule, step 2).
-pub(crate) fn settled_image(name: &str) -> Vec<u8> {
+/// The settled engine (brief 036; brief 038): ADR-0077's settled candidate built as
+/// `background_candidate` builds it, each step held to ADR-0077's pinned tables — the lead-in
+/// to its table and its length, the quiet run to its ticks and sums — and returned quiescent,
+/// the state an image is written from, with the sums the quiet run left. A mismatch stops the
+/// round here, before any rewarded run (H-13's stopping rule, step 2, and every rule after
+/// it).
+pub(crate) fn settled_engine(name: &str) -> (Engine, (i64, i64)) {
     let step = BACKGROUNDS[SETTLED];
     let mut exec = candidate(1024, step);
     assert_eq!(weights_by_polarity(&exec), PRIOR_SUMS_1024);
@@ -7566,7 +7581,14 @@ pub(crate) fn settled_image(name: &str) -> Vec<u8> {
         QUIET_1024[SETTLED],
         "{name}: the quiet run is ADR-0077's"
     );
-    let image = frozen_image(&exec);
+    (exec, quieted)
+}
+
+/// The settled engine's frozen image (brief 036): the modulator's baseline patched to zero,
+/// decoded and asserted to carry the sums the quiet run left, the gain and the step; the one
+/// image every arm of H-13 and H-14 decodes, and H-15's calibration.
+pub(crate) fn frozen_image_checked(name: &str, exec: &Engine, quieted: (i64, i64)) -> Vec<u8> {
+    let image = frozen_image(exec);
     let frozen = frozen_from(&image, 1024);
     assert_eq!(
         weights_by_polarity(&frozen),
@@ -7580,10 +7602,17 @@ pub(crate) fn settled_image(name: &str) -> Vec<u8> {
     );
     assert_eq!(
         frozen.homeostasis().control_step_q0_16,
-        step,
+        BACKGROUNDS[SETTLED],
         "{name}: and the step"
     );
     image
+}
+
+/// The settled image (brief 036): the settled engine's frozen image, its bytes, the one image
+/// every arm of H-13 and H-14 decodes.
+pub(crate) fn settled_image(name: &str) -> Vec<u8> {
+    let (exec, quieted) = settled_engine(name);
+    frozen_image_checked(name, &exec, quieted)
 }
 
 /// The calibration (brief 036): the withheld arm's first block held to ADR-0077's frozen run
@@ -8791,14 +8820,39 @@ pub(crate) fn earned_hash(read: &[EarnedTrial]) -> u64 {
 /// ADR-0080's derivation is asserted here: it is read after the run (`derivation`) so that a
 /// failure is reported beside the verdict and not in place of it.
 pub(crate) fn earned_run(exec: &mut Engine, arm: Earned, units: u32, trials: usize) -> EarnedRun {
+    earned_run_under(
+        exec,
+        feedback_of(arm),
+        earned_mirrors(arm),
+        units,
+        trials,
+        0,
+    )
+}
+
+/// `earned_run` under a feedback, an assignment and a modulation baseline (brief 038): H-14's
+/// arms pass their feedback and zero, the image's, and are the runs they were; H-15's pass
+/// theirs and 0.5, under which the oracle consolidates every stimulus–readout synapse under
+/// the baseline plus the signal where the synapse is addressed and under the baseline alone
+/// elsewhere (`Composer::baseline`); and under `Feedback::Withheld` the task delivers no
+/// reward and the signal stays at rest, asserted trial by trial, so every synapse consolidates
+/// under the baseline alone.
+pub(crate) fn earned_run_under(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+) -> EarnedRun {
     assert_eq!(
         units, 1024,
         "the cancel and the synapse counts below are pinned at 1 024 units"
     );
     assert_eq!(
         exec.modulation_baseline_q16(),
-        0,
-        "the baseline is the image's zero"
+        baseline_q16,
+        "the baseline is the image's"
     );
     assert_eq!(
         exec.modulator().dopamine_rpe,
@@ -8809,12 +8863,11 @@ pub(crate) fn earned_run(exec: &mut Engine, arm: Earned, units: u32, trials: usi
     let mut composer = Composer::new(units);
     composer.enumerate(exec);
     composer.cursor = exec.ticks() as u32;
+    composer.baseline = baseline_q16;
     composer.taught = Some(Taught {
         addressed: None,
         signal: 0,
     });
-    let mirrored = earned_mirrors(arm);
-    let feedback = feedback_of(arm);
     let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
     let task = task(
         SHAPE_F46,
@@ -8848,19 +8901,21 @@ pub(crate) fn earned_run(exec: &mut Engine, arm: Earned, units: u32, trials: usi
                 outcome.selection == Some(answer),
                 "trial {trial}: correct is the answer, a tie not"
             );
-            let positive = match feedback {
-                Feedback::Answer => outcome.correct,
-                Feedback::Shuffled => probe.coin_at(trial as u64),
-                Feedback::Withheld => unreachable!("every arm of H-14 rewards"),
+            let signed = |positive: bool| {
+                if positive {
+                    REWARD_Q16
+                } else {
+                    REWARD_Q16.saturating_neg()
+                }
             };
-            let expected = if positive {
-                REWARD_Q16
-            } else {
-                REWARD_Q16.saturating_neg()
+            let expected = match feedback {
+                Feedback::Answer => signed(outcome.correct),
+                Feedback::Shuffled => signed(probe.coin_at(trial as u64)),
+                Feedback::Withheld => 0,
             };
             assert_eq!(
                 outcome.reward_q16, expected,
-                "trial {trial}: the reward's sign is the outcome's"
+                "trial {trial}: the reward's sign is the outcome's, and none is withheld"
             );
             let stimulus = usize::from(outcome.stimulus);
             let targets = outcome
@@ -8876,6 +8931,12 @@ pub(crate) fn earned_run(exec: &mut Engine, arm: Earned, units: u32, trials: usi
                 outcome.signal_q16, after,
                 "trial {trial}: the task read the signal after its reward"
             );
+            if feedback == Feedback::Withheld {
+                assert_eq!(
+                    after, 0,
+                    "trial {trial}: the withheld arm's signal stays at rest"
+                );
+            }
             let end = after.saturating_sub(outcome.reward_q16);
             let transferred = composer.transferred.last().copied().unwrap_or([[0; 2]; 2]);
             composer.taught = Some(Taught {
