@@ -8862,6 +8862,14 @@ fn the_first_two_windows_of_the_settled_lead_in_at_1024_units_and_the_rules_over
         );
     }
     assert!(
+        SETTLED_AT_1024[0].is_some_and(|w| w as u64 > LEAD_IN_BOUND),
+        "the settled lead-in ran on past the eightieth window under the extended bound"
+    );
+    assert!(
+        SETTLED_AT_1024[1].is_some_and(|w| w as u64 <= LEAD_IN_BOUND),
+        "the controller's settled within the eightieth"
+    );
+    assert!(
         BACKGROUND_LEAD_IN_1024[0].iter().all(|w| w.5 == GAIN_1024),
         "the settled network's gain is held"
     );
