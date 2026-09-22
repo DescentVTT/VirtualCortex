@@ -77,4 +77,13 @@ Running the script to verify this change found a second defect. On a developer m
 
 - `scripts/exhaustive-shard.sh`, and the `weekly` job's comment and summary in `.github/workflows/ci.yml`.
 - Whitepaper §11: F-48, resolved here; F-45's row and Appendix B's line for the whole-domain tests read "tests" where they read "binaries".
-- The script run on the tree and the sharded job dispatched on this change's branch: in the evidence below.
+- **The script run on this tree** on a developer machine (Windows, Git Bash) at `1 48`, a shard holding one test. The first attempt's release build failed to link (`LNK1104`, the machine's known file lock); the script printed "the listing failed, so this shard cannot know its slice" and exited 1 — F-48's guard, read on the failure that found F-48. The second listed **48 tests in 5 binaries** — `cortex_core` 1, `everywhere` 1, `instrument` 28, `learning` 11, `reference` 7, the count ADR-0083's dispatch reported — took its one (`cortex-core`'s `exhaustive_the_efficacy_is_bounded_by_one_for_every_input`), ran it as `1 passed; … 88 filtered out`, checked 1 against the 1 it gave and wrote its row. At three shards the same listing deals `instrument` 10, 9 and 9, `learning` 3, 4 and 4, `reference` 3, 2 and 2, `cortex_core` to shard 1 and `everywhere` to shard 2; H-14's and H-15's tests, the two of about twenty minutes, both to shard 2.
+- **The sharded job dispatched on this change's branch** at `scope=exhaustive` — the diff is the exhaustive job's script, its comment and documents, [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s last clause — run [35743088690](https://github.com/DescentVTT/VirtualCortex/actions/runs/35743088690) at `abd6b00`: three shards, all green, every completeness check holding, **36 m 52 s, 30 m 40 s and 43 m 40 s** of their 120-minute bound, where ADR-0083's read 74 m 27 s, 12 m 39 s and 42 m 16 s. Their tables, each binary's share in seconds:
+
+  | Shard | `cortex_core` | `everywhere` | `instrument` | `learning` | `reference` | The shard's tests |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | 0 | — | — | 10 in 1 532 | 3 in 139 | 3 in 494 | **2 165 s**, 30 % |
+  | 1 | 1 in 2 | — | 9 in 1 071 | 4 in 359 | 2 in 371 | **1 803 s**, 25 % |
+  | 2 | — | 1 in 927 | 9 in 1 263 | 4 in 145 | 2 in 250 | **2 585 s**, 36 % |
+
+  The union is **48 tests**, the listing's count. The heaviest shard is the one holding both twenty-minute tests, as the round robin placed them, and it reads 36 per cent where `instrument` alone read 61. This runner read `reference` at 1 115 s over its three shares against ADR-0083's 1 296 and `learning` at 643 against 712, about 12 per cent faster; at ADR-0083's runner's speed the heaviest shard would read about 41 per cent, and at 1.66 times slower than this one — the spread ADR-0072 measured — about 60, inside the bound where `instrument` alone would have passed it.
