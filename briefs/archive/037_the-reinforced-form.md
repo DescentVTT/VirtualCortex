@@ -169,7 +169,7 @@ and the quoted sentences are what to re-derive.
   frozen run — the stimulus firing once, the sight 62, the sign 53. **A mismatch stops the round**: no
   rewarded run, a numbered finding in §11, and the ADR says what differed.
 - [x] **The constants commit**, preceding the first commit that holds a rewarded outcome: the criterion as an
-  **Done**: `bdb68c9` (the harness `earned_run`, the oracle's one field `Composer::rewarded`, the criterion `reinforced` over `last_correct`, the 1 536 trials, the arms `Earned` and their feedback, ADR-0080's prediction as constants, the assertion's shape `reachable_pairs` and `derivation`, the lock-in reading's shape `splits`, `last_splits` and `locked_in`, every constant restated, the gate) precedes `2a7c083`, the first commit that holds a rewarded outcome.
+  **Done**: `857fe23` on `main` (`bdb68c9` on the branch before the rebase that merged pull request #102; the harness `earned_run`, the oracle's one field `Composer::rewarded`, the criterion `reinforced` over `last_correct`, the 1 536 trials, the arms `Earned` and their feedback, ADR-0080's prediction as constants, the assertion's shape `reachable_pairs` and `derivation`, the lock-in reading's shape `splits`, `last_splits` and `locked_in`, every constant restated, the gate) precedes `96b57ca` (`2a7c083`), the first commit that holds a rewarded outcome.
   integer rule over the pinned-table shape (`last_correct` of each rewarded arm at least `REWARDED_MIN`, both
   arms), the 1 536 trials, the arms and their feedback, ADR-0080's prediction written as a constant, the
   assertion's shape, the lock-in reading's shape, and every constant of ADR-0065, ADR-0076, ADR-0077 and
@@ -204,7 +204,7 @@ and the quoted sentences are what to re-derive.
   settled network — a wrong selection's pair unmoved bit for bit, the oracle held at every trial. Nothing else
   added to the gate.
 - [x] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives **this round's
-  **Done**: the diff is `tests/instrument.rs` and documents, ADR-0075's last clause, so the weekly was dispatched at `scope=exhaustive` on this round's branch at `2a7c083`; its jobs, every pinned number and the shards' times against their bound are in ADR-0081's evidence.
+  **Done**: the diff is `tests/instrument.rs` and documents, ADR-0075's last clause, so the weekly was dispatched at `scope=exhaustive` on this round's branch at `2a7c083` (`96b57ca` on `main`); its jobs, every pinned number and the shards' times against their bound are in ADR-0081's evidence.
   own diff**, the clause that applied stated in the ADR; green in every job it runs, every pinned number
   reproduced; its run id and the three exhaustive shards' times, with the shard that holds this round's runs
   against its bound, in the ADR.
