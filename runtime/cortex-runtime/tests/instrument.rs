@@ -45,11 +45,22 @@
 //! by ADR-0074's measure, the sight and the sign. The candidates are a weekly `exhaustive`
 //! test; the gate runs the probes, the rules over the pinned tables and the first eight trials
 //! of the candidate the rules pick.
+//!
+//! Brief 035 (ADR-0077), step 2 of H-12's stopping rule, asks for the background side: the
+//! network settled before the task with the gain held, then the criticality controller on at
+//! ADR-0055's step, each alone and in that order, each a lead-in of whole windows under the
+//! drive alone until ADR-0055's criterion holds or a bound, run quiet, saved as an image with
+//! the modulation baseline at zero, and read over a frozen run of the task by three measures
+//! written first — ADR-0074's that the stimulus still fires once, the sight and the sign — the
+//! first candidate passing all three being the configuration and none meaning no rewarded run
+//! and the rule's third step. The two candidates are weekly `exhaustive` tests; the gate runs
+//! the rules over the pinned tables and the first two windows of the settled lead-in.
 
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_connectome::{
-    CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SectionEntry, crc64, ring_distance,
+    CortexFileHeader, Prior, SECTION_HOMEOSTASIS, SECTION_MODULATOR, SectionEntry, crc64,
+    ring_distance,
 };
 use cortex_core::{
     DendriticSuperNeuron, ELIGIBILITY_TAU_SHIFT, FLAG_INHIBITORY, MODULATION_ONE_Q16,
@@ -484,18 +495,33 @@ fn run_behind(
     let mut exec = at_gain(&p, config(units, workers, baseline_q16), gain);
     assert_eq!(exec.homeostasis().synaptic_gain_q16, gain);
     assert_eq!(exec.modulation_baseline_q16(), baseline_q16);
+    let task = task(shape, cancel, units, feedback, mirrored, delivery);
+    lead_in(&mut exec, &task.drive, lead_in_windows);
+    run_on(&mut exec, task, units, trials, observe)
+}
+
+/// `run_behind` from the executor's present state (brief 035): the instrument's own lead-in
+/// of one readout window under the task's drive, then `trials` trials of `task`, read as
+/// `run_behind` reads them. The executor is the caller's, so a lead-in, a settling or an
+/// image the caller made stands before the first trial; `run_behind` builds the network and
+/// runs its whole windows, then calls this.
+fn run_on(
+    exec: &mut Engine,
+    mut task: Task,
+    units: u32,
+    trials: usize,
+    observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
+) -> (Vec<Block>, u64) {
     assert_eq!(
         exec.addressed_counts(),
         (units as usize, units as usize),
         "every unit a source and a target before the first trial, whatever the delivery"
     );
-    let mut task = task(shape, cancel, units, feedback, mirrored, delivery);
-    task.check(&exec).expect("the task fits the executor");
+    task.check(exec).expect("the task fits the executor");
     let [a, b, r0, r1] = geometry(units, rotation(units));
     // The stimulus sets counted as a readout would count them: the same rule, the other
     // two sets.
     let stimuli = Readout::new([a, b]);
-    lead_in(&mut exec, &task.drive, lead_in_windows);
     let inject = exec.injector();
     for _ in 0..LEAD_IN {
         task.drive
@@ -519,7 +545,7 @@ fn run_behind(
         let before =
             task.readout
                 .count_window(exec.train(), start.wrapping_sub(WINDOW.ticks), WINDOW.ticks);
-        let outcome = task.trial(&mut exec, trial as u64).expect("a trial runs");
+        let outcome = task.trial(exec, trial as u64).expect("a trial runs");
         assert!(
             exec.train_overwritten().saturating_sub(overwritten)
                 <= u64::from(spikes_per_unit(TRIAL_TICKS)).saturating_mul(u64::from(units)),
@@ -541,14 +567,14 @@ fn run_behind(
         let before_total = before[0].saturating_add(before[1]);
         seen = seen.saturating_add(u32::from(after_total > before_total));
         ties = ties.saturating_add(u32::from(outcome.selection.is_none()));
-        observe(&mut exec, trial, start, &outcome);
+        observe(exec, trial, start, &outcome);
         sequence.push(
             i32::from(outcome.stimulus)
                 | i32::from(outcome.selection.map_or(3, |r| r)) << 1
                 | i32::from(outcome.correct) << 3,
         );
         if trial.wrapping_add(1) % BLOCK == 0 {
-            let (inhibitory, excitatory) = weights_by_polarity(&exec);
+            let (inhibitory, excitatory) = weights_by_polarity(exec);
             blocks.push((
                 correct,
                 a_trials,
@@ -561,8 +587,8 @@ fn run_behind(
                 excitatory,
                 exec.modulator().dopamine_rpe,
                 [
-                    [coupling(&exec, a, r0), coupling(&exec, a, r1)],
-                    [coupling(&exec, b, r0), coupling(&exec, b, r1)],
+                    [coupling(exec, a, r0), coupling(exec, a, r1)],
+                    [coupling(exec, b, r0), coupling(exec, b, r1)],
                 ],
                 ties,
             ));
@@ -3814,11 +3840,21 @@ impl Composer {
     }
 
     /// The synapses from a stimulus unit onto a readout unit, from the arena, in the walk's
-    /// order; a stimulus unit is excitatory, as the geometry holds.
+    /// order, each with its block's presynaptic stamp and its slot's trace as the record holds
+    /// them, and every unit's last spike on record seeded as the first entry of its list
+    /// (brief 035): on a fresh network the stamps and the traces are none and zero and no unit
+    /// has spiked, so the oracle starts as it started; on a network a lead-in left, it starts
+    /// where the engine is. A stimulus unit is excitatory, as the geometry holds.
     fn enumerate(&mut self, exec: &Engine) {
         let [a, b, r0, r1] = self.sets;
+        let blocks = exec.blocks();
         for unit in exec.units() {
             let id = unit.id as u32;
+            if unit.last_soma_spike_tick != NO_SPIKE_ON_RECORD {
+                if let Some(list) = self.spikes.get_mut(id as usize) {
+                    list.push(unit.last_soma_spike_tick);
+                }
+            }
             let stimulus = if a.contains(id) {
                 0
             } else if b.contains(id) {
@@ -3835,6 +3871,9 @@ impl Composer {
                 } else {
                     continue;
                 };
+                let block = blocks
+                    .get(s.block_idx as usize)
+                    .expect("a block of the arena");
                 self.synapses.push(Replayed {
                     block_idx: s.block_idx as usize,
                     slot: usize::from(s.slot),
@@ -3844,8 +3883,8 @@ impl Composer {
                     readout,
                     delay: u32::from(s.delay_ticks),
                     magnitude: i32::from(s.weight_q1_15).max(0),
-                    stamp: NO_SPIKE_ON_RECORD,
-                    trace: 0,
+                    stamp: block.last_spike_tick,
+                    trace: block.eligibility_q1_15[usize::from(s.slot)],
                 });
             }
         }
@@ -4156,21 +4195,41 @@ fn compose_shaped(
     trials: usize,
 ) -> Shaped {
     let p = prior(units);
-    let frozen = at_gain(&p, config(units, 2, 0), gain);
-    let sums = weights_by_polarity(&frozen);
+    let mut exec = at_gain(&p, config(units, 2, 0), gain);
+    assert_eq!(exec.homeostasis().synaptic_gain_q16, gain);
+    compose_on(&mut exec, shape, cancel, units, trials)
+}
+
+/// `compose_shaped` on an executor the caller made (brief 035): the modulation baseline
+/// asserted zero, the sums by polarity read before the run and asserted unchanged after every
+/// block, the composer's oracle seeded from the record before the first trial (a settled
+/// network carries a stamp and a trace on every block and a last spike on every unit; a fresh
+/// one none, so `compose_shaped` reads as it read), and the calibration's task run by
+/// `run_on`.
+fn compose_on(
+    exec: &mut Engine,
+    shape: Shape,
+    cancel: Option<Cancel>,
+    units: u32,
+    trials: usize,
+) -> Shaped {
+    assert_eq!(exec.modulation_baseline_q16(), 0, "the weights are frozen");
+    let sums = weights_by_polarity(exec);
     let mut composer = Composer::new(units);
+    composer.enumerate(exec);
     let mut counted: Vec<Counted> = Vec::with_capacity(trials);
-    let (blocks, trace) = run_behind(
-        0,
+    let task = task(
         shape,
         cancel,
         units,
-        2,
-        gain,
-        0,
         Feedback::Withheld,
         false,
         Delivery::Global,
+    );
+    let (blocks, trace) = run_on(
+        exec,
+        task,
+        units,
         trials,
         &mut |exec, trial, start, outcome| {
             composer.observe(exec, trial, start, outcome);
@@ -7213,4 +7272,595 @@ fn the_two_injections_at_1024_units_exhaustive() {
             "{name}: the volley's ticks"
         );
     }
+}
+
+// ------------------------------------------------ the background side (brief 035)
+//
+// Step 2 of H-12's stopping rule (whitepaper §11.1): the background, in its two named
+// settings, each tried alone and in a fixed order — the network settled before the task with
+// the gain held at 1.75, then the criticality controller on at ADR-0055's step of an eighth —
+// and picked by three measures that read no selection, reward or outcome: ADR-0074's measure
+// that the stimulus still fires once, ADR-0065's sight and ADR-0072's sign, all unchanged. The
+// stimulus is ADR-0076's pick, its efficacies pinned under both candidates (under the
+// controller the drive it delivers follows the gain, F-47, which is part of what that
+// candidate is); the rule, the geometry, the readout window, the trial and the seeds are
+// unchanged. The candidates are never combined, and the order is fixed so that no preference
+// chooses.
+//
+// The lead-in, per candidate: the instrument's executor at 1 024 units (the prior of ADR-0044
+// at seed 22, the gain 1.75 in the image, the modulation baseline 0.5 as the rewarded runs
+// have it, no sleep, the inhibitory period at its default) under the drive of ADR-0044 alone,
+// no task, whole windows of $2^{17}$ ticks read per window — the population's spikes, the two
+// readout sets' spikes, the sums by polarity, the fraction at the target, the gain and the
+// estimate — until ADR-0055's criterion holds or the bound is reached. The criterion, as an
+// integer rule written before the run (`settled_within`): a window $W$ is settled when each of
+// the sixteen windows up to and including $W$ is within 0.75 per cent of the sum after the
+// window sixteen before $W$ (the prior's sum for $W = 16$), $10\,000\,|E_k - E_{W-16}| <
+// 75\,E_{W-16}$, strict, which is at least as strict as ADR-0055's reading ("every one of the
+// last sixteen windows is within 0.75 per cent of the sixty-fourth", this rule at $W = 80$).
+// Not brief 026's clause: ADR-0070 read that one holding while the sum still fell by a third.
+// The lead-in is the first such $W$; the bound is eighty windows (ADR-0055's day), and a
+// lead-in unsettled at the eightieth runs on to 160, the cost stated in the ADR; unsettled at
+// 160, the lead-in is 160 and the ADR says the sum was still moving and at what rate. The rule
+// is evaluated after every window, so the lead-in stops at $W$ and the frozen run starts from
+// the state after it: a `for` over the larger bound, left when the rule holds.
+//
+// The settled engine is then run quiet without the drive until it is quiescent (`quiet`, a
+// countdown to one window of ticks; the ticks it took and what it changed in the sums are
+// read, not assumed) — encoding requires it — and saved as an image whose modulator record
+// carries a baseline of zero (`frozen_image`, `frozen_from`), the one patch, so that the
+// frozen run's weights do not move (asserted after every block); the homeostasis record is
+// left as the lead-in left it, so under the controller the gain it reached and its step are
+// carried and the controller still regulates through the frozen run. The clock resumes where
+// the image was written (ADR-0033), so every stamp keeps its meaning; the train is not in the
+// image, so the composer's oracle is seeded from the record before the first trial (each
+// block's stamp and trace, each unit's last spike; `Composer::enumerate`) and is held to the
+// record at every trial, as ADR-0072 holds it.
+//
+// The three measures, each over the frozen run of sixty-four trials (`compose_on` on the
+// decoded engine, ADR-0076's stimulus): `fires_once` (the volley one per unit within two
+// before the readout window opens, at most a tenth of a spike per unit in the pair window
+// after it), `calibrated` (the sight, 56 of 64) and the sign (56 of 64). A candidate passes
+// when all three do; the first that passes is the configuration (`background_pick`); none,
+// and there is no rewarded run and the rule's step 3 applies. Deliverable D's readings and the
+// composition are read from the same run under each candidate.
+//
+// The prediction for the controller, written before it ran, a Hypothesis from ADR-0053 and
+// ADR-0055 on the lattice prior from a gain of 2.0 (`CONTROLLER_PREDICTED`, read by
+// `controller_read`): (i) the gain after the lead-in's last window is above 1.75; (ii) the
+// gain's course is not settled by the rule above; (iii) the two readout sets fire more in the
+// lead-in's last window than under the settled network in its last; (iv) the candidate fails
+// at least one of the three measures. The settled network carries no prediction: whether
+// settling the weights escapes the squeeze ADR-0070 and ADR-0072's ladder found — a quieter
+// background and a weaker propagation of the stimulus — is what its run measures.
+
+/// The prior's sums at 1 024 units before any window, as the calibration pinned them with the
+/// weights frozen: (inhibitory, excitatory).
+const PRIOR_SUMS_1024: (i64, i64) = (CALIBRATION_1024[0].0.7, CALIBRATION_1024[0].0.8);
+const _: () = assert!(PRIOR_SUMS_1024.0 == 213_902_976 && PRIOR_SUMS_1024.1 == 235_822_619);
+/// ADR-0055's criterion: sixteen windows, each within 75 per ten thousand (0.75 per cent) of
+/// the sum after the window sixteen before.
+const SETTLED_WINDOWS: usize = 16;
+const SETTLED_PER_MYRIAD: u64 = 75;
+/// The lead-in's bound, eighty windows (the length ADR-0055 gave 1 024 units), and the bound
+/// a lead-in unsettled at the eightieth runs on to.
+const LEAD_IN_BOUND: u64 = 80;
+const LEAD_IN_EXTENDED: u64 = 160;
+const _: () =
+    assert!(LEAD_IN_EXTENDED == 2 * LEAD_IN_BOUND && LEAD_IN_BOUND > SETTLED_WINDOWS as u64);
+/// The controller's step, ADR-0055's eighth (Q0.16), the step already measured on this network
+/// size and not searched.
+const CONTROL_STEP_EIGHTH: u16 = 0x2000;
+const _: () = assert!(CONTROL_STEP_EIGHTH as u32 * 8 == 1 << 16);
+/// The candidates, as the controller's step each runs under, in the order tried and no other:
+/// the settled network (the gain held, step 0, as every run of the instrument), then the
+/// controller.
+const BACKGROUNDS: [u16; 2] = [0, CONTROL_STEP_EIGHTH];
+/// The quiet run's bound: one window of ticks.
+const QUIET_BOUND: u64 = WINDOW_TICKS;
+/// The windows the gate runs of the settled lead-in, held to the first rows of its table:
+/// two, $2^{18}$ ticks at 1 024 units.
+const GATE_WINDOWS: u64 = 2;
+const _: () = assert!(GATE_WINDOWS < SETTLED_WINDOWS as u64);
+
+/// One window of a lead-in (brief 035): the population's spikes; the two readout sets' spikes;
+/// the inhibitory and the excitatory sum over the arena after the window; the fraction of
+/// units at the target (Q16.16, ADR-0057); and the gain and the estimate as the window's
+/// regulation left them.
+type LeadInWindow = (u64, [u64; 2], i64, i64, u32, u32, u32);
+
+/// ADR-0055's criterion as a rule over the excitatory sums of a lead-in, `prior` the sum
+/// before the first window: the smallest window (from one) at which each of the last
+/// `SETTLED_WINDOWS` windows up to and including it is within `SETTLED_PER_MYRIAD` per ten
+/// thousand of the sum after the window `SETTLED_WINDOWS` before it (the prior's for the
+/// sixteenth); none when no window of the table is. Integers throughout: a sum `s` is within
+/// `p` per myriad of a reference `r` when `10 000 |s − r| < p r`, strict either way.
+fn settled_within(prior: i64, sums: &[i64]) -> Option<usize> {
+    let sum_after = |window: usize| -> Option<i64> {
+        window
+            .checked_sub(1)
+            .map_or(Some(prior), |k| sums.get(k).copied())
+    };
+    (SETTLED_WINDOWS..=sums.len()).find(|&window| {
+        let first = window.wrapping_sub(SETTLED_WINDOWS);
+        let Some(reference) = sum_after(first) else {
+            return false;
+        };
+        let bound = u64::try_from(reference)
+            .unwrap_or(0)
+            .saturating_mul(SETTLED_PER_MYRIAD);
+        (first.wrapping_add(1)..=window).all(|k| match sum_after(k) {
+            Some(sum) => sum.abs_diff(reference).saturating_mul(10_000) < bound,
+            None => false,
+        })
+    })
+}
+
+/// The excitatory sums of a lead-in table, window by window.
+fn lead_in_sums(table: &[LeadInWindow]) -> Vec<i64> {
+    table.iter().map(|w| w.3).collect()
+}
+
+/// The candidate's executor at 1 024 units (brief 035): the instrument's network at the gain
+/// 1.75 with the modulation baseline 0.5 (the rewarded runs') and the controller's step `step`
+/// in its homeostasis record; at 0 the gain is held, as in every run of the instrument.
+fn candidate(units: u32, step: u16) -> Engine {
+    let p = prior(units);
+    let cfg = Config {
+        control_step_q0_16: step,
+        ..config(units, 2, BASELINE_Q16)
+    };
+    let exec = at_gain(&p, cfg, gain(units));
+    assert_eq!(exec.homeostasis().synaptic_gain_q16, gain(units));
+    assert_eq!(exec.homeostasis().control_step_q0_16, step);
+    assert_eq!(exec.modulation_baseline_q16(), BASELINE_Q16);
+    exec
+}
+
+/// The two readout sets' spikes over `[from, to)`, read from the train, which must hold the
+/// whole window (the caller asserts it). The lead-in's ticks stay below the stamp's width, so
+/// the stamp is the tick.
+fn readout_spikes(exec: &mut Engine, readouts: [Set; 2], from: u64, to: u64) -> [u64; 2] {
+    let mut counts = [0u64; 2];
+    for &(tick, unit) in exec.train() {
+        let tick = u64::from(tick);
+        if tick >= from && tick < to {
+            for (count, set) in counts.iter_mut().zip(readouts.iter()) {
+                if set.contains(unit) {
+                    *count = count.saturating_add(1);
+                }
+            }
+        }
+    }
+    counts
+}
+
+/// One window of a lead-in under `drive`, run and read: the population's spikes and the
+/// fraction at the target over it, the readout sets' spikes, the sums after it, and the gain
+/// and the estimate as the window's regulation left them; the train asserted to have held
+/// the window whole, as `settling` asserts it.
+fn lead_in_window(exec: &mut Engine, drive: &Drive, readouts: [Set; 2]) -> LeadInWindow {
+    let from = exec.ticks();
+    let held = exec.train().len() as u64;
+    let overwritten = exec.train_overwritten();
+    lead_in(exec, drive, 1);
+    let to = exec.ticks();
+    assert!(
+        exec.train_overwritten().wrapping_sub(overwritten) <= held,
+        "the train held the window"
+    );
+    let (spikes, at_target) = spikes_and_at_target(exec, from, to);
+    let readout = readout_spikes(exec, readouts, from, to);
+    let (inhibitory, excitatory) = weights_by_polarity(exec);
+    let h = exec.homeostasis();
+    (
+        spikes,
+        readout,
+        inhibitory,
+        excitatory,
+        at_target,
+        h.synaptic_gain_q16,
+        h.branching_ratio_q16,
+    )
+}
+
+/// A candidate's lead-in (brief 035): whole windows under the drive alone from the executor's
+/// clock, read per window, until ADR-0055's criterion holds over the table so far or `bound`
+/// windows have run; the table's length is the lead-in. A `for` over the bound, left when the
+/// rule holds: it ends by construction. `prior` is the excitatory sum before the first window.
+fn lead_in_until_settled(
+    exec: &mut Engine,
+    units: u32,
+    prior: i64,
+    bound: u64,
+) -> Vec<LeadInWindow> {
+    let drive = drive(units);
+    let [_, _, r0, r1] = geometry(units, rotation(units));
+    let mut table = Vec::new();
+    for _ in 0..bound {
+        table.push(lead_in_window(exec, &drive, [r0, r1]));
+        if settled_within(prior, &lead_in_sums(&table)).is_some() {
+            break;
+        }
+    }
+    table
+}
+
+/// Runs `exec` quiet, without the drive, until it is quiescent — no unit holds a message, no
+/// token is in flight, the injector is empty: the state an image is written from — and
+/// returns the ticks it took. A countdown from `QUIET_BOUND`, so it ends by construction; a
+/// network still active at the bound fails the test, which is a reading of its own.
+fn quiet(exec: &mut Engine) -> u64 {
+    let mut ticks = 0u64;
+    for _ in 0..QUIET_BOUND {
+        if exec.is_quiescent() {
+            return ticks;
+        }
+        exec.tick();
+        ticks = ticks.wrapping_add(1);
+    }
+    assert!(
+        exec.is_quiescent(),
+        "the network fell quiet within {QUIET_BOUND} ticks"
+    );
+    ticks
+}
+
+/// The image of `exec`, quiescent, with its modulator record's baseline patched to zero, the
+/// one change, so that an engine decoded from it consolidates nothing: the frozen form of the
+/// settled network. Every other section is as the lead-in left it, the homeostasis record's
+/// gain and step among them.
+fn frozen_image(exec: &Engine) -> Vec<u8> {
+    let mut img = Image::encode(exec).expect("quiescent");
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_MODULATOR {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            img[offset..][16..20].copy_from_slice(&0i32.to_le_bytes());
+            entry.crc64 = crc64(&img[offset..][..length]);
+            img[at..][..64].copy_from_slice(&entry.encode());
+            return img;
+        }
+    }
+    panic!("the image holds a modulator section");
+}
+
+/// The frozen engine from a settled candidate's image, decoded under the calibration's
+/// configuration (two workers, a train that holds a trial); the image's baseline, gain and
+/// step outrank the configuration's (§8.3), and the baseline is asserted zero.
+fn frozen_from(image: &[u8], units: u32) -> Engine {
+    let exec = Image::decode::<2048>(image, config(units, 2, 0)).expect("a well-formed record");
+    assert_eq!(exec.modulation_baseline_q16(), 0, "the weights are frozen");
+    exec
+}
+
+/// A candidate's frozen run (brief 035): the composition's run of `trials` trials with
+/// ADR-0076's stimulus — F-46's drive with the cancel it picked — on the frozen engine, the
+/// composer seeded from the record; the sight's blocks and trace, the composed trials, every
+/// trial's counts and the volley-tick census.
+fn background_run(exec: &mut Engine, units: u32, trials: usize) -> CancelledRun {
+    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
+    let (blocks, trace, trials, counts, counted, volley_ticks) =
+        compose_on(exec, SHAPE_F46, Some(cancel_of(picked)), units, trials);
+    assert_eq!(counts, SYNAPSES_1024);
+    (blocks, trace, trials, counted, volley_ticks)
+}
+
+/// A candidate passes when all three measures do: the stimulus still fires once (ADR-0074's
+/// `fires_once`), the sight (ADR-0065's `calibrated`) and the sign (ADR-0072's, `SIGN_MIN`),
+/// the last two `passes`.
+fn background_passes(block: &Block, composition: &Composition) -> bool {
+    fires_once(1024, block, composition) && passes(block, composition)
+}
+
+/// The configuration the round picks: the first candidate, in the candidates' order, whose
+/// frozen run passes all three measures, as its step; none when none does.
+fn background_pick(runs: &[(Block, u64, Composition)]) -> Option<u16> {
+    BACKGROUNDS
+        .iter()
+        .zip(runs.iter())
+        .find(|(_, (block, _, composition))| background_passes(block, composition))
+        .map(|(&step, _)| step)
+}
+
+/// The prediction for the controller, read over its lead-in, the settled network's and its
+/// frozen run (the four clauses above, in order): true where the clause holds.
+fn controller_read(
+    controller: &[LeadInWindow],
+    settled: &[LeadInWindow],
+    run: &(Block, u64, Composition),
+) -> [bool; 4] {
+    let last = controller
+        .last()
+        .expect("a window of the controller's lead-in");
+    let settled_last = settled.last().expect("a window of the settled lead-in");
+    let gains: Vec<i64> = controller.iter().map(|w| i64::from(w.5)).collect();
+    [
+        last.5 > GAIN_1024,
+        settled_within(i64::from(GAIN_1024), &gains).is_none(),
+        last.1[0].saturating_add(last.1[1]) > settled_last.1[0].saturating_add(settled_last.1[1]),
+        !background_passes(&run.0, &run.2),
+    ]
+}
+
+/// The prediction, written before the controller ran: every clause holds.
+const CONTROLLER_PREDICTED: [bool; 4] = [true; 4];
+
+/// A candidate's readings: the lead-in (dumped and held to its table), the quiet run's ticks
+/// and the sums after it, the frozen image and its engine (the sums, the gain and the step
+/// carried across, asserted), and the frozen run read by the three measures, dumped before
+/// anything is held to its table so that a failure still shows the readings.
+fn background_candidate(k: usize, name: &str) {
+    let step = BACKGROUNDS[k];
+    let mut exec = candidate(1024, step);
+    assert_eq!(weights_by_polarity(&exec), PRIOR_SUMS_1024);
+    let table = lead_in_until_settled(&mut exec, 1024, PRIOR_SUMS_1024.1, LEAD_IN_EXTENDED);
+    let settled = settled_within(PRIOR_SUMS_1024.1, &lead_in_sums(&table));
+    eprintln!(
+        "DUMP {name} lead-in {table:?} settled {settled:?} windows {}",
+        table.len()
+    );
+    let ticks = quiet(&mut exec);
+    let quieted = weights_by_polarity(&exec);
+    let (gain_after, estimate_after) = (
+        exec.homeostasis().synaptic_gain_q16,
+        exec.homeostasis().branching_ratio_q16,
+    );
+    eprintln!(
+        "DUMP {name} quiet {ticks} sums {quieted:?} gain {gain_after:#x} estimate {estimate_after:#x}"
+    );
+    let image = frozen_image(&exec);
+    let mut frozen = frozen_from(&image, 1024);
+    assert_eq!(
+        weights_by_polarity(&frozen),
+        quieted,
+        "{name}: the image carries the weights"
+    );
+    assert_eq!(
+        frozen.homeostasis().synaptic_gain_q16,
+        gain_after,
+        "{name}: and the gain"
+    );
+    assert_eq!(
+        frozen.homeostasis().control_step_q0_16,
+        step,
+        "{name}: and the step"
+    );
+    let (blocks, trace, trials, counted, volley_ticks) = background_run(&mut frozen, 1024, BLOCK);
+    dump_composition(name, &blocks, trace, &trials);
+    dump_requires(name, &counted, false, OFFSET_MARK_64);
+    let composed = composition(&trials);
+    eprintln!(
+        "DUMP {name} volley {} after {} fires_once {} sight {} sign {} passes {} census {:?} gain after the run {:#x}",
+        volley_once(1024, &blocks[0]),
+        after_quiet(1024, &composed),
+        fires_once(1024, &blocks[0], &composed),
+        calibrated(&blocks[0]),
+        composed.3,
+        background_passes(&blocks[0], &composed),
+        census_of(&volley_ticks),
+        frozen.homeostasis().synaptic_gain_q16
+    );
+    assert_eq!(
+        table.as_slice(),
+        BACKGROUND_LEAD_IN_1024[k],
+        "{name}: the lead-in"
+    );
+    assert_eq!((ticks, quieted), QUIET_1024[k], "{name}: the quiet run");
+    let (block, pin, pinned_composed) = &BACKGROUND_1024[k];
+    pinned(&format!("{name} sight"), &blocks, trace, &[*block], *pin);
+    pinned_composition(
+        name,
+        &trials,
+        &BACKGROUND_ROWS_1024[k],
+        Some(pinned_composed),
+    );
+    assert_eq!(
+        counted.as_slice(),
+        &BACKGROUND_COUNTED_1024[k],
+        "{name}: the counts"
+    );
+    assert_eq!(
+        census_of(&volley_ticks),
+        BACKGROUND_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+}
+
+/// The settled network at 1 024 units (brief 035, the first candidate): the lead-in until
+/// ADR-0055's criterion holds or the bound, the quiet run, the frozen image and the frozen run
+/// read by the three measures.
+#[test]
+#[ignore]
+fn the_settled_network_at_1024_units_exhaustive() {
+    background_candidate(0, "settled1024");
+}
+
+/// The controller at 1 024 units (brief 035, the second candidate): as the first, with the
+/// controller's step of an eighth regulating through the lead-in and the frozen run.
+#[test]
+#[ignore]
+fn the_controller_at_1024_units_exhaustive() {
+    background_candidate(1, "controller1024");
+}
+
+// ---------------------------------------------------------- the measurement (brief 035)
+
+/// The candidates' lead-ins at 1 024 units, in the candidates' order, each pinned from one
+/// run: the settled network's under the gain held at 1.75, the controller's under its step.
+const BACKGROUND_LEAD_IN_1024: [&[LeadInWindow]; 2] = [&[], &[]];
+/// The quiet runs: the ticks each took and the sums by polarity after it.
+const QUIET_1024: [(u64, (i64, i64)); 2] = [(0, (0, 0)); 2];
+/// The candidates' frozen runs, each of sixty-four trials with ADR-0076's stimulus on the
+/// frozen engine: the sight's block and trace, and the composition. Pinned from one run each.
+const BACKGROUND_1024: [(Block, u64, Composition); 2] = [
+    (
+        (
+            0,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            0,
+            0,
+            [[0; 2]; 2],
+            0,
+        ),
+        0,
+        ([[0; 2]; 2], [[[0; 4]; 2]; 2], [[0; 2]; 3], 0, 0),
+    ),
+    (
+        (
+            0,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            0,
+            0,
+            [[0; 2]; 2],
+            0,
+        ),
+        0,
+        ([[0; 2]; 2], [[[0; 4]; 2]; 2], [[0; 2]; 3], 0, 0),
+    ),
+];
+/// The candidates' rows, trial by trial.
+const BACKGROUND_ROWS_1024: [[Row; BLOCK]; 2] = [[(0, 0, [0; 4]); BLOCK]; 2];
+/// Every trial's readout counts under each candidate.
+const BACKGROUND_COUNTED_1024: [[Counted; BLOCK]; 2] = [[(0, [0; 2]); BLOCK]; 2];
+/// The volley-tick census under each candidate.
+const BACKGROUND_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+
+/// The gate's test (ADR-0061's class; brief 035): ADR-0055's criterion as a rule, at its
+/// edges over tables written by hand; the pick and the prediction's clauses at theirs; then,
+/// over the pinned tables, the lead-ins' lengths, the quiet runs, the measures, the pick and
+/// the prediction as written; and the first two windows of the settled lead-in, run and held
+/// to the first two rows of its table. No number is pinned twice.
+#[test]
+fn the_first_two_windows_of_the_settled_lead_in_at_1024_units_and_the_rules_over_their_tables() {
+    // The criterion at its edges: sixteen windows at the prior's sum settle at the
+    // sixteenth; one of them at exactly 0.75 per cent off does not (the comparison is
+    // strict), one LSB inside does; a rise is a move; a table shorter than sixteen has no
+    // window; and a window whose reference is a window's sum and not the prior's holds where
+    // the prior's does not.
+    let flat = [10_000i64; 16];
+    assert_eq!(settled_within(10_000, &flat), Some(16));
+    let mut edge = flat;
+    edge[7] = 10_075;
+    assert_eq!(
+        settled_within(10_000, &edge),
+        None,
+        "exactly 0.75 per cent is not within"
+    );
+    edge[7] = 10_074;
+    assert_eq!(settled_within(10_000, &edge), Some(16));
+    edge[7] = 9_926;
+    assert_eq!(
+        settled_within(10_000, &edge),
+        Some(16),
+        "0.74 per cent below"
+    );
+    edge[7] = 9_925;
+    assert_eq!(settled_within(10_000, &edge), None, "0.75 per cent below");
+    edge[7] = 10_076;
+    assert_eq!(settled_within(10_000, &edge), None, "a rise is a move");
+    assert_eq!(
+        settled_within(10_000, &flat[..15]),
+        None,
+        "fifteen windows have no window"
+    );
+    assert_eq!(settled_within(10_000, &[]), None);
+    let mut later = [9_000i64; 17];
+    later[0] = 9_000;
+    assert_eq!(
+        settled_within(10_000, &later),
+        Some(17),
+        "the sixteenth fails against the prior, the seventeenth holds against the first"
+    );
+    let mut falling: Vec<i64> = (0..80i64)
+        .map(|k| 10_000i64.saturating_sub(k.saturating_mul(50)))
+        .collect();
+    assert_eq!(
+        settled_within(10_000, &falling),
+        None,
+        "a fall of fifty a window, above the tolerance at every window"
+    );
+    falling.extend([6_050i64; 16]);
+    assert_eq!(
+        settled_within(10_000, &falling),
+        Some(96),
+        "then flat: the sixteenth flat window, against the last of the fall"
+    );
+    assert_eq!(
+        lead_in_sums(&[(0, [0; 2], 1, 2, 0, 0, 0), (0, [0; 2], 3, 4, 0, 0, 0)]),
+        [2, 4]
+    );
+    // The pick: the first candidate passing all three measures, in the candidates' order;
+    // none when none does. Over readings written by hand from the pinned tables' shapes: a
+    // block that fires the volley whole and sees, with a composition whose after-count is
+    // quiet and whose signs are at the mark.
+    let sees: Block = (
+        0,
+        34,
+        [[800, 800], [800, 800]],
+        [1_734, 1_530],
+        [0; 2],
+        [300, 300],
+        SEEN_MIN,
+        0,
+        0,
+        0,
+        [[0; 2]; 2],
+        0,
+    );
+    let quiet_signed: Composition = ([[0; 2]; 2], [[[0; 4]; 2]; 2], [[0; 2]; 3], SIGN_MIN, 0);
+    let mut loud = quiet_signed;
+    loud.2[2][1] = 64 * 51 / 10 + 1;
+    let mut unsigned = quiet_signed;
+    unsigned.3 = SIGN_MIN - 1;
+    let mut blind = sees;
+    blind.6 = SEEN_MIN - 1;
+    assert!(background_passes(&sees, &quiet_signed));
+    assert!(!background_passes(&sees, &loud), "the after clause");
+    assert!(!background_passes(&sees, &unsigned), "the sign");
+    assert!(!background_passes(&blind, &quiet_signed), "the sight");
+    assert_eq!(
+        background_pick(&[(sees, 0, quiet_signed), (sees, 0, quiet_signed)]),
+        Some(0),
+        "the settled network first"
+    );
+    assert_eq!(
+        background_pick(&[(sees, 0, unsigned), (sees, 0, quiet_signed)]),
+        Some(CONTROL_STEP_EIGHTH),
+        "the controller when the settled network fails"
+    );
+    assert_eq!(
+        background_pick(&[(sees, 0, unsigned), (blind, 0, quiet_signed)]),
+        None
+    );
+    assert_eq!(background_pick(&[]), None);
+    // The prediction's clauses at their edges: a gain at 1.75 is not above it; a course of
+    // sixteen equal gains is settled; readouts equal are not more; a run that passes fails
+    // the fourth.
+    let window =
+        |gain: u32, readouts: [u64; 2]| -> LeadInWindow { (0, readouts, 0, 0, 0, gain, 0) };
+    let at_gain: Vec<LeadInWindow> = (0..16).map(|_| window(GAIN_1024, [10, 10])).collect();
+    let above: Vec<LeadInWindow> = vec![window(GAIN_1024 + 1, [11, 10])];
+    assert_eq!(
+        controller_read(&at_gain, &at_gain, &(sees, 0, quiet_signed)),
+        [false, false, false, false]
+    );
+    assert_eq!(
+        controller_read(&above, &at_gain, &(sees, 0, unsigned)),
+        [true, true, true, true]
+    );
+    assert_eq!(CONTROLLER_PREDICTED, [true; 4]);
 }
