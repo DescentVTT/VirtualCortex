@@ -11,8 +11,8 @@
 #![deny(clippy::arithmetic_side_effects)]
 
 use cortex_core::{
-    ISTDP_ALPHA_Q1_15, MODULATION_ONE_Q16, Polarity, STP_MAX, STP_U, SynapseBlock, THRESHOLD_BASE,
-    spike_message, synaptic_efficacy_q16,
+    FLAG_INHIBITORY, ISTDP_ALPHA_Q1_15, MODULATION_ONE_Q16, Polarity, STP_MAX, STP_U, SynapseBlock,
+    THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
 use cortex_runtime::{Config, ConfigError, Executor, Image};
 
@@ -516,4 +516,278 @@ fn the_baseline_is_refused_outside_the_unit_interval_and_the_default_is_one() {
     let (weight, trace) = synapse(&exec);
     assert!(weight > WEIGHT + 300, "the weight moved: {weight}");
     assert_eq!(trace, 0, "nothing pending");
+}
+
+/// The inhibitory synapse's weight: `WEIGHT` on the inhibitory side of zero (ADR-0049).
+const INHIBITORY_WEIGHT: i16 = -WEIGHT;
+
+/// Unit 0, inhibitory, fans out to unit 2 through slot 0 of block 0 at `INHIBITORY_WEIGHT`; unit 1,
+/// excitatory, to unit 2 through slot 0 of block 1 at `WEIGHT`; one tick of delay each: the
+/// pair the inhibitory baseline is read on (ADR-0086), one synapse of each polarity onto one
+/// target.
+fn pair_of_polarities(baseline_q16: i32, inhibitory_baseline_q16: Option<i32>) -> Executor<64> {
+    let mut exec = Executor::<64>::new(Config {
+        units: 3,
+        blocks: 2,
+        inhibitory_baseline_q16,
+        ..config(baseline_q16)
+    })
+    .expect("a valid configuration");
+    assert!(exec.blocks_mut()[0].set_synapse(0, 2, INHIBITORY_WEIGHT, 1, false));
+    assert!(exec.blocks_mut()[1].set_synapse(0, 2, WEIGHT, 1, false));
+    for unit in exec.units_mut() {
+        unit.v_thresh = THRESHOLD_BASE;
+        unit.stp_u_rel = STP_U;
+        unit.stp_r_ves = STP_MAX;
+    }
+    exec.units_mut()[0].flags |= FLAG_INHIBITORY;
+    assert!(exec.units_mut()[0].set_first_block(0));
+    assert!(exec.units_mut()[1].set_first_block(1));
+    assert_eq!(
+        Polarity::of_flags(exec.units()[0].flags),
+        Polarity::Inhibitory
+    );
+    assert_eq!(
+        Polarity::of_flags(exec.units()[1].flags),
+        Polarity::Excitatory
+    );
+    exec
+}
+
+/// The two slots' weights and traces, `[inhibitory, excitatory]`, between ticks.
+fn pair_slots(exec: &Executor<64>) -> [(i16, i16); 2] {
+    let blocks = exec.blocks();
+    [
+        (blocks[0].weights_q1_15[0], blocks[0].eligibility_q1_15[0]),
+        (blocks[1].weights_q1_15[0], blocks[1].eligibility_q1_15[0]),
+    ]
+}
+
+/// The oracle of the inhibitory synapse: a block of its own stepped as the engine steps it at
+/// unit 0's spike — the pair rule under the inhibitory polarity at the engine's depression
+/// per spike, then the consolidation under `modulation`.
+fn inhibitory_oracle_step(oracle: &mut SynapseBlock, pre: u32, post_last: u32, modulation: i32) {
+    oracle.step_stdp_all(
+        pre,
+        [post_last, 0, 0, 0],
+        Polarity::Inhibitory,
+        ISTDP_ALPHA_Q1_15,
+    );
+    oracle.consolidate_all(modulation, Polarity::Inhibitory);
+}
+
+/// One pairing on the pair: both presynaptic units fire, the target twenty ticks later, then
+/// quiet; returns unit 0's spike tick and the target's.
+fn pair_pairing(exec: &mut Executor<64>) -> (u32, u32) {
+    let pre = fire(exec, 0);
+    fire(exec, 1);
+    exec.run(20);
+    let post = fire(exec, 2);
+    exec.run(4000);
+    (pre, post)
+}
+
+/// The inhibitory baseline (ADR-0085, ADR-0086), on the pair with the modulation baseline at
+/// zero — the reward's gate — and the inhibitory baseline set at 0.5. With no reward, the
+/// excitatory synapse's pairings wait in its trace and its weight does not move (the gate),
+/// while the inhibitory synapse consolidates half its trace at every presynaptic spike, held
+/// to an oracle consolidated under exactly 0.5. A positive reward with every unit addressed
+/// consolidates the excitatory synapse's pending trace nearly whole at its next spike and
+/// still leaves the inhibitory synapse under 0.5 — not under the signal, which would have
+/// consolidated it whole. A punishment leaves the excitatory synapse under zero and the
+/// inhibitory one still under 0.5 — not under zero. Unset, the same sequence is today's
+/// rule: the inhibitory synapse consolidates nothing with no reward, whole under the reward
+/// and nothing under the punishment, its oracle under the signal. The image carries the
+/// baseline, set or unset, outranking the configuration's, and a loaded engine continues
+/// alike.
+#[test]
+fn an_inhibitory_synapse_consolidates_under_the_inhibitory_baseline_and_no_signal_reaches_it() {
+    let half = 0x8000;
+    // Set at 0.5, the gate at zero.
+    let mut exec = pair_of_polarities(0, Some(half));
+    assert_eq!(exec.inhibitory_baseline_q16(), Some(half));
+    let mut oracle = SynapseBlock::new();
+    assert!(oracle.set_synapse(0, 2, INHIBITORY_WEIGHT, 1, false));
+    let mut post_last = 0u32;
+    for k in 0..3 {
+        let (pre, post) = pair_pairing(&mut exec);
+        inhibitory_oracle_step(&mut oracle, pre, post_last, half);
+        post_last = post;
+        let [inhibitory, excitatory] = pair_slots(&exec);
+        assert_eq!(
+            inhibitory,
+            (oracle.weights_q1_15[0], oracle.eligibility_q1_15[0]),
+            "pairing {k}: the inhibitory synapse is its oracle's under 0.5"
+        );
+        assert_eq!(
+            excitatory.0, WEIGHT,
+            "pairing {k}: the excitatory weight waits under the gate"
+        );
+    }
+    let [inhibitory, excitatory] = pair_slots(&exec);
+    assert_ne!(
+        inhibitory.0, INHIBITORY_WEIGHT,
+        "the inhibitory weight moved with no reward: {inhibitory:?}"
+    );
+    assert!(
+        excitatory.1 > 300,
+        "the excitatory trace is pending: {excitatory:?}"
+    );
+    // A reward, every unit addressed: the excitatory synapse consolidates nearly whole at its
+    // next spike; the inhibitory synapse consolidates under 0.5 still, which is not what
+    // the signal would have done.
+    assert_eq!(exec.addressed_counts(), (3, 3));
+    assert_eq!(exec.reward(MODULATION_ONE_Q16), MODULATION_ONE_Q16);
+    let pre = fire(&mut exec, 0);
+    fire(&mut exec, 1);
+    let mut under_signal = oracle;
+    inhibitory_oracle_step(&mut oracle, pre, post_last, half);
+    inhibitory_oracle_step(&mut under_signal, pre, post_last, MODULATION_ONE_Q16);
+    let [inhibitory, excitatory] = pair_slots(&exec);
+    assert_eq!(
+        inhibitory,
+        (oracle.weights_q1_15[0], oracle.eligibility_q1_15[0]),
+        "under the reward the inhibitory synapse is its oracle's under 0.5"
+    );
+    assert_ne!(
+        inhibitory,
+        (
+            under_signal.weights_q1_15[0],
+            under_signal.eligibility_q1_15[0]
+        ),
+        "and not what the signal would have consolidated"
+    );
+    assert!(
+        excitatory.1 <= 1 && excitatory.0 > WEIGHT + 300,
+        "the excitatory synapse consolidated nearly whole under the reward: {excitatory:?}"
+    );
+    // The signal decays to rest — a reward of 1.0 is at rest after about 460 ms, 46 000
+    // ticks (§5.2.14) — so that the next pairing waits under the gate again.
+    exec.run(50_000);
+    assert_eq!(
+        exec.modulator().dopamine_rpe,
+        0,
+        "the signal is at rest again"
+    );
+    // Three pairings so that both traces are pending again (a pairing's potentiation is
+    // credited at the next presynaptic spike), then a punishment: the excitatory synapse
+    // consolidates nothing under zero; the inhibitory synapse under 0.5 still, which is not
+    // nothing.
+    for _ in 0..3 {
+        let (pre, post) = pair_pairing(&mut exec);
+        inhibitory_oracle_step(&mut oracle, pre, post_last, half);
+        post_last = post;
+    }
+    let before = pair_slots(&exec);
+    assert_eq!(
+        before[0],
+        (oracle.weights_q1_15[0], oracle.eligibility_q1_15[0])
+    );
+    assert!(before[1].1 > 300, "the excitatory trace is pending again");
+    assert_eq!(
+        exec.reward(-MODULATION_ONE_Q16),
+        -MODULATION_ONE_Q16,
+        "the signal is at rest before the punishment"
+    );
+    let pre = fire(&mut exec, 0);
+    fire(&mut exec, 1);
+    let mut under_zero = oracle;
+    inhibitory_oracle_step(&mut oracle, pre, post_last, half);
+    inhibitory_oracle_step(&mut under_zero, pre, post_last, 0);
+    let [inhibitory, excitatory] = pair_slots(&exec);
+    assert_eq!(
+        inhibitory,
+        (oracle.weights_q1_15[0], oracle.eligibility_q1_15[0]),
+        "under the punishment the inhibitory synapse is its oracle's under 0.5"
+    );
+    assert_ne!(
+        inhibitory,
+        (under_zero.weights_q1_15[0], under_zero.eligibility_q1_15[0]),
+        "and not what zero would have consolidated"
+    );
+    assert_eq!(
+        excitatory.0, before[1].0,
+        "the excitatory weight did not move under the punishment"
+    );
+    // The image carries the baseline: loaded under a configuration that says unset, the
+    // engine keeps the 0.5 it was written with, and continues alike.
+    exec.run(4000);
+    let img = Image::encode(&exec).unwrap();
+    let mut loaded = Image::decode::<64>(&img, config(0)).unwrap();
+    assert_eq!(loaded.inhibitory_baseline_q16(), Some(half));
+    assert_eq!(pair_slots(&loaded), pair_slots(&exec));
+    pair_pairing(&mut exec);
+    pair_pairing(&mut loaded);
+    assert_eq!(
+        pair_slots(&loaded),
+        pair_slots(&exec),
+        "the same consolidation after the same pairing"
+    );
+    assert_ne!(
+        pair_slots(&loaded)[0],
+        inhibitory,
+        "the inhibitory synapse consolidated again"
+    );
+
+    // Unset: today's rule, bit for bit — the inhibitory synapse consolidates nothing with
+    // no reward, whole under the reward and nothing under the punishment, its oracle under
+    // the signal as the excitatory synapse's is.
+    let mut exec = pair_of_polarities(0, None);
+    assert_eq!(exec.inhibitory_baseline_q16(), None);
+    let mut oracle = SynapseBlock::new();
+    assert!(oracle.set_synapse(0, 2, INHIBITORY_WEIGHT, 1, false));
+    let mut post_last = 0u32;
+    for k in 0..3 {
+        let (pre, post) = pair_pairing(&mut exec);
+        inhibitory_oracle_step(&mut oracle, pre, post_last, 0);
+        post_last = post;
+        let [inhibitory, excitatory] = pair_slots(&exec);
+        assert_eq!(
+            inhibitory,
+            (oracle.weights_q1_15[0], oracle.eligibility_q1_15[0]),
+            "unset, pairing {k}: the inhibitory synapse waits under the gate too"
+        );
+        assert_eq!((inhibitory.0, excitatory.0), (INHIBITORY_WEIGHT, WEIGHT));
+    }
+    assert!(
+        oracle.eligibility_q1_15[0] != 0,
+        "its trace is pending: {}",
+        oracle.eligibility_q1_15[0]
+    );
+    assert_eq!(exec.reward(MODULATION_ONE_Q16), MODULATION_ONE_Q16);
+    let pre = fire(&mut exec, 0);
+    fire(&mut exec, 1);
+    let pending = {
+        let mut stepped = oracle;
+        stepped.step_stdp_all(
+            pre,
+            [post_last, 0, 0, 0],
+            Polarity::Inhibitory,
+            ISTDP_ALPHA_Q1_15,
+        );
+        stepped.eligibility_q1_15[0]
+    };
+    let [inhibitory, excitatory] = pair_slots(&exec);
+    assert!(
+        inhibitory.1.abs() <= 1 && inhibitory.0 != INHIBITORY_WEIGHT,
+        "unset, under the reward the inhibitory synapse consolidated nearly whole, {pending} pending before it: {inhibitory:?}"
+    );
+    assert!(
+        excitatory.1 <= 1 && excitatory.0 > WEIGHT + 300,
+        "and so did the excitatory one: {excitatory:?}"
+    );
+    // The image carries unset: loaded under a configuration that says 0.5, the engine keeps
+    // unset.
+    exec.run(4000);
+    let img = Image::encode(&exec).unwrap();
+    let loaded = Image::decode::<64>(
+        &img,
+        Config {
+            inhibitory_baseline_q16: Some(half),
+            ..config(0)
+        },
+    )
+    .unwrap();
+    assert_eq!(loaded.inhibitory_baseline_q16(), None);
+    assert_eq!(pair_slots(&loaded), pair_slots(&exec));
 }
