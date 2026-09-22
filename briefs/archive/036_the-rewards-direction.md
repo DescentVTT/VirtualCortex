@@ -177,7 +177,7 @@ symbols and the quoted sentences are what to re-derive.
   trial's end and reported (ADR-0078's arithmetic says it approaches about 0.58 there; the round reads
   it).
 - [x] **The constants commit**, preceding the first commit that holds a rewarded outcome: the
-  **Done**: `6caa3a6` (the harness, the oracle, the rules `couplings_rose`, `paired`, `taught_blocks`, `last_paired`, `direction`, the arms `ARMS`, `COUPLINGS_PREDICTED`, every constant restated, the gate) precedes `a982efc`, the first commit that holds a rewarded outcome.
+  **Done**: `4fdb6cd` on `main` (`6caa3a6` on the branch before the rebase that merged pull request #99; the harness, the oracle, the rules `couplings_rose`, `paired`, `taught_blocks`, `last_paired`, `direction`, the arms `ARMS`, `COUPLINGS_PREDICTED`, every constant restated, the gate) precedes `1d1ccda` (`a982efc`), the first commit that holds a rewarded outcome.
   criterion as integer rules over pinned-table shapes (the couplings clause and the paired count over
   `LAST_BLOCKS` against `REWARDED_MIN`, a tie against, both clauses in both rewarded arms), the arms,
   ADR-0078's prediction for the couplings written as a constant beside them, and every constant of
@@ -207,7 +207,7 @@ symbols and the quoted sentences are what to re-derive.
   delivery's reach over a few trials — the synapses outside the assigned pair unmoved bit for bit.
   Nothing else added to the gate.
 - [x] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives **this
-  **Done**: the diff is `tests/instrument.rs` and documents, ADR-0075's last clause, so the weekly was dispatched at `scope=exhaustive` on this round's branch at `a982efc` (run 35690084220); its jobs, every pinned number and the shards' times against their bound are in ADR-0079's evidence.
+  **Done**: the diff is `tests/instrument.rs` and documents, ADR-0075's last clause, so the weekly was dispatched at `scope=exhaustive` on this round's branch at `a982efc` (`1d1ccda` on `main`; run 35690084220); its jobs, every pinned number and the shards' times against their bound are in ADR-0079's evidence.
   round's own diff**, the clause that applied stated in the ADR; green in every job it runs, every
   pinned number reproduced; its run id and the three exhaustive shards' times, with the shard that
   holds this round's runs against its bound, in the ADR.
