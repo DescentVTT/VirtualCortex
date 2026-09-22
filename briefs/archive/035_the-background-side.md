@@ -218,7 +218,7 @@ symbols and the quoted sentences are what to re-derive.
 - [x] **The constants commit**, preceding the first commit that holds a rewarded outcome: the chosen
   configuration with its lead-in and its settled image, and every constant of ADR-0065, ADR-0068,
   ADR-0069 and ADR-0076 restated unchanged.
-  **Done as the round's shape allows:** there is no rewarded outcome for it to precede. `61ed272` on the branch holds the harness, the settling rule, the measures, the pick and the prediction before either candidate ran, and `f59655c` the readings and the pick (none); every constant of ADR-0065, ADR-0068, ADR-0069 and ADR-0076 stands unchanged, and no configuration was chosen.
+  **Done as the round's shape allows:** there is no rewarded outcome for it to precede. `552c82d` on `main` (`61ed272` on the branch before the rebase that merged pull request #96) holds the harness, the settling rule, the measures, the pick and the prediction before either candidate ran, and `96bdc19` (`f59655c`) the readings and the pick (none); every constant of ADR-0065, ADR-0068, ADR-0069 and ADR-0076 stands unchanged, and no configuration was chosen.
 - [x] **If a candidate passes — the rule's step 4 — ADR-0069's criterion, unchanged**, at 1 024 units
   with ADR-0068's addressed delivery under the chosen configuration: the addressed rewarded run, the
   mirrored assignment, the addressed shuffled reward and the fixed modulation, as weekly `exhaustive`
