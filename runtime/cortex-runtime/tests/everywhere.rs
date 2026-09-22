@@ -3242,7 +3242,7 @@ const REACHED_1024: [[Option<usize>; 2]; 2] = [[None, Some(256)], [Some(256), So
 const R0_LATER_1024: [bool; 2] = [true, true];
 /// The reach of each arm's run, `(inside the four pairs, outside)`, as read: every one of the
 /// four pairs' 3 188 synapses moved in every arm, and 29 537 to 29 539 outside them — all but
-/// 43 of the arena's 32 768 — since every synapse consolidates under the baseline.
+/// 41 to 43 of the arena's 32 768 — since every synapse consolidates under the baseline.
 const EVERYWHERE_REACH_1024: [(u64, u64); 3] = [(3188, 29537), (3188, 29539), (3188, 29537)];
 const _: () = assert!(
     EVERYWHERE_REACH_1024[0].0 as u32
