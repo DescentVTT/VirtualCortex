@@ -1,0 +1,8 @@
+# The seconds each whole-domain (`exhaustive`) test took on the hosted runner, one test to a
+# line: the binary's stem, the test's name as `--list` prints it, the seconds. Read by
+# `scripts/exhaustive-shard.sh` to deal the tests to the weekly shards longest first
+# (ADR-0092). Advisory: which tests run is always what `--list` names, so a stale or missing
+# line changes the balance and never the coverage; a test with no line is costed at 900 s.
+# `npm run spec:costs` fails on a line that names no test in the tree. Regenerate from a
+# weekly run's `exhaustive-tests-*` artifacts: `node scripts/exhaustive-costs.mjs from <dir> --run <id>`.
+# Source: not recorded.

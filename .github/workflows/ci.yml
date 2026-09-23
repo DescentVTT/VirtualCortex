@@ -203,9 +203,12 @@ jobs:
     # and a list in the tree drift (F-44, F-45); each shard checks what it ran against what the
     # list gave it, as ADR-0058's completeness check does for the sweep. The unit is a test, not
     # a binary (ADR-0084): `instrument` alone read 61 per cent of a shard's bound, so a binary's
-    # tests are spread over the shards and each binary's share runs in one process. Four shards
-    # since ADR-0088: three read 48, 23 and 77 per cent of the bound on a runner two and a half
-    # times slower than the one before it, and a round adds a heavy test every time.
+    # tests are spread over the shards. Four shards since ADR-0088: three read 48, 23 and 77 per
+    # cent of the bound on a runner two and a half times slower than the one before it. Dealt
+    # by cost since ADR-0092: the round robin read names, not costs, and put two of the longest
+    # tests in one shard at 66 per cent, so the tests go longest first to the least-loaded shard,
+    # costed by scripts/exhaustive-costs.tsv, each in a process of its own so that its seconds
+    # are its own and the next table can be made from them.
     name: Weekly (exhaustive tests ${{ matrix.shard }}/4, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
@@ -229,23 +232,30 @@ jobs:
         with:
           shared-key: exhaustive
 
+      # The deal is made by scripts/exhaustive-costs.mjs (ADR-0092).
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "22"
+
       - name: This shard of the whole-domain tests, in the release profile (ADR-0073)
         run: bash scripts/exhaustive-shard.sh ${{ matrix.shard }} 4
 
-      # The seconds per binary that ADR-0071 read out of cargo's own lines; the shard script
-      # writes them directly now, so the table is what it wrote.
-      - name: What each binary's share of this shard took (F-45, ADR-0071, ADR-0084)
+      # Each test's seconds, longest first, and each binary's sum (ADR-0071, ADR-0092): the
+      # table the next cost table is made from.
+      - name: What each test of this shard took (F-45, ADR-0071, ADR-0092)
         if: always()
         run: |
-          f="exhaustive-times-${{ matrix.shard }}.txt"
-          [ -s "$f" ] || { echo "this shard recorded no binary"; exit 0; }
+          f="exhaustive-tests-${{ matrix.shard }}.tsv"
+          [ -s "$f" ] || { echo "this shard recorded no test"; exit 0; }
           {
             echo "### The whole-domain tests, shard ${{ matrix.shard }} of 4"
             echo
-            echo "| Binary | Its exhaustive tests in this shard | Seconds |"
-            echo "| :--- | ---: | ---: |"
-            awk '{ print "| `" $1 "` | " $2 " | " $3 " |" }' "$f"
-            awk '{ n += $2; s += $3 } END { print "| **this shard** | **" n "** | **" s "** |" }' "$f"
+            echo "Wall clock over the tests: $(cat exhaustive-wall-${{ matrix.shard }}.txt 2>/dev/null || echo '?') s"
+            echo
+            echo "| Binary | Test | Seconds | Exit | Passed |"
+            echo "| :--- | :--- | ---: | ---: | ---: |"
+            awk -F'\t' '{ print "| `" $2 "` | `" $3 "` | " $4 " | " $5 " | " $6 " |" }' "$f"
+            awk -F'\t' '{ n += 1; s += $4 } END { print "| **this shard** | **" n " tests** | **" s "** | | |" }' "$f"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep this shard's times for the round that reads them
@@ -254,7 +264,10 @@ jobs:
         with:
           name: exhaustive-times-${{ matrix.shard }}
           path: |
+            exhaustive-tests-${{ matrix.shard }}.tsv
             exhaustive-times-${{ matrix.shard }}.txt
+            exhaustive-wall-${{ matrix.shard }}.txt
+            mine.txt
             list.log
           retention-days: 90
 
