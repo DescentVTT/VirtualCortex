@@ -66,4 +66,17 @@ By the tree's present listing — 49 tests in six binaries, `cortex_core` 1, `ev
 
 - `.github/workflows/ci.yml`: the matrix, the script's argument, the job's name and the summary's heading.
 - Whitepaper Appendix B's line for the whole-domain tests and `CLAUDE.md`'s command comment, which read "three shards".
-- **The sharded job dispatched on this change's branch** at `scope=exhaustive`: in the evidence below.
+- **The sharded job dispatched on this change's branch** at `scope=exhaustive` — the diff is the exhaustive job's matrix and documents, [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s last clause — run [35800692998](https://github.com/DescentVTT/VirtualCortex/actions/runs/35800692998): **four shards, all green**, every completeness check holding, the union 49 tests, **22 m 07 s, 32 m 47 s, 31 m 57 s and 56 m 06 s** of their 120-minute bound where three read 58, 28 and 94 minutes. Each binary's share in seconds:
+
+  | Shard | `cortex_core` | `everywhere` | `inhibition` | `instrument` | `learning` | `reference` | The shard's tests |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | 0 | — | — | — | 7 in 1 029 | 3 in 13 | 2 in 249 | **1 291 s**, 18 % |
+  | 1 | 1 in 2 | — | — | 7 in 735 | 3 in 477 | 2 in 708 | **1 922 s**, 27 % |
+  | 2 | — | 1 in 1 169 | — | 7 in 478 | 3 in 223 | 1 in 3 | **1 873 s**, 26 % |
+  | 3 | — | — | 1 in 1 205 | 7 in 1 775 | 2 in 238 | 2 in 101 | **3 319 s**, 46 % |
+
+  The round robin deals `instrument` seven to a shard as the count says it must, and puts H-15's test, H-16's test and `instrument`'s heaviest in three shards — but not H-16's and `instrument`'s heaviest, which share shard 3 and make it the heaviest at 46 per cent.
+
+  **A binary's seconds are not a runner's speed alone**: the same tests contend for the runner's cores with whatever shares their shard. H-15's test read **1 169 s here against 2 294 s in ADR-0087's dispatch**, where it ran beside nine of `instrument`'s, and `reference`'s seven read 1 061 s against 1 426; `inhibition`'s read 1 205 against 1 238 and `learning`'s eleven 951 against 1 014, which are the same within a tenth. So part of the fall from 77 to 46 per cent is the fourth shard and part is the contention it removed, and the two cannot be separated from these tables. What the bound sees is the shard's total, and no shard is above half of it.
+
+  At ADR-0087's runner's speed — taking `reference` and `instrument`, the two least affected by what shares their shard, as about a third slower there — the heaviest shard would read about 60 per cent where three shards read 77. The floor stands where this decision put it: the longest single test.
