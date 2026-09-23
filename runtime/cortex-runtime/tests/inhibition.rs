@@ -22,6 +22,18 @@
 //! `exhaustive` test; the gate runs the rules at their edges and eight trials with the
 //! inhibitory baseline set.
 //!
+//! Brief 040 runs H-17 here as ADR-0089 wrote it and ADR-0090 amended its assertion: H-16's
+//! configuration over 3 072 trials with the answer's mapping flipped once, between the
+//! 1 536th trial and the 1 537th, by the task's `mirrored` and nothing else
+//! (`earned_run_flipped` on the shared harness), from the same inhibited image after the same
+//! calibration. Two arms, each its own weekly `exhaustive` test: the assignment first and the
+//! mirrored first. The first half of each is H-16's arm of its first mapping bit for bit and
+//! is held to H-16's tables; the second half is pinned. The criterion's two clauses (it
+//! learned, it revised), ADR-0090's assertion (the old answer's pairs held from the 1 537th
+//! trial, the pair the 1 536th did not carry from the 1 536th, no excitatory synapse outside
+//! the four pairs moved) and the readings of the measured need are integer rules written
+//! before the run; the gate runs them at their edges and a few trials over a flip.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -3637,4 +3649,919 @@ fn the_first_eight_trials_of_inhibition_off_the_gate_at_1024_units_and_the_rules
             }
         }
     }
+}
+
+// =================================================================================== H-17
+
+// ------------------------------------------ written before the run (ADR-0089, ADR-0090)
+
+/// H-17's run (ADR-0089): two of H-16's, forty-eight blocks.
+const REVERSAL_TRIALS: usize = 2 * INHIBITION_TRIALS;
+const _: () = assert!(REVERSAL_TRIALS == 3_072 && REVERSAL_TRIALS / BLOCK == 48);
+/// The blocks of an H-17 run.
+const REVERSAL_BLOCKS: usize = REVERSAL_TRIALS / BLOCK;
+
+/// The flip (ADR-0089): the index of the first trial under the second mapping, the 1 537th,
+/// the flip falling between the 1 536th and it. The trials before it are H-16's arm of the
+/// first mapping, bit for bit (ADR-0090).
+const FLIP: usize = INHIBITION_TRIALS;
+/// The index of the last trial under the first mapping, the 1 536th, whose delivery the
+/// 1 537th consolidates (ADR-0090).
+const LAST_BEFORE_FLIP: usize = FLIP - 1;
+/// The first block under the second mapping, the twenty-fifth; the twenty-four before it are
+/// H-16's.
+const FLIP_BLOCK: usize = FLIP / BLOCK;
+const _: () = assert!(FLIP == 1_536 && FLIP % BLOCK == 0 && FLIP_BLOCK == 24);
+const _: () = assert!(FLIP_BLOCK >= LAST_BLOCKS && REVERSAL_BLOCKS - FLIP_BLOCK >= LAST_BLOCKS);
+
+/// The arms of H-17 (ADR-0089), each its own weekly test (ADR-0088's floor is the longest
+/// test): the assignment first — A onto readout 0 and B onto readout 1 for the first 1 536
+/// trials, the mirrored mapping for the last 1 536 — and the mirrored first, the other way
+/// round; both `Feedback::Answer` under the task's own delivery from the one inhibited image,
+/// the flip `Task::mirrored` negated and nothing else. No withheld arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reversal {
+    AssignmentFirst,
+    MirroredFirst,
+}
+const REVERSAL_ARMS: [Reversal; 2] = [Reversal::AssignmentFirst, Reversal::MirroredFirst];
+
+/// The mapping an arm starts under, the task's `mirrored` before the flip; after it, the
+/// other.
+fn first_mapping(arm: Reversal) -> bool {
+    arm == Reversal::MirroredFirst
+}
+
+/// The H-16 arm an H-17 arm's first half is, by its index in `INHIBITION_ARMS` (ADR-0090):
+/// the assignment for the assignment first, the mirrored assignment for the mirrored first.
+fn replicated_arm(arm: Reversal) -> usize {
+    usize::from(first_mapping(arm))
+}
+
+/// ADR-0089's prediction, a Hypothesis written before the run: H-17 is no.
+const REVERSAL_PREDICTED: bool = false;
+
+// ------------------------------------------------------------ the criterion (ADR-0089)
+
+/// Clause 1's count (ADR-0089): the correct selections over the last `LAST_BLOCKS` blocks
+/// before the flip, trials 1 409 to 1 536, under the first mapping; zero for a run that does
+/// not reach the flip.
+fn correct_before(blocks: &[Block]) -> u32 {
+    blocks.get(..FLIP_BLOCK).map_or(0, last_correct)
+}
+
+/// Clause 2's count: the correct selections over the last `LAST_BLOCKS` blocks of the run,
+/// trials 2 945 to 3 072, under the second mapping; zero for a run of any other length.
+fn correct_after(blocks: &[Block]) -> u32 {
+    if blocks.len() == REVERSAL_BLOCKS {
+        last_correct(blocks)
+    } else {
+        0
+    }
+}
+
+/// H-17's criterion (ADR-0089), clause by clause per arm `[assignment first, mirrored
+/// first]`: (1) it learned — `correct_before` at least `REWARDED_MIN`; (2) it revised —
+/// `correct_after` at least `REWARDED_MIN`; a tie not correct, the task's count. `replicated`
+/// is clause 1 in both arms, H-16's result reproduced; `yes` is all four. A run whose
+/// `replicated` is false is a failure to replicate H-16 and answers nothing of H-17.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Revision {
+    learned: [bool; 2],
+    revised: [bool; 2],
+    replicated: bool,
+    yes: bool,
+}
+
+fn revision(arms: [&[Block]; 2]) -> Revision {
+    let learned = arms.map(|blocks| correct_before(blocks) >= REWARDED_MIN);
+    let revised = arms.map(|blocks| correct_after(blocks) >= REWARDED_MIN);
+    let replicated = learned[0] && learned[1];
+    Revision {
+        learned,
+        revised,
+        replicated,
+        yes: replicated && revised[0] && revised[1],
+    }
+}
+
+// ------------------------------------------------ the assertion's shape (ADR-0090)
+
+/// The weights and the four couplings at a trial's end: what the assertion compares at the
+/// 1 536th and the 1 537th trials.
+type Snapshot = (Vec<Vec<i16>>, [[i64; 2]; 2]);
+
+/// The four stimulus–readout couplings of `exec`, `[stimulus][readout]`, as a block reads
+/// them.
+fn pair_couplings(exec: &Engine, sets: &[Set; 4]) -> [[i64; 2]; 2] {
+    [
+        [
+            coupling(exec, sets[0], sets[2]),
+            coupling(exec, sets[0], sets[3]),
+        ],
+        [
+            coupling(exec, sets[1], sets[2]),
+            coupling(exec, sets[1], sets[3]),
+        ],
+    ]
+}
+
+/// The pair the 1 536th trial's delivery carries into the 1 537th (ADR-0090): the stimulus it
+/// presented onto the readout it selected, when it was rewarded; none otherwise.
+fn carried_pair(last: &EarnedTrial) -> Option<(usize, usize)> {
+    if last.4 > 0 {
+        last.2.map(|r| (usize::from(last.0), usize::from(r)))
+    } else {
+        None
+    }
+}
+
+/// The old answer's pairs the carry-over does not reach: both, when the 1 536th trial
+/// carried none.
+fn uncarried(old: [(usize, usize); 2], carried: Option<(usize, usize)>) -> Vec<(usize, usize)> {
+    old.into_iter()
+        .filter(|&pair| Some(pair) != carried)
+        .collect()
+}
+
+/// ADR-0090's assertion read over a run, clause by clause, as the synapses that moved: (a) of
+/// the two old answer pairs, from the end of the 1 537th trial to the run's end; (b) of the
+/// old answer pair the carry-over does not reach, from the end of the 1 536th; (c) the
+/// excitatory synapses outside the four stimulus–readout pairs, from the image's. Beside
+/// them, a reading and no clause: the synapses of the old answer's pairs the 1 537th trial
+/// moved.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Held {
+    after_carry: u64,
+    uncarried: u64,
+    outside: u64,
+    carried: u64,
+}
+
+/// The assertion as a rule: (a), (b) and (c) each moved nothing. True on both arms is the
+/// assertion; false on one is a finding against ADR-0080's derivation as ADR-0089 and
+/// ADR-0090 extend it, reported beside the verdict and not in place of it.
+fn reversal_held(held: &Held) -> bool {
+    held.after_carry == 0 && held.uncarried == 0 && held.outside == 0
+}
+
+/// The assertion's reach over an arm's run: the executor at the run's end against the
+/// image's weights and the weights at the ends of the 1 536th and the 1 537th trials, the
+/// pairs named by the arm's first mapping and the 1 536th trial's reading; `carried` is the
+/// synapses of the old answer's pairs that moved in the 1 537th trial, read at its end.
+fn held_of(
+    exec: &Engine,
+    image: &[Vec<i16>],
+    at_flip: &[Vec<i16>],
+    at_carry: &[Vec<i16>],
+    last: &EarnedTrial,
+    arm: Reversal,
+    carried: u64,
+) -> Held {
+    let old = assigned_pairs(first_mapping(arm));
+    Held {
+        after_carry: reach(exec, at_carry, 1024, &old).0,
+        uncarried: reach(exec, at_flip, 1024, &uncarried(old, carried_pair(last))).0,
+        outside: reach_by_polarity(exec, image, 1024, &ALL_PAIRS)
+            .excitatory
+            .1,
+        carried,
+    }
+}
+
+// --------------------------------------------- the readings' shape (ADR-0089): the need
+
+/// The measured need after the flip (ADR-0089), per arm: the trials in which the engine
+/// selected the readout that is the answer under the second mapping (the task's correct
+/// count), the trials in which it selected the old answer, the ties, the rewards it earned,
+/// and the trial at whose block's end the selection first passed `CROSSING_MARK` after the
+/// flip, none when no block did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Need {
+    selected_new: u32,
+    selected_old: u32,
+    ties: u32,
+    rewards: u32,
+    crossed: Option<usize>,
+}
+
+fn need(blocks: &[Block], earned: &[EarnedBlock]) -> Need {
+    let after = blocks.get(FLIP_BLOCK..).unwrap_or(&[]);
+    let selected_new = after.iter().fold(0u32, |sum, b| sum.saturating_add(b.0));
+    let ties = after.iter().fold(0u32, |sum, b| sum.saturating_add(b.11));
+    let trials = (after.len() as u32).saturating_mul(BLOCK as u32);
+    Need {
+        selected_new,
+        selected_old: trials.saturating_sub(selected_new).saturating_sub(ties),
+        ties,
+        rewards: earned
+            .get(FLIP_BLOCK..)
+            .unwrap_or(&[])
+            .iter()
+            .fold(0u32, |sum, b| sum.saturating_add(b.1)),
+        crossed: crossing(after).map(|t| t.saturating_add(FLIP)),
+    }
+}
+
+/// The first trial after the flip, by index, that earned a reward; none when none did.
+fn first_reward(read: &[EarnedTrial]) -> Option<usize> {
+    read.iter()
+        .enumerate()
+        .skip(FLIP)
+        .find(|(_, t)| t.4 > 0)
+        .map(|(k, _)| k)
+}
+
+/// The counts' gap per block (ADR-0089): for each stimulus, the spikes over the block of the
+/// readout that is its answer under the first mapping less the other readout's, `[A, B]` —
+/// the lead the first mapping's learning built before the flip, and the lead the old answer
+/// keeps after it.
+fn gaps(blocks: &[Block], first: bool) -> Vec<[i64; 2]> {
+    blocks
+        .iter()
+        .map(|b| {
+            [0u8, 1].map(|s| {
+                let old = answer_of(s, first);
+                let split = b.2[usize::from(s)];
+                (split[old] as i64).saturating_sub(split[old ^ 1] as i64)
+            })
+        })
+        .collect()
+}
+
+/// The new answer's pairs' couplings at the run's end less at the flip, `[A, B]`: whether, and
+/// by how much, the rewards the second mapping earned raised them; zero for a run that does
+/// not pass the flip.
+fn new_rise(blocks: &[Block], first: bool) -> [i64; 2] {
+    let (Some(flip), Some(last)) = (
+        blocks.get(FLIP_BLOCK - 1),
+        blocks.get(FLIP_BLOCK..).and_then(|after| after.last()),
+    ) else {
+        return [0; 2];
+    };
+    [0u8, 1].map(|s| {
+        let new = answer_of(s, !first);
+        last.10[usize::from(s)][new].saturating_sub(flip.10[usize::from(s)][new])
+    })
+}
+
+/// The blocks in which the stimulus fired once by ADR-0074's measure (`fires_once`), of a
+/// run's blocks and their compositions.
+fn once_blocks(blocks: &[Block], compositions: &[Composition]) -> u32 {
+    blocks
+        .iter()
+        .zip(compositions.iter())
+        .filter(|(b, c)| fires_once(1024, b, c))
+        .count() as u32
+}
+
+// ------------------------------------------------------------------ the run (brief 040)
+
+/// An arm's run from the inhibited engine (brief 040): `earned_run_flipped` under the
+/// answer's feedback at the gate's zero, the arm's first mapping, the flip before the trial
+/// of index `flip`, and `after` reading the executor at every trial's end — the oracle held
+/// to the record at every trial and every trial's contract asserted under the mapping in
+/// force at it.
+fn reversal_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    trials: usize,
+    flip: usize,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> EarnedRun {
+    earned_run_flipped(
+        exec,
+        Feedback::Answer,
+        first_mapping(arm),
+        1024,
+        trials,
+        GATE_BASELINE_Q16,
+        Some(flip),
+        after,
+    )
+}
+
+/// One arm of H-17 at 1 024 units (brief 040): the settled engine held to ADR-0077 step by
+/// step and its two images; the calibration — a frozen block from the zero image, the
+/// inhibitory baseline unset, the reward withheld, held to ADR-0077's frozen run — before
+/// any rewarded run (H-17's stopping rule, step 2); then the arm's 3 072 trials from the
+/// inhibited image, the flip between the 1 536th and the 1 537th, the weights and the four
+/// couplings read at the ends of those two trials; everything dumped and the clauses, the
+/// assertion and the readings computed before anything is held; then the first half held to
+/// H-16's arm (ADR-0090), the assertion, and the pinned tables of the second half.
+fn reversal_arm(arm: Reversal) {
+    let k = REVERSAL_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-17");
+    let name = format!("reversal1024 {arm:?}");
+    let (zero, inhibited) = inhibited_images(&name);
+    let image_crc = crc64(&inhibited);
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            frozen.inhibitory_baseline_q16(),
+            None,
+            "{name}: the calibration's image leaves the inhibitory baseline unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+        eprintln!(
+            "DUMP {name} calibration holds: ADR-0077's settled candidate reproduced; image crc {image_crc:#018x}"
+        );
+    }
+    let sets = geometry(1024, ROTATION_1024);
+    let image_sums = QUIET_1024[SETTLED].1;
+    let mut exec = inhibited_from(&inhibited, 1024);
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let image = weights_of(&exec);
+    let first = first_mapping(arm);
+    let old = assigned_pairs(first);
+    let mut at_flip: Option<Snapshot> = None;
+    let mut at_carry: Option<Snapshot> = None;
+    let mut carried = 0u64;
+    let run = reversal_run(&mut exec, arm, REVERSAL_TRIALS, FLIP, &mut |exec, trial| {
+        if trial == LAST_BEFORE_FLIP {
+            at_flip = Some((weights_of(exec), pair_couplings(exec, &sets)));
+        } else if trial == FLIP {
+            let before = at_flip.as_ref().expect("the 1 536th trial's reading first");
+            carried = reach(exec, &before.0, 1024, &old).0;
+            at_carry = Some((weights_of(exec), pair_couplings(exec, &sets)));
+        }
+    });
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let at_flip = at_flip.expect("the run reached the flip");
+    let at_carry = at_carry.expect("and the trial after it");
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    assert_eq!(blocks.len(), REVERSAL_BLOCKS, "{name}: forty-eight blocks");
+    assert_eq!(read.len(), REVERSAL_TRIALS);
+    // Everything dumped, and the clauses, the assertion and the readings computed, before
+    // anything is held.
+    dump_earned(&name, &run, &earned);
+    eprintln!("DUMP {name} PIN blocks {:?}", &blocks[FLIP_BLOCK..]);
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!(
+        "DUMP {name} PIN compositions {:?}",
+        &compositions[FLIP_BLOCK..]
+    );
+    eprintln!("DUMP {name} PIN earned {:?}", &earned[FLIP_BLOCK..]);
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(&read[FLIP..]));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN snapshots {:?}", (at_flip.1, at_carry.1));
+    let last = &read[LAST_BEFORE_FLIP];
+    let held = held_of(&exec, &image, &at_flip.0, &at_carry.0, last, arm, carried);
+    let correct = [correct_before(blocks), correct_after(blocks)];
+    let need_read = need(blocks, &earned);
+    let first_rewarded = first_reward(read);
+    let carried_read = carried_pair(last);
+    let new_rise_read = new_rise(blocks, first);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let derivation_read = derivation(read);
+    let sums_after = weights_by_polarity(&exec);
+    eprintln!(
+        "DUMP {name} PIN readings correct {correct:?} held {held:?} need {need_read:?} first reward {first_rewarded:?} carried {carried_read:?} new rise {new_rise_read:?} once {once} falls {falls} derivation {derivation_read:?} image crc {image_crc:#018x}"
+    );
+    eprintln!(
+        "DUMP {name} gaps {:?} course {:?} sums after {sums_after:?} image {image_sums:?} last splits {:?}",
+        gaps(blocks, first),
+        course(image_sums.0, blocks),
+        last_splits(read)
+    );
+    // The first half is H-16's arm of the first mapping, bit for bit (ADR-0090): clause 1 is
+    // H-16's 128, and a mismatch here is a failure to replicate H-16.
+    let h16 = replicated_arm(arm);
+    assert_eq!(
+        &blocks[..FLIP_BLOCK],
+        INHIBITION_BLOCKS_1024[h16],
+        "{name}: the first half is H-16's arm, block by block"
+    );
+    assert_eq!(
+        &compositions[..FLIP_BLOCK],
+        INHIBITION_COMPOSITIONS_1024[h16],
+        "{name}: and its composition"
+    );
+    assert_eq!(
+        &earned[..FLIP_BLOCK],
+        INHIBITION_EARNED_1024[h16],
+        "{name}: and its earned blocks"
+    );
+    assert_eq!(
+        earned_hash(&read[..FLIP]),
+        INHIBITION_READ_1024[h16],
+        "{name}: and its readings"
+    );
+    // The assertion (ADR-0090), after the dump and beside the verdict.
+    assert!(
+        reversal_held(&held),
+        "{name}: ADR-0090's assertion — the old answer's pairs held from the 1 537th trial, the uncarried one from the 1 536th, no excitatory synapse outside the four pairs moved: {held:?}"
+    );
+    // The pinned tables of the second half, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        &blocks[FLIP_BLOCK..],
+        *trace,
+        REVERSAL_BLOCKS_1024[k],
+        REVERSAL_TRACES_1024[k],
+    );
+    assert_eq!(
+        &compositions[FLIP_BLOCK..],
+        REVERSAL_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        &earned[FLIP_BLOCK..],
+        REVERSAL_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(&read[FLIP..]),
+        REVERSAL_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        REVERSAL_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(image_crc, REVERSAL_IMAGE_CRC_1024, "{name}: the one image");
+    assert_eq!((at_flip.1, at_carry.1), REVERSAL_SNAPSHOTS_1024[k]);
+    assert_eq!(correct, CORRECT_REVERSAL_1024[k]);
+    assert_eq!(held, HELD_1024[k]);
+    assert_eq!(need_read, NEED_1024[k]);
+    assert_eq!(first_rewarded, FIRST_REWARD_1024[k]);
+    assert_eq!(carried_read, CARRIED_1024[k]);
+    assert_eq!(new_rise_read, NEW_RISE_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_REVERSAL_1024[k]);
+    assert_eq!(falls, FALLS_REVERSAL_1024[k]);
+    assert_eq!(derivation_read, DERIVATION_REVERSAL_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (
+            SUMS_AFTER_REVERSAL_1024[k],
+            Some(SUMS_AFTER_REVERSAL_1024[k])
+        ),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-17's arm that starts from the assignment (brief 040): A onto readout 0 and B onto
+/// readout 1 for 1 536 trials, then the mirrored mapping for 1 536.
+#[test]
+#[ignore]
+fn the_assignment_reversed_from_the_assignment_at_1024_units_exhaustive() {
+    reversal_arm(Reversal::AssignmentFirst);
+}
+
+/// H-17's arm that starts from the mirrored assignment (brief 040): A onto readout 1 and B
+/// onto readout 0 for 1 536 trials, then the assignment for 1 536.
+#[test]
+#[ignore]
+fn the_assignment_reversed_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    reversal_arm(Reversal::MirroredFirst);
+}
+
+// ----------------------------------------------------------- the measurement (brief 040)
+
+/// The two arms at 1 024 units, in `REVERSAL_ARMS`'s order, each pinned from one run over
+/// its second half — the first half being H-16's arm, held to `INHIBITION_BLOCKS_1024` and
+/// its companions: the sight's blocks from the twenty-fifth and the whole run's trace, the
+/// composition and the earned blocks from the twenty-fifth, the hash of the readings from
+/// the 1 537th trial, and the whole run's volley census. Empty until the run: the constants
+/// above are committed before the first rewarded run, and the tables after it.
+const REVERSAL_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const REVERSAL_TRACES_1024: [u64; 2] = [0; 2];
+const REVERSAL_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const REVERSAL_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const REVERSAL_READ_1024: [u64; 2] = [0; 2];
+const REVERSAL_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+/// The one inhibited image both arms decode, its CRC-64: the same bytes in both tests.
+const REVERSAL_IMAGE_CRC_1024: u64 = 0;
+/// The four couplings at the ends of the 1 536th and the 1 537th trials, `[stimulus][readout]`.
+type Carry = ([[i64; 2]; 2], [[i64; 2]; 2]);
+/// The couplings around the flip per arm, as read.
+const REVERSAL_SNAPSHOTS_1024: [Carry; 2] = [([[0; 2]; 2], [[0; 2]; 2]); 2];
+/// Clause 1's and clause 2's counts per arm, `[before the flip, the run's last 128]`,
+/// against `REWARDED_MIN`.
+const CORRECT_REVERSAL_1024: [[u32; 2]; 2] = [[0; 2]; 2];
+/// ADR-0090's assertion's reach per arm, as read.
+const HELD_1024: [Held; 2] = [Held {
+    after_carry: 0,
+    uncarried: 0,
+    outside: 0,
+    carried: 0,
+}; 2];
+/// The measured need per arm, as read.
+const NEED_1024: [Need; 2] = [Need {
+    selected_new: 0,
+    selected_old: 0,
+    ties: 0,
+    rewards: 0,
+    crossed: None,
+}; 2];
+/// The first trial after the flip that earned a reward, per arm, as read.
+const FIRST_REWARD_1024: [Option<usize>; 2] = [None; 2];
+/// The pair the 1 536th trial carried into the 1 537th, per arm, as read.
+const CARRIED_1024: [Option<(usize, usize)>; 2] = [None; 2];
+/// The new answer's pairs' rise from the flip to the run's end, `[A, B]`, per arm, as read.
+const NEW_RISE_1024: [[i64; 2]; 2] = [[0; 2]; 2];
+/// The blocks, of forty-eight, in which the stimulus fired once, per arm, as read.
+const ONCE_BLOCKS_REVERSAL_1024: [u32; 2] = [0; 2];
+/// Whether the inhibitory sum fell in every block of the run, per arm, as read.
+const FALLS_REVERSAL_1024: [bool; 2] = [false; 2];
+/// ADR-0080's derivation as read over each arm's whole run, clause by clause.
+const DERIVATION_REVERSAL_1024: [[bool; 3]; 2] = [[false; 3]; 2];
+/// The arena's sums by polarity after each arm's run, `(inhibitory, excitatory)`.
+const SUMS_AFTER_REVERSAL_1024: [(i64, i64); 2] = [(0, 0); 2];
+
+/// The gate's test (ADR-0061's class; brief 040): the arms and their mappings; the constants
+/// as ADR-0089 fixed them; the criterion's two clauses at their edges over blocks written by
+/// hand, a clause-1 failure among them; ADR-0090's assertion's rule and the pair the
+/// carry-over names at their edges; the readings' rules over blocks written by hand; and a
+/// few trials over a flip on the instrument's network at 1 024 units with the inhibitory
+/// baseline set — the flipped run, the oracle held at every trial inside
+/// `earned_run_flipped`, beside a run with no flip from the same network: every trial
+/// before the flip the same, and at the flip the same stimulus, counts, selection, signal
+/// and consolidation, the correctness the other mapping's and the reward's sign with it.
+/// No whole run, and nothing else added to the gate.
+#[test]
+fn a_few_trials_over_the_flip_at_1024_units_and_the_rules_of_the_assignment_reversed() {
+    // The arms, their mappings and the H-16 arms their first halves are; the constants.
+    assert_eq!(
+        REVERSAL_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert!(!first_mapping(Reversal::AssignmentFirst) && first_mapping(Reversal::MirroredFirst));
+    assert_eq!(
+        REVERSAL_ARMS.map(replicated_arm),
+        [0, 1],
+        "the first halves are H-16's assignment and mirrored assignment"
+    );
+    assert_eq!(INHIBITION_ARMS[0], Inhibition::Assignment);
+    assert_eq!(INHIBITION_ARMS[1], Inhibition::Mirrored);
+    assert!(!inhibition_mirrors(INHIBITION_ARMS[0]) && inhibition_mirrors(INHIBITION_ARMS[1]));
+    assert_eq!(
+        (
+            REVERSAL_TRIALS,
+            REVERSAL_BLOCKS,
+            FLIP,
+            LAST_BEFORE_FLIP,
+            FLIP_BLOCK
+        ),
+        (3_072, 48, 1_536, 1_535, 24)
+    );
+    assert_eq!([REVERSAL_PREDICTED], [false], "ADR-0089 predicts no");
+    // Every constant of H-17 restated unchanged: ADR-0065's window, trial, seed and gain,
+    // ADR-0066's mark and window of the criterion, ADR-0076's stimulus and cancel, ADR-0077's
+    // settled candidate, ADR-0080's length and reward, ADR-0085's two baselines.
+    assert_eq!(
+        (WINDOW.from, WINDOW.ticks, TRIAL_TICKS, SEED, GAIN_1024),
+        (100, 500, 1 << 14, 27, 0x0001_C000)
+    );
+    assert_eq!((REWARDED_MIN, LAST_BLOCKS, BLOCK), (80, 2, 64));
+    assert_eq!(SHAPE_F46, (2, 0x0001_4000));
+    assert_eq!(CANCEL_PICKED_1024, Some(CANCEL_AT_THE_EXTREME));
+    assert_eq!((SETTLED, BACKGROUNDS[SETTLED]), (0, 0));
+    assert_eq!(INHIBITION_TRIALS, REINFORCED_TRIALS);
+    assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
+    assert_eq!(REWARD_Q16, ONE);
+    // The criterion at its edges over blocks written by hand: clause 1 reads the last two
+    // blocks before the flip and nothing after it; clause 2 the run's last two and nothing
+    // before them; a tie is never counted, since the task's correct count is the rule's.
+    let blocks_of = |correct: &[u32]| -> Vec<Block> {
+        correct
+            .iter()
+            .map(|&c| {
+                (
+                    c,
+                    0,
+                    [[0; 2]; 2],
+                    [0; 2],
+                    [0; 2],
+                    [0; 2],
+                    0,
+                    0,
+                    0,
+                    0,
+                    [[0; 2]; 2],
+                    (BLOCK as u32).saturating_sub(c),
+                )
+            })
+            .collect()
+    };
+    let run_of = |before: [u32; 2], after: [u32; 2], rest: u32| -> Vec<Block> {
+        let mut correct = vec![rest; REVERSAL_BLOCKS];
+        correct[FLIP_BLOCK - 2] = before[0];
+        correct[FLIP_BLOCK - 1] = before[1];
+        correct[REVERSAL_BLOCKS - 2] = after[0];
+        correct[REVERSAL_BLOCKS - 1] = after[1];
+        blocks_of(&correct)
+    };
+    let edge = run_of([40, 40], [40, 40], 0);
+    assert_eq!((correct_before(&edge), correct_after(&edge)), (80, 80));
+    let v = revision([&edge, &edge]);
+    assert_eq!(
+        v,
+        Revision {
+            learned: [true; 2],
+            revised: [true; 2],
+            replicated: true,
+            yes: true
+        },
+        "80 and 80 in both arms: yes"
+    );
+    let short_after = run_of([40, 40], [40, 39], 64);
+    assert_eq!(correct_after(&short_after), 79);
+    let v = revision([&edge, &short_after]);
+    assert_eq!(
+        v,
+        Revision {
+            learned: [true; 2],
+            revised: [true, false],
+            replicated: true,
+            yes: false
+        },
+        "79 after the flip in one arm: no, whatever the blocks between"
+    );
+    let short_before = run_of([39, 40], [64, 64], 64);
+    assert_eq!(correct_before(&short_before), 79);
+    let v = revision([&short_before, &edge]);
+    assert_eq!(
+        v,
+        Revision {
+            learned: [false, true],
+            revised: [true; 2],
+            replicated: false,
+            yes: false
+        },
+        "a clause-1 failure: not replicated, and no answer to H-17 whatever clause 2 reads"
+    );
+    let only_after = run_of([0, 0], [64, 64], 64);
+    assert_eq!(
+        correct_before(&only_after),
+        0,
+        "clause 1 reads no block after the flip"
+    );
+    let only_before = run_of([64, 64], [0, 0], 64);
+    assert_eq!(
+        correct_after(&only_before),
+        0,
+        "clause 2 reads no block before the run's last two"
+    );
+    assert_eq!(
+        correct_before(&blocks_of(&[64; 23])),
+        0,
+        "a run short of the flip"
+    );
+    assert_eq!(
+        correct_before(&blocks_of(&[64; 24])),
+        128,
+        "a run that reaches it"
+    );
+    assert_eq!(
+        correct_after(&blocks_of(&[64; 47])),
+        0,
+        "a run short of 3 072"
+    );
+    assert_eq!(correct_after(&blocks_of(&[64; 49])), 0, "or past it");
+    assert_eq!(correct_after(&blocks_of(&[64; 48])), 128);
+    // ADR-0090's assertion's rule at its edges, and the pair the carry-over names.
+    let held = |after_carry: u64, uncarried: u64, outside: u64, carried: u64| Held {
+        after_carry,
+        uncarried,
+        outside,
+        carried,
+    };
+    assert!(reversal_held(&Held::default()));
+    assert!(
+        reversal_held(&held(0, 0, 0, 170)),
+        "the carry-over's moves are a reading, not a clause"
+    );
+    assert!(!reversal_held(&held(1, 0, 0, 0)), "(a)");
+    assert!(!reversal_held(&held(0, 1, 0, 0)), "(b)");
+    assert!(!reversal_held(&held(0, 0, 1, 0)), "(c)");
+    let trial = |stimulus: u8, selection: Option<u8>, reward: i32| -> EarnedTrial {
+        (
+            stimulus,
+            [0; 2],
+            selection,
+            reward > 0,
+            reward,
+            [[0; 2]; 2],
+            0,
+            0,
+        )
+    };
+    assert_eq!(carried_pair(&trial(1, Some(1), ONE)), Some((1, 1)));
+    assert_eq!(carried_pair(&trial(0, Some(1), ONE)), Some((0, 1)));
+    assert_eq!(
+        carried_pair(&trial(1, Some(0), ONE.saturating_neg())),
+        None,
+        "a punishment carries nothing"
+    );
+    assert_eq!(
+        carried_pair(&trial(1, None, ONE.saturating_neg())),
+        None,
+        "nor a tie"
+    );
+    let old = assigned_pairs(false);
+    assert_eq!(uncarried(old, Some((1, 1))), vec![(0, 0)]);
+    assert_eq!(uncarried(old, Some((0, 0))), vec![(1, 1)]);
+    assert_eq!(uncarried(old, None), vec![(0, 0), (1, 1)]);
+    assert_eq!(uncarried(assigned_pairs(true), Some((1, 0))), vec![(0, 1)]);
+    // The readings' rules over blocks written by hand: the need after the flip, the first
+    // reward, the gaps and the new answer's rise.
+    let mut hand = run_of([64, 64], [3, 1], 0);
+    for (j, b) in hand.iter_mut().enumerate() {
+        b.11 = if j >= FLIP_BLOCK { 2 } else { 0 };
+    }
+    hand[FLIP_BLOCK + 3].0 = 41;
+    let earned_hand: Vec<EarnedBlock> = hand
+        .iter()
+        .map(|b| ([[0; 3]; 2], b.0, [[0; 2]; 2], 0, 0))
+        .collect();
+    assert_eq!(
+        need(&hand, &earned_hand),
+        Need {
+            selected_new: 45,
+            selected_old: 1_536 - 45 - 48,
+            ties: 48,
+            rewards: 45,
+            crossed: Some(FLIP + 4 * BLOCK),
+        },
+        "the need reads the blocks after the flip and nothing before"
+    );
+    assert_eq!(
+        need(&hand[..FLIP_BLOCK], &earned_hand[..FLIP_BLOCK]),
+        Need::default(),
+        "a run that stops at the flip needs nothing yet"
+    );
+    let mut read_hand = vec![trial(0, Some(0), ONE); REVERSAL_TRIALS];
+    for t in read_hand.iter_mut().skip(FLIP) {
+        *t = trial(0, Some(0), ONE.saturating_neg());
+    }
+    assert_eq!(
+        first_reward(&read_hand),
+        None,
+        "the rewards before the flip are not read"
+    );
+    read_hand[FLIP + 700] = trial(0, Some(1), ONE);
+    read_hand[FLIP + 900] = trial(1, Some(0), ONE);
+    assert_eq!(first_reward(&read_hand), Some(FLIP + 700));
+    read_hand[FLIP] = trial(1, Some(0), ONE);
+    assert_eq!(first_reward(&read_hand), Some(FLIP), "the 1 537th counts");
+    let mut gap_block = blocks_of(&[0])[0];
+    gap_block.2 = [[30, 12], [11, 29]];
+    assert_eq!(gaps(&[gap_block], false), vec![[18, 18]]);
+    assert_eq!(gaps(&[gap_block], true), vec![[-18, -18]]);
+    let mut rise = blocks_of(&[0; REVERSAL_BLOCKS]);
+    rise[FLIP_BLOCK - 1].10 = [[100, 200], [300, 400]];
+    rise[REVERSAL_BLOCKS - 1].10 = [[100, 207], [305, 400]];
+    assert_eq!(
+        new_rise(&rise, false),
+        [7, 5],
+        "A→R1 and B→R0 after the assignment"
+    );
+    assert_eq!(
+        new_rise(&rise, true),
+        [0, 0],
+        "A→R0 and B→R1 after the mirrored"
+    );
+    assert_eq!(
+        new_rise(&rise[..FLIP_BLOCK], false),
+        [0; 2],
+        "no block after the flip"
+    );
+    assert_eq!(once_blocks(&[], &[]), 0);
+    // A few trials over a flip on the instrument's network at 1 024 units, the inhibitory
+    // baseline set: the assignment first, flipped before the trial of index `GATE_FLIP`,
+    // the oracle held at every trial inside `earned_run_flipped` and every trial's contract
+    // asserted under the mapping in force; beside it the same network run to the flip's
+    // trial with no flip. The trials before the flip are the same run; at the flip's trial
+    // the stimulus, the counts, the selection, the signal at the trial's end and what the
+    // trial consolidated are the same, and the correctness is the other mapping's, the
+    // reward's sign with it; after it, every trial is judged under the other mapping.
+    const GATE_FLIP: usize = GATE_TRIALS / 2;
+    let p = prior(1024);
+    let inhibited = || Config {
+        inhibitory_baseline_q16: Some(INHIBITORY_BASELINE_Q16),
+        ..config(1024, 2, GATE_BASELINE_Q16)
+    };
+    let mut flipped = at_gain(&p, inhibited(), GAIN_1024);
+    let old = assigned_pairs(false);
+    let mut snapshot: Option<Vec<Vec<i16>>> = None;
+    let mut moved_at_flip = [0u64; 2];
+    let run = reversal_run(
+        &mut flipped,
+        Reversal::AssignmentFirst,
+        GATE_TRIALS,
+        GATE_FLIP,
+        &mut |exec, trial| {
+            if trial.saturating_add(1) == GATE_FLIP {
+                snapshot = Some(weights_of(exec));
+            } else if trial == GATE_FLIP {
+                let before = snapshot.as_ref().expect("the trial before the flip first");
+                moved_at_flip = old.map(|pair| reach(exec, before, 1024, &[pair]).0);
+            }
+        },
+    );
+    let (blocks, trace, _, read, _) = &run;
+    assert!(blocks.is_empty(), "a few trials are no whole block");
+    assert_eq!(read.len(), GATE_TRIALS);
+    let mut plain = at_gain(&p, inhibited(), GAIN_1024);
+    let reference = earned_run_under(
+        &mut plain,
+        Feedback::Answer,
+        false,
+        1024,
+        GATE_FLIP + 1,
+        GATE_BASELINE_Q16,
+    );
+    let (_, _, _, unflipped, _) = &reference;
+    eprintln!(
+        "DUMP reversal1024 over the flip trace {trace:#018x} read {read:?} unflipped {unflipped:?} moved at the flip {moved_at_flip:?}"
+    );
+    assert_eq!(
+        read[..GATE_FLIP],
+        unflipped[..GATE_FLIP],
+        "the trials before the flip are the run with no flip"
+    );
+    let (at, was) = (&read[GATE_FLIP], &unflipped[GATE_FLIP]);
+    assert_eq!(
+        (at.0, at.1, at.2, at.5, at.6),
+        (was.0, was.1, was.2, was.5, was.6),
+        "at the flip's trial the stimulus, the counts, the selection, what it consolidated and the signal at its end are the same"
+    );
+    assert!(
+        at.2.is_some(),
+        "the flip's trial selects a readout, so the mapping decides its correctness"
+    );
+    assert_eq!(at.3, !was.3, "and its correctness is the other mapping's");
+    assert_eq!(
+        (at.4, was.4),
+        (
+            if at.3 {
+                REWARD_Q16
+            } else {
+                REWARD_Q16.saturating_neg()
+            },
+            if was.3 {
+                REWARD_Q16
+            } else {
+                REWARD_Q16.saturating_neg()
+            }
+        ),
+        "the reward's sign with it"
+    );
+    for (trial, t) in read.iter().enumerate() {
+        let in_force = trial >= GATE_FLIP;
+        assert_eq!(
+            t.3,
+            t.2 == Some(answer_of(t.0, in_force) as u8),
+            "trial {trial}: correct under the mapping in force"
+        );
+        assert_eq!(
+            t.4 > 0,
+            t.3,
+            "trial {trial}: the reward's sign is the outcome's"
+        );
+    }
+    assert_eq!(
+        derivation(read),
+        [true; 3],
+        "ADR-0080's derivation over the flip"
+    );
+    // ADR-0090 at the gate: the trial after the flip moves no old answer pair but the one the
+    // trial before it carried, if it carried one.
+    let carried = carried_pair(&read[GATE_FLIP - 1]);
+    for (pair, &moved) in old.iter().zip(moved_at_flip.iter()) {
+        if Some(*pair) != carried {
+            assert_eq!(
+                moved, 0,
+                "the uncarried old answer pair {pair:?} held over the flip"
+            );
+        }
+    }
+    // And the carry-over itself, the defect ADR-0090 amends ADR-0089's assertion for: here the
+    // trial before the flip was rewarded on A→R0, and the trial after it consolidated that
+    // pair — 560 of its synapses moved — under the second mapping.
+    assert_eq!(
+        carried,
+        Some((0, 0)),
+        "the trial before the flip carried A→R0"
+    );
+    assert!(
+        moved_at_flip[0] > 0 && read[GATE_FLIP].5[0][0] > 0,
+        "and the first trial under the second mapping consolidated it: {moved_at_flip:?}"
+    );
 }
