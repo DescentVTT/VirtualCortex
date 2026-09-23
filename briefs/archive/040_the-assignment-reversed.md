@@ -130,14 +130,14 @@ the quoted sentences are what to re-derive.
   the last two blocks of the run, each at least `REWARDED_MIN`, both arms), the flip's trial, the arms, ADR-0089's
   prediction written as a constant, the assertion's shape, the readings' rules, and every constant of ADR-0065,
   ADR-0076, ADR-0077, ADR-0080, ADR-0085 and ADR-0089 restated unchanged.
-  **Done**: `f2ba2e7` on the branch, after ADR-0090's amendment (`1d06422`) and before the first rewarded run — `tests/inhibition.rs` with the constants, the rules, the gate and every table of the second half empty, the flip on the shared harness (`run_on_flipped`, `earned_run_flipped`).
+  **Done**: `5262769` on `main` (`f2ba2e7` on the branch before the rebase that merged pull request #113), after ADR-0090's amendment (`67d0124`; `1d06422` on the branch) and before the first rewarded run — `tests/inhibition.rs` with the constants, the rules, the gate and every table of the second half empty, the flip on the shared harness (`run_on_flipped`, `earned_run_flipped`).
 - [x] **The two arms** — the assignment first, the mirrored first — **each its own `exhaustive` test**, each 3 072
   trials from the one image with the excitatory baseline zero and the inhibitory baseline 0.5, the mapping flipped
   once between trials 1 536 and 1 537 and nothing else changed at the flip; their tables pinned per block: the
   correct selections under the mapping in force, the selections per stimulus and readout, the ties, the four
   stimulus–readout couplings, the rewards earned, the two readouts' counts per stimulus, the arena's sums, the
   sight, the stimulus's volley and the dopamine signal.
-  **Done**: `the_assignment_reversed_from_the_assignment_at_1024_units_exhaustive` and `the_assignment_reversed_from_the_mirrored_assignment_at_1024_units_exhaustive`; the first half of each held to H-16's pinned arm, which it equals bit for bit, and the second half's tables (`REVERSAL_*_1024`) pinned per block from one run and reproduced by a second on the same machine (`c44ce0c`).
+  **Done**: `the_assignment_reversed_from_the_assignment_at_1024_units_exhaustive` and `the_assignment_reversed_from_the_mirrored_assignment_at_1024_units_exhaustive`; the first half of each held to H-16's pinned arm, which it equals bit for bit, and the second half's tables (`REVERSAL_*_1024`) pinned per block from one run and reproduced by a second on the same machine (`aee1504` on `main`, `c44ce0c` on the branch).
 - [x] **The assertion.** In both arms the pair that was the answer before the flip has, at the 3 072nd trial,
   exactly the coupling it had at the 1 536th — bit for bit, every synapse — and no synapse outside the four
   stimulus–readout pairs moved. If it fails, a numbered finding against ADR-0080's derivation as ADR-0089 extends
