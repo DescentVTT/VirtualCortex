@@ -493,9 +493,24 @@ pub(crate) fn run_behind(
 /// runs its whole windows, then calls this.
 pub(crate) fn run_on(
     exec: &mut Engine,
+    task: Task,
+    units: u32,
+    trials: usize,
+    observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
+) -> (Vec<Block>, u64) {
+    run_on_flipped(exec, task, units, trials, None, observe)
+}
+
+/// `run_on` with the task's mapping flipped once (brief 040): before the trial of index
+/// `flip`, if one is given, `task.mirrored` is negated and nothing else is touched, so the
+/// trials before it are `run_on`'s and a trial after it is judged, rewarded and counted
+/// correct under the other mapping; with none it is `run_on`, which calls it so.
+pub(crate) fn run_on_flipped(
+    exec: &mut Engine,
     mut task: Task,
     units: u32,
     trials: usize,
+    flip: Option<usize>,
     observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
 ) -> (Vec<Block>, u64) {
     assert_eq!(
@@ -526,6 +541,9 @@ pub(crate) fn run_on(
     let mut seen = 0u32;
     let mut ties = 0u32;
     for trial in 0..trials {
+        if flip == Some(trial) {
+            task.mirrored = !task.mirrored;
+        }
         let overwritten = exec.train_overwritten();
         let start = exec.ticks() as u32;
         let before =
@@ -8845,6 +8863,35 @@ pub(crate) fn earned_run_under(
     trials: usize,
     baseline_q16: i32,
 ) -> EarnedRun {
+    earned_run_flipped(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        None,
+        &mut |_, _| {},
+    )
+}
+
+/// `earned_run_under` with the mapping flipped once (brief 040): before the trial of index
+/// `flip`, if one is given, `run_on_flipped` negates the task's `mirrored` and touches nothing
+/// else, and every trial's contract is asserted under the mapping in force at it — `mirrored`
+/// before the flip, the other after it. `after` is called at the end of every trial's reading
+/// with the executor and the trial's index; it reads and never writes. With no flip and an
+/// `after` that reads nothing it is `earned_run_under`, which calls it so.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_flipped(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flip: Option<usize>,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> EarnedRun {
     assert_eq!(
         units, 1024,
         "the cancel and the synapse counts below are pinned at 1 024 units"
@@ -8880,11 +8927,12 @@ pub(crate) fn earned_run_under(
     // The task is `Copy`: a copy reads the coin the run's own task drew.
     let probe = task;
     let mut read: Vec<EarnedTrial> = Vec::with_capacity(trials);
-    let (blocks, trace) = run_on(
+    let (blocks, trace) = run_on_flipped(
         exec,
         task,
         units,
         trials,
+        flip,
         &mut |exec, trial, start, outcome| {
             // The task rewarded at the trial's end, before this reading: the oracle holds the
             // record's signal to the course's end plus it.
@@ -8895,7 +8943,9 @@ pub(crate) fn earned_run_under(
                 selected(outcome.counts),
                 "trial {trial}: the selection is the sign of the count difference"
             );
-            let answer = answer_of(outcome.stimulus, mirrored) as u8;
+            // The mapping in force: the run's before the flip, the other from it on.
+            let in_force = mirrored != flip.is_some_and(|f| trial >= f);
+            let answer = answer_of(outcome.stimulus, in_force) as u8;
             assert_eq!(
                 outcome.correct,
                 outcome.selection == Some(answer),
@@ -8926,22 +8976,22 @@ pub(crate) fn earned_run_under(
                 (sets[stimulus].len() as usize, targets),
                 "trial {trial}: the addressed set is the presented stimulus onto the selected readout, onto none at a tie"
             );
-            let after = exec.modulator().dopamine_rpe;
+            let signal = exec.modulator().dopamine_rpe;
             assert_eq!(
-                outcome.signal_q16, after,
+                outcome.signal_q16, signal,
                 "trial {trial}: the task read the signal after its reward"
             );
             if feedback == Feedback::Withheld {
                 assert_eq!(
-                    after, 0,
+                    signal, 0,
                     "trial {trial}: the withheld arm's signal stays at rest"
                 );
             }
-            let end = after.saturating_sub(outcome.reward_q16);
+            let end = signal.saturating_sub(outcome.reward_q16);
             let transferred = composer.transferred.last().copied().unwrap_or([[0; 2]; 2]);
             composer.taught = Some(Taught {
                 addressed: outcome.selection.map(|r| (stimulus, usize::from(r))),
-                signal: after,
+                signal,
             });
             read.push((
                 outcome.stimulus,
@@ -8951,8 +9001,9 @@ pub(crate) fn earned_run_under(
                 outcome.reward_q16,
                 transferred,
                 end,
-                after,
+                signal,
             ));
+            after(exec, trial);
         },
     );
     assert_eq!(composer.out.len(), trials);
