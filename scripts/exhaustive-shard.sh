@@ -12,10 +12,12 @@
 # table does not know as a heavy one. The table decides the balance and never the coverage:
 # which tests run is what `--list` named.
 #
-# Each test runs in a process of its own (`<binary> --ignored --exact <test>`), as many at once
-# as the runner has cores, so the shard runs its tests side by side as a binary's threads did and
-# each test's seconds are its own, which is what the table is made from. No whole-domain test
-# shares a fixture with another, so a process per test costs a process start and nothing more.
+# Each test runs in a process of its own (`<binary> --ignored --exact <test>`), so each test's
+# seconds are its own, which is what the table is made from. No whole-domain test shares a
+# fixture with another, so a process per test costs a process start and nothing more. Half as
+# many run at once as the runner has cores: the heavy tests run an executor of two or four worker
+# threads each, and at one process a core the first dispatch of ADR-0092 read them three times
+# slower apiece and the shards' test time a fifth higher than ADR-0091's model.
 #
 # Each test is checked: it must exit 0 and report one test passed. A test that ran nothing — a
 # name `--exact` did not match — or failed, or never ran, fails the job the way ADR-0058's
@@ -68,7 +70,9 @@ run_one() {
 export -f run_one
 export SHARD="$k"
 
-parallel=$(nproc 2>/dev/null || echo 2)
+cores=$(nproc 2>/dev/null || echo 2)
+parallel=$((cores / 2))
+if [ "$parallel" -lt 1 ]; then parallel=1; fi
 : > "results-$k.tsv"
 started=$SECONDS
 # `-d '\n'` so that a line is one argument and xargs reads no quote or backslash in it.
