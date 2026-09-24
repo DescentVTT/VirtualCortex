@@ -2874,7 +2874,22 @@ pub(crate) struct Composer {
     /// and 0.5 under H-15, where every synapse consolidates half its trace at each
     /// presynaptic spike.
     pub(crate) baseline: i32,
+    /// The signed gate (brief 041, ADR-0094): false in every run before it, so that the
+    /// oracle consolidates under the modulation clamped to [0, 1] (`consolidated`); true under
+    /// H-18, where an addressed synapse — every replayed synapse is excitatory — consolidates
+    /// under the baseline plus the signal clamped to [−1, 1] (`consolidated_signed`).
+    pub(crate) signed: bool,
+    /// Per trial, over the synapses of the pair the last trial's delivery addressed, what the
+    /// trial's consolidation did to each (brief 041): the synapses whose weight rose, fell and
+    /// stayed, and the amounts raised and lowered; zero where nothing was addressed and in a
+    /// frozen run.
+    pub(crate) moves: Vec<Moves>,
 }
+
+/// What one trial's consolidation did to the synapses of the pair the last trial's delivery
+/// addressed (brief 041): `[rose, fell, stayed]` and `[raised, lowered]`, the second summed
+/// with its sign, so at most zero.
+pub(crate) type Moves = ([u32; 3], [i64; 2]);
 
 impl Composer {
     pub(crate) fn new(units: u32) -> Self {
@@ -2894,6 +2909,8 @@ impl Composer {
             transferred: Vec::new(),
             rewarded: 0,
             baseline: 0,
+            signed: false,
+            moves: Vec::new(),
         }
     }
 
@@ -3027,6 +3044,8 @@ impl Composer {
         let course = self.taught.as_ref().map(|t| signal_course(t.signal));
         let addressed = self.taught.as_ref().and_then(|t| t.addressed);
         let baseline = self.baseline;
+        let signed = self.signed;
+        let mut moves: Moves = ([0; 3], [0; 2]);
         let Self {
             synapses,
             spikes,
@@ -3042,6 +3061,7 @@ impl Composer {
                 panic!("a synapse's end is outside the arena");
             };
             let from = pre.partition_point(|&t| t < cursor);
+            let mut net = 0i64;
             for &t in pre.iter().skip(from) {
                 let elapsed = t.wrapping_sub(syn.stamp);
                 if elapsed != 0 {
@@ -3092,17 +3112,36 @@ impl Composer {
                     // The engine's rule (`Modulations::of`, `NeuromodulatorState::modulation`):
                     // the baseline plus the signal where the synapse is addressed, the
                     // baseline alone elsewhere, saturating; `consolidated` clamps it to
-                    // [0, 1] as the engine does.
+                    // [0, 1] as the engine does, and under the signed gate
+                    // `consolidated_signed` to [−1, 1] (brief 041; every replayed synapse is
+                    // excitatory, and one not addressed consolidates under the baseline,
+                    // which is not below zero, so the two rules are one there).
                     let modulation = baseline.saturating_add(signal);
-                    let (trace, magnitude, absorbed) =
-                        consolidated(syn.trace, syn.magnitude, modulation);
+                    let (trace, magnitude, absorbed) = if signed {
+                        consolidated_signed(syn.trace, syn.magnitude, modulation)
+                    } else {
+                        consolidated(syn.trace, syn.magnitude, modulation)
+                    };
                     syn.trace = trace;
                     syn.magnitude = magnitude;
                     let into = &mut transferred[syn.stimulus][syn.readout];
                     *into = into.saturating_add(i64::from(absorbed));
+                    net = net.saturating_add(i64::from(absorbed));
                 }
             }
+            // What the trial did to the addressed pair's synapse (brief 041).
+            if course.is_some() && addressed == Some((syn.stimulus, syn.readout)) {
+                let k = match net {
+                    1.. => 0,
+                    0 => 2,
+                    _ => 1,
+                };
+                moves.0[k] = moves.0[k].saturating_add(1);
+                let side = usize::from(net < 0);
+                moves.1[side] = moves.1[side].saturating_add(net);
+            }
         }
+        self.moves.push(moves);
         // The record: (a), each slot's trace held to the oracle and each weight to the
         // oracle's magnitude — the prior's in a frozen run, the consolidated one under the
         // taught delivery.
@@ -7194,6 +7233,37 @@ pub(crate) fn consolidated(trace: i16, magnitude: i32, modulation_q16: i32) -> (
     (trace.saturating_sub(absorbed) as i16, after, absorbed)
 }
 
+/// The consolidation of one excitatory slot under the signed gate (brief 041), as
+/// `cortex-core`'s `consolidate_signed` moves it (ADR-0093, ADR-0094): at and above zero
+/// `consolidated`; below it `round(|trace| × |m|)`, `m` clamped at −1.0, against the trace's
+/// sign out of or into the magnitude, which is read and clamped within $[0, 2^{15})$, and
+/// what the magnitude moved added to the trace, so the trace moves toward zero by it.
+/// Returns the trace after, the magnitude after and the amount the magnitude moved; written
+/// a second time as the oracle's.
+pub(crate) fn consolidated_signed(
+    trace: i16,
+    magnitude: i32,
+    modulation_q16: i32,
+) -> (i16, i32, i32) {
+    if modulation_q16 >= 0 {
+        return consolidated(trace, magnitude, modulation_q16);
+    }
+    let m = i64::from(modulation_q16.max(ONE.saturating_neg())).abs();
+    let trace = i32::from(trace);
+    let amount = (i64::from(trace)
+        .abs()
+        .saturating_mul(m)
+        .saturating_add(0x8000)
+        >> 16) as i32;
+    let transfer = amount.saturating_mul(trace.signum()).saturating_neg();
+    let before = magnitude.clamp(0, i32::from(i16::MAX));
+    let after = before
+        .saturating_add(transfer)
+        .clamp(0, i32::from(i16::MAX));
+    let moved = after.saturating_sub(before);
+    (trace.saturating_add(moved) as i16, after, moved)
+}
+
 /// The delivery as the oracle replays it (brief 036): the pair the last trial's delivery
 /// addressed — the stimulus presented and its assigned readout under the taught delivery,
 /// the readout the engine selected under the task's own (brief 037), none at a tie — and the
@@ -8892,6 +8962,39 @@ pub(crate) fn earned_run_flipped(
     flip: Option<usize>,
     after: &mut dyn FnMut(&Engine, usize),
 ) -> EarnedRun {
+    earned_run_signed(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flip,
+        false,
+        after,
+    )
+    .0
+}
+
+/// `earned_run_flipped` under the signed gate or not (brief 041): `signed` is the executor's
+/// gate, asserted, and the oracle's (`Composer::signed`), which consolidates every addressed
+/// replayed synapse by `consolidated_signed` while it is set; with it unset this is
+/// `earned_run_flipped`, which calls it so and drops the second value. Returns the run and,
+/// per trial, what its consolidation did to the pair the last trial's delivery addressed
+/// (`Composer::moves`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_signed(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flip: Option<usize>,
+    signed: bool,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> (EarnedRun, Vec<Moves>) {
+    assert_eq!(exec.signed_gate(), signed, "the signed gate is the image's");
     assert_eq!(
         units, 1024,
         "the cancel and the synapse counts below are pinned at 1 024 units"
@@ -8911,6 +9014,7 @@ pub(crate) fn earned_run_flipped(
     composer.enumerate(exec);
     composer.cursor = exec.ticks() as u32;
     composer.baseline = baseline_q16;
+    composer.signed = signed;
     composer.taught = Some(Taught {
         addressed: None,
         signal: 0,
@@ -9007,8 +9111,12 @@ pub(crate) fn earned_run_flipped(
         },
     );
     assert_eq!(composer.out.len(), trials);
+    assert_eq!(composer.moves.len(), trials);
     assert_eq!(composer.counts(), SYNAPSES_1024);
-    (blocks, trace, composer.out, read, composer.volley_ticks)
+    (
+        (blocks, trace, composer.out, read, composer.volley_ticks),
+        composer.moves,
+    )
 }
 
 /// Dumps an arm's run: the sight's blocks and trace, the rows, the composition per block, the
