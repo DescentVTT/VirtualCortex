@@ -11,7 +11,8 @@
 //! mailbox is written idle and woken again on load; the executor's clock is written with it
 //! and resumed by the loader, so the stamps keep their meaning (ADR-0033). The engine's
 //! modulation state (ADR-0032: the modulator record and the baseline; since ADR-0086 the
-//! inhibitory baseline beside them, set or unset), its homeostasis state
+//! inhibitory baseline beside them, set or unset; since ADR-0094 the signed gate, set or
+//! unset), its homeostasis state
 //! (ADR-0036, ADR-0037) and its hippocampal state (ADR-0038) are sections of their own, always
 //! written, and the episodic ledger a section written when it is not empty, so that the image
 //! defines the run (§8.3); since ADR-0052 so are the engine's affect state and induction
@@ -140,6 +141,13 @@ pub(crate) fn too_many_blocks(count: u64) -> bool {
 const INHIBITORY_FLAG: usize = 24;
 const INHIBITORY_VALUE: core::ops::Range<usize> = 28..32;
 const INHIBITORY_BASELINE_SET: u8 = 1;
+
+/// The modulator section's signed gate (ADR-0094; format 16): a flag byte at `[25]`,
+/// `SIGNED_GATE_SET` while the gate is set and zero while it is unset. `[26..28)` and
+/// `[32..64)` stay reserved and must be zero. A record a format-15 writer left zero there
+/// reads as unset, which is the rule before ADR-0094 bit for bit.
+const SIGNED_GATE_FLAG: usize = 25;
+const SIGNED_GATE_SET: u8 = 1;
 
 impl From<io::Error> for ImageError {
     fn from(e: io::Error) -> Self {
@@ -384,8 +392,9 @@ impl Image {
         // The engine's modulation state, always: one 64-byte record holding the modulator's 16
         // bytes, the baseline at `[16..20)`, the inhibitory rule's target period at `[20..24)`
         // (ADR-0053), the inhibitory baseline's flag at `[24]` and its value at `[28..32)`
-        // (ADR-0086; format 15) and 35 reserved bytes. The baselines and the period change
-        // what a run does, so they are in the image, not in a configuration (§8.3).
+        // (ADR-0086), the signed gate's flag at `[25]` (ADR-0094; format 16) and 34 reserved
+        // bytes. The baselines, the period and the gate change what a run does, so they are
+        // in the image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -393,6 +402,9 @@ impl Image {
         if let Some(inhibitory) = exec.inhibitory_baseline_q16() {
             modulator_bytes[INHIBITORY_FLAG] = INHIBITORY_BASELINE_SET;
             modulator_bytes[INHIBITORY_VALUE].copy_from_slice(&inhibitory.to_le_bytes());
+        }
+        if exec.signed_gate() {
+            modulator_bytes[SIGNED_GATE_FLAG] = SIGNED_GATE_SET;
         }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
@@ -678,7 +690,8 @@ impl Image {
             // One record, the engine's: the modulator's 16 bytes, the baseline at `[16..20)`,
             // the inhibitory rule's target period at `[20..24)` (each within its bounds, as
             // `Executor::new` would have demanded), the inhibitory baseline's flag at `[24]`
-            // and its value at `[28..32)` (ADR-0086), 35 reserved bytes.
+            // and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
+            // (ADR-0094), 34 reserved bytes.
             if modulator.record_count() != 1 {
                 return Err(ImageError::Directory(SECTION_MODULATOR));
             }
@@ -687,7 +700,7 @@ impl Image {
                 section: SECTION_MODULATOR,
                 index: 0,
             };
-            if record[25..28].iter().any(|&b| b != 0) || record[32..64].iter().any(|&b| b != 0) {
+            if record[26..28].iter().any(|&b| b != 0) || record[32..64].iter().any(|&b| b != 0) {
                 return Err(reserved_not_zero());
             }
             let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));
@@ -714,6 +727,15 @@ impl Image {
                     ConfigError::InhibitoryBaselineOutOfRange,
                 ));
             }
+            // The signed gate (ADR-0094): unset while its flag is zero, set while it is
+            // `SIGNED_GATE_SET`; any other flag is a byte the writer never produces. The
+            // image's, set or unset, outranks the configuration's (§8.3).
+            let signed_gate = match record[SIGNED_GATE_FLAG] {
+                0 => false,
+                SIGNED_GATE_SET => true,
+                _ => return Err(reserved_not_zero()),
+            };
+            exec.set_signed_gate(signed_gate);
             exec.set_modulator(NeuromodulatorState::decode(
                 record[0..16].try_into().unwrap_or(&[0; 16]),
             ));

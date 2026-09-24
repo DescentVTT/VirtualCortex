@@ -157,6 +157,16 @@ pub struct Config {
     /// image's outranks this one: it changes what the run does, so it is part of the image
     /// (§8.3).
     pub inhibitory_baseline_q16: Option<i32>,
+    /// The signed gate (ADR-0093, ADR-0094): while set, an addressed excitatory synapse
+    /// consolidates under `clamp(baseline + dopamine, -1, 1)` (`cortex-neuromod`'s
+    /// `signed_modulation`), so that below zero its weight moves against its trace's sign and
+    /// the trace is spent by as much (`SynapseBlock::consolidate_signed`); every other synapse
+    /// consolidates as before — an unaddressed one under the baseline alone, an inhibitory one
+    /// under the addressed modulation at no less than zero, or under its own baseline while
+    /// that is set. Unset (the default), every synapse consolidates as before, bit for bit.
+    /// For an engine built from an image, the image's outranks this one: it changes what the
+    /// run does, so it is part of the image (§8.3).
+    pub signed_gate: bool,
 }
 
 impl Default for Config {
@@ -183,6 +193,7 @@ impl Default for Config {
             discovery_tag: 0,
             istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
             inhibitory_baseline_q16: None,
+            signed_gate: false,
         }
     }
 }
@@ -342,9 +353,17 @@ pub enum AddressError {
 /// number, so a run with no reward is the same run whatever is addressed; with every unit a
 /// source and a target only the first is read, so a run that addresses every unit is the run
 /// before the addressing existed, bit for bit; with the inhibitory baseline unset the third
-/// is never read, so every run before ADR-0086 is the run it was, bit for bit.
+/// is never read, so every run before ADR-0086 is the run it was, bit for bit. While the
+/// signed gate is set (ADR-0094) the first is `clamp(baseline + dopamine, -1, 1)`
+/// (`cortex-neuromod`'s `signed_modulation`), which an addressed excitatory synapse
+/// consolidates under and an addressed inhibitory one at no less than zero — the first as it
+/// is unset — so the sign reaches no synapse but an addressed excitatory one; unset, the first
+/// is never below zero and the floor changes nothing, so every run before ADR-0094 is the run
+/// it was, bit for bit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Modulations {
+    /// The modulation of an addressed synapse: in $[0, 1]$ while the signed gate is unset, in
+    /// $[-1, 1]$ while it is set, where an inhibitory slot takes it at no less than zero.
     pub addressed: i32,
     pub at_rest: i32,
     /// The modulation of every slot of an inhibitory block while the inhibitory baseline is
@@ -354,17 +373,23 @@ pub struct Modulations {
 }
 
 impl Modulations {
-    /// The modulations from the modulator, the baseline and the inhibitory baseline: the rule
-    /// is `cortex-neuromod`'s in the first two, once with the signal as it stands and once at
-    /// rest; the third is the inhibitory baseline clamped to $[0, 1]$, the signal never
-    /// entering it, and none when the baseline is unset.
+    /// The modulations from the modulator, the baseline, the inhibitory baseline and the
+    /// signed gate: the rule is `cortex-neuromod`'s in the first two, once with the signal as
+    /// it stands — `modulation`, or `signed_modulation` while the signed gate is set — and
+    /// once at rest; the third is the inhibitory baseline clamped to $[0, 1]$, the signal
+    /// never entering it, and none when the baseline is unset.
     pub fn of(
         modulator: &NeuromodulatorState,
         baseline_q16: i32,
         inhibitory_baseline_q16: Option<i32>,
+        signed_gate: bool,
     ) -> Self {
         Self {
-            addressed: modulator.modulation(baseline_q16),
+            addressed: if signed_gate {
+                modulator.signed_modulation(baseline_q16)
+            } else {
+                modulator.modulation(baseline_q16)
+            },
             at_rest: NeuromodulatorState::new().modulation(baseline_q16),
             inhibitory: inhibitory_baseline_q16.map(|b| b.clamp(0, MODULATION_ONE_Q16)),
         }
@@ -372,17 +397,19 @@ impl Modulations {
 
     /// The modulation a synapse consolidates under: `inhibitory` for a slot of an inhibitory
     /// block while the inhibitory baseline is set, whatever the addressing; otherwise
-    /// `addressed` when the synapse is addressed and `at_rest` when it is not.
+    /// `addressed` when the synapse is addressed — at no less than zero for an inhibitory
+    /// slot, so that the signed gate reaches none (ADR-0094) — and `at_rest` when it is not.
     pub const fn for_synapse(&self, addressed: bool, polarity: Polarity) -> i32 {
-        match (polarity, self.inhibitory) {
-            (Polarity::Inhibitory, Some(modulation)) => modulation,
-            _ => {
-                if addressed {
-                    self.addressed
-                } else {
-                    self.at_rest
-                }
-            }
+        match (polarity, self.inhibitory, addressed) {
+            (Polarity::Inhibitory, Some(modulation), _) => modulation,
+            (_, _, false) => self.at_rest,
+            (Polarity::Excitatory, _, true) => self.addressed,
+            // A range pattern, not a comparison: at zero the floor and the value are one
+            // number, which no test could tell from a bound.
+            (Polarity::Inhibitory, None, true) => match self.addressed {
+                i32::MIN..0 => 0,
+                modulation => modulation,
+            },
         }
     }
 }
@@ -404,18 +431,20 @@ fn inhibitory_of_word(word: i32) -> Option<i32> {
     if word < 0 { None } else { Some(word) }
 }
 
-/// [`SynapseBlock::consolidate`] for every slot in order, each under its own modulation
-/// (ADR-0068). Under one modulation for every slot it is `consolidate_all`, call for call,
-/// which `consolidate_each_under_one_modulation_is_consolidate_all` holds with the previous
-/// call as its oracle; an empty slot's modulation is not read, since `consolidate` moves
-/// nothing there.
+/// [`SynapseBlock::consolidate_signed`] for every slot in order, each under its own modulation
+/// (ADR-0068, ADR-0094). A modulation at or above zero is `consolidate`'s, bit for bit, so under
+/// one such modulation for every slot it is `consolidate_all`, call for call, which
+/// `consolidate_each_is_consolidate_signed_slot_by_slot_and_consolidate_all_above_zero` holds
+/// with the previous call as its oracle; only an addressed excitatory slot under the signed
+/// gate is ever given one below zero (`Modulations::for_synapse`). An empty slot's modulation
+/// is not read, since neither rule moves anything there.
 fn consolidate_each(
     block: &mut SynapseBlock,
     modulations: &[i32; SYNAPSES_PER_BLOCK],
     polarity: Polarity,
 ) {
     for (slot, &modulation) in modulations.iter().enumerate() {
-        block.consolidate(slot, modulation, polarity);
+        block.consolidate_signed(slot, modulation, polarity);
     }
 }
 
@@ -527,7 +556,8 @@ struct Shared {
     now: AtomicU32,
     /// The modulation this tick's fan-out consolidates with (ADR-0032): stored by the
     /// coordinator before the tick's first barrier, read by every worker after it. Since
-    /// ADR-0068 it is the modulation of an addressed synapse.
+    /// ADR-0068 it is the modulation of an addressed synapse; since ADR-0094 it is below zero
+    /// only while the signed gate is set.
     modulation: AtomicI32,
     /// The modulation of a synapse that is not addressed (ADR-0068): the same rule with the
     /// dopamine signal at rest, stored and read beside `modulation`.
@@ -673,6 +703,8 @@ pub struct Executor<const CAP: usize> {
     /// The inhibitory baseline (ADR-0086): the configuration's, or the image's; none while
     /// unset.
     inhibitory_baseline_q16: Option<i32>,
+    /// The signed gate (ADR-0094): the configuration's, or the image's.
+    signed_gate: bool,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -872,6 +904,7 @@ impl<const CAP: usize> Executor<CAP> {
             modulator: NeuromodulatorState::new(),
             modulation_baseline_q16: config.modulation_baseline_q16,
             inhibitory_baseline_q16: config.inhibitory_baseline_q16,
+            signed_gate: config.signed_gate,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -942,6 +975,13 @@ impl<const CAP: usize> Executor<CAP> {
     /// unset, where every synapse consolidates as before ADR-0086.
     pub fn inhibitory_baseline_q16(&self) -> Option<i32> {
         self.inhibitory_baseline_q16
+    }
+
+    /// The signed gate (ADR-0094), from the configuration or the image: while set, an
+    /// addressed excitatory synapse consolidates under `clamp(baseline + dopamine, -1, 1)`;
+    /// unset, every synapse consolidates as before ADR-0094.
+    pub fn signed_gate(&self) -> bool {
+        self.signed_gate
     }
 
     /// A reward-prediction error into the dopamine signal, between ticks (ADR-0032): an input,
@@ -1046,6 +1086,12 @@ impl<const CAP: usize> Executor<CAP> {
         }
         self.inhibitory_baseline_q16 = baseline_q16;
         true
+    }
+
+    /// The loader's: the signed gate an image holds, set or unset, which outranks the
+    /// configuration's (§8.3).
+    pub(crate) fn set_signed_gate(&mut self, set: bool) {
+        self.signed_gate = set;
     }
 
     /// The loader's: the clock resumes at the tick the image was written (ADR-0033), between
@@ -1905,12 +1951,14 @@ impl<const CAP: usize> Executor<CAP> {
         // The modulations this tick's fan-out consolidates with, from the signal as it
         // stands (the addressed units' with the signal, every other's at rest; ADR-0032,
         // ADR-0068; the inhibitory blocks' under their own baseline while it is set,
-        // ADR-0086); then the signal decays by one tick. All before the barrier that starts
-        // the tick, so every worker reads the same values.
+        // ADR-0086; the addressed one signed while the signed gate is set, ADR-0094); then the
+        // signal decays by one tick. All before the barrier that starts the tick, so every
+        // worker reads the same values.
         let modulations = Modulations::of(
             &self.modulator,
             self.modulation_baseline_q16,
             self.inhibitory_baseline_q16,
+            self.signed_gate,
         );
         self.shared
             .modulation
@@ -2215,7 +2263,9 @@ impl<const CAP: usize> Worker<CAP> {
                 // The modulation per slot (ADR-0068): the addressed one for a synapse from an
                 // addressed source onto an addressed target, the one at rest for every other;
                 // for every slot of an inhibitory block the inhibitory one while the
-                // inhibitory baseline is set (ADR-0086); an empty slot's is never read.
+                // inhibitory baseline is set (ADR-0086); the addressed one below zero only for
+                // an excitatory slot under the signed gate (ADR-0094); an empty slot's is never
+                // read.
                 let per_slot: [i32; SYNAPSES_PER_BLOCK] = core::array::from_fn(|slot| {
                     modulations.for_synapse(
                         from_source && block.target(slot).is_some_and(|t| shared.is_target(t)),
@@ -2756,6 +2806,69 @@ mod tests {
             INHIBITORY_UNSET
         );
     }
+
+    /// The signed gate (ADR-0094): unset by default and set by the configuration and by the
+    /// loader's setter; the tick publishes the addressed modulation below zero under a
+    /// punishment only while it is set — the signal as it stands, clamped at −1.0 — and zero
+    /// while it is unset, the modulation at rest zero either way at the gate's baseline.
+    #[test]
+    fn the_signed_gate_is_unset_by_default_and_publishes_a_modulation_below_zero_only_while_set() {
+        let ok = Config {
+            units: 2,
+            modulation_baseline_q16: 0,
+            ..Config::default()
+        };
+        assert!(!ok.signed_gate);
+        assert!(!Config::default().signed_gate, "unset by default");
+        let set = Executor::<8>::new(Config {
+            signed_gate: true,
+            ..ok.clone()
+        })
+        .unwrap();
+        assert!(set.signed_gate(), "set by the configuration");
+        let mut exec = Executor::<8>::new(ok).unwrap();
+        assert!(!exec.signed_gate());
+        let published = |exec: &Executor<8>| {
+            (
+                exec.shared.modulation.load(Ordering::Relaxed),
+                exec.shared.modulation_at_rest.load(Ordering::Relaxed),
+            )
+        };
+        // Unset: a punishment publishes zero, the gate's floor.
+        assert_eq!(exec.reward(-MODULATION_ONE_Q16), -MODULATION_ONE_Q16);
+        exec.tick();
+        assert_eq!(published(&exec), (0, 0), "unset: clamped at zero");
+        // Set: the signal as it stands, below zero.
+        exec.set_signed_gate(true);
+        assert!(exec.signed_gate());
+        let signal = exec.modulator().dopamine_rpe;
+        assert!(signal < 0 && signal > -MODULATION_ONE_Q16, "{signal}");
+        exec.tick();
+        assert_eq!(published(&exec), (signal, 0), "set: the signal below zero");
+        // A second punishment carries the signal below −1.0, and the modulation stops there.
+        exec.reward(-MODULATION_ONE_Q16);
+        assert!(exec.modulator().dopamine_rpe < -MODULATION_ONE_Q16);
+        exec.tick();
+        assert_eq!(
+            published(&exec),
+            (-MODULATION_ONE_Q16, 0),
+            "set: clamped at −1.0"
+        );
+        // A reward above the floor publishes the same modulation set or unset.
+        exec.reward(2 * MODULATION_ONE_Q16);
+        let signal = exec.modulator().dopamine_rpe;
+        assert!(signal > 0 && signal < MODULATION_ONE_Q16, "{signal}");
+        exec.tick();
+        assert_eq!(published(&exec), (signal, 0), "set, above zero");
+        exec.set_signed_gate(false);
+        let signal = exec.modulator().dopamine_rpe;
+        exec.tick();
+        assert_eq!(published(&exec), (signal, 0), "unset, above zero");
+        // Unset again: a punishment publishes zero.
+        exec.reward(-3 * MODULATION_ONE_Q16);
+        exec.tick();
+        assert_eq!(published(&exec), (0, 0), "unset again");
+    }
 }
 
 /// The lattice property (ADR-0030) of the addressing (ADR-0068): over the lattice and a
@@ -2786,7 +2899,7 @@ mod prop {
         let mut modulator = NeuromodulatorState::new();
         for (baseline, dopamine) in cases {
             modulator.dopamine_rpe = dopamine;
-            let m = Modulations::of(&modulator, baseline, None);
+            let m = Modulations::of(&modulator, baseline, None, false);
             assert_eq!(
                 m.addressed,
                 baseline
@@ -2809,7 +2922,7 @@ mod prop {
         // The harness's baseline, a reward and a dip: the addressed modulation moves, the
         // other stays at the baseline.
         modulator.dopamine_rpe = 0x4000;
-        let m = Modulations::of(&modulator, 0x8000, None);
+        let m = Modulations::of(&modulator, 0x8000, None, false);
         assert_eq!(
             (
                 m.for_synapse(true, Polarity::Excitatory),
@@ -2818,7 +2931,7 @@ mod prop {
             (0xC000, 0x8000)
         );
         modulator.dopamine_rpe = -0x4000;
-        let m = Modulations::of(&modulator, 0x8000, None);
+        let m = Modulations::of(&modulator, 0x8000, None, false);
         assert_eq!(
             (
                 m.for_synapse(true, Polarity::Excitatory),
@@ -2827,7 +2940,7 @@ mod prop {
             (0x4000, 0x8000)
         );
         modulator.dopamine_rpe = MODULATION_ONE_Q16;
-        let m = Modulations::of(&modulator, 0x8000, None);
+        let m = Modulations::of(&modulator, 0x8000, None, false);
         assert_eq!(
             (
                 m.for_synapse(true, Polarity::Excitatory),
@@ -2837,7 +2950,7 @@ mod prop {
             "the reward of brief 027 carries the addressed to the ceiling"
         );
         modulator.dopamine_rpe = -MODULATION_ONE_Q16;
-        let m = Modulations::of(&modulator, 0x8000, None);
+        let m = Modulations::of(&modulator, 0x8000, None, false);
         assert_eq!(
             (
                 m.for_synapse(true, Polarity::Excitatory),
@@ -2876,9 +2989,13 @@ mod prop {
         block
     }
 
+    /// Since ADR-0094 `consolidate_each` is `consolidate_signed` slot by slot; under one
+    /// modulation at or above zero for every slot it is `consolidate_all`, the call before the
+    /// signed gate existed, bit for bit, and under one below zero it is not.
     #[test]
-    fn consolidate_each_under_one_modulation_is_consolidate_all() {
+    fn consolidate_each_is_consolidate_signed_slot_by_slot_and_consolidate_all_above_zero() {
         let mut lcg = Lcg::new(0x69);
+        let mut below = 0u32;
         for round in 0..2_000u32 {
             let block = seeded_block(&mut lcg);
             let polarity = if lcg.below(2) == 0 {
@@ -2887,26 +3004,34 @@ mod prop {
                 Polarity::Inhibitory
             };
             let modulation = lcg.i32_edge_biased();
-            let mut oracle = block;
-            let weights = oracle.consolidate_all(modulation, polarity);
             let mut each = block;
             consolidate_each(&mut each, &[modulation; SYNAPSES_PER_BLOCK], polarity);
-            assert_eq!(
-                each, oracle,
-                "round {round}: the previous call, bit for bit"
-            );
-            assert_eq!(each.weights_q1_15, weights);
-            // Under a modulation per slot, every slot is its own `consolidate`, in order.
+            let mut oracle = block;
+            let weights = oracle.consolidate_all(modulation.max(0), polarity);
+            if modulation >= 0 {
+                assert_eq!(
+                    each, oracle,
+                    "round {round}: the previous call, bit for bit"
+                );
+                assert_eq!(each.weights_q1_15, weights);
+            } else if each != oracle {
+                below = below.saturating_add(1);
+            }
+            // Under a modulation per slot, every slot is its own `consolidate_signed`, in order.
             let per_slot: [i32; SYNAPSES_PER_BLOCK] =
                 core::array::from_fn(|_| lcg.i32_edge_biased());
             let mut expected = block;
             for (slot, &m) in per_slot.iter().enumerate() {
-                expected.consolidate(slot, m, polarity);
+                expected.consolidate_signed(slot, m, polarity);
             }
             let mut each = block;
             consolidate_each(&mut each, &per_slot, polarity);
             assert_eq!(each, expected, "round {round}: slot by slot");
         }
+        assert!(
+            below > 100,
+            "below zero the signed rule moves what `consolidate_all` leaves: {below} rounds"
+        );
     }
 
     /// The lattice property of the inhibitory baseline (ADR-0086): over the lattice and a
@@ -2938,8 +3063,8 @@ mod prop {
         let mut modulator = NeuromodulatorState::new();
         for (baseline, dopamine, inhibitory) in cases {
             modulator.dopamine_rpe = dopamine;
-            let unset = Modulations::of(&modulator, baseline, None);
-            let set = Modulations::of(&modulator, baseline, Some(inhibitory));
+            let unset = Modulations::of(&modulator, baseline, None, false);
+            let set = Modulations::of(&modulator, baseline, Some(inhibitory), false);
             let clamped = inhibitory.clamp(0, MODULATION_ONE_Q16);
             assert_eq!(unset.inhibitory, None, "{baseline} {dopamine} {inhibitory}");
             assert_eq!(set.inhibitory, Some(clamped));
@@ -3001,7 +3126,7 @@ mod prop {
             (0, 0),
         ] {
             modulator.dopamine_rpe = dopamine;
-            let m = Modulations::of(&modulator, 0, Some(0x8000));
+            let m = Modulations::of(&modulator, 0, Some(0x8000), false);
             assert_eq!(
                 (
                     m.for_synapse(true, Polarity::Excitatory),
@@ -3013,5 +3138,133 @@ mod prop {
                 "{dopamine}: the signal reaches the addressed excitatory slot and no inhibitory one"
             );
         }
+    }
+
+    /// The lattice property of the signed gate (ADR-0094): over the lattice and a seeded walk
+    /// of baselines, dopamine signals and inhibitory baselines set and unset, while the signed
+    /// gate is set an addressed excitatory slot consolidates under `clamp(baseline + dopamine,
+    /// -1, 1)` — `cortex-neuromod`'s `signed_modulation` — and every other slot under what it
+    /// consolidates under while the gate is unset: an unaddressed one at rest, an inhibitory
+    /// one under its own baseline while that is set and under the addressed modulation at no
+    /// less than zero while it is not. Unset, the addressed excitatory slot's is the signed
+    /// one at its floor of zero, the rule before ADR-0094; and no modulation below zero
+    /// reaches any slot but an addressed excitatory one under the set gate.
+    #[test]
+    fn only_an_addressed_excitatory_slot_consolidates_under_the_signed_modulation_while_the_gate_is_set()
+     {
+        let mut lcg = Lcg::new(0x94);
+        let mut cases: Vec<(i32, i32, Option<i32>)> = Vec::new();
+        for &baseline in &I32_LATTICE {
+            for &dopamine in &I32_LATTICE {
+                cases.push((baseline, dopamine, None));
+                cases.push((baseline, dopamine, Some(0x8000)));
+            }
+        }
+        for _ in 0..4_000 {
+            let inhibitory = if lcg.below(2) == 0 {
+                None
+            } else {
+                Some(lcg.i32_edge_biased())
+            };
+            cases.push((lcg.i32_edge_biased(), lcg.i32_edge_biased(), inhibitory));
+        }
+        let mut modulator = NeuromodulatorState::new();
+        for (baseline, dopamine, inhibitory) in cases {
+            modulator.dopamine_rpe = dopamine;
+            let unset = Modulations::of(&modulator, baseline, inhibitory, false);
+            let set = Modulations::of(&modulator, baseline, inhibitory, true);
+            let signed = baseline
+                .saturating_add(dopamine)
+                .clamp(-MODULATION_ONE_Q16, MODULATION_ONE_Q16);
+            assert_eq!(set.addressed, signed, "{baseline} {dopamine}");
+            assert_eq!(
+                set.addressed,
+                modulator.signed_modulation(baseline),
+                "the rule is cortex-neuromod's"
+            );
+            assert_eq!(
+                (set.at_rest, set.inhibitory),
+                (unset.at_rest, unset.inhibitory),
+                "the signed gate moves neither of the other two"
+            );
+            for addressed in [false, true] {
+                for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
+                    let before = unset.for_synapse(addressed, polarity);
+                    let after = set.for_synapse(addressed, polarity);
+                    if addressed && polarity == Polarity::Excitatory {
+                        assert_eq!(after, signed, "{baseline} {dopamine}: set, the signed one");
+                        assert_eq!(
+                            before,
+                            signed.max(0),
+                            "{baseline} {dopamine}: unset, the same number at its floor"
+                        );
+                    } else {
+                        assert_eq!(
+                            after, before,
+                            "{baseline} {dopamine} {inhibitory:?} {addressed} {polarity:?}: every other slot as unset"
+                        );
+                        assert!(
+                            after >= 0,
+                            "no modulation below zero reaches any other slot"
+                        );
+                    }
+                }
+            }
+        }
+        // H-18's configuration (ADR-0093): the reward's gate at zero, the inhibitory baseline
+        // at 0.5 and the signed gate set, under the signal after a punishment and at a trial's
+        // end under a punishment every trial, at rest, and the mirror under a reward.
+        for (dopamine, addressed_excitatory) in [
+            (-112_227, -MODULATION_ONE_Q16),
+            (-46_691, -46_691),
+            (0, 0),
+            (46_691, 46_691),
+            (112_227, MODULATION_ONE_Q16),
+        ] {
+            modulator.dopamine_rpe = dopamine;
+            let m = Modulations::of(&modulator, 0, Some(0x8000), true);
+            assert_eq!(
+                (
+                    m.for_synapse(true, Polarity::Excitatory),
+                    m.for_synapse(false, Polarity::Excitatory),
+                    m.for_synapse(true, Polarity::Inhibitory),
+                    m.for_synapse(false, Polarity::Inhibitory),
+                ),
+                (addressed_excitatory, 0, 0x8000, 0x8000),
+                "{dopamine}: the signed modulation reaches the addressed excitatory slot alone"
+            );
+        }
+        // The inhibitory baseline unset: an addressed inhibitory slot under a punishment
+        // consolidates under zero, not below it; above zero it shares the excitatory slot's.
+        modulator.dopamine_rpe = -MODULATION_ONE_Q16;
+        let m = Modulations::of(&modulator, 0, None, true);
+        assert_eq!(
+            (
+                m.for_synapse(true, Polarity::Excitatory),
+                m.for_synapse(true, Polarity::Inhibitory),
+                m.for_synapse(false, Polarity::Inhibitory),
+            ),
+            (-MODULATION_ONE_Q16, 0, 0)
+        );
+        modulator.dopamine_rpe = -1;
+        let m = Modulations::of(&modulator, 0, None, true);
+        assert_eq!(
+            (
+                m.for_synapse(true, Polarity::Excitatory),
+                m.for_synapse(true, Polarity::Inhibitory)
+            ),
+            (-1, 0),
+            "one LSB below zero"
+        );
+        modulator.dopamine_rpe = 0x4000;
+        let m = Modulations::of(&modulator, 0, None, true);
+        assert_eq!(
+            (
+                m.for_synapse(true, Polarity::Excitatory),
+                m.for_synapse(true, Polarity::Inhibitory)
+            ),
+            (0x4000, 0x4000),
+            "above zero, one number"
+        );
     }
 }

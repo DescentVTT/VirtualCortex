@@ -38,6 +38,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         discovery_tag: 0,
         istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
         inhibitory_baseline_q16: None,
+        signed_gate: false,
     })
     .expect("a valid configuration");
     assert_eq!(

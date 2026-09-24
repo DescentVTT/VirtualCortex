@@ -228,7 +228,14 @@ impl CortexFileHeader {
     ///   version-14 image's zeros there read as unset, which is the rule before this version
     ///   bit for bit; the loader still refuses a version-14 header, as it refuses every
     ///   foreign version.
-    pub const FORMAT_VERSION: u32 = 15;
+    /// - 16: the modulator section's `[25]` is the signed gate's flag (0 unset, 1 set): while it
+    ///   is set an addressed excitatory synapse consolidates under
+    ///   `clamp(baseline + dopamine, -1, 1)`, its weight moving against its trace's sign below
+    ///   zero and the trace spent by as much (ADR-0093, ADR-0094); `[26..28)` and `[32..64)`
+    ///   stay reserved. A version-15 image's zero there reads as unset, which is the rule
+    ///   before this version bit for bit; the loader still refuses a version-15 header, as it
+    ///   refuses every foreign version.
+    pub const FORMAT_VERSION: u32 = 16;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -412,7 +419,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 15);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 16);
     }
 
     #[test]
@@ -458,8 +465,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            15,
-            "ADR-0086: the inhibitory baseline in the modulator section"
+            16,
+            "ADR-0094: the signed gate in the modulator section"
         );
     }
 
