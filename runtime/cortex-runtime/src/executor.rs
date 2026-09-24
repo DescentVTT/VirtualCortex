@@ -553,6 +553,9 @@ struct Shared {
     barrier: SpinBarrier,
     injector: Injector,
     delivered: Box<[AtomicU64]>,
+    /// Per worker, the turns it has served so far (ADR-0097): stored beside `delivered` at the
+    /// end of the deliveries phase, summed by `Executor::turns` between ticks.
+    turns: Box<[AtomicU64]>,
     now: AtomicU32,
     /// The modulation this tick's fan-out consolidates with (ADR-0032): stored by the
     /// coordinator before the tick's first barrier, read by every worker after it. Since
@@ -630,6 +633,8 @@ struct Worker<const CAP: usize> {
     spike_trace: Vec<(u32, u32)>,
     trace_dropped: u64,
     delivered: u64,
+    /// Turns this worker has served (ADR-0097).
+    turns: u64,
     /// Descendants this worker fired this tick (ADR-0054).
     descended: u32,
     in_flight: i64,
@@ -832,6 +837,7 @@ impl<const CAP: usize> Executor<CAP> {
             barrier: SpinBarrier::new(workers),
             injector: Injector::new(config.injector_capacity),
             delivered: (0..workers).map(|_| AtomicU64::new(0)).collect(),
+            turns: (0..workers).map(|_| AtomicU64::new(0)).collect(),
             now: AtomicU32::new(0),
             modulation: AtomicI32::new(config.modulation_baseline_q16),
             modulation_at_rest: AtomicI32::new(config.modulation_baseline_q16),
@@ -870,6 +876,7 @@ impl<const CAP: usize> Executor<CAP> {
                 spike_trace: Vec::with_capacity(config.trace_capacity),
                 trace_dropped: 0,
                 delivered: 0,
+                turns: 0,
                 in_flight: 0,
                 descended: 0,
             })
@@ -1609,6 +1616,18 @@ impl<const CAP: usize> Executor<CAP> {
             .sum()
     }
 
+    /// Turns served by every worker so far (ADR-0097): one for each unit a worker took from a
+    /// deque and ran, so the difference across a tick is the tick's active set — the units
+    /// that were not at rest after the tick before or that a message or an activation woke
+    /// (ADR-0023). A count kept beside `delivered`; it changes nothing the engine does.
+    pub fn turns(&self) -> u64 {
+        self.shared
+            .turns
+            .iter()
+            .map(|n| n.load(Ordering::Relaxed))
+            .sum()
+    }
+
     /// The unit arena, between ticks.
     pub fn units(&self) -> &[DendriticSuperNeuron] {
         // SAFETY: `&self` excludes `tick` (which takes `&mut self`); between ticks every worker
@@ -2099,6 +2118,7 @@ impl<const CAP: usize> Worker<CAP> {
                 },
             };
             self.turn(shared, unit, now, gain);
+            self.turns = self.turns.saturating_add(1);
         }
         // The units this worker fired this tick, for the population tally (ADR-0036), and
         // how many of them were descendants (ADR-0054); counts below the unit count, which
@@ -2360,6 +2380,7 @@ impl<const CAP: usize> Worker<CAP> {
         }
         self.next_tick.clear();
         shared.delivered[self.id].store(self.delivered, Ordering::Relaxed);
+        shared.turns[self.id].store(self.turns, Ordering::Relaxed);
         shared.in_flight[self.id].store(self.in_flight, Ordering::Relaxed);
     }
 
