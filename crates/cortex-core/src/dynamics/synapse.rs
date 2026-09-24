@@ -83,6 +83,11 @@ pub const ELIGIBILITY_TAU_SHIFT: u32 = 16;
 /// A modulation of 1.0 in Q16.16: [`SynapseBlock::consolidate`] moves the whole trace into the
 /// weight at the presynaptic spike, which is the rule of ADR-0022 (ADR-0032).
 pub const MODULATION_ONE_Q16: i32 = 0x0001_0000;
+/// A modulation of −1.0 in Q16.16, the floor of [`SynapseBlock::consolidate_signed`]'s domain
+/// (ADR-0094): the whole trace moved against its sign. A literal, so that the clamp's bound is
+/// nothing a mutant can touch; the assertion ties it to 1.0.
+const MODULATION_MINUS_ONE_Q16: i32 = -0x0001_0000;
+const _: () = assert!(MODULATION_MINUS_ONE_Q16 == -MODULATION_ONE_Q16);
 /// The target rate of the inhibitory rule (ADR-0049; Vogels et al. 2011), as a period in
 /// ticks: 20 000 ticks is 5 Hz at the 10 µs tick.
 pub const ISTDP_TARGET_PERIOD_TICKS: u32 = 20_000;
@@ -679,6 +684,65 @@ impl SynapseBlock {
         let weight = polarity.weight(after);
         self.weights_q1_15[slot] = weight;
         self.eligibility_q1_15[slot] = trace.saturating_sub(absorbed) as i16;
+        weight
+    }
+
+    /// The signed gate's consolidation (ADR-0093, ADR-0094): [`consolidate`](Self::consolidate)
+    /// over a modulation in $[-1, 1]$ rather than $[0, 1]$. At or above zero it is
+    /// `consolidate`, call for call, bit for bit. Below zero the slot's weight moves
+    /// **against** its trace's sign — `round(|trace| × |m|)` out of the magnitude for a
+    /// positive trace and into it for a negative one, `m` clamped at −1.0 and the magnitude
+    /// to $[0, 1)$ as ever — and the trace is spent toward zero by what the magnitude moved,
+    /// so that a consolidation below zero never grows the trace it reads: the magnitude less
+    /// the trace is conserved, where `consolidate` conserves their sum. A synapse whose trace
+    /// is negative is therefore potentiated below zero, the product of two negatives, as the
+    /// signed rule of Florian 2007 and Frémaux, Sprekeler and Gerstner 2010 has it. A weight
+    /// on the wrong side of zero reads as a magnitude of zero, as in `consolidate`, and an
+    /// inhibitory weight of $-2^{15}$, which no rule writes, as the rail. Returns the weight;
+    /// zero for an empty slot.
+    pub fn consolidate_signed(
+        &mut self,
+        slot: usize,
+        modulation_q16: i32,
+        polarity: Polarity,
+    ) -> i16 {
+        // A range pattern, not a comparison: at zero both branches move nothing, which no
+        // test could tell from a bound.
+        match modulation_q16 {
+            i32::MIN..0 => self.consolidate_against(slot, modulation_q16, polarity),
+            _ => self.consolidate(slot, modulation_q16, polarity),
+        }
+    }
+
+    /// The branch of [`consolidate_signed`](Self::consolidate_signed) below zero.
+    fn consolidate_against(&mut self, slot: usize, modulation_q16: i32, polarity: Polarity) -> i16 {
+        if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
+            return 0;
+        }
+        // $|m| \le 1$: the modulation is below zero here and clamped at −1.0.
+        let m = modulation_q16.max(MODULATION_MINUS_ONE_Q16).unsigned_abs() as i64;
+        let trace = self.eligibility_q1_15[slot] as i32;
+        // `|trace| × |m|` is below $2^{32}$; the transfer carries the sign opposite the trace's
+        // and is at most the trace, so every sum below fits: `saturating_*` by name (§8.1).
+        let amount = ((trace as i64)
+            .abs()
+            .saturating_mul(m)
+            .saturating_add(0x8000)
+            >> 16) as i32;
+        let transfer = amount.saturating_mul(trace.signum()).wrapping_neg();
+        // The magnitude read within $[0, 2^{15})$: an inhibitory weight of $-2^{15}$, which no
+        // rule writes, reads as the rail, so that the clamp below never moves the magnitude
+        // by an amount the trace did not carry and spending it can never grow the trace.
+        let before = polarity
+            .magnitude(self.weights_q1_15[slot])
+            .min(i16::MAX as i32);
+        let after = before.saturating_add(transfer).clamp(0, i16::MAX as i32);
+        // What the magnitude moved: the sign opposite the trace's, or zero, and at most the
+        // trace in size, so the trace moves toward zero by it and never past zero.
+        let moved = after.saturating_sub(before);
+        let weight = polarity.weight(after);
+        self.weights_q1_15[slot] = weight;
+        self.eligibility_q1_15[slot] = trace.saturating_add(moved) as i16;
         weight
     }
 
@@ -1421,6 +1485,168 @@ mod tests {
         assert_eq!(MODULATION_ONE_Q16, 0x0001_0000);
     }
 
+    /// The signed gate's consolidation (ADR-0093, ADR-0094) at its edges: below zero the
+    /// weight moves against the trace's sign by `round(|trace| × |m|)` and the trace is spent
+    /// by what the magnitude moved — a positive trace depressed and a negative one
+    /// potentiated, whole at −1.0, by the rounding alone at −1 LSB, clamped at zero and at the
+    /// rail with the rest pending, never growing; below −1.0 is −1.0; at and above zero it is
+    /// `consolidate`; an empty slot and one that does not exist are untouched.
+    #[test]
+    fn a_negative_modulation_moves_the_weight_against_the_trace_and_spends_the_trace() {
+        const MINUS_ONE: i32 = MODULATION_MINUS_ONE_Q16;
+        assert_eq!(MINUS_ONE, -0x0001_0000);
+        // −1.0: a positive trace comes out of the weight whole and a negative one goes in
+        // whole; the traces are spent.
+        let mut b = full_block(0, 1);
+        b.eligibility_q1_15 = [300, -300, 5, -5];
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Excitatory),
+            0x1000 - 300,
+            "a positive trace depressed"
+        );
+        assert_eq!(
+            b.consolidate_signed(1, MINUS_ONE, Polarity::Excitatory),
+            0x2000 + 300,
+            "a negative trace potentiated"
+        );
+        assert_eq!(b.eligibility_q1_15, [0, 0, 5, -5], "the two traces spent");
+        // −0.5: half, rounded to nearest (2.5 → 3), the rest pending on the same side.
+        assert_eq!(
+            b.consolidate_signed(2, MINUS_ONE / 2, Polarity::Excitatory),
+            0x3000 - 3
+        );
+        assert_eq!(
+            b.consolidate_signed(3, MINUS_ONE / 2, Polarity::Excitatory),
+            0x4000 + 3
+        );
+        assert_eq!(b.eligibility_q1_15, [0, 0, 2, -2]);
+        // A quarter of an odd trace: 7 × 0.25 = 1.75 → 2; of three, 0.75 → 1.
+        let mut b = one_synapse(1000, 1000);
+        b.eligibility_q1_15[0] = 7;
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE / 4, Polarity::Excitatory),
+            998
+        );
+        assert_eq!(b.eligibility_q1_15[0], 5);
+        b.eligibility_q1_15[0] = -3;
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE / 4, Polarity::Excitatory),
+            999
+        );
+        assert_eq!(b.eligibility_q1_15[0], -2);
+        // −1 LSB: a trace below half the width moves nothing; the most negative trace, half
+        // an LSB of the product exactly, moves one, into the weight.
+        let mut b = one_synapse(1000, 1000);
+        b.eligibility_q1_15[0] = i16::MAX;
+        assert_eq!(b.consolidate_signed(0, -1, Polarity::Excitatory), 1000);
+        assert_eq!(b.eligibility_q1_15[0], i16::MAX, "nothing spent");
+        b.eligibility_q1_15[0] = i16::MIN;
+        assert_eq!(b.consolidate_signed(0, -1, Polarity::Excitatory), 1001);
+        assert_eq!(b.eligibility_q1_15[0], i16::MIN + 1, "one spent");
+        // Below −1.0 is −1.0.
+        for below in [MINUS_ONE - 1, i32::MIN] {
+            let mut b = one_synapse(1000, 1000);
+            b.eligibility_q1_15[0] = 40;
+            assert_eq!(
+                b.consolidate_signed(0, below, Polarity::Excitatory),
+                960,
+                "{below}"
+            );
+            assert_eq!(b.eligibility_q1_15[0], 0);
+        }
+        // At zero the magnitude stops: a positive trace of 10 on a magnitude of 4 takes it to
+        // zero and six stay pending; at the rail a negative trace of −10 on a magnitude three
+        // below it takes it there and seven stay pending. Nothing crosses and no trace grows.
+        let mut b = one_synapse(4, 1000);
+        b.eligibility_q1_15[0] = 10;
+        assert_eq!(b.consolidate_signed(0, MINUS_ONE, Polarity::Excitatory), 0);
+        assert_eq!(b.eligibility_q1_15[0], 6, "four spent, six pending");
+        assert_eq!(b.consolidate_signed(0, MINUS_ONE, Polarity::Excitatory), 0);
+        assert_eq!(b.eligibility_q1_15[0], 6, "at zero nothing more is spent");
+        let mut b = one_synapse(i16::MAX - 3, 1000);
+        b.eligibility_q1_15[0] = -10;
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Excitatory),
+            i16::MAX
+        );
+        assert_eq!(b.eligibility_q1_15[0], -7, "three spent, seven pending");
+        // An inhibitory weight moves its magnitude against the trace the same way: a positive
+        // trace shrinks the magnitude, a negative one grows it, on the negative side of zero.
+        let mut b = one_synapse(-1000, 1000);
+        b.eligibility_q1_15[0] = 100;
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Inhibitory),
+            -900
+        );
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        b.eligibility_q1_15[0] = -100;
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Inhibitory),
+            -1000
+        );
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        // A weight on the wrong side reads as a magnitude of zero: brought to zero with a
+        // positive trace untouched, and a negative trace lands on the polarity's side.
+        let mut b = one_synapse(-500, 1000);
+        b.eligibility_q1_15[0] = 10;
+        assert_eq!(b.consolidate_signed(0, MINUS_ONE, Polarity::Excitatory), 0);
+        assert_eq!(b.eligibility_q1_15[0], 10);
+        b.eligibility_q1_15[0] = -10;
+        assert_eq!(b.consolidate_signed(0, MINUS_ONE, Polarity::Excitatory), 10);
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        // An inhibitory weight of −2^15, which no rule writes, reads as the rail: a zero or a
+        // negative trace leaves it at the rail with the trace as it was, a positive one comes
+        // out of the rail.
+        let mut b = one_synapse(i16::MIN, 1000);
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Inhibitory),
+            -i16::MAX
+        );
+        assert_eq!(b.eligibility_q1_15[0], 0, "a zero trace does not grow");
+        let mut b = one_synapse(i16::MIN, 1000);
+        b.eligibility_q1_15[0] = -5;
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Inhibitory),
+            -i16::MAX
+        );
+        assert_eq!(b.eligibility_q1_15[0], -5, "nor a negative one");
+        let mut b = one_synapse(i16::MIN, 1000);
+        b.eligibility_q1_15[0] = 5;
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Inhibitory),
+            -i16::MAX + 5
+        );
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        // A zero trace moves nothing, whatever the modulation.
+        let mut b = one_synapse(1000, 1000);
+        assert_eq!(
+            b.consolidate_signed(0, MINUS_ONE, Polarity::Excitatory),
+            1000
+        );
+        assert_eq!(b.eligibility_q1_15[0], 0);
+        // An empty slot and a slot that does not exist: zero, untouched.
+        let mut b = one_synapse(1000, 1000);
+        b.eligibility_q1_15 = [9, 9, 9, 9];
+        let before = b;
+        assert_eq!(b.consolidate_signed(1, MINUS_ONE, Polarity::Excitatory), 0);
+        assert_eq!(b.consolidate_signed(4, MINUS_ONE, Polarity::Excitatory), 0);
+        assert_eq!(b, before);
+        // At and above zero it is `consolidate`, bit for bit.
+        for m in [0, 1, MODULATION_ONE_Q16 / 2, MODULATION_ONE_Q16, i32::MAX] {
+            let mut signed = full_block(0, 1);
+            signed.eligibility_q1_15 = [300, -300, 7, -7];
+            let mut plain = signed;
+            for slot in 0..SYNAPSES_PER_BLOCK {
+                assert_eq!(
+                    signed.consolidate_signed(slot, m, Polarity::Excitatory),
+                    plain.consolidate(slot, m, Polarity::Excitatory),
+                    "{m}"
+                );
+            }
+            assert_eq!(signed, plain, "{m}");
+        }
+    }
+
     #[test]
     fn the_half_range_holds_a_weight_at_zero_and_a_weight_on_the_wrong_side_is_brought_to_it() {
         // An excitatory weight at zero is depressed by nothing (ADR-0055) and one of 100 by
@@ -1865,6 +2091,81 @@ mod prop {
                     );
                     block.stamp_presynaptic(now);
                 }
+            }
+        }
+    }
+
+    /// The signed gate's consolidation (ADR-0094) over the lattice and a seeded walk of
+    /// weights, traces, modulations and polarities: at and above zero it is `consolidate`,
+    /// bit for bit; below zero the weight stays on its polarity's side, the trace never grows
+    /// and never crosses zero, the magnitude less the trace is conserved, and the magnitude
+    /// is an oracle's in `i64` — `round(|trace| × |m|)` against the trace's sign, `m` clamped
+    /// at −1.0, the magnitude read and clamped within $[0, 2^{15})$.
+    #[test]
+    fn a_signed_consolidation_is_consolidate_at_and_above_zero_and_spends_the_trace_below_it() {
+        let check = |weight: i16, trace: i16, m: i32, polarity: Polarity| {
+            let mut signed = SynapseBlock::new();
+            assert!(signed.set_synapse(0, 1, weight, 1, false));
+            signed.eligibility_q1_15[0] = trace;
+            let mut plain = signed;
+            let w = signed.consolidate_signed(0, m, polarity);
+            assert_eq!(w, signed.weights_q1_15[0]);
+            if m >= 0 {
+                assert_eq!(w, plain.consolidate(0, m, polarity), "{weight} {trace} {m}");
+                assert_eq!(signed, plain, "{weight} {trace} {m}: bit for bit");
+                return;
+            }
+            let left = signed.eligibility_q1_15[0];
+            assert!(
+                i32::from(left).abs() <= i32::from(trace).abs(),
+                "{polarity:?} {weight} {trace} {m}: the trace never grows: {left}"
+            );
+            assert!(
+                left == 0 || left.signum() == trace.signum(),
+                "{polarity:?} {weight} {trace} {m}: nor crosses zero: {left}"
+            );
+            let magnitude = polarity.magnitude(w);
+            assert_eq!(
+                polarity.weight(magnitude),
+                w,
+                "{polarity:?}: the weight is on its polarity's side"
+            );
+            let read = polarity.magnitude(weight).min(i32::from(i16::MAX));
+            assert_eq!(
+                magnitude.saturating_sub(i32::from(left)),
+                read.saturating_sub(i32::from(trace)),
+                "{polarity:?} {weight} {trace} {m}: the magnitude less the trace is conserved"
+            );
+            let size = i64::from(trace)
+                .abs()
+                .saturating_mul(i64::from(m.max(MODULATION_MINUS_ONE_Q16)).abs())
+                .saturating_add(0x8000)
+                >> 16;
+            let expected = i64::from(read)
+                .saturating_sub(size.saturating_mul(i64::from(trace.signum())))
+                .clamp(0, i64::from(i16::MAX));
+            assert_eq!(
+                i64::from(magnitude),
+                expected,
+                "{polarity:?} {weight} {trace} {m}: the oracle's magnitude"
+            );
+        };
+        let mut rng = Lcg::new(0x94);
+        for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
+            for &weight in I16_LATTICE.iter() {
+                for &trace in I16_LATTICE.iter() {
+                    for &m in I32_LATTICE.iter() {
+                        check(weight, trace, m, polarity);
+                    }
+                }
+            }
+            for _ in 0..200_000 {
+                let m = match rng.below(3) {
+                    0 => rng.i32_edge_biased(),
+                    // The domain the executor passes: [−1, 1].
+                    _ => (rng.next_i32() >> 15).clamp(MODULATION_MINUS_ONE_Q16, MODULATION_ONE_Q16),
+                };
+                check(rng.next_i16(), rng.next_i16(), m, polarity);
             }
         }
     }

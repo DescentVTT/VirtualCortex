@@ -312,7 +312,7 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
         })
     ));
     let mut img = small_image_with_modulator();
-    patch_section(&mut img, SECTION_MODULATOR, |s| s[25] = 1);
+    patch_section(&mut img, SECTION_MODULATOR, |s| s[26] = 1);
     assert!(matches!(
         Image::decode::<8>(&img, Config::default()),
         Err(ImageError::ReservedNotZero {
@@ -1179,7 +1179,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
         None,
         "the flag and the value zero, as a format-14 writer left them, read as unset"
     );
-    for at in [25, 26, 27, 32, 40, 63] {
+    for at in [26, 27, 32, 40, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1201,8 +1201,120 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(14)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(15)))
         ),
-        "a format-14 header fails closed, as every foreign version does"
+        "the previous format's header fails closed, as every foreign version does"
+    );
+}
+
+/// The signed gate in the modulator section (ADR-0094; format 16): a flag byte at `[25]`.
+/// Unset, it is zero — the byte a format-15 writer left there — and reads as unset whatever
+/// the configuration says; set, it is 1 and reads as set whatever the configuration says,
+/// beside the inhibitory baseline's flag and value, which it leaves as they are. Refused: a
+/// flag that is neither zero nor one, which the writer never produces, and a reserved byte
+/// after it; and a header stamped with format 15, as every foreign version is.
+#[test]
+fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_reads_as_unset() {
+    let unset = small_image_with_modulator();
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(section[25], 0, "unset writes zero");
+    let loaded = Image::decode::<8>(
+        &unset,
+        Config {
+            signed_gate: true,
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        !loaded.signed_gate(),
+        "the image's unset outranks the configuration's set"
+    );
+    let exec = Executor::<8>::new(Config {
+        units: 2,
+        blocks: 1,
+        inhibitory_baseline_q16: Some(0x8000),
+        signed_gate: true,
+        ..Config::default()
+    })
+    .unwrap();
+    let set = Image::encode(&exec).unwrap();
+    let section = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(
+        (section[24], section[25]),
+        (1, 1),
+        "the inhibitory flag and the signed gate's"
+    );
+    assert_eq!(&section[26..28], &[0u8; 2]);
+    assert_eq!(
+        &section[28..32],
+        &0x8000i32.to_le_bytes(),
+        "the inhibitory value"
+    );
+    assert_eq!(&section[32..64], &[0u8; 32]);
+    let loaded = Image::decode::<8>(&set, Config::default()).unwrap();
+    assert!(
+        loaded.signed_gate(),
+        "the image's set outranks the configuration's unset"
+    );
+    assert_eq!(
+        loaded.inhibitory_baseline_q16(),
+        Some(0x8000),
+        "and the two are apart"
+    );
+    let with_flag = |flag: u8| {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[25] = flag);
+        img
+    };
+    assert!(
+        !Image::decode::<8>(&with_flag(0), Config::default())
+            .unwrap()
+            .signed_gate(),
+        "a zero, as a format-15 writer left it, reads as unset"
+    );
+    assert!(
+        Image::decode::<8>(&with_flag(1), Config::default())
+            .unwrap()
+            .signed_gate()
+    );
+    for flag in [2, 3, 0x80, 0xFF] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_flag(flag), Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "flag {flag}: a byte the writer never produces"
+        );
+    }
+    for at in [26, 27, 32, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 16);
+    let mut older = set.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 15;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, Config::default()),
+            Err(ImageError::Header(HeaderError::ForeignVersion(15)))
+        ),
+        "a format-15 header fails closed, as every foreign version does (L-6)"
     );
 }

@@ -14,6 +14,7 @@ use cortex_core::{
     FLAG_INHIBITORY, ISTDP_ALPHA_Q1_15, MODULATION_ONE_Q16, Polarity, STP_MAX, STP_U, SynapseBlock,
     THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
+use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
 use cortex_runtime::{Config, ConfigError, Executor, Image};
 
 /// Unit 0 fans out to unit 1 through slot 0 of block 0: weight 1 000, one tick of delay.
@@ -790,4 +791,238 @@ fn an_inhibitory_synapse_consolidates_under_the_inhibitory_baseline_and_no_signa
     .unwrap();
     assert_eq!(loaded.inhibitory_baseline_q16(), None);
     assert_eq!(pair_slots(&loaded), pair_slots(&exec));
+}
+
+/// The weight of the two synapses the signed gate is read on (ADR-0094): half the width, where
+/// the excitatory depression is twice its reference amount (ADR-0055), so that a pairing whose
+/// target fired just before the presynaptic spike leaves a trace below zero and one whose
+/// target fired just after leaves it above.
+const HALF_WIDTH: i16 = 0x4000;
+
+/// Unit 0 fans out to unit 1 through slot 0 and to unit 2 through slot 1 of block 0, both at
+/// `HALF_WIDTH` with one tick of delay, the gate at zero and the signed gate as given.
+fn signed_fork(signed_gate: bool) -> Executor<64> {
+    let mut exec = Executor::<64>::new(Config {
+        units: 3,
+        signed_gate,
+        ..config(0)
+    })
+    .expect("a valid configuration");
+    assert!(exec.blocks_mut()[0].set_synapse(0, 1, HALF_WIDTH, 1, false));
+    assert!(exec.blocks_mut()[0].set_synapse(1, 2, HALF_WIDTH, 1, false));
+    for unit in exec.units_mut() {
+        unit.v_thresh = THRESHOLD_BASE;
+        unit.stp_u_rel = STP_U;
+        unit.stp_r_ves = STP_MAX;
+    }
+    assert!(exec.units_mut()[0].set_first_block(0));
+    exec
+}
+
+/// One pairing on the signed fork: unit 2 fires, unit 0 twenty ticks later, unit 1 twenty
+/// ticks after that, then quiet; returns unit 0's spike tick and the two targets' spike ticks
+/// `[unit 1, unit 2]`. At unit 0's spike unit 2's last spike is this pairing's, just before
+/// it, and unit 1's the last pairing's.
+fn signed_pairing(exec: &mut Executor<64>) -> (u32, [u32; 2]) {
+    let post_2 = fire(exec, 2);
+    exec.run(20);
+    let pre = fire(exec, 0);
+    exec.run(20);
+    let post_1 = fire(exec, 1);
+    exec.run(4000);
+    (pre, [post_1, post_2])
+}
+
+/// The modulation the executor published at tick `spike`: the signal as it stood at `from`,
+/// decayed once per tick from `from` to `spike` (the executor publishes before it decays),
+/// under `rule`.
+fn published_at(
+    signal: &NeuromodulatorState,
+    from: u64,
+    spike: u32,
+    rule: impl Fn(&NeuromodulatorState) -> i32,
+) -> i32 {
+    let mut shadow = *signal;
+    for _ in from..u64::from(spike) {
+        shadow.decay_dopamine(DOPAMINE_TAU_SHIFT);
+    }
+    rule(&shadow)
+}
+
+/// The oracle's step at unit 0's spike: the pair rule, then each slot consolidated under
+/// `modulation` by the signed rule, as the executor's fan-out does.
+fn signed_oracle_step(oracle: &mut SynapseBlock, pre: u32, posts: [u32; 2], modulation: i32) {
+    oracle.step_stdp_all(
+        pre,
+        [posts[0], posts[1], 0, 0],
+        Polarity::Excitatory,
+        ISTDP_ALPHA_Q1_15,
+    );
+    oracle.consolidate_signed(0, modulation, Polarity::Excitatory);
+    oracle.consolidate_signed(1, modulation, Polarity::Excitatory);
+}
+
+/// The signed gate (ADR-0093, ADR-0094), on the signed fork with the gate at zero and every
+/// unit addressed. Three pairings with no reward: both weights wait, the trace onto unit 1
+/// above zero and the one onto unit 2 below it, held to an oracle block. A punishment, the
+/// next spike of unit 0: the weight onto unit 1 falls and the weight onto unit 2 rises —
+/// each against its trace's sign, the trace spent by what the weight moved — exactly as the
+/// oracle consolidates under the modulation the executor published, which is below zero;
+/// unset, the same punishment moves neither weight. A reward once the signal is at rest
+/// consolidates as `consolidate` does, above zero. The image carries the gate, set and unset,
+/// outranking the configuration's, and a loaded engine continues alike.
+#[test]
+fn a_punished_synapse_moves_against_its_trace_under_the_signed_gate_and_not_without_it() {
+    for signed in [true, false] {
+        let mut exec = signed_fork(signed);
+        assert_eq!(exec.signed_gate(), signed);
+        assert_eq!(exec.addressed_counts(), (3, 3));
+        let mut oracle = SynapseBlock::new();
+        assert!(oracle.set_synapse(0, 1, HALF_WIDTH, 1, false));
+        assert!(oracle.set_synapse(1, 2, HALF_WIDTH, 1, false));
+        let mut post_1_last = 0u32;
+        for k in 0..3 {
+            let (pre, [post_1, post_2]) = signed_pairing(&mut exec);
+            signed_oracle_step(&mut oracle, pre, [post_1_last, post_2], 0);
+            post_1_last = post_1;
+            let block = exec.blocks()[0];
+            assert_eq!(
+                (block.weights_q1_15, block.eligibility_q1_15),
+                (oracle.weights_q1_15, oracle.eligibility_q1_15),
+                "{signed} pairing {k}: the oracle's, under the gate's zero"
+            );
+            assert_eq!(&block.weights_q1_15[..2], &[HALF_WIDTH, HALF_WIDTH]);
+        }
+        let traces = exec.blocks()[0].eligibility_q1_15;
+        assert!(
+            traces[0] > 100 && traces[1] < -100,
+            "{signed}: a trace above zero onto unit 1 and one below it onto unit 2: {traces:?}"
+        );
+        // A punishment, then the next pairing: unit 0's spike consolidates under the
+        // modulation the executor published at its tick.
+        let from = exec.ticks();
+        assert_eq!(exec.reward(-MODULATION_ONE_Q16), -MODULATION_ONE_Q16);
+        let signal = *exec.modulator();
+        let (pre, [post_1, post_2]) = signed_pairing(&mut exec);
+        let signed_m = published_at(&signal, from, pre, |s| s.signed_modulation(0));
+        let gate_m = published_at(&signal, from, pre, |s| s.modulation(0));
+        assert!(
+            signed_m < -0xF000 && gate_m == 0,
+            "the signal near −1.0 at the spike: {signed_m}, {gate_m}"
+        );
+        let mut unsigned = oracle;
+        let pending = {
+            let mut stepped = oracle;
+            signed_oracle_step(&mut stepped, pre, [post_1_last, post_2], 0);
+            stepped.eligibility_q1_15
+        };
+        signed_oracle_step(&mut oracle, pre, [post_1_last, post_2], signed_m);
+        signed_oracle_step(&mut unsigned, pre, [post_1_last, post_2], gate_m);
+        post_1_last = post_1;
+        let block = exec.blocks()[0];
+        let expected = if signed { oracle } else { unsigned };
+        assert_eq!(
+            (block.weights_q1_15, block.eligibility_q1_15),
+            (expected.weights_q1_15, expected.eligibility_q1_15),
+            "{signed}: under the punishment, the oracle's under the published modulation"
+        );
+        if signed {
+            assert!(
+                block.weights_q1_15[0] < HALF_WIDTH - 100,
+                "a trace above zero depressed: {:?}",
+                block.weights_q1_15
+            );
+            assert!(
+                block.weights_q1_15[1] > HALF_WIDTH + 100,
+                "a trace below zero potentiated: {:?}",
+                block.weights_q1_15
+            );
+            // The signal decayed for the few dozen ticks before the spike, so the modulation
+            // is a little above −1.0 and a little of each trace stays pending, on its own side.
+            for (slot, (&left, &was)) in block
+                .eligibility_q1_15
+                .iter()
+                .zip(pending.iter())
+                .take(2)
+                .enumerate()
+            {
+                assert!(
+                    left.signum().saturating_mul(was.signum()) >= 0
+                        && u32::from(left.unsigned_abs()).saturating_mul(100)
+                            <= u32::from(was.unsigned_abs()),
+                    "slot {slot}: the trace spent nearly whole, never grown: {left} of {was}"
+                );
+            }
+            assert_ne!(
+                (block.weights_q1_15, block.eligibility_q1_15),
+                (unsigned.weights_q1_15, unsigned.eligibility_q1_15),
+                "and not what the gate's zero leaves"
+            );
+        } else {
+            assert_eq!(
+                &block.weights_q1_15[..2],
+                &[HALF_WIDTH, HALF_WIDTH],
+                "unset: the punishment moves neither weight"
+            );
+        }
+        oracle = expected;
+        // The signal at rest again, three pairings to fill the traces, a reward: above zero
+        // the signed gate is the gate, both weights consolidating toward their traces.
+        exec.run(50_000);
+        assert_eq!(exec.modulator().dopamine_rpe, 0);
+        for _ in 0..3 {
+            let (pre, [post_1, post_2]) = signed_pairing(&mut exec);
+            signed_oracle_step(&mut oracle, pre, [post_1_last, post_2], 0);
+            post_1_last = post_1;
+        }
+        let from = exec.ticks();
+        exec.reward(MODULATION_ONE_Q16);
+        let signal = *exec.modulator();
+        let (pre, [_, post_2]) = signed_pairing(&mut exec);
+        let m = published_at(&signal, from, pre, |s| s.signed_modulation(0));
+        assert_eq!(
+            m,
+            published_at(&signal, from, pre, |s| s.modulation(0)),
+            "above zero the two rules are one number"
+        );
+        let mut plain = oracle;
+        signed_oracle_step(&mut oracle, pre, [post_1_last, post_2], m);
+        plain.step_stdp_all(
+            pre,
+            [post_1_last, post_2, 0, 0],
+            Polarity::Excitatory,
+            ISTDP_ALPHA_Q1_15,
+        );
+        plain.consolidate_all(m, Polarity::Excitatory);
+        assert_eq!(oracle, plain, "{signed}: consolidate, bit for bit");
+        let block = exec.blocks()[0];
+        assert_eq!(
+            (block.weights_q1_15, block.eligibility_q1_15),
+            (oracle.weights_q1_15, oracle.eligibility_q1_15),
+            "{signed}: under the reward, the oracle's"
+        );
+        // The image carries the gate, outranking a configuration that says the other.
+        exec.run(50_000);
+        let img = Image::encode(&exec).unwrap();
+        let mut loaded = Image::decode::<64>(
+            &img,
+            Config {
+                units: 3,
+                signed_gate: !signed,
+                ..config(0)
+            },
+        )
+        .unwrap();
+        assert_eq!(loaded.signed_gate(), signed);
+        assert_eq!(loaded.blocks()[0], exec.blocks()[0]);
+        exec.reward(-MODULATION_ONE_Q16);
+        loaded.reward(-MODULATION_ONE_Q16);
+        signed_pairing(&mut exec);
+        signed_pairing(&mut loaded);
+        assert_eq!(
+            loaded.blocks()[0],
+            exec.blocks()[0],
+            "{signed}: the same consolidation after the same punished pairing"
+        );
+    }
 }

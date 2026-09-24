@@ -11,6 +11,10 @@
 
 /// 1.0 in Q16.16: the modulation above which nothing more of a trace can be consolidated.
 const Q16_ONE: i32 = 0x0001_0000;
+/// −1.0 in Q16.16: the signed modulation below which nothing more of a trace can be moved
+/// against its sign (ADR-0094). A literal; the assertion ties it to 1.0.
+const Q16_MINUS_ONE: i32 = -0x0001_0000;
+const _: () = assert!(Q16_MINUS_ONE == -Q16_ONE);
 
 /// The dopamine signal's time constant for the executor's per-tick decay, $2^{14}$ ticks
 /// (164 ms at 10 µs; ADR-0032). A reward that arrives after a pairing consolidates the
@@ -58,6 +62,20 @@ impl NeuromodulatorState {
         baseline_q16
             .saturating_add(self.dopamine_rpe)
             .clamp(0, Q16_ONE)
+    }
+
+    /// The signed modulation of the signed gate (ADR-0093, ADR-0094): `baseline + dopamine`,
+    /// saturating, clamped to $[-1, 1]$ in Q16.16 rather than to $[0, 1]$. At or above zero it
+    /// is [`modulation`](Self::modulation); below zero it is the fraction of an addressed
+    /// excitatory synapse's trace that `SynapseBlock::consolidate_signed` moves into the
+    /// weight **against** the trace's sign — the anti-Hebbian reversal `modulation` clamps
+    /// away, as in the signed reward-modulated rule of Florian 2007 and Frémaux, Sprekeler and
+    /// Gerstner 2010. The executor reads it only for an addressed excitatory synapse while the
+    /// signed gate is set.
+    pub fn signed_modulation(&self, baseline_q16: i32) -> i32 {
+        baseline_q16
+            .saturating_add(self.dopamine_rpe)
+            .clamp(Q16_MINUS_ONE, Q16_ONE)
     }
 
     /// The record's 16 bytes, little-endian, field by field (§8.7).
@@ -210,6 +228,57 @@ mod tests {
         assert_eq!(DOPAMINE_TAU_SHIFT, 14, "164 ms at 10 µs");
     }
 
+    /// The signed modulation (ADR-0094) at its edges: the modulation at and above zero, one
+    /// LSB below zero one LSB below it, exactly −1.0 at the bound and never below it, the sum
+    /// saturating before the clamp; and at the fixed points of a punishment after every trial
+    /// (ADR-0093), −1.0 after the punishment and −0.712 at a trial's end.
+    #[test]
+    fn the_signed_modulation_is_the_modulation_above_zero_and_reaches_minus_one_below_it() {
+        let mut m = NeuromodulatorState::new();
+        assert_eq!(
+            m.signed_modulation(Q16_ONE),
+            Q16_ONE,
+            "at rest, the baseline"
+        );
+        assert_eq!(m.signed_modulation(0), 0);
+        m.dopamine_rpe = 0x4000;
+        assert_eq!(m.signed_modulation(0x8000), 0xC000, "a reward raises it");
+        assert_eq!(m.signed_modulation(0xC001), Q16_ONE, "never above 1.0");
+        m.dopamine_rpe = -0x4000;
+        assert_eq!(m.signed_modulation(0x8000), 0x4000, "a dip lowers it");
+        assert_eq!(m.signed_modulation(0x4000), 0, "exactly 0 at zero");
+        assert_eq!(m.signed_modulation(0x3FFF), -1, "one LSB below zero");
+        assert_eq!(m.modulation(0x3FFF), 0, "where the modulation is clamped");
+        assert_eq!(m.signed_modulation(0), -0x4000);
+        m.dopamine_rpe = -Q16_ONE;
+        assert_eq!(
+            m.signed_modulation(0),
+            Q16_MINUS_ONE,
+            "exactly −1.0 at the bound"
+        );
+        assert_eq!(m.signed_modulation(1), Q16_MINUS_ONE + 1);
+        m.dopamine_rpe = -Q16_ONE - 1;
+        assert_eq!(m.signed_modulation(0), Q16_MINUS_ONE, "never below −1.0");
+        m.dopamine_rpe = i32::MIN;
+        assert_eq!(
+            m.signed_modulation(i32::MIN),
+            Q16_MINUS_ONE,
+            "the sum saturates before the clamp"
+        );
+        m.dopamine_rpe = i32::MAX;
+        assert_eq!(m.signed_modulation(i32::MAX), Q16_ONE);
+        // The gate's baseline, zero, at the fixed points of a punishment after every trial.
+        m.dopamine_rpe = -112_227;
+        assert_eq!(
+            m.signed_modulation(0),
+            Q16_MINUS_ONE,
+            "after the punishment"
+        );
+        m.dopamine_rpe = -46_691;
+        assert_eq!(m.signed_modulation(0), -46_691, "at a trial's end");
+        assert_eq!(m.modulation(0), 0, "where the gate's modulation is zero");
+    }
+
     #[test]
     fn the_record_round_trips_through_its_sixteen_bytes() {
         let m = NeuromodulatorState {
@@ -236,6 +305,50 @@ mod tests {
                 _ => one.acetylcholine = 1,
             }
             assert!(!one.is_at_rest(), "any signal takes the record off rest");
+        }
+    }
+}
+
+/// The lattice property (ADR-0030) of the signed modulation (ADR-0094): over the lattice's
+/// pairs and a seeded walk of baselines and signals, it is `baseline + dopamine` clamped to
+/// $[-1, 1]$ by an oracle in `i64`, and the modulation is it at no less than zero — the two
+/// rules one number at and above zero.
+#[cfg(test)]
+mod prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    #[test]
+    fn the_signed_modulation_is_the_sum_clamped_to_plus_and_minus_one_and_the_modulation_its_floor_at_zero()
+     {
+        let check = |baseline: i32, dopamine: i32| {
+            let m = NeuromodulatorState {
+                dopamine_rpe: dopamine,
+                ..NeuromodulatorState::new()
+            };
+            let signed = m.signed_modulation(baseline);
+            let oracle = i64::from(baseline)
+                .saturating_add(i64::from(dopamine))
+                .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+                .clamp(i64::from(Q16_MINUS_ONE), i64::from(Q16_ONE));
+            assert_eq!(i64::from(signed), oracle, "{baseline} {dopamine}");
+            assert_eq!(
+                m.modulation(baseline),
+                signed.max(0),
+                "{baseline} {dopamine}: the modulation is the signed one's floor at zero"
+            );
+        };
+        for &baseline in I32_LATTICE.iter() {
+            for &dopamine in I32_LATTICE.iter() {
+                check(baseline, dopamine);
+            }
+        }
+        let mut rng = Lcg::new(0x94);
+        for _ in 0..100_000 {
+            check(rng.i32_edge_biased(), rng.i32_edge_biased());
         }
     }
 }
