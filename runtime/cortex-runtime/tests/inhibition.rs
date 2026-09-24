@@ -3917,6 +3917,18 @@ fn once_blocks(blocks: &[Block], compositions: &[Composition]) -> u32 {
 
 // ------------------------------------------------------------------ the run (brief 040)
 
+/// An image with its header's version written as `version` and the header resealed, every
+/// other byte as it was (ADR-0095): the image a writer of that version would have produced
+/// from the same records, where no record's bytes differ between the two versions.
+fn with_version(image: &[u8], version: u32) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let mut header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    header.version = version;
+    header.crc64 = header.checksum();
+    img[0..64].copy_from_slice(&header.encode());
+    img
+}
+
 /// An arm's run from the inhibited engine (brief 040): `earned_run_flipped` under the
 /// answer's feedback at the gate's zero, the arm's first mapping, the flip before the trial
 /// of index `flip`, and `after` reading the executor at every trial's end — the oracle held
@@ -4095,6 +4107,11 @@ fn reversal_arm(arm: Reversal) {
         "{name}: the volley's ticks"
     );
     assert_eq!(image_crc, REVERSAL_IMAGE_CRC_1024, "{name}: the one image");
+    assert_eq!(
+        crc64(&with_version(&inhibited, 15)),
+        REVERSAL_IMAGE_CRC_FORMAT_15_1024,
+        "{name}: every byte but the header's version and seal is the image H-17 read (ADR-0095)"
+    );
     assert_eq!((at_flip.1, at_carry.1), REVERSAL_SNAPSHOTS_1024[k]);
     assert_eq!(correct, CORRECT_REVERSAL_1024[k]);
     assert_eq!(held, HELD_1024[k]);
@@ -5969,8 +5986,14 @@ const REVERSAL_CENSUS_1024: [&[(u32, u64)]; 2] = [
         (71, 1),
     ],
 ];
-/// The one inhibited image both arms decode, its CRC-64: the same bytes in both tests.
-const REVERSAL_IMAGE_CRC_1024: u64 = 0xd5579c31308388ad;
+/// The one inhibited image both arms decode, its CRC-64: the same bytes in both tests. Since
+/// ADR-0094 the image is format 16, so its header's version and seal are not the bytes H-17
+/// read, and ADR-0095 pins the image as it is now beside the CRC H-17 read.
+const REVERSAL_IMAGE_CRC_1024: u64 = 0xd2965219775c394a;
+/// The same image with its header's version written back to 15 and the header resealed: the
+/// CRC-64 H-17 read (ADR-0091), so that every byte of the image but the version and the seal is
+/// the image H-17 ran from (ADR-0095).
+const REVERSAL_IMAGE_CRC_FORMAT_15_1024: u64 = 0xd5579c31308388ad;
 /// The four couplings at the ends of the 1 536th and the 1 537th trials, `[stimulus][readout]`.
 type Carry = ([[i64; 2]; 2], [[i64; 2]; 2]);
 /// The couplings around the flip per arm, as read.
