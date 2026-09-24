@@ -329,9 +329,9 @@ fn ppm(row: &Row, units: u32, ticks: u64) -> u64 {
         .unwrap_or(0)
 }
 
-/// Dumps a run, its four windows beside the prediction and its wall time, then holds it to its
-/// table.
-fn hold(name: &str, k: usize, rows: &[Row], nanos: u128, table: &[Row]) {
+/// Dumps a run: its rows, its four windows beside the prediction, and its wall time per tick
+/// and per turn on one worker (the two workers' time over the turns), a developer machine's.
+fn dump(name: &str, k: usize, rows: &[Row], nanos: u128) {
     let units = RUNS[k].0;
     let windows: Vec<u64> = rows
         .iter()
@@ -342,22 +342,151 @@ fn hold(name: &str, k: usize, rows: &[Row], nanos: u128, table: &[Row]) {
     let turns = rows.iter().fold(0u64, |sum, row| sum.saturating_add(row.0));
     eprintln!(
         "DUMP {name} {rows:?} windows_ppm {windows:?} predicted_ppm {} \
-         ns_per_tick {} ns_per_turn {} (a developer machine's)",
+         ns_per_tick {} worker_ns_per_turn {} (a developer machine's)",
         PREDICTED_PPM[k],
         nanos.checked_div(u128::from(ticks)).unwrap_or(0),
-        nanos.checked_div(u128::from(turns)).unwrap_or(0),
+        nanos
+            .saturating_mul(2)
+            .checked_div(u128::from(turns))
+            .unwrap_or(0),
     );
-    assert_eq!(rows, table, "{name}");
 }
 
 // ---------------------------------------------------------------------- the pinned tables
 
-/// The four runs' rows, in `RUNS`'s order, each pinned from one run; committed before the
-/// runs empty, and after them filled.
-const NETWORK_ROWS: [&[Row]; 4] = [&[], &[], &[], &[]];
+/// The four runs' rows, in `RUNS`'s order, each pinned from one run and reproduced by a
+/// second; committed empty before the runs. Each row is `(turns, delivered, sent by the drive,
+/// spikes, fewest turns in a tick, most, ticks with every unit served)`; the four windows are
+/// the last four rows. At 1 024 units under ADR-0044's drive 99.99 per cent of the units are
+/// served in every window (every unit on 91 to 94 per cent of the ticks), the population
+/// firing 1.73 to 1.79 Hz a unit and the synapses delivering 55 to 57 messages a unit a second
+/// beside the drive's 781; sixteen times sparser, 71.9 to 72.1 per cent against the floor's
+/// 70.54, and no spike; 256 times sparser, 7.35 to 7.41 per cent against 7.35 (one window
+/// 7.345, below it by a thousandth of its value), and no spike; at 4 096 units, 99.99 per cent,
+/// every unit on 77 to 83 per cent of the ticks.
+const NETWORK_ROWS: [&[Row]; 4] = [
+    &[
+        (13_612, 504, 504, 0, 0, 391, 0),
+        (33_517, 512, 512, 0, 395, 631, 0),
+        (45_472, 512, 512, 0, 635, 782, 0),
+        (53_368, 512, 512, 0, 784, 879, 0),
+        (58_553, 512, 512, 0, 881, 944, 0),
+        (61_576, 512, 512, 0, 944, 977, 0),
+        (63_385, 512, 512, 0, 978, 995, 0),
+        (63_982, 512, 512, 0, 995, 1004, 0),
+        (133_683_066, 1_123_070, 1_044_480, 2464, 1004, 1024, 122_674),
+        (134_207_526, 1_124_137, 1_048_576, 2359, 1022, 1024, 121_388),
+        (134_210_016, 1_122_505, 1_048_576, 2317, 1021, 1024, 123_714),
+        (134_207_114, 1_124_129, 1_048_576, 2356, 1022, 1024, 120_642),
+        (134_206_286, 1_125_495, 1_048_576, 2403, 1022, 1024, 119_832),
+    ],
+    &[
+        (1024, 32, 32, 0, 0, 32, 0),
+        (3023, 32, 32, 0, 32, 63, 0),
+        (4865, 32, 32, 0, 63, 90, 0),
+        (6765, 32, 32, 0, 90, 121, 0),
+        (8658, 32, 32, 0, 121, 147, 0),
+        (10_332, 32, 32, 0, 147, 175, 0),
+        (11_996, 32, 32, 0, 175, 201, 0),
+        (13_668, 32, 32, 0, 201, 227, 0),
+        (95_879_032, 65_280, 65_280, 0, 227, 771, 0),
+        (96_634_999, 65_536, 65_536, 0, 704, 767, 0),
+        (96_540_672, 65_536, 65_536, 0, 697, 767, 0),
+        (96_799_753, 65_536, 65_536, 0, 701, 775, 0),
+        (96_517_112, 65_536, 65_536, 0, 709, 770, 0),
+    ],
+    &[
+        (94, 2, 2, 0, 0, 2, 0),
+        (222, 2, 2, 0, 2, 4, 0),
+        (350, 2, 2, 0, 4, 6, 0),
+        (478, 2, 2, 0, 6, 8, 0),
+        (606, 2, 2, 0, 8, 10, 0),
+        (734, 2, 2, 0, 10, 12, 0),
+        (862, 2, 2, 0, 12, 14, 0),
+        (990, 2, 2, 0, 14, 16, 0),
+        (9_828_836, 4080, 4080, 0, 16, 81, 0),
+        (9_930_259, 4096, 4096, 0, 71, 81, 0),
+        (9_901_563, 4096, 4096, 0, 69, 80, 0),
+        (9_858_485, 4096, 4096, 0, 70, 81, 0),
+        (9_940_766, 4096, 4096, 0, 70, 81, 0),
+    ],
+    &[
+        (54_835, 2016, 2016, 0, 0, 1593, 0),
+        (136_558, 2048, 2048, 0, 1609, 2574, 0),
+        (185_362, 2048, 2048, 0, 2586, 3178, 0),
+        (216_471, 2048, 2048, 0, 3189, 3546, 0),
+        (234_464, 2048, 2048, 0, 3554, 3757, 0),
+        (245_747, 2048, 2048, 0, 3763, 3896, 0),
+        (252_493, 2048, 2048, 0, 3899, 3983, 0),
+        (256_665, 2048, 2048, 1, 3985, 4031, 0),
+        (
+            534_735_614,
+            4_500_501,
+            4_177_920,
+            10_123,
+            4033,
+            4096,
+            102_024,
+        ),
+        (536_846_299, 4_497_765, 4_194_304, 9483, 4093, 4096, 108_557),
+        (536_836_260, 4_506_084, 4_194_304, 9751, 4092, 4096, 101_087),
+        (536_843_551, 4_499_723, 4_194_304, 9537, 4093, 4096, 105_862),
+        (536_842_407, 4_497_635, 4_194_304, 9495, 4093, 4096, 106_379),
+    ],
+];
 
-/// The controls at 1 024 units, (a) to (c).
-const CONTROL_ROWS: [&[Row]; 3] = [&[], &[], &[]];
+/// The controls at 1 024 units, (a) to (c): the same units armed and wired to nothing. Under the
+/// two sparser drives the network never fires, so its rows are its control's bit for bit; under
+/// ADR-0044's drive the control serves every unit on every tick and fires 1.14 to 1.24 Hz a
+/// unit unwired, and the network's own messages bring a unit to rest now and then (its fewest turns
+/// in a tick 1 021 or 1 022).
+const CONTROL_ROWS: [&[Row]; 3] = [
+    &[
+        (13_612, 504, 504, 0, 0, 391, 0),
+        (33_517, 512, 512, 0, 395, 631, 0),
+        (45_472, 512, 512, 0, 635, 782, 0),
+        (53_368, 512, 512, 0, 784, 879, 0),
+        (58_553, 512, 512, 0, 881, 944, 0),
+        (61_576, 512, 512, 0, 944, 977, 0),
+        (63_385, 512, 512, 0, 978, 995, 0),
+        (63_982, 512, 512, 0, 995, 1004, 0),
+        (133_690_894, 1_044_480, 1_044_480, 1555, 1004, 1024, 130_199),
+        (134_217_728, 1_048_576, 1_048_576, 1533, 1024, 1024, 131_072),
+        (134_217_728, 1_048_576, 1_048_576, 1598, 1024, 1024, 131_072),
+        (134_217_728, 1_048_576, 1_048_576, 1634, 1024, 1024, 131_072),
+        (134_217_728, 1_048_576, 1_048_576, 1664, 1024, 1024, 131_072),
+    ],
+    &[
+        (1024, 32, 32, 0, 0, 32, 0),
+        (3023, 32, 32, 0, 32, 63, 0),
+        (4865, 32, 32, 0, 63, 90, 0),
+        (6765, 32, 32, 0, 90, 121, 0),
+        (8658, 32, 32, 0, 121, 147, 0),
+        (10_332, 32, 32, 0, 147, 175, 0),
+        (11_996, 32, 32, 0, 175, 201, 0),
+        (13_668, 32, 32, 0, 201, 227, 0),
+        (95_879_032, 65_280, 65_280, 0, 227, 771, 0),
+        (96_634_999, 65_536, 65_536, 0, 704, 767, 0),
+        (96_540_672, 65_536, 65_536, 0, 697, 767, 0),
+        (96_799_753, 65_536, 65_536, 0, 701, 775, 0),
+        (96_517_112, 65_536, 65_536, 0, 709, 770, 0),
+    ],
+    &[
+        (94, 2, 2, 0, 0, 2, 0),
+        (222, 2, 2, 0, 2, 4, 0),
+        (350, 2, 2, 0, 4, 6, 0),
+        (478, 2, 2, 0, 6, 8, 0),
+        (606, 2, 2, 0, 8, 10, 0),
+        (734, 2, 2, 0, 10, 12, 0),
+        (862, 2, 2, 0, 12, 14, 0),
+        (990, 2, 2, 0, 14, 16, 0),
+        (9_828_836, 4080, 4080, 0, 16, 81, 0),
+        (9_930_259, 4096, 4096, 0, 71, 81, 0),
+        (9_901_563, 4096, 4096, 0, 69, 80, 0),
+        (9_858_485, 4096, 4096, 0, 70, 81, 0),
+        (9_940_766, 4096, 4096, 0, 70, 81, 0),
+    ],
+];
 
 // ------------------------------------------------------------------------------ the gate
 
@@ -425,21 +554,32 @@ fn the_turns_are_counted_one_message_keeps_a_unit_awake_as_the_oracle_says_and_t
         assert_eq!(exec.turns(), u64::from(TICKS_TO_REST[k]));
         assert_eq!(exec.delivered(), 1);
     }
+
+    // The first 512 ticks of run (a), held to the first rows of its table.
+    let mut exec = network(1024);
+    let (rows, _) = read(&mut exec, &run_drive(0), &[PREFIX_TICKS; PREFIX_ROWS]);
+    assert_eq!(rows, NETWORK_ROWS[0][..PREFIX_ROWS]);
 }
 
 // ------------------------------------------------------------------- the runs (weekly)
 
-/// Run `k` on the reference network, and at 1 024 units its control.
+/// Run `k` on the reference network, and at 1 024 units its control, each dumped before either
+/// is held to its table.
 fn active_set(k: usize) {
     let (units, _, _) = RUNS[k];
     let drive = run_drive(k);
     let mut exec = network(units);
     let (rows, nanos) = read(&mut exec, &drive, &layout());
-    hold(&format!("network {k}"), k, &rows, nanos, NETWORK_ROWS[k]);
-    if let Some(table) = CONTROL_ROWS.get(k) {
+    dump(&format!("network {k}"), k, &rows, nanos);
+    let control = CONTROL_ROWS.get(k).map(|&table| {
         let mut exec = unwired(units);
         let (rows, nanos) = read(&mut exec, &drive, &layout());
-        hold(&format!("control {k}"), k, &rows, nanos, table);
+        dump(&format!("control {k}"), k, &rows, nanos);
+        (rows, table)
+    });
+    assert_eq!(rows, NETWORK_ROWS[k], "network {k}");
+    if let Some((rows, table)) = control {
+        assert_eq!(rows, table, "control {k}");
     }
 }
 
