@@ -343,6 +343,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             blocks: 128,
             deltas: 0,
             nodes_per_worker: 4096,
+            deque_capacity: 0,
             injector_capacity: 1024,
             trace_capacity: 1 << 16,
             amendments: 0,

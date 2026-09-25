@@ -1,8 +1,7 @@
 //! The VirtualCortex executor: the runtime crate that composes the state crates (whitepaper
-//! §4.3, §6.1; ADR-0023). A fixed pool of worker threads, each owning a range of the unit
-//! arena that it serves in unit order from a schedule bitmap (ADR-0100), one timing wheel per
-//! worker, mailbox delivery, synaptic fan-out and STDP, in three barrier-separated phases per
-//! fine tick; the `.cortex` image writer and loader and the clock
+//! §4.3, §6.1; ADR-0023). A fixed pool of worker threads, one work-stealing deque and one
+//! timing wheel per worker, mailbox delivery, synaptic fan-out and STDP, in three
+//! barrier-separated phases per fine tick; the `.cortex` image writer and loader and the clock
 //! sweep with its write-ahead log (ADR-0024); the policy amendment's trial in two forks of the
 //! image and its commit into the live policy (ADR-0031); the modulator of three-factor
 //! plasticity (ADR-0032); the population spike tally and the criticality controller's gain,
@@ -37,6 +36,7 @@
 pub mod arena;
 pub mod barrier;
 pub mod branching;
+pub mod deque;
 pub mod discovery;
 pub mod episode;
 pub mod executor;

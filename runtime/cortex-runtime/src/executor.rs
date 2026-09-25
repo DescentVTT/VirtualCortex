@@ -4,15 +4,13 @@
 //! A tick has three phases separated by barriers, so that the references a worker holds into
 //! the shared arenas never alias another worker's:
 //!
-//! 1. **Turns.** Each worker owns a fixed, contiguous range of the unit arena and serves, in
-//!    unit order, the units of its range the schedule names: one bit per unit, set by the
-//!    unit's owner when its turn left it awake and by a push or an activation that found it
-//!    idle (ADR-0100). For each, the worker drains the mailbox if it holds mail, orders the
-//!    batch by message value (§8.3), scales the two compartment sums by the tick's synaptic
-//!    gain (ADR-0036), integrates, steps the short-term plasticity if the unit fired, and keeps
-//!    the unit on the schedule for the next tick while it is not at rest. Only the owner
-//!    references the unit, exclusively, and no push happens in the phase, so the turn takes no
-//!    claim. At the end of the phase the worker publishes how many of its units fired.
+//! 1. **Turns.** Each worker pops units from its deque, stealing from the others when it is
+//!    empty; for each, it claims the turn (`begin_turn`), drains the mailbox, orders the batch
+//!    by message value (§8.3), scales the two compartment sums by the tick's synaptic gain
+//!    (ADR-0036), integrates, steps the short-term plasticity if the unit fired, ends the
+//!    turn, and keeps the unit on the active set for the next tick while it is not at rest.
+//!    Only the turn holder references the unit, exclusively. At the end of the phase the
+//!    worker publishes how many of its units fired.
 //! 2. **Fan-out.** For each unit that fired in phase 1, the worker that ran it walks its chain:
 //!    per block, STDP against the targets' last spikes (settled, since every turn has ended)
 //!    into the eligibility traces, the traces consolidated into the weights under the tick's
@@ -23,7 +21,7 @@
 //!    into the targets' mailboxes as spike messages; worker 0 also drains the injector and,
 //!    during slow-wave sleep on the ripple's cadence, delivers the replay drive to every unit
 //!    of the episode the coordinator chose before the tick (ADR-0038). Blocks and units only
-//!    shared. A unit a push wakes is marked on the schedule for the next tick.
+//!    shared. Units woken by a push are queued for the next tick, as is the active set.
 //!
 //! A message pushed in phase 2 or 3 of tick $t$ is integrated in phase 1 of tick $t + 1$, so a
 //! zero-delay synapse and a one-tick one arrive together; a delay $d$ scheduled in phase 2 is
@@ -41,6 +39,7 @@
 
 use crate::arena::Arena;
 use crate::barrier::SpinBarrier;
+use crate::deque::{self, Local, Steal, Stealer};
 use crate::discovery::Discovery;
 use crate::episode::{COINCIDENCE_TICKS, DISCOVERY_WINDOW, DiscoverError, DiscoverReport};
 use crate::image::{ImageError, WriteAheadLog};
@@ -49,7 +48,7 @@ use crate::pool::Pools;
 use crate::store::{Induction, TermError};
 use cortex_affect::InteroceptiveState;
 use cortex_core::{
-    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel, GateState,
+    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel,
     ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16,
     NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SynapseBlock,
     THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical,
@@ -91,6 +90,8 @@ pub struct Config {
     /// (`REPLAY_MESSAGES × PATTERN_MAX`, 24, while the ledger has room; ADR-0038); nodes come
     /// back the tick after. Refused below one ripple's worth when the ledger has room.
     pub nodes_per_worker: usize,
+    /// Slots per worker deque; 0 means one per unit, which cannot fill.
+    pub deque_capacity: usize,
     /// Entries of the injector ring (rounded up to a power of two).
     pub injector_capacity: usize,
     /// Delivered messages and spikes each worker records, for tests and reports; 0 records
@@ -176,6 +177,7 @@ impl Default for Config {
             blocks: 0,
             deltas: 0,
             nodes_per_worker: 64,
+            deque_capacity: 0,
             injector_capacity: 64,
             trace_capacity: 0,
             amendments: 0,
@@ -519,28 +521,6 @@ fn scaled(sum: i32, gain_q16: u32) -> i32 {
         .clamp(i32::MIN as i64, i32::MAX as i64) as i32
 }
 
-/// The partition of the unit arena among the workers (ADR-0100): the share, $\lceil N / W
-/// \rceil$ units a worker, and the stride, the words of the schedule a worker's region takes —
-/// a share's words rounded up to eight, a cache line, so that no two owners' words share one.
-fn partition(units: usize, workers: usize) -> (usize, usize) {
-    let share = units.div_ceil(workers.max(1));
-    (share, share.div_ceil(64).next_multiple_of(8))
-}
-
-/// Worker `id`'s range (ADR-0100): its first unit `id·share`, the words of the schedule its
-/// units take, and its first word `id·stride`. The range ends at `(id + 1)·share` or at the
-/// arena's end; a worker past the arena owns none and takes no word.
-fn range_of(id: usize, units: usize, share: usize, stride: usize) -> (u32, usize, usize) {
-    let first = id.saturating_mul(share).min(units);
-    let end = id.saturating_add(1).saturating_mul(share).min(units);
-    // Below the unit count, which `Executor::new` bounds below `u32::MAX`.
-    (
-        first as u32,
-        end.saturating_sub(first).div_ceil(64),
-        id.saturating_mul(stride),
-    )
-}
-
 /// `Vec::push` that never grows: exceeding the capacity is a sizing bug, not an allocation.
 #[inline]
 fn push_bounded<T>(v: &mut Vec<T>, x: T, what: &str) {
@@ -569,18 +549,7 @@ struct Shared {
     rehydration_pending: AtomicUsize,
     in_flight: Box<[AtomicI64]>,
     pools: Pools,
-    /// The schedule (ADR-0100): one bit per unit, set while the next tick serves the unit.
-    /// Worker `w` owns the units `[w·share, min((w+1)·share, N))`, and their bits are its
-    /// region of `stride` words from word `w·stride`, in unit order. The owner loads and stores
-    /// its words in the turns phase, where no push happens; a push or an activation sets a bit
-    /// with a fetch-or in phases 2 and 3, and the coordinator between ticks; the barriers order
-    /// the two.
-    scheduled: Box<[AtomicU64]>,
-    /// Units per worker, $\lceil N / W \rceil$.
-    share: usize,
-    /// Words of the schedule per worker: a share's words rounded up to eight, a cache line, so
-    /// that no two owners' words share a line.
-    stride: usize,
+    stealers: Box<[Stealer]>,
     barrier: SpinBarrier,
     injector: Injector,
     delivered: Box<[AtomicU64]>,
@@ -648,56 +617,18 @@ impl Shared {
             .get(unit as usize)
             .is_some_and(|flag| flag.load(Ordering::Relaxed))
     }
-
-    /// The worker that owns `unit` and alone serves it (ADR-0100): `unit / share`; none for a
-    /// unit outside the arena.
-    fn owner(&self, unit: u32) -> Option<usize> {
-        if unit as usize >= self.units.len() {
-            return None;
-        }
-        (unit as usize).checked_div(self.share)
-    }
-
-    /// The word of the schedule that holds `unit`'s bit, and the bit (ADR-0100): the unit's
-    /// place in its owner's range, `unit − owner·share`, is bit `place mod 64` of the owner's
-    /// word `place / 64`. None for a unit outside the arena.
-    fn place(&self, unit: u32) -> Option<(&AtomicU64, u64)> {
-        let owner = self.owner(unit)?;
-        // Below the share: `owner·share` is at most `unit`, which `owner` is the quotient of.
-        let at = (unit as usize).wrapping_sub(owner.wrapping_mul(self.share));
-        let word = owner.wrapping_mul(self.stride).wrapping_add(at >> 6);
-        Some((self.scheduled.get(word)?, 1u64 << (at & 63)))
-    }
-
-    /// Marks `unit` for a turn at the next tick (ADR-0100), in phases 2 and 3 after a push or
-    /// at an activation, and between ticks: a unit already scheduled is left as it is; an idle
-    /// one has its gate byte recorded scheduled and its bit set. Two markers that both find the
-    /// unit idle store the same byte and set the same bit, so no claim is needed.
-    fn mark(&self, unit: u32, u: &DendriticSuperNeuron) {
-        if u.gate() == Some(GateState::Scheduled) {
-            return;
-        }
-        u.set_gate(GateState::Scheduled);
-        let Some((word, bit)) = self.place(unit) else {
-            abort("a marked unit is outside the arena");
-        };
-        word.fetch_or(bit, Ordering::Relaxed);
-    }
 }
 
 /// One worker's private state.
 struct Worker<const CAP: usize> {
     id: usize,
-    /// The first unit of the worker's range (ADR-0100).
-    first: u32,
-    /// The words of the schedule the range takes, from `region`.
-    words: usize,
-    /// The worker's first word of the schedule.
-    region: usize,
+    local: Local,
     wheel: Box<FlatTimingWheel<CAP>>,
+    steal_from: usize,
     batch: Vec<u32>,
     due: Vec<u32>,
     spiked: Vec<(u32, u8, u8)>,
+    next_tick: Vec<u32>,
     trace: Vec<u32>,
     spike_trace: Vec<(u32, u32)>,
     trace_dropped: u64,
@@ -720,9 +651,6 @@ pub struct WorkerReport {
     pub dropped: u64,
     /// Messages the worker drained, whether or not traced.
     pub delivered_count: u64,
-    /// Turns the worker served (ADR-0097): its own units', since each worker serves the range
-    /// of the arena it owns (ADR-0100).
-    pub turns: u64,
 }
 
 /// A handle producers use to inject from outside the tick loop. Clone it freely; it is `Send`
@@ -885,7 +813,13 @@ impl<const CAP: usize> Executor<CAP> {
         } else {
             config.units
         };
-        let (share, stride) = partition(config.units, workers);
+        let deque_capacity = if config.deque_capacity == 0 {
+            config.units
+        } else {
+            config.deque_capacity
+        };
+        let (locals, stealers): (Vec<Local>, Vec<Stealer>) =
+            (0..workers).map(|_| deque::new(deque_capacity)).unzip();
         let shared = Arc::new(Shared {
             units: Arena::from_vec(
                 (0..config.units as u64)
@@ -899,11 +833,7 @@ impl<const CAP: usize> Executor<CAP> {
             rehydration_pending: AtomicUsize::new(0),
             in_flight: (0..workers).map(|_| AtomicI64::new(0)).collect(),
             pools: Pools::new(workers, config.nodes_per_worker),
-            scheduled: (0..workers.saturating_mul(stride))
-                .map(|_| AtomicU64::new(0))
-                .collect(),
-            share,
-            stride,
+            stealers: stealers.into_boxed_slice(),
             barrier: SpinBarrier::new(workers),
             injector: Injector::new(config.injector_capacity),
             delivered: (0..workers).map(|_| AtomicU64::new(0)).collect(),
@@ -930,17 +860,18 @@ impl<const CAP: usize> Executor<CAP> {
         // above (a capacity overflow) before this sizes a buffer.
         let total_nodes = workers.saturating_mul(config.nodes_per_worker);
         let mut wheels = build_wheels::<CAP>(workers);
-        let mut states: Vec<Worker<CAP>> = (0..workers)
-            .map(|id| (id, range_of(id, config.units, share, stride)))
-            .map(|(id, (first, words, region))| Worker {
+        let mut states: Vec<Worker<CAP>> = locals
+            .into_iter()
+            .enumerate()
+            .map(|(id, local)| Worker {
                 id,
-                first,
-                words,
-                region,
+                local,
                 wheel: wheels.remove(0),
+                steal_from: next_in_ring(id, workers),
                 batch: Vec::with_capacity(total_nodes),
                 due: Vec::with_capacity(CAP),
                 spiked: Vec::with_capacity(config.units),
+                next_tick: Vec::with_capacity(config.units),
                 trace: Vec::with_capacity(config.trace_capacity),
                 spike_trace: Vec::with_capacity(config.trace_capacity),
                 trace_dropped: 0,
@@ -1666,14 +1597,6 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.barrier.parties()
     }
 
-    /// The worker that serves `unit` (ADR-0100): each worker owns a fixed, contiguous range of
-    /// the arena, $\lceil N / W \rceil$ units, the last range shorter and a worker past the
-    /// arena none, and alone runs the turns of its range's units. None for a unit outside the
-    /// arena.
-    pub fn owner(&self, unit: u32) -> Option<usize> {
-        self.shared.owner(unit)
-    }
-
     /// Ticks run so far.
     pub fn ticks(&self) -> u64 {
         self.tick
@@ -1693,11 +1616,10 @@ impl<const CAP: usize> Executor<CAP> {
             .sum()
     }
 
-    /// Turns served by every worker so far (ADR-0097): one for each unit a worker served, so the
-    /// difference across a tick is the tick's active set — the units that were not at rest
-    /// after the tick before or that a message or an activation woke (ADR-0023), the units the
-    /// schedule named (ADR-0100). A count kept beside `delivered`; it changes nothing the
-    /// engine does.
+    /// Turns served by every worker so far (ADR-0097): one for each unit a worker took from a
+    /// deque and ran, so the difference across a tick is the tick's active set — the units
+    /// that were not at rest after the tick before or that a message or an activation woke
+    /// (ADR-0023). A count kept beside `delivered`; it changes nothing the engine does.
     pub fn turns(&self) -> u64 {
         self.shared
             .turns
@@ -2033,11 +1955,11 @@ impl<const CAP: usize> Executor<CAP> {
         }
     }
 
-    /// Between ticks: marks `units` for a turn on the next tick without a message (the loader
+    /// Between ticks: queues `units` for a turn on the next tick without a message (the loader
     /// wakes every unit that is not at rest).
     pub(crate) fn wake_now(&mut self, units: &[u32]) {
         for &unit in units {
-            Worker::<CAP>::wake(&self.shared, unit);
+            self.worker0.wake(&self.shared, unit);
         }
     }
 
@@ -2179,40 +2101,24 @@ impl<const CAP: usize> Worker<CAP> {
             spikes: std::mem::take(&mut self.spike_trace),
             dropped: self.trace_dropped,
             delivered_count: self.delivered,
-            turns: self.turns,
         }
     }
 
     // ---------------------------------------------------------------- phase 1: turns
 
-    /// The sweep (ADR-0100): this worker's region of the schedule, word by word, and in each
-    /// word the set bits from the lowest, so the units of its range in increasing index. No
-    /// other worker writes the region in this phase, since no push happens in it, so a word is
-    /// loaded and stored back with the bits of the units that stay awake.
     fn phase_turns(&mut self, shared: &Shared, now: u32) {
         let gain = shared.gain.load(Ordering::Relaxed);
         self.descended = 0;
-        for w in 0..self.words {
-            let Some(word) = shared.scheduled.get(self.region.wrapping_add(w)) else {
-                abort("a worker's region runs past the schedule");
+        loop {
+            let unit = match self.local.pop() {
+                Some(unit) => unit,
+                None => match self.steal(shared) {
+                    Some(unit) => unit,
+                    None => break,
+                },
             };
-            let mut due = word.load(Ordering::Relaxed);
-            if due == 0 {
-                continue;
-            }
-            // The range's unit of the word's bit 0: within the range, below the unit count.
-            let base = self.first.wrapping_add((w as u32) << 6);
-            let mut awake = 0u64;
-            for _ in 0..due.count_ones() {
-                let bit = due.trailing_zeros();
-                due &= due.wrapping_sub(1); // the lowest set bit, served now, cleared
-                if self.turn(shared, base.wrapping_add(bit), now, gain) {
-                    // A bit not yet in `awake`: the sum is the union.
-                    awake = awake.wrapping_add(1u64 << bit);
-                }
-                self.turns = self.turns.saturating_add(1);
-            }
-            word.store(awake, Ordering::Relaxed);
+            self.turn(shared, unit, now, gain);
+            self.turns = self.turns.saturating_add(1);
         }
         // The units this worker fired this tick, for the population tally (ADR-0036), and
         // how many of them were descendants (ADR-0054); counts below the unit count, which
@@ -2221,33 +2127,48 @@ impl<const CAP: usize> Worker<CAP> {
         shared.descendants[self.id].store(self.descended, Ordering::Relaxed);
     }
 
-    /// One unit's turn; true when the unit is not at rest after it and stays on the schedule.
-    fn turn(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32) -> bool {
-        // SAFETY (phase 1): `unit` is a set bit of this worker's region of the schedule, and so
-        // in this worker's range, which no other worker's range overlaps: the ranges partition
-        // the arena and are fixed in `Executor::new` (ADR-0100). In phase 1 a worker references
-        // only its own range's units, one at a time, and no push happens; phases 2 and 3 have
-        // ended at the barrier.
-        let Some(u) = (unsafe { shared.units.get_mut(unit as usize) }) else {
-            abort("a scheduled unit index is outside the arena");
-        };
-        self.batch.clear();
-        // A unit with no mail takes no swap: no push happens in this phase, so an empty head
-        // stays empty through the turn (ADR-0100).
-        if !u.mailbox_is_empty() {
-            for (node, payload) in u.mailbox_drain(shared.pools.nodes()) {
-                push_bounded(
-                    &mut self.batch,
-                    payload,
-                    "a mailbox held more nodes than exist",
-                );
-                shared.pools.free(node);
-                self.delivered = self.delivered.saturating_add(1);
-                if self.trace.len() < self.trace.capacity() {
-                    self.trace.push(payload);
-                } else if self.trace.capacity() > 0 {
-                    self.trace_dropped = self.trace_dropped.saturating_add(1);
+    fn steal(&mut self, shared: &Shared) -> Option<u32> {
+        let n = shared.stealers.len();
+        for _ in 0..n {
+            let victim = self.steal_from;
+            self.steal_from = next_in_ring(victim, n);
+            if victim == self.id {
+                continue;
+            }
+            loop {
+                match shared.stealers[victim].steal() {
+                    Steal::Success(unit) => return Some(unit),
+                    Steal::Empty => break,
+                    Steal::Retry => continue,
                 }
+            }
+        }
+        None
+    }
+
+    fn turn(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32) {
+        // SAFETY (phase 1): this worker took `unit` from a deque, where it was put by the one
+        // `try_schedule` that moved its gate to scheduled, so no other worker holds it; no
+        // phase-1 code references another unit, and phases 2 and 3 have ended at the barrier.
+        let Some(u) = (unsafe { shared.units.get_mut(unit as usize) }) else {
+            abort("a queued unit index is outside the arena");
+        };
+        if !u.begin_turn() {
+            abort("a queued unit was not scheduled");
+        }
+        self.batch.clear();
+        for (node, payload) in u.mailbox_drain(shared.pools.nodes()) {
+            push_bounded(
+                &mut self.batch,
+                payload,
+                "a mailbox held more nodes than exist",
+            );
+            shared.pools.free(node);
+            self.delivered = self.delivered.saturating_add(1);
+            if self.trace.len() < self.trace.capacity() {
+                self.trace.push(payload);
+            } else if self.trace.capacity() > 0 {
+                self.trace_dropped = self.trace_dropped.saturating_add(1);
             }
         }
         // §8.3: the batch is applied in message order, never in arrival order.
@@ -2303,15 +2224,15 @@ impl<const CAP: usize> Worker<CAP> {
                 slot.store(unit, Ordering::Relaxed);
             }
         }
-        // The schedule's record (ADR-0100): the unit stays on it while it is not at rest and
-        // leaves it at rest, until a message or an activation marks it again.
-        let awake = !at_rest(u);
-        u.set_gate(if awake {
-            GateState::Scheduled
-        } else {
-            GateState::Idle
-        });
-        awake
+        if u.end_turn() {
+            // A message arrived during the turn. No push overlaps a turn in this executor, so
+            // this cannot happen; the rule of ADR-0017 is kept as defence in depth.
+            if self.local.push(unit).is_err() {
+                abort("the deque is full");
+            }
+        } else if !at_rest(u) && u.try_schedule() {
+            push_bounded(&mut self.next_tick, unit, "more active units than units");
+        }
     }
 
     // ---------------------------------------------------------------- phase 2: fan-out
@@ -2428,7 +2349,7 @@ impl<const CAP: usize> Worker<CAP> {
                 };
                 budget = budget.wrapping_sub(1); // not 0: the loop's guard
                 if payload == ACTIVATE {
-                    Self::wake(shared, unit);
+                    self.wake(shared, unit);
                 } else {
                     self.deliver(shared, unit, payload);
                 }
@@ -2452,13 +2373,19 @@ impl<const CAP: usize> Worker<CAP> {
                 }
             }
         }
+        for i in 0..self.next_tick.len() {
+            if self.local.push(self.next_tick[i]).is_err() {
+                abort("the deque is full");
+            }
+        }
+        self.next_tick.clear();
         shared.delivered[self.id].store(self.delivered, Ordering::Relaxed);
         shared.turns[self.id].store(self.turns, Ordering::Relaxed);
         shared.in_flight[self.id].store(self.in_flight, Ordering::Relaxed);
     }
 
-    /// Phases 2 and 3: a message into a unit's mailbox, and the unit marked on the schedule
-    /// for the next tick if it was idle (ADR-0100).
+    /// Phases 2 and 3: a message into a unit's mailbox, and the unit onto this worker's deque
+    /// if its gate was idle.
     fn deliver(&mut self, shared: &Shared, target: u32, message: u32) {
         let Some(node) = shared.pools.alloc(self.id) else {
             abort("the worker's mailbox node pool is exhausted (size nodes_per_worker, §8.9)");
@@ -2471,7 +2398,9 @@ impl<const CAP: usize> Worker<CAP> {
         if !u.mailbox_push(shared.pools.nodes(), node, message) {
             abort("a mailbox push was refused");
         }
-        shared.mark(target, u);
+        if u.try_schedule() && self.local.push(target).is_err() {
+            abort("the deque is full");
+        }
         Self::note_evicted(shared, target);
     }
 
@@ -2485,15 +2414,15 @@ impl<const CAP: usize> Worker<CAP> {
         }
     }
 
-    /// Phase 3, and between ticks from `Executor::wake_now`: a turn without a message.
-    fn wake(shared: &Shared, unit: u32) {
-        // SAFETY (phase 3): as in `deliver`. Between ticks `wake_now` holds `&mut` to the
-        // executor, which excludes every reference it hands out, and every worker is parked at
-        // the barrier.
+    /// Phase 3: a turn without a message.
+    fn wake(&mut self, shared: &Shared, unit: u32) {
+        // SAFETY (phase 3): as in `deliver`.
         let Some(u) = (unsafe { shared.units.get(unit as usize) }) else {
             abort("an activation names a unit outside the arena");
         };
-        shared.mark(unit, u);
+        if u.try_schedule() && self.local.push(unit).is_err() {
+            abort("the deque is full");
+        }
         Self::note_evicted(shared, unit);
     }
 }
@@ -2677,76 +2606,6 @@ mod tests {
         assert_eq!(reports[0].delivered, vec![spike_message(0x100, false)]);
         assert_eq!(reports[0].delivered_count, 1);
         assert!(reports[0].spikes.is_empty());
-    }
-
-    /// Axiom A3's partition (ADR-0100): for every arena and worker count of a grid, the ranges
-    /// are contiguous from unit 0, at most a share each, and cover the arena exactly; each
-    /// worker's region is the stride from `id·stride` and its words hold its range; and on an
-    /// executor every unit has one owner, whose range holds it, and one place in the schedule,
-    /// the bit of its position in that range. Outside the arena, neither.
-    #[test]
-    fn the_ranges_partition_the_arena_and_the_places_partition_the_schedule() {
-        const UNITS: [usize; 12] = [1, 2, 3, 5, 63, 64, 65, 129, 512, 513, 1000, 4097];
-        const WORKERS: [usize; 7] = [1, 2, 3, 4, 7, 8, 16];
-        for units in UNITS {
-            for workers in WORKERS {
-                let (share, stride) = partition(units, workers);
-                assert_eq!(share, units.div_ceil(workers), "{units}/{workers}");
-                assert_eq!(
-                    stride.checked_rem(8),
-                    Some(0),
-                    "a whole cache line of words"
-                );
-                assert!(
-                    stride.saturating_mul(64) >= share
-                        && stride.saturating_sub(8).saturating_mul(64) < share,
-                    "the least whole line that holds a share: {units}/{workers}"
-                );
-                let mut next = 0usize;
-                for id in 0..workers {
-                    let (first, words, region) = range_of(id, units, share, stride);
-                    let end = next.saturating_add(share).min(units);
-                    assert_eq!(first as usize, next, "{units}/{workers} worker {id}");
-                    assert_eq!(words, end.saturating_sub(next).div_ceil(64));
-                    assert!(words <= stride);
-                    assert_eq!(region, id.saturating_mul(stride));
-                    next = end;
-                }
-                assert_eq!(next, units, "{units}/{workers}: the ranges cover the arena");
-            }
-        }
-        for units in [1usize, 3, 65, 130] {
-            for workers in [1usize, 2, 3, 4] {
-                let exec = Executor::<8>::new(Config {
-                    workers,
-                    units,
-                    ..Config::default()
-                })
-                .unwrap();
-                let (share, stride) = partition(units, workers);
-                let shared = &exec.shared;
-                for unit in 0..units as u32 {
-                    let owner = exec.owner(unit).expect("an owner");
-                    let (first, words, region) = range_of(owner, units, share, stride);
-                    let at = (unit as usize).wrapping_sub(first as usize);
-                    assert!(first <= unit && at < share, "{units}/{workers} unit {unit}");
-                    let (word, bit) = shared.place(unit).expect("a place");
-                    let index = shared
-                        .scheduled
-                        .iter()
-                        .position(|w| core::ptr::eq(w, word))
-                        .unwrap();
-                    assert!(index >= region && index < region.wrapping_add(words));
-                    assert_eq!(
-                        (index.wrapping_sub(region), bit),
-                        (at >> 6, 1u64 << (at & 63)),
-                        "{units}/{workers} unit {unit}"
-                    );
-                }
-                assert_eq!(exec.owner(units as u32), None);
-                assert!(shared.place(units as u32).is_none());
-            }
-        }
     }
 
     /// Two armed units fired by fourteen strong messages each, `rounds` times, 400 ticks
