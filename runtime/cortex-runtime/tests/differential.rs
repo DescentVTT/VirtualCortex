@@ -1,6 +1,6 @@
 //! The first differential test toward target T-1 (whitepaper §8.3): the same network and the
-//! same injections on one worker and on four leave bit-identical arenas and the same spike
-//! train. Two networks: the three-unit ring of `crates/cortex-core/tests/oscillator.rs` (here
+//! same injections on one worker, on two and on four leave bit-identical arenas and the same
+//! spike train. Two networks: the three-unit ring of `crates/cortex-core/tests/oscillator.rs` (here
 //! under short-term plasticity, which that harness holds at rest, so the ring rings down
 //! rather than oscillating) and a random network of 128 units with STDP at work.
 
@@ -114,7 +114,7 @@ fn wire_ring(exec: &mut Executor<64>) {
 }
 
 #[test]
-fn the_ring_is_identical_on_one_and_four_workers_and_goes_round() {
+fn the_ring_is_identical_on_one_two_and_four_workers_and_goes_round() {
     let config = Config {
         units: 3,
         blocks: 12,
@@ -124,10 +124,21 @@ fn the_ring_is_identical_on_one_and_four_workers_and_goes_round() {
         ..Config::default()
     };
     let one = run(1, config.clone(), wire_ring, 20_000);
-    let four = run(4, config, wire_ring, 20_000);
-    assert_eq!(one.units, four.units, "unit arenas are bit-identical");
-    assert_eq!(one.blocks, four.blocks, "synapse arenas are bit-identical");
-    assert_eq!(one.spikes, four.spikes, "the spike train is the same");
+    for workers in [2, 4] {
+        let many = run(workers, config.clone(), wire_ring, 20_000);
+        assert_eq!(
+            one.units, many.units,
+            "unit arenas are bit-identical on {workers}"
+        );
+        assert_eq!(
+            one.blocks, many.blocks,
+            "synapse arenas are bit-identical on {workers}"
+        );
+        assert_eq!(
+            one.spikes, many.spikes,
+            "the spike train is the same on {workers}"
+        );
+    }
     for unit in 0..3 {
         assert!(
             one.spikes.iter().any(|&(u, _)| u == unit),
@@ -197,7 +208,7 @@ fn wire_random(exec: &mut Executor<64>) {
 }
 
 #[test]
-fn a_random_network_with_stdp_is_bit_identical_on_one_and_four_workers() {
+fn a_random_network_with_stdp_is_bit_identical_on_one_two_and_four_workers() {
     let config = Config {
         units: 128,
         blocks: 128,
@@ -207,18 +218,26 @@ fn a_random_network_with_stdp_is_bit_identical_on_one_and_four_workers() {
         ..Config::default()
     };
     let one = run(1, config.clone(), wire_random, 6000);
-    let four = run(4, config, wire_random, 6000);
     assert!(!one.spikes.is_empty(), "the network fired");
     assert!(
         one.blocks.iter().any(|b| b.last_spike_tick != 0),
         "fan-out ran through the blocks"
     );
-    assert_eq!(one.units, four.units, "unit arenas are bit-identical");
-    assert_eq!(
-        one.blocks, four.blocks,
-        "synapse arenas are bit-identical, STDP included"
-    );
-    assert_eq!(one.spikes, four.spikes, "the spike train is the same");
+    for workers in [2, 4] {
+        let many = run(workers, config.clone(), wire_random, 6000);
+        assert_eq!(
+            one.units, many.units,
+            "unit arenas are bit-identical on {workers}"
+        );
+        assert_eq!(
+            one.blocks, many.blocks,
+            "synapse arenas are bit-identical, STDP included, on {workers}"
+        );
+        assert_eq!(
+            one.spikes, many.spikes,
+            "the spike train is the same on {workers}"
+        );
+    }
 }
 
 #[test]
@@ -293,10 +312,25 @@ fn a_delayed_synapse_arrives_delay_ticks_after_the_spike_and_a_zero_delay_one_th
 /// magnitude, and this network's weights, within [8 180, 31 986], are depressed by more or
 /// less than the additive amount from the first pairing on, so the arena's weights and every
 /// unit's potentials differ; the spike count did not move.
+/// The hash covers every unit's 64 bytes, and so the scheduler's own: the mailbox head at
+/// `[8..16)`, a node index from the pool of the worker that delivered, and the gate byte at
+/// `[56]`, which says whether the unit is queued. Read with those bytes masked on the executor
+/// before brief 043's change (ADR-0099), the hash is the same value: after 20 000 ticks every
+/// gate is idle and every mailbox empty, so the pin holds the dynamics alone, and the test
+/// asserts that it still does.
 const PINNED_ARENA_HASH: u64 = 0x6c27858ece2dd412;
 /// The spike count that goes with the hash: a moved hash with the same count is a change to
 /// the state, a moved count a change to the dynamics.
 const PINNED_SPIKE_COUNT: usize = 95;
+
+/// A unit's 64 bytes with the scheduler's own masked: the mailbox head `[8..16)` and the gate
+/// byte `[56]` (ADR-0099).
+fn masked(bytes: &[u8; 64]) -> [u8; 64] {
+    let mut out = *bytes;
+    out[8..16].fill(0);
+    out[56] = 0;
+    out
+}
 
 #[test]
 fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
@@ -330,23 +364,34 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
         wire_random,
         20_000,
     );
-    let mut crc = Crc64::new();
-    for bytes in &outcome.unit_bytes {
-        crc.update(bytes);
-    }
-    for b in &outcome.blocks {
-        crc.update(&b.encode());
-    }
-    for &(unit, tick) in &outcome.spikes {
-        crc.update(&unit.to_le_bytes());
-        crc.update(&tick.to_le_bytes());
-    }
-    let hash = crc.finish();
+    let hash_of = |mask: bool| {
+        let mut crc = Crc64::new();
+        for bytes in &outcome.unit_bytes {
+            crc.update(&if mask { masked(bytes) } else { *bytes });
+        }
+        for b in &outcome.blocks {
+            crc.update(&b.encode());
+        }
+        for &(unit, tick) in &outcome.spikes {
+            crc.update(&unit.to_le_bytes());
+            crc.update(&tick.to_le_bytes());
+        }
+        crc.finish()
+    };
+    let (hash, hash_masked) = (hash_of(false), hash_of(true));
+    eprintln!(
+        "DUMP T-1 arena hash {hash:#018x} masked {hash_masked:#018x} spikes {}",
+        outcome.spikes.len()
+    );
     assert_eq!(
         outcome.spikes.len(),
         PINNED_SPIKE_COUNT,
         "T-1: the spike count is {}",
         outcome.spikes.len()
+    );
+    assert_eq!(
+        hash_masked, hash,
+        "T-1: the pin holds no scheduler state: with the gate and the mailbox heads masked the hash is {hash_masked:#018x}"
     );
     assert_eq!(
         hash, PINNED_ARENA_HASH,
