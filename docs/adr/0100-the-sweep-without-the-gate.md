@@ -108,7 +108,13 @@ So the ratio the criterion read at (c) comes from the workload's census interact
 
 ### The per-turn breakdown
 
-PENDING: the bench on an idle machine beside the runs' per-turn figures.
+What a turn costs on the sweep, for the working layout's ADR, from the runs and the bench of one developer machine (not admissible; `docs/benchmarks/results/2026-09-26-dancr-win11.md`):
+
+- **On one worker**, where no barrier waits and no balance enters, the sweep's tick at (a) is 10 981 ns for 1 024 turns: about **10.7 ns a turn**, against the base's 20.8 (21 275 ns). The bench's `neuron/integrate`, one integration under a drive that fires the unit now and then, reads 13.45 ns on the same day's machine and 11.03 on 2026-09-25's. So on the sweep the integration is the turn, to the resolution of this machine; what the base paid besides it, about 10 ns, is the gate and the deque, as `gate/schedule_begin_end` (14.0 ns today, 9.79 on 2026-09-25) said it would be.
+- **On two workers**, the runs' own figure of one worker's nanoseconds a turn is 13 at (a), 11 at (b) and 18 at (d), against the base's 34, 30 and 37: the barriers and the balance between two ranges are in it.
+- **A message** costs `mailbox/push_drain_x16` / 16, 7.6 ns today (4.70 on 2026-09-25); at (a) the drive and the synapses bring about 8.6 messages a tick against 1 024 turns.
+
+The working layout's measured need is therefore the integration itself: on one worker the sweep leaves nothing else in a turn at (a). The bench of the base in the same session is not read: the other process tree took the machine back part way through it (98 to 100 per cent). No bench case was added; the one-worker run is the sweep's turn in isolation.
 
 ### The verdict and what the pull request carries
 
@@ -151,4 +157,4 @@ ADR-0099: when a lever is not kept, "an ADR decides whether the next lever proce
 - `014db40`, kept: `the_random_network_hashes_to_the_pinned_value_on_every_architecture` asserts its hash with the scheduler's bytes masked equals the pin; `the_ring_is_identical_on_one_two_and_four_workers_and_goes_round` and `a_random_network_with_stdp_is_bit_identical_on_one_two_and_four_workers`.
 - `4b2f694`: the revert; against `391ad6d` the tree's code differs only in `tests/differential.rs`.
 - `docs/benchmarks/results/2026-09-26-dancr-win11.md`: every reading above, the protocol's script and the bench.
-- PENDING: the weekly dispatch, its shards beside the base's, and the cost table regenerated from it.
+- The evidence: the weekly dispatched on this round's branch, run `36188866157` at `df38fa8` with `scope=exhaustive` (the clause above), green in every job it runs: the four whole-domain shards took 44m42s, 50m04s, 1h19m35s and 58m44s, their tests' wall 2 631, 2 957, 4 722 and 3 471 s, 37, 41, 66 and 48 per cent of the 7 200-second bound, every pinned number of those tests reproduced. Beside them, as the secondary reading, ADR-0097's run `36050252444` on the same code (ADR-0098 and ADR-0099 changed documents only): 95m38s, 50m03s, 44m37s and 77m11s. The same tests moved by 0.55 to 1.99 times between the two runs on identical code, the runners' (F-45's kind): the longest, H-14's run, 2 475 s then and 3 097 now, and H-18's assignment arm 4 121 then and 2 284 now. The cost table is regenerated from this run, 57 lines, 26 945 seconds against the previous table's 29 300. No sweep was dispatched, so there is no survivor to disposition; Monday's schedule sweeps `main` as it always does.

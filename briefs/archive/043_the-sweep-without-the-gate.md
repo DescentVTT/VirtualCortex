@@ -1,18 +1,41 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-25
 ---
+
+> **Executed 2026-09-26 in pull request #124.** Writes ADR-0100 (the sweep without the gate, built and not kept) and
+> opens finding F-50. The design was written into the ADR before the code: each worker owns a fixed, contiguous range
+> of the unit arena and serves in unit order the units a schedule bitmap names; the owner keeps the bit of a unit its
+> turn leaves awake, and a push or an activation that finds a unit idle records its gate byte scheduled and sets its
+> bit; the deque, the stealing and the compare-and-swap leave the turn. Built (`3887e83`), it held every reading of
+> behaviour bit for bit — the determinism pin and its spike count masked and unmasked, ADR-0097's four tables, the
+> differential test on one, two and four workers, every test of the workspace — so no pin was restated. Timed by
+> ADR-0099's protocol on an idle developer machine (not admissible), five alternating pairs, medians, change/base:
+>
+> - (a) 0.406, (b) 0.369 and (d) 0.488, within their bounds of 0.80, 1.10 and 0.80;
+> - (c) **1.178**, above its bound of 1.10.
+>
+> **Not kept**: the code is reverted in the same pull request and stays in the history; the pull request carries the
+> readings, the ADR and the tests that hold behaviour (the pin's masked hash, the differential test on two workers).
+> Two diagnostics beside the criterion place the regression in the workload, not the sweep: 0.657 at (c) on one
+> worker, 0.748 on two with the harness's per-tick census of every unit taken out; F-50 records that the measure reads
+> the instrument beside the engine. A first timing session was discarded unread (its parser missed the network lines,
+> and another repository's mutation run held the machine at 100 per cent); how the idle machine is checked was written
+> into the protocol before the session that is read. The next decision is named in ADR-0100 and not taken. Image
+> format 16; no rule of the engine changed. Every deliverable is dispositioned below. Relative links gained one `../`
+> so that they resolve from `archive/`; no other word, claim or figure changed.
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 043: The sweep without the gate — each worker serves the units it owns, in order, with no deque and no compare-and-swap in the turn; every reading of behaviour held bit for bit, and the gain read against ADR-0099's criterion before it is kept
 
 ## Mission
 
-**This brief makes the engine faster and changes no rule.** Under [ADR-0044](../docs/adr/0044-reference-network.md)'s
+**This brief makes the engine faster and changes no rule.** Under [ADR-0044](../../docs/adr/0044-reference-network.md)'s
 drive the executor serves 99.99 per cent of the reference network's units on every tick
-([ADR-0097](../docs/adr/0097-the-active-set-measured.md)). It still finds each one through a work-stealing deque and
+([ADR-0097](../../docs/adr/0097-the-active-set-measured.md)). It still finds each one through a work-stealing deque and
 takes each turn through a compare-and-swap gate. On a developer machine the gate's schedule, begin and end cost 9.79 ns
-of a turn of about 25 ns (not admissible). [ADR-0098](../docs/adr/0098-the-integration-model.md) kept per-tick service and
-named the levers on the engine's speed. [ADR-0099](../docs/adr/0099-the-engines-speed.md) took the three that change no
+of a turn of about 25 ns (not admissible). [ADR-0098](../../docs/adr/0098-the-integration-model.md) kept per-tick service and
+named the levers on the engine's speed. [ADR-0099](../../docs/adr/0099-the-engines-speed.md) took the three that change no
 rule, in order, and this is the first: **a sweep without the gate**.
 
 When the round is done, the tree holds either the sweep or the readings that show it is not worth keeping. With the
@@ -42,21 +65,21 @@ A pin that also holds the scheduler's own bytes is restated only under ADR-0099'
   masked on the base and on the change, finds the two equal, and records both values beside the old and the new pin,
   with the spike count or any behaviour reading beside it unmoved. Any other pin that moves stops the round: it is a
   finding, the change is not merged, and there is no re-pin and no second attempt.
-- **The gain is read, not argued** (ADR-0099, [ADR-0010](../docs/adr/0010-measured-or-target.md)). Use ADR-0097's four
+- **The gain is read, not argued** (ADR-0099, [ADR-0010](../../docs/adr/0010-measured-or-target.md)). Use ADR-0097's four
   runs, and build the base (main at the round's start) and the change in release in two target directories. Make five
   alternating pairs in one session on one otherwise idle machine, and take each run's median. The change is kept at
   **≤ 0.80 × base at (a) and (d) and ≤ 1.10 × base at (b) and (c)**, the wall time per tick. The figures are a
   developer machine's, recorded in `docs/benchmarks/results/` as `admissible: no`, and never written into §10.2. The
   constants do not move after a timed run.
 - No record field and no image format moves (the format stays 16). `unsafe` stays in the runtime, under an invariant
-  restated with its test ([ADR-0023](../docs/adr/0023-executor.md)); `unsafe_code` stays forbidden in every state crate.
+  restated with its test ([ADR-0023](../../docs/adr/0023-executor.md)); `unsafe_code` stays forbidden in every state crate.
 - No `f32`/`f64` anywhere; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)); a wait on another thread is the runtime's protocol
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)); a wait on another thread is the runtime's protocol
   and lives there only. Nothing allocates after start-up (`tests/no_alloc.rs`).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`; the runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The engine is read before a description of it is trusted**, this brief's included.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -80,7 +103,7 @@ quoted sentences are what to re-derive.
    its gate was idle" `try_schedule`s the target onto this worker's deque. Worker 0 also drains the injector
    (`ACTIVATE` wakes a unit without a message) and delivers a ripple's replay.
 3. **The gate** (`crates/cortex-core/src/dynamics/neuron.rs`: `gate`, `try_schedule`, `begin_turn`, `end_turn`;
-   [ADR-0017](../docs/adr/0017-mailbox-and-gate-protocol.md)). `gate_state` at `[56]` is idle 0, scheduled 1,
+   [ADR-0017](../../docs/adr/0017-mailbox-and-gate-protocol.md)). `gate_state` at `[56]` is idle 0, scheduled 1,
    running 2. Axiom A3 (whitepaper §4): "At most one worker touches a record in any tick, enforced by a
    compare-and-swap gate." The deque (`runtime/cortex-runtime/src/deque.rs`) is sized "so that it cannot fill: a unit
    is queued at most once at a time, by the gate of axiom A3".
@@ -104,13 +127,13 @@ quoted sentences are what to re-derive.
    worker_ns_per_turn` on stderr: (a) 1 024 units under ADR-0044's drive, (b) sixteen times sparser, (c) 256 times
    sparser, (d) 4 096 units. At (c) the executor serves about 7.4 per cent of the units a tick, which is where a sweep
    that visits every unit it owns could be slower than the deque.
-10. **The weekly job** ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md),
-    [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a change under `src/` dispatches
+10. **The weekly job** ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md),
+    [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a change under `src/` dispatches
     `scope=both`, and the round regenerates `scripts/exhaustive-costs.tsv` from its own dispatch.
 
 ## Deliverables
 
-- [ ] **The design, in a new ADR at the next free number (`ls docs/adr`), before the code.** Which units each worker
+- [x] **The design, in a new ADR at the next free number (`ls docs/adr`), before the code.** Which units each worker
   owns; how a worker finds, each tick, the units of its own that are awake, have mail or were activated; what becomes of
   the deque and of stealing, including whether the sparse case keeps a list rather than a sweep; what the gate still
   does, if anything; how a message delivered by another worker reaches its owner's turn; how the order in which a worker
@@ -118,32 +141,40 @@ quoted sentences are what to re-derive.
   with the enforcement it now has and the test that holds it; and **phase 1's `unsafe` restated** with its invariant and
   its test. The round weighs load balance at (c) and at the learning line's configurations (two and four workers) and
   says what it chose.
-- [ ] **The pins that hold the scheduler's bytes, found before the change.** Every pin over a unit's or an image's
+  **Done** (ADR-0100, `0f7fee9`, before the code): contiguous ranges of ⌈N/W⌉ units fixed at construction; a schedule bitmap in each owner's region of words, padded to a cache line; a unit marked by its owner when its turn leaves it awake and by a push or an activation that finds its gate byte idle (a store and a fetch-or, idempotent, so no claim); the gate byte kept as the schedule's record; the deque and stealing removed, the bitmap the sparse case's list; A3 and phase 1's `unsafe` restated with their tests; the balance weighed at (c) and at two and four workers. Since the change is not kept, A3's enforcement and the `unsafe`'s invariant stand as ADR-0017 and ADR-0023 wrote them.
+- [x] **The pins that hold the scheduler's bytes, found before the change.** Every pin over a unit's or an image's
   bytes, listed with the bytes it covers. For each one the change moves: its value with the gate byte and the mailbox
   heads masked, on the base and on the change, shown equal, both values recorded beside the old and new pin, and the
   spike count or behaviour reading beside it unmoved. If none moves, say so.
-- [ ] **The code and its tests.** The ownership and the sweep in the executor. Tests that each unit is served by
+  **Done** (`014db40`, before the change): every pin over a unit's or an image's bytes is listed in ADR-0100 with the bytes it covers. Only `PINNED_ARENA_HASH` holds the scheduler's bytes, and with every mailbox head and gate byte masked it is the pin itself, `0x6c27858ece2dd412`: at its end every gate is idle and every mailbox empty. It did not move on the change, so no pin was restated; the test now asserts that the masked hash equals the pin.
+- [x] **The code and its tests.** The ownership and the sweep in the executor. Tests that each unit is served by
   exactly one worker; that a unit woken by another worker's message is served by its owner at the next tick; that a
   unit at rest with no mail is not served (ADR-0097's counter holds the served set to the scheduled set, and its tables
   pin the turns); and that the differential test holds at one, two and four workers. `tests/no_alloc.rs` passes. The
   mutation gate on the diff reports no survivor.
-- [ ] **The gain, by ADR-0099's protocol.** The four runs, base and change, five alternating pairs, with each run's
+  **Rejected:** by ADR-0099's criterion, not by review. Built at `3887e83` with `a_unit_is_served_by_its_owner_alone_and_a_woken_unit_at_the_next_tick`, `the_ranges_partition_the_arena_and_the_places_partition_the_schedule` and `set_gate`'s test; ADR-0097's tables and census, the differential test on one, two and four workers and `tests/no_alloc.rs` passed on it. Reverted in `4b2f694` because (c) read 1.178 against 1.10. The mutation gate was not run on code that is not merged; this pull request's diff has no source line to mutate.
+- [x] **The gain, by ADR-0099's protocol.** The four runs, base and change, five alternating pairs, with each run's
   median and the ratio change/base, recorded in `docs/benchmarks/results/` with the machine, `admissible: no`. **Kept**
   when (a) and (d) are ≤ 0.80 and (b) and (c) ≤ 1.10. **If not kept**, the pull request carries the readings, the ADR
   and any test that holds behaviour, not the change, and the ADR names the next decision.
-- [ ] **The per-turn breakdown after the change**, for the next lever's ADR. The runs' wall time per turn on the sweep,
+  **Done** (ADR-0100, `docs/benchmarks/results/2026-09-26-dancr-win11.md`): (a) 0.406, (b) 0.369, (c) 1.178, (d) 0.488 — **not kept**, so the pull request carries the readings, the ADR and the tests that hold behaviour, and ADR-0100 names the next decision. The controls, the per-worker turns, a discarded first session and two diagnostics are recorded beside the criterion.
+- [x] **The per-turn breakdown after the change**, for the next lever's ADR. The runs' wall time per turn on the sweep,
   beside the bench's `neuron/integrate` and `mailbox/push_drain_x16`, as a developer machine's figures: what share of a
   turn is now the integration. A bench case for the sweep's turn if the round finds one needed.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (the clause
+  **Done** (ADR-0100, the results file): on one worker the sweep's tick at (a) is 10 981 ns for 1 024 turns, about 10.7 ns a turn against the base's 20.8, where the bench's `neuron/integrate` reads 13.45 ns that day (11.03 the day before) and `mailbox/push_drain_x16` 7.6 ns a message: the integration is the turn. On two workers the runs read 13, 11 and 18 ns a worker-turn at (a), (b) and (d). No bench case was needed: the one-worker run is the sweep's turn in isolation. The base's bench of that session was overtaken by another process tree's load and is not read.
+- [x] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (the clause
   stated in the ADR), green in every job, every pinned number reproduced or restated under the masked check, and the
   sweep's survivors dispositioned. The shards' times are read beside the base's as a secondary reading. The cost table
   is regenerated from that run.
-- [ ] **The documents, in the same pull request.** Whitepaper §4's A3 row and every sentence that says the gate
+  **Done** (ADR-0100): the weekly dispatched on this round's branch, run `36188866157` at `df38fa8` with `scope=exhaustive` (ADR-0075: against `main` no file under `src/` changes, the change and its revert netting to nothing; no test is deleted or taken out of the swept suite; `.cargo/mutants.toml` is as it was), green in every job it runs: the four whole-domain shards took 44m42s, 50m04s, 1h19m35s and 58m44s, their tests' wall 2 631, 2 957, 4 722 and 3 471 s, 37, 41, 66 and 48 per cent of the 7 200-second bound, every pinned number of those tests reproduced. Beside them, as the secondary reading, ADR-0097's run `36050252444` on the same code (ADR-0098 and ADR-0099 changed documents only): 95m38s, 50m03s, 44m37s and 77m11s. The same tests moved by 0.55 to 1.99 times between the two runs on identical code, the runners' (F-45's kind): the longest, H-14's run, 2 475 s then and 3 097 now, and H-18's assignment arm 4 121 then and 2 284 now. The cost table is regenerated from this run, 57 lines, 26 945 seconds against the previous table's 29 300. No sweep was dispatched, so there is no survivor to disposition; Monday's schedule sweeps `main` as it always does.
+- [x] **The documents, in the same pull request.** Whitepaper §4's A3 row and every sentence that says the gate
   enforces it; §6.1's executor paragraph and its assertions; §8.5; §11.1's question on the engine's speed, with the
   first lever's outcome; §9. The ADR index; `CHANGELOG.md`; `CLAUDE.md`; `docs/zh-TW`'s reader's guide as the result
   requires. The whitepaper's version in both declarations with its date
-  ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+  ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+  **Done**, as the result required: the change is not kept, so §4's A3 row, §6.1 and §8.5 stand as they were, and so do ADR-0023 and ADR-0017. §11.1 records the first lever's outcome, §9 the ADR's row, §11 finding F-50, and the executive summary and §8.3 the differential test on two workers, with assertions; the ADR index, `CHANGELOG.md`, `CLAUDE.md` and the reader's guide; whitepaper 4.52.0 in both declarations, dated 2026-09-26.
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+  **Done**: this file.
 
 ## Not empowered
 
