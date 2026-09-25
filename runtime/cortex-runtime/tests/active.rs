@@ -563,6 +563,14 @@ fn the_turns_are_counted_one_message_keeps_a_unit_awake_as_the_oracle_says_and_t
 
 // ------------------------------------------------------------------- the runs (weekly)
 
+/// Dumps the turns each worker served over a run: since ADR-0100 each serves the range of the
+/// arena it owns, so the shares are the partition's and the drive's, a reading of the load's
+/// balance beside the wall time.
+fn shares(name: &str, exec: Engine) {
+    let turns: Vec<u64> = exec.shutdown().iter().map(|r| r.turns).collect();
+    eprintln!("DUMP {name} turns per worker {turns:?}");
+}
+
 /// Run `k` on the reference network, and at 1 024 units its control, each dumped before either
 /// is held to its table.
 fn active_set(k: usize) {
@@ -571,10 +579,12 @@ fn active_set(k: usize) {
     let mut exec = network(units);
     let (rows, nanos) = read(&mut exec, &drive, &layout());
     dump(&format!("network {k}"), k, &rows, nanos);
+    shares(&format!("network {k}"), exec);
     let control = CONTROL_ROWS.get(k).map(|&table| {
         let mut exec = unwired(units);
         let (rows, nanos) = read(&mut exec, &drive, &layout());
         dump(&format!("control {k}"), k, &rows, nanos);
+        shares(&format!("control {k}"), exec);
         (rows, table)
     });
     assert_eq!(rows, NETWORK_ROWS[k], "network {k}");
