@@ -1,8 +1,8 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.51.0
+version: 4.52.0
 status: active
-date: 2026-09-25
+date: 2026-09-26
 ---
 
 # VirtualCortex Architecture Whitepaper
@@ -11,9 +11,9 @@ date: 2026-09-25
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.51.0 |
+| Version | 4.52.0 |
 | Status | Active (living document; amended by ADR) |
-| Date | 2026-09-25 |
+| Date | 2026-09-26 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
@@ -2320,6 +2320,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0097](adr/0097-the-active-set-measured.md) | The active set, measured: the executor counts its turns, held on every tick to the units whose gate is scheduled; one message of 0.125 keeps an armed unit awake 2 210 ticks at the gain 1.0 and 2 503 at 1.75, an oracle of the membrane's rule and the engine agreeing; under ADR-0044's drive 99.99 per cent of the reference network's units are served on every tick at 1 024 and 4 096 units while 0.0018 per cent fire, and at drives sixteen and 256 times sparser, where it never fires, 72.0 and 7.38 per cent against the floor $1 - e^{-rD}$ written first, 70.54 and 7.35; the budget Appendix A's three targets must fit written for per-tick service and for service on arrival — per tick, about 26 000 units in real time on 64 workers at ADR-0044's drive, or 43 million about 1 700 times slower, at an estimated 25 ns a turn — and F-49; no integration model chosen |
 | [ADR-0098](adr/0098-the-integration-model.md) | The integration model: every awake unit integrated every tick, as built, since the maintainers prefer it and ADR-0097's budget shows that service on arrival buys nothing without a catch-up the membrane does not have; Appendix A's three targets met in two modes — a real-time mode, with a body attached, whose unit count is what the budget allows at the input's density (a Target of about 2.6 × 10⁴ units on 64 workers at ADR-0044's), and an offline mode, with none, whose unit count is what memory holds and whose run is slower than real time; F-49 resolved; five levers on the engine's speed named, and the three that change no rule (the lookahead, a sweep without the gate, a working layout for the vector units) taken first, before the learning line resumes |
 | [ADR-0099](adr/0099-the-engines-speed.md) | The engine's speed: the three levers that change no rule, in the order the sizes the tree runs can read them — the sweep without the gate first, a working layout of the integrated fields for the vector units second, the lookahead third; each held to every reading of behaviour bit for bit, a pin that also holds the scheduler's own bytes restated only when shown equal with those bytes masked, and each kept only if a gain written before its first timed run is read (at most 0.80 of the base's wall time per tick at ADR-0097's runs (a) and (d), at most 1.10 at (b) and (c)); axiom A3's enforcement opened to the sweep's round; brief 043 builds the first |
+| [ADR-0100](adr/0100-the-sweep-without-the-gate.md) | The sweep without the gate: each worker owns a fixed, contiguous range of the unit arena and serves, in unit order, the units of it that a schedule bitmap names, with no deque, no stealing and no compare-and-swap in the turn; a unit is marked by its owner when its turn leaves it awake and by a pusher when its message finds it idle; the gate byte kept as the record of that schedule; axiom A3 enforced by the ownership; every reading of behaviour held bit for bit, and the gain read against ADR-0099's criterion |
 
 ---
 
