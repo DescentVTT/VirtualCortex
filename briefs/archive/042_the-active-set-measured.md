@@ -22,9 +22,10 @@ date: 2026-09-25
 > service on arrival: at ADR-0044's density, per-tick service reaches about 26 000 units in real time on 64 workers,
 > or runs 43 million about 1 700 times slower than real time, at an estimated 25 ns a turn. **Finding F-49 opened**:
 > §1.1's premise and ADR-0023's "a unit at rest costs nothing" describe an executor whose cost follows activity,
-> and Appendix A's three targets cannot be met together by the executor as built. Neither §1.1 nor Appendix A was
-> edited. **No integration model was chosen**; it is an open question in §11.1 for the next ADR. Image format 16;
-> the determinism pin untouched; no pinned number moved. Every deliverable is done, and the notes under the boxes
+> and Appendix A's three targets cannot be met together by the executor as built. §1.1's sentence and Appendix A's
+> table were not edited; a paragraph under the table points to F-49. **No integration model was chosen**; it is
+> an open question in §11.1 for the next ADR. Image format 16; the determinism pin untouched; no pinned number
+> moved. Every deliverable is done, and the notes under the boxes
 > say what each read and where the round decided what the brief left to it. Relative links gained one `../` so that
 > they resolve from `archive/`; no other word, claim or figure changed.
 > *The body below describes the tree before execution and is not maintained.*
@@ -161,11 +162,11 @@ quoted sentences are what to re-derive.
   next decision has both sides; for per-tick service, the largest unit count that meets a 10 µs tick in real time at
   each measured input density, and the slowdown against real time at Appendix A's count; and what the arena's size
   alone implies for serving every unit every tick. **No integration model is chosen.**
-  **Done** in ADR-0097: the relation for per-tick service and for service on arrival, the measured fractions in it and the costs labelled as an estimate; the largest unit count at a 10 µs tick and the slowdown at 43 million for each density; the arena's traffic; and the constraint that separates the two models, a closed form of the membrane between events, named. No model is chosen.
+  **Done** in ADR-0097: the relation for per-tick service and for service on arrival, the measured fractions in it and the costs labelled as an estimate; the largest unit count at a 10 µs tick and the slowdown at 43 million for each density; the arena's traffic; and the condition that separates the two models named — a catch-up over $\Delta$ quiet ticks cheaper than $\Delta$ integrations, of which a closed form is the most evident and not shown to be the only form. No model is chosen.
 - [x] **The finding, if it applies.** If the measured active fraction under ADR-0044's drive contradicts §1's premise
   of 1–2 %, or the relation shows Appendix A's targets cannot be met together by the executor as built, a numbered
   finding in §11 stating the disagreement and its evidence; Appendix A's line and §1's sentence are not edited to fit.
-  **Done** as F-49 (open): both clauses apply. §1.1's sentence and Appendix A's plan are not edited; Appendix A carries a pointer to the budget.
+  **Done** as F-49 (open): both clauses apply. §1.1's sentence and Appendix A's table are not edited; a paragraph under the table points to F-49 and the budget.
 - [x] **The gate.** At most one runtime test: the counter's edges and a few hundred ticks of (a) held to the first rows
   of its table.
   **Done**: one test, the oracle, the exponential, the predictions, the counter at its edges and the ticks to rest at both gains on the engine, and the first 512 ticks of (a) held to the first eight rows of its table; 0.2 s in the debug profile.
