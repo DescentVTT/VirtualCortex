@@ -50,11 +50,10 @@ use crate::store::{Induction, TermError};
 use cortex_affect::InteroceptiveState;
 use cortex_core::{
     BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel, GateState,
-    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, LANES,
-    MODULATION_ONE_Q16, MembraneLanes, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity,
-    REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SynapseBlock, THRESHOLD_BASE, WorkerWheel,
-    istdp_alpha_q1_15, message_efficacy_q16, message_is_apical, message_is_synaptic, spike_message,
-    synapse_token, synaptic_message, token_block, token_slot,
+    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16,
+    NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SynapseBlock,
+    THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical,
+    message_is_synaptic, spike_message, synapse_token, synaptic_message, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
@@ -708,8 +707,6 @@ struct Worker<const CAP: usize> {
     /// Descendants this worker fired this tick (ADR-0054).
     descended: u32,
     in_flight: i64,
-    /// The chunk of units phase 1 integrates together (ADR-0104): scratch within the phase.
-    lanes: MembraneLanes,
 }
 
 /// What a worker kept.
@@ -951,7 +948,6 @@ impl<const CAP: usize> Executor<CAP> {
                 turns: 0,
                 in_flight: 0,
                 descended: 0,
-                lanes: MembraneLanes::new(),
             })
             .collect();
         let worker0 = states.remove(0);
@@ -2207,28 +2203,14 @@ impl<const CAP: usize> Worker<CAP> {
             // The range's unit of the word's bit 0: within the range, below the unit count.
             let base = self.first.wrapping_add((w as u32) << 6);
             let mut awake = 0u64;
-            // The word's units in chunks of `LANES` (ADR-0104): each unit's inputs taken and
-            // its fields loaded into a lane in unit order, the chunk integrated together, then
-            // each unit's fields stored back and its spike recorded, in unit order again.
-            let mut left = due.count_ones() as usize;
-            for _ in 0..left.div_ceil(LANES) {
-                let chunk = left.min(LANES);
-                left = left.saturating_sub(chunk);
-                let mut bits = [0u32; LANES];
-                for (lane, slot) in bits.iter_mut().enumerate().take(chunk) {
-                    let bit = due.trailing_zeros();
-                    due &= due.wrapping_sub(1); // the lowest set bit, served now, cleared
-                    *slot = bit;
-                    self.take_inputs(shared, base.wrapping_add(bit), now, gain, lane);
+            for _ in 0..due.count_ones() {
+                let bit = due.trailing_zeros();
+                due &= due.wrapping_sub(1); // the lowest set bit, served now, cleared
+                if self.turn(shared, base.wrapping_add(bit), now, gain) {
+                    // A bit not yet in `awake`: the sum is the union.
+                    awake = awake.wrapping_add(1u64 << bit);
                 }
-                self.lanes.integrate();
-                for (lane, &bit) in bits.iter().enumerate().take(chunk) {
-                    if self.finish_turn(shared, base.wrapping_add(bit), now, lane) {
-                        // A bit not yet in `awake`: the sum is the union.
-                        awake = awake.wrapping_add(1u64 << bit);
-                    }
-                    self.turns = self.turns.saturating_add(1);
-                }
+                self.turns = self.turns.saturating_add(1);
             }
             word.store(awake, Ordering::Relaxed);
         }
@@ -2239,15 +2221,13 @@ impl<const CAP: usize> Worker<CAP> {
         shared.descendants[self.id].store(self.descended, Ordering::Relaxed);
     }
 
-    /// The first half of one unit's turn: its mail drained and its inputs taken, and its
-    /// integrated fields and inputs loaded into `lane` of the chunk (ADR-0104).
-    fn take_inputs(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32, lane: usize) {
+    /// One unit's turn; true when the unit is not at rest after it and stays on the schedule.
+    fn turn(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32) -> bool {
         // SAFETY (phase 1): `unit` is a set bit of this worker's region of the schedule, and so
         // in this worker's range, which no other worker's range overlaps: the ranges partition
         // the arena and are fixed in `Executor::new` (ADR-0100). In phase 1 a worker references
         // only its own range's units, one at a time, and no push happens; phases 2 and 3 have
-        // ended at the barrier. A chunk holds its units' fields as copies in the lanes, not
-        // references: this one ends with the call.
+        // ended at the barrier.
         let Some(u) = (unsafe { shared.units.get_mut(unit as usize) }) else {
             abort("a scheduled unit index is outside the arena");
         };
@@ -2291,19 +2271,8 @@ impl<const CAP: usize> Worker<CAP> {
         // The tick's synaptic gain on every input of the unit (ADR-0036): the whitepaper's
         // rescaling of every weight, as one factor per turn.
         let (basal, apical) = (scaled(basal, gain), scaled(apical, gain));
-        self.lanes.load(lane, u, basal, apical);
-    }
-
-    /// The second half of one unit's turn, after its chunk is integrated: its fields stored
-    /// back from `lane` and, if it fired, its spike recorded, then its schedule. True when the
-    /// unit is not at rest after it and stays on the schedule.
-    fn finish_turn(&mut self, shared: &Shared, unit: u32, now: u32, lane: usize) -> bool {
-        // SAFETY (phase 1): as in `take_inputs`; the reference ends with the call.
-        let Some(u) = (unsafe { shared.units.get_mut(unit as usize) }) else {
-            abort("a scheduled unit index is outside the arena");
-        };
         let previous_spike = u.last_soma_spike_tick;
-        if self.lanes.store(lane, u, now) {
+        if u.integrate(basal, apical, now) {
             let elapsed = if previous_spike == NO_SPIKE_ON_RECORD {
                 u32::MAX
             } else {
