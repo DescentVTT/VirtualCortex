@@ -1,17 +1,18 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-26
 depends-on: ADR-0101
+amends: [ADR-0023, ADR-0017]
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0102: The sweep timed with no census — ADR-0100's sweep without the gate, re-applied as built by reverting its revert, timed on ADR-0101's workload against ADR-0099's bounds unchanged; the instrument, the re-application, the pins, the mutation gate and the protocol written before the first timed run
+# ADR-0102: The sweep timed with no census, and kept — ADR-0100's sweep without the gate, re-applied as built by reverting its revert and timed on ADR-0101's workload, read 0.517, 0.527, 0.745 and 0.643 of the base's wall time per tick at ADR-0097's runs (a) to (d), inside every bound of ADR-0099, with every reading of behaviour held bit for bit; the census workload read again beside it at 1.156 at (c); the instrument, the re-application, the pins, the mutation gate and the protocol written before the first timed run; axiom A3 enforced by ownership, and ADR-0017's and ADR-0023's decisions amended
 
 ## Context and Problem Statement
 
 [ADR-0100](0100-the-sweep-without-the-gate.md) built the sweep without the gate: each worker owns a fixed, contiguous range of the unit arena and serves in unit order the units of it a schedule bitmap names, with no deque, no stealing and no compare-and-swap in the turn. It held every reading of behaviour bit for bit and was not kept, because [ADR-0099](0099-the-engines-speed.md)'s workload read 1.178 of the base's wall time per tick at [ADR-0097](0097-the-active-set-measured.md)'s run (c) against a bound of 1.10. That workload's harness reads every unit's gate byte on worker 0 before each timed tick (F-50). [ADR-0101](0101-the-sweep-measured-again.md) took ADR-0100's second named option: the same sweep, timed on ADR-0097's four configurations with no census in the timed ticks, against the same bounds, and it says that this workload was chosen after the first reading failed. Brief 044 is the round that applies it.
 
-This record says how the census-free workload is built, how the sweep is re-applied and what in it changed, which pins it is held to, what the mutation gate read on its lines before any run was timed, and how the session is run and judged — all before the first timed run — and then the readings and the verdict.
+This record says how the census-free workload is built, how the sweep is re-applied and what in it changed, which pins it is held to, what the mutation gate read on its lines before any run was timed, and how the session is run and judged. All of that was committed before the first timed run (`b839388` and `86c2b0b` on the round's branch). The readings and the verdict follow.
 
 ## Decision Drivers
 
@@ -35,7 +36,7 @@ For the controls: in the timed session, where ADR-0100's tests made them, or out
 
 ## Decision Outcome
 
-**Option 1; the one-worker diagnostic as tests of its own; the controls in the session, read beside the criterion and not a criterion; one ADR.**
+**Option 1; the one-worker diagnostic as tests of its own; the controls in the session, read beside the criterion and not a criterion; one ADR. The criterion read every bound met, and the sweep is kept.**
 
 ### The instrument (`ad32761` on the round's branch)
 
@@ -79,15 +80,63 @@ The pull request's gate, run `36208294392` at `b839388` (the sweep's code as `a4
 
 ### The readings
 
-To be completed by the round after the session.
+The session ran from 2026-09-26T01:44:30Z to 02:09:32Z on the developer machine of ADR-0097's and ADR-0100's readings (AMD Ryzen 7 7735HS, eight cores, sixteen threads, Windows 11, unpinned; not admissible). The idle check passed at 01:44:17Z after six samples at 8.1 to 14.4 per cent. Through the three parts, 302 samples: the total averaged 17 to 24 per cent a part, two samples were at or above 40 per cent (62.5 and 40.2); processes outside the round's binaries held 1.20 to 1.22 logical processors on average and 1.58 at most. The heaviest of them, in every sample, was a test worker of another repository's session, at about one. **No part was disturbed**, and the rule was applied to the log before any reading was looked at. Every run of both builds passed its pinned table. All figures are in `docs/benchmarks/results/2026-09-26-dancr-win11-brief-044.md`, a developer machine's, not admissible.
+
+**Part 1, the criterion** (ADR-0101's workload, two workers), wall time per tick in nanoseconds, medians of five:
+
+| Run | Base | Change | Change/base | Bound | |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| (a) 1 024 units, ADR-0044's drive | 10 939 | 5 651 | **0.517** | 0.80 | met |
+| (b) sixteen times sparser | 7 037 | 3 707 | **0.527** | 1.10 | met |
+| (c) 256 times sparser | 1 077 | 802 | **0.745** | 1.10 | met |
+| (d) 4 096 units, ADR-0044's drive | 46 810 | 30 078 | **0.643** | 0.80 | met |
+
+The controls beside them, not a criterion: 0.602, 0.565 and 0.716 at (a) to (c). The base's readings at (a) are bimodal: pairs 1 and 3 read 21 340 and 22 889 against 10 926 to 10 939, and the controls at (a) and one reading at (b) do the same. The change's are not. The median reads the lower mode, the conservative choice for the change; the mechanism is not measured.
+
+**Part 2, ADR-0099's census workload beside it**, not a criterion: 0.465, 0.435, **1.156** and 0.524 at (a) to (d), controls 0.340, 0.520 and 1.109. ADR-0100's reading of that workload repeats: 1.156 at (c) against its 1.178. The census has a cost of its own, and it differs between the builds: at (a) it adds about 3 200 ns a tick to the base and 900 to the change; at (c) about 180 to the base and 650 to the change. The change's turns per worker are its partition's in every pair, the figures ADR-0100 recorded.
+
+**Part 3, one worker beside it**, not a criterion: 0.521 at (a) and 0.649 at (c), controls 0.586 and 0.643, where ADR-0100's one-worker diagnostic, with the census, read 0.516 and 0.657.
+
+**The per-turn breakdown** after the sweep, from part 3 and the bench on the change's code (after the same idle check; not admissible):
+
+- On one worker the sweep's turn at (a) is 11.4 ns, and `neuron/integrate` is 10.96 ns: the integration is the turn. The base's is 21.9 ns, the difference about `gate/schedule_begin_end`'s 9.76 ns and the deque's push and pop.
+- On two workers the runs' own figure is 11, 10 and 14 ns a turn at (a), (b) and (d), against the base's 21, 19 and 22.
+- At (c) about 75 units are served a tick. `executor/idle_tick/2`, the barriers and coordinator of a tick with nothing to serve, is 337 ns of the change's 802: about two fifths of the tick is synchronisation.
 
 ### The verdict
 
-To be completed by the round.
+**Kept.** Every bound is met in part 1, with room: 0.517 and 0.643 against 0.80, 0.527 and 0.745 against 1.10. No reading of behaviour moved and no pin was restated. Parts 2 and 3 decide nothing: they repeat ADR-0100's readings of its own workload and of one worker.
+
+What lands is ADR-0100's design as built (`ff6a297`), unchanged:
+
+- **Ownership.** Worker $w$ owns the units $[ws, \min((w+1)s, N))$, $s = \lceil N/W \rceil$, fixed in `Executor::new`; `Executor::owner` names a unit's owner.
+- **The schedule.** One bit per unit, each owner's region padded to a cache line. Phase 1 serves the region's set bits in unit order and keeps the bit of a unit its turn leaves awake. A push or an activation that finds a unit idle stores its gate byte scheduled and sets its bit with a fetch-or. No compare-and-swap is left in the turn, and a unit with no mail takes no swap.
+- **The gate byte** is the schedule's record, scheduled between ticks exactly when the next tick serves the unit, never running, written by `cortex-core`'s `set_gate`. `is_image_ready`, the clock sweep, the image writer, ADR-0097's census and the differential test's snapshot read it as before.
+- **Removed:** `deque.rs` and its four tests, `Config::deque_capacity`, `Worker::steal`, and the two exclusions of `.cargo/mutants.toml` that named the steal.
+- **Axiom A3**, whitepaper §4: "At most one worker writes a record's plain fields in any tick, enforced by ownership: each worker owns a fixed range of the unit arena and alone runs its units' turns; the barriers keep every other worker's access to the record — a push onto its mailbox, a mark of its gate byte, a read of its spike stamp — out of the phase in which the owner writes it." It is held by `a_unit_is_served_by_its_owner_alone_and_a_woken_unit_at_the_next_tick` (`tests/contention.rs`), by `the_ranges_partition_the_arena_and_the_places_partition_the_schedule` (`executor.rs`), and by the differential test on one, two and four workers.
+- **Phase 1's `unsafe`** ([ADR-0023](0023-executor.md)'s one), as `executor.rs` states it: "`unit` is a set bit of this worker's region of the schedule, and so in this worker's range, which no other worker's range overlaps: the ranges partition the arena and are fixed in `Executor::new`. In phase 1 a worker references only its own range's units, one at a time, and no push happens; phases 2 and 3 have ended at the barrier." ADR-0023's invariant, that a `&mut` to a record never overlaps another reference to it, is unchanged; what upholds it in phase 1 is now the partition, not the claim.
+
+**The decisions amended:**
+
+- **[ADR-0023](0023-executor.md)**: "in-house work-stealing deques" is replaced by the ownership and the schedule above. The three barrier-separated phases, the one `unsafe` and its invariant, and the fixed pool stand.
+- **[ADR-0017](0017-mailbox-and-gate-protocol.md)**: the mailbox is unchanged — the index stack drained whole, no ABA tag, the push's compare-exchange. The gate no longer claims a turn in the executor. `try_schedule`, `begin_turn` and `end_turn` stay in `cortex-core` with their tests and their bench case, for a scheduler without ownership. The executor records its schedule with `set_gate`, and the four sequentially consistent operations that close the lost-wakeup window are not on its path: no push overlaps a turn, as ADR-0023 already said, and the barriers order every phase's writes before the next phase's reads.
+
+**The weekly dispatch's scope** ([ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)): `scope=both`. The diff changes files under `src/` (`executor.rs`, `lib.rs`, `neuron.rs`, `deque.rs` deleted), deletes tests from the swept suite (the deque's four), and changes `.cargo/mutants.toml`. Any one of the three would give it.
+
+**What the working layout's round should weigh** (ADR-0099's order: the working layout second, the lookahead third):
+
+- On the sweep the integration is the whole turn, 11 ns of 11 on one worker at (a). A layout of the integrated fields for the vector units is aimed at all of what is left of a turn. Its gain is bounded by how many units' integrations one vector step can do at once. Its cost is quality goal 2: one unit, one cache line.
+- At the sparsest drive, synchronisation is about two fifths of a tick on two workers. That is the lookahead's measured need, and it grows with the worker count (`executor/idle_tick/4` 1 234 ns).
+- The census reading (1.156 at (c)) shows that under ownership a tick pays for any thread that pulled the owners' lines between ticks. The engine's own between-tick readers of every record — the clock sweep, the image writer and the instrument's `is_quiescent` — do not run between the ticks the learning line times. A round that adds one should read its cost.
 
 ### Consequences
 
-To be completed by the round.
+- Good: the engine is faster at every run the tree times, on this machine: 1.9 times at (a) and (b), 1.3 at (c), 1.6 at (d). A turn on one worker costs its integration and little else.
+- Good: axiom A3 is held by a partition fixed at construction and tested over a grid, where a compare-and-swap claim took each turn at run time. Every reading of behaviour held with no pin restated.
+- Good: the working layout and the lookahead have the ownership and the contiguous ranges they need.
+- Bad: the verdict rests on a workload chosen after ADR-0100's reading failed. ADR-0101 says so. The old workload, read again, still fails at (c), and that reading is published beside this one.
+- Bad: the ranges are fixed. A worker whose range is idle waits at the barrier, and nothing moves a clustered activity's work to it. ADR-0097's drives draw units uniformly, so the shares are even: 24.85 and 24.61 million turns at (c). A network whose activity clusters in one range has not been read.
+- Neutral: the gate byte and ADR-0017's claim protocol stay in `cortex-core`; the executor writes the byte and does not claim with it.
 
 ## Alternatives considered and why rejected
 
@@ -98,4 +147,8 @@ To be completed by the round.
 
 ## Confirmation
 
-To be completed by the round.
+- `ad32761` (on the round's branch): the instrument, `Census` and the six timed tests; all ten ignored tests of `tests/active.rs` passed on it.
+- `a46cf33`: the sweep re-applied, `git revert 5aa57c5`, with `a_unit_is_served_by_its_owner_alone_and_a_woken_unit_at_the_next_tick`, `the_ranges_partition_the_arena_and_the_places_partition_the_schedule` and `set_gate_records_each_state_without_a_claim`; every test of the workspace in debug, release and under the MSRV, the determinism pin masked and not, and ADR-0097's tables with and without the census held on it.
+- `b839388` and `86c2b0b`: this record as it stood before the first timed run, the measure and the disturbance rule, and the mutation gate's reading (run `36208294392`).
+- `docs/benchmarks/results/2026-09-26-dancr-win11-brief-044.md`: every reading above, the load through the session, the bench, and the scripts.
+- The evidence: the weekly dispatched on the round's branch at `86c2b0b`, whose code is the kept code, run `36209381108` with `scope=both` (the clause above). To be completed by the round when it ends.

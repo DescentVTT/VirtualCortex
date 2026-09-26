@@ -2,10 +2,13 @@
 status: accepted
 date: 2026-09-10
 decision-makers: VirtualCortex maintainers
+amended-by: ADR-0102
 amends: ADR-0006
 ---
 
 # ADR-0017: Mailbox and gate protocol — an index stack drained whole, no ABA tag, four sequentially consistent operations
+
+> Amended by [ADR-0102](0102-the-sweep-timed-with-no-census.md) (2026-09-26): the executor no longer claims a turn through the gate. It enforces axiom A3 by ownership and records its schedule in the gate byte with `set_gate`, a relaxed store, ordered by the barriers between phases. The mailbox protocol below is unchanged, and the claim (`try_schedule`, `begin_turn`, `end_turn`, the four sequentially consistent operations) stays in `cortex-core` with its tests, for a scheduler without ownership.
 
 ## Context and Problem Statement
 
