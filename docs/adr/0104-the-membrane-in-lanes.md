@@ -73,6 +73,10 @@ The design was chosen on readings taken on the developer machine before this ADR
 
 **Prediction, written before the first timed run:** the change is not kept. The ratio at (a) and at (d) is above 0.80, and likely above 1.0. The criterion is read anyway: it is ADR-0099's verdict, and the development readings are not.
 
+### The mutation gate, before the first timed run
+
+Run `36224029050` on the pull request, at `f57349d`, the code the session times: 63 mutants in the lines the pull request changes (the lane form, its registration and the executor's `phase_turns`, `take_inputs` and `finish_turn`), **63 caught**, none unviable, no timeout, none missed, in 11 minutes. No survivor, so the code is not changed before the timing. On the developer machine the same gate over `lanes.rs` alone read 28 caught and none missed; its other 29 did not link (`LNK1104`, the machine's), which is why the reading is CI's.
+
 ### Consequences
 
 - Good: the lane form exists, is held to `integrate` on every lane over the lattice, and is vectorized at the baseline with no intrinsic, no target feature and no dependency; the i32 rewrite of the two `i64` steps is proved and tested, and is what any later vector form of the rule starts from.
