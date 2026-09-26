@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.56.0
+version: 4.56.1
 status: active
 date: 2026-09-26
 ---
@@ -11,7 +11,7 @@ date: 2026-09-26
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.56.0 |
+| Version | 4.56.1 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-26 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
