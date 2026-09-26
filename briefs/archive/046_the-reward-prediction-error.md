@@ -1,19 +1,39 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-26
 ---
+
+> **Executed 2026-09-26 in pull request #134.** Writes ADR-0107 (the critic built) and ADR-0108 (the reward-prediction
+> error, measured); opens and resolves findings F-52 (ADR-0106 mis-rounded three of H-18's moves: the range is 3.6 to 9.5
+> per cent, not 3.7) and F-53 (ADR-0106's arithmetic of the punishment's fading left out the dopamine signal's
+> carry-over from trial to trial). The critic (`Task::critic`, off unless set, no record field, image format 16) and
+> H-19's constants, clauses, assertion, readings' rules and gate were committed before the first rewarded run; every
+> other whole-domain test then reproduced its pinned numbers with the critic unset, and each arm reproduced ADR-0077's
+> settled candidate, H-18's image and H-18's first block before its own run.
+>
+> **H-19 is no, clause 3 the one that failed.** Clause 1 read 122 and 125 of 128, clause 2 read 119 and 121, and in
+> both arms one answer pair of each mapping moved by 1.22 to 1.87 per cent of its image coupling over its span, the
+> other within 0.34, where H-18's moved by 3.6 to 9.5. ADR-0106's two predicted readings held; the assertion held. The
+> expectations settled about a tenth below the reward because the selection stayed wrong or tied in two to five trials
+> of 64. **H-19's stopping rule is at step 4**, clause 3 alone: the next decision is an ADR on what else keeps the
+> couplings rising, named and not taken.
+>
+> The weekly dispatch at `scope=both` (run 36236559958) was green: all 65 whole-domain tests passed, the sweep found no survivor, and the cost table is regenerated from it. Image format 16; whitepaper 4.59.0.
+> Every deliverable is dispositioned below. Relative links gained one `../` so that they resolve from `archive/`; no
+> other word, claim or figure changed.
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 046: The reward-prediction error — a critic in the task, an expected reward per stimulus from which the outcome's reward is taken before the dopamine signal receives it; then H-19 run once on H-18's configuration, schedule and arms: does the engine learn, revise and settle
 
 ## Mission
 
 **This brief builds one mechanism and runs one hypothesis.** H-18 is yes
-([ADR-0096](../docs/adr/0096-the-punished-pair-measured.md)): the engine learns the two-alternative mapping and, with
+([ADR-0096](../../docs/adr/0096-the-punished-pair-measured.md)): the engine learns the two-alternative mapping and, with
 the signed gate, learns it again after a flip. But its reward is the outcome itself every trial, so a learned mapping
 is reinforced for ever. Over the last 256 trials of each mapping, with every trial correct, the answer pairs rose by
 3.7 to 9.5 per cent of the image's coupling, "the rise has no stop but the rail".
 
-[ADR-0106](../docs/adr/0106-the-reward-prediction-error.md) takes the reward-prediction error:
+[ADR-0106](../../docs/adr/0106-the-reward-prediction-error.md) takes the reward-prediction error:
 - The task keeps an expected reward for each stimulus, $V_s$.
 - The dopamine signal receives $\delta = r - V_s$.
 - $V_s$ then moves by $\delta \gg 5$.
@@ -49,12 +69,12 @@ When the round is done, the tree holds:
 - **Every pinned number of every round stands with the critic unset**, H-18's arms among them, and the determinism pin
   with them. A pinned number that moves with the critic unset stops the round before any rewarded run and is a finding.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). Nothing allocates after start-up.
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). Nothing allocates after start-up.
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`; the runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of
   `testkit/prop.rs`, and the mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0106's included. In particular,
   ADR-0106's arithmetic of the punishment's fading ($\delta_n = -2(31/32)^n$, about 54 presentations' worth) takes no
   account of the dopamine signal's carry-over from one trial into the next. It is a statement about the rules, not a
@@ -99,14 +119,14 @@ are what to re-derive.
    - The inhibitory sum ended at 0.11 of the image's.
 5. **ADR-0106's H-19** (whitepaper §11.1): the configuration, the three clauses, the assertion, the two predicted
    readings, the four reads, the tension and the stopping rule.
-6. **The weekly job** ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md),
-   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The critic changes `src/`, so the scope is
+6. **The weekly job** ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md),
+   [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The critic changes `src/`, so the scope is
    `both`. The cost table is regenerated from the round's own dispatch. Each of H-18's arms takes about 1 000 to
    2 000 s on a runner.
 
 ## Deliverables
 
-- [ ] **The critic (a new ADR at the next free number; `ls docs/adr`)**, in `Task`, off unless set, as ADR-0106 wrote
+- [x] **The critic (a new ADR at the next free number; `ls docs/adr`)**, in `Task`, off unless set, as ADR-0106 wrote
   it. `Outcome` carries the prediction error delivered, and the expected reward before and after the trial, in the
   form the round chooses. Tests:
   - $\delta$ and the update at their edges: $V_s$ at $\pm r$; $\delta$ of $\pm 2r$; the arithmetic shift's floor for a
@@ -116,27 +136,27 @@ are what to re-derive.
   - with the critic unset, `Task::trial` returns every field it returned before.
 
   **Every pinned number of the tree and the determinism pin unchanged with the critic unset.**
-- [ ] **The calibration, before any rewarded run.** The settled engine held to ADR-0077's tables, and H-18's image and
+- [x] **The calibration, before any rewarded run.** The settled engine held to ADR-0077's tables, and H-18's image and
   first block held to what H-18 read, as H-18's arms do. **A mismatch, or any pinned number that moved, stops the
   round**: no rewarded run, and a numbered finding in §11.
-- [ ] **The constants commit**, preceding the first commit that holds a rewarded outcome. It holds:
+- [x] **The constants commit**, preceding the first commit that holds a rewarded outcome. It holds:
   - H-19's three clauses as integer rules over the pinned tables' shape (clause 3 as $|\Delta| \times 100 <$ the image
     coupling, for each answer pair over its span);
   - the critic's shift (5), the 4 608 trials and the flip, and the arms;
   - ADR-0106's two predicted readings, written as constants;
   - the assertion's shape and the readings' rules;
   - every constant of ADR-0065, ADR-0076, ADR-0077, ADR-0080, ADR-0085, ADR-0093 and ADR-0106, restated unchanged.
-- [ ] **The two arms**, the assignment first and the mirrored first, **each its own `exhaustive` test**: 4 608 trials
+- [x] **The two arms**, the assignment first and the mirrored first, **each its own `exhaustive` test**: 4 608 trials
   from H-18's image with the critic set, the mapping flipped once between trials 1 536 and 1 537, nothing else changed
   at the flip. Their tables are pinned per block as H-18's are, plus each stimulus's expected reward at the block's
   end.
-- [ ] **The assertion.** No excitatory synapse outside the four stimulus–readout pairs moves in either arm, and the
+- [x] **The assertion.** No excitatory synapse outside the four stimulus–readout pairs moves in either arm, and the
   oracle, fed the prediction error each trial delivered, agrees with the record's weights, traces and signal at every
   trial. If it fails, that is a numbered finding, reported beside the verdict and not in place of it.
-- [ ] **The verdict.** The rule committed first, over the pinned tables: **H-19 is yes or no**, and if no, which
+- [x] **The verdict.** The rule committed first, over the pinned tables: **H-19 is yes or no**, and if no, which
   clause failed. §11.1's H-19 is checked with the result and its scope, and its stopping rule's item with the step
   reached. The ADR states the next decision H-19's rule makes **and does not take it**.
-- [ ] **The readings, in every branch**:
+- [x] **The readings, in every branch**:
   - ADR-0106's two predicted readings beside what the runs read;
   - the trials after the flip whose modulation of the old answer's pair was at −0.5 or below;
   - each stimulus's expected reward by block;
@@ -144,19 +164,19 @@ are what to re-derive.
   - the answer pairs' course by block, beside H-18's;
   - each stimulus's first new selection and its crossing block, if any;
   - the inhibitory sum, the sight, and whether the stimulus still fires once.
-- [ ] **The gate.** The critic's unit and property tests; and at most one runtime test for H-19, running no whole run:
+- [x] **The gate.** The critic's unit and property tests; and at most one runtime test for H-19, running no whole run:
   - the criterion's clauses at their edges over tables written by hand, clause 3 at 1 per cent and one LSB either side;
   - a few trials on the instrument's network with the critic set, where the delivered reward is $\delta$, $V_s$ moves
     by $\delta \gg 5$, every unaddressed excitatory synapse is unmoved, and the oracle is held at every trial.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (`both`, since
+- [x] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (`both`, since
   `src/` changes), the clause stated in the ADR. It must be green in every job, every pinned number reproduced, and the
   sweep's survivors dispositioned. The run id and the shards' times go in the ADR, and the cost table is regenerated
   from that run's artifacts.
-- [ ] **The documents, in the same pull request.** Whitepaper §11.1's H-19 and its stopping rule (the step reached),
+- [x] **The documents, in the same pull request.** Whitepaper §11.1's H-19 and its stopping rule (the step reached),
   the task's paragraph where §6 describes the reward, and §9; the ADR index; `CHANGELOG.md`; `README.md`;
   `CLAUDE.md`'s opening paragraph; `docs/zh-TW`'s reader's guide as the result requires. The whitepaper's version in
-  both declarations, with its date ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the frozen banner naming
+  both declarations, with its date ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the frozen banner naming
   the pull request, the ADRs, **H-19's answer and the step of its stopping rule reached**.
 
 ## Not empowered
