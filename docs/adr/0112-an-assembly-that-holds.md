@@ -174,7 +174,7 @@ Each fires once. When its window ends, a unit stands about 0.27 below the adapte
 1. This ADR, the constants, the rules and the oracles, and the gate's checks of them, committed before any run (`6cfc32f`, `a95a1c3`).
 2. The kick and the background run; the kick, read once and derived again with its reset before any cell (above), read again, its tables pinned, and shown to fire every member once.
 3. The twelve cells run against the background pinned in step 2, their tables pinned.
-4. The readings recorded below.
+4. The readings recorded below, then the weekly dispatched on the documents commit and its evidence.
 
 ### The readings
 
@@ -229,6 +229,26 @@ On a developer machine in the release profile the kick and background test took 
 - **The arithmetic beside the readings.** Before any run, the arithmetic said that no cell's mean input can hold a member at threshold at any rate: depression caps what a rate transmits at about 5.5 times the background's. So a hold would have to be the fluctuations riding above a mean below threshold. The runs read no such state. They read the other behaviour the rule allows: a regenerative burst on the pool the members have, then silence while the pool recovers. The bursts' strength follows the arithmetic's order:
   - at a quarter of the range nothing bursts on its own at any size; there one spike at rest delivers 0.157, and eight must land together to fire a unit;
   - the most bursts come where the fan and the weight are largest.
+- **The evidence.** None of [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s clauses for `scope=both` applies to the diff: no file under a `src/` directory changed; no test was deleted or taken out of the suite the sweep runs, since the gate gains one test and the weekly job four new `#[ignore]`d ones; and neither `.cargo/mutants.toml` nor the `mutants-weekly` job changed. So its last clause applies, and the weekly was dispatched on this round's branch at **`scope=exhaustive`** alone: run [36267201620](https://github.com/DescentVTT/VirtualCortex/actions/runs/36267201620) at `c1cf774`, the documents commit, after which only this evidence, the cost table and the brief's archive change. **Every job it ran is green.** All seventy-one whole-domain tests passed on the hosted runners: the sixty-seven before this round reproduced their pinned numbers, and this round's four reproduced their tables. [ADR-0092](0092-the-shards-dealt-by-cost.md)'s table did not know the four and costed each at 900 s, so it dealt one to each shard; on the runners each took 167 to 171 s. The four shards took:
+
+  | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
+  | ---: | ---: | ---: | ---: | ---: | :--- |
+  | 0 | 52 m 56 s | 17 | 5 999 | 3 127 s, 43 % | H-20 from the mirrored 2 062 |
+  | 1 | 45 m 22 s | 18 | 5 090 | 2 674 s, 37 % | H-20 from the assignment 1 704 |
+  | 2 | 37 m 13 s | 18 | 4 358 | 2 184 s, 30 % | H-19 from the mirrored 1 176 |
+  | 3 | 45 m 35 s | 18 | 5 342 | 2 680 s, 37 % | H-18 from the mirrored 1 145 |
+
+  **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: seventy-one lines, 20 789 s, its source line naming the run; `npm run spec:costs` passing). No sweep ran: the diff gives the sweep nothing new to find, and Monday's run sweeps the tree as it always does.
+
+  The pull request's gate on `c1cf774` (run [36267193282](https://github.com/DescentVTT/VirtualCortex/actions/runs/36267193282)) is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which found no mutant to make (*"No mutants to filter"*), since the diff touches no file `cargo-mutants` mutates.
+
+  On the developer machine every command of brief 048's verification list exited 0 (a ratio, not admissible):
+  - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 641 tests passed in each, the 640 before this round and its gate test, and 71 ignored;
+  - check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
+  - `--list`, 71 tests;
+  - the in-diff mutation command: *"No mutants to filter"*.
+
+  The gate test takes 3 s in the debug profile and 0.15 s in the release profile.
 - **Not done:**
   - The grid was not widened. A size of 128 gives a member no more synapses than 64 does. A weight between two of the four would place the edge between burst-free and bursting, and the question does not turn on that edge.
   - The grid was not read on a network drained as a learning run leaves it.
