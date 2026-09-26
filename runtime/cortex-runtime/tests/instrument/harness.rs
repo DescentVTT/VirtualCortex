@@ -16,8 +16,8 @@ pub(crate) use cortex_homeostasis::{
 pub(crate) use cortex_neuromod::DOPAMINE_TAU_SHIFT;
 
 pub(crate) use cortex_runtime::{
-    Cancel, Config, Delivery, Drive, Executor, Feedback, Image, Outcome, Readout, Set, Stimulus,
-    Task, TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
+    Cancel, Config, Critic, Delivery, Drive, Executor, Feedback, Image, Outcome, Readout, Set,
+    Stimulus, Task, TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -8983,7 +8983,7 @@ pub(crate) fn earned_run_flipped(
 /// replayed synapse by `consolidated_signed` while it is set; with it unset this is
 /// `earned_run_flipped`, which calls it so and drops the second value. Returns the run and,
 /// per trial, what its consolidation did to the pair the last trial's delivery addressed
-/// (`Composer::moves`).
+/// (`Composer::moves`). It is `earned_run_predicted` with no critic, which it calls so.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_signed(
     exec: &mut Engine,
@@ -8996,6 +8996,60 @@ pub(crate) fn earned_run_signed(
     signed: bool,
     after: &mut dyn FnMut(&Engine, usize),
 ) -> (EarnedRun, Vec<Moves>) {
+    let (run, moves, expected) = earned_run_predicted(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flip,
+        signed,
+        None,
+        after,
+    );
+    assert!(expected.is_empty(), "no critic, no expectation");
+    (run, moves)
+}
+
+/// The critic's rule written a second time as the oracle's (brief 046, ADR-0107): the error of
+/// `reward_q16` against `expected_q16`, taken in `i64` and clamped to the width, and the
+/// expectation after it, the one before plus the floor of the error over $2^{\text{shift}}$ by
+/// `div_euclid` — not a shift — clamped to the width. Returns the error and the expectation
+/// after.
+pub(crate) fn critic_step(expected_q16: i32, reward_q16: i32, shift: u32) -> (i32, i32) {
+    let width = |x: i64| x.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    let error = width(i64::from(reward_q16).saturating_sub(i64::from(expected_q16)));
+    let divisor = 1i64
+        .checked_shl(shift.min(62))
+        .expect("a divisor within the width");
+    let after = width(i64::from(expected_q16).saturating_add(i64::from(error).div_euclid(divisor)));
+    (error, after)
+}
+
+/// `earned_run_signed` under a critic or none (brief 046, ADR-0107): with `critic` set the task
+/// carries it, so the reward the task delivers is the outcome's less the presented stimulus's
+/// expectation; the harness keeps its own expectations from the critic's, moves them by
+/// `critic_step` and holds the task to them at every trial — the reward delivered the oracle's
+/// error, the outcome's expectation before and after the oracle's, both the same and the
+/// reward zero where the reward is withheld — and the composer, fed the reward the task
+/// delivered, holds the record's signal, traces and weights to the oracle as it does without
+/// one. Returns the run, the moves, and each trial's expectations after it, `[A, B]`, as the
+/// oracle holds them; with no critic the outcome carries no expectation, the reward is the
+/// outcome's, the run is `earned_run_signed`'s, and the third value is empty.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_predicted(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flip: Option<usize>,
+    signed: bool,
+    critic: Option<Critic>,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
     assert_eq!(exec.signed_gate(), signed, "the signed gate is the image's");
     assert_eq!(
         units, 1024,
@@ -9030,9 +9084,14 @@ pub(crate) fn earned_run_signed(
         mirrored,
         Delivery::Addressed,
     );
+    let task = Task { critic, ..task };
     // The task is `Copy`: a copy reads the coin the run's own task drew.
     let probe = task;
     let mut read: Vec<EarnedTrial> = Vec::with_capacity(trials);
+    // The oracle's expectations, from the critic's, and the shift it moves them by.
+    let mut expectations = critic.map(|c| c.expected_q16);
+    let shift = critic.map_or(0, |c| c.shift);
+    let mut expected_after: Vec<[i32; 2]> = Vec::new();
     let (blocks, trace) = run_on_flipped(
         exec,
         task,
@@ -9069,11 +9128,39 @@ pub(crate) fn earned_run_signed(
                 Feedback::Shuffled => signed(probe.coin_at(trial as u64)),
                 Feedback::Withheld => 0,
             };
+            let stimulus = usize::from(outcome.stimulus);
+            // Under a critic the reward delivered is the outcome's less the stimulus's
+            // expectation, which then moves by the oracle's rule (ADR-0107); withheld, nothing
+            // is delivered and nothing moves.
+            let expected = match expectations.as_mut() {
+                Some(held) => {
+                    let before = held[stimulus];
+                    let (error, moved) = if feedback == Feedback::Withheld {
+                        (0, before)
+                    } else {
+                        critic_step(before, expected, shift)
+                    };
+                    held[stimulus] = moved;
+                    assert_eq!(
+                        outcome.expected_q16,
+                        Some([before, moved]),
+                        "trial {trial}: the task's expectation before and after is the oracle's"
+                    );
+                    expected_after.push(*held);
+                    error
+                }
+                None => {
+                    assert_eq!(
+                        outcome.expected_q16, None,
+                        "trial {trial}: no critic, no expectation"
+                    );
+                    expected
+                }
+            };
             assert_eq!(
                 outcome.reward_q16, expected,
-                "trial {trial}: the reward's sign is the outcome's, and none is withheld"
+                "trial {trial}: the reward's sign is the outcome's, less the expectation under a critic, and none is withheld"
             );
-            let stimulus = usize::from(outcome.stimulus);
             let targets = outcome
                 .selection
                 .map_or(0, |r| readout_set(&sets, usize::from(r)).len() as usize);
@@ -9115,9 +9202,14 @@ pub(crate) fn earned_run_signed(
     assert_eq!(composer.out.len(), trials);
     assert_eq!(composer.moves.len(), trials);
     assert_eq!(composer.counts(), SYNAPSES_1024);
+    assert_eq!(
+        expected_after.len(),
+        if critic.is_some() { trials } else { 0 }
+    );
     (
         (blocks, trace, composer.out, read, composer.volley_ticks),
         composer.moves,
+        expected_after,
     )
 }
 

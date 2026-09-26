@@ -47,6 +47,18 @@
 //! before the run, and the gate runs them at their edges and a few trials over a punishment
 //! with the gate set beside the same trials with it unset.
 //!
+//! Brief 046 runs H-19 here as ADR-0106 wrote it: H-18's configuration, schedule and arms with
+//! ADR-0107's critic set in the task — an expected reward per stimulus, zero at the start, the
+//! reward delivered the outcome's less it, the expectation then moved by a thirty-second of
+//! that error — from H-18's one signed image, after the same calibration and H-18's first
+//! block reproduced with the critic unset. Two arms, each its own weekly `exhaustive` test,
+//! pinned whole with each stimulus's expectation per block. The oracle is fed the error each
+//! trial delivered (`earned_run_predicted`) and held to the record at every trial, and the
+//! task's error and expectations to the harness's critic; the criterion's three clauses (it
+//! learned, it revised, it settled), the assertion and the readings are integer rules written
+//! before the run, and the gate runs them at their edges and a few trials with the critic set
+//! beside the same trials with it unset.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -13780,3 +13792,1074 @@ const PUNISHED_1024: Punished = Punished {
     revised: [true, true],
     yes: true,
 };
+
+// =================================================================================== H-19
+
+// ------------------------------------------ written before the run (ADR-0106, ADR-0107)
+
+/// H-19's run (ADR-0106): H-18's, 4 608 trials in seventy-two blocks, the flip where H-18's
+/// was, before the trial of index 1 536. Neither moves after a rewarded run.
+const CRITIC_TRIALS: usize = PUNISHED_TRIALS;
+/// The blocks of an H-19 run.
+const CRITIC_BLOCKS: usize = PUNISHED_BLOCKS;
+const _: () = assert!(CRITIC_TRIALS == 4_608 && CRITIC_BLOCKS == 72 && FLIP == 1_536);
+
+/// The arms of H-19 (ADR-0106): H-18's two, in their order, each its own weekly test — the
+/// assignment first and the mirrored first — from H-18's one signed image with the critic set,
+/// the flip `Task::mirrored` negated and nothing else, the critic's expectations carried across
+/// it.
+const CRITIC_ARMS: [Reversal; 2] = PUNISHED_ARMS;
+
+/// The critic's shift (ADR-0106): an expectation moves by a thirty-second of the error, so it
+/// forgets over about thirty-two presentations of its stimulus, one block of trials. It does
+/// not move after a rewarded run.
+const CRITIC_SHIFT: u32 = 5;
+
+/// The critic at the run's start (ADR-0106): both expectations zero.
+const CRITIC_AT_START: Critic = Critic::new(CRITIC_SHIFT);
+
+/// ADR-0106 writes no prediction for the verdict.
+const CRITIC_PREDICTED: Option<bool> = None;
+
+/// Clause 3's span (ADR-0106): the last four blocks of each mapping, 256 trials — trials 1 281
+/// to 1 536 under the first mapping, 4 353 to 4 608 under the second — over which H-18's
+/// answer pairs rose by 3.7 to 9.5 per cent of their image couplings.
+const SETTLE_BLOCKS: usize = 4;
+/// Clause 3's bound (ADR-0106): a move of less than one per cent of the pair's image coupling,
+/// read in integers as `|Δ| × SETTLE_PER_CENT < image`.
+const SETTLE_PER_CENT: i64 = 100;
+const _: () = assert!(SETTLE_BLOCKS * BLOCK == 256 && FLIP_BLOCK >= SETTLE_BLOCKS);
+const _: () = assert!(CRITIC_BLOCKS - FLIP_BLOCK >= SETTLE_BLOCKS);
+
+/// ADR-0106's predicted reading (1), a Hypothesis written before the run and never asserted:
+/// for both stimuli in both arms, the first mapping's answer pair at the flip stands below
+/// H-18's same pair in the same arm at the flip (`below_punished`).
+const BELOW_PUNISHED_PREDICTED: bool = true;
+
+/// ADR-0106's predicted reading (2), a Hypothesis written before the run and never asserted:
+/// for both stimuli in both arms, the stimulus's expectation is below zero after a trial within
+/// `FALLS_WITHIN` trials of the flip, trials 1 537 to 1 600 (`falls_within`). ADR-0106's rule,
+/// from an expectation of 1.0 punished at every presentation, says after 22 presentations.
+const EXPECTATION_FALLS_PREDICTED: bool = true;
+/// The trials from the flip the predicted reading (2) reads.
+const FALLS_WITHIN: usize = BLOCK;
+const _: () = assert!(FALLS_WITHIN == 64);
+
+/// The signal at or below which a trial's delivery is counted as a strong punishment of the old
+/// answer's pair (ADR-0106's reading): −0.5, the modulation the pair starts consolidating under
+/// in the next trial, the baseline being zero.
+const STRONG_PUNISHMENT_Q16: i32 = -(ONE / 2);
+
+// ------------------------------------------------------------ the criterion (ADR-0106)
+
+/// Clause 3's moves (ADR-0106), per mapping `[first, second]` and per stimulus `[A, B]`: the
+/// stimulus's answer pair under that mapping, its coupling at the end of the mapping's last
+/// block less its coupling `SETTLE_BLOCKS` blocks before — over trials 1 281 to 1 536 under
+/// the first mapping and 4 353 to 4 608 under the second; none for a run of any other length.
+fn settle_moves(blocks: &[Block], first: bool) -> Option<[[i64; 2]; 2]> {
+    if blocks.len() != CRITIC_BLOCKS {
+        return None;
+    }
+    let ends = [FLIP_BLOCK - 1, CRITIC_BLOCKS - 1];
+    let mappings = [first, !first];
+    Some([0usize, 1].map(|m| {
+        [0usize, 1].map(|s| {
+            let answer = answer_of(s as u8, mappings[m]);
+            let at = |j: usize| blocks.get(j).map_or(0, |b| b.10[s][answer]);
+            at(ends[m]).saturating_sub(at(ends[m].saturating_sub(SETTLE_BLOCKS)))
+        })
+    }))
+}
+
+/// Clause 3 as a rule (ADR-0106): each of the four moves less than one per cent of its pair's
+/// image coupling, `|Δ| × 100 < image`, whichever way it moved; false for a run of any other
+/// length.
+fn settles(blocks: &[Block], first: bool) -> bool {
+    let Some(moves) = settle_moves(blocks, first) else {
+        return false;
+    };
+    moves.iter().zip([first, !first]).all(|(pairs, mapping)| {
+        pairs.iter().enumerate().all(|(s, &delta)| {
+            let image = IMAGE_COUPLINGS_1024[s][answer_of(s as u8, mapping)];
+            delta.saturating_abs().saturating_mul(SETTLE_PER_CENT) < image
+        })
+    })
+}
+
+/// H-19's criterion (ADR-0106), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) it learned — `correct_before`, trials 1 409 to 1 536 under the first mapping, at least
+/// `REWARDED_MIN`; (2) it revised — `revised_count`, trials 4 481 to 4 608 under the second, at
+/// least `REWARDED_MIN`; (3) it settled — `settles`; a tie not correct, the task's count. `yes`
+/// is all six; a no names the clause that failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Predicted {
+    learned: [bool; 2],
+    revised: [bool; 2],
+    settled: [bool; 2],
+    yes: bool,
+}
+
+fn predicted(arms: [&[Block]; 2]) -> Predicted {
+    let learned = arms.map(|blocks| correct_before(blocks) >= REWARDED_MIN);
+    let revised = arms.map(|blocks| revised_count(blocks) >= REWARDED_MIN);
+    let settled = [0usize, 1].map(|k| settles(arms[k], first_mapping(CRITIC_ARMS[k])));
+    Predicted {
+        learned,
+        revised,
+        settled,
+        yes: learned.iter().chain(&revised).chain(&settled).all(|&c| c),
+    }
+}
+
+// --------------------------------------------------- the readings' shape (ADR-0106)
+
+/// ADR-0106's predicted reading (1) as a rule: per stimulus, its answer pair under the first
+/// mapping at the end of the 1 536th trial below the same pair at the same trial of `punished`,
+/// H-18's arm of the same first mapping; false for a run that does not reach the flip.
+fn below_punished(blocks: &[Block], punished: &[Block], first: bool) -> [bool; 2] {
+    let (Some(here), Some(there)) = (blocks.get(FLIP_BLOCK - 1), punished.get(FLIP_BLOCK - 1))
+    else {
+        return [false; 2];
+    };
+    [0usize, 1].map(|s| {
+        let answer = answer_of(s as u8, first);
+        here.10[s][answer] < there.10[s][answer]
+    })
+}
+
+/// Per stimulus, the first trial from the flip on, by index, after which its expectation was
+/// below zero; none when none was.
+fn below_zero(expected: &[[i32; 2]]) -> [Option<usize>; 2] {
+    [0usize, 1].map(|s| {
+        expected
+            .iter()
+            .enumerate()
+            .skip(FLIP)
+            .find(|(_, e)| e[s] < 0)
+            .map(|(t, _)| t)
+    })
+}
+
+/// ADR-0106's predicted reading (2) as a rule: per stimulus, `below_zero` within
+/// `FALLS_WITHIN` trials of the flip, before the trial of index `FLIP + FALLS_WITHIN`.
+fn falls_within(expected: &[[i32; 2]]) -> [bool; 2] {
+    below_zero(expected).map(|t| t.is_some_and(|t| t < FLIP + FALLS_WITHIN))
+}
+
+/// Per stimulus, its presentations from the flip up to and including the trial `below_zero`
+/// names — ADR-0106's arithmetic says 22 from an expectation of 1.0 punished at every one; none
+/// when its expectation never fell below zero. A reading.
+fn presentations_to_below(read: &[EarnedTrial], expected: &[[i32; 2]]) -> [Option<u32>; 2] {
+    let at = below_zero(expected);
+    [0usize, 1].map(|s| {
+        at[s].map(|t| {
+            read.get(FLIP..=t)
+                .unwrap_or(&[])
+                .iter()
+                .filter(|r| usize::from(r.0) == s)
+                .count() as u32
+        })
+    })
+}
+
+/// The punishment's course after the flip (ADR-0106's reading), per block from the flip and
+/// per stimulus `[A, B]`: the trials that selected the stimulus's old answer — its answer under
+/// the first mapping, an error under the second — and left a signal at or below
+/// `STRONG_PUNISHMENT_Q16`, the modulation under which the old answer's pair starts
+/// consolidating in the next trial, the baseline being zero. The blocks before the flip are not
+/// read.
+fn strong_punishments(read: &[EarnedTrial], first: bool) -> Vec<[u32; 2]> {
+    read.get(FLIP..)
+        .unwrap_or(&[])
+        .chunks(BLOCK)
+        .map(|block| {
+            let mut out = [0u32; 2];
+            for t in block {
+                let old = answer_of(t.0, first) as u8;
+                if t.2 == Some(old) && t.7 <= STRONG_PUNISHMENT_Q16 {
+                    let into = &mut out[usize::from(t.0)];
+                    *into = into.saturating_add(1);
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// `strong_punishments` summed over the blocks, per stimulus.
+fn strong_total(blocks: &[[u32; 2]]) -> [u32; 2] {
+    blocks.iter().fold([0u32; 2], |sum, b| {
+        [sum[0].saturating_add(b[0]), sum[1].saturating_add(b[1])]
+    })
+}
+
+/// Each stimulus's expectation at every block's end, `[A, B]`, from the trials' expectations.
+fn expected_blocks(expected: &[[i32; 2]]) -> Vec<[i32; 2]> {
+    expected
+        .chunks(BLOCK)
+        .filter_map(|block| block.last().copied())
+        .collect()
+}
+
+/// The four couplings after every block as fractions of the image's, in parts per ten
+/// thousand, `[stimulus][readout]`: the course the dump reads beside H-18's.
+fn couplings_course(blocks: &[Block]) -> Vec<[[i64; 2]; 2]> {
+    blocks
+        .iter()
+        .map(|b| {
+            [0usize, 1]
+                .map(|s| [0usize, 1].map(|r| per_myriad(b.10[s][r], IMAGE_COUPLINGS_1024[s][r])))
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------- the run (brief 046)
+
+/// An arm's run from the signed engine (brief 046): `earned_run_predicted` under the answer's
+/// feedback at the gate's zero with the signed gate set, the arm's first mapping, the flip
+/// before the trial of index `flip`, the critic given, and `after` reading the executor at
+/// every trial's end — the oracle, fed the reward each trial delivered, held to the record at
+/// every trial; the task's error and expectations held to the harness's critic; every trial's
+/// contract asserted under the mapping in force at it. With no critic it is `punished_run`'s
+/// run.
+fn critic_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    trials: usize,
+    flip: usize,
+    critic: Option<Critic>,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
+    earned_run_predicted(
+        exec,
+        Feedback::Answer,
+        first_mapping(arm),
+        1024,
+        trials,
+        GATE_BASELINE_Q16,
+        Some(flip),
+        true,
+        critic,
+        after,
+    )
+}
+
+/// One arm of H-19 at 1 024 units (brief 046): the settled engine held to ADR-0077 step by step
+/// and its images, the signed image H-18's by its CRC; the calibration before any rewarded run
+/// (H-19's stopping rule, step 2) — a frozen block from the zero image, the inhibitory baseline
+/// and the signed gate unset, held to ADR-0077's frozen run, and H-18's arm's first block from
+/// the signed image with the critic unset, held to H-18's tables; then the arm's 4 608 trials
+/// from the signed image with the critic set, the flip between the 1 536th and the 1 537th, the
+/// couplings read at the end of the 1 537th; everything dumped and the clauses, the assertion
+/// and the readings computed before anything is held; then the assertion, and the pinned
+/// tables.
+fn critic_arm(arm: Reversal) {
+    let k = CRITIC_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-19");
+    let name = format!("critic1024 {arm:?}");
+    let (zero, signed) = signed_images(&name);
+    let image_crc = crc64(&signed);
+    assert_eq!(
+        image_crc, PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-18's one image"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    {
+        let mut exec = signed_from(&signed, 1024);
+        let (run, moves) = punished_run(&mut exec, arm, BLOCK, FLIP, &mut |_, _| {});
+        let (blocks, _, trials, read, _) = &run;
+        let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+        assert_eq!(
+            blocks.as_slice(),
+            &PUNISHED_BLOCKS_1024[k][..1],
+            "{name}: H-18's first block, the critic unset"
+        );
+        assert_eq!(
+            compositions.as_slice(),
+            &PUNISHED_COMPOSITIONS_1024[k][..1],
+            "{name}: and its composition"
+        );
+        assert_eq!(
+            earned_blocks(read).as_slice(),
+            &PUNISHED_EARNED_1024[k][..1],
+            "{name}: and its earned block"
+        );
+        assert_eq!(
+            moves_blocks(read, &moves).as_slice(),
+            &PUNISHED_MOVES_1024[k][..1],
+            "{name}: and its moves"
+        );
+        eprintln!(
+            "DUMP {name} calibration holds: ADR-0077's settled candidate, H-18's image (crc {image_crc:#018x}) and H-18's first block reproduced"
+        );
+    }
+    let sets = geometry(1024, ROTATION_1024);
+    let image_sums = QUIET_1024[SETTLED].1;
+    let mut exec = signed_from(&signed, 1024);
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let image = weights_of(&exec);
+    let first = first_mapping(arm);
+    let mut at_carry: Option<[[i64; 2]; 2]> = None;
+    let (run, moves, expected) = critic_run(
+        &mut exec,
+        arm,
+        CRITIC_TRIALS,
+        FLIP,
+        Some(CRITIC_AT_START),
+        &mut |exec, trial| {
+            if trial == FLIP {
+                at_carry = Some(pair_couplings(exec, &sets));
+            }
+        },
+    );
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let at_carry = at_carry.expect("the run reached the trial after the flip");
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let expected_by_block = expected_blocks(&expected);
+    let strong = strong_punishments(read, first);
+    assert_eq!(blocks.len(), CRITIC_BLOCKS, "{name}: seventy-two blocks");
+    assert_eq!((read.len(), expected.len()), (CRITIC_TRIALS, CRITIC_TRIALS));
+    assert_eq!(
+        (moved.len(), expected_by_block.len(), strong.len()),
+        (CRITIC_BLOCKS, CRITIC_BLOCKS, CRITIC_BLOCKS - FLIP_BLOCK)
+    );
+    // Everything dumped, and the clauses, the assertion and the readings computed, before
+    // anything is held.
+    dump_earned(&name, &run, &earned);
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {compositions:?}");
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {moved:?}");
+    eprintln!("DUMP {name} PIN expected {expected_by_block:?}");
+    eprintln!("DUMP {name} PIN strong {strong:?}");
+    eprintln!("DUMP {name} PIN carry {at_carry:?}");
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    let correct = [correct_before(blocks), revised_count(blocks)];
+    let settle = settle_moves(blocks, first);
+    let settled = settles(blocks, first);
+    let need_read = need(blocks, &earned);
+    let first_rewarded = first_reward(read);
+    let first_new_read = first_new(read, first);
+    let crossed = crossed_block(&earned, first);
+    let below = below_punished(blocks, PUNISHED_BLOCKS_1024[k], first);
+    let below_zero_read = below_zero(&expected);
+    let within = falls_within(&expected);
+    let to_below = presentations_to_below(read, &expected);
+    let strong_sum = strong_total(&strong);
+    let old_falls_read = old_falls(blocks, &earned, first);
+    let fall_slows_read = fall_slows(blocks, &earned, first);
+    let wrong_below_read = wrong_below(blocks, first);
+    let punished_moves = moves_totals(&moved, 1);
+    let rewarded_moves = moves_totals(&moved, 0);
+    let new_rise_read = new_rise(blocks, first);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let derivation_read = derivation(read);
+    let sums_after = weights_by_polarity(&exec);
+    eprintln!(
+        "DUMP {name} PIN readings correct {correct:?} settle {settle:?} settled {settled} reach {reach:?} need {need_read:?} first reward {first_rewarded:?} first new {first_new_read:?} crossed {crossed:?} below punished {below:?} (predicted {BELOW_PUNISHED_PREDICTED}) below zero {below_zero_read:?} within {within:?} (predicted {EXPECTATION_FALLS_PREDICTED}) to below {to_below:?} strong total {strong_sum:?} old falls {old_falls_read:?} slows {fall_slows_read:?} wrong below {wrong_below_read:?} punished moves {punished_moves:?} rewarded moves {rewarded_moves:?} new rise {new_rise_read:?} once {once} falls {falls} derivation {derivation_read:?} sums after {sums_after:?} image crc {image_crc:#018x}"
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?} beside H-18's {:?}",
+        couplings_course(blocks),
+        couplings_course(PUNISHED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} old course {:?} gaps {:?} course {:?} image {image_sums:?} last splits {:?}",
+        old_course(blocks, first),
+        gaps(blocks, first),
+        course(image_sums.0, blocks),
+        last_splits(read)
+    );
+    // The assertion (ADR-0106), after the dump and beside the verdict: H-18's rule.
+    assert!(
+        punished_held(&reach),
+        "{name}: ADR-0106's assertion — no excitatory synapse outside the four stimulus–readout pairs moved: {reach:?}"
+    );
+    // The pinned tables, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        CRITIC_BLOCKS_1024[k],
+        CRITIC_TRACES_1024[k],
+    );
+    assert_eq!(
+        compositions.as_slice(),
+        CRITIC_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        CRITIC_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        CRITIC_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        CRITIC_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        moved.as_slice(),
+        CRITIC_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        expected_by_block.as_slice(),
+        CRITIC_EXPECTED_1024[k],
+        "{name}: the expectations per block"
+    );
+    assert_eq!(
+        strong.as_slice(),
+        CRITIC_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(at_carry, CRITIC_CARRY_1024[k]);
+    assert_eq!(correct, CORRECT_CRITIC_1024[k]);
+    assert_eq!(settle, SETTLE_MOVES_1024[k]);
+    assert_eq!(settled, SETTLED_1024[k]);
+    assert_eq!(reach, REACH_CRITIC_1024[k]);
+    assert_eq!(need_read, NEED_CRITIC_1024[k]);
+    assert_eq!(first_rewarded, FIRST_REWARD_CRITIC_1024[k]);
+    assert_eq!(first_new_read, FIRST_NEW_CRITIC_1024[k]);
+    assert_eq!(crossed, CROSSED_CRITIC_1024[k]);
+    assert_eq!(below, BELOW_PUNISHED_1024[k]);
+    assert_eq!(below_zero_read, BELOW_ZERO_1024[k]);
+    assert_eq!(within, FALLS_WITHIN_1024[k]);
+    assert_eq!(to_below, TO_BELOW_1024[k]);
+    assert_eq!(strong_sum, STRONG_TOTAL_1024[k]);
+    assert_eq!(old_falls_read, OLD_FALLS_CRITIC_1024[k]);
+    assert_eq!(fall_slows_read, FALL_SLOWS_CRITIC_1024[k]);
+    assert_eq!(wrong_below_read, WRONG_BELOW_CRITIC_1024[k]);
+    assert_eq!(punished_moves, PUNISHED_MOVES_CRITIC_1024[k]);
+    assert_eq!(rewarded_moves, REWARDED_MOVES_CRITIC_1024[k]);
+    assert_eq!(new_rise_read, NEW_RISE_CRITIC_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_CRITIC_1024[k]);
+    assert_eq!(falls, FALLS_CRITIC_1024[k]);
+    assert_eq!(derivation_read, DERIVATION_CRITIC_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (SUMS_AFTER_CRITIC_1024[k], Some(SUMS_AFTER_CRITIC_1024[k])),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-19's arm that starts from the assignment (brief 046): A onto readout 0 and B onto readout
+/// 1 for 1 536 trials, then the mirrored mapping for 3 072, the signed gate and the critic set.
+#[test]
+#[ignore]
+fn the_critic_from_the_assignment_at_1024_units_exhaustive() {
+    critic_arm(Reversal::AssignmentFirst);
+}
+
+/// H-19's arm that starts from the mirrored assignment (brief 046): A onto readout 1 and B onto
+/// readout 0 for 1 536 trials, then the assignment for 3 072, the signed gate and the critic
+/// set.
+#[test]
+#[ignore]
+fn the_critic_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    critic_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 046): the arms and the constants as ADR-0106 and
+/// ADR-0107 fixed them; the criterion's three clauses at their edges over blocks written by
+/// hand, clause 3 at one per cent and one LSB either side, and clause 3 over H-18's pinned
+/// tables; the readings' rules over blocks, trials and expectations written by hand; the
+/// harness's critic against the task's over the lattice; and a few trials over a flip on the
+/// instrument's network at 1 024 units with the inhibitory baseline and the signed gate set,
+/// the critic set beside the same trials with it unset — the oracle held at every trial inside
+/// `earned_run_predicted` in both, the task's error and expectations held to the harness's
+/// critic — where the reward delivered is the error against the expectation, each expectation
+/// moves by the error shifted by five, the two runs are one run up to the first trial whose
+/// expectation was not zero, and no excitatory synapse outside the pairs the deliveries
+/// addressed moves. No whole run, and nothing else added to the gate.
+#[test]
+fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
+    // The arms and the constants.
+    assert_eq!(
+        CRITIC_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (CRITIC_TRIALS, CRITIC_BLOCKS, FLIP, FLIP_BLOCK),
+        (4_608, 72, 1_536, 24)
+    );
+    assert_eq!(CRITIC_SHIFT, 5, "ADR-0106's shift");
+    assert_eq!(
+        CRITIC_AT_START,
+        Critic {
+            expected_q16: [0; 2],
+            shift: 5
+        },
+        "both expectations zero at the start"
+    );
+    assert_eq!(CRITIC_PREDICTED, None, "ADR-0106 predicts no verdict");
+    assert_eq!(
+        [BELOW_PUNISHED_PREDICTED, EXPECTATION_FALLS_PREDICTED],
+        [true; 2],
+        "ADR-0106's two predicted readings"
+    );
+    assert_eq!((FALLS_WITHIN, STRONG_PUNISHMENT_Q16), (64, -0x8000));
+    assert_eq!((SETTLE_BLOCKS, SETTLE_PER_CENT), (4, 100));
+    // Every constant of H-19 restated unchanged: ADR-0065's window, trial, seed and gain,
+    // ADR-0066's mark and window of the criterion, ADR-0076's stimulus and cancel, ADR-0077's
+    // settled candidate, ADR-0080's reward, ADR-0085's two baselines, ADR-0089's flip,
+    // ADR-0093's run and arms, ADR-0094's flag and H-18's one image.
+    assert_eq!(
+        (WINDOW.from, WINDOW.ticks, TRIAL_TICKS, SEED, GAIN_1024),
+        (100, 500, 1 << 14, 27, 0x0001_C000)
+    );
+    assert_eq!((REWARDED_MIN, LAST_BLOCKS, BLOCK), (80, 2, 64));
+    assert_eq!(SHAPE_F46, (2, 0x0001_4000));
+    assert_eq!(CANCEL_PICKED_1024, Some(CANCEL_AT_THE_EXTREME));
+    assert_eq!((SETTLED, BACKGROUNDS[SETTLED]), (0, 0));
+    assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
+    assert_eq!(REWARD_Q16, ONE);
+    assert_eq!((FLIP, LAST_BEFORE_FLIP), (INHIBITION_TRIALS, 1_535));
+    assert_eq!((PUNISHED_TRIALS, PUNISHED_ARMS), (4_608, REVERSAL_ARMS));
+    assert_eq!(SIGNED_GATE_BYTE, 25);
+    assert_eq!(
+        PUNISHED_IMAGE_CRC_1024, 0x3771_636d_3851_91ac,
+        "H-18's image"
+    );
+    // The criterion's clauses 1 and 2 at their edges over blocks written by hand, as H-18's.
+    let blocks_of = |correct: &[u32]| -> Vec<Block> {
+        correct
+            .iter()
+            .map(|&c| {
+                (
+                    c,
+                    0,
+                    [[0; 2]; 2],
+                    [0; 2],
+                    [0; 2],
+                    [0; 2],
+                    0,
+                    0,
+                    0,
+                    0,
+                    IMAGE_COUPLINGS_1024,
+                    (BLOCK as u32).saturating_sub(c),
+                )
+            })
+            .collect()
+    };
+    let run_of = |before: [u32; 2], after: [u32; 2]| -> Vec<Block> {
+        let mut correct = vec![BLOCK as u32; CRITIC_BLOCKS];
+        correct[FLIP_BLOCK - 2] = before[0];
+        correct[FLIP_BLOCK - 1] = before[1];
+        correct[CRITIC_BLOCKS - 2] = after[0];
+        correct[CRITIC_BLOCKS - 1] = after[1];
+        blocks_of(&correct)
+    };
+    let edge = run_of([40, 40], [40, 40]);
+    assert_eq!((correct_before(&edge), revised_count(&edge)), (80, 80));
+    assert_eq!(
+        predicted([&edge, &edge]),
+        Predicted {
+            learned: [true; 2],
+            revised: [true; 2],
+            settled: [true; 2],
+            yes: true
+        },
+        "80 and 80 in both arms, and no pair moved: yes"
+    );
+    let short_before = run_of([39, 40], [64, 64]);
+    assert_eq!(
+        predicted([&edge, &short_before]),
+        Predicted {
+            learned: [true, false],
+            revised: [true; 2],
+            settled: [true; 2],
+            yes: false
+        },
+        "79 before the flip in one arm: clause 1 fails there"
+    );
+    let short_after = run_of([64, 64], [40, 39]);
+    assert_eq!(
+        predicted([&short_after, &edge]),
+        Predicted {
+            learned: [true; 2],
+            revised: [false, true],
+            settled: [true; 2],
+            yes: false
+        },
+        "79 at the end in one arm: clause 2 fails there"
+    );
+    // Clause 3 at its edges: the four answer pairs, two per mapping, each moved over its span
+    // by as much as stays below one per cent of its image coupling, then by one LSB more, up
+    // and down, under both first mappings. Only the blocks at a span's two ends are read.
+    let settle_run = |first: bool, moves: [[i64; 2]; 2]| -> Vec<Block> {
+        let mut blocks = blocks_of(&[BLOCK as u32; CRITIC_BLOCKS]);
+        for (m, (end, mapping)) in [(FLIP_BLOCK - 1, first), (CRITIC_BLOCKS - 1, !first)]
+            .into_iter()
+            .enumerate()
+        {
+            for s in 0..2usize {
+                let answer = answer_of(s as u8, mapping);
+                blocks[end].10[s][answer] =
+                    IMAGE_COUPLINGS_1024[s][answer].saturating_add(moves[m][s]);
+            }
+        }
+        blocks
+    };
+    assert_eq!(
+        IMAGE_COUPLINGS_1024[0][0]
+            .saturating_sub(1)
+            .saturating_div(SETTLE_PER_CENT),
+        62_495,
+        "A→R0's image coupling, 6 249 552: 62 495 is below one per cent of it and 62 496 is not"
+    );
+    for first in [false, true] {
+        let largest = [first, !first].map(|mapping| {
+            [0usize, 1].map(|s| {
+                IMAGE_COUPLINGS_1024[s][answer_of(s as u8, mapping)]
+                    .saturating_sub(1)
+                    .saturating_div(SETTLE_PER_CENT)
+            })
+        });
+        let down = largest.map(|m| m.map(|d| d.saturating_neg()));
+        assert_eq!(
+            settle_moves(&settle_run(first, largest), first),
+            Some(largest)
+        );
+        assert!(
+            settles(&settle_run(first, largest), first),
+            "{first}: each pair just below one per cent, up"
+        );
+        assert!(
+            settles(&settle_run(first, down), first),
+            "{first}: and down"
+        );
+        assert!(settles(&settle_run(first, [[0; 2]; 2]), first));
+        for m in 0..2usize {
+            for s in 0..2usize {
+                let mut over = largest;
+                over[m][s] = over[m][s].saturating_add(1);
+                assert!(
+                    !settles(&settle_run(first, over), first),
+                    "{first} {m} {s}: one LSB past, up"
+                );
+                let mut under = down;
+                under[m][s] = under[m][s].saturating_sub(1);
+                assert!(
+                    !settles(&settle_run(first, under), first),
+                    "{first} {m} {s}: one LSB past, down"
+                );
+            }
+        }
+        let mut wrong = settle_run(first, largest);
+        for (end, mapping) in [(FLIP_BLOCK - 1, first), (CRITIC_BLOCKS - 1, !first)] {
+            for s in 0..2usize {
+                let other = answer_of(s as u8, !mapping);
+                wrong[end].10[s][other] = wrong[end].10[s][other].saturating_add(1_000_000);
+            }
+        }
+        assert!(
+            settles(&wrong, first),
+            "{first}: only the answer pairs are read"
+        );
+        let mut before_span = settle_run(first, largest);
+        before_span[FLIP_BLOCK - 1 - SETTLE_BLOCKS - 1].10 = [[0; 2]; 2];
+        before_span[CRITIC_BLOCKS - 1 - SETTLE_BLOCKS - 1].10 = [[0; 2]; 2];
+        assert!(
+            settles(&before_span, first),
+            "{first}: nothing before a span's first block is read"
+        );
+    }
+    let over = settle_run(false, [[62_496, 0], [0, 0]]);
+    assert_eq!(
+        predicted([&over, &settle_run(true, [[0; 2]; 2])]),
+        Predicted {
+            learned: [true; 2],
+            revised: [true; 2],
+            settled: [false, true],
+            yes: false
+        },
+        "A→R0 past one per cent in the first arm's first mapping: clause 3 fails there"
+    );
+    let all = settle_run(false, [[0; 2]; 2]);
+    assert_eq!(settle_moves(&all[..CRITIC_BLOCKS - 1], false), None);
+    assert!(
+        !settles(&all[..CRITIC_BLOCKS - 1], false),
+        "a run short of 4 608 does not settle"
+    );
+    let mut longer = all.clone();
+    longer.push(all[0]);
+    assert!(!settles(&longer, false), "nor one past it");
+    // Clause 3 over H-18's pinned tables: its answer pairs rose over both spans in both arms,
+    // by 3.7 to 9.5 per cent of the image's couplings, and it does not settle.
+    let h18: Vec<[[i64; 2]; 2]> = (0..2usize)
+        .map(|k| {
+            let first = first_mapping(PUNISHED_ARMS[k]);
+            let moves = settle_moves(PUNISHED_BLOCKS_1024[k], first).expect("seventy-two blocks");
+            [first, !first]
+                .into_iter()
+                .zip(moves)
+                .map(|(mapping, pairs)| {
+                    [0usize, 1].map(|s| {
+                        per_myriad(
+                            pairs[s],
+                            IMAGE_COUPLINGS_1024[s][answer_of(s as u8, mapping)],
+                        )
+                    })
+                })
+                .collect::<Vec<[i64; 2]>>()
+                .try_into()
+                .expect("two mappings")
+        })
+        .collect();
+    eprintln!("DUMP critic1024 H-18's clause-3 moves, per myriad of the image's: {h18:?}");
+    assert_eq!(
+        h18, H18_SETTLE_PER_MYRIAD,
+        "H-18's moves, as ADR-0106 read them"
+    );
+    for (k, &arm) in PUNISHED_ARMS.iter().enumerate() {
+        assert!(
+            !settles(PUNISHED_BLOCKS_1024[k], first_mapping(arm)),
+            "{arm:?}: H-18 does not settle"
+        );
+    }
+    assert_eq!(
+        predicted([PUNISHED_BLOCKS_1024[0], PUNISHED_BLOCKS_1024[1]]),
+        Predicted {
+            learned: [true; 2],
+            revised: [true; 2],
+            settled: [false; 2],
+            yes: false
+        },
+        "H-18's tables read under H-19's rule: learned and revised, and never settled"
+    );
+    // The readings' rules over blocks, trials and expectations written by hand, the
+    // assignment first: A's old answer is readout 0 and its new one readout 1.
+    let mut hand = blocks_of(&[BLOCK as u32; CRITIC_BLOCKS]);
+    let mut there = hand.clone();
+    hand[FLIP_BLOCK - 1].10[0][0] = IMAGE_COUPLINGS_1024[0][0].saturating_add(10);
+    there[FLIP_BLOCK - 1].10[0][0] = IMAGE_COUPLINGS_1024[0][0].saturating_add(11);
+    hand[FLIP_BLOCK - 1].10[1][1] = IMAGE_COUPLINGS_1024[1][1].saturating_add(11);
+    there[FLIP_BLOCK - 1].10[1][1] = IMAGE_COUPLINGS_1024[1][1].saturating_add(11);
+    assert_eq!(
+        below_punished(&hand, &there, false),
+        [true, false],
+        "A's pair below H-18's by one; B's level with it, which is not below"
+    );
+    assert_eq!(
+        below_punished(&hand, &there, true),
+        [false; 2],
+        "the other mapping's pairs are level"
+    );
+    assert_eq!(
+        below_punished(&hand[..FLIP_BLOCK - 1], &there, false),
+        [false; 2]
+    );
+    let mut expected_hand = vec![[ONE, ONE]; CRITIC_TRIALS];
+    assert_eq!(below_zero(&expected_hand), [None; 2]);
+    assert_eq!(falls_within(&expected_hand), [false; 2]);
+    expected_hand[FLIP - 1] = [-1, -1];
+    assert_eq!(
+        below_zero(&expected_hand),
+        [None; 2],
+        "below zero before the flip is not read"
+    );
+    expected_hand[FLIP + FALLS_WITHIN - 1][0] = -1;
+    expected_hand[FLIP + FALLS_WITHIN][1] = -1;
+    assert_eq!(
+        below_zero(&expected_hand),
+        [Some(FLIP + FALLS_WITHIN - 1), Some(FLIP + FALLS_WITHIN)]
+    );
+    assert_eq!(
+        falls_within(&expected_hand),
+        [true, false],
+        "the 1 600th trial is within 64 of the flip and the 1 601st is not"
+    );
+    expected_hand[FLIP + 3][1] = 0;
+    assert_eq!(
+        below_zero(&expected_hand)[1],
+        Some(FLIP + FALLS_WITHIN),
+        "zero is not below zero"
+    );
+    let trial = |stimulus: u8, selection: Option<u8>, signal: i32| -> EarnedTrial {
+        (
+            stimulus,
+            [0; 2],
+            selection,
+            false,
+            -ONE,
+            [[0; 2]; 2],
+            0,
+            signal,
+        )
+    };
+    let mut read_hand = vec![trial(0, Some(1), ONE); CRITIC_TRIALS];
+    for t in read_hand.iter_mut().skip(FLIP).step_by(2) {
+        t.0 = 1;
+        t.2 = Some(0);
+    }
+    assert_eq!(
+        presentations_to_below(&read_hand, &expected_hand),
+        [Some(32), Some(33)],
+        "A at the odd trials after the flip, B at the even: 32 of A up to the 1 600th, 33 of B up to the 1 601st"
+    );
+    read_hand[FLIP - 1] = trial(0, Some(0), -ONE);
+    read_hand[FLIP] = trial(0, Some(0), STRONG_PUNISHMENT_Q16);
+    read_hand[FLIP + 1] = trial(0, Some(0), STRONG_PUNISHMENT_Q16.saturating_add(1));
+    read_hand[FLIP + 2] = trial(1, Some(1), -ONE);
+    read_hand[FLIP + 3] = trial(1, Some(0), -ONE);
+    read_hand[FLIP + BLOCK] = trial(0, Some(0), i32::MIN);
+    read_hand[CRITIC_TRIALS - 1] = trial(1, Some(1), -ONE);
+    let strong = strong_punishments(&read_hand, false);
+    assert_eq!(strong.len(), CRITIC_BLOCKS - FLIP_BLOCK);
+    assert_eq!(
+        strong[0],
+        [1, 1],
+        "the 1 537th's old answer at −0.5 counted, the 1 538th's one LSB above not, B's old answer at −1.0 counted and its new answer not, the 1 536th not read"
+    );
+    assert_eq!(strong[1], [1, 0]);
+    assert_eq!(strong[CRITIC_BLOCKS - FLIP_BLOCK - 1], [0, 1]);
+    assert_eq!(strong_total(&strong), [2, 2]);
+    assert_eq!(
+        strong_punishments(&read_hand, true)[0],
+        [0, 1],
+        "under the other first mapping the old answers are the other readouts: B's readout 0 at −1.0, the 1 540th"
+    );
+    assert_eq!(
+        strong_punishments(&read_hand[..FLIP], false),
+        Vec::<[u32; 2]>::new()
+    );
+    let mut ramp: Vec<[i32; 2]> = Vec::new();
+    for t in 0..(3 * BLOCK) {
+        ramp.push([t as i32, (t as i32).saturating_neg()]);
+    }
+    assert_eq!(
+        expected_blocks(&ramp),
+        vec![[63, -63], [127, -127], [191, -191]],
+        "each block's last trial"
+    );
+    assert_eq!(
+        couplings_course(&hand[..1]),
+        vec![[[10_000; 2]; 2]],
+        "the image's couplings are ten thousand parts of themselves"
+    );
+    // The harness's critic, `div_euclid` in `i64`, against the task's, a shift saturating in
+    // `i32`, over the lattice: one rule, written twice.
+    for &expected in I32_LATTICE.iter() {
+        for &reward in I32_LATTICE.iter() {
+            for shift in [0, 1, 5, 30, 31, 32, u32::MAX] {
+                let mut c = Critic {
+                    expected_q16: [expected, 0],
+                    shift,
+                };
+                let (error, before, after) = c.predict(0, reward);
+                assert_eq!(
+                    (error, after),
+                    critic_step(expected, reward, shift),
+                    "{expected} {reward} {shift}"
+                );
+                assert_eq!(before, expected);
+            }
+        }
+    }
+    // A few trials over a flip on the instrument's network at 1 024 units, the inhibitory
+    // baseline and the signed gate set, the assignment first, flipped before the trial of index
+    // `GATE_FLIP`: the critic set, and beside it the same network with the critic unset. The
+    // oracle is held at every trial inside `earned_run_predicted` in both, and the task's error
+    // and expectations to the harness's critic in the first.
+    const GATE_FLIP: usize = GATE_TRIALS / 2;
+    let p = prior(1024);
+    let network = Config {
+        inhibitory_baseline_q16: Some(INHIBITORY_BASELINE_Q16),
+        signed_gate: true,
+        ..config(1024, 2, GATE_BASELINE_Q16)
+    };
+    let mut critic_exec = at_gain(&p, network.clone(), GAIN_1024);
+    let before = weights_of(&critic_exec);
+    let (run, _, expected) = critic_run(
+        &mut critic_exec,
+        Reversal::AssignmentFirst,
+        GATE_TRIALS,
+        GATE_FLIP,
+        Some(CRITIC_AT_START),
+        &mut |_, _| {},
+    );
+    let (blocks, trace, _, read, _) = &run;
+    assert!(blocks.is_empty(), "a few trials are no whole block");
+    assert_eq!((read.len(), expected.len()), (GATE_TRIALS, GATE_TRIALS));
+    let mut plain_exec = at_gain(&p, network, GAIN_1024);
+    let (plain_run, _) = punished_run(
+        &mut plain_exec,
+        Reversal::AssignmentFirst,
+        GATE_TRIALS,
+        GATE_FLIP,
+        &mut |_, _| {},
+    );
+    let plain = &plain_run.3;
+    eprintln!(
+        "DUMP critic1024 a few trials trace {trace:#018x} read {read:?} expected {expected:?} plain {plain:?}"
+    );
+    // By hand: the outcome's reward, ±1.0 by whether the trial was correct under the mapping in
+    // force (a tie not); the reward delivered the error against the expectation before; the
+    // expectation moved by the error shifted by five, the other stimulus's unmoved.
+    let mut held = [0i32; 2];
+    let mut first_moved: Option<usize> = None;
+    for (t, r) in read.iter().enumerate() {
+        let s = usize::from(r.0);
+        let in_force = t >= GATE_FLIP;
+        assert_eq!(
+            r.3,
+            r.2 == Some(answer_of(r.0, in_force) as u8),
+            "trial {t}: correct under the mapping in force"
+        );
+        let outcome = if r.3 { ONE } else { -ONE };
+        let error = outcome.saturating_sub(held[s]);
+        assert_eq!(r.4, error, "trial {t}: the reward delivered is the error");
+        if first_moved.is_none() && held[s] != 0 {
+            first_moved = Some(t);
+        }
+        held[s] = held[s].saturating_add(error >> CRITIC_SHIFT);
+        assert_eq!(
+            expected[t], held,
+            "trial {t}: the expectation moved by the error shifted by five"
+        );
+    }
+    let diverged = first_moved.expect("a stimulus presented twice in eight trials");
+    assert_eq!(
+        read[..diverged],
+        plain[..diverged],
+        "up to the first trial whose expectation was not zero the two runs are one run"
+    );
+    let (c, u) = (&read[diverged], &plain[diverged]);
+    assert_eq!(
+        (c.0, c.1, c.2, c.3),
+        (u.0, u.1, u.2, u.3),
+        "the trial there is the same trial"
+    );
+    assert_ne!(
+        c.4, u.4,
+        "and its reward is not: the critic's error, not the outcome's"
+    );
+    // No excitatory synapse outside the pairs the deliveries addressed moved: a delivery
+    // addresses the selected pair whatever the error, the signal it consolidates under being
+    // the error plus what the last delivery left.
+    let addressed: Vec<(usize, usize)> = read
+        .iter()
+        .take(GATE_TRIALS - 1)
+        .filter_map(|t| t.2.map(|r| (usize::from(t.0), usize::from(r))))
+        .collect();
+    let reach = reach_by_polarity(&critic_exec, &before, 1024, &addressed);
+    assert_eq!(
+        reach.excitatory.1, 0,
+        "no excitatory synapse outside the addressed pairs moved: {reach:?}"
+    );
+    assert!(reach.excitatory.0 > 0, "the addressed pairs moved");
+}
+
+/// H-18's answer pairs over clause 3's spans, as fractions of their image couplings in parts
+/// per ten thousand, truncated, per arm `[assignment first, mirrored first]`, per mapping
+/// `[first, second]`, per stimulus `[A, B]`: read from `PUNISHED_BLOCKS_1024` by
+/// `settle_moves` before any run of H-19 — 3.64 to 9.54 per cent. ADR-0106 wrote 3.7, 7.6 and
+/// 8.8 where the table reads 3.64, 7.66 and 8.85, and so a range from 3.7 (F-52).
+const H18_SETTLE_PER_MYRIAD: [[[i64; 2]; 2]; 2] =
+    [[[364, 766], [713, 885]], [[417, 954], [490, 649]]];
+
+// ----------------------------------------------------------- the measurement (brief 046)
+
+/// The two arms at 1 024 units, in `CRITIC_ARMS`'s order, each pinned from one run: the
+/// sight's blocks and the trace, the composition, the earned blocks, the moves, each
+/// stimulus's expectation and the strong punishments per block, the hash of the readings and
+/// the volley's census. Empty until the run: the constants above are committed before the
+/// first rewarded run, and the tables after it.
+const CRITIC_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const CRITIC_TRACES_1024: [u64; 2] = [0; 2];
+const CRITIC_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const CRITIC_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const CRITIC_READ_1024: [u64; 2] = [0; 2];
+const CRITIC_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+const CRITIC_MOVES_1024: [&[MovesBlock]; 2] = [&[], &[]];
+/// Each stimulus's expectation at every block's end, `[A, B]`, per arm.
+const CRITIC_EXPECTED_1024: [&[[i32; 2]]; 2] = [&[], &[]];
+/// The strong punishments of the old answer per block from the flip, `[A, B]`, per arm.
+const CRITIC_STRONG_1024: [&[[u32; 2]]; 2] = [&[], &[]];
+/// The four couplings at the end of the 1 537th trial, per arm, as read.
+const CRITIC_CARRY_1024: [[[i64; 2]; 2]; 2] = [[[0; 2]; 2]; 2];
+/// Clause 1's and clause 2's counts per arm, `[before the flip, the run's last 128]`, against
+/// `REWARDED_MIN`.
+const CORRECT_CRITIC_1024: [[u32; 2]; 2] = [[0; 2]; 2];
+/// Clause 3's moves per arm, `[first mapping, second][A, B]`, and whether each arm settled.
+const SETTLE_MOVES_1024: [Option<[[i64; 2]; 2]>; 2] = [None; 2];
+const SETTLED_1024: [bool; 2] = [false; 2];
+/// The assertion's reach per arm, as read.
+const REACH_CRITIC_1024: [Reach; 2] = [Reach {
+    excitatory: (0, 0),
+    inhibitory: (0, 0),
+}; 2];
+/// The need after the flip, per arm, H-17's reading.
+const NEED_CRITIC_1024: [Need; 2] = [Need {
+    selected_new: 0,
+    selected_old: 0,
+    ties: 0,
+    rewards: 0,
+    crossed: None,
+}; 2];
+/// The first trial after the flip that earned a reward, per arm.
+const FIRST_REWARD_CRITIC_1024: [Option<usize>; 2] = [None; 2];
+/// Per arm, per stimulus, the first trial after the flip that selected the new answer, and
+/// the block in which the selection crossed to it.
+const FIRST_NEW_CRITIC_1024: [[Option<usize>; 2]; 2] = [[None; 2]; 2];
+const CROSSED_CRITIC_1024: [[Option<usize>; 2]; 2] = [[None; 2]; 2];
+/// ADR-0106's predicted readings as read, per arm, per stimulus: (1) below H-18's at the
+/// flip; (2) the expectation below zero within 64 trials of the flip, with the trial and the
+/// presentations it took.
+const BELOW_PUNISHED_1024: [[bool; 2]; 2] = [[false; 2]; 2];
+const BELOW_ZERO_1024: [[Option<usize>; 2]; 2] = [[None; 2]; 2];
+const FALLS_WITHIN_1024: [[bool; 2]; 2] = [[false; 2]; 2];
+const TO_BELOW_1024: [[Option<u32>; 2]; 2] = [[None; 2]; 2];
+/// The strong punishments of the old answer after the flip, summed, `[A, B]`, per arm.
+const STRONG_TOTAL_1024: [[u32; 2]; 2] = [[0; 2]; 2];
+/// ADR-0093's readings (a), (b) and (c), read again under the critic, per arm, per stimulus.
+const OLD_FALLS_CRITIC_1024: [[bool; 2]; 2] = [[false; 2]; 2];
+const FALL_SLOWS_CRITIC_1024: [[bool; 2]; 2] = [[false; 2]; 2];
+const WRONG_BELOW_CRITIC_1024: [[bool; 2]; 2] = [[false; 2]; 2];
+/// Per arm, the moves after a negative delivery and after a positive one, `[before the flip,
+/// after it]`.
+const PUNISHED_MOVES_CRITIC_1024: [[Moves; 2]; 2] = [[([0; 3], [0; 2]); 2]; 2];
+const REWARDED_MOVES_CRITIC_1024: [[Moves; 2]; 2] = [[([0; 3], [0; 2]); 2]; 2];
+/// The new answer's pairs' rise from the flip to the run's end, `[A, B]`, per arm.
+const NEW_RISE_CRITIC_1024: [[i64; 2]; 2] = [[0; 2]; 2];
+/// The blocks, of seventy-two, in which the stimulus fired once, per arm.
+const ONCE_BLOCKS_CRITIC_1024: [u32; 2] = [0; 2];
+/// Whether the inhibitory sum fell in every block of the run, per arm.
+const FALLS_CRITIC_1024: [bool; 2] = [false; 2];
+/// ADR-0080's derivation as read over each arm's whole run, clause by clause.
+const DERIVATION_CRITIC_1024: [[bool; 3]; 2] = [[false; 3]; 2];
+/// The arena's sums by polarity after each arm's run, `(inhibitory, excitatory)`.
+const SUMS_AFTER_CRITIC_1024: [(i64, i64); 2] = [(0, 0); 2];
