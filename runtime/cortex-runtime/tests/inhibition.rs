@@ -59,6 +59,18 @@
 //! before the run, and the gate runs them at their edges and a few trials with the critic set
 //! beside the same trials with it unset.
 //!
+//! Brief 047 runs H-20 here as ADR-0109 wrote it: H-19's configuration, arms and critic over
+//! 7 680 trials with the mapping flipped three times, before the trials of index 1 536, 3 584
+//! and 5 632, by the task's `mirrored` and nothing else (`earned_run_scheduled` on the shared
+//! harness), from H-19's image after H-19's calibration. Two arms, each its own weekly
+//! `exhaustive` test. Every trial before the second flip is H-19's, so the first 56 blocks are
+//! held to H-19's tables table by table and the 64 after them are pinned. The criterion's two
+//! clauses (every mapping learned, every coupling at or below 1.30 of its image's at every
+//! block's end), the assertion and the readings — among them each reversal's speed — are
+//! integer rules written before the run; the gate runs them at their edges, reads what H-19's
+//! tables already decide of them, and runs a few trials over a schedule beside the same trials
+//! over one flip.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -21321,3 +21333,1585 @@ const CRITIC_1024: Predicted = Predicted {
     settled: [false, false],
     yes: false,
 };
+
+// ------------------------------------------------- written before the run (ADR-0109)
+
+/// H-20's run (ADR-0109): 7 680 trials in 120 blocks, five of H-16's runs. It does not move
+/// after a rewarded run.
+const SCHEDULE_TRIALS: usize = 5 * INHIBITION_TRIALS;
+/// The blocks of an H-20 run.
+const SCHEDULE_BLOCKS: usize = SCHEDULE_TRIALS / BLOCK;
+const _: () = assert!(SCHEDULE_TRIALS == 7_680 && SCHEDULE_BLOCKS == 120);
+
+/// Each mapping after the first (ADR-0109): 2 048 trials, thirty-two blocks, where H-19's
+/// selection passed 40 of 64 in a block 19 and 23 blocks after its flip.
+const LATER_MAPPING_TRIALS: usize = 2_048;
+const _: () = assert!(LATER_MAPPING_TRIALS == 32 * BLOCK);
+
+/// The schedule (ADR-0109): the flips before the trials of index 1 536, 3 584 and 5 632, so
+/// the mapping flips between the 1 536th trial and the 1 537th, the 3 584th and the 3 585th,
+/// and the 5 632nd and the 5 633rd. The first is H-19's `FLIP`. None moves after a rewarded
+/// run.
+const SCHEDULE_FLIPS: [usize; 3] = [
+    FLIP,
+    FLIP + LATER_MAPPING_TRIALS,
+    FLIP + 2 * LATER_MAPPING_TRIALS,
+];
+const _: () = assert!(
+    SCHEDULE_FLIPS[0] == 1_536
+        && SCHEDULE_FLIPS[1] == 3_584
+        && SCHEDULE_FLIPS[2] == 5_632
+        && SCHEDULE_FLIPS[2] + LATER_MAPPING_TRIALS == SCHEDULE_TRIALS
+);
+
+/// The four mappings' trials, `[first, end)` by index: the first 1 536 trials long, each later
+/// one 2 048.
+const SPANS: [(usize, usize); 4] = [
+    (0, SCHEDULE_FLIPS[0]),
+    (SCHEDULE_FLIPS[0], SCHEDULE_FLIPS[1]),
+    (SCHEDULE_FLIPS[1], SCHEDULE_FLIPS[2]),
+    (SCHEDULE_FLIPS[2], SCHEDULE_TRIALS),
+];
+
+/// The four mappings' blocks, `[first, end)` by index: 0 to 24, 24 to 56, 56 to 88 and 88 to
+/// 120. Every flip falls between two blocks, so every block lies under one mapping.
+const MAPPINGS: [(usize, usize); 4] = [
+    (SPANS[0].0 / BLOCK, SPANS[0].1 / BLOCK),
+    (SPANS[1].0 / BLOCK, SPANS[1].1 / BLOCK),
+    (SPANS[2].0 / BLOCK, SPANS[2].1 / BLOCK),
+    (SPANS[3].0 / BLOCK, SPANS[3].1 / BLOCK),
+];
+const _: () = assert!(
+    SCHEDULE_FLIPS[0] % BLOCK == 0
+        && SCHEDULE_FLIPS[1] % BLOCK == 0
+        && SCHEDULE_FLIPS[2] % BLOCK == 0
+        && MAPPINGS[0].1 == FLIP_BLOCK
+        && MAPPINGS[1].1 == 56
+        && MAPPINGS[2].1 == 88
+        && MAPPINGS[3].1 == SCHEDULE_BLOCKS
+);
+
+/// The blocks H-20 holds to H-19's (ADR-0109): the first 56, every trial before the second
+/// flip — the same image, critic and trials, so H-19's arm's bit for bit — and of them the 32
+/// from the first flip, from which the strong punishments are read.
+const REPLICATED_BLOCKS: usize = MAPPINGS[1].1;
+const REPLICATED_AFTER_FLIP: usize = REPLICATED_BLOCKS - FLIP_BLOCK;
+const _: () = assert!(
+    REPLICATED_BLOCKS == 56 && REPLICATED_AFTER_FLIP == 32 && REPLICATED_BLOCKS <= CRITIC_BLOCKS
+);
+
+/// The arms of H-20 (ADR-0109): H-19's two, in their order, each its own weekly test — the
+/// assignment first and the mirrored first — from H-19's image, H-18's signed image, with
+/// H-19's critic at the start; at each flip `Task::mirrored` negated and nothing else, the
+/// critic's expectations carried across it.
+const SCHEDULE_ARMS: [Reversal; 2] = CRITIC_ARMS;
+
+/// ADR-0109 writes no prediction for the verdict.
+const SCHEDULE_PREDICTED: Option<bool> = None;
+
+/// Clause 2's bound (ADR-0109): every stimulus–readout coupling at or below 1.30 of its image
+/// coupling at the end of every block, read in integers as `coupling × 100 ≤ image × 130`.
+const BOUND_PER_CENT: i64 = 130;
+
+/// ADR-0109's predicted reading (1), a Hypothesis written before the run and never asserted:
+/// after each of the three flips, each stimulus selects its new answer within `NEW_WITHIN`
+/// trials of the flip (`new_within`). After H-19's flip each did so within 3 to 68.
+const NEW_WITHIN_PREDICTED: bool = true;
+/// The trials from a flip the predicted reading (1) reads: 128, trials 1 537 to 1 664 after
+/// the first flip.
+const NEW_WITHIN: usize = 2 * BLOCK;
+const _: () = assert!(NEW_WITHIN == 128);
+
+/// ADR-0109's predicted reading (2), a Hypothesis written before the run and never asserted:
+/// each mapping's first `EDGE_BLOCKS` blocks — for the first mapping its first four, for a
+/// later one the four after its flip — hold fewer correct trials than its last four
+/// (`later_better`).
+const LATER_BETTER_PREDICTED: bool = true;
+/// The blocks at each end of a mapping the predicted reading (2) reads.
+const EDGE_BLOCKS: usize = 4;
+const _: () =
+    assert!(2 * EDGE_BLOCKS <= FLIP_BLOCK && 2 * EDGE_BLOCKS * BLOCK <= LATER_MAPPING_TRIALS);
+
+// ------------------------------------------------------------ the criterion (ADR-0109)
+
+/// Whether the mapping in force over the block of index `j`, in an arm whose first mapping is
+/// `first`, is mirrored: `first` where the schedule has flipped an even number of times by the
+/// block's first trial, the other where an odd number (`flipped_at`, the harness's rule).
+fn mirrored_at(first: bool, j: usize) -> bool {
+    first != flipped_at(&SCHEDULE_FLIPS, j.saturating_mul(BLOCK))
+}
+
+/// Clause 1's counts (ADR-0109), per mapping: the correct selections over its last
+/// `LAST_BLOCKS` blocks under it — trials 1 409 to 1 536, 3 457 to 3 584, 5 505 to 5 632 and
+/// 7 553 to 7 680 — a tie not correct, the task's count; zeros for a run of any other length.
+fn mapping_correct(blocks: &[Block]) -> [u32; 4] {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return [0; 4];
+    }
+    MAPPINGS.map(|(_, end)| blocks.get(..end).map_or(0, last_correct))
+}
+
+/// Clause 2's rule for one coupling: above 1.30 of its image coupling,
+/// `coupling × 100 > image × 130`.
+fn over_bound(coupling: i64, image: i64) -> bool {
+    coupling.saturating_mul(100) > image.saturating_mul(BOUND_PER_CENT)
+}
+
+/// Clause 2's reading (ADR-0109): the first block, by index, at whose end a stimulus–readout
+/// coupling stood above 1.30 of its image coupling, with that pair, `(block, stimulus,
+/// readout)` — the first in `ALL_PAIRS`'s order where two did at once; none when no coupling
+/// did at any block's end.
+fn first_over(blocks: &[Block]) -> Option<(usize, usize, usize)> {
+    blocks.iter().enumerate().find_map(|(j, b)| {
+        ALL_PAIRS
+            .iter()
+            .find(|&&(s, r)| over_bound(b.10[s][r], IMAGE_COUPLINGS_1024[s][r]))
+            .map(|&(s, r)| (j, s, r))
+    })
+}
+
+/// H-20's criterion (ADR-0109), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) each of the four mappings learned — `mapping_correct` at least `REWARDED_MIN` — and (2)
+/// the couplings bounded — a run of 120 blocks with no coupling past 1.30 of its image's at any
+/// block's end. `yes` is all ten. A no names the clause, the mapping and the block: under
+/// clause 1 the mappings whose `learned` is false, read over their last two blocks; under
+/// clause 2 `over`, the first block past the bound and its pair.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Scheduled {
+    learned: [[bool; 4]; 2],
+    bounded: [bool; 2],
+    over: [Option<(usize, usize, usize)>; 2],
+    yes: bool,
+}
+
+fn scheduled(arms: [&[Block]; 2]) -> Scheduled {
+    let learned = arms.map(|blocks| mapping_correct(blocks).map(|c| c >= REWARDED_MIN));
+    let over = arms.map(first_over);
+    let bounded = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && over[k].is_none());
+    Scheduled {
+        learned,
+        bounded,
+        over,
+        yes: learned.iter().flatten().chain(&bounded).all(|&c| c),
+    }
+}
+
+// --------------------------------------------------- the assertion's shape (ADR-0109)
+
+/// An arm's per-block tables, as H-19's arms pin them: the sight's blocks, the compositions,
+/// the earned blocks, the moves and each stimulus's expectation from the run's first block,
+/// and the strong punishments from the first flip's.
+#[derive(Clone, Copy)]
+struct Tables<'a> {
+    blocks: &'a [Block],
+    compositions: &'a [Composition],
+    earned: &'a [EarnedBlock],
+    moves: &'a [MovesBlock],
+    expected: &'a [[i32; 2]],
+    strong: &'a [[u32; 2]],
+}
+
+/// H-19's arm's pinned tables, by its index in `CRITIC_ARMS`.
+fn critic_tables(k: usize) -> Tables<'static> {
+    Tables {
+        blocks: CRITIC_BLOCKS_1024[k],
+        compositions: CRITIC_COMPOSITIONS_1024[k],
+        earned: CRITIC_EARNED_1024[k],
+        moves: CRITIC_MOVES_1024[k],
+        expected: CRITIC_EXPECTED_1024[k],
+        strong: CRITIC_STRONG_1024[k],
+    }
+}
+
+/// The first `rows` rows of `run` are `h19`'s, both holding at least that many.
+fn same_rows<T: PartialEq>(run: &[T], h19: &[T], rows: usize) -> bool {
+    match (run.get(..rows), h19.get(..rows)) {
+        (Some(here), Some(there)) => here == there,
+        _ => false,
+    }
+}
+
+/// ADR-0109's assertion that the first 56 blocks are H-19's arm's bit for bit, table by table
+/// in `Tables`'s order: the first `REPLICATED_BLOCKS` rows of every table read from the run's
+/// first block, and the first `REPLICATED_AFTER_FLIP` rows of the strong punishments, equal to
+/// H-19's. All six true is the assertion; a false one stops the round before any reading is
+/// taken, and is a finding. Beside it the arm holds the couplings at the end of the 1 537th
+/// trial to H-19's, and the oracle is held to the record at every trial.
+fn replication(run: Tables, h19: Tables) -> [bool; 6] {
+    [
+        same_rows(run.blocks, h19.blocks, REPLICATED_BLOCKS),
+        same_rows(run.compositions, h19.compositions, REPLICATED_BLOCKS),
+        same_rows(run.earned, h19.earned, REPLICATED_BLOCKS),
+        same_rows(run.moves, h19.moves, REPLICATED_BLOCKS),
+        same_rows(run.expected, h19.expected, REPLICATED_BLOCKS),
+        same_rows(run.strong, h19.strong, REPLICATED_AFTER_FLIP),
+    ]
+}
+
+// --------------------------------------------------- the readings' shape (ADR-0109)
+
+/// The punishment's course (ADR-0106's reading) under the schedule, per block from the first
+/// flip and per stimulus `[A, B]`: the trials that selected the stimulus's old answer — the
+/// readout that is not its answer under the mapping in force, which was its answer under the
+/// mapping before — and left a signal at or below `STRONG_PUNISHMENT_Q16`. Up to the second
+/// flip it is `strong_punishments`; the blocks before the first flip are not read.
+fn strong_scheduled(read: &[EarnedTrial], first: bool) -> Vec<[u32; 2]> {
+    let mut out = vec![[0u32; 2]; read.len().saturating_sub(FLIP).div_ceil(BLOCK)];
+    for (t, trial) in read.iter().enumerate().skip(FLIP) {
+        let old = answer_of(trial.0, first == flipped_at(&SCHEDULE_FLIPS, t)) as u8;
+        if trial.2 != Some(old) || trial.7 > STRONG_PUNISHMENT_Q16 {
+            continue;
+        }
+        if let Some(block) = t
+            .checked_sub(FLIP)
+            .and_then(|d| d.checked_div(BLOCK))
+            .and_then(|j| out.get_mut(j))
+        {
+            let into = &mut block[usize::from(trial.0)];
+            *into = into.saturating_add(1);
+        }
+    }
+    out
+}
+
+/// `strong_scheduled` summed over the blocks of the mapping each flip put in force, per flip
+/// and per stimulus; zeros for a mapping the table does not hold whole.
+fn strong_by_flip(strong: &[[u32; 2]]) -> [[u32; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        strong
+            .get(from.saturating_sub(FLIP_BLOCK)..to.saturating_sub(FLIP_BLOCK))
+            .map_or([0; 2], strong_total)
+    })
+}
+
+/// Per flip and per stimulus, the first trial from the flip, by index, that selected the
+/// stimulus's answer under the mapping the flip put in force; none when none did before the
+/// next flip or the run's end. At the first flip it is `first_new` where that came before the
+/// second.
+fn first_new_scheduled(read: &[EarnedTrial], first: bool) -> [[Option<usize>; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = SPANS[m];
+        let mirrored = mirrored_at(first, MAPPINGS[m].0);
+        [0u8, 1].map(|s| {
+            let new = answer_of(s, mirrored) as u8;
+            read.iter()
+                .enumerate()
+                .take(to)
+                .skip(from)
+                .find(|(_, t)| t.0 == s && t.2 == Some(new))
+                .map(|(k, _)| k)
+        })
+    })
+}
+
+/// ADR-0109's predicted reading (1) as a rule: per flip and per stimulus, its first new
+/// selection before the trial of index `flip + NEW_WITHIN`, among the first 128 trials from
+/// the flip.
+fn new_within(first_new: [[Option<usize>; 2]; 3]) -> [[bool; 2]; 3] {
+    [0usize, 1, 2].map(|f| {
+        let by = SCHEDULE_FLIPS[f].saturating_add(NEW_WITHIN);
+        first_new[f].map(|t| t.is_some_and(|t| t < by))
+    })
+}
+
+/// The correct trials of a run of blocks.
+fn correct_in(blocks: &[Block]) -> u32 {
+    blocks.iter().fold(0u32, |sum, b| sum.saturating_add(b.0))
+}
+
+/// Per mapping, the correct trials in its first `EDGE_BLOCKS` blocks and in its last
+/// `EDGE_BLOCKS`, `[first, last]`; zeros for a run of any other length.
+fn edges(blocks: &[Block]) -> [[u32; 2]; 4] {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return [[0; 2]; 4];
+    }
+    MAPPINGS.map(|(from, to)| {
+        [
+            blocks
+                .get(from..from.saturating_add(EDGE_BLOCKS))
+                .map_or(0, correct_in),
+            blocks
+                .get(to.saturating_sub(EDGE_BLOCKS)..to)
+                .map_or(0, correct_in),
+        ]
+    })
+}
+
+/// ADR-0109's predicted reading (2) as a rule: per mapping, fewer correct trials in its first
+/// four blocks than in its last four; false for a run of any other length.
+fn later_better(blocks: &[Block]) -> [bool; 4] {
+    edges(blocks).map(|[early, late]| early < late)
+}
+
+/// The speed of each mapping's learning (ADR-0109's reading of each reversal): per mapping, the
+/// blocks from its first to the first of its blocks with at least `CROSSING_MARK` correct, that
+/// block counted — after H-19's flip, 19 and 23; none when none of its blocks did or the run
+/// does not hold it.
+fn crossings(blocks: &[Block]) -> [Option<usize>; 4] {
+    MAPPINGS.map(|(from, to)| {
+        blocks
+            .get(from..to)
+            .and_then(|mine| mine.iter().position(|b| b.0 >= CROSSING_MARK))
+            .map(|j| j.saturating_add(1))
+    })
+}
+
+/// Per flip and per stimulus, the first block of the mapping the flip put in force, by index,
+/// in which the stimulus selected its new answer more often than its old (the earned splits):
+/// where its selection crossed; none when no block of the mapping did. At the first flip it is
+/// `crossed_block` where that crossed before the second.
+fn crossed_scheduled(earned: &[EarnedBlock], first: bool) -> [[Option<usize>; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        let mirrored = mirrored_at(first, from);
+        [0u8, 1].map(|s| {
+            let (new, old) = (answer_of(s, mirrored), answer_of(s, !mirrored));
+            earned
+                .iter()
+                .enumerate()
+                .take(to)
+                .skip(from)
+                .find(|(_, b)| b.0[usize::from(s)][new] > b.0[usize::from(s)][old])
+                .map(|(j, _)| j)
+        })
+    })
+}
+
+/// Per mapping, its trials' outcomes `[correct, wrong, tied]`: the correct selections, the
+/// selections of the other readout, and the ties; zeros for a mapping the run does not hold.
+fn tally(blocks: &[Block]) -> [[u32; 3]; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let Some(mine) = blocks.get(from..to) else {
+            return [0; 3];
+        };
+        let correct = correct_in(mine);
+        let ties = mine.iter().fold(0u32, |sum, b| sum.saturating_add(b.11));
+        let trials = (mine.len() as u32).saturating_mul(BLOCK as u32);
+        [
+            correct,
+            trials.saturating_sub(correct).saturating_sub(ties),
+            ties,
+        ]
+    })
+}
+
+/// H-19's settle measure (ADR-0106's clause 3, a reading here and no clause) over each
+/// mapping's last `SETTLE_BLOCKS` blocks, per mapping and per stimulus: the stimulus's answer
+/// pair under the mapping, its coupling at the end of the mapping's last block less its
+/// coupling `SETTLE_BLOCKS` blocks before; none for a run of any other length. Over the first
+/// mapping it is `settle_moves`'s first.
+fn settle_scheduled(blocks: &[Block], first: bool) -> Option<[[i64; 2]; 4]> {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return None;
+    }
+    Some(MAPPINGS.map(|(from, to)| {
+        let mirrored = mirrored_at(first, from);
+        let end = to.saturating_sub(1);
+        [0usize, 1].map(|s| {
+            let answer = answer_of(s as u8, mirrored);
+            let at = |j: usize| blocks.get(j).map_or(0, |b| b.10[s][answer]);
+            at(end).saturating_sub(at(end.saturating_sub(SETTLE_BLOCKS)))
+        })
+    }))
+}
+
+/// `settle_scheduled` as fractions of each answer pair's image coupling, in parts per ten
+/// thousand, truncated.
+fn settle_per_myriad(settle: Option<[[i64; 2]; 4]>, first: bool) -> Option<[[i64; 2]; 4]> {
+    settle.map(|moves| {
+        let mut out = [[0i64; 2]; 4];
+        for (m, (into, pairs)) in out.iter_mut().zip(moves.iter()).enumerate() {
+            let mirrored = mirrored_at(first, MAPPINGS[m].0);
+            for (s, (fraction, &delta)) in into.iter_mut().zip(pairs.iter()).enumerate() {
+                *fraction =
+                    per_myriad(delta, IMAGE_COUPLINGS_1024[s][answer_of(s as u8, mirrored)]);
+            }
+        }
+        out
+    })
+}
+
+/// A coupling's peak: its fraction of the image coupling in parts per ten thousand, its block,
+/// its stimulus and its readout.
+type Peak = (i64, usize, usize, usize);
+
+/// The highest coupling of each mapping (ADR-0109's reading): per mapping, the highest of the
+/// four couplings at any of its blocks' ends as a fraction of its image coupling, in parts per
+/// ten thousand, with its block and pair, `(per myriad, block, stimulus, readout)` — the first
+/// in block order and then in `ALL_PAIRS`'s where two read the same; none for a mapping of
+/// which the run holds no block.
+fn highest(blocks: &[Block]) -> [Option<Peak>; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut best: Option<Peak> = None;
+        for (j, b) in blocks.iter().enumerate().take(to).skip(from) {
+            for &(s, r) in &ALL_PAIRS {
+                let fraction = per_myriad(b.10[s][r], IMAGE_COUPLINGS_1024[s][r]);
+                if best.is_none_or(|(high, ..)| fraction > high) {
+                    best = Some((fraction, j, s, r));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// The moves after a punishment (`side` 1) or after a reward (`side` 0), summed over each
+/// mapping's blocks: how the deliveries of each sign moved the addressed synapses, mapping by
+/// mapping.
+fn moves_by_mapping(blocks: &[MovesBlock], side: usize) -> [Moves; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut out: Moves = ([0; 3], [0; 2]);
+        for block in blocks.iter().take(to).skip(from) {
+            add_moves(&mut out, &block[side]);
+        }
+        out
+    })
+}
+
+// ---------------------------------------------------------------- the run (brief 047)
+
+/// An arm's run from the signed engine under a schedule (brief 047): `earned_run_scheduled`
+/// under the answer's feedback at the gate's zero with the signed gate set, the arm's first
+/// mapping, the flips before the trials of index `flips`, the critic given, and `after` reading
+/// the executor at every trial's end — the oracle, fed the reward each trial delivered, held to
+/// the record at every trial; the task's error and expectations held to the harness's critic;
+/// every trial's contract asserted under the mapping in force at it. Over H-19's one flip it
+/// is `critic_run`'s run.
+fn schedule_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    trials: usize,
+    flips: &[usize],
+    critic: Option<Critic>,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
+    earned_run_scheduled(
+        exec,
+        Feedback::Answer,
+        first_mapping(arm),
+        1024,
+        trials,
+        GATE_BASELINE_Q16,
+        flips,
+        true,
+        critic,
+        after,
+    )
+}
+
+/// One arm of H-20 at 1 024 units (brief 047): H-19's calibration before any rewarded run
+/// (H-20's stopping rule, step 2) — the settled engine held to ADR-0077 step by step and its
+/// images, the signed image H-19's by its CRC, a frozen block from the zero image, the
+/// inhibitory baseline and the signed gate unset, held to ADR-0077's frozen run, and H-18's
+/// arm's first block from the signed image with the critic unset, held to H-18's tables; then
+/// the arm's 7 680 trials from the signed image with H-19's critic and the three flips, the
+/// couplings read at the end of the first trial under each new mapping; the run's tables
+/// dumped; the first 56 blocks held to H-19's arm's, table by table, before any reading is
+/// taken; then everything read and dumped, the clauses and the readings computed, before
+/// anything else is held; then the assertion, and the pinned tables of the 64 blocks after
+/// the second flip.
+fn schedule_arm(arm: Reversal) {
+    let k = SCHEDULE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-20");
+    let name = format!("schedule1024 {arm:?}");
+    let (zero, signed) = signed_images(&name);
+    let image_crc = crc64(&signed);
+    assert_eq!(
+        image_crc, PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-19's image, H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    {
+        let mut exec = signed_from(&signed, 1024);
+        let (run, moves) = punished_run(&mut exec, arm, BLOCK, FLIP, &mut |_, _| {});
+        let (blocks, _, trials, read, _) = &run;
+        let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+        assert_eq!(
+            blocks.as_slice(),
+            &PUNISHED_BLOCKS_1024[k][..1],
+            "{name}: H-18's first block, the critic unset"
+        );
+        assert_eq!(
+            compositions.as_slice(),
+            &PUNISHED_COMPOSITIONS_1024[k][..1],
+            "{name}: and its composition"
+        );
+        assert_eq!(
+            earned_blocks(read).as_slice(),
+            &PUNISHED_EARNED_1024[k][..1],
+            "{name}: and its earned block"
+        );
+        assert_eq!(
+            moves_blocks(read, &moves).as_slice(),
+            &PUNISHED_MOVES_1024[k][..1],
+            "{name}: and its moves"
+        );
+        eprintln!(
+            "DUMP {name} calibration holds: ADR-0077's settled candidate, H-19's image (crc {image_crc:#018x}) and H-18's first block reproduced"
+        );
+    }
+    let sets = geometry(1024, ROTATION_1024);
+    let image_sums = QUIET_1024[SETTLED].1;
+    let mut exec = signed_from(&signed, 1024);
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let image = weights_of(&exec);
+    let first = first_mapping(arm);
+    let mut at_flips: [Option<[[i64; 2]; 2]>; 3] = [None; 3];
+    let (run, moves, expected) = schedule_run(
+        &mut exec,
+        arm,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        Some(CRITIC_AT_START),
+        &mut |exec, trial| {
+            if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
+                at_flips[f] = Some(pair_couplings(exec, &sets));
+            }
+        },
+    );
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let at_flips = at_flips.map(|c| c.expect("the run reached the trial after every flip"));
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let expected_by_block = expected_blocks(&expected);
+    let strong = strong_scheduled(read, first);
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        (read.len(), expected.len()),
+        (SCHEDULE_TRIALS, SCHEDULE_TRIALS)
+    );
+    assert_eq!(
+        (
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            expected_by_block.len(),
+            strong.len()
+        ),
+        (
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS - FLIP_BLOCK
+        )
+    );
+    // The run's tables dumped, the 64 blocks after the second flip as they are pinned, before
+    // anything is held or read.
+    let after = REPLICATED_BLOCKS;
+    eprintln!("DUMP {name} PIN blocks {:?}", &blocks[after..]);
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {:?}", &compositions[after..]);
+    eprintln!("DUMP {name} PIN earned {:?}", &earned[after..]);
+    eprintln!(
+        "DUMP {name} PIN read {:#018x}",
+        earned_hash(&read[SCHEDULE_FLIPS[1]..])
+    );
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {:?}", &moved[after..]);
+    eprintln!("DUMP {name} PIN expected {:?}", &expected_by_block[after..]);
+    eprintln!(
+        "DUMP {name} PIN strong {:?}",
+        &strong[REPLICATED_AFTER_FLIP..]
+    );
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    // The first 56 blocks are H-19's arm's (ADR-0109's assertion): a divergence stops the round
+    // here, before any reading is taken, and is a finding.
+    let here = Tables {
+        blocks,
+        compositions: &compositions,
+        earned: &earned,
+        moves: &moved,
+        expected: &expected_by_block,
+        strong: &strong,
+    };
+    let replicated = replication(here, critic_tables(k));
+    eprintln!(
+        "DUMP {name} replication {replicated:?} at the 1 537th {:?}",
+        at_flips[0]
+    );
+    assert_eq!(
+        replicated, [true; 6],
+        "{name}: the first 56 blocks are H-19's arm's — its blocks, compositions, earned blocks, moves, expectations and strong punishments"
+    );
+    assert_eq!(
+        at_flips[0], CRITIC_CARRY_1024[k],
+        "{name}: and the couplings at the end of the 1 537th trial"
+    );
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    let correct = mapping_correct(blocks);
+    let over = first_over(blocks);
+    let first_new_read = first_new_scheduled(read, first);
+    let within = new_within(first_new_read);
+    let edges_read = edges(blocks);
+    let later = later_better(blocks);
+    let crossings_read = crossings(blocks);
+    let crossed = crossed_scheduled(&earned, first);
+    let tally_read = tally(blocks);
+    let settle = settle_scheduled(blocks, first);
+    let highest_read = highest(blocks);
+    let strong_sum = strong_by_flip(&strong);
+    let punished_moves = moves_by_mapping(&moved, 1);
+    let rewarded_moves = moves_by_mapping(&moved, 0);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let sums_after = weights_by_polarity(&exec);
+    eprintln!(
+        "DUMP {name} PIN readings correct {correct:?} over {over:?} reach {reach:?} first new {first_new_read:?} within {within:?} (predicted {NEW_WITHIN_PREDICTED}) edges {edges_read:?} later better {later:?} (predicted {LATER_BETTER_PREDICTED}) crossings {crossings_read:?} crossed {crossed:?} tally {tally_read:?} settle {settle:?} highest {highest_read:?} strong total {strong_sum:?} punished moves {punished_moves:?} rewarded moves {rewarded_moves:?} once {once} falls {falls} sums after {sums_after:?} image crc {image_crc:#018x}"
+    );
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {over:?} settle per myriad {:?}",
+        correct.map(|c| c >= REWARDED_MIN),
+        settle_per_myriad(settle, first)
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?}",
+        couplings_course(blocks)
+    );
+    eprintln!(
+        "DUMP {name} expectations {expected_by_block:?} signal {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} image {image_sums:?} last splits {:?}",
+        course(image_sums.0, blocks),
+        last_splits(read)
+    );
+    // The assertion (ADR-0109), after the dump and beside the verdict: H-18's rule.
+    assert!(
+        punished_held(&reach),
+        "{name}: ADR-0109's assertion — no excitatory synapse outside the four stimulus–readout pairs moved: {reach:?}"
+    );
+    // The pinned tables of the 64 blocks after the second flip, and the readings as the
+    // constants state.
+    pinned(
+        &format!("{name} sight"),
+        &blocks[after..],
+        *trace,
+        SCHEDULE_BLOCKS_1024[k],
+        SCHEDULE_TRACES_1024[k],
+    );
+    assert_eq!(
+        &compositions[after..],
+        SCHEDULE_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        &earned[after..],
+        SCHEDULE_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(&read[SCHEDULE_FLIPS[1]..]),
+        SCHEDULE_READ_1024[k],
+        "{name}: the readings from the second flip"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        SCHEDULE_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        &moved[after..],
+        SCHEDULE_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        &expected_by_block[after..],
+        SCHEDULE_EXPECTED_1024[k],
+        "{name}: the expectations per block"
+    );
+    assert_eq!(
+        &strong[REPLICATED_AFTER_FLIP..],
+        SCHEDULE_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(at_flips, SCHEDULE_AT_FLIPS_1024[k]);
+    assert_eq!(correct, CORRECT_SCHEDULE_1024[k]);
+    assert_eq!(over, OVER_1024[k]);
+    assert_eq!(reach, REACH_SCHEDULE_1024[k]);
+    assert_eq!(first_new_read, FIRST_NEW_SCHEDULE_1024[k]);
+    assert_eq!(within, NEW_WITHIN_1024[k]);
+    assert_eq!(edges_read, EDGES_1024[k]);
+    assert_eq!(later, LATER_BETTER_1024[k]);
+    assert_eq!(crossings_read, CROSSINGS_1024[k]);
+    assert_eq!(crossed, CROSSED_SCHEDULE_1024[k]);
+    assert_eq!(tally_read, TALLY_1024[k]);
+    assert_eq!(settle, SETTLE_SCHEDULE_1024[k]);
+    assert_eq!(highest_read, HIGHEST_1024[k]);
+    assert_eq!(strong_sum, STRONG_BY_FLIP_1024[k]);
+    assert_eq!(punished_moves, PUNISHED_MOVES_SCHEDULE_1024[k]);
+    assert_eq!(rewarded_moves, REWARDED_MOVES_SCHEDULE_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_SCHEDULE_1024[k]);
+    assert_eq!(falls, FALLS_SCHEDULE_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (
+            SUMS_AFTER_SCHEDULE_1024[k],
+            Some(SUMS_AFTER_SCHEDULE_1024[k])
+        ),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-20's arm that starts from the assignment (brief 047): A onto readout 0 and B onto readout
+/// 1 for 1 536 trials, then the mirrored mapping, the assignment and the mirrored mapping again
+/// for 2 048 trials each, the signed gate and the critic set.
+#[test]
+#[ignore]
+fn the_schedule_of_reversals_from_the_assignment_at_1024_units_exhaustive() {
+    schedule_arm(Reversal::AssignmentFirst);
+}
+
+/// H-20's arm that starts from the mirrored assignment (brief 047): A onto readout 1 and B onto
+/// readout 0 for 1 536 trials, then the assignment, the mirrored mapping and the assignment
+/// again for 2 048 trials each, the signed gate and the critic set.
+#[test]
+#[ignore]
+fn the_schedule_of_reversals_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    schedule_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 047): the arms and the constants as ADR-0109 fixed
+/// them, H-19's restated; the schedule's rule; the criterion's two clauses at their edges over
+/// blocks written by hand — 80 and 79 correct in each mapping's window, a coupling at 1.30 of
+/// its image's and one LSB above it — and the verdict naming the clause, the mapping and the
+/// block; the replication's rule over a hand-written prefix and over H-19's and H-18's tables;
+/// the readings' rules over blocks, trials and tables written by hand; what H-19's pinned
+/// tables already decide of H-20; and a few trials over a schedule of three flips on the
+/// instrument's network at 1 024 units with the critic set, beside the same trials over the
+/// first of those flips alone — the oracle held at every trial inside `earned_run_scheduled`
+/// in both — where every trial is judged under the mapping the schedule puts in force and the
+/// two runs are one run up to the second flip. No whole run, and nothing else added to the
+/// gate.
+#[test]
+fn a_few_trials_over_a_schedule_at_1024_units_and_the_rules_of_the_schedule() {
+    // The arms and the constants.
+    assert_eq!(
+        SCHEDULE_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (SCHEDULE_TRIALS, SCHEDULE_BLOCKS, LATER_MAPPING_TRIALS),
+        (7_680, 120, 2_048)
+    );
+    assert_eq!(SCHEDULE_FLIPS, [1_536, 3_584, 5_632]);
+    assert_eq!(
+        SPANS,
+        [(0, 1_536), (1_536, 3_584), (3_584, 5_632), (5_632, 7_680)]
+    );
+    assert_eq!(MAPPINGS, [(0, 24), (24, 56), (56, 88), (88, 120)]);
+    assert_eq!((REPLICATED_BLOCKS, REPLICATED_AFTER_FLIP), (56, 32));
+    assert_eq!(SCHEDULE_PREDICTED, None, "ADR-0109 predicts no verdict");
+    assert_eq!(BOUND_PER_CENT, 130);
+    assert_eq!((NEW_WITHIN, EDGE_BLOCKS), (128, 4));
+    assert_eq!(
+        [NEW_WITHIN_PREDICTED, LATER_BETTER_PREDICTED],
+        [true; 2],
+        "ADR-0109's two predicted readings"
+    );
+    // Every constant of H-19 restated unchanged, and with them ADR-0065's window, trial, seed
+    // and gain, ADR-0066's mark and window of the criterion, ADR-0076's stimulus and cancel,
+    // ADR-0077's settled candidate, ADR-0080's reward and mark of a crossing, ADR-0085's two
+    // baselines, ADR-0089's flip, ADR-0093's run and arms, ADR-0094's flag and H-19's image.
+    assert_eq!(
+        (CRITIC_TRIALS, CRITIC_BLOCKS, FLIP, FLIP_BLOCK),
+        (4_608, 72, 1_536, 24)
+    );
+    assert_eq!(CRITIC_ARMS, PUNISHED_ARMS);
+    assert_eq!(CRITIC_SHIFT, 5, "ADR-0106's shift");
+    assert_eq!(
+        CRITIC_AT_START,
+        Critic {
+            expected_q16: [0; 2],
+            shift: 5
+        },
+        "both expectations zero at the start"
+    );
+    assert_eq!(
+        (STRONG_PUNISHMENT_Q16, SETTLE_BLOCKS, SETTLE_PER_CENT),
+        (-0x8000, 4, 100)
+    );
+    assert_eq!(
+        (WINDOW.from, WINDOW.ticks, TRIAL_TICKS, SEED, GAIN_1024),
+        (100, 500, 1 << 14, 27, 0x0001_C000)
+    );
+    assert_eq!(
+        (REWARDED_MIN, LAST_BLOCKS, BLOCK, CROSSING_MARK),
+        (80, 2, 64, 40)
+    );
+    assert_eq!(SHAPE_F46, (2, 0x0001_4000));
+    assert_eq!(CANCEL_PICKED_1024, Some(CANCEL_AT_THE_EXTREME));
+    assert_eq!((SETTLED, BACKGROUNDS[SETTLED]), (0, 0));
+    assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
+    assert_eq!(REWARD_Q16, ONE);
+    assert_eq!((PUNISHED_TRIALS, PUNISHED_ARMS), (4_608, REVERSAL_ARMS));
+    assert_eq!(SIGNED_GATE_BYTE, 25);
+    assert_eq!(
+        PUNISHED_IMAGE_CRC_1024, 0x3771_636d_3851_91ac,
+        "H-19's image, H-18's"
+    );
+    // The schedule's rule: the mapping in force is the other than the first from the 1 537th
+    // trial to the 3 584th and from the 5 633rd to the last; under H-19's one flip, from the
+    // 1 537th on; under none, never. A block lies under the mapping of its first trial.
+    for t in 0..SCHEDULE_TRIALS {
+        assert_eq!(
+            flipped_at(&SCHEDULE_FLIPS, t),
+            (1_536..3_584).contains(&t) || (5_632..7_680).contains(&t),
+            "trial {t}"
+        );
+        assert_eq!(flipped_at(&[FLIP], t), t >= FLIP, "trial {t}: one flip");
+        assert!(!flipped_at(&[], t), "trial {t}: none");
+    }
+    for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+        assert_eq!(
+            SPANS[m],
+            (from.saturating_mul(BLOCK), to.saturating_mul(BLOCK))
+        );
+        for j in from..to {
+            assert_eq!(
+                mirrored_at(false, j),
+                m & 1 == 1,
+                "block {j}: the assignment first"
+            );
+            assert_eq!(
+                mirrored_at(true, j),
+                m & 1 == 0,
+                "block {j}: the mirrored first"
+            );
+        }
+    }
+    // The criterion's clause 1 at its edges over blocks written by hand: each mapping's last two
+    // blocks at 40 and 40, then one of them at 39, in either arm; nothing before a mapping's last
+    // two blocks is read, and a run of any other length learns nothing.
+    let blocks_of = |correct: &[u32]| -> Vec<Block> {
+        correct
+            .iter()
+            .map(|&c| {
+                (
+                    c,
+                    0,
+                    [[0; 2]; 2],
+                    [0; 2],
+                    [0; 2],
+                    [0; 2],
+                    0,
+                    0,
+                    0,
+                    0,
+                    IMAGE_COUPLINGS_1024,
+                    (BLOCK as u32).saturating_sub(c),
+                )
+            })
+            .collect()
+    };
+    let windows = |counts: [[u32; 2]; 4]| -> Vec<Block> {
+        let mut correct = vec![BLOCK as u32; SCHEDULE_BLOCKS];
+        for (&(_, end), pair) in MAPPINGS.iter().zip(counts) {
+            correct[end.saturating_sub(2)] = pair[0];
+            correct[end.saturating_sub(1)] = pair[1];
+        }
+        blocks_of(&correct)
+    };
+    let edge = windows([[40, 40]; 4]);
+    assert_eq!(mapping_correct(&edge), [80; 4]);
+    let all_yes = Scheduled {
+        learned: [[true; 4]; 2],
+        bounded: [true; 2],
+        over: [None; 2],
+        yes: true,
+    };
+    assert_eq!(
+        scheduled([&edge, &edge]),
+        all_yes,
+        "80 in every mapping of both arms, every coupling the image's: yes"
+    );
+    for m in 0..4usize {
+        for late in [false, true] {
+            let mut counts = [[40, 40]; 4];
+            counts[m][usize::from(late)] = 39;
+            let short = windows(counts);
+            let mut learned = [true; 4];
+            learned[m] = false;
+            assert_eq!(mapping_correct(&short)[m], 79);
+            assert_eq!(
+                scheduled([&short, &edge]),
+                Scheduled {
+                    learned: [learned, [true; 4]],
+                    bounded: [true; 2],
+                    over: [None; 2],
+                    yes: false
+                },
+                "79 in mapping {m} of the first arm: clause 1 fails there"
+            );
+            assert_eq!(
+                scheduled([&edge, &short]).learned,
+                [[true; 4], learned],
+                "and of the second"
+            );
+        }
+        let mut before = edge.clone();
+        before[MAPPINGS[m].1.saturating_sub(LAST_BLOCKS + 1)].0 = 0;
+        before[MAPPINGS[m].0].0 = 0;
+        assert_eq!(
+            mapping_correct(&before),
+            [80; 4],
+            "mapping {m}: nothing before its last two blocks is read"
+        );
+    }
+    assert_eq!(
+        mapping_correct(&edge[..SCHEDULE_BLOCKS - 1]),
+        [0; 4],
+        "a run short of 7 680 learns nothing"
+    );
+    let mut longer = edge.clone();
+    longer.push(edge[0]);
+    assert_eq!(mapping_correct(&longer), [0; 4], "nor one past it");
+    // Clause 2 at its edges: each pair's coupling at the largest value at or below 1.30 of its
+    // image coupling, at the end of the first block, the 56th, the 57th and the last, then one
+    // LSB above it; the first block past the bound named, and the first pair in `ALL_PAIRS`'s
+    // order at one block; no bound below; a run of any other length not bounded.
+    assert_eq!(
+        IMAGE_COUPLINGS_1024[0][0]
+            .saturating_mul(BOUND_PER_CENT)
+            .saturating_div(100),
+        8_124_417,
+        "A→R0's image coupling, 6 249 552: 8 124 417 is at or below 1.30 of it and 8 124 418 is not"
+    );
+    for &(s, r) in &ALL_PAIRS {
+        let image = IMAGE_COUPLINGS_1024[s][r];
+        let at_bound = image.saturating_mul(BOUND_PER_CENT).saturating_div(100);
+        assert!(
+            !over_bound(at_bound, image) && over_bound(at_bound.saturating_add(1), image),
+            "{s}→{r}: {at_bound}"
+        );
+        for j in [
+            0,
+            REPLICATED_BLOCKS - 1,
+            REPLICATED_BLOCKS,
+            SCHEDULE_BLOCKS - 1,
+        ] {
+            let mut run = edge.clone();
+            run[j].10[s][r] = at_bound;
+            assert_eq!(first_over(&run), None, "{s}→{r} at block {j}: at 1.30");
+            assert_eq!(scheduled([&run, &run]), all_yes);
+            run[j].10[s][r] = at_bound.saturating_add(1);
+            assert_eq!(
+                first_over(&run),
+                Some((j, s, r)),
+                "{s}→{r} at block {j}: one LSB above"
+            );
+            assert_eq!(
+                scheduled([&edge, &run]),
+                Scheduled {
+                    learned: [[true; 4]; 2],
+                    bounded: [true, false],
+                    over: [None, Some((j, s, r))],
+                    yes: false
+                },
+                "{s}→{r} at block {j}: clause 2 fails in the second arm there"
+            );
+        }
+    }
+    let mut twice = edge.clone();
+    twice[70].10[1][1] = IMAGE_COUPLINGS_1024[1][1].saturating_mul(2);
+    twice[90].10[0][0] = IMAGE_COUPLINGS_1024[0][0].saturating_mul(2);
+    twice[90].10[1][0] = IMAGE_COUPLINGS_1024[1][0].saturating_mul(2);
+    assert_eq!(
+        first_over(&twice),
+        Some((70, 1, 1)),
+        "the first block past it"
+    );
+    twice[70].10[1][1] = IMAGE_COUPLINGS_1024[1][1];
+    assert_eq!(first_over(&twice), Some((90, 0, 0)), "the first pair there");
+    let mut low = edge.clone();
+    low[100].10 = [[0; 2]; 2];
+    assert_eq!(first_over(&low), None, "clause 2 bounds from above only");
+    assert_eq!(
+        scheduled([&edge[..SCHEDULE_BLOCKS - 1], &edge]),
+        Scheduled {
+            learned: [[false; 4], [true; 4]],
+            bounded: [false, true],
+            over: [None; 2],
+            yes: false
+        },
+        "a run short of 7 680 is neither learned nor bounded"
+    );
+    // The replication's rule. On a hand-written prefix: the same 56 rows hold whatever follows
+    // them; a row changed among them breaks the table, and 55 rows are short. Over the pinned
+    // tables: H-19's arm against itself holds all six; one row changed at the 56th block — the
+    // 32nd from the flip for the strong punishments — breaks that table and only it; a row
+    // changed after them breaks nothing; and H-18's arm, the critic unset, is not H-19's.
+    let hand = blocks_of(&[BLOCK as u32; SCHEDULE_BLOCKS]);
+    let mut tail = hand.clone();
+    tail[REPLICATED_BLOCKS].0 = 0;
+    tail.truncate(REPLICATED_BLOCKS + 1);
+    assert!(same_rows(&tail, &hand, REPLICATED_BLOCKS));
+    tail[REPLICATED_BLOCKS - 1].0 = 0;
+    assert!(!same_rows(&tail, &hand, REPLICATED_BLOCKS));
+    assert!(!same_rows(
+        &hand[..REPLICATED_BLOCKS - 1],
+        &hand,
+        REPLICATED_BLOCKS
+    ));
+    assert!(!same_rows(
+        &hand,
+        &hand[..REPLICATED_BLOCKS - 1],
+        REPLICATED_BLOCKS
+    ));
+    for k in 0..2usize {
+        let h19 = critic_tables(k);
+        assert_eq!(replication(h19, h19), [true; 6], "{k}: H-19's own");
+        let mut blocks = h19.blocks.to_vec();
+        blocks[REPLICATED_BLOCKS - 1].11 ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    blocks: &blocks,
+                    ..h19
+                },
+                h19
+            ),
+            [false, true, true, true, true, true],
+            "{k}: the 56th block's ties"
+        );
+        let mut later = h19.blocks.to_vec();
+        later[REPLICATED_BLOCKS].11 ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    blocks: &later,
+                    ..h19
+                },
+                h19
+            ),
+            [true; 6],
+            "{k}: the 57th block is not read"
+        );
+        let mut expected = h19.expected.to_vec();
+        expected[REPLICATED_BLOCKS - 1][1] ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    expected: &expected,
+                    ..h19
+                },
+                h19
+            ),
+            [true, true, true, true, false, true],
+            "{k}: an expectation one LSB off"
+        );
+        let mut strong = h19.strong.to_vec();
+        strong[REPLICATED_AFTER_FLIP - 1][0] ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    strong: &strong,
+                    ..h19
+                },
+                h19
+            ),
+            [true, true, true, true, true, false],
+            "{k}: the strong punishments of the 56th block"
+        );
+        strong[REPLICATED_AFTER_FLIP - 1][0] ^= 1;
+        strong[REPLICATED_AFTER_FLIP][0] ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    strong: &strong,
+                    ..h19
+                },
+                h19
+            ),
+            [true; 6],
+            "{k}: and of the 57th, not read"
+        );
+        assert_eq!(
+            replication(
+                Tables {
+                    moves: &h19.moves[..REPLICATED_BLOCKS - 1],
+                    ..h19
+                },
+                h19
+            ),
+            [true, true, true, false, true, true],
+            "{k}: 55 blocks of moves are short"
+        );
+        let h18 = Tables {
+            blocks: PUNISHED_BLOCKS_1024[k],
+            compositions: PUNISHED_COMPOSITIONS_1024[k],
+            earned: PUNISHED_EARNED_1024[k],
+            moves: PUNISHED_MOVES_1024[k],
+            ..h19
+        };
+        assert_eq!(
+            replication(h18, h19),
+            [false, false, false, false, true, true],
+            "{k}: H-18's arm, the critic unset, is not H-19's"
+        );
+    }
+    // The readings' rules over trials written by hand, the assignment first: A's answer is
+    // readout 0 under the first and third mappings and readout 1 under the second and fourth,
+    // B's the other.
+    let trial = |stimulus: u8, selection: Option<u8>, signal: i32| -> EarnedTrial {
+        (
+            stimulus,
+            [0; 2],
+            selection,
+            false,
+            -ONE,
+            [[0; 2]; 2],
+            0,
+            signal,
+        )
+    };
+    let mut read_hand = vec![trial(0, None, -ONE); SCHEDULE_TRIALS];
+    // The strong punishments: the old answer at −0.5 or below, a tie, one LSB above −0.5, and
+    // the answer in force not counted.
+    read_hand[FLIP] = trial(0, Some(0), STRONG_PUNISHMENT_Q16);
+    read_hand[FLIP + 1] = trial(0, Some(0), STRONG_PUNISHMENT_Q16.saturating_add(1));
+    read_hand[SCHEDULE_FLIPS[1] - 1] = trial(1, Some(1), -ONE);
+    read_hand[SCHEDULE_FLIPS[1]] = trial(0, Some(0), -ONE);
+    read_hand[SCHEDULE_FLIPS[1] + 1] = trial(0, Some(1), -ONE);
+    read_hand[SCHEDULE_FLIPS[2]] = trial(1, Some(1), i32::MIN);
+    read_hand[SCHEDULE_TRIALS - 1] = trial(1, Some(0), -ONE);
+    let strong = strong_scheduled(&read_hand, false);
+    assert_eq!(strong.len(), SCHEDULE_BLOCKS - FLIP_BLOCK);
+    let counted: Vec<(usize, [u32; 2])> = strong
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, c)| *c != [0; 2])
+        .collect();
+    assert_eq!(
+        counted,
+        vec![(0, [1, 0]), (31, [0, 1]), (32, [1, 0]), (64, [0, 1])],
+        "the 1 537th's old answer at −0.5; the 3 584th's B onto its old answer; after the second flip A onto readout 1, its old answer, and not onto readout 0; after the third B onto readout 1, and not the last trial's B onto its answer"
+    );
+    assert_eq!(strong_by_flip(&strong), [[1, 1], [1, 0], [0, 1]]);
+    assert_eq!(
+        strong_scheduled(&read_hand[..SCHEDULE_FLIPS[1]], false),
+        strong_punishments(&read_hand[..SCHEDULE_FLIPS[1]], false),
+        "up to the second flip it is H-19's rule"
+    );
+    assert_eq!(
+        strong_scheduled(&read_hand, true)[0],
+        [0, 0],
+        "under the other first mapping the 1 537th's readout 0 is A's answer"
+    );
+    // The first new selections: A's new answer 127 trials after the first flip, B's 128 after
+    // it; the first new selection before a flip not counted; after the second A's at the flip
+    // and B's never, and B's readout 0, its old answer there, not a new one; after the third A's
+    // 5 trials in and B's at the last trial.
+    let mut news = vec![trial(0, None, 0); SCHEDULE_TRIALS];
+    news[FLIP - 1] = trial(0, Some(1), 0);
+    news[FLIP + NEW_WITHIN - 1] = trial(0, Some(1), 0);
+    news[FLIP + NEW_WITHIN] = trial(1, Some(0), 0);
+    news[SCHEDULE_FLIPS[1]] = trial(0, Some(0), 0);
+    news[SCHEDULE_FLIPS[1] + 2] = trial(1, Some(0), 0);
+    news[SCHEDULE_FLIPS[2] + 5] = trial(0, Some(1), 0);
+    news[SCHEDULE_TRIALS - 1] = trial(1, Some(0), 0);
+    let first_new_hand = first_new_scheduled(&news, false);
+    assert_eq!(
+        first_new_hand,
+        [
+            [Some(FLIP + NEW_WITHIN - 1), Some(FLIP + NEW_WITHIN)],
+            [Some(SCHEDULE_FLIPS[1]), None],
+            [Some(SCHEDULE_FLIPS[2] + 5), Some(SCHEDULE_TRIALS - 1)],
+        ]
+    );
+    assert_eq!(
+        new_within(first_new_hand),
+        [[true, false], [true, false], [true, false]],
+        "the trial of index 1 663 is within 128 of the first flip and the one of index 1 664 is not"
+    );
+    assert_eq!(
+        first_new_scheduled(&news, false)[0],
+        first_new(&news[..SCHEDULE_FLIPS[1]], false),
+        "at the first flip it is H-18's rule up to the second"
+    );
+    // The edges, the crossings, the tally, the settle measure and the highest coupling over
+    // blocks written by hand.
+    let mut graded = edge.clone();
+    for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+        for block in &mut graded[from..to] {
+            block.0 = 30;
+            block.11 = 2;
+        }
+        graded[from].0 = 20;
+        graded[to.saturating_sub(1)].0 = 20u32.saturating_add(u32::try_from(m).unwrap());
+    }
+    assert_eq!(
+        edges(&graded),
+        [[110, 110], [110, 111], [110, 112], [110, 113]]
+    );
+    assert_eq!(
+        later_better(&graded),
+        [false, true, true, true],
+        "equal is not fewer"
+    );
+    assert_eq!(later_better(&graded[..SCHEDULE_BLOCKS - 1]), [false; 4]);
+    assert_eq!(crossings(&graded), [None; 4]);
+    graded[MAPPINGS[1].0 + 18].0 = CROSSING_MARK;
+    graded[MAPPINGS[3].0 + 22].0 = CROSSING_MARK - 1;
+    graded[MAPPINGS[3].0 + 23].0 = CROSSING_MARK;
+    assert_eq!(
+        crossings(&graded),
+        [None, Some(19), None, Some(24)],
+        "40 in a mapping's 19th block: 19 blocks; 39 is not 40"
+    );
+    assert_eq!(
+        crossings(&graded[..MAPPINGS[1].1]),
+        [None, Some(19), None, None],
+        "a mapping the run does not hold crosses nowhere"
+    );
+    assert_eq!(
+        tally(&graded)[1],
+        [951, 1_033, 64],
+        "the second mapping: 30 a block, 20 in its first, 21 in its last and 40 in its 19th, two ties a block"
+    );
+    let mut settling = edge.clone();
+    for (m, &(_, to)) in MAPPINGS.iter().enumerate() {
+        let mirrored = mirrored_at(false, MAPPINGS[m].0);
+        for (s, image) in IMAGE_COUPLINGS_1024.iter().enumerate() {
+            let answer = answer_of(s as u8, mirrored);
+            settling[to.saturating_sub(1)].10[s][answer] =
+                image[answer].saturating_add(i64::try_from(m).unwrap().saturating_add(1));
+            settling[to.saturating_sub(1 + SETTLE_BLOCKS)].10[s][answer] =
+                image[answer].saturating_sub(10);
+            settling[to.saturating_sub(2 + SETTLE_BLOCKS)].10[s][answer] = 0;
+        }
+    }
+    assert_eq!(
+        settle_scheduled(&settling, false),
+        Some([[11; 2], [12; 2], [13; 2], [14; 2]]),
+        "the answer pair's coupling at a mapping's end less four blocks before; nothing before read"
+    );
+    assert_eq!(
+        settle_scheduled(&settling, true),
+        Some([[0; 2]; 4]),
+        "the other mapping's pairs are the image's"
+    );
+    assert_eq!(
+        settle_scheduled(&settling[..SCHEDULE_BLOCKS - 1], false),
+        None
+    );
+    let mut h19_padded = CRITIC_BLOCKS_1024[0].to_vec();
+    h19_padded.resize(SCHEDULE_BLOCKS, edge[0]);
+    assert_eq!(
+        settle_scheduled(&h19_padded, false).map(|m| [m[0]]),
+        SETTLE_MOVES_1024[0].map(|m| [m[0]]),
+        "over the first mapping it is H-19's clause 3"
+    );
+    let mut peaks = edge.clone();
+    peaks[3].10[1][0] = IMAGE_COUPLINGS_1024[1][0].saturating_mul(2);
+    peaks[30].10[0][1] = IMAGE_COUPLINGS_1024[0][1].saturating_mul(3);
+    peaks[31].10[1][1] = IMAGE_COUPLINGS_1024[1][1].saturating_mul(3);
+    assert_eq!(
+        highest(&peaks),
+        [
+            Some((20_000, 3, 1, 0)),
+            Some((30_000, 30, 0, 1)),
+            Some((10_000, MAPPINGS[2].0, 0, 0)),
+            Some((10_000, MAPPINGS[3].0, 0, 0)),
+        ],
+        "the highest, the first where two read the same"
+    );
+    assert_eq!(highest(&peaks[..MAPPINGS[1].1])[2], None);
+    // The crossings per stimulus and the moves per mapping over earned blocks written by hand.
+    let empty: EarnedBlock = ([[0; 3]; 2], 0, [[0; 2]; 2], 0, 0);
+    let mut earned_hand = vec![empty; SCHEDULE_BLOCKS];
+    earned_hand[30].0[0] = [10, 11, 0];
+    earned_hand[40].0[1] = [12, 11, 0];
+    earned_hand[60].0[0] = [11, 11, 0];
+    earned_hand[61].0[0] = [12, 11, 0];
+    earned_hand[100].0[1] = [5, 6, 3];
+    assert_eq!(
+        crossed_scheduled(&earned_hand, false),
+        [[Some(30), Some(40)], [Some(61), None], [None, None]],
+        "after the first flip A onto readout 1, B onto readout 0; after the second A onto readout 0, level not crossed; after the third B's new answer is readout 0"
+    );
+    assert_eq!(
+        crossed_scheduled(&earned_hand, false)[0],
+        crossed_block(&earned_hand[..REPLICATED_BLOCKS], false),
+        "at the first flip it is H-18's rule up to the second"
+    );
+    let moved_hand: Vec<MovesBlock> = (0..SCHEDULE_BLOCKS)
+        .map(|j| {
+            let one = u32::try_from(j).unwrap();
+            [([one, 0, 0], [1, 0]), ([0, one, 0], [0, -1])]
+        })
+        .collect();
+    let rewarded = moves_by_mapping(&moved_hand, 0);
+    let punished = moves_by_mapping(&moved_hand, 1);
+    assert_eq!(
+        rewarded.map(|m| (m.0[0], m.1[0])),
+        [(276, 24), (1_264, 32), (2_288, 32), (3_312, 32)]
+    );
+    assert_eq!(
+        punished.map(|m| (m.0[1], m.1[1])),
+        [(276, -24), (1_264, -32), (2_288, -32), (3_312, -32)]
+    );
+    // What H-19's pinned tables already decide of H-20, since its first 56 blocks are H-19's:
+    // clause 1 over the first two mappings, clause 2 over the first 56 blocks, the predicted
+    // reading (1) at the first flip and (2) over the first two mappings, the first two
+    // mappings' speeds, errors and ties, settle measures and highest couplings. The third and
+    // the fourth mappings are the run's.
+    for k in 0..2usize {
+        let first = first_mapping(CRITIC_ARMS[k]);
+        let h19 = &CRITIC_BLOCKS_1024[k][..REPLICATED_BLOCKS];
+        let mut padded = h19.to_vec();
+        padded.resize(SCHEDULE_BLOCKS, edge[0]);
+        let decided = (
+            [mapping_correct(&padded)[0], mapping_correct(&padded)[1]],
+            first_over(h19),
+            [edges(&padded)[0], edges(&padded)[1]],
+            [crossings(h19)[0], crossings(h19)[1]],
+            [tally(h19)[0], tally(h19)[1]],
+            settle_scheduled(&padded, first).map(|m| [m[0], m[1]]),
+            [highest(h19)[0], highest(h19)[1]],
+        );
+        eprintln!("DUMP schedule1024 decided by H-19's tables, arm {k}: {decided:?}");
+        assert_eq!(decided, H19_DECIDES_1024[k], "arm {k}");
+        assert_eq!(
+            [mapping_correct(&padded)[0], mapping_correct(&padded)[1]],
+            [CORRECT_CRITIC_1024[k][0], last_correct(h19)],
+            "arm {k}: clause 1's first count is H-19's"
+        );
+        let within: Vec<bool> = FIRST_NEW_CRITIC_1024[k]
+            .iter()
+            .map(|t| t.is_some_and(|t| t < FLIP + NEW_WITHIN))
+            .collect();
+        assert_eq!(
+            within, [true; 2],
+            "arm {k}: the first flip's new answers within 128"
+        );
+        assert_eq!(
+            crossed_scheduled(CRITIC_EARNED_1024[k], first)[0],
+            CROSSED_CRITIC_1024[k],
+            "arm {k}: the first flip's crossings are H-19's"
+        );
+        assert_eq!(
+            strong_by_flip(CRITIC_STRONG_1024[k])[0],
+            strong_total(&CRITIC_STRONG_1024[k][..REPLICATED_AFTER_FLIP])
+        );
+    }
+    // A few trials over a schedule on the instrument's network at 1 024 units, the inhibitory
+    // baseline, the signed gate and the critic set, the assignment first: flips before the
+    // trials of index 2, 4 and 6, and beside it the same network over the flip before the
+    // trial of index 2 alone. The oracle is held at every trial inside `earned_run_scheduled`
+    // in both, and the task's error and expectations to the harness's critic.
+    const GATE_SCHEDULE: [usize; 3] = [2, 4, 6];
+    let p = prior(1024);
+    let network = Config {
+        inhibitory_baseline_q16: Some(INHIBITORY_BASELINE_Q16),
+        signed_gate: true,
+        ..config(1024, 2, GATE_BASELINE_Q16)
+    };
+    let mut exec = at_gain(&p, network.clone(), GAIN_1024);
+    let before = weights_of(&exec);
+    let (run, _, expected) = schedule_run(
+        &mut exec,
+        Reversal::AssignmentFirst,
+        GATE_TRIALS,
+        &GATE_SCHEDULE,
+        Some(CRITIC_AT_START),
+        &mut |_, _| {},
+    );
+    let (blocks, trace, _, read, _) = &run;
+    assert!(blocks.is_empty(), "a few trials are no whole block");
+    assert_eq!((read.len(), expected.len()), (GATE_TRIALS, GATE_TRIALS));
+    let mut once_exec = at_gain(&p, network, GAIN_1024);
+    let (once_run, _, once_expected) = critic_run(
+        &mut once_exec,
+        Reversal::AssignmentFirst,
+        GATE_TRIALS,
+        GATE_SCHEDULE[0],
+        Some(CRITIC_AT_START),
+        &mut |_, _| {},
+    );
+    let once = &once_run.3;
+    eprintln!(
+        "DUMP schedule1024 a few trials trace {trace:#018x} read {read:?} expected {expected:?} once {once:?} once expected {once_expected:?}"
+    );
+    // By hand: the mapping in force the assignment's over the trials of index 0, 1, 4 and 5 and
+    // the mirrored one's over 2, 3, 6 and 7; the reward delivered the error against the
+    // expectation before; the expectation moved by the error shifted by five, the other
+    // stimulus's unmoved and carried across every flip.
+    let mut held = [0i32; 2];
+    for (t, r) in read.iter().enumerate() {
+        let s = usize::from(r.0);
+        let in_force = matches!(t, 2 | 3 | 6 | 7);
+        assert_eq!(flipped_at(&GATE_SCHEDULE, t), in_force, "trial {t}");
+        assert_eq!(
+            r.3,
+            r.2 == Some(answer_of(r.0, in_force) as u8),
+            "trial {t}: correct under the mapping in force"
+        );
+        let outcome = if r.3 { ONE } else { -ONE };
+        let error = outcome.saturating_sub(held[s]);
+        assert_eq!(r.4, error, "trial {t}: the reward delivered is the error");
+        held[s] = held[s].saturating_add(error >> CRITIC_SHIFT);
+        assert_eq!(
+            expected[t], held,
+            "trial {t}: the expectation moved by the error shifted by five"
+        );
+    }
+    let second = GATE_SCHEDULE[1];
+    assert_eq!(
+        (&read[..second], &expected[..second]),
+        (&once[..second], &once_expected[..second]),
+        "up to the second flip the two runs are one run"
+    );
+    let (c, u) = (&read[second], &once[second]);
+    assert_eq!(
+        (c.0, c.1, c.2),
+        (u.0, u.1, u.2),
+        "the trial there is the same trial"
+    );
+    assert_eq!(
+        c.3,
+        c.2 == Some(answer_of(c.0, false) as u8),
+        "judged under the assignment again"
+    );
+    assert_eq!(
+        u.3,
+        u.2 == Some(answer_of(u.0, true) as u8),
+        "where the one flip judges it under the mirrored mapping"
+    );
+    // No excitatory synapse outside the pairs the deliveries addressed moved.
+    let addressed: Vec<(usize, usize)> = read
+        .iter()
+        .take(GATE_TRIALS - 1)
+        .filter_map(|t| t.2.map(|r| (usize::from(t.0), usize::from(r))))
+        .collect();
+    let reach = reach_by_polarity(&exec, &before, 1024, &addressed);
+    assert_eq!(
+        reach.excitatory.1, 0,
+        "no excitatory synapse outside the addressed pairs moved: {reach:?}"
+    );
+    assert!(reach.excitatory.0 > 0, "the addressed pairs moved");
+}
+
+/// What H-19's pinned tables decide of H-20 before any run, per arm, read by H-20's rules over
+/// H-19's first 56 blocks: clause 1's counts over the first two mappings; the first block past
+/// 1.30 among the 56 (none); the predicted reading (2)'s edges over the first two mappings; the
+/// first two mappings' speeds, `[correct, wrong, tied]` and settle measures; and their highest
+/// couplings — H-19's 1.145 and 1.165.
+type Decided = (
+    [u32; 2],
+    Option<(usize, usize, usize)>,
+    [[u32; 2]; 2],
+    [Option<usize>; 2],
+    [[u32; 3]; 2],
+    Option<[[i64; 2]; 2]>,
+    [Option<Peak>; 2],
+);
+const H19_DECIDES_1024: [Decided; 2] = [
+    (
+        [122, 121],
+        None,
+        [[137, 245], [21, 227]],
+        [Some(6), Some(19)],
+        [[1256, 219, 61], [1027, 898, 123]],
+        Some([[76203, 20279], [167170, 122090]]),
+        [Some((11454, 23, 0, 0)), Some((11334, 55, 0, 1))],
+    ),
+    (
+        [125, 115],
+        None,
+        [[144, 245], [18, 229]],
+        [Some(3), Some(23)],
+        [[1266, 205, 65], [875, 1071, 102]],
+        Some([[-5555, 123439], [173546, 120882]]),
+        [Some((11652, 22, 1, 0)), Some((11485, 55, 1, 1))],
+    ),
+];
+
+// ----------------------------------------------------------- the measurement (brief 047)
+
+/// The two arms at 1 024 units, in `SCHEDULE_ARMS`'s order, each pinned from one run: of the 64
+/// blocks after the second flip — the 56 before it are H-19's and held to its tables — the
+/// sight's blocks, the composition, the earned blocks, the moves, each stimulus's expectation
+/// and the strong punishments; the whole run's trace, the hash of the readings from the second
+/// flip on and the volley's census over the whole run. Empty until the run: the constants
+/// above are committed before the first rewarded run, and the tables after it.
+const SCHEDULE_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const SCHEDULE_TRACES_1024: [u64; 2] = [0; 2];
+const SCHEDULE_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const SCHEDULE_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const SCHEDULE_READ_1024: [u64; 2] = [0; 2];
+const SCHEDULE_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+const SCHEDULE_MOVES_1024: [&[MovesBlock]; 2] = [&[], &[]];
+/// Each stimulus's expectation at every block's end after the second flip, `[A, B]`, per arm.
+const SCHEDULE_EXPECTED_1024: [&[[i32; 2]]; 2] = [&[], &[]];
+/// The strong punishments of the old answer per block after the second flip, `[A, B]`, per
+/// arm.
+const SCHEDULE_STRONG_1024: [&[[u32; 2]]; 2] = [&[], &[]];
+/// The four couplings at the end of the first trial under each new mapping, per arm, as read;
+/// the first H-19's `CRITIC_CARRY_1024`.
+const SCHEDULE_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [[[[0; 2]; 2]; 3]; 2];
+/// Clause 1's counts per arm and per mapping, against `REWARDED_MIN`, and clause 2's first
+/// block past the bound with its pair, per arm.
+const CORRECT_SCHEDULE_1024: [[u32; 4]; 2] = [[0; 4]; 2];
+const OVER_1024: [Option<(usize, usize, usize)>; 2] = [None; 2];
+/// The assertion's reach per arm, as read.
+const REACH_SCHEDULE_1024: [Reach; 2] = [Reach {
+    excitatory: (0, 0),
+    inhibitory: (0, 0),
+}; 2];
+/// ADR-0109's predicted readings as read, per arm: (1) per flip and per stimulus the first new
+/// selection and whether it came within 128 trials of the flip; (2) per mapping the correct
+/// trials of its first four blocks and its last four, and whether the first were fewer.
+const FIRST_NEW_SCHEDULE_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const NEW_WITHIN_1024: [[[bool; 2]; 3]; 2] = [[[false; 2]; 3]; 2];
+const EDGES_1024: [[[u32; 2]; 4]; 2] = [[[0; 2]; 4]; 2];
+const LATER_BETTER_1024: [[bool; 4]; 2] = [[false; 4]; 2];
+/// Per arm, each mapping's speed in blocks to 40 of 64, and per flip and per stimulus the block
+/// in which the selection crossed to the new answer.
+const CROSSINGS_1024: [[Option<usize>; 4]; 2] = [[None; 4]; 2];
+const CROSSED_SCHEDULE_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+/// Per arm and per mapping, `[correct, wrong, tied]`.
+const TALLY_1024: [[[u32; 3]; 4]; 2] = [[[0; 3]; 4]; 2];
+/// Per arm, H-19's settle measure over each mapping's last 256 trials, `[mapping][A, B]`.
+const SETTLE_SCHEDULE_1024: [Option<[[i64; 2]; 4]>; 2] = [None; 2];
+/// Per arm and per mapping, the highest coupling as a fraction of its image's in parts per ten
+/// thousand, with its block and pair.
+const HIGHEST_1024: [[Option<Peak>; 4]; 2] = [[None; 4]; 2];
+/// Per arm, the strong punishments summed over each later mapping, `[flip][A, B]`.
+const STRONG_BY_FLIP_1024: [[[u32; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+/// Per arm and per mapping, the moves after a negative delivery and after a positive one.
+const PUNISHED_MOVES_SCHEDULE_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const REWARDED_MOVES_SCHEDULE_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+/// The blocks, of 120, in which the stimulus fired once, per arm.
+const ONCE_BLOCKS_SCHEDULE_1024: [u32; 2] = [0; 2];
+/// Whether the inhibitory sum fell in every block of the run, per arm.
+const FALLS_SCHEDULE_1024: [bool; 2] = [false; 2];
+/// The arena's sums by polarity after each arm's run, `(inhibitory, excitatory)`.
+const SUMS_AFTER_SCHEDULE_1024: [(i64, i64); 2] = [(0, 0); 2];
