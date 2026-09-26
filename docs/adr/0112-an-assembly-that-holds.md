@@ -1,0 +1,176 @@
+---
+status: accepted
+date: 2026-09-27
+depends-on: ADR-0111
+decision-makers: VirtualCortex maintainers
+---
+
+# ADR-0112: An assembly that holds — ADR-0111's first round, measured and nothing changed: the grid, the protocol, the kick, the release and the measures, written before any run
+
+## Context and Problem Statement
+
+[ADR-0111](0111-a-rule-held-by-the-network.md) took a representation of the rule in force as the learning line's next question and staged it in three rounds. Its first round, brief 048, asks whether the substrate exists: **can an assembly of the reference network hold its activity once kicked, stay quiet when not kicked, and let go on a signal?** Nothing of the engine changes. On [ADR-0077](0077-the-background-side.md)'s settled image, with every weight frozen, a grid of assemblies is wired as the test's own network, and each cell is measured by rules written before any run.
+
+Four facts of the tree shaped how the round is built. Each was read before anything was written (principle 2).
+
+1. **No assembly of sixteen units or more can be disjoint from the task's sets at 1 024 units.** Brief 048 asks for assemblies disjoint from the task's stimulus and readout sets, so that a later round can put the task and the context in one network. The task's geometry (`geometry` in `tests/instrument/harness.rs`, [ADR-0065](0065-the-instrument-recalibrated.md)) reads the ring in periods of twenty from rotation 0, and every place of a period is in exactly one set: stimulus A the first place, B the twelfth, readout 0 nine odd places and readout 1 nine even places. Fifty-one whole periods cover units 0 to 1 019, so only units 1 020 to 1 023 are in no set. The brief's disjointness names assemblies the network does not have room for. This is finding **F-54** (whitepaper §11).
+2. **The prior's blocks are full, and the loader sizes the arena from the image.** ADR-0044's prior gives each unit 32 synapses in eight blocks and `blocks_for` sizes the arena at exactly that (`synthesis.rs`). `Image::decode` takes the block count from the image's synapse section, not from the configuration. So an assembly's synapses need blocks beyond the prior's, and the settled image has none to give.
+3. **ADR-0076's stimulus fires each unit once only because its cancel then holds the unit below rest.** The cancel lands on ticks 202 to 210, as each unit's refractory window ends. It takes the basal compartment to about −187 and keeps the soma below the drive's mean standing for about 3 500 ticks. Every recurrent message of an assembly lands either in the refractory window, which drops it (ADR-0076), or on a unit the cancel is holding down. Kicked that way, an assembly could not hold by construction. The cancel is a release, and the brief names it as one.
+4. **Short-term plasticity is the presynaptic unit's.** `stp_u_rel` and `stp_r_ves` are fields of `DendriticSuperNeuron`, stepped once per spike of the unit (`step_stp`, `executor.rs`'s turn). Every synapse of a member releases with the member's one pair `(u, R)`, the prior's synapses and the assembly's alike. "The assembly's short-term state" is the members' pairs.
+
+## Decision Drivers
+
+- Brief 048's standing directives: no rule of the engine changes; every weight is frozen and shown unchanged at each run's end; the grid, the measures and their thresholds are written before any run and do not move after one; the rules' arithmetic is written first; no float, oracles included; every loop ends by construction; the engine is read before a description of it is trusted; no pinned number moves.
+- Latest ≠ Newest: no dependency, no tool, no rule. The assembly is test wiring: blocks appended to an image the harness already writes and reads, chained by the core's own `link` and `set_synapse`.
+- [ADR-0061](0061-the-learning-runs-leave-the-gate.md): the runtime's gate grows by at most one test, and the runs are weekly `exhaustive` tests.
+- The brief's empowerment: where the assemblies sit and how their synapses are chained, the delays, the epochs' number and windows within the measures' definitions, the release, a widened grid, where the tests live, one ADR or two.
+
+## Considered Options
+
+1. **Where the assembly's synapses live**:
+   - (a) blocks appended to the settled image's synapse section, the image laid out again and decoded, each member's new blocks chained after its own;
+   - (b) a fresh executor with a larger arena, synthesized from the prior and led in again, whose lead-in would have to be held to ADR-0077's tables with an arena of another size;
+   - (c) the prior's own slots, overwritten.
+2. **The kick**:
+   - (a) ADR-0076's pick, F-46's drive with its cancel;
+   - (b) F-46's drive alone;
+   - (c) one message;
+   - (d) a ramp derived from the membrane rule.
+3. **The release**:
+   - (a) ADR-0076's cancel as built, into the members;
+   - (b) that cancel spread over the refractory window;
+   - (c) a volley into nearby inhibitory units.
+4. **Where the members sit**:
+   - (a) contiguous;
+   - (b) two places of each period, beyond the prior's window of one another.
+5. **The background the thresholds read against**:
+   - (a) the members' rate on the same image unwired, under the same drive over the same ticks, with no kick;
+   - (b) each cell's own lead-in.
+6. **Where the tests live**: a binary of their own on the shared harness, or `instrument.rs`.
+7. **One ADR or two.**
+
+## Decision Outcome
+
+Options 1(a), 2(d), 3(a), 4(b), 5(a), a binary of its own (`runtime/cortex-runtime/tests/assembly.rs`, the harness shared as one module, [ADR-0083](0083-plasticity-everywhere-measured.md)), and one ADR. Everything below was committed before any run of the grid.
+
+### The grid
+
+- **Sizes**: 16, 32 and 64 excitatory units, the brief's. The grid is not widened. The arithmetic below says why a size of 128 would ask nothing new: at 64 units a member already receives the most synapses a member sends, 32.
+- **Weights**: 0x2000, 0x4000, 0x6000 and `i16::MAX` in Q1.15. That is a quarter, a half and three quarters of the range, and its top, one LSB below 1.0. The prior's excitatory weights are 6 000 to 12 000.
+- **Placement**: places 5 and 16 of each period of twenty, from the ring's start, over the first `size / 2` periods (`PLACES`, `assembly`). Both places are excitatory by the prior's rule, since every fifth unit from the fifth is inhibitory (places 4, 9, 14 and 19). Neither is a stimulus place (0 and 11). They are eleven and nine places apart, beyond the prior's window of eight, so no local synapse of the prior joins two members. Place 5 is readout 0's and place 16 readout 1's, so F-54's forced overlap with the readouts is split evenly between them. The sizes nest: the members of 16 are the first sixteen of 32's, and those of 32 the first 32 of 64's. The members of 64 run from unit 5 to unit 636.
+- **Wiring** (`wire`): member $k$ sends one basal synapse at the cell's weight to each of the next $\min(\text{size} - 1, 32)$ members in the assembly's order, wrapping. That is 15 targets at 16 units, 31 at 32, and 32 of 63 at 64. Every member receives as many as it sends. The delays are drawn from the prior's local band, 100 to 300 ticks inclusive, by `mix64` of seed 48, the source and the target (`delay_of`).
+- **Chaining** (`grown`): the settled image with `size × ⌈fan / 4⌉` empty blocks appended to its synapse section — 64, 256 and 512 — laid out again as `Image::encode` lays an image out, with a new header seal, directory and section CRCs. Member $k$'s blocks follow in order, the first linked after the last block of its own chain. Every record is the image's. The gate shows that the grown image unwired runs as the image bit for bit, and each control run shows it on the settled network: its lead-in and first epoch are the background's.
+
+### The protocol
+
+Each run starts from the frozen image decoded at its written tick, so every run of the round meets the same drive at the same ticks. It reads ADR-0044's drive the whole time, the gain 1.75 carried in the image and the controller off.
+
+- **A lead-in** of one epoch, unkicked, read as the run's first row.
+- **Twenty-four epochs** of $2^{14}$ ticks, one trial's length: an unkicked, a kicked and a released epoch, eight times over (`ORDER`). So every unkicked epoch after the first follows a release, and every kicked one follows an unkicked one.
+- **Windows**: each epoch is read in eight windows of 2 048 ticks. The last half, windows 4 to 7, is the hold's window and the tail's.
+- **The kick** (`KICK_MESSAGE_Q16`, `KICK_TICKS`): one basal message of 1/64 into every member before each of the epoch's first 160 ticks, a ramp. A member fires when its soma crosses the threshold, then drops the rest of the ramp in its refractory window. So it fires once whatever its standing potential, and is left holding about what firing takes. The message is derived by a rule (`kick_rule`): the first of 1/256, 1/128, 1/64, 1/32 and 1/16 under which the oracle fires a unit exactly once within the span and not again within a pair window after it, from every standing of `KICK_STANDINGS` under the drive's mean input. The standings are rest, the drive's mean standing, ADR-0076's extreme, and one and two thresholds below rest. 1/128 leaves the two lowest unfired within the span, and 1/64 passes. The ramp stops forty ticks before the span's end, five of the soma's time constants of eight ticks, so that a unit the last message brings to the threshold fires inside the span. The span is the epoch's ticks 1 to 200 (`KICK_SPAN`), in which no unit fires twice.
+- **The kick read on the engine, before any cell** (`the_kick_and_the_background_at_1024_units_exhaustive`): each size's control is the grown image, unwired, run through the protocol. Over its sixteen kicks the kick must fire every member once by the measure that picked ADR-0076's stimulus (ADR-0074's `fires_once`), read per kick:
+  - the volley: within `VOLLEY_TOLERANCE_TENTHS` tenths of one spike per member per kick, and at most one;
+  - the after: at most `AFTER_MAX_TENTHS` tenths of a spike per member per kick in the pair window after the span.
+  If it does not, no cell is run and the kick is derived again. The gate holds the probe: the ramp into one unit at rest, with no drive, fires it on the tick the oracle says, once.
+- **The release** (`release`): ADR-0076's cancel as built — six messages at −2.0 into every member before each of nine ticks — from the epoch's quarter, tick 4 096. A member refractory through all nine ticks escapes it: at a rate of $r$ Hz, about $192r / 10^5$ of the members, 3.8 per cent at 20 Hz and 19 per cent at 100 Hz. The tail is the last half, from tick 8 192. It opens after the release's direct effect has passed on a member it reached: at the drive's mean standing, the oracle has the soma back within a tenth of the threshold of that standing 3 510 ticks after the first message (`RELEASE_RECOVERED`).
+- **Rows** (`EpochRow`): per window, the members' spikes, the rest of the network's spikes, and the sums over the members of the pair `(u, R)` a spike on the next tick would release with. That pair is `step_stp` on a copy of each member's factors, with the ticks since its last spike as the executor reads them. Per epoch, the kick's reading: the members' spikes in the span and in the pair window after it.
+- **The runs**:
+  - the background: the frozen image, unwired, all 25 epochs unkicked, read for each size's members;
+  - three controls: the grown image unwired, the protocol;
+  - twelve cells: the grown image wired at each weight, the protocol.
+
+  Every run is dumped before any is held to its table. Every weight of the arena at each run's end is asserted equal to its value at the start.
+
+### The measures
+
+The background (`background_of`) is the members' spikes and the rest's over the background run's twenty-four epochs, 393 216 ticks. Every comparison is in integers: $s$ spikes over $t$ ticks are at least $f$ times $b$ over $T$ when $s T \ge f b t$.
+
+- **Holds**: in at least 7 of the 8 kicked epochs, the members' spikes over the last half are at least five times the background.
+- **Ignites**: the unkicked epochs whose last half reaches that rate. A cell may have at most 1 of 8.
+- **Lets go**: in at least 7 of the 8 released epochs, the members' spikes over the tail are at most twice the background.
+- **Spills**: over the last halves of the kicked epochs that held, the rest of the network's spikes are more than twice the rest's background. If none held, spills is not read.
+- **Usable**: holds, lets go, ignites in at most 1 of 8, and does not spill.
+- **Read, no clause**: the released epochs whose window before the release held at five times the background.
+- **What failed, where nothing is usable**: never holding (holds is false), running away (ignites more than once, or spills), not letting go (lets go is false).
+
+**What the thresholds read by chance**, as arithmetic before the run, for a Poisson background at the settled network's 1.7 Hz (ADR-0077). A quiet assembly's last half expects 2.2, 4.5 and 8.9 spikes at 16, 32 and 64 units. So a quiet assembly fails "lets go" in one released epoch by chance with probability about 7.6, 3.8 and 0.5 per cent. It fails the cell's seven of eight with probability about 12, 3.5 and 0.06 per cent. A quiet assembly reads "held" or "ignited" by chance with probability below $10^{-4}$ per epoch.
+
+### The arithmetic, before any run
+
+Every number below comes from an oracle in `tests/assembly.rs` and is pinned in the gate. The oracles are `step_stp` and `integrate` themselves, stepped alone, with the executor's scaling by the gain.
+
+**Short-term plasticity at a sustained rate** (`steady`: `step_stp` from rest at a fixed interval until the pair repeats). The pair a spike after a long rest releases with is $(92, 255)$, a factor $u R$ of 23 460 of $2^{16}$.
+
+| Rate | Interval (ticks) | Steady pair $(u, R)$, Q0.8 | $uR$ | Of the factor at rest | Transmitted a second, in spikes at rest |
+| ---: | ---: | :--- | ---: | ---: | ---: |
+| 1.76 Hz, the background (ADR-0097) | 56 818 | (93, 237) | 22 041 | 0.940 | 1.65 |
+| 5 Hz | 20 000 | (105, 172) | 18 060 | 0.770 | 3.85 |
+| 10 Hz | 10 000 | (122, 110) | 13 420 | 0.572 | 5.72 |
+| **20 Hz** | **5 000** | **(149, 57)** | **8 493** | **0.362** | **7.24** |
+| 40 Hz | 2 500 | (182, 26) | 4 732 | 0.202 | 8.07 |
+| 100 Hz | 1 000 | (214, 10) | 2 140 | 0.091 | 9.12 |
+| 200 Hz | 500 | (234, 4) | 936 | 0.040 | 7.98 |
+| 400 Hz | 250 | (242, 2) | 484 | 0.021 | 8.25 |
+
+**At a sustained 20 Hz a synapse's efficacy is 0.362 of its efficacy at rest** (`STEADY_20_HZ_PER_MILLE`, 362). Facilitation raises $u$ from 0.36 to 0.58, and the pool falls from 1.0 to 0.22. A member firing at 20 Hz transmits 4.4 times what it transmits at the background rate. No rate transmits more than about 9.1 spikes at rest a second, 5.5 times the background's.
+
+**What one spike of a member delivers to a target**, after the gain, against the threshold (`DELIVERED`). The drive's mean input is 112 of $2^{16}$ a tick after the gain. It holds a unit at a mean standing of 0.875 basal and 0.436 soma (`DRIVE_STANDING`), 0.564 below the base threshold of 1.0.
+
+| Weight | At rest: delivered | Soma's peak from the drive's mean standing | Spikes together to fire | At 20 Hz: delivered | Peak | Spikes together |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.25 | 0.157 | 0.509 (+0.073) | 8 | 0.057 | 0.462 (+0.027) | 22 |
+| 0.5 | 0.313 | 0.583 (+0.147) | 4 | 0.113 | 0.489 (+0.053) | 11 |
+| 0.75 | 0.470 | 0.656 (+0.220) | 3 | 0.170 | 0.515 (+0.080) | 8 |
+| 1.0 | 0.626 | 0.729 (+0.293) | 2 | 0.227 | 0.542 (+0.106) | 6 |
+
+No single spike fires a unit at the drive's mean standing at any weight. At rest it takes 2 to 8 members' spikes landing together, and at 20 Hz 6 to 22.
+
+**The members' own mean input while every member fires at a rate** (`recurrent`): fan × delivered × 512 / interval as a basal potential, and the soma that holds against it, 128/257 of it (the soma leaks and is coupled by a sixteenth to each compartment, the apical at zero). Below is the soma, beside the drive's mean standing of 0.436:
+
+| Size (fan) | Weight | At the background's rate | At 20 Hz | At 100 Hz | Mean soma at 100 Hz, with the drive's |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| 16 (15) | 0.25 / 0.5 / 0.75 / 1.0 | 0.010 / 0.020 / 0.030 / 0.040 | 0.043 / 0.087 / 0.130 / 0.173 | 0.055 / 0.109 / 0.164 / 0.218 | 0.49 / 0.55 / 0.60 / 0.65 |
+| 32 (31) | 0.25 / 0.5 / 0.75 / 1.0 | 0.020 / 0.041 / 0.061 / 0.082 | 0.090 / 0.179 / 0.269 / 0.359 | 0.113 / 0.226 / 0.339 / 0.451 | 0.55 / 0.66 / 0.77 / 0.89 |
+| 64 (32) | 0.25 / 0.5 / 0.75 / 1.0 | 0.021 / 0.042 / 0.063 / 0.085 | 0.093 / 0.185 / 0.278 / 0.370 | 0.117 / 0.233 / 0.350 / 0.466 | 0.55 / 0.67 / 0.79 / 0.90 |
+
+**In no cell does the members' mean input, at any rate, bring the mean soma to the threshold.** The largest, 64 units at 1.0 firing at 100 Hz, stands at 0.90 of it, and depression caps what a higher rate adds. A hold, if one exists, is the fluctuations above a mean below threshold: the drive's shot noise and the members' own messages. It is not a mean above threshold. This is the arithmetic the readings are set beside. It makes no prediction of the region, and the brief asks for none.
+
+**The kick by the oracle** (`KICK_ORACLE`: the drive's mean input every tick, the ramp on its first 160 ticks), from each standing:
+
+| Standing (basal, soma) | Fires on | Basal at the spike | Soma as the refractory window ends | Basal then |
+| :--- | ---: | ---: | ---: | ---: |
+| rest (0, 0) | 82 | 2.204 | 0.753 | 1.492 |
+| the drive's mean (0.875, 0.436) | 51 | 2.204 | 0.753 | 1.492 |
+| the extreme (2.0⁻, 1.0⁻) | 1 | 2.025 | 0.692 | 1.371 |
+| one threshold below (−1.0, −0.5) | 115 | 2.197 | 0.751 | 1.487 |
+| two thresholds below (−2.0, −1.0) | 146 | 2.190 | 0.749 | 1.483 |
+
+Each fires once. When its window ends, a unit stands about 0.27 below the adapted threshold of about 1.02, where F-46's drive left it above (ADR-0076).
+
+**The release by the oracle** (`RELEASE_ORACLE`, the drive's mean input every tick):
+- from the drive's mean standing: no spike for the rest of the epoch, the basal down to −186.7, the soma back within a tenth of the threshold of the standing after 3 510 ticks;
+- from the extreme: −185.6, and 3 507 ticks.
+
+### The order of the work
+
+1. This ADR, the constants, the rules and the oracles, and the gate's checks of them, committed before any run.
+2. The kick and the background run, their tables pinned, and the kick shown to fire every member once.
+3. The twelve cells run against the background pinned in step 2, their tables pinned.
+4. The readings recorded below.
+
+### The readings
+
+Recorded after the runs, below this line, in this ADR.
+
+### Consequences
+
+- Good: the substrate question is asked of the network as it is — the settled image, its rules, its drive — with the assembly the only difference, and the growth shown to change nothing unwired.
+- Good: the kick is derived from the membrane rule and held to the engine, and the release is ADR-0076's cancel as built; neither is searched.
+- Good: the arithmetic says before the run what a hold would have to be — fluctuations above a mean the depression caps below threshold — so a no is explained before it is read, and a yes is a reading of the fluctuations.
+- Bad: no assembly can be disjoint from the task's sets on this network (F-54). The next round that puts a context and the task together needs another geometry or another size.
+- Neutral: one seed of the delays, one placement, one drive; the grid reads these cells and no others.
+
+## Confirmation
+
+`runtime/cortex-runtime/tests/assembly.rs`: `SIZES`, `WEIGHTS`, `FAN_MAX`, `PLACES`, `DELAY_SEED`, `ORDER`, `ROUNDS`, `KICK_MESSAGE_Q16`, `KICK_TICKS`, `KICK_SPAN`, `KICK_STANDINGS`, `RELEASE_AT`, `HOLD_TIMES`, `LET_GO_TIMES`, `SPILL_TIMES`, `OF_EIGHT_MIN`, `IGNITIONS_MAX`; `grown`, `wire`, `protocol`, `background_of`, `cell`, `kick_reading`, `kicked_once`, `kick_rule`, `kick_oracle`, `release_oracle`, `steady`, `delivered`, `recurrent`; the gate `the_grid_the_arithmetic_the_rules_and_an_assembly_kicked_on_the_engine`; the weekly `the_kick_and_the_background_at_1024_units_exhaustive` and `an_assembly_of_16_units_at_four_weights_exhaustive`, `…_32_…` and `…_64_…`.
