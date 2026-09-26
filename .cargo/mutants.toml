@@ -59,13 +59,6 @@ exclude_re = [
     # since brief 016, so they have no arithmetic mutant to exclude.)
     "barrier\\.rs:\\d+:\\d+: replace << with >>$",
     "barrier\\.rs:\\d+:\\d+: replace < with (==|>|<=) in SpinBarrier::wait",
-    # Work stealing balances load and changes no result: a worker that never steals still runs
-    # every unit it owns, exactly once (the contention test), and the shares are reported, not
-    # asserted (ADR-0030). The victim ring's `victim == self.id` skip, inverted, leaves a
-    # worker trying only its own deque, which its own `pop` has just found empty: no steal at
-    # all, the case above (ADR-0062).
-    "executor\\.rs:\\d+:\\d+: replace Worker<CAP>::steal -> Option<u32> with None",
-    "executor\\.rs:\\d+:\\d+: replace == with != in Worker<CAP>::steal",
     # The positioned read and write are the platform's one call each, under `cfg`: `seek_read`
     # and `seek_write` are the Windows forms, which no CI runner compiles, so their mutants
     # meet no test there; the Unix forms, `pread` and `pwrite`, and the loop around both,
