@@ -5,7 +5,7 @@ depends-on: ADR-0111
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0112: An assembly that holds — ADR-0111's first round, measured and nothing changed: the grid, the protocol, the kick, the release and the measures, written before any run
+# ADR-0112: An assembly that holds, measured — ADR-0111's first round, nothing of the engine changed: on ADR-0077's settled image with every weight frozen, assemblies of 16, 32 and 64 excitatory units wired at four recurrent weights and run through one protocol by rules written before any run; the kick derived from the membrane rule and, after its first reading and before any cell, given a reset; no cell is usable — three hold by the rule (32 units at the top weight, 64 at 0.75 and at the top), each of them also ignites without a kick and does not let go, and the tables say what the holds are: population bursts, one set off by each kick and, in the stronger cells, more of their own, each draining the members' pool to a few per cent, never a sustained rate; F-54; the next decision named and not taken
 
 ## Context and Problem Statement
 
@@ -68,7 +68,7 @@ Each run starts from the frozen image decoded at its written tick, so every run 
 - **A lead-in** of one epoch, unkicked, read as the run's first row.
 - **Twenty-four epochs** of $2^{14}$ ticks, one trial's length: an unkicked, a kicked and a released epoch, eight times over (`ORDER`). So every unkicked epoch after the first follows a release, and every kicked one follows an unkicked one.
 - **Windows**: each epoch is read in eight windows of 2 048 ticks. The last half, windows 4 to 7, is the hold's window and the tail's.
-- **The kick** (`KICK_MESSAGE_Q16`, `KICK_TICKS`): one basal message of 1/64 into every member before each of the epoch's first 160 ticks, a ramp. A member fires when its soma crosses the threshold, then drops the rest of the ramp in its refractory window. So it fires once whatever its standing potential, and is left holding about what firing takes. The message is derived by a rule (`kick_rule`): the first of 1/256, 1/128, 1/64, 1/32 and 1/16 under which the oracle fires a unit exactly once within the span and not again within a pair window after it, from every standing of `KICK_STANDINGS` under the drive's mean input. The standings are rest, the drive's mean standing, ADR-0076's extreme, and one and two thresholds below rest. 1/128 leaves the two lowest unfired within the span, and 1/64 passes. The ramp stops forty ticks before the span's end, five of the soma's time constants of eight ticks, so that a unit the last message brings to the threshold fires inside the span. The span is the epoch's ticks 1 to 200 (`KICK_SPAN`), in which no unit fires twice.
+- **The kick** (`KICK_MESSAGE_Q16`, `KICK_RESET_Q16`, `KICK_TICKS`): one basal message of 1/64 into every member before each of the epoch's first 160 ticks, a ramp. A member fires when its soma crosses the threshold, then drops the rest of the ramp in its refractory window. So it fires once whatever its standing potential, and is left holding about what firing takes. The message is derived by a rule (`kick_rule`): the first of 1/256, 1/128, 1/64, 1/32 and 1/16 under which the oracle fires a unit exactly once within the span and not again within a pair window after it, from every standing of `KICK_STANDINGS` under the drive's mean input. The standings are rest, the drive's mean standing, ADR-0076's extreme, and one and two thresholds below rest. 1/128 leaves the two lowest unfired within the span, and 1/64 passes. The ramp stops forty ticks before the span's end, five of the soma's time constants of eight ticks, so that a unit the last message brings to the threshold fires inside the span. The span is the epoch's ticks 1 to 200 (`KICK_SPAN`), in which no unit fires twice.
 - **The kick read on the engine, before any cell** (`the_kick_and_the_background_at_1024_units_exhaustive`): each size's control is the grown image, unwired, run through the protocol. Over its sixteen kicks the kick must fire every member once by the measure that picked ADR-0076's stimulus (ADR-0074's `fires_once`), read per kick:
   - the volley: within `VOLLEY_TOLERANCE_TENTHS` tenths of one spike per member per kick, and at most one;
   - the after: at most `AFTER_MAX_TENTHS` tenths of a spike per member per kick in the pair window after the span.
@@ -178,16 +178,81 @@ Each fires once. When its window ends, a unit stands about 0.27 below the adapte
 
 ### The readings
 
-Recorded after the runs, below this line, in this ADR.
+Every reading below is from the pinned tables of `tests/assembly.rs`, and a second run of every test reproduced them. The runs are in the order above:
+- the kick and the background at `cc05cd8`, and again at `712ef21` after the kick's helpers were shared with the gate;
+- the three cell tests at `712ef21` side by side, and again against their tables.
+
+On a developer machine in the release profile the kick and background test took 70 s, and each cell test 93 s alone or 138 s three at a time (a ratio, not admissible). No weight of any arena moved in any run.
+
+- **The background** (`BACKGROUNDS_1024`: the unwired frozen image under the drive, with no kick, over the protocol's 393 216 ticks after the lead-in). The members fired 108, 218 and 440 spikes at 16, 32 and 64 units, 1.72, 1.73 and 1.75 Hz a member. The rest fired 6 954, 6 844 and 6 622, 1.75 Hz a unit, ADR-0077's settled rate.
+- **The kick, read on the engine with its reset** (`KICKS_1024`, `KICKED_ONCE_1024`, each size's control). Every member fires once by the measure at every size:
+  - the volley is 254 of 256, 510 of 512 and 1 022 of 1 024 over the sixteen kicks, 14 of the 16 a full volley;
+  - the after is 10, 22 and 42 against marks of 25.6, 51.2 and 102.4, about 0.04 a member a kick, which is what the background puts in those windows.
+
+  Each control's lead-in and first epoch are the background's bit for bit, so the growth changes nothing unkicked on the settled network.
+- **The controls** (`CONTROLS_1024`: the grown image unwired, with the kick and the release). At every size no kicked epoch holds, no unkicked epoch ignites, and every released epoch lets go. The kick alone holds nothing.
+- **The grid** (`GRID_1024`, by the rules committed first, against the background pinned before any cell ran):
+
+  | Size | Weight | Holds, of 8 | Ignites, of 8 | Lets go, of 8 | Spills | Usable | What failed |
+  | ---: | :--- | ---: | ---: | ---: | :--- | :--- | :--- |
+  | 16 | 0.25 | 0 | 0 | 8 | not read | no | never holding |
+  | 16 | 0.5 | 0 | 0 | 8 | not read | no | never holding |
+  | 16 | 0.75 | 0 | 1 | 8 | not read | no | never holding |
+  | 16 | 1.0 | 1 | 2 | 6 | no | no | never holding; running away; not letting go |
+  | 32 | 0.25 | 0 | 0 | 8 | not read | no | never holding |
+  | 32 | 0.5 | 1 | 1 | 5 | no | no | never holding; not letting go |
+  | 32 | 0.75 | 3 | 5 | 4 | no | no | never holding; running away; not letting go |
+  | 32 | 1.0 | **7** | 5 | 2 | no | no | running away; not letting go |
+  | 64 | 0.25 | 0 | 0 | 8 | not read | no | never holding |
+  | 64 | 0.5 | 0 | 3 | 7 | not read | no | never holding; running away |
+  | 64 | 0.75 | **7** | 2 | 1 | no | no | running away; not letting go |
+  | 64 | 1.0 | **7** | 6 | 0 | no | no | running away; not letting go |
+
+  **No cell is usable, and the grid has no usable region.** At a quarter and a half of the range nothing holds. The three cells that hold by the rule each also ignite without a kick in two to six of eight epochs, and let go in at most two. Wherever the spill was read, the rest of the network fired at 0.99 to 1.08 of its background over the held last halves, so nothing spills. In no released epoch of any cell did the window before the release hold at five times the background.
+- **What the holds are** (`BURSTS_1024`, `bursts`). This is a reading written after the runs, from what the tables showed, and it is no clause. A burst window is one in which the members fire at least once each in 2 048 ticks, about 28 times the background.
+
+  | Size | Weight | Burst windows, of 192 | Not a kick's first window | Held last halves | Fewest quiet windows in one | Members' pool $R$ at a burst window's end, of 255 |
+  | ---: | :--- | ---: | ---: | ---: | ---: | ---: |
+  | 16 | control | 14 | 0 | 0 | — | 102 |
+  | 16 | 0.25 / 0.5 / 0.75 / 1.0 | 16 / 16 / 19 / 25 | 0 / 0 / 3 / 9 | 0 / 0 / 0 / 1 | — / — / — / 3 | 88 / 27 / 19 / 14 |
+  | 32 | control | 15 | 0 | 0 | — | 104 |
+  | 32 | 0.25 / 0.5 / 0.75 / 1.0 | 18 / 21 / 36 / 42 | 2 / 5 / 20 / 28 | 0 / 1 / 3 / 7 | — / 3 / 2 / 2 | 27 / 14 / 13 / 10 |
+  | 64 | control | 15 | 0 | 0 | — | 103 |
+  | 64 | 0.25 / 0.5 / 0.75 / 1.0 | 16 / 23 / 37 / 48 | 0 / 7 / 22 / 32 | 0 / 0 / 7 / 7 | — / — / 2 / 1 | 24 / 14 / 11 / 9 |
+
+  **No held last half of any cell is without a quiet window**, one in which the members fire at most twice the background. A held last half averages 7 to 27 times the background (23 to 27 in the three cells that hold), and one to three of its four windows are quiet. What the rule reads as a hold is one burst, not a sustained rate. The rows show the course:
+  - **Each kick sets off a burst.** In every wired cell but the weakest, a member fires 1.5 to 2.4 more times a kick in the pair window after the span (0.25 at sixteen units and a quarter of the range), against 0.04 unwired. It fires at the refractory limit, a spike about every 220 ticks. The gate's 800 ticks on the prior's network show this at sixteen units and the top weight: every member fires at about 80, 300, 530 and 750 ticks.
+  - **The burst drains the pool.** At the burst windows' ends the members' pool $R$ stands at 9 to 27 of 255, 3.5 to 10.6 per cent, in every wired cell but the weakest (88 there), against 102 to 104 after the controls' kick volleys. That is the pool the arithmetic's steady pair has at 100 Hz (10); a sustained 20 Hz would hold 57.
+  - **The assembly is then silent** until the pool recovers, with $\tau_d$ of $2^{15}$ ticks. So the window after a kick's window is never a hold, and a kick leaves the assembly silent, not active.
+  - **In the stronger cells the next burst comes without a kick.** Once the pool has recovered enough, the drive's fluctuations set off another. At 0.75 and the top weight of 32 and 64 units, 20 to 32 of the burst windows fall outside a kick's first window, the bursts starting two to twelve windows apart. Those bursts are the ignitions, and after a release they are the failures to let go. The release reaches the members but does not drain their pool, so the assembly bursts again once the release's effect has passed; in the three cells that hold, the tails that do not let go read 19 to 31 times the background.
+  - **Between bursts it is the pool that is low.** At the top weight of each size, over the whole run, the members' release fraction $u$ averages 0.61 to 0.72, against 0.39 unwired, and their pool 0.13 to 0.24 of its rest, against 0.82. In their silent windows $u$ stands at 0.60 to 0.68 and the pool at 0.18 to 0.27. What silences a strong assembly between bursts is the pool.
+- **The arithmetic beside the readings.** Before any run, the arithmetic said that no cell's mean input can hold a member at threshold at any rate: depression caps what a rate transmits at about 5.5 times the background's. So a hold would have to be the fluctuations riding above a mean below threshold. The runs read no such state. They read the other behaviour the rule allows: a regenerative burst on the pool the members have, then silence while the pool recovers. The bursts' strength follows the arithmetic's order:
+  - at a quarter of the range nothing bursts on its own at any size; there one spike at rest delivers 0.157, and eight must land together to fire a unit;
+  - the most bursts come where the fan and the weight are largest.
+- **Not done:**
+  - The grid was not widened. A size of 128 gives a member no more synapses than 64 does. A weight between two of the four would place the edge between burst-free and bursting, and the question does not turn on that edge.
+  - The grid was not read on a network drained as a learning run leaves it.
+  - There is one seed of the delays, one placement and one drive.
+  - No rule of the engine changed, and no context, gated readout or reward was built.
+- **The next decision, named and not taken.** This is ADR-0111's own branch for "nothing usable": **an ADR on a mechanism of persistence**, with these readings as its need:
+  - the assemblies do not hold: a kick sets off one burst and then silences them, and the strong ones burst of their own every few windows, kicked or not;
+  - each burst leaves the pool at a few per cent, and between bursts the pool, not $u$, stays low: $u$ near 0.6 to 0.7 and the pool near a fifth of its rest.
+
+  ADR-0111 named two candidates, each a rule change with its own need:
+  - synapses whose facilitation outlasts their depression, for the context's units. In the account of Mongillo, Barak and Tsodyks (2008), $\tau_f$ well above $\tau_d$ keeps the kicked assembly's synapses strong between its reactivations and the unkicked assembly's weak, and this grid lacked both;
+  - a slower current.
+
+  That round also carries F-54: a context and the task in one network need another geometry or another size.
 
 ### Consequences
 
-- Good: the substrate question is asked of the network as it is — the settled image, its rules, its drive — with the assembly the only difference, and the growth shown to change nothing unwired.
-- Good: the kick is derived from the membrane rule and held to the engine, and the release is ADR-0076's cancel as built; neither is searched.
-- Good: the arithmetic says before the run what a hold would have to be — fluctuations above a mean the depression caps below threshold — so a no is explained before it is read, and a yes is a reading of the fluctuations.
-- Bad: no assembly can be disjoint from the task's sets on this network (F-54). The next round that puts a context and the task together needs another geometry or another size.
-- Neutral: one seed of the delays, one placement, one drive; the grid reads these cells and no others.
+- Good: the substrate question is answered for this network as it is — its settled image, its rules and its drive — with the assembly the only difference, and the growth shown to change nothing unwired. The network does not hold a context, and the tables say why: a burst drains the pool; no state persists.
+- Good: the kick is derived from the membrane rule and held to the engine. It was read before any cell, and derived again when the measure failed by one spike. The release is ADR-0076's cancel as built. Neither is searched, and no threshold moved.
+- Good: the next decision has a measured need, and ADR-0111's two later rounds are not built on a substrate that does not hold.
+- Bad: no cell is usable, so the representation of the rule in force waits on a rule change, and ADR-0111's second and third rounds wait with it.
+- Bad: no assembly can be disjoint from the task's sets on this network (F-54).
+- Neutral: one seed of the delays, one placement and one drive, on the settled network and not the drained one; the grid reads these cells and no others.
 
 ## Confirmation
 
-`runtime/cortex-runtime/tests/assembly.rs`: `SIZES`, `WEIGHTS`, `FAN_MAX`, `PLACES`, `DELAY_SEED`, `ORDER`, `ROUNDS`, `KICK_MESSAGE_Q16`, `KICK_TICKS`, `KICK_SPAN`, `KICK_STANDINGS`, `RELEASE_AT`, `HOLD_TIMES`, `LET_GO_TIMES`, `SPILL_TIMES`, `OF_EIGHT_MIN`, `IGNITIONS_MAX`; `grown`, `wire`, `protocol`, `background_of`, `cell`, `kick_reading`, `kicked_once`, `kick_rule`, `kick_oracle`, `release_oracle`, `steady`, `delivered`, `recurrent`; the gate `the_grid_the_arithmetic_the_rules_and_an_assembly_kicked_on_the_engine`; the weekly `the_kick_and_the_background_at_1024_units_exhaustive` and `an_assembly_of_16_units_at_four_weights_exhaustive`, `…_32_…` and `…_64_…`.
+`runtime/cortex-runtime/tests/assembly.rs`: `SIZES`, `WEIGHTS`, `FAN_MAX`, `PLACES`, `DELAY_SEED`, `ORDER`, `ROUNDS`, `KICK_MESSAGE_Q16`, `KICK_TICKS`, `KICK_SPAN`, `KICK_STANDINGS`, `RELEASE_AT`, `HOLD_TIMES`, `LET_GO_TIMES`, `SPILL_TIMES`, `OF_EIGHT_MIN`, `IGNITIONS_MAX`; `grown`, `wire`, `protocol`, `background_of`, `cell`, `kick_reading`, `kicked_once`, `kick_rule`, `reset_rule`, `kick_oracle`, `release_oracle`, `steady`, `delivered`, `recurrent`, `inject_before`, `note_kick_spikes`, `bursts`; the tables `BACKGROUND_ROWS_1024`, `CONTROL_ROWS_1024`, `CELL_ROWS_1024`, `BACKGROUNDS_1024`, `KICKS_1024`, `KICKED_ONCE_1024`, `CONTROLS_1024`, `GRID_1024`, `BURSTS_1024`, `GATE_KICKED`; the gate `the_grid_the_arithmetic_the_rules_and_an_assembly_kicked_on_the_engine`; the weekly `the_kick_and_the_background_at_1024_units_exhaustive` and `an_assembly_of_16_units_at_four_weights_exhaustive`, `…_32_…` and `…_64_…`.
