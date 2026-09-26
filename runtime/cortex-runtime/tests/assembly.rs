@@ -1755,10 +1755,13 @@ const RECURRENT: [[[(i64, i64); 3]; 4]; 3] = [
     ],
 ];
 
+/// A kick by the oracle as pinned: `KickRead` with its ticks borrowed.
+type KickPinned = (&'static [u32], i32, i32, i32, i32, i32);
+
 /// The kick by the oracle from each standing: the ticks it fires on, its basal potential on
 /// the tick it fires, its somatic and basal potentials on the last tick of its refractory
 /// window, its basal potential on the tick the reset lands, and its soma 64 ticks after.
-const KICK_ORACLE: [(&[u32], i32, i32, i32, i32, i32); 5] = [
+const KICK_ORACLE: [KickPinned; 5] = [
     (&[82], 144438, 49369, 97779, 57343, 28563),
     (&[51], 144439, 49369, 97780, 57344, 28563),
     (&[1], 132720, 45365, 89853, 49432, 25047),
