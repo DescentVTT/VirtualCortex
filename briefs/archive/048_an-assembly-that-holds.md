@@ -1,15 +1,39 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-27
 ---
+
+> **Executed 2026-09-27 in pull request #140.** Writes ADR-0112 (an assembly that holds, measured); opens finding F-54.
+> The grid, the placement, the wiring, the protocol, the kick, the release, the measures and the arithmetic were
+> committed in a new binary on the shared harness, `tests/assembly.rs`, and in ADR-0112, and pushed before any run
+> (`6cfc32f`, `a95a1c3`). The kick was read on the engine before any cell. The ramp alone failed the after clause at
+> sixteen units by one spike, so no cell ran, and the kick was derived again with a reset that puts each member back at
+> the drive's mean standing. It then fired every member once at every size.
+>
+> **No cell is usable.** At a quarter and a half of the range nothing holds. Three cells hold by the rule, 32 units at the
+> top weight and 64 at 0.75 and at the top; each also ignites without a kick in 2 to 6 of 8 epochs and lets go in at
+> most 2, and nothing spills. The tables say what the holds are: population bursts that drain the members' vesicle
+> pool to 3.5 to 10.6 per cent, then silence while it recovers. A kick sets off one burst, the stronger cells burst
+> again of their own, and no held last half is without a quiet window. The arithmetic written first said no cell's
+> mean input can hold a member at threshold at any rate: at a sustained 20 Hz a synapse releases 0.362 of its efficacy
+> at rest. **The next decision** — an ADR on a mechanism of persistence, with these readings as its need — is named and
+> not taken.
+>
+> The brief's assemblies disjoint from the task's sets cannot exist at 1 024 units, because the geometry puts 1 020
+> units in its sets (F-54). The weekly dispatch at `scope=exhaustive` (run 36267201620) was green: all seventy-one whole-domain
+> tests passed, the four of this round among them, and the cost table is regenerated from it. No file under `src/`
+> changed; image format 16; whitepaper 4.63.0.
+> Every deliverable is dispositioned below. Relative links gained one `../` so that they resolve from `archive/`; no
+> other word, claim or figure changed.
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 048: An assembly that holds — on the learning line's settled network, every weight frozen, a grid of assemblies wired among its excitatory units: does one hold its activity after a kick, stay quiet without one, and let go on a signal; measured, nothing changed
 
 ## Mission
 
-**This brief measures and changes no rule.** [ADR-0111](../docs/adr/0111-a-rule-held-by-the-network.md) took a
+**This brief measures and changes no rule.** [ADR-0111](../../docs/adr/0111-a-rule-held-by-the-network.md) took a
 representation of the rule in force as the learning line's next question. H-20 read no learning set
-([ADR-0110](../docs/adr/0110-a-schedule-of-reversals-measured.md)): every reversal was a relearning, 13 to 23 blocks
+([ADR-0110](../../docs/adr/0110-a-schedule-of-reversals-measured.md)): every reversal was a relearning, 13 to 23 blocks
 each. The prefrontal account is a context held as persistent activity, under which each mapping is kept, so that a
 reversal becomes a switch.
 
@@ -48,11 +72,11 @@ When the round is done, the tree holds:
     efficacy at rest;
   - what one kicked unit's spike delivers to its targets at each weight of the grid, against the threshold.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`; the runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0111's included. The executor
   scales an injected message by the gain (F-47), so a kick's shape is read on the engine before it is used.
 - No pinned number of an earlier round moves.
@@ -78,19 +102,19 @@ are what to re-derive.
      between spikes.
 4. **The membrane** (`membrane.rs`): the threshold at 1.0 and adapting by `THRESHOLD_STEP` (0.02) with
    `THRESHOLD_DECAY_SHIFT` 12; `REFRACTORY_TICKS` 200.
-5. **The kick and the cancel** ([ADR-0076](../docs/adr/0076-two-injections.md)): a stimulus shape that fires each unit
+5. **The kick and the cancel** ([ADR-0076](../../docs/adr/0076-two-injections.md)): a stimulus shape that fires each unit
    of a set once under the drive, and a cancel of negative basal messages derived from the refractory window. Both are
    in the harness, `SHAPE_F46` and `CANCEL_AT_THE_EXTREME` among them.
 6. **The rates** (ADR-0097): about 1.76 Hz a unit on the reference network under ADR-0044's drive.
 7. **The task's sets** (the harness's stimulus and readout sets), which an assembly must not share a unit with, so that
    a later round can put the task and the context in the same network.
-8. **The weekly job** ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md),
-   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a round that changes only tests dispatches
+8. **The weekly job** ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md),
+   [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a round that changes only tests dispatches
    `scope=exhaustive`. The cost table is regenerated from its own dispatch.
 
 ## Deliverables
 
-- [ ] **The grid and the protocol, in a new ADR at the next free number (`ls docs/adr`), before any run.** At least:
+- [x] **The grid and the protocol, in a new ADR at the next free number (`ls docs/adr`), before any run.** At least:
   - *Sizes and weights:* assemblies of **16, 32 and 64** excitatory units, disjoint from the task's sets, with added
     recurrent synapses among them at **four weights**, 0.25, 0.5, 0.75 and 1.0 of Q1.15's range. Each unit targets
     the assembly's other units up to 32 of them, with delays from the local band.
@@ -109,28 +133,32 @@ are what to re-derive.
     - **lets go**: the rate over the tail after the release at most twice the background, in at least 7 of 8;
     - **spills**: the rest of the network's rate while the assembly holds more than twice its background;
     - a cell is **usable** when it holds, lets go, ignites in at most 1 of 8 unkicked epochs, and does not spill.
-- [ ] **The arithmetic, before any run**: `step_stp`'s steady efficacy at 20 Hz as a fraction of the efficacy at rest,
+
+  **Rejected:** the assemblies disjoint from the task's readout sets, which the task's geometry makes impossible at
+  1 024 units (F-54); ADR-0112 places them in no stimulus set, beyond the prior's window of one another, split evenly
+  between the two readouts, and measures them with no task running.
+- [x] **The arithmetic, before any run**: `step_stp`'s steady efficacy at 20 Hz as a fraction of the efficacy at rest,
   and what one spike delivers to a target at each weight against the threshold. The kick read on the engine: each unit
   of each assembly fires once, or the shape is derived again until it does, before any cell is run.
-- [ ] **The runs.** Every cell of the grid, each an `exhaustive` test or a few cells to a test, the weights shown
+- [x] **The runs.** Every cell of the grid, each an `exhaustive` test or a few cells to a test, the weights shown
   unchanged at each run's end. Tables pinned per epoch: the assembly's spikes by window, the rest of the network's,
   the ignitions, and the assembly's short-term state (the mean $u$ and $R$) at each window's end.
-- [ ] **The ADR's reading.** The grid table: holds, ignites, lets go, spills, usable, per cell. The usable region if one
+- [x] **The ADR's reading.** The grid table: holds, ignites, lets go, spills, usable, per cell. The usable region if one
   exists. The arithmetic beside what the runs read. If no cell is usable, what failed in each: never holding, running
   away, or not letting go. **The next decision named and not taken**:
   - a readout gated by the context, if a region is usable;
   - otherwise a mechanism of persistence (synapses whose facilitation outlasts their depression for the context's units,
     or a slower current), with this round's readings as its need.
-- [ ] **The gate.** At most one runtime test: the rules at their edges over tables written by hand, and one assembly
+- [x] **The gate.** At most one runtime test: the rules at their edges over tables written by hand, and one assembly
   wired and kicked for a few hundred ticks.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (`exhaustive`
+- [x] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (`exhaustive`
   if only tests change), the clause stated in the ADR. It must be green in every job, and every pinned number
   reproduced. The cost table is regenerated from that run's artifacts.
-- [ ] **The documents, in the same pull request.** Whitepaper §11.1's question on a rule held by the network, with this
+- [x] **The documents, in the same pull request.** Whitepaper §11.1's question on a rule held by the network, with this
   round's reading, and §9; the ADR index; `CHANGELOG.md`; `CLAUDE.md`; `docs/zh-TW`'s reader's guide as the result
   requires. The whitepaper's version in both declarations, with its date
-  ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+  ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 
