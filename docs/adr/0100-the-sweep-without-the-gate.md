@@ -57,7 +57,7 @@ For the partition: contiguous ranges, or units interleaved by index or by word a
 
 ## Decision Outcome
 
-**Option 3, with contiguous ranges fixed at construction, was built and measured, and is not kept**: its wall time per tick at ADR-0097's run (c) read 1.178 of the base's against a bound of 1.10. The code is commit `3887e83` of this round's branch and is reverted in the same pull request; what the pull request keeps is this record, the readings in `docs/benchmarks/results/2026-09-26-dancr-win11.md`, and the tests that hold behaviour on the executor as it is.
+**Option 3, with contiguous ranges fixed at construction, was built and measured, and is not kept**: its wall time per tick at ADR-0097's run (c) read 1.178 of the base's against a bound of 1.10. The code is commit `ff6a297` on `main` (`3887e83` on the round's branch before the rebase that merged it, the same tree) and is reverted in the same pull request; what the pull request keeps is this record, the readings in `docs/benchmarks/results/2026-09-26-dancr-win11.md`, and the tests that hold behaviour on the executor as it is.
 
 ### The design built (`3887e83`)
 
@@ -74,9 +74,9 @@ For the partition: contiguous ranges, or units interleaved by index or by word a
 
 ### The measure, fixed before the first timed run
 
-ADR-0099's criterion and the protocol were written into this record before any run was timed (`0f7fee9`), and how the idle machine is checked was added before the session that is read (`5eba9be`):
+ADR-0099's criterion and the protocol were written into this record before any run was timed (`cffc607` on `main`; `0f7fee9` on the round's branch before the rebase that merged it, the same tree), and how the idle machine is checked was added before the session that is read (`ad4cfe8` (`5eba9be` on the branch)):
 
-- *Builds:* the base is `main` at the round's start (`391ad6d`), the change is this round's commit of the code (`3887e83`); each exported with `git archive` into a directory of its own and built with `cargo test -p cortex-runtime --release --locked --test active --no-run` into a target directory of its own.
+- *Builds:* the base is `main` at the round's start (`391ad6d`), the change is this round's commit of the code (`3887e83` on the branch, `ff6a297` on `main`); each exported with `git archive` into a directory of its own and built with `cargo test -p cortex-runtime --release --locked --test active --no-run` into a target directory of its own.
 - *Runs:* ADR-0097's four, `tests/active.rs`, each test run alone by its binary: `<binary> --ignored --exact <test> --nocapture --test-threads=1`. The reading is the `ns_per_tick` of the run's `DUMP network k` line; the control's line at (a) to (c) is read beside it and is not a criterion.
 - *Pairs:* five pairs in one session on one machine with nothing else started, the base first in the first, third and fifth pairs and the change first in the second and fourth, the four runs in order (a) to (d) within each build's turn.
 - *The idle machine, as checked:* the session starts only after the machine's total processor time has stayed below 15 per cent for thirty seconds with none of the round's processes running, and the total is sampled every five seconds through the session and reported beside the readings. Every run's whole output is kept. A session started before this sentence was written is discarded, not read: its parser anchored the DUMP lines at the start of a line, where libtest prints `test <name> ... ` before a run's first line, so it recorded the controls and none of the network readings the criterion reads; and another process tree (a mutation run of another repository, fifteen workers) held all sixteen logical processors at 100 per cent throughout it. Its control readings are reported with the round, not as a reading of the gain.
@@ -121,7 +121,7 @@ The working layout's measured need is therefore the integration itself: on one w
 - **Not kept.** Three of the four bounds are met with room (0.37 to 0.49 against 0.80 and 1.10), and (c) is not (1.178 against 1.10). Under ADR-0099 no constant moves and no second attempt is made in this round.
 - **Reverted** in `4b2f694` (on the branch): `deque.rs`, `Config::deque_capacity`, the steal, the gate's use in the turn, the exclusions naming the steal; `set_gate`, `Executor::owner`, `WorkerReport::turns` and the ownership's tests go with the change. Axiom A3's enforcement, §4 and §8.5, and ADR-0023's and ADR-0017's decisions stand as they were.
 - **Kept:** the determinism pin's assertion that it holds no scheduler state, and the differential test on one, two and four workers (`014db40`), both true on the executor as it is.
-- **The mutation gate** has no source line of this pull request to mutate: its diff changes tests and documents only. The code of `3887e83` was not put through the gate, since it is not merged.
+- **The mutation gate** has no source line of this pull request to mutate: its diff changes tests and documents only. The code of `ff6a297` was not put through the gate, since it is not merged.
 - **The weekly dispatch's scope** ([ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`. Against `main` the diff changes no file under `src/` (the change and its revert net to nothing), deletes no test and takes none out of the swept suite (the two differential tests are renamed and assert more on the same binary), and leaves `.cargo/mutants.toml` as it was.
 
 ### The next decision (named, not taken)
@@ -140,7 +140,7 @@ ADR-0099: when a lever is not kept, "an ADR decides whether the next lever proce
 - Good: the tree keeps ADR-0097's census and ADR-0099's criterion as written; the criterion did what ADR-0099 said it was for, which is to keep nothing on a hope.
 - Bad: the engine is not faster. The lever with the most gain at the sizes the tree runs waits for the next decision.
 - Bad: ADR-0099's workload carries an instrument whose cost depends on who serves a unit, which no one saw before the run.
-- Neutral: the ownership, the bitmap and their tests are in the history at `3887e83` for the round that takes option 2, 3 or 4.
+- Neutral: the ownership, the bitmap and their tests are in the history at `ff6a297` for the round that takes option 2, 3 or 4.
 
 ## Alternatives considered and why rejected
 
@@ -157,4 +157,4 @@ ADR-0099: when a lever is not kept, "an ADR decides whether the next lever proce
 - `014db40`, kept: `the_random_network_hashes_to_the_pinned_value_on_every_architecture` asserts its hash with the scheduler's bytes masked equals the pin; `the_ring_is_identical_on_one_two_and_four_workers_and_goes_round` and `a_random_network_with_stdp_is_bit_identical_on_one_two_and_four_workers`.
 - `4b2f694`: the revert; against `391ad6d` the tree's code differs only in `tests/differential.rs`.
 - `docs/benchmarks/results/2026-09-26-dancr-win11.md`: every reading above, the protocol's script and the bench.
-- The evidence: the weekly dispatched on this round's branch, run `36188866157` at `df38fa8` with `scope=exhaustive` (the clause above), green in every job it runs: the four whole-domain shards took 44m42s, 50m04s, 1h19m35s and 58m44s, their tests' wall 2 631, 2 957, 4 722 and 3 471 s, 37, 41, 66 and 48 per cent of the 7 200-second bound, every pinned number of those tests reproduced. Beside them, as the secondary reading, ADR-0097's run `36050252444` on the same code (ADR-0098 and ADR-0099 changed documents only): 95m38s, 50m03s, 44m37s and 77m11s. The same tests moved by 0.55 to 1.99 times between the two runs on identical code, the runners' (F-45's kind): the longest, H-14's run, 2 475 s then and 3 097 now, and H-18's assignment arm 4 121 then and 2 284 now. The cost table is regenerated from this run, 57 lines, 26 945 seconds against the previous table's 29 300. No sweep was dispatched, so there is no survivor to disposition; Monday's schedule sweeps `main` as it always does.
+- The evidence: the weekly dispatched on this round's branch, run `36188866157` at the branch's `df38fa8` (`a7db817` on `main`, the same tree) with `scope=exhaustive` (the clause above), green in every job it runs: the four whole-domain shards took 44m42s, 50m04s, 1h19m35s and 58m44s, their tests' wall 2 631, 2 957, 4 722 and 3 471 s, 37, 41, 66 and 48 per cent of the 7 200-second bound, every pinned number of those tests reproduced. Beside them, as the secondary reading, ADR-0097's run `36050252444` on the same code (ADR-0098 and ADR-0099 changed documents only): 95m38s, 50m03s, 44m37s and 77m11s. The same tests moved by 0.55 to 1.99 times between the two runs on identical code, the runners' (F-45's kind): the longest, H-14's run, 2 475 s then and 3 097 now, and H-18's assignment arm 4 121 then and 2 284 now. The cost table is regenerated from this run, 57 lines, 26 945 seconds against the previous table's 29 300. No sweep was dispatched, so there is no survivor to disposition; Monday's schedule sweeps `main` as it always does.
