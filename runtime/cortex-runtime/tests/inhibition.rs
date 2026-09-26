@@ -59,6 +59,18 @@
 //! before the run, and the gate runs them at their edges and a few trials with the critic set
 //! beside the same trials with it unset.
 //!
+//! Brief 047 runs H-20 here as ADR-0109 wrote it: H-19's configuration, arms and critic over
+//! 7 680 trials with the mapping flipped three times, before the trials of index 1 536, 3 584
+//! and 5 632, by the task's `mirrored` and nothing else (`earned_run_scheduled` on the shared
+//! harness), from H-19's image after H-19's calibration. Two arms, each its own weekly
+//! `exhaustive` test. Every trial before the second flip is H-19's, so the first 56 blocks are
+//! held to H-19's tables table by table and the 64 after them are pinned. The criterion's two
+//! clauses (every mapping learned, every coupling at or below 1.30 of its image's at every
+//! block's end), the assertion and the readings — among them each reversal's speed — are
+//! integer rules written before the run; the gate runs them at their edges, reads what H-19's
+//! tables already decide of them, and runs a few trials over a schedule beside the same trials
+//! over one flip.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -21320,4 +21332,7485 @@ const CRITIC_1024: Predicted = Predicted {
     revised: [true, true],
     settled: [false, false],
     yes: false,
+};
+
+// ------------------------------------------------- written before the run (ADR-0109)
+
+/// H-20's run (ADR-0109): 7 680 trials in 120 blocks, five of H-16's runs. It does not move
+/// after a rewarded run.
+const SCHEDULE_TRIALS: usize = 5 * INHIBITION_TRIALS;
+/// The blocks of an H-20 run.
+const SCHEDULE_BLOCKS: usize = SCHEDULE_TRIALS / BLOCK;
+const _: () = assert!(SCHEDULE_TRIALS == 7_680 && SCHEDULE_BLOCKS == 120);
+
+/// Each mapping after the first (ADR-0109): 2 048 trials, thirty-two blocks, where H-19's
+/// selection passed 40 of 64 in a block 19 and 23 blocks after its flip.
+const LATER_MAPPING_TRIALS: usize = 2_048;
+const _: () = assert!(LATER_MAPPING_TRIALS == 32 * BLOCK);
+
+/// The schedule (ADR-0109): the flips before the trials of index 1 536, 3 584 and 5 632, so
+/// the mapping flips between the 1 536th trial and the 1 537th, the 3 584th and the 3 585th,
+/// and the 5 632nd and the 5 633rd. The first is H-19's `FLIP`. None moves after a rewarded
+/// run.
+const SCHEDULE_FLIPS: [usize; 3] = [
+    FLIP,
+    FLIP + LATER_MAPPING_TRIALS,
+    FLIP + 2 * LATER_MAPPING_TRIALS,
+];
+const _: () = assert!(
+    SCHEDULE_FLIPS[0] == 1_536
+        && SCHEDULE_FLIPS[1] == 3_584
+        && SCHEDULE_FLIPS[2] == 5_632
+        && SCHEDULE_FLIPS[2] + LATER_MAPPING_TRIALS == SCHEDULE_TRIALS
+);
+
+/// The four mappings' trials, `[first, end)` by index: the first 1 536 trials long, each later
+/// one 2 048.
+const SPANS: [(usize, usize); 4] = [
+    (0, SCHEDULE_FLIPS[0]),
+    (SCHEDULE_FLIPS[0], SCHEDULE_FLIPS[1]),
+    (SCHEDULE_FLIPS[1], SCHEDULE_FLIPS[2]),
+    (SCHEDULE_FLIPS[2], SCHEDULE_TRIALS),
+];
+
+/// The four mappings' blocks, `[first, end)` by index: 0 to 24, 24 to 56, 56 to 88 and 88 to
+/// 120. Every flip falls between two blocks, so every block lies under one mapping.
+const MAPPINGS: [(usize, usize); 4] = [
+    (SPANS[0].0 / BLOCK, SPANS[0].1 / BLOCK),
+    (SPANS[1].0 / BLOCK, SPANS[1].1 / BLOCK),
+    (SPANS[2].0 / BLOCK, SPANS[2].1 / BLOCK),
+    (SPANS[3].0 / BLOCK, SPANS[3].1 / BLOCK),
+];
+const _: () = assert!(
+    SCHEDULE_FLIPS[0] % BLOCK == 0
+        && SCHEDULE_FLIPS[1] % BLOCK == 0
+        && SCHEDULE_FLIPS[2] % BLOCK == 0
+        && MAPPINGS[0].1 == FLIP_BLOCK
+        && MAPPINGS[1].1 == 56
+        && MAPPINGS[2].1 == 88
+        && MAPPINGS[3].1 == SCHEDULE_BLOCKS
+);
+
+/// The blocks H-20 holds to H-19's (ADR-0109): the first 56, every trial before the second
+/// flip — the same image, critic and trials, so H-19's arm's bit for bit — and of them the 32
+/// from the first flip, from which the strong punishments are read.
+const REPLICATED_BLOCKS: usize = MAPPINGS[1].1;
+const REPLICATED_AFTER_FLIP: usize = REPLICATED_BLOCKS - FLIP_BLOCK;
+const _: () = assert!(
+    REPLICATED_BLOCKS == 56 && REPLICATED_AFTER_FLIP == 32 && REPLICATED_BLOCKS <= CRITIC_BLOCKS
+);
+
+/// The arms of H-20 (ADR-0109): H-19's two, in their order, each its own weekly test — the
+/// assignment first and the mirrored first — from H-19's image, H-18's signed image, with
+/// H-19's critic at the start; at each flip `Task::mirrored` negated and nothing else, the
+/// critic's expectations carried across it.
+const SCHEDULE_ARMS: [Reversal; 2] = CRITIC_ARMS;
+
+/// ADR-0109 writes no prediction for the verdict.
+const SCHEDULE_PREDICTED: Option<bool> = None;
+
+/// Clause 2's bound (ADR-0109): every stimulus–readout coupling at or below 1.30 of its image
+/// coupling at the end of every block, read in integers as `coupling × 100 ≤ image × 130`.
+const BOUND_PER_CENT: i64 = 130;
+
+/// ADR-0109's predicted reading (1), a Hypothesis written before the run and never asserted:
+/// after each of the three flips, each stimulus selects its new answer within `NEW_WITHIN`
+/// trials of the flip (`new_within`). After H-19's flip each did so within 3 to 68.
+const NEW_WITHIN_PREDICTED: bool = true;
+/// The trials from a flip the predicted reading (1) reads: 128, trials 1 537 to 1 664 after
+/// the first flip.
+const NEW_WITHIN: usize = 2 * BLOCK;
+const _: () = assert!(NEW_WITHIN == 128);
+
+/// ADR-0109's predicted reading (2), a Hypothesis written before the run and never asserted:
+/// each mapping's first `EDGE_BLOCKS` blocks — for the first mapping its first four, for a
+/// later one the four after its flip — hold fewer correct trials than its last four
+/// (`later_better`).
+const LATER_BETTER_PREDICTED: bool = true;
+/// The blocks at each end of a mapping the predicted reading (2) reads.
+const EDGE_BLOCKS: usize = 4;
+const _: () =
+    assert!(2 * EDGE_BLOCKS <= FLIP_BLOCK && 2 * EDGE_BLOCKS * BLOCK <= LATER_MAPPING_TRIALS);
+
+// ------------------------------------------------------------ the criterion (ADR-0109)
+
+/// Whether the mapping in force over the block of index `j`, in an arm whose first mapping is
+/// `first`, is mirrored: `first` where the schedule has flipped an even number of times by the
+/// block's first trial, the other where an odd number (`flipped_at`, the harness's rule).
+fn mirrored_at(first: bool, j: usize) -> bool {
+    first != flipped_at(&SCHEDULE_FLIPS, j.saturating_mul(BLOCK))
+}
+
+/// Clause 1's counts (ADR-0109), per mapping: the correct selections over its last
+/// `LAST_BLOCKS` blocks under it — trials 1 409 to 1 536, 3 457 to 3 584, 5 505 to 5 632 and
+/// 7 553 to 7 680 — a tie not correct, the task's count; zeros for a run of any other length.
+fn mapping_correct(blocks: &[Block]) -> [u32; 4] {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return [0; 4];
+    }
+    MAPPINGS.map(|(_, end)| blocks.get(..end).map_or(0, last_correct))
+}
+
+/// Clause 2's rule for one coupling: above 1.30 of its image coupling,
+/// `coupling × 100 > image × 130`.
+fn over_bound(coupling: i64, image: i64) -> bool {
+    coupling.saturating_mul(100) > image.saturating_mul(BOUND_PER_CENT)
+}
+
+/// Clause 2's reading (ADR-0109): the first block, by index, at whose end a stimulus–readout
+/// coupling stood above 1.30 of its image coupling, with that pair, `(block, stimulus,
+/// readout)` — the first in `ALL_PAIRS`'s order where two did at once; none when no coupling
+/// did at any block's end.
+fn first_over(blocks: &[Block]) -> Option<(usize, usize, usize)> {
+    blocks.iter().enumerate().find_map(|(j, b)| {
+        ALL_PAIRS
+            .iter()
+            .find(|&&(s, r)| over_bound(b.10[s][r], IMAGE_COUPLINGS_1024[s][r]))
+            .map(|&(s, r)| (j, s, r))
+    })
+}
+
+/// H-20's criterion (ADR-0109), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) each of the four mappings learned — `mapping_correct` at least `REWARDED_MIN` — and (2)
+/// the couplings bounded — a run of 120 blocks with no coupling past 1.30 of its image's at any
+/// block's end. `yes` is all ten. A no names the clause, the mapping and the block: under
+/// clause 1 the mappings whose `learned` is false, read over their last two blocks; under
+/// clause 2 `over`, the first block past the bound and its pair.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Scheduled {
+    learned: [[bool; 4]; 2],
+    bounded: [bool; 2],
+    over: [Option<(usize, usize, usize)>; 2],
+    yes: bool,
+}
+
+fn scheduled(arms: [&[Block]; 2]) -> Scheduled {
+    let learned = arms.map(|blocks| mapping_correct(blocks).map(|c| c >= REWARDED_MIN));
+    let over = arms.map(first_over);
+    let bounded = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && over[k].is_none());
+    Scheduled {
+        learned,
+        bounded,
+        over,
+        yes: learned.iter().flatten().chain(&bounded).all(|&c| c),
+    }
+}
+
+// --------------------------------------------------- the assertion's shape (ADR-0109)
+
+/// An arm's per-block tables, as H-19's arms pin them: the sight's blocks, the compositions,
+/// the earned blocks, the moves and each stimulus's expectation from the run's first block,
+/// and the strong punishments from the first flip's.
+#[derive(Clone, Copy)]
+struct Tables<'a> {
+    blocks: &'a [Block],
+    compositions: &'a [Composition],
+    earned: &'a [EarnedBlock],
+    moves: &'a [MovesBlock],
+    expected: &'a [[i32; 2]],
+    strong: &'a [[u32; 2]],
+}
+
+/// H-19's arm's pinned tables, by its index in `CRITIC_ARMS`.
+fn critic_tables(k: usize) -> Tables<'static> {
+    Tables {
+        blocks: CRITIC_BLOCKS_1024[k],
+        compositions: CRITIC_COMPOSITIONS_1024[k],
+        earned: CRITIC_EARNED_1024[k],
+        moves: CRITIC_MOVES_1024[k],
+        expected: CRITIC_EXPECTED_1024[k],
+        strong: CRITIC_STRONG_1024[k],
+    }
+}
+
+/// The first `rows` rows of `run` are `h19`'s, both holding at least that many.
+fn same_rows<T: PartialEq>(run: &[T], h19: &[T], rows: usize) -> bool {
+    match (run.get(..rows), h19.get(..rows)) {
+        (Some(here), Some(there)) => here == there,
+        _ => false,
+    }
+}
+
+/// ADR-0109's assertion that the first 56 blocks are H-19's arm's bit for bit, table by table
+/// in `Tables`'s order: the first `REPLICATED_BLOCKS` rows of every table read from the run's
+/// first block, and the first `REPLICATED_AFTER_FLIP` rows of the strong punishments, equal to
+/// H-19's. All six true is the assertion; a false one stops the round before any reading is
+/// taken, and is a finding. Beside it the arm holds the couplings at the end of the 1 537th
+/// trial to H-19's, and the oracle is held to the record at every trial.
+fn replication(run: Tables, h19: Tables) -> [bool; 6] {
+    [
+        same_rows(run.blocks, h19.blocks, REPLICATED_BLOCKS),
+        same_rows(run.compositions, h19.compositions, REPLICATED_BLOCKS),
+        same_rows(run.earned, h19.earned, REPLICATED_BLOCKS),
+        same_rows(run.moves, h19.moves, REPLICATED_BLOCKS),
+        same_rows(run.expected, h19.expected, REPLICATED_BLOCKS),
+        same_rows(run.strong, h19.strong, REPLICATED_AFTER_FLIP),
+    ]
+}
+
+// --------------------------------------------------- the readings' shape (ADR-0109)
+
+/// The punishment's course (ADR-0106's reading) under the schedule, per block from the first
+/// flip and per stimulus `[A, B]`: the trials that selected the stimulus's old answer — the
+/// readout that is not its answer under the mapping in force, which was its answer under the
+/// mapping before — and left a signal at or below `STRONG_PUNISHMENT_Q16`. Up to the second
+/// flip it is `strong_punishments`; the blocks before the first flip are not read.
+fn strong_scheduled(read: &[EarnedTrial], first: bool) -> Vec<[u32; 2]> {
+    let mut out = vec![[0u32; 2]; read.len().saturating_sub(FLIP).div_ceil(BLOCK)];
+    for (t, trial) in read.iter().enumerate().skip(FLIP) {
+        let old = answer_of(trial.0, first == flipped_at(&SCHEDULE_FLIPS, t)) as u8;
+        if trial.2 != Some(old) || trial.7 > STRONG_PUNISHMENT_Q16 {
+            continue;
+        }
+        if let Some(block) = t
+            .checked_sub(FLIP)
+            .and_then(|d| d.checked_div(BLOCK))
+            .and_then(|j| out.get_mut(j))
+        {
+            let into = &mut block[usize::from(trial.0)];
+            *into = into.saturating_add(1);
+        }
+    }
+    out
+}
+
+/// `strong_scheduled` summed over the blocks of the mapping each flip put in force, per flip
+/// and per stimulus; zeros for a mapping the table does not hold whole.
+fn strong_by_flip(strong: &[[u32; 2]]) -> [[u32; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        strong
+            .get(from.saturating_sub(FLIP_BLOCK)..to.saturating_sub(FLIP_BLOCK))
+            .map_or([0; 2], strong_total)
+    })
+}
+
+/// Per flip and per stimulus, the first trial from the flip, by index, that selected the
+/// stimulus's answer under the mapping the flip put in force; none when none did before the
+/// next flip or the run's end. At the first flip it is `first_new` where that came before the
+/// second.
+fn first_new_scheduled(read: &[EarnedTrial], first: bool) -> [[Option<usize>; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = SPANS[m];
+        let mirrored = mirrored_at(first, MAPPINGS[m].0);
+        [0u8, 1].map(|s| {
+            let new = answer_of(s, mirrored) as u8;
+            read.iter()
+                .enumerate()
+                .take(to)
+                .skip(from)
+                .find(|(_, t)| t.0 == s && t.2 == Some(new))
+                .map(|(k, _)| k)
+        })
+    })
+}
+
+/// ADR-0109's predicted reading (1) as a rule: per flip and per stimulus, its first new
+/// selection before the trial of index `flip + NEW_WITHIN`, among the first 128 trials from
+/// the flip.
+fn new_within(first_new: [[Option<usize>; 2]; 3]) -> [[bool; 2]; 3] {
+    [0usize, 1, 2].map(|f| {
+        let by = SCHEDULE_FLIPS[f].saturating_add(NEW_WITHIN);
+        first_new[f].map(|t| t.is_some_and(|t| t < by))
+    })
+}
+
+/// The correct trials of a run of blocks.
+fn correct_in(blocks: &[Block]) -> u32 {
+    blocks.iter().fold(0u32, |sum, b| sum.saturating_add(b.0))
+}
+
+/// Per mapping, the correct trials in its first `EDGE_BLOCKS` blocks and in its last
+/// `EDGE_BLOCKS`, `[first, last]`; zeros for a run of any other length.
+fn edges(blocks: &[Block]) -> [[u32; 2]; 4] {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return [[0; 2]; 4];
+    }
+    MAPPINGS.map(|(from, to)| {
+        [
+            blocks
+                .get(from..from.saturating_add(EDGE_BLOCKS))
+                .map_or(0, correct_in),
+            blocks
+                .get(to.saturating_sub(EDGE_BLOCKS)..to)
+                .map_or(0, correct_in),
+        ]
+    })
+}
+
+/// ADR-0109's predicted reading (2) as a rule: per mapping, fewer correct trials in its first
+/// four blocks than in its last four; false for a run of any other length.
+fn later_better(blocks: &[Block]) -> [bool; 4] {
+    edges(blocks).map(|[early, late]| early < late)
+}
+
+/// The speed of each mapping's learning (ADR-0109's reading of each reversal): per mapping, the
+/// blocks from its first to the first of its blocks with at least `CROSSING_MARK` correct, that
+/// block counted — after H-19's flip, 19 and 23; none when none of its blocks did or the run
+/// does not hold it.
+fn crossings(blocks: &[Block]) -> [Option<usize>; 4] {
+    MAPPINGS.map(|(from, to)| {
+        blocks
+            .get(from..to)
+            .and_then(|mine| mine.iter().position(|b| b.0 >= CROSSING_MARK))
+            .map(|j| j.saturating_add(1))
+    })
+}
+
+/// Per flip and per stimulus, the first block of the mapping the flip put in force, by index,
+/// in which the stimulus selected its new answer more often than its old (the earned splits):
+/// where its selection crossed; none when no block of the mapping did. At the first flip it is
+/// `crossed_block` where that crossed before the second.
+fn crossed_scheduled(earned: &[EarnedBlock], first: bool) -> [[Option<usize>; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        let mirrored = mirrored_at(first, from);
+        [0u8, 1].map(|s| {
+            let (new, old) = (answer_of(s, mirrored), answer_of(s, !mirrored));
+            earned
+                .iter()
+                .enumerate()
+                .take(to)
+                .skip(from)
+                .find(|(_, b)| b.0[usize::from(s)][new] > b.0[usize::from(s)][old])
+                .map(|(j, _)| j)
+        })
+    })
+}
+
+/// Per mapping, its trials' outcomes `[correct, wrong, tied]`: the correct selections, the
+/// selections of the other readout, and the ties; zeros for a mapping the run does not hold.
+fn tally(blocks: &[Block]) -> [[u32; 3]; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let Some(mine) = blocks.get(from..to) else {
+            return [0; 3];
+        };
+        let correct = correct_in(mine);
+        let ties = mine.iter().fold(0u32, |sum, b| sum.saturating_add(b.11));
+        let trials = (mine.len() as u32).saturating_mul(BLOCK as u32);
+        [
+            correct,
+            trials.saturating_sub(correct).saturating_sub(ties),
+            ties,
+        ]
+    })
+}
+
+/// H-19's settle measure (ADR-0106's clause 3, a reading here and no clause) over each
+/// mapping's last `SETTLE_BLOCKS` blocks, per mapping and per stimulus: the stimulus's answer
+/// pair under the mapping, its coupling at the end of the mapping's last block less its
+/// coupling `SETTLE_BLOCKS` blocks before; none for a run of any other length. Over the first
+/// mapping it is `settle_moves`'s first.
+fn settle_scheduled(blocks: &[Block], first: bool) -> Option<[[i64; 2]; 4]> {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return None;
+    }
+    Some(MAPPINGS.map(|(from, to)| {
+        let mirrored = mirrored_at(first, from);
+        let end = to.saturating_sub(1);
+        [0usize, 1].map(|s| {
+            let answer = answer_of(s as u8, mirrored);
+            let at = |j: usize| blocks.get(j).map_or(0, |b| b.10[s][answer]);
+            at(end).saturating_sub(at(end.saturating_sub(SETTLE_BLOCKS)))
+        })
+    }))
+}
+
+/// `settle_scheduled` as fractions of each answer pair's image coupling, in parts per ten
+/// thousand, truncated.
+fn settle_per_myriad(settle: Option<[[i64; 2]; 4]>, first: bool) -> Option<[[i64; 2]; 4]> {
+    settle.map(|moves| {
+        let mut out = [[0i64; 2]; 4];
+        for (m, (into, pairs)) in out.iter_mut().zip(moves.iter()).enumerate() {
+            let mirrored = mirrored_at(first, MAPPINGS[m].0);
+            for (s, (fraction, &delta)) in into.iter_mut().zip(pairs.iter()).enumerate() {
+                *fraction =
+                    per_myriad(delta, IMAGE_COUPLINGS_1024[s][answer_of(s as u8, mirrored)]);
+            }
+        }
+        out
+    })
+}
+
+/// A coupling's peak: its fraction of the image coupling in parts per ten thousand, its block,
+/// its stimulus and its readout.
+type Peak = (i64, usize, usize, usize);
+
+/// The highest coupling of each mapping (ADR-0109's reading): per mapping, the highest of the
+/// four couplings at any of its blocks' ends as a fraction of its image coupling, in parts per
+/// ten thousand, with its block and pair, `(per myriad, block, stimulus, readout)` — the first
+/// in block order and then in `ALL_PAIRS`'s where two read the same; none for a mapping of
+/// which the run holds no block.
+fn highest(blocks: &[Block]) -> [Option<Peak>; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut best: Option<Peak> = None;
+        for (j, b) in blocks.iter().enumerate().take(to).skip(from) {
+            for &(s, r) in &ALL_PAIRS {
+                let fraction = per_myriad(b.10[s][r], IMAGE_COUPLINGS_1024[s][r]);
+                if best.is_none_or(|(high, ..)| fraction > high) {
+                    best = Some((fraction, j, s, r));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// The moves after a punishment (`side` 1) or after a reward (`side` 0), summed over each
+/// mapping's blocks: how the deliveries of each sign moved the addressed synapses, mapping by
+/// mapping.
+fn moves_by_mapping(blocks: &[MovesBlock], side: usize) -> [Moves; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut out: Moves = ([0; 3], [0; 2]);
+        for block in blocks.iter().take(to).skip(from) {
+            add_moves(&mut out, &block[side]);
+        }
+        out
+    })
+}
+
+// ---------------------------------------------------------------- the run (brief 047)
+
+/// An arm's run from the signed engine under a schedule (brief 047): `earned_run_scheduled`
+/// under the answer's feedback at the gate's zero with the signed gate set, the arm's first
+/// mapping, the flips before the trials of index `flips`, the critic given, and `after` reading
+/// the executor at every trial's end — the oracle, fed the reward each trial delivered, held to
+/// the record at every trial; the task's error and expectations held to the harness's critic;
+/// every trial's contract asserted under the mapping in force at it. Over H-19's one flip it
+/// is `critic_run`'s run.
+fn schedule_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    trials: usize,
+    flips: &[usize],
+    critic: Option<Critic>,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
+    earned_run_scheduled(
+        exec,
+        Feedback::Answer,
+        first_mapping(arm),
+        1024,
+        trials,
+        GATE_BASELINE_Q16,
+        flips,
+        true,
+        critic,
+        after,
+    )
+}
+
+/// One arm of H-20 at 1 024 units (brief 047): H-19's calibration before any rewarded run
+/// (H-20's stopping rule, step 2) — the settled engine held to ADR-0077 step by step and its
+/// images, the signed image H-19's by its CRC, a frozen block from the zero image, the
+/// inhibitory baseline and the signed gate unset, held to ADR-0077's frozen run, and H-18's
+/// arm's first block from the signed image with the critic unset, held to H-18's tables; then
+/// the arm's 7 680 trials from the signed image with H-19's critic and the three flips, the
+/// couplings read at the end of the first trial under each new mapping; the run's tables
+/// dumped; the first 56 blocks held to H-19's arm's, table by table, before any reading is
+/// taken; then everything read and dumped, the clauses and the readings computed, before
+/// anything else is held; then the assertion, and the pinned tables of the 64 blocks after
+/// the second flip.
+fn schedule_arm(arm: Reversal) {
+    let k = SCHEDULE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-20");
+    let name = format!("schedule1024 {arm:?}");
+    let (zero, signed) = signed_images(&name);
+    let image_crc = crc64(&signed);
+    assert_eq!(
+        image_crc, PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-19's image, H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    {
+        let mut exec = signed_from(&signed, 1024);
+        let (run, moves) = punished_run(&mut exec, arm, BLOCK, FLIP, &mut |_, _| {});
+        let (blocks, _, trials, read, _) = &run;
+        let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+        assert_eq!(
+            blocks.as_slice(),
+            &PUNISHED_BLOCKS_1024[k][..1],
+            "{name}: H-18's first block, the critic unset"
+        );
+        assert_eq!(
+            compositions.as_slice(),
+            &PUNISHED_COMPOSITIONS_1024[k][..1],
+            "{name}: and its composition"
+        );
+        assert_eq!(
+            earned_blocks(read).as_slice(),
+            &PUNISHED_EARNED_1024[k][..1],
+            "{name}: and its earned block"
+        );
+        assert_eq!(
+            moves_blocks(read, &moves).as_slice(),
+            &PUNISHED_MOVES_1024[k][..1],
+            "{name}: and its moves"
+        );
+        eprintln!(
+            "DUMP {name} calibration holds: ADR-0077's settled candidate, H-19's image (crc {image_crc:#018x}) and H-18's first block reproduced"
+        );
+    }
+    let sets = geometry(1024, ROTATION_1024);
+    let image_sums = QUIET_1024[SETTLED].1;
+    let mut exec = signed_from(&signed, 1024);
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let image = weights_of(&exec);
+    let first = first_mapping(arm);
+    let mut at_flips: [Option<[[i64; 2]; 2]>; 3] = [None; 3];
+    let (run, moves, expected) = schedule_run(
+        &mut exec,
+        arm,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        Some(CRITIC_AT_START),
+        &mut |exec, trial| {
+            if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
+                at_flips[f] = Some(pair_couplings(exec, &sets));
+            }
+        },
+    );
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let at_flips = at_flips.map(|c| c.expect("the run reached the trial after every flip"));
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let expected_by_block = expected_blocks(&expected);
+    let strong = strong_scheduled(read, first);
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        (read.len(), expected.len()),
+        (SCHEDULE_TRIALS, SCHEDULE_TRIALS)
+    );
+    assert_eq!(
+        (
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            expected_by_block.len(),
+            strong.len()
+        ),
+        (
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS - FLIP_BLOCK
+        )
+    );
+    // The run's tables dumped, the 64 blocks after the second flip as they are pinned, before
+    // anything is held or read.
+    let after = REPLICATED_BLOCKS;
+    eprintln!("DUMP {name} PIN blocks {:?}", &blocks[after..]);
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {:?}", &compositions[after..]);
+    eprintln!("DUMP {name} PIN earned {:?}", &earned[after..]);
+    eprintln!(
+        "DUMP {name} PIN read {:#018x}",
+        earned_hash(&read[SCHEDULE_FLIPS[1]..])
+    );
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {:?}", &moved[after..]);
+    eprintln!("DUMP {name} PIN expected {:?}", &expected_by_block[after..]);
+    eprintln!(
+        "DUMP {name} PIN strong {:?}",
+        &strong[REPLICATED_AFTER_FLIP..]
+    );
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    // The first 56 blocks are H-19's arm's (ADR-0109's assertion): a divergence stops the round
+    // here, before any reading is taken, and is a finding.
+    let here = Tables {
+        blocks,
+        compositions: &compositions,
+        earned: &earned,
+        moves: &moved,
+        expected: &expected_by_block,
+        strong: &strong,
+    };
+    let replicated = replication(here, critic_tables(k));
+    eprintln!(
+        "DUMP {name} replication {replicated:?} at the 1 537th {:?}",
+        at_flips[0]
+    );
+    assert_eq!(
+        replicated, [true; 6],
+        "{name}: the first 56 blocks are H-19's arm's — its blocks, compositions, earned blocks, moves, expectations and strong punishments"
+    );
+    assert_eq!(
+        at_flips[0], CRITIC_CARRY_1024[k],
+        "{name}: and the couplings at the end of the 1 537th trial"
+    );
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    let correct = mapping_correct(blocks);
+    let over = first_over(blocks);
+    let first_new_read = first_new_scheduled(read, first);
+    let within = new_within(first_new_read);
+    let edges_read = edges(blocks);
+    let later = later_better(blocks);
+    let crossings_read = crossings(blocks);
+    let crossed = crossed_scheduled(&earned, first);
+    let tally_read = tally(blocks);
+    let settle = settle_scheduled(blocks, first);
+    let highest_read = highest(blocks);
+    let strong_sum = strong_by_flip(&strong);
+    let punished_moves = moves_by_mapping(&moved, 1);
+    let rewarded_moves = moves_by_mapping(&moved, 0);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let sums_after = weights_by_polarity(&exec);
+    eprintln!(
+        "DUMP {name} PIN readings correct {correct:?} over {over:?} reach {reach:?} first new {first_new_read:?} within {within:?} (predicted {NEW_WITHIN_PREDICTED}) edges {edges_read:?} later better {later:?} (predicted {LATER_BETTER_PREDICTED}) crossings {crossings_read:?} crossed {crossed:?} tally {tally_read:?} settle {settle:?} highest {highest_read:?} strong total {strong_sum:?} punished moves {punished_moves:?} rewarded moves {rewarded_moves:?} once {once} falls {falls} sums after {sums_after:?} image crc {image_crc:#018x}"
+    );
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {over:?} settle per myriad {:?}",
+        correct.map(|c| c >= REWARDED_MIN),
+        settle_per_myriad(settle, first)
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?}",
+        couplings_course(blocks)
+    );
+    eprintln!(
+        "DUMP {name} expectations {expected_by_block:?} signal {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} image {image_sums:?} last splits {:?}",
+        course(image_sums.0, blocks),
+        last_splits(read)
+    );
+    // The assertion (ADR-0109), after the dump and beside the verdict: H-18's rule.
+    assert!(
+        punished_held(&reach),
+        "{name}: ADR-0109's assertion — no excitatory synapse outside the four stimulus–readout pairs moved: {reach:?}"
+    );
+    // The pinned tables of the 64 blocks after the second flip, and the readings as the
+    // constants state.
+    pinned(
+        &format!("{name} sight"),
+        &blocks[after..],
+        *trace,
+        SCHEDULE_BLOCKS_1024[k],
+        SCHEDULE_TRACES_1024[k],
+    );
+    assert_eq!(
+        &compositions[after..],
+        SCHEDULE_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        &earned[after..],
+        SCHEDULE_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(&read[SCHEDULE_FLIPS[1]..]),
+        SCHEDULE_READ_1024[k],
+        "{name}: the readings from the second flip"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        SCHEDULE_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        &moved[after..],
+        SCHEDULE_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        &expected_by_block[after..],
+        SCHEDULE_EXPECTED_1024[k],
+        "{name}: the expectations per block"
+    );
+    assert_eq!(
+        &strong[REPLICATED_AFTER_FLIP..],
+        SCHEDULE_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(at_flips, SCHEDULE_AT_FLIPS_1024[k]);
+    assert_eq!(correct, CORRECT_SCHEDULE_1024[k]);
+    assert_eq!(over, OVER_1024[k]);
+    assert_eq!(reach, REACH_SCHEDULE_1024[k]);
+    assert_eq!(first_new_read, FIRST_NEW_SCHEDULE_1024[k]);
+    assert_eq!(within, NEW_WITHIN_1024[k]);
+    assert_eq!(edges_read, EDGES_1024[k]);
+    assert_eq!(later, LATER_BETTER_1024[k]);
+    assert_eq!(crossings_read, CROSSINGS_1024[k]);
+    assert_eq!(crossed, CROSSED_SCHEDULE_1024[k]);
+    assert_eq!(tally_read, TALLY_1024[k]);
+    assert_eq!(settle, SETTLE_SCHEDULE_1024[k]);
+    assert_eq!(highest_read, HIGHEST_1024[k]);
+    assert_eq!(strong_sum, STRONG_BY_FLIP_1024[k]);
+    assert_eq!(punished_moves, PUNISHED_MOVES_SCHEDULE_1024[k]);
+    assert_eq!(rewarded_moves, REWARDED_MOVES_SCHEDULE_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_SCHEDULE_1024[k]);
+    assert_eq!(falls, FALLS_SCHEDULE_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (
+            SUMS_AFTER_SCHEDULE_1024[k],
+            Some(SUMS_AFTER_SCHEDULE_1024[k])
+        ),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-20's arm that starts from the assignment (brief 047): A onto readout 0 and B onto readout
+/// 1 for 1 536 trials, then the mirrored mapping, the assignment and the mirrored mapping again
+/// for 2 048 trials each, the signed gate and the critic set.
+#[test]
+#[ignore]
+fn the_schedule_of_reversals_from_the_assignment_at_1024_units_exhaustive() {
+    schedule_arm(Reversal::AssignmentFirst);
+}
+
+/// H-20's arm that starts from the mirrored assignment (brief 047): A onto readout 1 and B onto
+/// readout 0 for 1 536 trials, then the assignment, the mirrored mapping and the assignment
+/// again for 2 048 trials each, the signed gate and the critic set.
+#[test]
+#[ignore]
+fn the_schedule_of_reversals_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    schedule_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 047): the arms and the constants as ADR-0109 fixed
+/// them, H-19's restated; the schedule's rule; the criterion's two clauses at their edges over
+/// blocks written by hand — 80 and 79 correct in each mapping's window, a coupling at 1.30 of
+/// its image's and one LSB above it — and the verdict naming the clause, the mapping and the
+/// block; the replication's rule over a hand-written prefix and over H-19's and H-18's tables;
+/// the readings' rules over blocks, trials and tables written by hand; what H-19's pinned
+/// tables already decide of H-20; and a few trials over a schedule of three flips on the
+/// instrument's network at 1 024 units with the critic set, beside the same trials over the
+/// first of those flips alone — the oracle held at every trial inside `earned_run_scheduled`
+/// in both — where every trial is judged under the mapping the schedule puts in force and the
+/// two runs are one run up to the second flip. No whole run, and nothing else added to the
+/// gate.
+#[test]
+fn a_few_trials_over_a_schedule_at_1024_units_and_the_rules_of_the_schedule() {
+    // The arms and the constants.
+    assert_eq!(
+        SCHEDULE_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (SCHEDULE_TRIALS, SCHEDULE_BLOCKS, LATER_MAPPING_TRIALS),
+        (7_680, 120, 2_048)
+    );
+    assert_eq!(SCHEDULE_FLIPS, [1_536, 3_584, 5_632]);
+    assert_eq!(
+        SPANS,
+        [(0, 1_536), (1_536, 3_584), (3_584, 5_632), (5_632, 7_680)]
+    );
+    assert_eq!(MAPPINGS, [(0, 24), (24, 56), (56, 88), (88, 120)]);
+    assert_eq!((REPLICATED_BLOCKS, REPLICATED_AFTER_FLIP), (56, 32));
+    assert_eq!(SCHEDULE_PREDICTED, None, "ADR-0109 predicts no verdict");
+    assert_eq!(BOUND_PER_CENT, 130);
+    assert_eq!((NEW_WITHIN, EDGE_BLOCKS), (128, 4));
+    assert_eq!(
+        [NEW_WITHIN_PREDICTED, LATER_BETTER_PREDICTED],
+        [true; 2],
+        "ADR-0109's two predicted readings"
+    );
+    // Every constant of H-19 restated unchanged, and with them ADR-0065's window, trial, seed
+    // and gain, ADR-0066's mark and window of the criterion, ADR-0076's stimulus and cancel,
+    // ADR-0077's settled candidate, ADR-0080's reward and mark of a crossing, ADR-0085's two
+    // baselines, ADR-0089's flip, ADR-0093's run and arms, ADR-0094's flag and H-19's image.
+    assert_eq!(
+        (CRITIC_TRIALS, CRITIC_BLOCKS, FLIP, FLIP_BLOCK),
+        (4_608, 72, 1_536, 24)
+    );
+    assert_eq!(CRITIC_ARMS, PUNISHED_ARMS);
+    assert_eq!(CRITIC_SHIFT, 5, "ADR-0106's shift");
+    assert_eq!(
+        CRITIC_AT_START,
+        Critic {
+            expected_q16: [0; 2],
+            shift: 5
+        },
+        "both expectations zero at the start"
+    );
+    assert_eq!(
+        (STRONG_PUNISHMENT_Q16, SETTLE_BLOCKS, SETTLE_PER_CENT),
+        (-0x8000, 4, 100)
+    );
+    assert_eq!(
+        (WINDOW.from, WINDOW.ticks, TRIAL_TICKS, SEED, GAIN_1024),
+        (100, 500, 1 << 14, 27, 0x0001_C000)
+    );
+    assert_eq!(
+        (REWARDED_MIN, LAST_BLOCKS, BLOCK, CROSSING_MARK),
+        (80, 2, 64, 40)
+    );
+    assert_eq!(SHAPE_F46, (2, 0x0001_4000));
+    assert_eq!(CANCEL_PICKED_1024, Some(CANCEL_AT_THE_EXTREME));
+    assert_eq!((SETTLED, BACKGROUNDS[SETTLED]), (0, 0));
+    assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
+    assert_eq!(REWARD_Q16, ONE);
+    assert_eq!((PUNISHED_TRIALS, PUNISHED_ARMS), (4_608, REVERSAL_ARMS));
+    assert_eq!(SIGNED_GATE_BYTE, 25);
+    assert_eq!(
+        PUNISHED_IMAGE_CRC_1024, 0x3771_636d_3851_91ac,
+        "H-19's image, H-18's"
+    );
+    // The schedule's rule: the mapping in force is the other than the first from the 1 537th
+    // trial to the 3 584th and from the 5 633rd to the last; under H-19's one flip, from the
+    // 1 537th on; under none, never. A block lies under the mapping of its first trial.
+    for t in 0..SCHEDULE_TRIALS {
+        assert_eq!(
+            flipped_at(&SCHEDULE_FLIPS, t),
+            (1_536..3_584).contains(&t) || (5_632..7_680).contains(&t),
+            "trial {t}"
+        );
+        assert_eq!(flipped_at(&[FLIP], t), t >= FLIP, "trial {t}: one flip");
+        assert!(!flipped_at(&[], t), "trial {t}: none");
+    }
+    for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+        assert_eq!(
+            SPANS[m],
+            (from.saturating_mul(BLOCK), to.saturating_mul(BLOCK))
+        );
+        for j in from..to {
+            assert_eq!(
+                mirrored_at(false, j),
+                m & 1 == 1,
+                "block {j}: the assignment first"
+            );
+            assert_eq!(
+                mirrored_at(true, j),
+                m & 1 == 0,
+                "block {j}: the mirrored first"
+            );
+        }
+    }
+    // The criterion's clause 1 at its edges over blocks written by hand: each mapping's last two
+    // blocks at 40 and 40, then one of them at 39, in either arm; nothing before a mapping's last
+    // two blocks is read, and a run of any other length learns nothing.
+    let blocks_of = |correct: &[u32]| -> Vec<Block> {
+        correct
+            .iter()
+            .map(|&c| {
+                (
+                    c,
+                    0,
+                    [[0; 2]; 2],
+                    [0; 2],
+                    [0; 2],
+                    [0; 2],
+                    0,
+                    0,
+                    0,
+                    0,
+                    IMAGE_COUPLINGS_1024,
+                    (BLOCK as u32).saturating_sub(c),
+                )
+            })
+            .collect()
+    };
+    let windows = |counts: [[u32; 2]; 4]| -> Vec<Block> {
+        let mut correct = vec![BLOCK as u32; SCHEDULE_BLOCKS];
+        for (&(_, end), pair) in MAPPINGS.iter().zip(counts) {
+            correct[end.saturating_sub(2)] = pair[0];
+            correct[end.saturating_sub(1)] = pair[1];
+        }
+        blocks_of(&correct)
+    };
+    let edge = windows([[40, 40]; 4]);
+    assert_eq!(mapping_correct(&edge), [80; 4]);
+    let all_yes = Scheduled {
+        learned: [[true; 4]; 2],
+        bounded: [true; 2],
+        over: [None; 2],
+        yes: true,
+    };
+    assert_eq!(
+        scheduled([&edge, &edge]),
+        all_yes,
+        "80 in every mapping of both arms, every coupling the image's: yes"
+    );
+    for m in 0..4usize {
+        for late in [false, true] {
+            let mut counts = [[40, 40]; 4];
+            counts[m][usize::from(late)] = 39;
+            let short = windows(counts);
+            let mut learned = [true; 4];
+            learned[m] = false;
+            assert_eq!(mapping_correct(&short)[m], 79);
+            assert_eq!(
+                scheduled([&short, &edge]),
+                Scheduled {
+                    learned: [learned, [true; 4]],
+                    bounded: [true; 2],
+                    over: [None; 2],
+                    yes: false
+                },
+                "79 in mapping {m} of the first arm: clause 1 fails there"
+            );
+            assert_eq!(
+                scheduled([&edge, &short]).learned,
+                [[true; 4], learned],
+                "and of the second"
+            );
+        }
+        let mut before = edge.clone();
+        before[MAPPINGS[m].1.saturating_sub(LAST_BLOCKS + 1)].0 = 0;
+        before[MAPPINGS[m].0].0 = 0;
+        assert_eq!(
+            mapping_correct(&before),
+            [80; 4],
+            "mapping {m}: nothing before its last two blocks is read"
+        );
+    }
+    assert_eq!(
+        mapping_correct(&edge[..SCHEDULE_BLOCKS - 1]),
+        [0; 4],
+        "a run short of 7 680 learns nothing"
+    );
+    let mut longer = edge.clone();
+    longer.push(edge[0]);
+    assert_eq!(mapping_correct(&longer), [0; 4], "nor one past it");
+    // Clause 2 at its edges: each pair's coupling at the largest value at or below 1.30 of its
+    // image coupling, at the end of the first block, the 56th, the 57th and the last, then one
+    // LSB above it; the first block past the bound named, and the first pair in `ALL_PAIRS`'s
+    // order at one block; no bound below; a run of any other length not bounded.
+    assert_eq!(
+        IMAGE_COUPLINGS_1024[0][0]
+            .saturating_mul(BOUND_PER_CENT)
+            .saturating_div(100),
+        8_124_417,
+        "A→R0's image coupling, 6 249 552: 8 124 417 is at or below 1.30 of it and 8 124 418 is not"
+    );
+    for &(s, r) in &ALL_PAIRS {
+        let image = IMAGE_COUPLINGS_1024[s][r];
+        let at_bound = image.saturating_mul(BOUND_PER_CENT).saturating_div(100);
+        assert!(
+            !over_bound(at_bound, image) && over_bound(at_bound.saturating_add(1), image),
+            "{s}→{r}: {at_bound}"
+        );
+        for j in [
+            0,
+            REPLICATED_BLOCKS - 1,
+            REPLICATED_BLOCKS,
+            SCHEDULE_BLOCKS - 1,
+        ] {
+            let mut run = edge.clone();
+            run[j].10[s][r] = at_bound;
+            assert_eq!(first_over(&run), None, "{s}→{r} at block {j}: at 1.30");
+            assert_eq!(scheduled([&run, &run]), all_yes);
+            run[j].10[s][r] = at_bound.saturating_add(1);
+            assert_eq!(
+                first_over(&run),
+                Some((j, s, r)),
+                "{s}→{r} at block {j}: one LSB above"
+            );
+            assert_eq!(
+                scheduled([&edge, &run]),
+                Scheduled {
+                    learned: [[true; 4]; 2],
+                    bounded: [true, false],
+                    over: [None, Some((j, s, r))],
+                    yes: false
+                },
+                "{s}→{r} at block {j}: clause 2 fails in the second arm there"
+            );
+        }
+    }
+    let mut twice = edge.clone();
+    twice[70].10[1][1] = IMAGE_COUPLINGS_1024[1][1].saturating_mul(2);
+    twice[90].10[0][0] = IMAGE_COUPLINGS_1024[0][0].saturating_mul(2);
+    twice[90].10[1][0] = IMAGE_COUPLINGS_1024[1][0].saturating_mul(2);
+    assert_eq!(
+        first_over(&twice),
+        Some((70, 1, 1)),
+        "the first block past it"
+    );
+    twice[70].10[1][1] = IMAGE_COUPLINGS_1024[1][1];
+    assert_eq!(first_over(&twice), Some((90, 0, 0)), "the first pair there");
+    let mut low = edge.clone();
+    low[100].10 = [[0; 2]; 2];
+    assert_eq!(first_over(&low), None, "clause 2 bounds from above only");
+    assert_eq!(
+        scheduled([&edge[..SCHEDULE_BLOCKS - 1], &edge]),
+        Scheduled {
+            learned: [[false; 4], [true; 4]],
+            bounded: [false, true],
+            over: [None; 2],
+            yes: false
+        },
+        "a run short of 7 680 is neither learned nor bounded"
+    );
+    // The replication's rule. On a hand-written prefix: the same 56 rows hold whatever follows
+    // them; a row changed among them breaks the table, and 55 rows are short. Over the pinned
+    // tables: H-19's arm against itself holds all six; one row changed at the 56th block — the
+    // 32nd from the flip for the strong punishments — breaks that table and only it; a row
+    // changed after them breaks nothing; and H-18's arm, the critic unset, is not H-19's.
+    let hand = blocks_of(&[BLOCK as u32; SCHEDULE_BLOCKS]);
+    let mut tail = hand.clone();
+    tail[REPLICATED_BLOCKS].0 = 0;
+    tail.truncate(REPLICATED_BLOCKS + 1);
+    assert!(same_rows(&tail, &hand, REPLICATED_BLOCKS));
+    tail[REPLICATED_BLOCKS - 1].0 = 0;
+    assert!(!same_rows(&tail, &hand, REPLICATED_BLOCKS));
+    assert!(!same_rows(
+        &hand[..REPLICATED_BLOCKS - 1],
+        &hand,
+        REPLICATED_BLOCKS
+    ));
+    assert!(!same_rows(
+        &hand,
+        &hand[..REPLICATED_BLOCKS - 1],
+        REPLICATED_BLOCKS
+    ));
+    for k in 0..2usize {
+        let h19 = critic_tables(k);
+        assert_eq!(replication(h19, h19), [true; 6], "{k}: H-19's own");
+        let mut blocks = h19.blocks.to_vec();
+        blocks[REPLICATED_BLOCKS - 1].11 ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    blocks: &blocks,
+                    ..h19
+                },
+                h19
+            ),
+            [false, true, true, true, true, true],
+            "{k}: the 56th block's ties"
+        );
+        let mut later = h19.blocks.to_vec();
+        later[REPLICATED_BLOCKS].11 ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    blocks: &later,
+                    ..h19
+                },
+                h19
+            ),
+            [true; 6],
+            "{k}: the 57th block is not read"
+        );
+        let mut expected = h19.expected.to_vec();
+        expected[REPLICATED_BLOCKS - 1][1] ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    expected: &expected,
+                    ..h19
+                },
+                h19
+            ),
+            [true, true, true, true, false, true],
+            "{k}: an expectation one LSB off"
+        );
+        let mut strong = h19.strong.to_vec();
+        strong[REPLICATED_AFTER_FLIP - 1][0] ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    strong: &strong,
+                    ..h19
+                },
+                h19
+            ),
+            [true, true, true, true, true, false],
+            "{k}: the strong punishments of the 56th block"
+        );
+        strong[REPLICATED_AFTER_FLIP - 1][0] ^= 1;
+        strong[REPLICATED_AFTER_FLIP][0] ^= 1;
+        assert_eq!(
+            replication(
+                Tables {
+                    strong: &strong,
+                    ..h19
+                },
+                h19
+            ),
+            [true; 6],
+            "{k}: and of the 57th, not read"
+        );
+        assert_eq!(
+            replication(
+                Tables {
+                    moves: &h19.moves[..REPLICATED_BLOCKS - 1],
+                    ..h19
+                },
+                h19
+            ),
+            [true, true, true, false, true, true],
+            "{k}: 55 blocks of moves are short"
+        );
+        let h18 = Tables {
+            blocks: PUNISHED_BLOCKS_1024[k],
+            compositions: PUNISHED_COMPOSITIONS_1024[k],
+            earned: PUNISHED_EARNED_1024[k],
+            moves: PUNISHED_MOVES_1024[k],
+            ..h19
+        };
+        assert_eq!(
+            replication(h18, h19),
+            [false, false, false, false, true, true],
+            "{k}: H-18's arm, the critic unset, is not H-19's"
+        );
+    }
+    // The readings' rules over trials written by hand, the assignment first: A's answer is
+    // readout 0 under the first and third mappings and readout 1 under the second and fourth,
+    // B's the other.
+    let trial = |stimulus: u8, selection: Option<u8>, signal: i32| -> EarnedTrial {
+        (
+            stimulus,
+            [0; 2],
+            selection,
+            false,
+            -ONE,
+            [[0; 2]; 2],
+            0,
+            signal,
+        )
+    };
+    let mut read_hand = vec![trial(0, None, -ONE); SCHEDULE_TRIALS];
+    // The strong punishments: the old answer at −0.5 or below, a tie, one LSB above −0.5, and
+    // the answer in force not counted.
+    read_hand[FLIP] = trial(0, Some(0), STRONG_PUNISHMENT_Q16);
+    read_hand[FLIP + 1] = trial(0, Some(0), STRONG_PUNISHMENT_Q16.saturating_add(1));
+    read_hand[SCHEDULE_FLIPS[1] - 1] = trial(1, Some(1), -ONE);
+    read_hand[SCHEDULE_FLIPS[1]] = trial(0, Some(0), -ONE);
+    read_hand[SCHEDULE_FLIPS[1] + 1] = trial(0, Some(1), -ONE);
+    read_hand[SCHEDULE_FLIPS[2]] = trial(1, Some(1), i32::MIN);
+    read_hand[SCHEDULE_TRIALS - 1] = trial(1, Some(0), -ONE);
+    let strong = strong_scheduled(&read_hand, false);
+    assert_eq!(strong.len(), SCHEDULE_BLOCKS - FLIP_BLOCK);
+    let counted: Vec<(usize, [u32; 2])> = strong
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, c)| *c != [0; 2])
+        .collect();
+    assert_eq!(
+        counted,
+        vec![(0, [1, 0]), (31, [0, 1]), (32, [1, 0]), (64, [0, 1])],
+        "the 1 537th's old answer at −0.5; the 3 584th's B onto its old answer; after the second flip A onto readout 1, its old answer, and not onto readout 0; after the third B onto readout 1, and not the last trial's B onto its answer"
+    );
+    assert_eq!(strong_by_flip(&strong), [[1, 1], [1, 0], [0, 1]]);
+    assert_eq!(
+        strong_scheduled(&read_hand[..SCHEDULE_FLIPS[1]], false),
+        strong_punishments(&read_hand[..SCHEDULE_FLIPS[1]], false),
+        "up to the second flip it is H-19's rule"
+    );
+    assert_eq!(
+        strong_scheduled(&read_hand, true)[0],
+        [0, 0],
+        "under the other first mapping the 1 537th's readout 0 is A's answer"
+    );
+    // The first new selections: A's new answer 127 trials after the first flip, B's 128 after
+    // it; the first new selection before a flip not counted; after the second A's at the flip
+    // and B's never, and B's readout 0, its old answer there, not a new one; after the third A's
+    // 5 trials in and B's at the last trial.
+    let mut news = vec![trial(0, None, 0); SCHEDULE_TRIALS];
+    news[FLIP - 1] = trial(0, Some(1), 0);
+    news[FLIP + NEW_WITHIN - 1] = trial(0, Some(1), 0);
+    news[FLIP + NEW_WITHIN] = trial(1, Some(0), 0);
+    news[SCHEDULE_FLIPS[1]] = trial(0, Some(0), 0);
+    news[SCHEDULE_FLIPS[1] + 2] = trial(1, Some(0), 0);
+    news[SCHEDULE_FLIPS[2] + 5] = trial(0, Some(1), 0);
+    news[SCHEDULE_TRIALS - 1] = trial(1, Some(0), 0);
+    let first_new_hand = first_new_scheduled(&news, false);
+    assert_eq!(
+        first_new_hand,
+        [
+            [Some(FLIP + NEW_WITHIN - 1), Some(FLIP + NEW_WITHIN)],
+            [Some(SCHEDULE_FLIPS[1]), None],
+            [Some(SCHEDULE_FLIPS[2] + 5), Some(SCHEDULE_TRIALS - 1)],
+        ]
+    );
+    assert_eq!(
+        new_within(first_new_hand),
+        [[true, false], [true, false], [true, false]],
+        "the trial of index 1 663 is within 128 of the first flip and the one of index 1 664 is not"
+    );
+    assert_eq!(
+        first_new_scheduled(&news, false)[0],
+        first_new(&news[..SCHEDULE_FLIPS[1]], false),
+        "at the first flip it is H-18's rule up to the second"
+    );
+    // The edges, the crossings, the tally, the settle measure and the highest coupling over
+    // blocks written by hand.
+    let mut graded = edge.clone();
+    for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+        for block in &mut graded[from..to] {
+            block.0 = 30;
+            block.11 = 2;
+        }
+        graded[from].0 = 20;
+        graded[to.saturating_sub(1)].0 = 20u32.saturating_add(u32::try_from(m).unwrap());
+    }
+    assert_eq!(
+        edges(&graded),
+        [[110, 110], [110, 111], [110, 112], [110, 113]]
+    );
+    assert_eq!(
+        later_better(&graded),
+        [false, true, true, true],
+        "equal is not fewer"
+    );
+    assert_eq!(later_better(&graded[..SCHEDULE_BLOCKS - 1]), [false; 4]);
+    assert_eq!(crossings(&graded), [None; 4]);
+    graded[MAPPINGS[1].0 + 18].0 = CROSSING_MARK;
+    graded[MAPPINGS[3].0 + 22].0 = CROSSING_MARK - 1;
+    graded[MAPPINGS[3].0 + 23].0 = CROSSING_MARK;
+    assert_eq!(
+        crossings(&graded),
+        [None, Some(19), None, Some(24)],
+        "40 in a mapping's 19th block: 19 blocks; 39 is not 40"
+    );
+    assert_eq!(
+        crossings(&graded[..MAPPINGS[1].1]),
+        [None, Some(19), None, None],
+        "a mapping the run does not hold crosses nowhere"
+    );
+    assert_eq!(
+        tally(&graded)[1],
+        [951, 1_033, 64],
+        "the second mapping: 30 a block, 20 in its first, 21 in its last and 40 in its 19th, two ties a block"
+    );
+    let mut settling = edge.clone();
+    for (m, &(_, to)) in MAPPINGS.iter().enumerate() {
+        let mirrored = mirrored_at(false, MAPPINGS[m].0);
+        for (s, image) in IMAGE_COUPLINGS_1024.iter().enumerate() {
+            let answer = answer_of(s as u8, mirrored);
+            settling[to.saturating_sub(1)].10[s][answer] =
+                image[answer].saturating_add(i64::try_from(m).unwrap().saturating_add(1));
+            settling[to.saturating_sub(1 + SETTLE_BLOCKS)].10[s][answer] =
+                image[answer].saturating_sub(10);
+            settling[to.saturating_sub(2 + SETTLE_BLOCKS)].10[s][answer] = 0;
+        }
+    }
+    assert_eq!(
+        settle_scheduled(&settling, false),
+        Some([[11; 2], [12; 2], [13; 2], [14; 2]]),
+        "the answer pair's coupling at a mapping's end less four blocks before; nothing before read"
+    );
+    assert_eq!(
+        settle_scheduled(&settling, true),
+        Some([[0; 2]; 4]),
+        "the other mapping's pairs are the image's"
+    );
+    assert_eq!(
+        settle_scheduled(&settling[..SCHEDULE_BLOCKS - 1], false),
+        None
+    );
+    let mut h19_padded = CRITIC_BLOCKS_1024[0].to_vec();
+    h19_padded.resize(SCHEDULE_BLOCKS, edge[0]);
+    assert_eq!(
+        settle_scheduled(&h19_padded, false).map(|m| [m[0]]),
+        SETTLE_MOVES_1024[0].map(|m| [m[0]]),
+        "over the first mapping it is H-19's clause 3"
+    );
+    let mut peaks = edge.clone();
+    peaks[3].10[1][0] = IMAGE_COUPLINGS_1024[1][0].saturating_mul(2);
+    peaks[30].10[0][1] = IMAGE_COUPLINGS_1024[0][1].saturating_mul(3);
+    peaks[31].10[1][1] = IMAGE_COUPLINGS_1024[1][1].saturating_mul(3);
+    assert_eq!(
+        highest(&peaks),
+        [
+            Some((20_000, 3, 1, 0)),
+            Some((30_000, 30, 0, 1)),
+            Some((10_000, MAPPINGS[2].0, 0, 0)),
+            Some((10_000, MAPPINGS[3].0, 0, 0)),
+        ],
+        "the highest, the first where two read the same"
+    );
+    assert_eq!(highest(&peaks[..MAPPINGS[1].1])[2], None);
+    // The crossings per stimulus and the moves per mapping over earned blocks written by hand.
+    let empty: EarnedBlock = ([[0; 3]; 2], 0, [[0; 2]; 2], 0, 0);
+    let mut earned_hand = vec![empty; SCHEDULE_BLOCKS];
+    earned_hand[30].0[0] = [10, 11, 0];
+    earned_hand[40].0[1] = [12, 11, 0];
+    earned_hand[60].0[0] = [11, 11, 0];
+    earned_hand[61].0[0] = [12, 11, 0];
+    earned_hand[100].0[1] = [5, 6, 3];
+    assert_eq!(
+        crossed_scheduled(&earned_hand, false),
+        [[Some(30), Some(40)], [Some(61), None], [None, None]],
+        "after the first flip A onto readout 1, B onto readout 0; after the second A onto readout 0, level not crossed; after the third B's new answer is readout 0"
+    );
+    assert_eq!(
+        crossed_scheduled(&earned_hand, false)[0],
+        crossed_block(&earned_hand[..REPLICATED_BLOCKS], false),
+        "at the first flip it is H-18's rule up to the second"
+    );
+    let moved_hand: Vec<MovesBlock> = (0..SCHEDULE_BLOCKS)
+        .map(|j| {
+            let one = u32::try_from(j).unwrap();
+            [([one, 0, 0], [1, 0]), ([0, one, 0], [0, -1])]
+        })
+        .collect();
+    let rewarded = moves_by_mapping(&moved_hand, 0);
+    let punished = moves_by_mapping(&moved_hand, 1);
+    assert_eq!(
+        rewarded.map(|m| (m.0[0], m.1[0])),
+        [(276, 24), (1_264, 32), (2_288, 32), (3_312, 32)]
+    );
+    assert_eq!(
+        punished.map(|m| (m.0[1], m.1[1])),
+        [(276, -24), (1_264, -32), (2_288, -32), (3_312, -32)]
+    );
+    // What H-19's pinned tables already decide of H-20, since its first 56 blocks are H-19's:
+    // clause 1 over the first two mappings, clause 2 over the first 56 blocks, the predicted
+    // reading (1) at the first flip and (2) over the first two mappings, the first two
+    // mappings' speeds, errors and ties, settle measures and highest couplings. The third and
+    // the fourth mappings are the run's.
+    for k in 0..2usize {
+        let first = first_mapping(CRITIC_ARMS[k]);
+        let h19 = &CRITIC_BLOCKS_1024[k][..REPLICATED_BLOCKS];
+        let mut padded = h19.to_vec();
+        padded.resize(SCHEDULE_BLOCKS, edge[0]);
+        let decided = (
+            [mapping_correct(&padded)[0], mapping_correct(&padded)[1]],
+            first_over(h19),
+            [edges(&padded)[0], edges(&padded)[1]],
+            [crossings(h19)[0], crossings(h19)[1]],
+            [tally(h19)[0], tally(h19)[1]],
+            settle_scheduled(&padded, first).map(|m| [m[0], m[1]]),
+            [highest(h19)[0], highest(h19)[1]],
+        );
+        eprintln!("DUMP schedule1024 decided by H-19's tables, arm {k}: {decided:?}");
+        assert_eq!(decided, H19_DECIDES_1024[k], "arm {k}");
+        assert_eq!(
+            [mapping_correct(&padded)[0], mapping_correct(&padded)[1]],
+            [CORRECT_CRITIC_1024[k][0], last_correct(h19)],
+            "arm {k}: clause 1's first count is H-19's"
+        );
+        let within: Vec<bool> = FIRST_NEW_CRITIC_1024[k]
+            .iter()
+            .map(|t| t.is_some_and(|t| t < FLIP + NEW_WITHIN))
+            .collect();
+        assert_eq!(
+            within, [true; 2],
+            "arm {k}: the first flip's new answers within 128"
+        );
+        assert_eq!(
+            crossed_scheduled(CRITIC_EARNED_1024[k], first)[0],
+            CROSSED_CRITIC_1024[k],
+            "arm {k}: the first flip's crossings are H-19's"
+        );
+        assert_eq!(
+            strong_by_flip(CRITIC_STRONG_1024[k])[0],
+            strong_total(&CRITIC_STRONG_1024[k][..REPLICATED_AFTER_FLIP])
+        );
+    }
+    // A few trials over a schedule on the instrument's network at 1 024 units, the inhibitory
+    // baseline, the signed gate and the critic set, the assignment first: flips before the
+    // trials of index 2, 4 and 6, and beside it the same network over the flip before the
+    // trial of index 2 alone. The oracle is held at every trial inside `earned_run_scheduled`
+    // in both, and the task's error and expectations to the harness's critic.
+    const GATE_SCHEDULE: [usize; 3] = [2, 4, 6];
+    let p = prior(1024);
+    let network = Config {
+        inhibitory_baseline_q16: Some(INHIBITORY_BASELINE_Q16),
+        signed_gate: true,
+        ..config(1024, 2, GATE_BASELINE_Q16)
+    };
+    let mut exec = at_gain(&p, network.clone(), GAIN_1024);
+    let before = weights_of(&exec);
+    let (run, _, expected) = schedule_run(
+        &mut exec,
+        Reversal::AssignmentFirst,
+        GATE_TRIALS,
+        &GATE_SCHEDULE,
+        Some(CRITIC_AT_START),
+        &mut |_, _| {},
+    );
+    let (blocks, trace, _, read, _) = &run;
+    assert!(blocks.is_empty(), "a few trials are no whole block");
+    assert_eq!((read.len(), expected.len()), (GATE_TRIALS, GATE_TRIALS));
+    let mut once_exec = at_gain(&p, network, GAIN_1024);
+    let (once_run, _, once_expected) = critic_run(
+        &mut once_exec,
+        Reversal::AssignmentFirst,
+        GATE_TRIALS,
+        GATE_SCHEDULE[0],
+        Some(CRITIC_AT_START),
+        &mut |_, _| {},
+    );
+    let once = &once_run.3;
+    eprintln!(
+        "DUMP schedule1024 a few trials trace {trace:#018x} read {read:?} expected {expected:?} once {once:?} once expected {once_expected:?}"
+    );
+    // By hand: the mapping in force the assignment's over the trials of index 0, 1, 4 and 5 and
+    // the mirrored one's over 2, 3, 6 and 7; the reward delivered the error against the
+    // expectation before; the expectation moved by the error shifted by five, the other
+    // stimulus's unmoved and carried across every flip.
+    let mut held = [0i32; 2];
+    for (t, r) in read.iter().enumerate() {
+        let s = usize::from(r.0);
+        let in_force = matches!(t, 2 | 3 | 6 | 7);
+        assert_eq!(flipped_at(&GATE_SCHEDULE, t), in_force, "trial {t}");
+        assert_eq!(
+            r.3,
+            r.2 == Some(answer_of(r.0, in_force) as u8),
+            "trial {t}: correct under the mapping in force"
+        );
+        let outcome = if r.3 { ONE } else { -ONE };
+        let error = outcome.saturating_sub(held[s]);
+        assert_eq!(r.4, error, "trial {t}: the reward delivered is the error");
+        held[s] = held[s].saturating_add(error >> CRITIC_SHIFT);
+        assert_eq!(
+            expected[t], held,
+            "trial {t}: the expectation moved by the error shifted by five"
+        );
+    }
+    let second = GATE_SCHEDULE[1];
+    assert_eq!(
+        (&read[..second], &expected[..second]),
+        (&once[..second], &once_expected[..second]),
+        "up to the second flip the two runs are one run"
+    );
+    let (c, u) = (&read[second], &once[second]);
+    assert_eq!(
+        (c.0, c.1, c.2),
+        (u.0, u.1, u.2),
+        "the trial there is the same trial"
+    );
+    assert_eq!(
+        c.3,
+        c.2 == Some(answer_of(c.0, false) as u8),
+        "judged under the assignment again"
+    );
+    assert_eq!(
+        u.3,
+        u.2 == Some(answer_of(u.0, true) as u8),
+        "where the one flip judges it under the mirrored mapping"
+    );
+    // No excitatory synapse outside the pairs the deliveries addressed moved.
+    let addressed: Vec<(usize, usize)> = read
+        .iter()
+        .take(GATE_TRIALS - 1)
+        .filter_map(|t| t.2.map(|r| (usize::from(t.0), usize::from(r))))
+        .collect();
+    let reach = reach_by_polarity(&exec, &before, 1024, &addressed);
+    assert_eq!(
+        reach.excitatory.1, 0,
+        "no excitatory synapse outside the addressed pairs moved: {reach:?}"
+    );
+    assert!(reach.excitatory.0 > 0, "the addressed pairs moved");
+    // Over the pinned tables: the verdict as written, by the rule committed first; the readings
+    // as the constants state; what H-19's tables decided, as the run read it; and, block by
+    // block over each arm's 120 blocks — H-19's first 56, to which the run was held, and the 64
+    // pinned after them — the tables consistent with one another, with H-19's trials, with the
+    // assertion and with the oracle: each coupling after a block the one before plus what the
+    // oracle consolidated into that pair over the block, the excitatory sum the image's plus
+    // the four pairs' moves, what the addressed synapses moved what the oracle consolidated,
+    // and each expectation within the reward.
+    let image = QUIET_1024[SETTLED].1;
+    let arm_blocks = [0usize, 1].map(|k| {
+        whole(
+            CRITIC_BLOCKS_1024[k],
+            REPLICATED_BLOCKS,
+            SCHEDULE_BLOCKS_1024[k],
+        )
+    });
+    let verdict = scheduled([&arm_blocks[0], &arm_blocks[1]]);
+    assert_eq!(verdict, SCHEDULE_1024, "the verdict as written");
+    assert_eq!(SCHEDULE_PREDICTED, None, "and no prediction to hold it to");
+    for (k, &arm) in SCHEDULE_ARMS.iter().enumerate() {
+        let first = first_mapping(arm);
+        let blocks = &arm_blocks[k];
+        let earned = whole(
+            CRITIC_EARNED_1024[k],
+            REPLICATED_BLOCKS,
+            SCHEDULE_EARNED_1024[k],
+        );
+        let moved = whole(
+            CRITIC_MOVES_1024[k],
+            REPLICATED_BLOCKS,
+            SCHEDULE_MOVES_1024[k],
+        );
+        let compositions = whole(
+            CRITIC_COMPOSITIONS_1024[k],
+            REPLICATED_BLOCKS,
+            SCHEDULE_COMPOSITIONS_1024[k],
+        );
+        let expected = whole(
+            CRITIC_EXPECTED_1024[k],
+            REPLICATED_BLOCKS,
+            SCHEDULE_EXPECTED_1024[k],
+        );
+        let strong = whole(
+            CRITIC_STRONG_1024[k],
+            REPLICATED_AFTER_FLIP,
+            SCHEDULE_STRONG_1024[k],
+        );
+        let pinned_after = SCHEDULE_BLOCKS - REPLICATED_BLOCKS;
+        assert_eq!(
+            (
+                SCHEDULE_BLOCKS_1024[k].len(),
+                SCHEDULE_COMPOSITIONS_1024[k].len(),
+                SCHEDULE_EARNED_1024[k].len(),
+                SCHEDULE_MOVES_1024[k].len(),
+                SCHEDULE_EXPECTED_1024[k].len(),
+                SCHEDULE_STRONG_1024[k].len()
+            ),
+            (
+                pinned_after,
+                pinned_after,
+                pinned_after,
+                pinned_after,
+                pinned_after,
+                pinned_after
+            ),
+            "{arm:?}: sixty-four blocks of each after the second flip"
+        );
+        assert_eq!(
+            (blocks.len(), strong.len()),
+            (SCHEDULE_BLOCKS, SCHEDULE_BLOCKS - FLIP_BLOCK)
+        );
+        assert_ne!(SCHEDULE_TRACES_1024[k], 0);
+        assert_ne!(SCHEDULE_READ_1024[k], 0);
+        assert!(!SCHEDULE_CENSUS_1024[k].is_empty());
+        assert_eq!(
+            SCHEDULE_AT_FLIPS_1024[k][0], CRITIC_CARRY_1024[k],
+            "{arm:?}: the couplings at the end of the 1 537th trial are H-19's"
+        );
+        let correct = mapping_correct(blocks);
+        assert_eq!(correct, CORRECT_SCHEDULE_1024[k]);
+        assert_eq!(correct.map(|c| c >= REWARDED_MIN), verdict.learned[k]);
+        assert_eq!(first_over(blocks), OVER_1024[k]);
+        assert_eq!(
+            first_over(blocks).is_none(),
+            verdict.bounded[k],
+            "{arm:?}: 120 blocks, so bounded is no coupling past the bound"
+        );
+        assert_eq!(new_within(FIRST_NEW_SCHEDULE_1024[k]), NEW_WITHIN_1024[k]);
+        assert_eq!(
+            FIRST_NEW_SCHEDULE_1024[k][0], FIRST_NEW_CRITIC_1024[k],
+            "{arm:?}: the first flip's first new selections are H-19's"
+        );
+        assert_eq!(edges(blocks), EDGES_1024[k]);
+        assert_eq!(later_better(blocks), LATER_BETTER_1024[k]);
+        assert_eq!(crossings(blocks), CROSSINGS_1024[k]);
+        assert_eq!(crossed_scheduled(&earned, first), CROSSED_SCHEDULE_1024[k]);
+        assert_eq!(
+            CROSSED_SCHEDULE_1024[k][0], CROSSED_CRITIC_1024[k],
+            "{arm:?}: the first flip's crossings are H-19's"
+        );
+        assert_eq!(tally(blocks), TALLY_1024[k]);
+        assert_eq!(settle_scheduled(blocks, first), SETTLE_SCHEDULE_1024[k]);
+        assert_eq!(highest(blocks), HIGHEST_1024[k]);
+        let decided = (
+            [correct[0], correct[1]],
+            first_over(&blocks[..REPLICATED_BLOCKS]),
+            [EDGES_1024[k][0], EDGES_1024[k][1]],
+            [CROSSINGS_1024[k][0], CROSSINGS_1024[k][1]],
+            [TALLY_1024[k][0], TALLY_1024[k][1]],
+            SETTLE_SCHEDULE_1024[k].map(|m| [m[0], m[1]]),
+            [HIGHEST_1024[k][0], HIGHEST_1024[k][1]],
+        );
+        assert_eq!(
+            decided, H19_DECIDES_1024[k],
+            "{arm:?}: what H-19's tables decided, the run read"
+        );
+        assert_eq!(strong_by_flip(&strong), STRONG_BY_FLIP_1024[k]);
+        assert_eq!(moves_by_mapping(&moved, 1), PUNISHED_MOVES_SCHEDULE_1024[k]);
+        assert_eq!(moves_by_mapping(&moved, 0), REWARDED_MOVES_SCHEDULE_1024[k]);
+        assert_eq!(
+            once_blocks(blocks, &compositions),
+            ONCE_BLOCKS_SCHEDULE_1024[k]
+        );
+        assert_eq!(falls_every_block(image.0, blocks), FALLS_SCHEDULE_1024[k]);
+        assert!(
+            punished_held(&REACH_SCHEDULE_1024[k]),
+            "{arm:?}: the assertion held"
+        );
+        let last = blocks.last().expect("a block");
+        assert_eq!(SUMS_AFTER_SCHEDULE_1024[k], (last.7, last.8));
+        for (j, e) in expected.iter().enumerate() {
+            assert!(
+                e.iter().all(|v| v.unsigned_abs() <= ONE.unsigned_abs()),
+                "{arm:?} block {j}: each expectation within the reward: {e:?}"
+            );
+        }
+        let mut previous = IMAGE_COUPLINGS_1024;
+        for (j, block) in blocks.iter().enumerate() {
+            let in_force = mirrored_at(first, j);
+            assert_eq!(
+                block.1, arm_blocks[0][j].1,
+                "{arm:?} block {j}: the same trials present A in both arms"
+            );
+            if let Some(h19) = CRITIC_BLOCKS_1024[0].get(j) {
+                assert_eq!(block.1, h19.1, "{arm:?} block {j}: and in H-19's");
+            }
+            let presented = [block.1, (BLOCK as u32).saturating_sub(block.1)];
+            for (s, &n) in presented.iter().enumerate() {
+                assert_eq!(
+                    earned[j].0[s].iter().sum::<u32>(),
+                    n,
+                    "{arm:?} block {j}: every presentation of {s} selected or tied"
+                );
+            }
+            assert_eq!(
+                block.11,
+                earned[j].0[0][2].saturating_add(earned[j].0[1][2]),
+                "{arm:?} block {j}: the ties"
+            );
+            let correct = earned[j].0[0][answer_of(0, in_force)]
+                .saturating_add(earned[j].0[1][answer_of(1, in_force)]);
+            assert_eq!(
+                block.0, correct,
+                "{arm:?} block {j}: correct under the mapping in force"
+            );
+            assert_eq!(
+                earned[j].1, correct,
+                "{arm:?} block {j}: an error above zero on every correct trial and on no other, the expectation below 1.0"
+            );
+            let mut rise = 0i64;
+            let mut consolidated = 0i64;
+            for &(s, r) in &ALL_PAIRS {
+                assert_eq!(
+                    block.10[s][r],
+                    previous[s][r].saturating_add(earned[j].2[s][r]),
+                    "{arm:?} block {j}: {s}→{r} moved by what the oracle consolidated"
+                );
+                rise =
+                    rise.saturating_add(block.10[s][r].saturating_sub(IMAGE_COUPLINGS_1024[s][r]));
+                consolidated = consolidated.saturating_add(earned[j].2[s][r]);
+            }
+            assert_eq!(
+                block.8,
+                image.1.saturating_add(rise),
+                "{arm:?} block {j}: the excitatory sum moved by the four pairs' moves and nothing else"
+            );
+            let moved_sum = moved[j]
+                .iter()
+                .flat_map(|m| m.1.iter())
+                .fold(0i64, |sum, &a| sum.saturating_add(a));
+            assert_eq!(
+                moved_sum, consolidated,
+                "{arm:?} block {j}: what the addressed synapses moved is what the oracle consolidated"
+            );
+            previous = block.10;
+        }
+    }
+}
+
+/// An arm's whole table of H-20: H-19's first `rows` rows, to which the run was held, and the
+/// rows pinned after them.
+fn whole<T: Clone>(h19: &[T], rows: usize, after: &[T]) -> Vec<T> {
+    h19.iter().take(rows).chain(after).cloned().collect()
+}
+
+/// What H-19's pinned tables decide of H-20 before any run, per arm, read by H-20's rules over
+/// H-19's first 56 blocks: clause 1's counts over the first two mappings; the first block past
+/// 1.30 among the 56 (none); the predicted reading (2)'s edges over the first two mappings; the
+/// first two mappings' speeds, `[correct, wrong, tied]` and settle measures; and their highest
+/// couplings — H-19's 1.145 and 1.165.
+type Decided = (
+    [u32; 2],
+    Option<(usize, usize, usize)>,
+    [[u32; 2]; 2],
+    [Option<usize>; 2],
+    [[u32; 3]; 2],
+    Option<[[i64; 2]; 2]>,
+    [Option<Peak>; 2],
+);
+const H19_DECIDES_1024: [Decided; 2] = [
+    (
+        [122, 121],
+        None,
+        [[137, 245], [21, 227]],
+        [Some(6), Some(19)],
+        [[1256, 219, 61], [1027, 898, 123]],
+        Some([[76203, 20279], [167170, 122090]]),
+        [Some((11454, 23, 0, 0)), Some((11334, 55, 0, 1))],
+    ),
+    (
+        [125, 115],
+        None,
+        [[144, 245], [18, 229]],
+        [Some(3), Some(23)],
+        [[1266, 205, 65], [875, 1071, 102]],
+        Some([[-5555, 123439], [173546, 120882]]),
+        [Some((11652, 22, 1, 0)), Some((11485, 55, 1, 1))],
+    ),
+];
+
+// ----------------------------------------------------------- the measurement (brief 047)
+
+/// The two arms at 1 024 units, in `SCHEDULE_ARMS`'s order, each pinned from one run: of the 64
+/// blocks after the second flip — the 56 before it are H-19's and held to its tables — the
+/// sight's blocks, the composition, the earned blocks, the moves, each stimulus's expectation
+/// and the strong punishments; the whole run's trace, the hash of the readings from the second
+/// flip on and the volley's census over the whole run. Empty until the run: the constants
+/// above are committed before the first rewarded run, and the tables after it.
+const SCHEDULE_BLOCKS_1024: [&[Block]; 2] = [
+    &[
+        (
+            2,
+            25,
+            [[259, 474], [577, 375]],
+            [1274, 1982],
+            [2196, 2735],
+            [267, 266],
+            64,
+            19526945,
+            218656922,
+            -82186,
+            [[6263487, 7458854], [6901857, 6137208]],
+            1,
+        ),
+        (
+            4,
+            26,
+            [[253, 448], [504, 308]],
+            [1318, 1933],
+            [2183, 2686],
+            [284, 282],
+            64,
+            19131431,
+            218456071,
+            73987,
+            [[6261507, 7364721], [6793334, 6140993]],
+            3,
+        ),
+        (
+            5,
+            35,
+            [[315, 569], [373, 271]],
+            [1779, 1475],
+            [2659, 2265],
+            [300, 261],
+            63,
+            18766141,
+            218281538,
+            -30545,
+            [[6264999, 7271985], [6709925, 6139113]],
+            4,
+        ),
+        (
+            8,
+            35,
+            [[310, 508], [377, 277]],
+            [1782, 1477],
+            [2645, 2236],
+            [243, 285],
+            63,
+            18394551,
+            218229049,
+            -23820,
+            [[6272094, 7230527], [6688227, 6142685]],
+            2,
+        ),
+        (
+            13,
+            31,
+            [[294, 494], [403, 343]],
+            [1576, 1677],
+            [2429, 2456],
+            [252, 246],
+            63,
+            18077776,
+            218242272,
+            75743,
+            [[6277778, 7250769], [6649792, 6168417]],
+            3,
+        ),
+        (
+            13,
+            35,
+            [[348, 481], [357, 280]],
+            [1777, 1472],
+            [2640, 2244],
+            [276, 235],
+            64,
+            17763556,
+            218261785,
+            119653,
+            [[6277304, 7254383], [6626066, 6208516]],
+            2,
+        ),
+        (
+            11,
+            32,
+            [[336, 508], [397, 319]],
+            [1627, 1624],
+            [2491, 2372],
+            [287, 263],
+            64,
+            17502177,
+            218191399,
+            -35590,
+            [[6281803, 7208871], [6583083, 6222126]],
+            2,
+        ),
+        (
+            14,
+            34,
+            [[344, 503], [340, 278]],
+            [1731, 1527],
+            [2519, 2302],
+            [302, 230],
+            61,
+            17267574,
+            218101433,
+            -73805,
+            [[6296839, 7156741], [6512653, 6239684]],
+            5,
+        ),
+        (
+            14,
+            30,
+            [[298, 459], [348, 302]],
+            [1525, 1728],
+            [2390, 2513],
+            [263, 273],
+            62,
+            16951660,
+            218040965,
+            -23863,
+            [[6289777, 7117035], [6469278, 6269359]],
+            2,
+        ),
+        (
+            17,
+            36,
+            [[345, 525], [304, 272]],
+            [1830, 1421],
+            [2627, 2250],
+            [283, 306],
+            63,
+            16747095,
+            218012631,
+            -35549,
+            [[6290487, 7100227], [6445708, 6280693]],
+            5,
+        ),
+        (
+            16,
+            27,
+            [[282, 401], [347, 306]],
+            [1373, 1886],
+            [2277, 2697],
+            [293, 255],
+            63,
+            16525021,
+            217947273,
+            -41999,
+            [[6284886, 7073053], [6394336, 6299482]],
+            4,
+        ),
+        (
+            18,
+            34,
+            [[323, 486], [328, 305]],
+            [1728, 1525],
+            [2523, 2297],
+            [253, 263],
+            64,
+            16226294,
+            217849358,
+            -22341,
+            [[6282273, 7013519], [6345158, 6312892]],
+            1,
+        ),
+        (
+            16,
+            34,
+            [[344, 427], [359, 307]],
+            [1726, 1527],
+            [2543, 2292],
+            [268, 286],
+            63,
+            16000829,
+            217770848,
+            78583,
+            [[6300673, 6938972], [6306533, 6329154]],
+            4,
+        ),
+        (
+            20,
+            30,
+            [[327, 406], [361, 345]],
+            [1529, 1730],
+            [2362, 2470],
+            [304, 278],
+            64,
+            15801456,
+            217725605,
+            -52753,
+            [[6327112, 6845631], [6296915, 6360431]],
+            9,
+        ),
+        (
+            26,
+            29,
+            [[307, 369], [371, 385]],
+            [1472, 1776],
+            [2408, 2598],
+            [299, 270],
+            61,
+            15658654,
+            217726952,
+            119058,
+            [[6347942, 6825135], [6255544, 6402815]],
+            3,
+        ),
+        (
+            23,
+            31,
+            [[337, 376], [325, 323]],
+            [1572, 1673],
+            [2435, 2480],
+            [256, 251],
+            64,
+            15503934,
+            217703774,
+            -15373,
+            [[6371357, 6780999], [6234476, 6421426]],
+            5,
+        ),
+        (
+            25,
+            35,
+            [[348, 443], [283, 325]],
+            [1777, 1478],
+            [2578, 2228],
+            [251, 297],
+            62,
+            15307509,
+            217686638,
+            118566,
+            [[6384070, 6738111], [6197893, 6471048]],
+            4,
+        ),
+        (
+            22,
+            26,
+            [[261, 329], [387, 394]],
+            [1321, 1931],
+            [2239, 2700],
+            [252, 241],
+            63,
+            15137386,
+            217652876,
+            87435,
+            [[6395911, 6708819], [6154163, 6498467]],
+            3,
+        ),
+        (
+            24,
+            34,
+            [[399, 401], [317, 304]],
+            [1733, 1522],
+            [2596, 2369],
+            [271, 267],
+            63,
+            14965084,
+            217607912,
+            92818,
+            [[6392069, 6689347], [6128355, 6502625]],
+            9,
+        ),
+        (
+            29,
+            40,
+            [[443, 451], [246, 276]],
+            [2032, 1216],
+            [2891, 2004],
+            [300, 314],
+            61,
+            14799085,
+            217593294,
+            -33536,
+            [[6440441, 6635849], [6102015, 6519473]],
+            8,
+        ),
+        (
+            40,
+            31,
+            [[388, 319], [350, 374]],
+            [1573, 1676],
+            [2410, 2465],
+            [280, 263],
+            64,
+            14600544,
+            217634246,
+            95577,
+            [[6503763, 6618498], [6062739, 6553730]],
+            7,
+        ),
+        (
+            31,
+            33,
+            [[390, 399], [314, 320]],
+            [1680, 1578],
+            [2525, 2433],
+            [312, 253],
+            63,
+            14458927,
+            217636521,
+            23292,
+            [[6556520, 6571890], [6029588, 6583007]],
+            4,
+        ),
+        (
+            41,
+            37,
+            [[462, 365], [248, 294]],
+            [1884, 1371],
+            [2699, 2214],
+            [262, 264],
+            63,
+            14340869,
+            217703719,
+            91675,
+            [[6645388, 6531807], [6029339, 6601669]],
+            4,
+        ),
+        (
+            38,
+            27,
+            [[382, 287], [336, 336]],
+            [1373, 1881],
+            [2261, 2671],
+            [251, 259],
+            63,
+            14214150,
+            217764594,
+            12723,
+            [[6706296, 6516271], [5998577, 6647934]],
+            6,
+        ),
+        (
+            42,
+            35,
+            [[541, 383], [317, 344]],
+            [1782, 1476],
+            [2576, 2276],
+            [262, 282],
+            63,
+            14115567,
+            217852091,
+            -161627,
+            [[6801170, 6480470], [5971460, 6703475]],
+            3,
+        ),
+        (
+            43,
+            27,
+            [[444, 323], [366, 420]],
+            [1372, 1880],
+            [2262, 2675],
+            [281, 290],
+            63,
+            14005866,
+            217919369,
+            35784,
+            [[6839545, 6469647], [5963938, 6750723]],
+            5,
+        ),
+        (
+            49,
+            31,
+            [[491, 360], [271, 378]],
+            [1575, 1677],
+            [2382, 2524],
+            [287, 257],
+            64,
+            13882899,
+            218035142,
+            -80813,
+            [[6957137, 6461309], [5941641, 6779539]],
+            2,
+        ),
+        (
+            53,
+            26,
+            [[444, 282], [373, 509]],
+            [1317, 1932],
+            [2283, 2652],
+            [273, 255],
+            63,
+            13834661,
+            218200757,
+            40457,
+            [[7039696, 6448219], [5929167, 6888159]],
+            4,
+        ),
+        (
+            53,
+            30,
+            [[529, 345], [343, 450]],
+            [1520, 1723],
+            [2414, 2493],
+            [270, 288],
+            64,
+            13733774,
+            218332166,
+            29021,
+            [[7104171, 6420352], [5938567, 6973560]],
+            2,
+        ),
+        (
+            55,
+            28,
+            [[500, 324], [328, 514]],
+            [1421, 1832],
+            [2317, 2600],
+            [266, 266],
+            64,
+            13708331,
+            218456375,
+            -111005,
+            [[7144978, 6419759], [5923280, 7072842]],
+            3,
+        ),
+        (
+            57,
+            33,
+            [[622, 365], [319, 473]],
+            [1679, 1575],
+            [2536, 2404],
+            [269, 279],
+            64,
+            13610250,
+            218502627,
+            21524,
+            [[7181673, 6404303], [5904651, 7116484]],
+            2,
+        ),
+        (
+            56,
+            29,
+            [[521, 290], [322, 531]],
+            [1472, 1777],
+            [2343, 2567],
+            [257, 266],
+            62,
+            13500850,
+            218548622,
+            27395,
+            [[7181275, 6390272], [5886911, 7194648]],
+            3,
+        ),
+        (
+            3,
+            36,
+            [[627, 350], [285, 441]],
+            [1832, 1427],
+            [2713, 2170],
+            [308, 282],
+            64,
+            13406233,
+            218269489,
+            -93714,
+            [[6979497, 6390272], [5889392, 7114812]],
+            4,
+        ),
+        (
+            7,
+            32,
+            [[525, 329], [317, 492]],
+            [1630, 1625],
+            [2484, 2378],
+            [289, 274],
+            63,
+            13293471,
+            218073835,
+            -26979,
+            [[6844914, 6402140], [5924741, 7006524]],
+            1,
+        ),
+        (
+            9,
+            33,
+            [[482, 327], [283, 413]],
+            [1677, 1573],
+            [2554, 2336],
+            [248, 286],
+            63,
+            13173783,
+            217973797,
+            80066,
+            [[6762816, 6422139], [5941933, 6951393]],
+            3,
+        ),
+        (
+            13,
+            32,
+            [[440, 352], [279, 412]],
+            [1625, 1629],
+            [2502, 2406],
+            [300, 287],
+            64,
+            13112508,
+            217965809,
+            6030,
+            [[6742273, 6467293], [5954341, 6906386]],
+            6,
+        ),
+        (
+            11,
+            27,
+            [[398, 286], [359, 475]],
+            [1375, 1879],
+            [2224, 2705],
+            [255, 276],
+            64,
+            13054388,
+            217900542,
+            -47105,
+            [[6684334, 6488448], [5989358, 6842886]],
+            5,
+        ),
+        (
+            17,
+            32,
+            [[420, 356], [327, 447]],
+            [1627, 1621],
+            [2487, 2487],
+            [263, 254],
+            64,
+            12927683,
+            217893176,
+            5418,
+            [[6646796, 6502851], [6012791, 6835222]],
+            7,
+        ),
+        (
+            14,
+            33,
+            [[473, 392], [338, 422]],
+            [1679, 1577],
+            [2552, 2347],
+            [269, 286],
+            64,
+            12916396,
+            217859913,
+            -53595,
+            [[6620490, 6544238], [6023091, 6776578]],
+            7,
+        ),
+        (
+            21,
+            28,
+            [[348, 318], [308, 410]],
+            [1421, 1834],
+            [2350, 2626],
+            [282, 275],
+            61,
+            12834856,
+            217887754,
+            8344,
+            [[6608942, 6597163], [6054907, 6731226]],
+            5,
+        ),
+        (
+            21,
+            27,
+            [[370, 347], [325, 407]],
+            [1372, 1878],
+            [2232, 2687],
+            [264, 282],
+            61,
+            12709276,
+            217856874,
+            108290,
+            [[6561539, 6639996], [6084566, 6675257]],
+            2,
+        ),
+        (
+            22,
+            40,
+            [[490, 471], [267, 324]],
+            [2028, 1221],
+            [2856, 2078],
+            [270, 281],
+            64,
+            12628910,
+            217823732,
+            -77112,
+            [[6469970, 6719862], [6088809, 6649575]],
+            5,
+        ),
+        (
+            25,
+            33,
+            [[419, 414], [298, 370]],
+            [1674, 1577],
+            [2597, 2357],
+            [270, 295],
+            62,
+            12597421,
+            217826563,
+            -62356,
+            [[6414199, 6765110], [6125432, 6626306]],
+            5,
+        ),
+        (
+            30,
+            32,
+            [[359, 403], [323, 363]],
+            [1621, 1627],
+            [2480, 2453],
+            [262, 277],
+            64,
+            12548904,
+            217845596,
+            -48608,
+            [[6389907, 6794233], [6141393, 6624547]],
+            4,
+        ),
+        (
+            28,
+            36,
+            [[425, 457], [292, 315]],
+            [1831, 1426],
+            [2742, 2220],
+            [268, 247],
+            64,
+            12509574,
+            217885810,
+            -13217,
+            [[6347047, 6869653], [6164737, 6608857]],
+            7,
+        ),
+        (
+            28,
+            29,
+            [[328, 418], [343, 399]],
+            [1473, 1780],
+            [2345, 2542],
+            [275, 269],
+            63,
+            12433742,
+            217877615,
+            -44531,
+            [[6308324, 6910618], [6192192, 6570965]],
+            3,
+        ),
+        (
+            39,
+            36,
+            [[372, 508], [270, 307]],
+            [1828, 1424],
+            [2737, 2206],
+            [280, 261],
+            64,
+            12378558,
+            217984211,
+            47725,
+            [[6275861, 7057152], [6209599, 6546083]],
+            2,
+        ),
+        (
+            46,
+            36,
+            [[362, 580], [292, 305]],
+            [1834, 1423],
+            [2731, 2210],
+            [271, 291],
+            64,
+            12347181,
+            218107878,
+            62711,
+            [[6272113, 7158326], [6253869, 6528054]],
+            2,
+        ),
+        (
+            40,
+            34,
+            [[348, 543], [305, 323]],
+            [1726, 1522],
+            [2596, 2364],
+            [274, 287],
+            62,
+            12236806,
+            218154579,
+            -19594,
+            [[6263396, 7214479], [6297108, 6484080]],
+            5,
+        ),
+        (
+            38,
+            29,
+            [[284, 513], [360, 398]],
+            [1474, 1782],
+            [2344, 2623],
+            [275, 280],
+            64,
+            12229458,
+            218202485,
+            72705,
+            [[6261002, 7290887], [6315784, 6439296]],
+            2,
+        ),
+        (
+            39,
+            27,
+            [[276, 499], [334, 355]],
+            [1372, 1882],
+            [2305, 2651],
+            [261, 253],
+            63,
+            12119991,
+            218250948,
+            8320,
+            [[6258632, 7329342], [6389299, 6378159]],
+            4,
+        ),
+        (
+            46,
+            31,
+            [[317, 558], [332, 288]],
+            [1576, 1677],
+            [2476, 2485],
+            [261, 262],
+            64,
+            12085126,
+            218332921,
+            96888,
+            [[6256308, 7392297], [6420653, 6368147]],
+            4,
+        ),
+        (
+            48,
+            35,
+            [[396, 627], [330, 302]],
+            [1780, 1476],
+            [2602, 2323],
+            [249, 258],
+            63,
+            12011335,
+            218475977,
+            28775,
+            [[6253155, 7524012], [6469265, 6334029]],
+            2,
+        ),
+        (
+            42,
+            31,
+            [[348, 579], [329, 332]],
+            [1577, 1677],
+            [2490, 2519],
+            [289, 286],
+            63,
+            12006967,
+            218572333,
+            -64096,
+            [[6252689, 7583804], [6504456, 6335868]],
+            6,
+        ),
+        (
+            50,
+            37,
+            [[359, 722], [341, 325]],
+            [1878, 1373],
+            [2724, 2166],
+            [249, 278],
+            62,
+            12054478,
+            218663244,
+            -35602,
+            [[6252689, 7644198], [6546207, 6324634]],
+            5,
+        ),
+        (
+            46,
+            31,
+            [[350, 641], [341, 345]],
+            [1575, 1674],
+            [2475, 2481],
+            [275, 270],
+            64,
+            12040809,
+            218712117,
+            66927,
+            [[6259296, 7669507], [6593341, 6294457]],
+            1,
+        ),
+        (
+            47,
+            30,
+            [[304, 602], [383, 351]],
+            [1525, 1728],
+            [2382, 2514],
+            [258, 259],
+            64,
+            12054172,
+            218751354,
+            89599,
+            [[6259296, 7656929], [6671503, 6268110]],
+            3,
+        ),
+        (
+            53,
+            39,
+            [[376, 702], [313, 283]],
+            [1986, 1268],
+            [2871, 2118],
+            [289, 289],
+            63,
+            12079429,
+            218812936,
+            2847,
+            [[6259296, 7673664], [6724464, 6259996]],
+            2,
+        ),
+        (
+            53,
+            28,
+            [[293, 601], [436, 332]],
+            [1423, 1831],
+            [2299, 2579],
+            [255, 251],
+            64,
+            12050292,
+            218913356,
+            -29742,
+            [[6259296, 7730513], [6793332, 6234699]],
+            5,
+        ),
+        (
+            56,
+            35,
+            [[348, 704], [399, 287]],
+            [1777, 1475],
+            [2660, 2270],
+            [291, 273],
+            64,
+            12016911,
+            218969074,
+            71865,
+            [[6259296, 7723930], [6849187, 6241145]],
+            0,
+        ),
+        (
+            57,
+            28,
+            [[324, 608], [496, 361]],
+            [1423, 1831],
+            [2301, 2597],
+            [307, 269],
+            64,
+            12073706,
+            219086853,
+            24551,
+            [[6259296, 7766988], [6950646, 6214407]],
+            3,
+        ),
+        (
+            56,
+            31,
+            [[354, 600], [510, 347]],
+            [1576, 1678],
+            [2477, 2418],
+            [278, 283],
+            62,
+            11984328,
+            219184131,
+            39332,
+            [[6259296, 7797976], [7022036, 6209307]],
+            2,
+        ),
+        (
+            58,
+            24,
+            [[240, 534], [621, 417]],
+            [1220, 2028],
+            [2136, 2759],
+            [282, 307],
+            64,
+            12016145,
+            219243458,
+            20334,
+            [[6259296, 7808651], [7094914, 6185081]],
+            1,
+        ),
+        (
+            57,
+            30,
+            [[317, 666], [495, 359]],
+            [1528, 1731],
+            [2394, 2576],
+            [265, 270],
+            64,
+            11999067,
+            219302252,
+            24401,
+            [[6259296, 7804177], [7173458, 6169805]],
+            0,
+        ),
+    ],
+    &[
+        (
+            3,
+            25,
+            [[398, 290], [427, 680]],
+            [1274, 1982],
+            [2197, 2737],
+            [277, 266],
+            64,
+            19832488,
+            219390191,
+            -74566,
+            [[6788779, 6660316], [6480092, 7565488]],
+            2,
+        ),
+        (
+            8,
+            26,
+            [[389, 275], [403, 576]],
+            [1318, 1933],
+            [2181, 2671],
+            [280, 273],
+            64,
+            19442582,
+            219158353,
+            -58645,
+            [[6738810, 6651991], [6521802, 7350234]],
+            2,
+        ),
+        (
+            7,
+            35,
+            [[479, 387], [327, 466]],
+            [1779, 1475],
+            [2669, 2274],
+            [304, 255],
+            64,
+            19093176,
+            218969071,
+            12586,
+            [[6640125, 6665091], [6521802, 7246537]],
+            6,
+        ),
+        (
+            16,
+            35,
+            [[440, 360], [347, 454]],
+            [1781, 1477],
+            [2653, 2232],
+            [241, 283],
+            64,
+            18751374,
+            218942424,
+            -50849,
+            [[6584546, 6688981], [6554099, 7219282]],
+            6,
+        ),
+        (
+            13,
+            31,
+            [[392, 330], [344, 521]],
+            [1576, 1678],
+            [2417, 2463],
+            [252, 254],
+            64,
+            18429545,
+            218866023,
+            -4702,
+            [[6529384, 6704226], [6552629, 7184268]],
+            2,
+        ),
+        (
+            8,
+            35,
+            [[443, 319], [342, 454]],
+            [1777, 1472],
+            [2637, 2241],
+            [274, 232],
+            63,
+            18131691,
+            218770742,
+            -45679,
+            [[6481547, 6718458], [6555406, 7119815]],
+            8,
+        ),
+        (
+            19,
+            32,
+            [[394, 350], [379, 458]],
+            [1626, 1624],
+            [2501, 2379],
+            [294, 265],
+            64,
+            17910150,
+            218718053,
+            70209,
+            [[6440999, 6730933], [6598638, 7051967]],
+            1,
+        ),
+        (
+            29,
+            34,
+            [[372, 375], [349, 410]],
+            [1731, 1527],
+            [2514, 2308],
+            [305, 231],
+            63,
+            17680969,
+            218821586,
+            153454,
+            [[6426934, 6791989], [6647107, 7060040]],
+            3,
+        ),
+        (
+            28,
+            30,
+            [[315, 347], [358, 415]],
+            [1526, 1728],
+            [2383, 2501],
+            [270, 271],
+            63,
+            17348916,
+            218859604,
+            93507,
+            [[6421307, 6869274], [6683221, 6990286]],
+            5,
+        ),
+        (
+            33,
+            36,
+            [[400, 435], [350, 363]],
+            [1830, 1421],
+            [2643, 2238],
+            [280, 312],
+            64,
+            17157574,
+            218894863,
+            99992,
+            [[6377811, 6934958], [6729899, 6956679]],
+            3,
+        ),
+        (
+            29,
+            27,
+            [[313, 366], [399, 421]],
+            [1373, 1886],
+            [2272, 2691],
+            [295, 259],
+            63,
+            16969229,
+            218939109,
+            102096,
+            [[6365187, 6973306], [6772711, 6932389]],
+            6,
+        ),
+        (
+            37,
+            34,
+            [[338, 455], [377, 376]],
+            [1728, 1525],
+            [2526, 2294],
+            [259, 260],
+            64,
+            16675378,
+            219047980,
+            44515,
+            [[6353077, 7062209], [6819138, 6918040]],
+            6,
+        ),
+        (
+            41,
+            34,
+            [[361, 422], [436, 379]],
+            [1727, 1527],
+            [2536, 2291],
+            [281, 291],
+            64,
+            16439171,
+            219122094,
+            -41361,
+            [[6306061, 7164521], [6875478, 6880518]],
+            2,
+        ),
+        (
+            42,
+            30,
+            [[329, 446], [466, 424]],
+            [1528, 1730],
+            [2361, 2476],
+            [306, 273],
+            64,
+            16269739,
+            219183950,
+            -58484,
+            [[6292729, 7282344], [6914546, 6798815]],
+            2,
+        ),
+        (
+            40,
+            29,
+            [[329, 444], [480, 449]],
+            [1471, 1777],
+            [2409, 2607],
+            [298, 266],
+            63,
+            16140801,
+            219228652,
+            -122046,
+            [[6289934, 7321562], [6996752, 6724888]],
+            5,
+        ),
+        (
+            52,
+            31,
+            [[327, 488], [475, 366]],
+            [1573, 1674],
+            [2430, 2459],
+            [259, 254],
+            64,
+            16028654,
+            219352748,
+            26579,
+            [[6281927, 7389393], [7073661, 6712251]],
+            4,
+        ),
+        (
+            49,
+            35,
+            [[333, 568], [428, 369]],
+            [1776, 1478],
+            [2568, 2220],
+            [259, 300],
+            64,
+            15836601,
+            219382955,
+            49187,
+            [[6275833, 7420705], [7132609, 6658292]],
+            3,
+        ),
+        (
+            52,
+            26,
+            [[264, 450], [611, 433]],
+            [1321, 1931],
+            [2243, 2693],
+            [256, 249],
+            64,
+            15720390,
+            219453825,
+            4303,
+            [[6263060, 7472161], [7194529, 6628559]],
+            5,
+        ),
+        (
+            57,
+            34,
+            [[360, 566], [508, 333]],
+            [1733, 1522],
+            [2604, 2356],
+            [281, 279],
+            64,
+            15622469,
+            219568442,
+            -86237,
+            [[6261329, 7531229], [7261010, 6619358]],
+            1,
+        ),
+        (
+            55,
+            40,
+            [[388, 666], [426, 295]],
+            [2032, 1216],
+            [2889, 1993],
+            [295, 316],
+            64,
+            15452267,
+            219604712,
+            31026,
+            [[6243546, 7569006], [7284140, 6612504]],
+            3,
+        ),
+        (
+            54,
+            31,
+            [[344, 515], [544, 410]],
+            [1573, 1676],
+            [2414, 2472],
+            [287, 268],
+            64,
+            15315249,
+            219660651,
+            -31721,
+            [[6233561, 7622961], [7332364, 6576249]],
+            2,
+        ),
+        (
+            60,
+            33,
+            [[330, 606], [562, 333]],
+            [1681, 1578],
+            [2526, 2428],
+            [312, 256],
+            64,
+            15195196,
+            219829113,
+            12860,
+            [[6232135, 7706517], [7418696, 6576249]],
+            3,
+        ),
+        (
+            56,
+            37,
+            [[367, 628], [468, 319]],
+            [1884, 1371],
+            [2700, 2215],
+            [272, 279],
+            64,
+            15087207,
+            219866489,
+            24,
+            [[6235794, 7733284], [7428568, 6573327]],
+            2,
+        ),
+        (
+            60,
+            27,
+            [[288, 489], [635, 366]],
+            [1374, 1881],
+            [2259, 2676],
+            [252, 258],
+            64,
+            14987485,
+            219906671,
+            12749,
+            [[6234522, 7748462], [7474982, 6553189]],
+            1,
+        ),
+        (
+            62,
+            35,
+            [[393, 709], [574, 330]],
+            [1782, 1476],
+            [2573, 2268],
+            [264, 285],
+            64,
+            14899127,
+            219941120,
+            4206,
+            [[6234522, 7793834], [7492047, 6525201]],
+            0,
+        ),
+        (
+            62,
+            27,
+            [[315, 558], [668, 389]],
+            [1372, 1880],
+            [2264, 2669],
+            [286, 305],
+            64,
+            14798602,
+            219941826,
+            8364,
+            [[6234522, 7802776], [7499073, 6509939]],
+            0,
+        ),
+        (
+            61,
+            31,
+            [[311, 610], [575, 342]],
+            [1575, 1676],
+            [2380, 2512],
+            [283, 262],
+            64,
+            14683786,
+            219989024,
+            681,
+            [[6234522, 7798978], [7548937, 6511071]],
+            2,
+        ),
+        (
+            59,
+            26,
+            [[263, 494], [676, 430]],
+            [1317, 1933],
+            [2282, 2650],
+            [274, 266],
+            64,
+            14677210,
+            219978699,
+            2478,
+            [[6221788, 7796320], [7552851, 6512224]],
+            1,
+        ),
+        (
+            62,
+            30,
+            [[299, 592], [650, 362]],
+            [1520, 1722],
+            [2420, 2489],
+            [272, 287],
+            64,
+            14622890,
+            219993458,
+            9055,
+            [[6222486, 7807192], [7555986, 6512278]],
+            0,
+        ),
+        (
+            57,
+            28,
+            [[283, 548], [665, 377]],
+            [1421, 1832],
+            [2316, 2581],
+            [263, 272],
+            64,
+            14591935,
+            219975520,
+            -28708,
+            [[6222486, 7794020], [7573390, 6490108]],
+            3,
+        ),
+        (
+            60,
+            33,
+            [[345, 621], [577, 356]],
+            [1680, 1575],
+            [2535, 2400],
+            [272, 280],
+            64,
+            14474994,
+            220052354,
+            4685,
+            [[6216498, 7832782], [7617450, 6490108]],
+            3,
+        ),
+        (
+            58,
+            29,
+            [[272, 520], [635, 420]],
+            [1472, 1778],
+            [2338, 2573],
+            [271, 271],
+            63,
+            14425263,
+            220075282,
+            7162,
+            [[6216867, 7835676], [7659180, 6468043]],
+            2,
+        ),
+        (
+            2,
+            36,
+            [[364, 650], [575, 312]],
+            [1832, 1427],
+            [2701, 2173],
+            [313, 294],
+            64,
+            14365106,
+            219664450,
+            -90277,
+            [[6214157, 7624740], [7461992, 6468045]],
+            2,
+        ),
+        (
+            6,
+            32,
+            [[296, 546], [532, 354]],
+            [1630, 1625],
+            [2467, 2377],
+            [293, 275],
+            63,
+            14223008,
+            219394243,
+            -27013,
+            [[6224836, 7493608], [7309609, 6470674]],
+            3,
+        ),
+        (
+            1,
+            33,
+            [[336, 522], [498, 305]],
+            [1677, 1573],
+            [2547, 2333],
+            [255, 285],
+            63,
+            14115809,
+            219206687,
+            -10867,
+            [[6231621, 7386517], [7222359, 6470674]],
+            6,
+        ),
+        (
+            6,
+            32,
+            [[289, 498], [464, 319]],
+            [1625, 1629],
+            [2499, 2394],
+            [298, 294],
+            64,
+            14084547,
+            219221834,
+            -9527,
+            [[6232385, 7387553], [7221330, 6485050]],
+            3,
+        ),
+        (
+            8,
+            27,
+            [[274, 437], [558, 392]],
+            [1374, 1879],
+            [2235, 2708],
+            [266, 276],
+            64,
+            14083768,
+            219213854,
+            170853,
+            [[6242722, 7370695], [7199426, 6505495]],
+            2,
+        ),
+        (
+            7,
+            32,
+            [[312, 500], [510, 362]],
+            [1627, 1621],
+            [2477, 2479],
+            [259, 252],
+            64,
+            13984138,
+            219206664,
+            110608,
+            [[6258505, 7338633], [7181699, 6532311]],
+            2,
+        ),
+        (
+            9,
+            33,
+            [[367, 533], [499, 351]],
+            [1680, 1577],
+            [2535, 2338],
+            [266, 279],
+            64,
+            13919805,
+            219162471,
+            -48823,
+            [[6277462, 7356322], [7094512, 6538659]],
+            2,
+        ),
+        (
+            13,
+            28,
+            [[275, 485], [457, 372]],
+            [1422, 1834],
+            [2336, 2637],
+            [285, 285],
+            61,
+            13888095,
+            219127996,
+            87247,
+            [[6290907, 7318048], [7052289, 6571236]],
+            2,
+        ),
+        (
+            14,
+            27,
+            [[290, 430], [464, 367]],
+            [1372, 1878],
+            [2235, 2692],
+            [275, 281],
+            64,
+            13777699,
+            219155234,
+            -19829,
+            [[6297901, 7297127], [7037644, 6627046]],
+            6,
+        ),
+        (
+            11,
+            40,
+            [[421, 574], [360, 304]],
+            [2028, 1221],
+            [2855, 2095],
+            [275, 282],
+            63,
+            13737117,
+            219057041,
+            137861,
+            [[6312868, 7199880], [7012215, 6636562]],
+            5,
+        ),
+        (
+            20,
+            33,
+            [[375, 465], [407, 366]],
+            [1674, 1576],
+            [2591, 2342],
+            [268, 300],
+            64,
+            13698632,
+            219006514,
+            5867,
+            [[6349712, 7160489], [6948247, 6652550]],
+            6,
+        ),
+        (
+            20,
+            32,
+            [[368, 445], [426, 364]],
+            [1621, 1627],
+            [2481, 2450],
+            [273, 280],
+            64,
+            13687258,
+            218977062,
+            112716,
+            [[6370041, 7106492], [6905827, 6699186]],
+            2,
+        ),
+        (
+            23,
+            36,
+            [[437, 470], [382, 329]],
+            [1831, 1426],
+            [2740, 2229],
+            [280, 246],
+            64,
+            13624247,
+            218941703,
+            -67113,
+            [[6435585, 7038102], [6873208, 6699292]],
+            3,
+        ),
+        (
+            29,
+            29,
+            [[363, 361], [430, 435]],
+            [1473, 1780],
+            [2339, 2534],
+            [277, 274],
+            63,
+            13516332,
+            219047692,
+            100916,
+            [[6491241, 7031969], [6853823, 6775143]],
+            6,
+        ),
+        (
+            30,
+            36,
+            [[424, 416], [347, 330]],
+            [1829, 1424],
+            [2731, 2203],
+            [278, 258],
+            63,
+            13458162,
+            219100493,
+            121929,
+            [[6567827, 6998147], [6845899, 6793104]],
+            7,
+        ),
+        (
+            31,
+            36,
+            [[465, 445], [357, 341]],
+            [1834, 1423],
+            [2743, 2223],
+            [272, 281],
+            64,
+            13395370,
+            219130172,
+            -49273,
+            [[6632962, 6938573], [6810128, 6852993]],
+            3,
+        ),
+        (
+            31,
+            34,
+            [[447, 432], [382, 380]],
+            [1726, 1521],
+            [2590, 2358],
+            [286, 288],
+            64,
+            13356359,
+            219143102,
+            24858,
+            [[6682444, 6875826], [6769432, 6919884]],
+            5,
+        ),
+        (
+            40,
+            29,
+            [[417, 349], [402, 450]],
+            [1475, 1783],
+            [2332, 2622],
+            [281, 281],
+            64,
+            13313295,
+            219235210,
+            -78936,
+            [[6746656, 6847108], [6760488, 6985442]],
+            4,
+        ),
+        (
+            40,
+            27,
+            [[403, 346], [405, 467]],
+            [1372, 1882],
+            [2314, 2648],
+            [263, 248],
+            64,
+            13185903,
+            219337443,
+            26551,
+            [[6793608, 6826609], [6700896, 7120814]],
+            5,
+        ),
+        (
+            37,
+            31,
+            [[462, 392], [365, 428]],
+            [1575, 1677],
+            [2468, 2480],
+            [257, 255],
+            64,
+            13126292,
+            219397430,
+            -878,
+            [[6858113, 6787461], [6686458, 7169882]],
+            4,
+        ),
+        (
+            49,
+            35,
+            [[573, 406], [357, 448]],
+            [1779, 1476],
+            [2612, 2320],
+            [255, 262],
+            64,
+            13063121,
+            219533542,
+            -3591,
+            [[6961864, 6785325], [6652913, 7237924]],
+            5,
+        ),
+        (
+            51,
+            31,
+            [[514, 350], [387, 522]],
+            [1577, 1678],
+            [2469, 2520],
+            [291, 271],
+            64,
+            13048178,
+            219567518,
+            67196,
+            [[6957667, 6756892], [6632659, 7324784]],
+            4,
+        ),
+        (
+            42,
+            37,
+            [[550, 433], [353, 457]],
+            [1878, 1373],
+            [2728, 2157],
+            [254, 277],
+            63,
+            13044912,
+            219658727,
+            41074,
+            [[7036332, 6713772], [6607720, 7405387]],
+            6,
+        ),
+        (
+            57,
+            31,
+            [[568, 362], [377, 575]],
+            [1575, 1674],
+            [2464, 2486],
+            [282, 269],
+            64,
+            13087217,
+            219835486,
+            48638,
+            [[7130148, 6704777], [6596737, 7508308]],
+            1,
+        ),
+        (
+            57,
+            30,
+            [[526, 339], [364, 604]],
+            [1525, 1728],
+            [2375, 2517],
+            [263, 267],
+            64,
+            13011191,
+            219908183,
+            -33343,
+            [[7161406, 6695483], [6575046, 7580732]],
+            0,
+        ),
+        (
+            54,
+            39,
+            [[647, 432], [293, 459]],
+            [1986, 1270],
+            [2869, 2114],
+            [283, 291],
+            64,
+            13013553,
+            219917426,
+            41101,
+            [[7188692, 6667127], [6577816, 7588275]],
+            3,
+        ),
+        (
+            52,
+            28,
+            [[525, 343], [435, 605]],
+            [1422, 1831],
+            [2299, 2578],
+            [253, 246],
+            64,
+            12987255,
+            219975313,
+            -112276,
+            [[7221751, 6664920], [6549661, 7643465]],
+            1,
+        ),
+        (
+            59,
+            35,
+            [[624, 391], [356, 558]],
+            [1777, 1475],
+            [2664, 2265],
+            [296, 268],
+            64,
+            12945178,
+            220008537,
+            -160141,
+            [[7251464, 6639573], [6549661, 7672323]],
+            3,
+        ),
+        (
+            57,
+            28,
+            [[570, 335], [425, 652]],
+            [1423, 1831],
+            [2309, 2594],
+            [324, 273],
+            64,
+            12982808,
+            220094403,
+            28362,
+            [[7266657, 6637856], [6550102, 7744272]],
+            2,
+        ),
+        (
+            63,
+            31,
+            [[633, 344], [379, 635]],
+            [1576, 1678],
+            [2465, 2416],
+            [280, 279],
+            64,
+            12920059,
+            220190719,
+            11533,
+            [[7316220, 6637856], [6554613, 7786514]],
+            0,
+        ),
+        (
+            59,
+            24,
+            [[461, 290], [488, 784]],
+            [1219, 2030],
+            [2118, 2763],
+            [290, 306],
+            64,
+            12916784,
+            220222965,
+            9227,
+            [[7304504, 6635066], [6562040, 7825839]],
+            0,
+        ),
+        (
+            61,
+            30,
+            [[599, 354], [408, 662]],
+            [1528, 1731],
+            [2391, 2574],
+            [277, 285],
+            64,
+            12936700,
+            220257496,
+            5055,
+            [[7336027, 6615168], [6559371, 7851414]],
+            0,
+        ),
+    ],
+];
+const SCHEDULE_TRACES_1024: [u64; 2] = [0xdd2a9318b3c5d288, 0xf4c8a5f8566b124e];
+const SCHEDULE_COMPOSITIONS_1024: [&[Composition]; 2] = [
+    &[
+        (
+            [[-1879, 480], [3903, 3391]],
+            [
+                [
+                    [165211, -5463, 330151, -511132],
+                    [304052, -11000, 483401, -583857],
+                ],
+                [
+                    [402290, -12156, 464542, -613083],
+                    [257950, -7447, 368717, -549620],
+                ],
+            ],
+            [[1063, 1943], [1022, 1962], [3372, 2]],
+            54,
+            15764248459456830490,
+        ),
+        (
+            [[2698, 2553], [17823, 1100]],
+            [
+                [
+                    [167582, -5496, 305983, -533102],
+                    [280456, -8237, 487190, -573846],
+                ],
+                [
+                    [382327, -9596, 419308, -607417],
+                    [243040, -6164, 336447, -534754],
+                ],
+            ],
+            [[1110, 1909], [1117, 1881], [3350, 0]],
+            54,
+            12948270975959512353,
+        ),
+        (
+            [[-8092, 7514], [1933, 2863]],
+            [
+                [
+                    [212641, -6248, 333722, -584901],
+                    [379253, -12238, 507477, -670676],
+                ],
+                [
+                    [269296, -7582, 384257, -505069],
+                    [179786, -6912, 301490, -458416],
+                ],
+            ],
+            [[1120, 1882], [1100, 2010], [3337, 0]],
+            51,
+            8712160543781422027,
+        ),
+        (
+            [[-7076, -5182], [-3550, -1343]],
+            [
+                [
+                    [225887, -9290, 343655, -581753],
+                    [351086, -14349, 494642, -716497],
+                ],
+                [
+                    [237950, -6387, 346254, -504317],
+                    [161235, -4818, 268377, -428755],
+                ],
+            ],
+            [[1084, 1819], [1089, 1868], [3367, 0]],
+            41,
+            13662651902999289154,
+        ),
+        (
+            [[-1908, 18022], [1263, 3262]],
+            [
+                [
+                    [182861, -6434, 329328, -520840],
+                    [336263, -18182, 483025, -592117],
+                ],
+                [
+                    [278175, -9339, 365986, -560187],
+                    [218345, -5421, 327447, -508851],
+                ],
+            ],
+            [[1080, 1757], [1116, 1943], [3361, 0]],
+            51,
+            3742729086932485630,
+        ),
+        (
+            [[-1355, 633], [3896, -1029]],
+            [
+                [
+                    [231326, -9115, 354645, -586183],
+                    [341659, -14300, 486665, -657742],
+                ],
+                [
+                    [216673, -4262, 331124, -513312],
+                    [185094, -4233, 284519, -415135],
+                ],
+            ],
+            [[1142, 1867], [1042, 1874], [3363, 0]],
+            48,
+            2711196290900491982,
+        ),
+        (
+            [[-1114, 5290], [-3076, 4555]],
+            [
+                [
+                    [222219, -5438, 340027, -576630],
+                    [367132, -10222, 504919, -609959],
+                ],
+                [
+                    [268078, -8312, 363865, -530812],
+                    [210945, -5809, 309437, -492190],
+                ],
+            ],
+            [[1133, 1865], [1108, 1934], [3348, 0]],
+            55,
+            7627232093793835007,
+        ),
+        (
+            [[-2391, 10568], [-249, 13031]],
+            [
+                [
+                    [223234, -6673, 325552, -562699],
+                    [384387, -9746, 452153, -628642],
+                ],
+                [
+                    [226823, -5591, 348392, -497548],
+                    [184691, -3787, 316237, -463542],
+                ],
+            ],
+            [[1181, 1809], [1076, 1905], [3355, 0]],
+            48,
+            11676545130348459557,
+        ),
+        (
+            [[-4838, 11017], [4443, 2570]],
+            [
+                [
+                    [208768, -6511, 329858, -560849],
+                    [309824, -6640, 466192, -611914],
+                ],
+                [
+                    [263478, -4567, 359997, -533579],
+                    [217922, -3258, 329640, -524772],
+                ],
+            ],
+            [[1094, 1797], [1099, 1864], [3364, 0]],
+            44,
+            16491844369141047589,
+        ),
+        (
+            [[-3721, 10442], [-1814, -5590]],
+            [
+                [
+                    [240118, -7474, 363172, -591112],
+                    [360367, -10303, 468066, -694994],
+                ],
+                [
+                    [193950, -5304, 339116, -503868],
+                    [171594, -6136, 306141, -468155],
+                ],
+            ],
+            [[1172, 1814], [1123, 1921], [3363, 0]],
+            45,
+            1259019241261398154,
+        ),
+        (
+            [[2419, 2509], [4132, 98]],
+            [
+                [
+                    [164007, -7519, 323199, -511287],
+                    [265618, -7558, 422884, -538083],
+                ],
+                [
+                    [269357, -6851, 366357, -584416],
+                    [239929, -6460, 354866, -577493],
+                ],
+            ],
+            [[1155, 1749], [1099, 1802], [3368, 0]],
+            41,
+            17155844134092597536,
+        ),
+        (
+            [[-104, 5914], [1290, -3079]],
+            [
+                [
+                    [212940, -8207, 317812, -524928],
+                    [334652, -9102, 425901, -579030],
+                ],
+                [
+                    [191640, -4840, 300854, -449345],
+                    [193213, -5289, 300280, -458458],
+                ],
+            ],
+            [[1070, 1663], [1032, 1862], [3355, 0]],
+            52,
+            3856333891883433817,
+        ),
+        (
+            [[-6787, 15837], [4375, 2715]],
+            [
+                [
+                    [247144, -6270, 335288, -538695],
+                    [327280, -10038, 421775, -577677],
+                ],
+                [
+                    [215860, -7965, 328183, -488742],
+                    [194418, -5992, 321298, -491926],
+                ],
+            ],
+            [[1123, 1826], [1089, 1876], [3349, 0]],
+            54,
+            14993088908426824839,
+        ),
+        (
+            [[1291, 6515], [4051, -1026]],
+            [
+                [
+                    [218848, -5839, 318401, -510321],
+                    [286094, -7262, 398370, -524547],
+                ],
+                [
+                    [242239, -6171, 316084, -505197],
+                    [249505, -4890, 321403, -546061],
+                ],
+            ],
+            [[1112, 1864], [1161, 1934], [3368, 0]],
+            50,
+            3913898689269447867,
+        ),
+        (
+            [[-6864, -5332], [347, -1531]],
+            [
+                [
+                    [198944, -8545, 379585, -567576],
+                    [262347, -8589, 409482, -565904],
+                ],
+                [
+                    [243143, -6760, 348573, -519883],
+                    [246124, -6176, 369068, -555333],
+                ],
+            ],
+            [[1122, 1760], [1081, 1862], [3366, 0]],
+            49,
+            2823032463607147289,
+        ),
+        (
+            [[-1386, 4763], [-6333, 2324]],
+            [
+                [
+                    [219262, -8929, 332456, -536075],
+                    [262715, -8071, 388481, -549304],
+                ],
+                [
+                    [203815, -3637, 333482, -526833],
+                    [210809, -3289, 364943, -554923],
+                ],
+            ],
+            [[1085, 1747], [1087, 1766], [3364, 0]],
+            41,
+            10525540721681033601,
+        ),
+        (
+            [[4283, 11776], [3123, 3159]],
+            [
+                [
+                    [247162, -9873, 343449, -572747],
+                    [299618, -10353, 399206, -580612],
+                ],
+                [
+                    [193029, -3905, 309109, -452247],
+                    [210885, -3578, 320651, -470347],
+                ],
+            ],
+            [[1071, 1854], [1111, 1928], [3364, 0]],
+            49,
+            1173394324791217483,
+        ),
+        (
+            [[-7147, 10212], [-1157, 3878]],
+            [
+                [
+                    [193704, -6784, 344346, -504610],
+                    [226571, -8719, 362455, -509253],
+                ],
+                [
+                    [241482, -6565, 345931, -524415],
+                    [260140, -4729, 345740, -559503],
+                ],
+            ],
+            [[1122, 1718], [1051, 1779], [3370, 0]],
+            50,
+            9150989329751158337,
+        ),
+        (
+            [[-716, 7240], [1052, 1324]],
+            [
+                [
+                    [259702, -7278, 378860, -619293],
+                    [289927, -8629, 386106, -561324],
+                ],
+                [
+                    [191119, -5477, 316137, -488289],
+                    [200123, -4001, 315005, -525406],
+                ],
+            ],
+            [[1167, 1830], [1122, 1803], [3383, 0]],
+            38,
+            16159366007497678965,
+        ),
+        (
+            [[2603, 4810], [-8231, -3599]],
+            [
+                [
+                    [297250, -8298, 401038, -622997],
+                    [328061, -8907, 424810, -639081],
+                ],
+                [
+                    [150064, -4133, 272334, -398371],
+                    [164112, -3854, 294431, -417944],
+                ],
+            ],
+            [[1098, 1798], [1164, 1817], [3361, 0]],
+            49,
+            8819948449104626703,
+        ),
+        (
+            [[-8, 2230], [3418, 6195]],
+            [
+                [
+                    [250548, -4252, 334632, -521758],
+                    [221006, -5811, 385453, -512643],
+                ],
+                [
+                    [215638, -5039, 333046, -493861],
+                    [253247, -6034, 339383, -527754],
+                ],
+            ],
+            [[1147, 1870], [1114, 1814], [3362, 0]],
+            53,
+            14588830967741032305,
+        ),
+        (
+            [[-1903, 12929], [665, 6772]],
+            [
+                [
+                    [274286, -6135, 383574, -551922],
+                    [258314, -7174, 394618, -547640],
+                ],
+                [
+                    [199110, -6266, 341798, -478556],
+                    [213054, -6073, 371186, -534560],
+                ],
+            ],
+            [[1156, 1874], [1075, 1783], [3355, 0]],
+            56,
+            15411177053643297796,
+        ),
+        (
+            [[-3541, 861], [-2370, -4001]],
+            [
+                [
+                    [325160, -8776, 433982, -623721],
+                    [267965, -8695, 387447, -589929],
+                ],
+                [
+                    [147721, -4051, 295852, -448472],
+                    [183833, -5587, 317462, -477649],
+                ],
+            ],
+            [[1092, 1781], [1096, 1778], [3370, 0]],
+            48,
+            17375631544352545676,
+        ),
+        (
+            [[5258, -3224], [-886, 3618]],
+            [
+                [
+                    [255489, -6714, 413349, -551606],
+                    [190583, -6121, 321030, -507108],
+                ],
+                [
+                    [243324, -5480, 331252, -530431],
+                    [268280, -7834, 348611, -528467],
+                ],
+            ],
+            [[1078, 1820], [1029, 1754], [3367, 0]],
+            42,
+            268529463703148226,
+        ),
+        (
+            [[14478, 4], [-1720, 1481]],
+            [
+                [
+                    [362185, -11813, 471597, -633625],
+                    [245890, -5698, 338153, -564971],
+                ],
+                [
+                    [182383, -3918, 309526, -442156],
+                    [232558, -7031, 339380, -493135],
+                ],
+            ],
+            [[1113, 2031], [1078, 1835], [3362, 0]],
+            49,
+            1107059849613890624,
+        ),
+        (
+            [[14773, 1862], [3812, 2528]],
+            [
+                [
+                    [288480, -8661, 436576, -612004],
+                    [201219, -5375, 352357, -516256],
+                ],
+                [
+                    [214135, -6643, 357035, -528528],
+                    [322619, -8046, 371315, -572949],
+                ],
+            ],
+            [[1132, 1927], [1100, 1888], [3370, 0]],
+            52,
+            1049667893917957018,
+        ),
+        (
+            [[1594, -1118], [-1162, 1442]],
+            [
+                [
+                    [337784, -9846, 412284, -565819],
+                    [235515, -4964, 364300, -566332],
+                ],
+                [
+                    [194914, -6432, 327131, -501591],
+                    [254754, -8463, 365681, -550560],
+                ],
+            ],
+            [[1135, 1871], [1087, 1931], [3354, 0]],
+            52,
+            12180692400305806397,
+        ),
+        (
+            [[11554, 4637], [-47, -31]],
+            [
+                [
+                    [311623, -10407, 493282, -636747],
+                    [192189, -5532, 347487, -518326],
+                ],
+                [
+                    [246694, -8090, 341190, -518624],
+                    [357519, -10791, 393262, -572556],
+                ],
+            ],
+            [[1118, 2039], [1081, 1954], [3368, 1]],
+            52,
+            5113087573330953569,
+        ),
+        (
+            [[14852, -1712], [17416, 1893]],
+            [
+                [
+                    [382041, -11716, 488535, -650754],
+                    [231987, -5941, 355370, -556474],
+                ],
+                [
+                    [200502, -6756, 332286, -500643],
+                    [301773, -9796, 408310, -576529],
+                ],
+            ],
+            [[1140, 2088], [1131, 1942], [3348, 0]],
+            53,
+            11248122695326812476,
+        ),
+        (
+            [[14487, -4571], [3413, 18149]],
+            [
+                [
+                    [325391, -15451, 524461, -685399],
+                    [206750, -6277, 354789, -528669],
+                ],
+                [
+                    [213315, -5491, 351812, -522857],
+                    [361985, -12982, 451187, -595657],
+                ],
+            ],
+            [[1124, 2089], [1036, 2057], [3362, 0]],
+            57,
+            13960606192155056718,
+        ),
+        (
+            [[10852, 10079], [8148, 9201]],
+            [
+                [
+                    [410159, -8656, 515025, -734293],
+                    [255961, -7085, 378280, -540071],
+                ],
+                [
+                    [209167, -6579, 323262, -469873],
+                    [309326, -9418, 422269, -560619],
+                ],
+            ],
+            [[1143, 2048], [1093, 2019], [3366, 0]],
+            59,
+            9375590217196429367,
+        ),
+        (
+            [[12806, -6829], [-2330, 7143]],
+            [
+                [
+                    [335592, -13498, 485315, -641097],
+                    [212660, -6378, 352451, -564088],
+                ],
+                [
+                    [238456, -6390, 331027, -498094],
+                    [355491, -7761, 460065, -616386],
+                ],
+            ],
+            [[1126, 2050], [1147, 1998], [3359, 1]],
+            58,
+            18223670482880372304,
+        ),
+        (
+            [[1090, 1965], [8987, 1394]],
+            [
+                [
+                    [438930, -11216, 515534, -719214],
+                    [260892, -7784, 404106, -603858],
+                ],
+                [
+                    [170780, -5844, 285324, -439496],
+                    [265576, -7192, 398448, -566901],
+                ],
+            ],
+            [[1144, 2050], [1131, 2050], [3345, 0]],
+            52,
+            8694422190437481212,
+        ),
+        (
+            [[1644, 3925], [-9654, 7357]],
+            [
+                [
+                    [369091, -14034, 457031, -633988],
+                    [219556, -6321, 345201, -553324],
+                ],
+                [
+                    [216978, -3907, 305710, -479598],
+                    [322467, -9459, 420703, -584382],
+                ],
+            ],
+            [[1152, 2035], [1145, 1981], [3361, 2]],
+            46,
+            7621527081723782884,
+        ),
+        (
+            [[4648, 2289], [17901, 1821]],
+            [
+                [
+                    [339005, -8718, 450799, -605488],
+                    [237207, -7289, 387859, -569295],
+                ],
+                [
+                    [195238, -4459, 314343, -455262],
+                    [277520, -6179, 399017, -592812],
+                ],
+            ],
+            [[1062, 1957], [1148, 1859], [3369, 0]],
+            51,
+            6857007209063477982,
+        ),
+        (
+            [[5508, -533], [3489, 1325]],
+            [
+                [
+                    [296308, -9400, 440150, -637700],
+                    [228028, -6992, 361462, -533482],
+                ],
+                [
+                    [191988, -4900, 306634, -507279],
+                    [297228, -5938, 374257, -563809],
+                ],
+            ],
+            [[1076, 1906], [1065, 1904], [3362, 0]],
+            49,
+            16760770893189675763,
+        ),
+        (
+            [[7707, -6779], [3466, 11743]],
+            [
+                [
+                    [267830, -10141, 390934, -546737],
+                    [189291, -5298, 337967, -503064],
+                ],
+                [
+                    [241814, -7287, 353306, -537779],
+                    [333829, -9635, 444003, -624844],
+                ],
+            ],
+            [[1054, 1903], [1035, 1973], [3344, 0]],
+            49,
+            11074052884439633572,
+        ),
+        (
+            [[-1298, 12300], [-646, 5059]],
+            [
+                [
+                    [295123, -7527, 414442, -569459],
+                    [249812, -5885, 347490, -528378],
+                ],
+                [
+                    [206113, -5544, 334757, -518556],
+                    [269769, -8319, 411409, -589604],
+                ],
+            ],
+            [[1094, 1918], [1090, 1918], [3369, 0]],
+            55,
+            11662219289708327476,
+        ),
+        (
+            [[-2322, 2820], [16766, 1224]],
+            [
+                [
+                    [300573, -9116, 399197, -615818],
+                    [260330, -9958, 392622, -596434],
+                ],
+                [
+                    [212471, -4542, 307600, -453334],
+                    [271488, -7934, 384007, -555987],
+                ],
+            ],
+            [[1085, 2025], [1103, 2010], [3362, 0]],
+            50,
+            849118626213519864,
+        ),
+        (
+            [[-5675, 9073], [5379, 8644]],
+            [
+                [
+                    [238069, -9974, 418712, -631423],
+                    [205945, -5595, 393908, -532708],
+                ],
+                [
+                    [218346, -6610, 327283, -495537],
+                    [292829, -6218, 360576, -568704],
+                ],
+            ],
+            [[1186, 1782], [1149, 1807], [3367, 0]],
+            47,
+            8811448039181929053,
+        ),
+        (
+            [[9904, 2498], [-5857, 1162]],
+            [
+                [
+                    [245263, -7862, 375468, -498222],
+                    [233924, -5898, 349198, -501275],
+                ],
+                [
+                    [225221, -7335, 326421, -524585],
+                    [292494, -8909, 385387, -550466],
+                ],
+            ],
+            [[1140, 1811], [1088, 1882], [3370, 0]],
+            52,
+            18109305407620029567,
+        ),
+        (
+            [[279, 7653], [-9167, 1396]],
+            [
+                [
+                    [354688, -9580, 412504, -630317],
+                    [340599, -11796, 423244, -627654],
+                ],
+                [
+                    [149317, -6831, 295693, -464358],
+                    [197251, -6499, 340501, -464432],
+                ],
+            ],
+            [[1115, 1905], [1153, 1949], [3361, 0]],
+            52,
+            5573231671516208586,
+        ),
+        (
+            [[2556, 2704], [3765, -27]],
+            [
+                [
+                    [275908, -7761, 415848, -600796],
+                    [267344, -9119, 423212, -621659],
+                ],
+                [
+                    [208314, -4828, 327291, -493967],
+                    [240337, -5937, 378941, -538065],
+                ],
+            ],
+            [[1102, 1855], [1156, 1906], [3365, 0]],
+            47,
+            3793107961995357270,
+        ),
+        (
+            [[-476, 9171], [6482, 3324]],
+            [
+                [
+                    [246656, -5063, 357659, -559015],
+                    [284229, -7457, 386566, -623215],
+                ],
+                [
+                    [213949, -5597, 345566, -512225],
+                    [245548, -7850, 340629, -546109],
+                ],
+            ],
+            [[1112, 1860], [1122, 1887], [3373, 0]],
+            44,
+            2121792189598231594,
+        ),
+        (
+            [[1738, 1998], [-626, -2164]],
+            [
+                [
+                    [284275, -8390, 392613, -599197],
+                    [319949, -9327, 462405, -641681],
+                ],
+                [
+                    [180465, -5992, 304692, -452368],
+                    [195607, -6188, 336539, -497353],
+                ],
+            ],
+            [[1073, 1878], [1085, 1890], [3386, 0]],
+            51,
+            9041354186343019964,
+        ),
+        (
+            [[-9274, 583], [1432, 16545]],
+            [
+                [
+                    [226000, -7338, 351048, -559440],
+                    [272884, -6397, 406239, -564779],
+                ],
+                [
+                    [235518, -6319, 330032, -532748],
+                    [256622, -7703, 358164, -559343],
+                ],
+            ],
+            [[1133, 1902], [1128, 1961], [3369, 0]],
+            41,
+            6288898881903337720,
+        ),
+        (
+            [[-1855, -744], [5315, -11]],
+            [
+                [
+                    [255909, -7944, 377815, -577445],
+                    [381578, -11230, 523232, -710041],
+                ],
+                [
+                    [189896, -4820, 299550, -484252],
+                    [206069, -4102, 322665, -498663],
+                ],
+            ],
+            [[1138, 1802], [1108, 1966], [3352, 0]],
+            43,
+            6928173783019285349,
+        ),
+        (
+            [[13158, 10720], [-1462, -3616]],
+            [
+                [
+                    [262443, -6518, 422809, -603063],
+                    [390986, -9116, 540521, -708081],
+                ],
+                [
+                    [202781, -6413, 307285, -467009],
+                    [205462, -5088, 328382, -467545],
+                ],
+            ],
+            [[1107, 1885], [1113, 2053], [3354, 0]],
+            53,
+            4507281409150477758,
+        ),
+        (
+            [[-226, 1121], [-146, 1072]],
+            [
+                [
+                    [243006, -7958, 345650, -590220],
+                    [401814, -11876, 490673, -666743],
+                ],
+                [
+                    [206648, -8904, 324522, -454080],
+                    [233229, -7891, 349402, -506887],
+                ],
+            ],
+            [[1156, 1835], [1090, 2022], [3371, 0]],
+            52,
+            8371478790874926659,
+        ),
+        (
+            [[-2538, -3549], [-1461, -160]],
+            [
+                [
+                    [201855, -3661, 349231, -536754],
+                    [335511, -10478, 508770, -640488],
+                ],
+                [
+                    [228828, -8389, 359616, -560504],
+                    [253010, -6912, 335528, -541774],
+                ],
+            ],
+            [[1139, 1766], [1086, 2094], [3365, 0]],
+            48,
+            12338846989017689592,
+        ),
+        (
+            [[4548, 8223], [51, -3854]],
+            [
+                [
+                    [177658, -4987, 352598, -510303],
+                    [299050, -8625, 531658, -616211],
+                ],
+                [
+                    [270253, -6757, 357979, -511745],
+                    [252765, -7848, 357095, -511318],
+                ],
+            ],
+            [[1052, 1780], [1017, 1986], [3369, 0]],
+            56,
+            10066567946627160795,
+        ),
+        (
+            [[-9010, 9901], [4910, -848]],
+            [
+                [
+                    [208735, -6867, 354547, -572804],
+                    [370032, -9357, 515530, -656598],
+                ],
+                [
+                    [221386, -6167, 354190, -532078],
+                    [204636, -5238, 324611, -521650],
+                ],
+            ],
+            [[1121, 1743], [1105, 1959], [3354, 0]],
+            47,
+            14106514375358889250,
+        ),
+        (
+            [[-8724, 12333], [9345, -957]],
+            [
+                [
+                    [246466, -5077, 340769, -540434],
+                    [425481, -12786, 535004, -664493],
+                ],
+                [
+                    [221568, -7440, 330809, -498504],
+                    [196338, -5392, 321111, -494196],
+                ],
+            ],
+            [[1057, 1866], [1073, 2074], [3362, 0]],
+            53,
+            2820159782952793617,
+        ),
+        (
+            [[-1510, 6003], [-1890, 576]],
+            [
+                [
+                    [223723, -6508, 355453, -618614],
+                    [386559, -15820, 606473, -710152],
+                ],
+                [
+                    [232494, -7536, 361518, -555885],
+                    [202402, -6376, 365071, -588249],
+                ],
+            ],
+            [[1129, 1785], [1113, 1974], [3360, 1]],
+            41,
+            15010038177562902355,
+        ),
+        (
+            [[7546, 9473], [14654, 6882]],
+            [
+                [
+                    [270277, -7220, 375294, -538645],
+                    [480275, -18027, 608268, -751232],
+                ],
+                [
+                    [228377, -5028, 329304, -487818],
+                    [189190, -5199, 327178, -473319],
+                ],
+            ],
+            [[1101, 1818], [1122, 2188], [3359, 0]],
+            58,
+            17231367272591271111,
+        ),
+        (
+            [[7047, 14284], [1732, 2372]],
+            [
+                [
+                    [230449, -5705, 370103, -580048],
+                    [421405, -11924, 588737, -686009],
+                ],
+                [
+                    [248070, -4733, 365680, -549681],
+                    [214062, -4872, 347140, -530544],
+                ],
+            ],
+            [[1147, 1846], [1102, 2178], [3363, 0]],
+            51,
+            15275251945907766601,
+        ),
+        (
+            [[-8376, 8723], [5756, 4590]],
+            [
+                [
+                    [194936, -4815, 346131, -562380],
+                    [400823, -12570, 538596, -679774],
+                ],
+                [
+                    [278318, -6890, 364534, -521981],
+                    [228595, -6581, 343756, -519686],
+                ],
+            ],
+            [[1050, 1823], [1049, 2137], [3355, 0]],
+            51,
+            16592823853070618287,
+        ),
+        (
+            [[7833, 22662], [-348, -9842]],
+            [
+                [
+                    [270958, -7505, 410047, -619879],
+                    [460944, -10567, 672051, -788937],
+                ],
+                [
+                    [205995, -6153, 336697, -492991],
+                    [170867, -4833, 291990, -475621],
+                ],
+            ],
+            [[1186, 1857], [1153, 2103], [3370, 0]],
+            53,
+            11948586388637764181,
+        ),
+        (
+            [[4595, 19660], [-1727, -146]],
+            [
+                [
+                    [184949, -4216, 346728, -538655],
+                    [376002, -16356, 571022, -676269],
+                ],
+                [
+                    [299859, -7075, 387478, -586466],
+                    [223341, -4899, 329816, -504662],
+                ],
+            ],
+            [[1049, 1907], [1030, 2060], [3358, 0]],
+            52,
+            2860537161168307148,
+        ),
+        (
+            [[-12893, 12060], [-474, 78]],
+            [
+                [
+                    [267051, -7495, 376517, -636928],
+                    [488887, -20005, 633300, -772687],
+                ],
+                [
+                    [252693, -6449, 384475, -565682],
+                    [184704, -5150, 289361, -484125],
+                ],
+            ],
+            [[1180, 1976], [1136, 2095], [3365, 1]],
+            48,
+            15196685334283816234,
+        ),
+        (
+            [[9575, -120], [7878, -2211]],
+            [
+                [
+                    [205108, -5062, 363692, -553335],
+                    [360820, -13405, 564185, -698364],
+                ],
+                [
+                    [368945, -9964, 408635, -612435],
+                    [235499, -4709, 346569, -536024],
+                ],
+            ],
+            [[1150, 2106], [1133, 2207], [3397, 0]],
+            53,
+            6266477506654349633,
+        ),
+        (
+            [[-4008, 16922], [7182, 10968]],
+            [
+                [
+                    [239979, -6353, 384291, -565664],
+                    [411254, -10261, 592023, -762776],
+                ],
+                [
+                    [336218, -10973, 394300, -576172],
+                    [224808, -5734, 326951, -514428],
+                ],
+            ],
+            [[1120, 2080], [1102, 2097], [3360, 0]],
+            58,
+            4005786219164796999,
+        ),
+        (
+            [[-8634, 3553], [19096, 4610]],
+            [
+                [
+                    [144860, -3812, 333612, -526982],
+                    [308439, -9883, 565642, -650483],
+                ],
+                [
+                    [421110, -13123, 480943, -680349],
+                    [268493, -5265, 335030, -573325],
+                ],
+            ],
+            [[1157, 1954], [1174, 2067], [3364, 0]],
+            56,
+            17043465584786536520,
+        ),
+        (
+            [[2385, 14736], [15483, 2975]],
+            [
+                [
+                    [219321, -7057, 356515, -559264],
+                    [436796, -16377, 608182, -660897],
+                ],
+                [
+                    [342156, -6977, 444142, -596702],
+                    [235502, -8435, 352671, -543046],
+                ],
+            ],
+            [[1010, 1986], [1066, 2269], [3351, 0]],
+            60,
+            803856251804574337,
+        ),
+    ],
+    &[
+        (
+            [[4634, 3917], [7592, 10922]],
+            [
+                [
+                    [248431, -7624, 450365, -557092],
+                    [191779, -5821, 334064, -521124],
+                ],
+                [
+                    [275689, -7048, 372211, -561591],
+                    [478613, -13255, 551830, -725072],
+                ],
+            ],
+            [[1077, 1955], [1034, 2126], [3373, 2]],
+            56,
+            8621068887384986912,
+        ),
+        (
+            [[2594, -1049], [1439, 3028]],
+            [
+                [
+                    [252321, -8788, 414807, -576504],
+                    [174777, -5938, 319400, -488093],
+                ],
+                [
+                    [290365, -7177, 350430, -549376],
+                    [440596, -11384, 499417, -672728],
+                ],
+            ],
+            [[1109, 1961], [1108, 2012], [3351, 0]],
+            47,
+            7067297802027083769,
+        ),
+        (
+            [[4691, 49], [794, 10610]],
+            [
+                [
+                    [326273, -8637, 445463, -613183],
+                    [242998, -7531, 372273, -577604],
+                ],
+                [
+                    [212729, -7058, 331483, -495395],
+                    [333044, -10153, 424544, -559562],
+                ],
+            ],
+            [[1126, 2039], [1094, 2023], [3337, 1]],
+            57,
+            14595706744361001872,
+        ),
+        (
+            [[5703, -6014], [336, 20080]],
+            [
+                [
+                    [323823, -13220, 450564, -618473],
+                    [245490, -8120, 363615, -616266],
+                ],
+                [
+                    [202754, -6091, 321140, -486387],
+                    [296075, -7895, 394905, -529728],
+                ],
+            ],
+            [[1069, 1945], [1077, 1955], [3363, 0]],
+            48,
+            8577639282678929594,
+        ),
+        (
+            [[6624, 13045], [6481, 6753]],
+            [
+                [
+                    [248277, -7294, 398119, -563070],
+                    [218814, -9152, 346348, -550331],
+                ],
+                [
+                    [236509, -8035, 343959, -565113],
+                    [340063, -9630, 436742, -600513],
+                ],
+            ],
+            [[1085, 1834], [1134, 1987], [3364, 0]],
+            46,
+            4366893548248087164,
+        ),
+        (
+            [[2060, -5323], [-1526, 6224]],
+            [
+                [
+                    [288438, -11160, 422368, -606773],
+                    [224933, -8922, 376960, -587690],
+                ],
+                [
+                    [201355, -4554, 320036, -526848],
+                    [300546, -7251, 382332, -504071],
+                ],
+            ],
+            [[1146, 1949], [1050, 1903], [3364, 0]],
+            48,
+            2623949002801651204,
+        ),
+        (
+            [[502, 4953], [2146, 4591]],
+            [
+                [
+                    [280107, -7885, 395974, -604128],
+                    [249972, -6724, 381201, -562288],
+                ],
+                [
+                    [256221, -7219, 352418, -523883],
+                    [317955, -9956, 402977, -571337],
+                ],
+            ],
+            [[1140, 1948], [1103, 1952], [3347, 0]],
+            53,
+            1933249995964501410,
+        ),
+        (
+            [[2765, 4760], [-139, 21931]],
+            [
+                [
+                    [260863, -5710, 346897, -586050],
+                    [289833, -6670, 364586, -570446],
+                ],
+                [
+                    [227093, -6068, 357104, -525573],
+                    [277471, -6649, 405885, -547338],
+                ],
+            ],
+            [[1186, 1889], [1082, 1956], [3357, 0]],
+            49,
+            793687376022627548,
+        ),
+        (
+            [[1737, 5390], [3491, 19656]],
+            [
+                [
+                    [228953, -7322, 347262, -545059],
+                    [251836, -6829, 386682, -556596],
+                ],
+                [
+                    [258864, -5042, 380964, -543794],
+                    [324327, -5713, 408361, -587451],
+                ],
+            ],
+            [[1107, 1829], [1113, 1901], [3366, 0]],
+            48,
+            16214712891165150586,
+        ),
+        (
+            [[587, 5424], [1680, -8691]],
+            [
+                [
+                    [278718, -7364, 407474, -610318],
+                    [317080, -8230, 433374, -667111],
+                ],
+                [
+                    [208561, -5845, 364006, -528764],
+                    [246964, -6886, 372916, -538378],
+                ],
+            ],
+            [[1185, 1915], [1136, 1969], [3364, 0]],
+            51,
+            9354704106101003260,
+        ),
+        (
+            [[4673, -4900], [1794, 2770]],
+            [
+                [
+                    [192621, -7761, 346621, -515614],
+                    [235859, -6729, 392508, -526559],
+                ],
+                [
+                    [287265, -5714, 404434, -630874],
+                    [320474, -8481, 400840, -636482],
+                ],
+            ],
+            [[1162, 1845], [1103, 1909], [3368, 0]],
+            53,
+            5826169274916714244,
+        ),
+        (
+            [[352, 10016], [-2813, -2646]],
+            [
+                [
+                    [222211, -8188, 354116, -552360],
+                    [315501, -9549, 405905, -583039],
+                ],
+                [
+                    [206970, -6377, 345347, -494640],
+                    [241846, -8189, 352304, -512319],
+                ],
+            ],
+            [[1092, 1728], [1045, 1961], [3355, 0]],
+            48,
+            5215948593703103713,
+        ),
+        (
+            [[-5789, 6093], [5512, 8718]],
+            [
+                [
+                    [265854, -7646, 358731, -563885],
+                    [321146, -9396, 429462, -606947],
+                ],
+                [
+                    [256506, -8242, 385929, -574277],
+                    [249403, -8289, 371145, -526164],
+                ],
+            ],
+            [[1140, 1917], [1091, 1972], [3346, 0]],
+            49,
+            3342657393849708692,
+        ),
+        (
+            [[5783, 393], [5868, 6402]],
+            [
+                [
+                    [216694, -6090, 354123, -517530],
+                    [314032, -7558, 426290, -595482],
+                ],
+                [
+                    [297260, -6902, 391172, -585608],
+                    [324469, -6110, 369033, -592834],
+                ],
+            ],
+            [[1126, 2017], [1167, 2136], [3366, 0]],
+            51,
+            7533310124117945506,
+        ),
+        (
+            [[-6883, 1358], [455, 4395]],
+            [
+                [
+                    [199314, -8614, 378862, -566977],
+                    [296175, -10947, 456264, -620032],
+                ],
+                [
+                    [322290, -7747, 419282, -594980],
+                    [281790, -7045, 414790, -594104],
+                ],
+            ],
+            [[1130, 1925], [1084, 2049], [3364, 0]],
+            55,
+            10745843397896297988,
+        ),
+        (
+            [[7704, 15571], [-262, 4651]],
+            [
+                [
+                    [221138, -6470, 351761, -522159],
+                    [311930, -9968, 468975, -612398],
+                ],
+                [
+                    [291130, -5123, 431594, -624712],
+                    [241326, -4010, 395232, -588836],
+                ],
+            ],
+            [[1101, 1947], [1106, 1967], [3363, 0]],
+            51,
+            7821070289065366229,
+        ),
+        (
+            [[9063, 16226], [7963, 2408]],
+            [
+                [
+                    [232883, -8393, 343236, -562008],
+                    [365902, -19232, 492825, -662965],
+                ],
+                [
+                    [273487, -8634, 401478, -566166],
+                    [231058, -4608, 350594, -498089],
+                ],
+            ],
+            [[1083, 1981], [1124, 2087], [3363, 0]],
+            49,
+            11195212650122036781,
+        ),
+        (
+            [[-5302, 13319], [96, 96]],
+            [
+                [
+                    [186570, -7215, 337985, -492956],
+                    [299669, -13321, 490301, -650632],
+                ],
+                [
+                    [380106, -12164, 463104, -678140],
+                    [302580, -5628, 369668, -571643],
+                ],
+            ],
+            [[1130, 2003], [1073, 1965], [3369, 0]],
+            56,
+            4317425267115521689,
+        ),
+        (
+            [[-6683, 8666], [7951, 5878]],
+            [
+                [
+                    [229916, -7794, 375484, -612849],
+                    [379559, -13651, 531104, -678421],
+                ],
+                [
+                    [307885, -7394, 462425, -642725],
+                    [222474, -4395, 323437, -535536],
+                ],
+            ],
+            [[1188, 2021], [1141, 2050], [3378, 0]],
+            47,
+            2088105227236233039,
+        ),
+        (
+            [[7535, 10571], [8620, -1622]],
+            [
+                [
+                    [264940, -7223, 380055, -590548],
+                    [455942, -13646, 601957, -787394],
+                ],
+                [
+                    [252683, -11736, 380021, -500602],
+                    [178002, -4390, 302843, -422582],
+                ],
+            ],
+            [[1113, 1941], [1187, 2094], [3358, 0]],
+            59,
+            10928964829266706528,
+        ),
+        (
+            [[-3259, -7623], [7317, 6779]],
+            [
+                [
+                    [215178, -4381, 310122, -525321],
+                    [348697, -9487, 516694, -648848],
+                ],
+                [
+                    [350044, -11450, 482922, -708883],
+                    [273545, -7240, 344014, -542969],
+                ],
+            ],
+            [[1181, 2057], [1139, 2074], [3361, 1]],
+            56,
+            8618433996181254475,
+        ),
+        (
+            [[-7291, 18676], [14812, 5234]],
+            [
+                [
+                    [225382, -4854, 347508, -545827],
+                    [396078, -11013, 543086, -699624],
+                ],
+                [
+                    [345793, -11518, 522741, -651891],
+                    [211126, -6371, 370110, -529769],
+                ],
+            ],
+            [[1178, 2058], [1097, 2047], [3355, 0]],
+            61,
+            648295326162343057,
+        ),
+        (
+            [[947, 3426], [-3522, 778]],
+            [
+                [
+                    [259662, -8324, 373222, -603913],
+                    [463400, -17150, 571622, -786633],
+                ],
+                [
+                    [264321, -8858, 492364, -634888],
+                    [193866, -5920, 330204, -485067],
+                ],
+            ],
+            [[1103, 1960], [1127, 2118], [3369, 0]],
+            54,
+            15818221587368902016,
+        ),
+        (
+            [[-7726, 4137], [20116, 10110]],
+            [
+                [
+                    [172968, -4955, 332455, -514155],
+                    [319488, -10677, 509702, -642872],
+                ],
+                [
+                    [461860, -12179, 505188, -687515],
+                    [284910, -7422, 371316, -531151],
+                ],
+            ],
+            [[1077, 2088], [1046, 2021], [3370, 0]],
+            57,
+            5982599551333097613,
+        ),
+        (
+            [[12651, 26015], [5054, 6627]],
+            [
+                [
+                    [256228, -5508, 364158, -554396],
+                    [434083, -15417, 541638, -681151],
+                ],
+                [
+                    [355894, -11475, 486484, -571300],
+                    [225342, -7996, 329113, -479457],
+                ],
+            ],
+            [[1104, 2163], [1080, 2195], [3362, 0]],
+            63,
+            943925988010414108,
+        ),
+        (
+            [[1597, 29355], [13870, 625]],
+            [
+                [
+                    [189946, -7784, 320994, -533942],
+                    [348304, -10446, 602014, -711314],
+                ],
+                [
+                    [430084, -11196, 564117, -702689],
+                    [280467, -7843, 348037, -558877],
+                ],
+            ],
+            [[1130, 2117], [1134, 2157], [3369, 0]],
+            60,
+            306103152347406834,
+        ),
+        (
+            [[-6493, 13578], [10178, -1384]],
+            [
+                [
+                    [194666, -4711, 326637, -518826],
+                    [382495, -9610, 552098, -723418],
+                ],
+                [
+                    [396228, -15391, 506978, -659505],
+                    [228387, -7825, 332604, -537053],
+                ],
+            ],
+            [[1143, 2003], [1116, 2140], [3351, 0]],
+            61,
+            13185025505767029207,
+        ),
+        (
+            [[8557, 10010], [10962, 5440]],
+            [
+                [
+                    [182137, -6293, 365778, -561560],
+                    [320109, -11198, 564099, -688273],
+                ],
+                [
+                    [457045, -17634, 523825, -705730],
+                    [300212, -10489, 341920, -562702],
+                ],
+            ],
+            [[1127, 2133], [1105, 2053], [3369, 1]],
+            61,
+            12648981326293878519,
+        ),
+        (
+            [[-1247, 16136], [22160, -5181]],
+            [
+                [
+                    [219382, -7980, 345165, -551459],
+                    [390729, -15726, 559558, -725391],
+                ],
+                [
+                    [401078, -13155, 552454, -717278],
+                    [244040, -7594, 365834, -551473],
+                ],
+            ],
+            [[1146, 2160], [1154, 2129], [3347, 1]],
+            61,
+            10430171179359981547,
+        ),
+        (
+            [[-2960, 7142], [14472, -42]],
+            [
+                [
+                    [192905, -10390, 337920, -540161],
+                    [351097, -12960, 569896, -690378],
+                ],
+                [
+                    [433038, -11032, 543923, -690951],
+                    [262896, -8085, 339556, -535835],
+                ],
+            ],
+            [[1104, 2190], [1029, 2126], [3362, 0]],
+            58,
+            5040623008797397973,
+        ),
+        (
+            [[6367, 23913], [8226, -979]],
+            [
+                [
+                    [219848, -4507, 361781, -565670],
+                    [406492, -11791, 582656, -701568],
+                ],
+                [
+                    [381880, -14919, 513653, -641870],
+                    [229131, -6972, 333963, -493408],
+                ],
+            ],
+            [[1142, 2067], [1095, 2185], [3366, 0]],
+            58,
+            12545111009924385179,
+        ),
+        (
+            [[-5635, -1884], [5559, 2357]],
+            [
+                [
+                    [192086, -8224, 338869, -554307],
+                    [371556, -13962, 570707, -741395],
+                ],
+                [
+                    [442106, -10862, 552426, -733974],
+                    [275850, -6793, 365196, -562338],
+                ],
+            ],
+            [[1168, 2129], [1149, 2144], [3357, 1]],
+            61,
+            15673324814854218737,
+        ),
+        (
+            [[6494, 3019], [1744, -568]],
+            [
+                [
+                    [247022, -7420, 364487, -593231],
+                    [451746, -18999, 604454, -754513],
+                ],
+                [
+                    [340653, -12404, 479217, -591052],
+                    [189809, -4992, 327285, -511725],
+                ],
+            ],
+            [[1156, 2114], [1149, 2206], [3347, 1]],
+            46,
+            13143207174196042450,
+        ),
+        (
+            [[-5786, 12120], [-6639, -961]],
+            [
+                [
+                    [201939, -5890, 332363, -521356],
+                    [357907, -13422, 519214, -654646],
+                ],
+                [
+                    [375023, -7249, 445102, -641805],
+                    [226714, -6737, 335279, -529629],
+                ],
+            ],
+            [[1157, 2002], [1143, 2039], [3355, 0]],
+            55,
+            14274553329066611584,
+        ),
+        (
+            [[2614, 6747], [19002, 1562]],
+            [
+                [
+                    [222893, -6110, 339384, -543838],
+                    [361795, -10846, 531392, -669980],
+                ],
+                [
+                    [330984, -7510, 433327, -594309],
+                    [210853, -6281, 326464, -538898],
+                ],
+            ],
+            [[1059, 2005], [1161, 1953], [3370, 0]],
+            46,
+            2647075601434328656,
+        ),
+        (
+            [[2957, 20725], [-4315, -198]],
+            [
+                [
+                    [194528, -7569, 353446, -542745],
+                    [335188, -9740, 486013, -629085],
+                ],
+                [
+                    [322440, -6531, 421874, -647674],
+                    [220788, -4613, 326903, -520153],
+                ],
+            ],
+            [[1072, 1930], [1076, 1948], [3359, 0]],
+            53,
+            13526495718803209957,
+        ),
+        (
+            [[-5676, 4261], [5826, 11089]],
+            [
+                [
+                    [173590, -8149, 319147, -514600],
+                    [283019, -6850, 457689, -581877],
+                ],
+                [
+                    [393276, -10489, 477996, -687545],
+                    [274401, -8373, 375106, -558699],
+                ],
+            ],
+            [[1079, 2012], [1054, 2060], [3342, 0]],
+            56,
+            17844057037941769892,
+        ),
+        (
+            [[3184, 18912], [4027, 425]],
+            [
+                [
+                    [225829, -5017, 352970, -521887],
+                    [335575, -8755, 454511, -591524],
+                ],
+                [
+                    [321056, -10656, 444546, -636918],
+                    [219797, -7380, 343807, -541462],
+                ],
+            ],
+            [[1096, 2027], [1077, 1967], [3364, 0]],
+            56,
+            4710505380063337781,
+        ),
+        (
+            [[-7778, 10109], [647, 3284]],
+            [
+                [
+                    [246038, -7026, 326961, -545206],
+                    [356269, -12591, 503615, -674046],
+                ],
+                [
+                    [323170, -9291, 408107, -537307],
+                    [221001, -8149, 348740, -533544],
+                ],
+            ],
+            [[1062, 2104], [1088, 2096], [3359, 0]],
+            54,
+            10542038345394320288,
+        ),
+        (
+            [[-15825, 15297], [7184, 3563]],
+            [
+                [
+                    [182216, -6965, 348240, -563776],
+                    [317881, -9809, 493570, -587776],
+                ],
+                [
+                    [320851, -8965, 429301, -636229],
+                    [255191, -4897, 336281, -570337],
+                ],
+            ],
+            [[1209, 1883], [1159, 1997], [3367, 0]],
+            52,
+            16069587405213947382,
+        ),
+        (
+            [[8271, 16607], [4667, -4646]],
+            [
+                [
+                    [186091, -5939, 339185, -490565],
+                    [300025, -7949, 442085, -567134],
+                ],
+                [
+                    [322213, -10176, 426715, -669049],
+                    [269147, -8842, 369292, -557305],
+                ],
+            ],
+            [[1154, 1868], [1091, 1924], [3367, 0]],
+            52,
+            2645841773342580226,
+        ),
+        (
+            [[1177, -76], [-4686, -3010]],
+            [
+                [
+                    [301887, -8018, 391784, -621332],
+                    [417541, -13675, 505362, -699130],
+                ],
+                [
+                    [207070, -8702, 362575, -562154],
+                    [183071, -6412, 323343, -468438],
+                ],
+            ],
+            [[1145, 1920], [1155, 2076], [3361, 0]],
+            52,
+            10076917405476109860,
+        ),
+        (
+            [[-2048, 3589], [6813, 3473]],
+            [
+                [
+                    [238955, -6389, 401438, -599097],
+                    [300401, -9812, 470890, -651500],
+                ],
+                [
+                    [286330, -5734, 399856, -557055],
+                    [221621, -5558, 351174, -541433],
+                ],
+            ],
+            [[1111, 1950], [1177, 1950], [3366, 0]],
+            49,
+            4117580634823802652,
+        ),
+        (
+            [[-182, 5084], [7142, 1223]],
+            [
+                [
+                    [250108, -5502, 364314, -574006],
+                    [314491, -8202, 418840, -665347],
+                ],
+                [
+                    [273034, -7157, 411421, -608945],
+                    [250871, -6969, 370772, -542322],
+                ],
+            ],
+            [[1138, 2029], [1125, 1996], [3373, 0]],
+            46,
+            2690330961369589202,
+        ),
+        (
+            [[-2585, 3075], [-1693, -1746]],
+            [
+                [
+                    [285732, -9396, 413180, -618133],
+                    [321112, -8862, 471760, -658378],
+                ],
+                [
+                    [233724, -7095, 370173, -556454],
+                    [184276, -6337, 346516, -521297],
+                ],
+            ],
+            [[1105, 1979], [1102, 1904], [3385, 0]],
+            49,
+            11368185192347716039,
+        ),
+        (
+            [[-7082, 3010], [4475, 5577]],
+            [
+                [
+                    [249765, -8090, 379703, -576417],
+                    [239290, -4230, 406586, -579615],
+                ],
+                [
+                    [277097, -8717, 375029, -615831],
+                    [282642, -9008, 354716, -557881],
+                ],
+            ],
+            [[1155, 1997], [1132, 1923], [3369, 0]],
+            44,
+            11020740647858847145,
+        ),
+        (
+            [[813, -2451], [6139, 6]],
+            [
+                [
+                    [286340, -9879, 434222, -629463],
+                    [312014, -9066, 458231, -675072],
+                ],
+                [
+                    [233947, -4277, 332890, -567094],
+                    [219304, -5278, 320857, -514130],
+                ],
+            ],
+            [[1138, 1956], [1105, 1912], [3354, 0]],
+            47,
+            13633041997446879791,
+        ),
+        (
+            [[7279, -2438], [-4182, -1216]],
+            [
+                [
+                    [314944, -12448, 499230, -683691],
+                    [292909, -8295, 469687, -669574],
+                ],
+                [
+                    [238902, -7562, 358447, -534778],
+                    [240792, -7677, 335204, -470048],
+                ],
+            ],
+            [[1115, 2048], [1109, 1952], [3355, 0]],
+            54,
+            13709622780425317363,
+        ),
+        (
+            [[11598, -1484], [38, 4299]],
+            [
+                [
+                    [309566, -11886, 426972, -628452],
+                    [310798, -9514, 391860, -619274],
+                ],
+                [
+                    [251155, -8637, 363457, -567171],
+                    [261979, -7877, 390034, -544091],
+                ],
+            ],
+            [[1192, 2076], [1094, 1995], [3370, 0]],
+            45,
+            2645095903859306111,
+        ),
+        (
+            [[-226, -3604], [-8173, 4418]],
+            [
+                [
+                    [280581, -6174, 412041, -585442],
+                    [226964, -6585, 383742, -556233],
+                ],
+                [
+                    [248780, -9673, 389788, -638561],
+                    [292423, -8476, 384910, -594817],
+                ],
+            ],
+            [[1156, 1983], [1087, 2005], [3362, 0]],
+            41,
+            5493141413352603757,
+        ),
+        (
+            [[11039, 8021], [-3279, 2679]],
+            [
+                [
+                    [257403, -5517, 462099, -603872],
+                    [208060, -6438, 389928, -521597],
+                ],
+                [
+                    [298291, -9051, 378891, -561003],
+                    [360433, -10312, 447080, -591752],
+                ],
+            ],
+            [[1061, 1995], [1025, 1976], [3368, 0]],
+            60,
+            12749792280854495968,
+        ),
+        (
+            [[-18938, 1184], [1099, 4799]],
+            [
+                [
+                    [299138, -10178, 445574, -658817],
+                    [255301, -6165, 372280, -576822],
+                ],
+                [
+                    [230861, -6216, 373194, -583651],
+                    [313242, -7705, 414282, -602496],
+                ],
+            ],
+            [[1124, 1982], [1096, 1981], [3350, 3]],
+            50,
+            9103526219350530882,
+        ),
+        (
+            [[-5287, -858], [7259, 16733]],
+            [
+                [
+                    [367775, -10824, 495892, -656695],
+                    [279287, -8644, 370336, -585815],
+                ],
+                [
+                    [220870, -8893, 350445, -552390],
+                    [295445, -7450, 433405, -596578],
+                ],
+            ],
+            [[1068, 2120], [1077, 2061], [3361, 0]],
+            52,
+            10097123705050900000,
+        ),
+        (
+            [[7464, -1417], [6824, 1343]],
+            [
+                [
+                    [315613, -9885, 489889, -733327],
+                    [240672, -8224, 409476, -556105],
+                ],
+                [
+                    [238022, -8961, 387131, -610505],
+                    [339790, -10718, 514868, -723531],
+                ],
+            ],
+            [[1124, 2011], [1083, 1955], [3354, 0]],
+            49,
+            13869444677452234630,
+        ),
+        (
+            [[3942, 845], [11633, 6486]],
+            [
+                [
+                    [381337, -12881, 492562, -657590],
+                    [282053, -8129, 389114, -604023],
+                ],
+                [
+                    [218611, -5441, 339045, -526124],
+                    [284552, -8647, 465405, -555224],
+                ],
+            ],
+            [[1096, 2047], [1106, 2037], [3359, 0]],
+            59,
+            13334092057603342603,
+        ),
+        (
+            [[8317, 2062], [2468, 3183]],
+            [
+                [
+                    [366882, -10820, 526773, -674868],
+                    [232967, -8427, 408135, -577774],
+                ],
+                [
+                    [243981, -5027, 384015, -613389],
+                    [354099, -8858, 527146, -700283],
+                ],
+            ],
+            [[1168, 2167], [1115, 2168], [3357, 0]],
+            56,
+            15716795891756004401,
+        ),
+        (
+            [[5316, -7819], [324, 18273]],
+            [
+                [
+                    [325626, -8020, 497945, -696232],
+                    [239675, -6621, 335562, -558067],
+                ],
+                [
+                    [252984, -7615, 351751, -567959],
+                    [402485, -12976, 519150, -675650],
+                ],
+            ],
+            [[1090, 2075], [1079, 2151], [3360, 0]],
+            51,
+            16482242574988863514,
+        ),
+        (
+            [[4864, 9943], [672, -2373]],
+            [
+                [
+                    [424757, -10814, 582811, -777776],
+                    [275724, -7028, 428636, -644067],
+                ],
+                [
+                    [164879, -5810, 305210, -514362],
+                    [268162, -6671, 428171, -584509],
+                ],
+            ],
+            [[1191, 2186], [1148, 2051], [3367, 0]],
+            54,
+            5496022984110075004,
+        ),
+        (
+            [[18766, 5709], [-9788, 13504]],
+            [
+                [
+                    [315238, -8429, 511575, -677301],
+                    [222740, -6298, 341175, -528678],
+                ],
+                [
+                    [261002, -5493, 365192, -578769],
+                    [388631, -13197, 504518, -619472],
+                ],
+            ],
+            [[1065, 2198], [1030, 2146], [3362, 0]],
+            56,
+            1084710978730984842,
+        ),
+        (
+            [[-2661, -7312], [3193, 21576]],
+            [
+                [
+                    [433561, -12037, 585371, -904759],
+                    [264613, -9221, 393429, -586268],
+                ],
+                [
+                    [206775, -3604, 348040, -578716],
+                    [356660, -10441, 479989, -630655],
+                ],
+            ],
+            [[1207, 2261], [1108, 2148], [3364, 1]],
+            53,
+            4962905722620687913,
+        ),
+        (
+            [[24283, -6702], [11820, 8129]],
+            [
+                [
+                    [356984, -10403, 537502, -758713],
+                    [208980, -6634, 343571, -549987],
+                ],
+                [
+                    [285306, -7524, 361824, -618834],
+                    [427460, -10823, 562091, -694675],
+                ],
+            ],
+            [[1204, 2323], [1153, 2245], [3400, 0]],
+            53,
+            18166163661226624876,
+        ),
+        (
+            [[-1983, 6464], [13224, 15502]],
+            [
+                [
+                    [409270, -13226, 560314, -748438],
+                    [233587, -6011, 356460, -587905],
+                ],
+                [
+                    [250610, -8311, 338974, -583263],
+                    [401122, -12943, 562101, -730486],
+                ],
+            ],
+            [[1129, 2286], [1110, 2225], [3358, 0]],
+            52,
+            9531827987408500970,
+        ),
+        (
+            [[-2506, -520], [7000, 18923]],
+            [
+                [
+                    [280360, -10523, 499806, -685768],
+                    [153886, -5237, 334156, -503969],
+                ],
+                [
+                    [302443, -6529, 381188, -625648],
+                    [514885, -13589, 555186, -754876],
+                ],
+            ],
+            [[1164, 2084], [1168, 2209], [3363, 0]],
+            57,
+            13243007268360593978,
+        ),
+        (
+            [[20043, 620], [16476, 9809]],
+            [
+                [
+                    [387285, -13179, 566083, -698539],
+                    [240006, -8049, 362098, -533106],
+                ],
+                [
+                    [259854, -7217, 381028, -585801],
+                    [424445, -16284, 566755, -776768],
+                ],
+            ],
+            [[1020, 2268], [1091, 2337], [3352, 0]],
+            60,
+            416429453541672177,
+        ),
+    ],
+];
+const SCHEDULE_EARNED_1024: [&[EarnedBlock]; 2] = [
+    &[
+        (
+            [[0, 25, 0], [36, 2, 1]],
+            2,
+            [[0, -133897], [-202861, -3258]],
+            -42853,
+            -82186,
+        ),
+        (
+            [[2, 24, 0], [33, 2, 3]],
+            4,
+            [[-1980, -94133], [-108523, 3785]],
+            -26941,
+            73987,
+        ),
+        (
+            [[1, 31, 3], [24, 4, 1]],
+            5,
+            [[3492, -92736], [-83409, -1880]],
+            -16443,
+            -30545,
+        ),
+        (
+            [[3, 32, 0], [22, 5, 2]],
+            8,
+            [[7095, -41458], [-21698, 3572]],
+            -1248,
+            -23820,
+        ),
+        (
+            [[3, 26, 2], [22, 10, 1]],
+            13,
+            [[5684, 20242], [-38435, 25732]],
+            -25324,
+            75743,
+        ),
+        (
+            [[4, 29, 2], [20, 9, 0]],
+            13,
+            [[-474, 3614], [-23726, 40099]],
+            0,
+            119653,
+        ),
+        (
+            [[3, 28, 1], [23, 8, 1]],
+            11,
+            [[4499, -45512], [-42983, 13610]],
+            -21980,
+            -35590,
+        ),
+        (
+            [[4, 28, 2], [17, 10, 3]],
+            14,
+            [[15036, -52130], [-70430, 17558]],
+            -32200,
+            -73805,
+        ),
+        (
+            [[1, 29, 0], [19, 13, 2]],
+            14,
+            [[-7062, -39706], [-43375, 29675]],
+            26095,
+            -23863,
+        ),
+        (
+            [[5, 29, 2], [13, 12, 3]],
+            17,
+            [[710, -16808], [-23570, 11334]],
+            15928,
+            -35549,
+        ),
+        (
+            [[4, 22, 1], [22, 12, 3]],
+            16,
+            [[-5601, -27174], [-51372, 18789]],
+            -23591,
+            -41999,
+        ),
+        (
+            [[5, 28, 1], [17, 13, 0]],
+            18,
+            [[-2613, -59534], [-49178, 13410]],
+            0,
+            -22341,
+        ),
+        (
+            [[8, 23, 3], [21, 8, 1]],
+            16,
+            [[18400, -74547], [-38625, 16262]],
+            -12348,
+            78583,
+        ),
+        (
+            [[7, 18, 5], [17, 13, 4]],
+            20,
+            [[26439, -93341], [-9618, 31277]],
+            -5224,
+            -52753,
+        ),
+        (
+            [[8, 20, 1], [15, 18, 2]],
+            26,
+            [[20830, -20496], [-41371, 42384]],
+            17580,
+            119058,
+        ),
+        (
+            [[11, 19, 1], [17, 12, 4]],
+            23,
+            [[23415, -44136], [-21068, 18611]],
+            27922,
+            -15373,
+        ),
+        (
+            [[7, 24, 4], [11, 18, 0]],
+            25,
+            [[12713, -42888], [-36583, 49622]],
+            17992,
+            118566,
+        ),
+        (
+            [[4, 22, 0], [17, 18, 3]],
+            22,
+            [[11841, -29292], [-43730, 27419]],
+            20951,
+            87435,
+        ),
+        (
+            [[11, 15, 8], [16, 13, 1]],
+            24,
+            [[-3842, -19472], [-25808, 4158]],
+            21433,
+            92818,
+        ),
+        (
+            [[16, 18, 6], [9, 13, 2]],
+            29,
+            [[48372, -53498], [-26340, 16848]],
+            35335,
+            -33536,
+        ),
+        (
+            [[24, 5, 2], [12, 16, 5]],
+            40,
+            [[63322, -17351], [-39276, 34257]],
+            44541,
+            95577,
+        ),
+        (
+            [[15, 16, 2], [13, 16, 2]],
+            31,
+            [[52757, -46608], [-33151, 29277]],
+            -42479,
+            23292,
+        ),
+        (
+            [[22, 12, 3], [7, 19, 1]],
+            41,
+            [[88868, -40083], [-249, 18662]],
+            41675,
+            91675,
+        ),
+        (
+            [[23, 4, 0], [16, 15, 6]],
+            38,
+            [[60908, -15536], [-30762, 46265]],
+            -24640,
+            12723,
+        ),
+        (
+            [[29, 5, 1], [14, 13, 2]],
+            42,
+            [[94874, -35801], [-27117, 55541]],
+            -56933,
+            -161627,
+        ),
+        (
+            [[21, 3, 3], [13, 22, 2]],
+            43,
+            [[38375, -10823], [-7522, 47248]],
+            -26458,
+            35784,
+        ),
+        (
+            [[25, 6, 0], [7, 24, 2]],
+            49,
+            [[117592, -8338], [-22297, 28816]],
+            25428,
+            -80813,
+        ),
+        (
+            [[24, 2, 0], [5, 29, 4]],
+            53,
+            [[82559, -13090], [-12474, 108620]],
+            22399,
+            40457,
+        ),
+        (
+            [[26, 3, 1], [6, 27, 1]],
+            53,
+            [[64475, -27867], [9400, 85401]],
+            0,
+            29021,
+        ),
+        (
+            [[25, 2, 1], [4, 30, 2]],
+            55,
+            [[40807, -593], [-15287, 99282]],
+            0,
+            -111005,
+        ),
+        (
+            [[31, 1, 1], [4, 26, 1]],
+            57,
+            [[36695, -15456], [-18629, 43642]],
+            10903,
+            21524,
+        ),
+        (
+            [[27, 1, 1], [4, 29, 2]],
+            56,
+            [[-398, -14031], [-17740, 78164]],
+            17058,
+            27395,
+        ),
+        (
+            [[34, 0, 2], [3, 23, 2]],
+            3,
+            [[-201778, 0], [2481, -79836]],
+            -38477,
+            -93714,
+        ),
+        (
+            [[29, 2, 1], [5, 27, 0]],
+            7,
+            [[-134583, 11868], [35349, -108288]],
+            -5642,
+            -26979,
+        ),
+        (
+            [[29, 3, 1], [6, 23, 2]],
+            9,
+            [[-82098, 19999], [17192, -55131]],
+            -25139,
+            80066,
+        ),
+        (
+            [[19, 9, 4], [4, 26, 2]],
+            13,
+            [[-20543, 45154], [12408, -45007]],
+            36389,
+            6030,
+        ),
+        (
+            [[21, 4, 2], [7, 27, 3]],
+            11,
+            [[-57939, 21155], [35017, -63500]],
+            -23333,
+            -47105,
+        ),
+        (
+            [[17, 10, 5], [7, 23, 2]],
+            17,
+            [[-37538, 14403], [23433, -7664]],
+            31577,
+            5418,
+        ),
+        (
+            [[22, 7, 4], [7, 21, 3]],
+            14,
+            [[-26306, 41387], [10300, -58644]],
+            -26512,
+            -53595,
+        ),
+        (
+            [[12, 13, 3], [8, 26, 2]],
+            21,
+            [[-11548, 52925], [31816, -45352]],
+            32256,
+            8344,
+        ),
+        (
+            [[17, 10, 0], [11, 24, 2]],
+            21,
+            [[-47403, 42833], [29659, -55969]],
+            25835,
+            108290,
+        ),
+        (
+            [[22, 16, 2], [6, 15, 3]],
+            22,
+            [[-91569, 79866], [4243, -25682]],
+            -25835,
+            -77112,
+        ),
+        (
+            [[13, 17, 3], [8, 21, 2]],
+            25,
+            [[-55771, 45248], [36623, -23269]],
+            0,
+            -62356,
+        ),
+        (
+            [[11, 19, 2], [11, 19, 2]],
+            30,
+            [[-24292, 29123], [15961, -1759]],
+            -5364,
+            -48608,
+        ),
+        (
+            [[15, 17, 4], [11, 14, 3]],
+            28,
+            [[-42860, 75420], [23344, -15690]],
+            39579,
+            -13217,
+        ),
+        (
+            [[10, 18, 1], [10, 23, 2]],
+            28,
+            [[-38723, 40965], [27455, -37892]],
+            0,
+            -44531,
+        ),
+        (
+            [[7, 28, 1], [11, 16, 1]],
+            39,
+            [[-32463, 146534], [17407, -24882]],
+            -34032,
+            47725,
+        ),
+        (
+            [[2, 33, 1], [13, 14, 1]],
+            46,
+            [[-3748, 101174], [44270, -18029]],
+            39175,
+            62711,
+        ),
+        (
+            [[5, 27, 2], [13, 14, 3]],
+            40,
+            [[-8717, 56153], [43239, -43974]],
+            40895,
+            -19594,
+        ),
+        (
+            [[2, 27, 0], [11, 22, 2]],
+            38,
+            [[-2394, 76408], [18676, -44784]],
+            -12263,
+            72705,
+        ),
+        (
+            [[1, 26, 0], [13, 20, 4]],
+            39,
+            [[-2370, 38455], [73515, -61137]],
+            -697,
+            8320,
+        ),
+        (
+            [[3, 27, 1], [19, 11, 3]],
+            46,
+            [[-2324, 62955], [31354, -10012]],
+            28971,
+            96888,
+        ),
+        (
+            [[2, 33, 0], [15, 12, 2]],
+            48,
+            [[-3153, 131715], [48612, -34118]],
+            19762,
+            28775,
+        ),
+        (
+            [[2, 29, 0], [13, 14, 6]],
+            42,
+            [[-466, 59792], [35191, 1839]],
+            -2790,
+            -64096,
+        ),
+        (
+            [[0, 36, 1], [14, 9, 4]],
+            50,
+            [[0, 60394], [41751, -11234]],
+            -41430,
+            -35602,
+        ),
+        (
+            [[1, 30, 0], [16, 16, 1]],
+            46,
+            [[6607, 25309], [47134, -30177]],
+            0,
+            66927,
+        ),
+        (
+            [[0, 30, 0], [17, 14, 3]],
+            47,
+            [[0, -12578], [78162, -26347]],
+            22268,
+            89599,
+        ),
+        (
+            [[0, 38, 1], [15, 9, 1]],
+            53,
+            [[0, 16735], [52961, -8114]],
+            0,
+            2847,
+        ),
+        (
+            [[0, 28, 0], [25, 6, 5]],
+            53,
+            [[0, 56849], [68868, -25297]],
+            -30922,
+            -29742,
+        ),
+        (
+            [[0, 35, 0], [21, 8, 0]],
+            56,
+            [[0, -6583], [55855, 6446]],
+            30020,
+            71865,
+        ),
+        (
+            [[0, 27, 1], [30, 4, 2]],
+            57,
+            [[0, 43058], [101459, -26738]],
+            21835,
+            24551,
+        ),
+        (
+            [[0, 30, 1], [26, 6, 1]],
+            56,
+            [[0, 30988], [71390, -5100]],
+            11916,
+            39332,
+        ),
+        (
+            [[0, 24, 0], [34, 5, 1]],
+            58,
+            [[0, 10675], [72878, -24226]],
+            0,
+            20334,
+        ),
+        (
+            [[0, 30, 0], [27, 7, 0]],
+            57,
+            [[0, -4474], [78544, -15276]],
+            796,
+            24401,
+        ),
+    ],
+    &[
+        (
+            [[23, 1, 1], [2, 36, 1]],
+            3,
+            [[-88231, -51], [5249, -262276]],
+            -29966,
+            -74566,
+        ),
+        (
+            [[21, 3, 2], [5, 33, 0]],
+            8,
+            [[-49969, -8325], [41710, -215254]],
+            -27826,
+            -58645,
+        ),
+        (
+            [[23, 7, 5], [0, 28, 1]],
+            7,
+            [[-98685, 13100], [0, -103697]],
+            43683,
+            12586,
+        ),
+        (
+            [[23, 8, 4], [8, 19, 2]],
+            16,
+            [[-55579, 23890], [32297, -27255]],
+            -24222,
+            -50849,
+        ),
+        (
+            [[18, 12, 1], [1, 31, 1]],
+            13,
+            [[-55162, 15245], [-1470, -35014]],
+            6540,
+            -4702,
+        ),
+        (
+            [[27, 5, 3], [3, 21, 5]],
+            8,
+            [[-47837, 14232], [2777, -64453]],
+            -19530,
+            -45679,
+        ),
+        (
+            [[21, 11, 0], [8, 23, 1]],
+            19,
+            [[-40548, 12475], [43232, -67848]],
+            -27831,
+            70209,
+        ),
+        (
+            [[15, 19, 0], [10, 17, 3]],
+            29,
+            [[-14065, 61056], [48469, 8073]],
+            57807,
+            153454,
+        ),
+        (
+            [[10, 17, 3], [11, 21, 2]],
+            28,
+            [[-5627, 77285], [36114, -69754]],
+            0,
+            93507,
+        ),
+        (
+            [[13, 21, 2], [12, 15, 1]],
+            33,
+            [[-43496, 65684], [46678, -33607]],
+            17002,
+            99992,
+        ),
+        (
+            [[9, 15, 3], [14, 20, 3]],
+            29,
+            [[-12624, 38348], [42812, -24290]],
+            46751,
+            102096,
+        ),
+        (
+            [[5, 25, 4], [12, 16, 2]],
+            37,
+            [[-12110, 88903], [46427, -14349]],
+            0,
+            44515,
+        ),
+        (
+            [[9, 23, 2], [18, 12, 0]],
+            41,
+            [[-47016, 102312], [56340, -37522]],
+            28455,
+            -41361,
+        ),
+        (
+            [[6, 23, 1], [19, 14, 1]],
+            42,
+            [[-13332, 117823], [39068, -81703]],
+            17144,
+            -58484,
+        ),
+        (
+            [[3, 23, 3], [17, 16, 2]],
+            40,
+            [[-2795, 39218], [82206, -73927]],
+            -20128,
+            -122046,
+        ),
+        (
+            [[2, 26, 3], [26, 6, 1]],
+            52,
+            [[-8007, 67831], [76909, -12637]],
+            0,
+            26579,
+        ),
+        (
+            [[2, 31, 2], [18, 10, 1]],
+            49,
+            [[-6094, 31312], [58948, -53959]],
+            30097,
+            49187,
+        ),
+        (
+            [[3, 22, 1], [30, 4, 4]],
+            52,
+            [[-12773, 51456], [61920, -29733]],
+            -33735,
+            4303,
+        ),
+        (
+            [[2, 32, 0], [25, 4, 1]],
+            57,
+            [[-1731, 59068], [66481, -9201]],
+            21037,
+            -86237,
+        ),
+        (
+            [[2, 36, 2], [19, 4, 1]],
+            55,
+            [[-17783, 37777], [23130, -6854]],
+            3504,
+            31026,
+        ),
+        (
+            [[3, 28, 0], [26, 5, 2]],
+            54,
+            [[-9985, 53955], [48224, -36255]],
+            -44683,
+            -31721,
+        ),
+        (
+            [[1, 30, 2], [30, 0, 1]],
+            60,
+            [[-1426, 83556], [86332, 0]],
+            0,
+            12860,
+        ),
+        (
+            [[4, 33, 0], [23, 2, 2]],
+            56,
+            [[3659, 26767], [9872, -2922]],
+            -18608,
+            24,
+        ),
+        (
+            [[2, 24, 1], [36, 1, 0]],
+            60,
+            [[-1272, 15178], [46414, -20138]],
+            0,
+            12749,
+        ),
+        (
+            [[0, 35, 0], [27, 2, 0]],
+            62,
+            [[0, 45372], [17065, -27988]],
+            0,
+            4206,
+        ),
+        (
+            [[0, 27, 0], [35, 2, 0]],
+            62,
+            [[0, 8942], [7026, -15262]],
+            0,
+            8364,
+        ),
+        (
+            [[0, 31, 0], [30, 1, 2]],
+            61,
+            [[0, -3798], [49864, 1132]],
+            0,
+            681,
+        ),
+        (
+            [[1, 25, 0], [34, 3, 1]],
+            59,
+            [[-12734, -2658], [3914, 1153]],
+            0,
+            2478,
+        ),
+        (
+            [[1, 29, 0], [33, 1, 0]],
+            62,
+            [[698, 10872], [3135, 54]],
+            0,
+            9055,
+        ),
+        (
+            [[0, 27, 1], [30, 4, 2]],
+            57,
+            [[0, -13172], [17404, -22170]],
+            -47777,
+            -28708,
+        ),
+        (
+            [[1, 31, 1], [29, 0, 2]],
+            60,
+            [[-5988, 38762], [44060, 0]],
+            0,
+            4685,
+        ),
+        (
+            [[1, 27, 1], [31, 3, 1]],
+            58,
+            [[369, 2894], [41730, -22065]],
+            0,
+            7162,
+        ),
+        (
+            [[1, 33, 2], [27, 1, 0]],
+            2,
+            [[-2710, -210936], [-197188, 2]],
+            -37888,
+            -90277,
+        ),
+        (
+            [[2, 29, 1], [26, 4, 2]],
+            6,
+            [[10679, -131132], [-152383, 2629]],
+            -5659,
+            -27013,
+        ),
+        (
+            [[1, 30, 2], [27, 0, 4]],
+            1,
+            [[6785, -107091], [-87250, 0]],
+            0,
+            -10867,
+        ),
+        (
+            [[2, 29, 1], [26, 4, 2]],
+            6,
+            [[764, 1036], [-1029, 14376]],
+            0,
+            -9527,
+        ),
+        (
+            [[2, 24, 1], [30, 6, 1]],
+            8,
+            [[10337, -16858], [-21904, 20445]],
+            46995,
+            170853,
+        ),
+        (
+            [[1, 30, 1], [25, 6, 1]],
+            7,
+            [[15783, -32062], [-17727, 26816]],
+            0,
+            110608,
+        ),
+        (
+            [[3, 28, 2], [25, 6, 0]],
+            9,
+            [[18957, 17689], [-87187, 6348]],
+            -24377,
+            -48823,
+        ),
+        (
+            [[3, 25, 0], [24, 10, 2]],
+            13,
+            [[13445, -38274], [-42223, 32577]],
+            -13338,
+            87247,
+        ),
+        (
+            [[5, 21, 1], [23, 9, 5]],
+            14,
+            [[6994, -20921], [-14645, 55810]],
+            0,
+            -19829,
+        ),
+        (
+            [[4, 32, 4], [16, 7, 1]],
+            11,
+            [[14967, -97247], [-25429, 9516]],
+            17932,
+            137861,
+        ),
+        (
+            [[9, 20, 4], [18, 11, 2]],
+            20,
+            [[36844, -39391], [-63968, 15988]],
+            32781,
+            5867,
+        ),
+        (
+            [[8, 23, 1], [19, 12, 1]],
+            20,
+            [[20329, -53997], [-42420, 46636]],
+            28300,
+            112716,
+        ),
+        (
+            [[15, 19, 2], [19, 8, 1]],
+            23,
+            [[65544, -68390], [-32619, 106]],
+            -24932,
+            -67113,
+        ),
+        (
+            [[13, 13, 3], [16, 16, 3]],
+            29,
+            [[55656, -6133], [-19385, 75851]],
+            24043,
+            100916,
+        ),
+        (
+            [[19, 15, 2], [12, 11, 5]],
+            30,
+            [[76586, -33822], [-7924, 17961]],
+            42801,
+            121929,
+        ),
+        (
+            [[18, 16, 2], [14, 13, 1]],
+            31,
+            [[65135, -59574], [-35771, 59889]],
+            17560,
+            -49273,
+        ),
+        (
+            [[16, 14, 4], [14, 15, 1]],
+            31,
+            [[49482, -62747], [-40696, 66891]],
+            -45461,
+            24858,
+        ),
+        (
+            [[19, 9, 1], [11, 21, 3]],
+            40,
+            [[64212, -28718], [-8944, 65558]],
+            0,
+            -78936,
+        ),
+        (
+            [[16, 8, 3], [11, 24, 2]],
+            40,
+            [[46952, -20499], [-59592, 135372]],
+            -30602,
+            26551,
+        ),
+        (
+            [[17, 11, 3], [12, 20, 1]],
+            37,
+            [[64505, -39148], [-14438, 49068]],
+            -50153,
+            -878,
+        ),
+        (
+            [[30, 3, 2], [7, 19, 3]],
+            49,
+            [[103751, -2136], [-33545, 68042]],
+            -37216,
+            -3591,
+        ),
+        (
+            [[26, 3, 2], [6, 25, 2]],
+            51,
+            [[-4197, -28433], [-20254, 86860]],
+            29183,
+            67196,
+        ),
+        (
+            [[23, 10, 4], [6, 19, 2]],
+            42,
+            [[78665, -43120], [-24939, 80603]],
+            -2290,
+            41074,
+        ),
+        (
+            [[29, 1, 1], [5, 28, 0]],
+            57,
+            [[93816, -8995], [-10983, 102921]],
+            22243,
+            48638,
+        ),
+        (
+            [[26, 4, 0], [3, 31, 0]],
+            57,
+            [[31258, -9294], [-21691, 72424]],
+            -53243,
+            -33343,
+        ),
+        (
+            [[32, 5, 2], [2, 22, 1]],
+            54,
+            [[27286, -28356], [2770, 7543]],
+            20809,
+            41101,
+        ),
+        (
+            [[24, 4, 0], [7, 28, 1]],
+            52,
+            [[33059, -2207], [-28155, 55190]],
+            0,
+            -112276,
+        ),
+        (
+            [[34, 1, 0], [1, 25, 3]],
+            59,
+            [[29713, -25347], [0, 28858]],
+            -47859,
+            -160141,
+        ),
+        (
+            [[26, 1, 1], [4, 31, 1]],
+            57,
+            [[15193, -1717], [441, 71949]],
+            18064,
+            28362,
+        ),
+        (
+            [[31, 0, 0], [1, 32, 0]],
+            63,
+            [[49563, 0], [4511, 42242]],
+            0,
+            11533,
+        ),
+        (
+            [[22, 2, 0], [3, 37, 0]],
+            59,
+            [[-11716, -2790], [7427, 39325]],
+            0,
+            9227,
+        ),
+        (
+            [[28, 2, 0], [1, 33, 0]],
+            61,
+            [[31523, -19898], [-2669, 25575]],
+            0,
+            5055,
+        ),
+    ],
+];
+const SCHEDULE_READ_1024: [u64; 2] = [0x78e39782209b718a, 0x5d995a7cb23cf34f];
+const SCHEDULE_CENSUS_1024: [&[(u32, u64)]; 2] = [
+    &[
+        (0, 7),
+        (1, 16710),
+        (2, 125471),
+        (3, 191081),
+        (4, 54597),
+        (5, 2014),
+        (6, 287),
+        (7, 103),
+        (8, 34),
+        (9, 19),
+        (10, 5),
+        (11, 4),
+        (12, 1),
+        (13, 1),
+        (70, 1),
+    ],
+    &[
+        (0, 8),
+        (1, 16658),
+        (2, 125315),
+        (3, 191039),
+        (4, 54724),
+        (5, 2089),
+        (6, 309),
+        (7, 114),
+        (8, 48),
+        (9, 17),
+        (10, 7),
+        (11, 7),
+        (12, 3),
+        (71, 1),
+    ],
+];
+const SCHEDULE_MOVES_1024: [&[MovesBlock]; 2] = [
+    &[
+        [
+            ([116, 102, 1400], [4342, -5373]),
+            ([7407, 7858, 33624], [633234, -972219]),
+        ],
+        [
+            ([552, 513, 1328], [38405, -36600]),
+            ([8782, 9157, 28537], [459863, -662519]),
+        ],
+        [
+            ([675, 628, 3483], [53076, -51464]),
+            ([11135, 12023, 20980], [372987, -549132]),
+        ],
+        [
+            ([859, 827, 4684], [73754, -63087]),
+            ([10381, 10893, 21276], [252002, -315158]),
+        ],
+        [
+            ([2518, 2463, 4625], [217732, -186316]),
+            ([10270, 10324, 18716], [370888, -389081]),
+        ],
+        [
+            ([2896, 2796, 4723], [262198, -222573]),
+            ([9616, 9467, 20251], [369946, -390058]),
+        ],
+        [
+            ([2103, 2182, 5287], [194016, -175907]),
+            ([8618, 8839, 22659], [330174, -418669]),
+        ],
+        [
+            ([2733, 2812, 5645], [261188, -228594]),
+            ([7536, 8467, 20139], [327170, -449730]),
+        ],
+        [
+            ([2803, 2643, 5846], [241545, -218932]),
+            ([9443, 9901, 19192], [288664, -371745]),
+        ],
+        [
+            ([3680, 3592, 6311], [284898, -272854]),
+            ([8072, 8737, 16939], [283398, -323776]),
+        ],
+        [
+            ([2783, 2675, 7350], [208291, -195103]),
+            ([7590, 7652, 20038], [323821, -402367]),
+        ],
+        [
+            ([2468, 2484, 9440], [171770, -160973]),
+            ([7427, 7697, 21010], [304572, -413284]),
+        ],
+        [
+            ([2729, 2597, 6537], [231183, -196521]),
+            ([8504, 8806, 18792], [337738, -450910]),
+        ],
+        [
+            ([3564, 3391, 9796], [317808, -260092]),
+            ([6348, 6646, 15080], [231062, -334021]),
+        ],
+        [
+            ([4554, 4289, 11144], [373299, -310085]),
+            ([6793, 6768, 14529], [312193, -374060]),
+        ],
+        [
+            ([3887, 3923, 11198], [317149, -275123]),
+            ([5909, 6032, 16133], [290191, -355395]),
+        ],
+        [
+            ([4190, 3961, 11061], [308907, -246572]),
+            ([6862, 7317, 14749], [259948, -339419]),
+        ],
+        [
+            ([4055, 4013, 9560], [259113, -219853]),
+            ([7241, 7386, 16671], [318067, -391089]),
+        ],
+        [
+            ([4265, 4402, 10375], [333405, -333089]),
+            ([5821, 5836, 13201], [237756, -283036]),
+        ],
+        [
+            ([4420, 4354, 14952], [400908, -335688]),
+            ([5480, 5777, 9635], [201101, -280939]),
+        ],
+        [
+            ([6446, 6329, 17994], [476701, -379122]),
+            ([4415, 4517, 5472], [218007, -274634]),
+        ],
+        [
+            ([5714, 5379, 13442], [358262, -276228]),
+            ([5275, 5798, 12197], [308392, -388151]),
+        ],
+        [
+            ([6962, 6606, 18853], [485973, -378443]),
+            ([3309, 3573, 8376], [231233, -271565]),
+        ],
+        [
+            ([6432, 6118, 17444], [409667, -302494]),
+            ([4256, 4289, 7447], [260789, -307087]),
+        ],
+        [
+            ([7394, 6880, 19493], [479500, -329085]),
+            ([3994, 4007, 6395], [229773, -292691]),
+        ],
+        [
+            ([7282, 6865, 19117], [411141, -325518]),
+            ([3099, 3063, 7436], [187246, -205591]),
+        ],
+        [
+            ([7873, 7501, 24226], [572774, -426366]),
+            ([2512, 2726, 4378], [185292, -215927]),
+        ],
+        [
+            ([10194, 9515, 21577], [624106, -432927]),
+            ([1657, 1792, 2959], [122029, -147593]),
+        ],
+        [
+            ([10924, 10317, 20718], [600794, -450918]),
+            ([1683, 1681, 3842], [132479, -150946]),
+        ],
+        [
+            ([11699, 10962, 21793], [572113, -432024]),
+            ([610, 704, 3490], [40226, -56106]),
+        ],
+        [
+            ([11628, 11043, 21613], [387365, -307028]),
+            ([1433, 1622, 943], [111453, -145538]),
+        ],
+        [
+            ([12475, 11723, 20188], [420315, -342549]),
+            ([997, 1201, 1800], [78981, -110752]),
+        ],
+        [
+            ([818, 747, 1604], [20104, -17679]),
+            ([6835, 7247, 30066], [646308, -927866]),
+        ],
+        [
+            ([2211, 1798, 1593], [195038, -147821]),
+            ([8567, 9074, 27486], [455306, -698177]),
+        ],
+        [
+            ([1758, 1544, 3106], [157105, -119914]),
+            ([11023, 11372, 18687], [431471, -568700]),
+        ],
+        [
+            ([2640, 2369, 6235], [250755, -193193]),
+            ([9143, 9488, 16353], [364324, -429874]),
+        ],
+        [
+            ([2452, 2324, 4034], [231796, -175624]),
+            ([9152, 9757, 19209], [342333, -463772]),
+        ],
+        [
+            ([3142, 3216, 7288], [299447, -261611]),
+            ([7603, 7499, 16646], [321812, -367014]),
+        ],
+        [
+            ([2407, 2258, 6563], [228199, -176512]),
+            ([7172, 7623, 20053], [336444, -421394]),
+        ],
+        [
+            ([3782, 3721, 9359], [359379, -274638]),
+            ([6578, 6417, 16530], [267025, -323925]),
+        ],
+        [
+            ([3790, 3482, 8760], [339438, -266946]),
+            ([6855, 7339, 19206], [334771, -438143]),
+        ],
+        [
+            ([4715, 4370, 9405], [395190, -311081]),
+            ([5570, 5994, 16846], [268320, -385571]),
+        ],
+        [
+            ([4885, 4721, 10480], [407552, -325681]),
+            ([5965, 6164, 15710], [263900, -342940]),
+        ],
+        [
+            ([5094, 5377, 13621], [395109, -350025]),
+            ([5201, 5218, 12668], [194787, -220838]),
+        ],
+        [
+            ([5062, 4676, 12742], [395823, -297059]),
+            ([4920, 4912, 13119], [296600, -355150]),
+        ],
+        [
+            ([4661, 4601, 13226], [363458, -295038]),
+            ([6059, 5865, 14433], [307812, -384427]),
+        ],
+        [
+            ([7082, 6532, 16934], [559563, -395622]),
+            ([4366, 4659, 10153], [237774, -295119]),
+        ],
+        [
+            ([8687, 7901, 20376], [575544, -430100]),
+            ([2528, 2890, 7458], [116689, -138466]),
+        ],
+        [
+            ([8510, 8197, 16235], [451088, -351696]),
+            ([2995, 3024, 8373], [207807, -260498]),
+        ],
+        [
+            ([6495, 5768, 17479], [374000, -278916]),
+            ([4328, 4714, 11115], [196330, -243508]),
+        ],
+        [
+            ([7170, 6741, 17411], [410222, -298252]),
+            ([3752, 4198, 9005], [159989, -223496]),
+        ],
+        [
+            ([8669, 8228, 20035], [515262, -420953]),
+            ([2398, 2398, 6428], [147554, -159890]),
+        ],
+        [
+            ([9831, 8702, 20027], [572044, -391717]),
+            ([3137, 3191, 4930], [175130, -212401]),
+        ],
+        [
+            ([8072, 7479, 19003], [480100, -385117]),
+            ([2529, 2444, 7094], [181639, -180266]),
+        ],
+        [
+            ([10229, 9652, 19501], [492237, -390092]),
+            ([1454, 1537, 5099], [93499, -104733]),
+        ],
+        [
+            ([8783, 8556, 19617], [466060, -393617]),
+            ([2571, 2393, 8755], [154199, -177769]),
+        ],
+        [
+            ([9459, 9000, 19287], [467612, -402028]),
+            ([2055, 2111, 7160], [119746, -146093]),
+        ],
+        [
+            ([10791, 9679, 22120], [419924, -350228]),
+            ([1494, 1549, 4238], [87912, -96026]),
+        ],
+        [
+            ([9451, 8833, 24234], [485293, -359576]),
+            ([1133, 1359, 2362], [67183, -92480]),
+        ],
+        [
+            ([10682, 9827, 24467], [423209, -373937]),
+            ([1447, 1282, 3743], [112107, -105661]),
+        ],
+        [
+            ([11921, 10771, 23002], [629496, -484979]),
+            ([517, 775, 1944], [41495, -68233]),
+        ],
+        [
+            ([13158, 11793, 19985], [418815, -316437]),
+            ([1017, 1123, 2714], [85667, -90767]),
+        ],
+        [
+            ([10820, 10322, 25334], [370093, -286540]),
+            ([1100, 1351, 1594], [96727, -120953]),
+        ],
+        [
+            ([10882, 9198, 25646], [312987, -238917]),
+            ([1295, 1442, 2926], [104320, -119596]),
+        ],
+    ],
+    &[
+        [
+            ([536, 451, 2224], [23179, -17983]),
+            ([7314, 7813, 31013], [663708, -1014213]),
+        ],
+        [
+            ([1862, 1704, 2842], [160195, -126810]),
+            ([8196, 8694, 26116], [430735, -695958]),
+        ],
+        [
+            ([1425, 1433, 2784], [129816, -116716]),
+            ([9533, 10570, 20374], [350688, -553070]),
+        ],
+        [
+            ([3323, 3376, 6133], [340344, -284157]),
+            ([6838, 7227, 19097], [254178, -337012]),
+        ],
+        [
+            ([2449, 2539, 5482], [235661, -221886]),
+            ([10225, 10855, 17949], [365397, -455573]),
+        ],
+        [
+            ([1807, 1895, 2722], [174988, -157979]),
+            ([8952, 9605, 19391], [366168, -478458]),
+        ],
+        [
+            ([3301, 3138, 8005], [319777, -264070]),
+            ([7543, 7777, 20337], [296515, -404911]),
+        ],
+        [
+            ([4788, 4522, 13992], [470797, -361272]),
+            ([5686, 5564, 14128], [230127, -236119]),
+        ],
+        [
+            ([5771, 5732, 10977], [498576, -385177]),
+            ([6050, 6413, 12276], [261754, -337135]),
+        ],
+        [
+            ([5729, 5601, 15172], [492645, -380283]),
+            ([5116, 5307, 11787], [242836, -319939]),
+        ],
+        [
+            ([5438, 5157, 12659], [389990, -308830]),
+            ([5122, 5096, 12937], [257679, -294593]),
+        ],
+        [
+            ([5903, 5631, 18192], [455792, -320462]),
+            ([2808, 3003, 11008], [145575, -172034]),
+        ],
+        [
+            ([7560, 7034, 19114], [568494, -409842]),
+            ([3841, 4173, 7860], [213032, -297570]),
+        ],
+        [
+            ([6628, 6484, 20588], [512075, -355184]),
+            ([3815, 4425, 7736], [235883, -330918]),
+        ],
+        [
+            ([7023, 6370, 18711], [440675, -319251]),
+            ([3691, 4157, 7455], [258795, -335517]),
+        ],
+        [
+            ([7666, 7503, 25729], [560817, -416077]),
+            ([1887, 1826, 3466], [127261, -147905]),
+        ],
+        [
+            ([9750, 9349, 20251], [436474, -346214]),
+            ([2109, 2413, 5118], [156788, -216841]),
+        ],
+        [
+            ([9798, 9913, 21969], [550735, -437359]),
+            ([1883, 1921, 1757], [149078, -191584]),
+        ],
+        [
+            ([11491, 11081, 23968], [565515, -439966]),
+            ([995, 1044, 1938], [81697, -92629]),
+        ],
+        [
+            ([11433, 10685, 21262], [398138, -337231]),
+            ([1383, 1339, 2873], [98940, -123577]),
+        ],
+        [
+            ([11579, 10886, 20843], [469186, -367007]),
+            ([1624, 1877, 2869], [134431, -180671]),
+        ],
+        [
+            ([13270, 11421, 23437], [540120, -370232]),
+            ([75, 76, 624], [3543, -4969]),
+        ],
+        [
+            ([11583, 10900, 22469], [278016, -241377]),
+            ([1356, 1460, 1902], [122727, -121990]),
+        ],
+        [
+            ([12536, 11203, 24325], [282266, -220674]),
+            ([1040, 1065, 254], [79566, -100976]),
+        ],
+        [
+            ([12093, 10850, 26813], [205767, -143330]),
+            ([664, 756, 198], [47004, -74992]),
+        ],
+        [
+            ([10660, 9413, 29627], [136824, -120856]),
+            ([482, 556, 580], [34874, -50136]),
+        ],
+        [
+            ([10757, 8717, 29444], [128798, -82732]),
+            ([78, 74, 657], [5583, -4451]),
+        ],
+        [
+            ([11732, 10313, 25237], [170763, -169507]),
+            ([1099, 1138, 965], [95165, -106746]),
+        ],
+        [
+            ([12008, 10400, 27308], [169179, -155172]),
+            ([521, 466, 597], [45304, -44552]),
+        ],
+        [
+            ([11112, 10325, 24265], [239234, -235002]),
+            ([1034, 1227, 975], [88459, -110629]),
+        ],
+        [
+            ([13650, 11982, 22488], [328487, -245665]),
+            ([355, 321, 99], [22170, -28158]),
+        ],
+        [
+            ([13414, 11605, 21481], [258670, -214046]),
+            ([845, 918, 1439], [69889, -91585]),
+        ],
+        [
+            ([415, 415, 1560], [18696, -21304]),
+            ([7660, 7937, 31749], [710992, -1119216]),
+        ],
+        [
+            ([1358, 1444, 1984], [114377, -101069]),
+            ([8645, 9880, 25589], [550393, -833908]),
+        ],
+        [
+            ([362, 353, 60], [30182, -23397]),
+            ([12030, 13374, 20330], [363339, -557680]),
+        ],
+        [
+            ([1145, 1089, 2552], [109731, -94591]),
+            ([11624, 12429, 20061], [243507, -243500]),
+        ],
+        [
+            ([1548, 1451, 2630], [143906, -113124]),
+            ([10208, 11402, 22480], [199145, -237907]),
+        ],
+        [
+            ([2145, 1980, 1470], [204192, -161593]),
+            ([9650, 9991, 24489], [195124, -244913]),
+        ],
+        [
+            ([1376, 1314, 5298], [127735, -102430]),
+            ([9898, 10481, 21341], [361158, -430656]),
+        ],
+        [
+            ([2844, 2948, 3814], [287684, -241662]),
+            ([9637, 10101, 20362], [337346, -417843]),
+        ],
+        [
+            ([3658, 3593, 4714], [355198, -292394]),
+            ([8478, 8627, 17369], [293098, -328664]),
+        ],
+        [
+            ([1282, 1284, 5422], [120302, -95819]),
+            ([10148, 10876, 18342], [411263, -533939]),
+        ],
+        [
+            ([3567, 3601, 9481], [339805, -286973]),
+            ([6965, 7526, 15187], [333526, -436885]),
+        ],
+        [
+            ([3249, 2977, 8873], [304015, -237050]),
+            ([7796, 8006, 18704], [397736, -494153]),
+        ],
+        [
+            ([4083, 4089, 10734], [388440, -322790]),
+            ([6216, 6769, 16693], [337461, -438470]),
+        ],
+        [
+            ([5154, 4915, 12141], [488271, -356764]),
+            ([5206, 5218, 13620], [308104, -333622]),
+        ],
+        [
+            ([5514, 5402, 12708], [443451, -348904]),
+            ([4632, 4774, 12260], [240830, -282576]),
+        ],
+        [
+            ([5824, 5284, 14168], [443915, -318891]),
+            ([6047, 6590, 10625], [353797, -449142]),
+        ],
+        [
+            ([5098, 5051, 13577], [483090, -366717]),
+            ([5278, 5789, 12195], [319902, -423345]),
+        ],
+        [
+            ([6717, 6214, 19592], [498422, -368652]),
+            ([3886, 4090, 8056], [210146, -247808]),
+        ],
+        [
+            ([6342, 5890, 18809], [518984, -336660]),
+            ([3806, 4172, 7248], [251196, -331287]),
+        ],
+        [
+            ([6240, 5757, 17324], [397848, -284275]),
+            ([5021, 5048, 8373], [355853, -409439]),
+        ],
+        [
+            ([8260, 7627, 22768], [560959, -389166]),
+            ([2321, 2451, 3232], [177718, -213399]),
+        ],
+        [
+            ([7604, 7996, 24741], [536776, -454113]),
+            ([1990, 2374, 2842], [168421, -217108]),
+        ],
+        [
+            ([8255, 7413, 17562], [450740, -291472]),
+            ([3210, 3361, 6277], [282251, -350310]),
+        ],
+        [
+            ([9046, 8663, 27384], [714122, -517385]),
+            ([1276, 1527, 1993], [125614, -145592]),
+        ],
+        [
+            ([11864, 11270, 22095], [535791, -432109]),
+            ([1414, 1525, 2679], [118066, -149051]),
+        ],
+        [
+            ([11114, 10723, 20795], [365855, -331026]),
+            ([1571, 1727, 2328], [148722, -174308]),
+        ],
+        [
+            ([10726, 10090, 21211], [405049, -316800]),
+            ([1780, 1909, 4315], [155935, -186297]),
+        ],
+        [
+            ([11700, 11144, 23731], [490590, -432019]),
+            ([565, 719, 328], [44523, -69870]),
+        ],
+        [
+            ([12714, 11069, 20671], [419988, -332846]),
+            ([1235, 1234, 2327], [117251, -118527]),
+        ],
+        [
+            ([15094, 12515, 22270], [323535, -231730]),
+            ([74, 74, 650], [12303, -7792]),
+        ],
+        [
+            ([11359, 10583, 25041], [243311, -215702]),
+            ([946, 944, 2116], [81758, -77121]),
+        ],
+        [
+            ([11757, 10063, 26577], [187350, -130252]),
+            ([469, 592, 1349], [43173, -65740]),
+        ],
+    ],
+];
+/// Each stimulus's expectation at every block's end after the second flip, `[A, B]`, per arm.
+const SCHEDULE_EXPECTED_1024: [&[[i32; 2]]; 2] = [
+    &[
+        [-7088, -27433],
+        [-32238, -47479],
+        [-51875, -47470],
+        [-55156, -43670],
+        [-52528, -32373],
+        [-50378, -26129],
+        [-52352, -28652],
+        [-53388, -25232],
+        [-57580, -17140],
+        [-49760, -15668],
+        [-47704, -19828],
+        [-43894, -13448],
+        [-37702, -22554],
+        [-35090, -19493],
+        [-32771, -5321],
+        [-23594, -14918],
+        [-31896, 1227],
+        [-40425, 1129],
+        [-26078, -3619],
+        [-13510, 1182],
+        [16094, 1749],
+        [-1778, 1820],
+        [9721, 17098],
+        [29340, 1042],
+        [35886, -3268],
+        [33920, 5239],
+        [37384, 23305],
+        [48042, 34312],
+        [50595, 37421],
+        [52145, 42000],
+        [55246, 44718],
+        [55522, 44618],
+        [-26945, -12026],
+        [-44866, -32511],
+        [-52150, -36382],
+        [-36126, -45187],
+        [-42507, -43484],
+        [-30929, -40195],
+        [-33823, -39300],
+        [-14597, -42372],
+        [-14343, -33158],
+        [-15862, -32990],
+        [-5129, -30546],
+        [6773, -23644],
+        [606, -14390],
+        [9510, -22397],
+        [27318, -13667],
+        [42735, -4208],
+        [40333, -6938],
+        [49476, -16777],
+        [56800, -20850],
+        [49732, -259],
+        [56804, 3232],
+        [57248, -6146],
+        [59890, -607],
+        [61028, 700],
+        [63788, 309],
+        [62777, 7244],
+        [64392, 18299],
+        [65149, 24998],
+        [62904, 41013],
+        [62304, 38976],
+        [64019, 45837],
+        [64941, 42668],
+    ],
+    &[
+        [-13883, -22330],
+        [-35681, -40462],
+        [-35411, -55561],
+        [-38129, -39742],
+        [-23416, -54646],
+        [-40205, -53281],
+        [-29441, -42312],
+        [-1226, -27123],
+        [6138, -25049],
+        [12952, -14861],
+        [11920, -17909],
+        [22412, -16663],
+        [22248, 2098],
+        [30702, 7728],
+        [33197, -707],
+        [39787, 27013],
+        [47042, 22468],
+        [45975, 28686],
+        [53091, 38385],
+        [53593, 38874],
+        [52979, 37346],
+        [56154, 53077],
+        [55182, 47486],
+        [53185, 57061],
+        [61461, 57042],
+        [63796, 57433],
+        [64876, 54572],
+        [63135, 50032],
+        [61216, 56763],
+        [61779, 47062],
+        [60997, 54339],
+        [58597, 51134],
+        [-24334, -14785],
+        [-44850, -37346],
+        [-56496, -55009],
+        [-56307, -50128],
+        [-54452, -44068],
+        [-58148, -41616],
+        [-56887, -41854],
+        [-52927, -31906],
+        [-46327, -28237],
+        [-50646, -23775],
+        [-39464, -19605],
+        [-36013, -16242],
+        [-16884, -24674],
+        [-10774, -8935],
+        [-83, -11120],
+        [-792, -9918],
+        [-3473, -2586],
+        [9276, 10933],
+        [10169, 20981],
+        [8435, 17800],
+        [32961, 17986],
+        [37076, 28710],
+        [23527, 27146],
+        [44875, 39965],
+        [49996, 46257],
+        [45878, 46650],
+        [43231, 38847],
+        [56389, 43237],
+        [55559, 43990],
+        [61797, 54363],
+        [58077, 56597],
+        [57632, 60638],
+    ],
+];
+/// The strong punishments of the old answer per block after the second flip, `[A, B]`, per
+/// arm.
+const SCHEDULE_STRONG_1024: [&[[u32; 2]]; 2] = [
+    &[
+        [25, 36],
+        [22, 30],
+        [13, 17],
+        [0, 0],
+        [2, 13],
+        [5, 14],
+        [12, 16],
+        [12, 15],
+        [4, 12],
+        [3, 8],
+        [10, 15],
+        [10, 16],
+        [12, 15],
+        [11, 8],
+        [9, 11],
+        [11, 11],
+        [14, 8],
+        [12, 12],
+        [5, 11],
+        [8, 6],
+        [4, 10],
+        [15, 12],
+        [10, 7],
+        [4, 14],
+        [5, 12],
+        [3, 13],
+        [6, 7],
+        [2, 5],
+        [3, 6],
+        [2, 4],
+        [1, 4],
+        [1, 4],
+        [34, 23],
+        [22, 21],
+        [14, 16],
+        [9, 15],
+        [12, 17],
+        [11, 10],
+        [14, 16],
+        [5, 15],
+        [12, 14],
+        [14, 8],
+        [12, 7],
+        [6, 9],
+        [11, 8],
+        [9, 16],
+        [7, 7],
+        [2, 8],
+        [5, 11],
+        [2, 16],
+        [1, 13],
+        [3, 8],
+        [2, 11],
+        [2, 13],
+        [0, 8],
+        [1, 14],
+        [0, 12],
+        [0, 8],
+        [0, 6],
+        [0, 8],
+        [0, 4],
+        [0, 6],
+        [0, 5],
+        [0, 7],
+    ],
+    &[
+        [22, 36],
+        [18, 28],
+        [16, 12],
+        [11, 4],
+        [13, 7],
+        [22, 7],
+        [12, 8],
+        [10, 6],
+        [4, 13],
+        [11, 6],
+        [9, 10],
+        [5, 7],
+        [9, 7],
+        [6, 14],
+        [3, 16],
+        [2, 6],
+        [2, 10],
+        [3, 4],
+        [2, 4],
+        [2, 4],
+        [3, 5],
+        [1, 0],
+        [4, 2],
+        [2, 1],
+        [0, 2],
+        [0, 2],
+        [0, 1],
+        [1, 3],
+        [1, 1],
+        [0, 4],
+        [1, 0],
+        [1, 3],
+        [33, 27],
+        [22, 24],
+        [11, 13],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [1, 11],
+        [4, 8],
+        [3, 10],
+        [14, 13],
+        [8, 12],
+        [14, 14],
+        [12, 16],
+        [7, 11],
+        [10, 9],
+        [13, 9],
+        [11, 8],
+        [8, 5],
+        [8, 11],
+        [11, 12],
+        [3, 7],
+        [3, 6],
+        [10, 6],
+        [1, 5],
+        [4, 3],
+        [5, 2],
+        [4, 7],
+        [1, 1],
+        [1, 4],
+        [0, 1],
+        [2, 3],
+        [2, 1],
+    ],
+];
+/// The four couplings at the end of the first trial under each new mapping, per arm, as read;
+/// the first H-19's `CRITIC_CARRY_1024`.
+const SCHEDULE_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [
+    [
+        [[7158812, 6283500], [6244171, 7664900]],
+        [[6263487, 7592751], [7104718, 6138239]],
+        [[7181219, 6390272], [5886911, 7194648]],
+    ],
+    [
+        [[6027452, 7763786], [7667405, 6483413]],
+        [[6877010, 6660367], [6474843, 7827762]],
+        [[6216867, 7835776], [7659180, 6468043]],
+    ],
+];
+/// Clause 1's counts per arm and per mapping, against `REWARDED_MIN`, and clause 2's first
+/// block past the bound with its pair, per arm.
+const CORRECT_SCHEDULE_1024: [[u32; 4]; 2] = [[122, 121, 113, 115], [125, 115, 118, 120]];
+const OVER_1024: [Option<(usize, usize, usize)>; 2] = [None, None];
+/// The assertion's reach per arm, as read.
+const REACH_SCHEDULE_1024: [Reach; 2] = [
+    Reach {
+        excitatory: (3188, 0),
+        inhibitory: (0, 6509),
+    },
+    Reach {
+        excitatory: (3188, 0),
+        inhibitory: (0, 6505),
+    },
+];
+/// ADR-0109's predicted readings as read, per arm: (1) per flip and per stimulus the first new
+/// selection and whether it came within 128 trials of the flip; (2) per mapping the correct
+/// trials of its first four blocks and its last four, and whether the first were fewer.
+const FIRST_NEW_SCHEDULE_1024: [[[Option<usize>; 2]; 3]; 2] = [
+    [
+        [Some(1604), Some(1549)],
+        [Some(3703), Some(3614)],
+        [Some(5738), Some(5649)],
+    ],
+    [
+        [Some(1576), Some(1539)],
+        [Some(3608), Some(3624)],
+        [Some(5643), Some(5660)],
+    ],
+];
+const NEW_WITHIN_1024: [[[bool; 2]; 3]; 2] = [
+    [[true, true], [true, true], [true, true]],
+    [[true, true], [true, true], [true, true]],
+];
+const EDGES_1024: [[[u32; 2]; 4]; 2] = [
+    [[137, 245], [21, 227], [19, 221], [32, 228]],
+    [[144, 245], [18, 229], [34, 237], [15, 240]],
+];
+const LATER_BETTER_1024: [[bool; 4]; 2] = [[true, true, true, true], [true, true, true, true]];
+/// Per arm, each mapping's speed in blocks to 40 of 64, and per flip and per stimulus the block
+/// in which the selection crossed to the new answer.
+const CROSSINGS_1024: [[Option<usize>; 4]; 2] = [
+    [Some(6), Some(19), Some(21), Some(16)],
+    [Some(3), Some(23), Some(13), Some(18)],
+];
+const CROSSED_SCHEDULE_1024: [[[Option<usize>; 2]; 3]; 2] = [
+    [
+        [Some(37), Some(41)],
+        [Some(76), Some(70)],
+        [Some(95), Some(107)],
+    ],
+    [
+        [Some(46), Some(39)],
+        [Some(63), Some(68)],
+        [Some(102), Some(104)],
+    ],
+];
+/// Per arm and per mapping, `[correct, wrong, tied]`.
+const TALLY_1024: [[[u32; 3]; 4]; 2] = [
+    [
+        [1256, 219, 61],
+        [1027, 898, 123],
+        [878, 1046, 124],
+        [1120, 815, 113],
+    ],
+    [
+        [1266, 205, 65],
+        [875, 1071, 102],
+        [1329, 625, 94],
+        [1039, 906, 103],
+    ],
+];
+/// Per arm, H-19's settle measure over each mapping's last 256 trials, `[mapping][A, B]`.
+const SETTLE_SCHEDULE_1024: [Option<[[i64; 2]; 4]>; 2] = [
+    Some([
+        [76203, 20279],
+        [167170, 122090],
+        [141579, 306489],
+        [80247, 324271],
+    ]),
+    Some([
+        [-5555, 123439],
+        [173546, 120882],
+        [39356, 106329],
+        [84563, 179091],
+    ]),
+];
+/// Per arm and per mapping, the highest coupling as a fraction of its image's in parts per ten
+/// thousand, with its block and pair.
+const HIGHEST_1024: [[Option<Peak>; 4]; 2] = [
+    [
+        Some((11454, 23, 0, 0)),
+        Some((11334, 55, 0, 1)),
+        Some((11491, 86, 0, 0)),
+        Some((11657, 118, 0, 1)),
+    ],
+    [
+        Some((11652, 22, 1, 0)),
+        Some((11485, 55, 1, 1)),
+        Some((11697, 87, 0, 1)),
+        Some((11738, 119, 0, 0)),
+    ],
+];
+/// Per arm, the strong punishments summed over each later mapping, `[flip][A, B]`.
+const STRONG_BY_FLIP_1024: [[[u32; 2]; 3]; 2] = [
+    [[238, 297], [256, 372], [210, 360]],
+    [[254, 261], [196, 233], [226, 259]],
+];
+/// Per arm and per mapping, the moves after a negative delivery and after a positive one.
+const PUNISHED_MOVES_SCHEDULE_1024: [[Moves; 4]; 2] = [
+    [
+        ([41009, 42334, 92371], [2483095, -3238240]),
+        ([163275, 172222, 376066], [7886937, -10306696]),
+        ([192475, 200556, 446886], [8610675, -11033188]),
+        ([140759, 146409, 362103], [7216980, -9163746]),
+    ],
+    [
+        ([37174, 37668, 88385], [2368603, -2922760]),
+        ([185846, 196917, 476735], [7869557, -10165538]),
+        ([112160, 119156, 265775], [5935549, -7955411]),
+        ([169682, 181517, 375509], [8249651, -10570068]),
+    ],
+];
+const REWARDED_MOVES_SCHEDULE_1024: [[Moves; 4]; 2] = [
+    [
+        ([224624, 208673, 561020], [7685635, -5927126]),
+        ([186016, 180611, 457960], [10579181, -8409202]),
+        ([160873, 153885, 381203], [10351698, -8377501]),
+        ([218109, 202383, 478709], [12461942, -9761546]),
+    ],
+    [
+        ([234437, 215450, 564887], [8416495, -6268301]),
+        ([166678, 160246, 369380], [10249695, -8055605]),
+        ([258075, 237613, 570513], [10931993, -8572349]),
+        ([197414, 184207, 441757], [11052310, -8549679]),
+    ],
+];
+/// The blocks, of 120, in which the stimulus fired once, per arm.
+const ONCE_BLOCKS_SCHEDULE_1024: [u32; 2] = [120, 120];
+/// Whether the inhibitory sum fell in every block of the run, per arm.
+const FALLS_SCHEDULE_1024: [bool; 2] = [false, false];
+/// The arena's sums by polarity after each arm's run, `(inhibitory, excitatory)`.
+const SUMS_AFTER_SCHEDULE_1024: [(i64, i64); 2] = [(11999067, 219302252), (12936700, 220257496)];
+
+/// The verdict, by the rule committed first, over the pinned tables: clause 1 held in every
+/// mapping of both arms — 122, 121, 113 and 115 of each mapping's last 128 trials from the
+/// assignment, 125, 115, 118 and 120 from the mirrored assignment — and clause 2 in both, no
+/// coupling past 1.30 of its image's at any block's end. H-20 is yes; ADR-0109 wrote no
+/// prediction for it.
+const SCHEDULE_1024: Scheduled = Scheduled {
+    learned: [[true; 4]; 2],
+    bounded: [true; 2],
+    over: [None; 2],
+    yes: true,
 };
