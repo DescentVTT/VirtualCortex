@@ -16,6 +16,7 @@ pub mod serial;
 pub use dispatch::cadence::Cadence;
 pub use dispatch::wheel::{FlatTimingWheel, MAX_TOKEN, ScheduleError, TICK_NS, WorkerWheel};
 pub use dynamics::delta::{DELTA_END, DeltaChain, PlasticDelta};
+pub use dynamics::lanes::{LANES, MembraneLanes};
 pub use dynamics::membrane::{
     APICAL_LEAK_SHIFT, BAC_APICAL_THRESHOLD, BAC_PLATEAU_TICKS, BASAL_LEAK_SHIFT,
     BURST_REFRACTORY_TICKS, CAUSAL_LATENCY_TICKS, COUPLING_SHIFT, FLAG_BURST_MODE, FLAG_INHIBITORY,
