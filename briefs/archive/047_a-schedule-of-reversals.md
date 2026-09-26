@@ -1,17 +1,38 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-26
 ---
+
+> **Executed 2026-09-27 in pull request #137.** Writes ADR-0110 (a schedule of reversals, measured); opens no finding.
+> The schedule in the shared harness (`run_on_scheduled`, `flipped_at`, `earned_run_scheduled`, which the one-flip
+> forms call) and H-20's constants, clauses, assertion, readings' rules, calibration, arms and gate were committed and
+> pushed before the first rewarded run; every other whole-domain test then reproduced its pinned numbers through the new
+> harness, and each arm reproduced ADR-0077's settled candidate, H-19's image and H-18's first block before its own run,
+> its first 56 blocks H-19's table by table.
+>
+> **H-20 is yes.** Every mapping was learned in both arms, 122, 121, 113 and 115 and 125, 115, 118 and 120 of each
+> mapping's last 128 trials, and no stimulus–readout coupling passed 1.30 of its image's at any block's end, the highest
+> 1.166 and 1.174. Both predicted readings held; the assertion held. Each reversal passed 40 of 64 in the 13th to the
+> 23rd block after its flip, with no steady speed-up; the answer pairs were still rising at every flip, by up to 4.9 per
+> cent over a mapping's last 256 trials; the inhibitory sum stopped falling at about 0.07 and 0.08 of the image's.
+> **H-20's stopping rule is at step 3**: the configuration is named as one that learns across a schedule of reversals
+> with its couplings bounded, and the next decision — an ADR choosing among the operating regime, another size, the
+> inhibitory drain and a critic of the engine's own — is named and not taken.
+>
+> The weekly dispatch at `scope=exhaustive` (run 36257987164) was green: all 67 whole-domain tests passed, and the cost table is regenerated from it. No file under `src/` changed; image format 16; whitepaper 4.61.0.
+> Every deliverable is dispositioned below. Relative links gained one `../` so that they resolve from `archive/`; no
+> other word, claim or figure changed.
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 047: A schedule of reversals — H-19's configuration and critic through three reversals, 7 680 trials, the first 56 blocks H-19's bit for bit; does every mapping get learned, and does every coupling stay below 1.30 of its image's
 
 ## Mission
 
 **This brief runs one hypothesis and builds no mechanism of the engine.** H-19 is no on clause 3 alone
-([ADR-0108](../docs/adr/0108-the-reward-prediction-error-measured.md)): with the critic of
-[ADR-0106](../docs/adr/0106-the-reward-prediction-error.md) the engine learned and revised, in both arms, and did not
+([ADR-0108](../../docs/adr/0108-the-reward-prediction-error-measured.md)): with the critic of
+[ADR-0106](../../docs/adr/0106-the-reward-prediction-error.md) the engine learned and revised, in both arms, and did not
 settle. One answer pair of each mapping still moved by 1.22 to 1.87 per cent over its last 256 trials, where H-18's
-moved by 3.6 to 9.5. [ADR-0109](../docs/adr/0109-a-schedule-of-reversals.md) read what keeps them moving:
+moved by 3.6 to 9.5. [ADR-0109](../../docs/adr/0109-a-schedule-of-reversals.md) read what keeps them moving:
 - the critic's advantage while the selection still errs, which falls as it errs less;
 - an error's carry-over into the next trial.
 
@@ -51,11 +72,11 @@ When the round is done, the tree holds:
 - **A run whose first 56 blocks are not H-19's stops the round** before any reading is taken, and is a finding. So does
   a calibration that does not reproduce, or a pinned number that moves.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`; the runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0109's included. ADR-0109's bound
   of 32 full rewards for an expectation per stimulus and readout is arithmetic from the rule, and its 50 and 100 are
   an estimate from ADR-0108's tables.
@@ -87,17 +108,17 @@ quoted sentences are what to re-derive.
    - The inhibitory sum fell in every block, to a tenth of the image's.
 4. **The run's cost.** H-19's arms took 1 209 and 1 104 s on the hosted runners and about 450 to 510 s on the
    developer machine. H-20's 7 680 trials are 1.67 times as many.
-5. **The weekly job** ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md),
-   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The scope follows the round's diff: a round
+5. **The weekly job** ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md),
+   [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The scope follows the round's diff: a round
    that changes only tests dispatches `scope=exhaustive`. The cost table is regenerated from its own dispatch.
 
 ## Deliverables
 
-- [ ] **The schedule in the harness.** `run_on_flipped` generalized to a list of flips, or a sibling beside it. With a
+- [x] **The schedule in the harness.** `run_on_flipped` generalized to a list of flips, or a sibling beside it. With a
   single flip, or none, every earlier arm's pinned tables must still reproduce.
-- [ ] **The calibration, before any rewarded run.** ADR-0077's settled candidate and H-19's image reproduced, as H-19's
+- [x] **The calibration, before any rewarded run.** ADR-0077's settled candidate and H-19's image reproduced, as H-19's
   arms reproduce them. A mismatch stops the round, and is a finding.
-- [ ] **The constants commit**, preceding the first commit that holds a rewarded outcome. It holds:
+- [x] **The constants commit**, preceding the first commit that holds a rewarded outcome. It holds:
   - H-20's two clauses as integer rules over the pinned tables' shape (clause 2 as
     `coupling × 100 ≤ image × 130` for every pair at every block's end);
   - the flips, the run's length and the arms;
@@ -105,15 +126,15 @@ quoted sentences are what to re-derive.
   - ADR-0109's two predicted readings, written as constants, and the readings' rules;
   - every constant of ADR-0065, ADR-0076, ADR-0077, ADR-0080, ADR-0085, ADR-0093, ADR-0106 and ADR-0109, restated
     unchanged.
-- [ ] **The two arms**, from the assignment and from the mirrored assignment, **each its own `exhaustive` test**:
+- [x] **The two arms**, from the assignment and from the mirrored assignment, **each its own `exhaustive` test**:
   7 680 trials, the three flips, nothing else changed at a flip. Tables pinned per block as H-19's are.
-- [ ] **The assertion.** The first 56 blocks are H-19's; no excitatory synapse outside the four pairs moves; the oracle
+- [x] **The assertion.** The first 56 blocks are H-19's; no excitatory synapse outside the four pairs moves; the oracle
   agrees at every trial. A divergence in the first 56 blocks stops the round, as the Standing directives say. Any
   other failure is a numbered finding, reported beside the verdict.
-- [ ] **The verdict.** The rule committed first, over the pinned tables: **H-20 is yes or no**, and if no, the clause,
+- [x] **The verdict.** The rule committed first, over the pinned tables: **H-20 is yes or no**, and if no, the clause,
   the mapping and the block. §11.1's H-20 is checked with the result and its scope, and its stopping rule's item with
   the step reached. The ADR states the next decision H-20's rule makes **and does not take it**.
-- [ ] **The readings, in every branch**:
+- [x] **The readings, in every branch**:
   - ADR-0109's two predicted readings beside what the run read;
   - for each reversal: the blocks from the flip to the first block with 40 of 64 correct, each stimulus's first new
     selection and crossing block, beside H-19's first reversal;
@@ -121,19 +142,19 @@ quoted sentences are what to re-derive.
   - each expectation and the dopamine signal by block;
   - the highest coupling of each mapping;
   - the inhibitory sum by block.
-- [ ] **The gate.** At most one runtime test for H-20, running no whole run:
+- [x] **The gate.** At most one runtime test for H-20, running no whole run:
   - the clauses at their edges over tables written by hand (80 and 79; 1.30 and one LSB above);
   - the schedule's flips on a few trials;
   - the first-56-blocks assertion on a hand-written prefix.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (`exhaustive`
+- [x] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff (`exhaustive`
   if only tests change), the clause stated in the ADR. It must be green in every job, and every pinned number
   reproduced. The run id and the shards' times go in the ADR, and the cost table is regenerated from that run's
   artifacts.
-- [ ] **The documents, in the same pull request.** Whitepaper §11.1's H-20 and its stopping rule (the step reached),
+- [x] **The documents, in the same pull request.** Whitepaper §11.1's H-20 and its stopping rule (the step reached),
   and §9; the ADR index; `CHANGELOG.md`; `README.md`; `CLAUDE.md`'s opening paragraph; `docs/zh-TW`'s reader's guide as
   the result requires. The whitepaper's version in both declarations, with its date
-  ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the frozen banner naming
+  ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the frozen banner naming
   the pull request, the ADRs, **H-20's answer and the step of its stopping rule reached**.
 
 ## Not empowered
