@@ -13993,6 +13993,26 @@ fn strong_total(blocks: &[[u32; 2]]) -> [u32; 2] {
     })
 }
 
+/// ADR-0107's arithmetic of the punishment's fading with the dopamine signal's carry-over
+/// (F-53), from the rules and not a reading: both expectations at 1.0 and the signal at rest,
+/// every trial a punished presentation of the stimuli in turn — the course ADR-0106's
+/// $delta_n = -2(31/32)^n$ describes — the error each trial delivers (`critic_step`) and the
+/// signal it leaves, the error plus what the deliveries before it left, decayed over a trial
+/// by the executor's rule (`signal_course`).
+fn carried_punishment(trials: usize) -> Vec<(i32, i32)> {
+    let mut expected = [ONE; 2];
+    let mut signal = 0i32;
+    (0..trials)
+        .map(|t| {
+            let s = t & 1;
+            let (error, after) = critic_step(expected[s], ONE.saturating_neg(), CRITIC_SHIFT);
+            expected[s] = after;
+            signal = signal_end(&signal_course(signal)).saturating_add(error);
+            (error, signal)
+        })
+        .collect()
+}
+
 /// Each stimulus's expectation at every block's end, `[A, B]`, from the trials' expectations.
 fn expected_blocks(expected: &[[i32; 2]]) -> Vec<[i32; 2]> {
     expected
@@ -14670,6 +14690,35 @@ fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
         vec![[[10_000; 2]; 2]],
         "the image's couplings are ten thousand parts of themselves"
     );
+    // ADR-0107's arithmetic of the fading with the carry-over (F-53): the error alone is at or
+    // below −1.0 for 22 presentations of each stimulus, as ADR-0106 wrote; the signal a delivery
+    // leaves, the carry-over counted, for 42 of each and at or below −0.5 for 133 trials; the
+    // full punishment summed about 68 presentations' worth of each stimulus where the error
+    // alone is about 54. A signal of −2.0 ends the next trial at −0.820.
+    let carried = carried_punishment(400);
+    let count = |pick: &dyn Fn(&(i32, i32)) -> bool| carried.iter().filter(|c| pick(c)).count();
+    let worth = |of: &dyn Fn(&(i32, i32)) -> i32| {
+        carried
+            .iter()
+            .fold(0i64, |sum, c| {
+                sum.saturating_add(i64::from(of(c).clamp(-ONE, 0)))
+            })
+            .saturating_neg()
+            .saturating_div(i64::from(ONE).saturating_mul(2))
+    };
+    let summary = (
+        count(&|c| c.0 <= -ONE),
+        count(&|c| c.1 <= -ONE),
+        count(&|c| c.1 <= STRONG_PUNISHMENT_Q16),
+        worth(&|c| c.0),
+        worth(&|c| c.1),
+        signal_end(&signal_course(-2 * ONE)),
+    );
+    eprintln!("DUMP critic1024 the carried punishment {summary:?}");
+    assert_eq!(
+        summary, CARRIED_PUNISHMENT,
+        "(trials the error alone is at or below −1.0, the signal is, the signal at or below −0.5, presentations' worth of each stimulus by the error alone and by the signal, the end of a trial from −2.0)"
+    );
     // The harness's critic, `div_euclid` in `i64`, against the task's, a shift saturating in
     // `i32`, over the lattice: one rule, written twice.
     for &expected in I32_LATTICE.iter() {
@@ -14783,11 +14832,19 @@ fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
     assert!(reach.excitatory.0 > 0, "the addressed pairs moved");
 }
 
+/// ADR-0107's arithmetic of the fading with the carry-over (F-53), by `carried_punishment` over
+/// 400 trials: the trials whose error alone is at or below −1.0 (44, ADR-0106's 22
+/// presentations of each stimulus), whose signal is (84, 42 of each) and whose signal is at or
+/// below −0.5; the full punishment summed in presentations of each stimulus by the error alone
+/// (53, truncated: ADR-0106's about 54) and by the signal (68); and a signal of −2.0 at the end
+/// of a trial, −0.820.
+const CARRIED_PUNISHMENT: (usize, usize, usize, i64, i64, i32) = (44, 84, 133, 53, 68, -53_714);
+
 /// H-18's answer pairs over clause 3's spans, as fractions of their image couplings in parts
 /// per ten thousand, truncated, per arm `[assignment first, mirrored first]`, per mapping
 /// `[first, second]`, per stimulus `[A, B]`: read from `PUNISHED_BLOCKS_1024` by
-/// `settle_moves` before any run of H-19 — 3.64 to 9.54 per cent. ADR-0106 wrote 3.7, 7.6 and
-/// 8.8 where the table reads 3.64, 7.66 and 8.85, and so a range from 3.7 (F-52).
+/// `settle_moves` before any run of H-19 — 3.64 to 9.55 per cent. ADR-0106 wrote 3.7, 7.6 and
+/// 8.8 where the table reads 3.64, 7.67 and 8.86, and so a range from 3.7 (F-52).
 const H18_SETTLE_PER_MYRIAD: [[[i64; 2]; 2]; 2] =
     [[[364, 766], [713, 885]], [[417, 954], [490, 649]]];
 
