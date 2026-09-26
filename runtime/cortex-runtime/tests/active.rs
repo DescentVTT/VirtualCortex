@@ -29,6 +29,15 @@
 //! exponential and the prediction as committed, the counter at its edges and the ticks to rest
 //! at both gains on the engine, and the first 512 ticks of the first run, held to the first
 //! rows of its table.
+//!
+//! Brief 044 (ADR-0101) times the same four runs with no census: a lever's gain on the
+//! engine's speed is read on a workload whose instrument reads no record the engine does not
+//! (F-50). The census above reads every unit's gate byte on the coordinator's thread, worker 0,
+//! before each tick, which leaves every unit's line in that worker's cache before the tick is
+//! timed. The timed runs read between two timed ticks only what the engine keeps — the clock,
+//! the turns and the messages each worker counted — and are held to the same tables; the
+//! census stays in the four runs above as the test of behaviour it is. Two of them are timed on
+//! one worker too, (a) and (c), a turn with no barrier and no balance in it.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -240,10 +249,22 @@ fn spikes(exec: &mut Engine) -> u64 {
     (exec.train().len() as u64).saturating_add(exec.train_overwritten())
 }
 
+/// What a run reads of the units between its ticks.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Census {
+    /// ADR-0097's test of behaviour: before every tick, every unit's gate byte, and the tick's
+    /// turns held to the units it found scheduled.
+    Held,
+    /// ADR-0101's timed workload: no unit's record between two ticks, only the engine's own
+    /// counts.
+    Off,
+}
+
 /// Runs `exec` under `drive` for the rows `lengths` names, back to back from its clock, and
-/// reads each; every tick's turns are held to the units the tick before left scheduled. Also
-/// returns the wall time the ticks took, in nanoseconds: a developer machine's, never pinned.
-fn read(exec: &mut Engine, drive: &Drive, lengths: &[u64]) -> (Vec<Row>, u128) {
+/// reads each; under `Census::Held` every tick's turns are held to the units the tick before
+/// left scheduled. Also returns the wall time the ticks took, in nanoseconds: a developer
+/// machine's, never pinned.
+fn read(exec: &mut Engine, drive: &Drive, lengths: &[u64], census: Census) -> (Vec<Row>, u128) {
     let units = exec.units().len() as u64;
     let inject = exec.injector();
     let mut rows = Vec::new();
@@ -261,16 +282,18 @@ fn read(exec: &mut Engine, drive: &Drive, lengths: &[u64]) -> (Vec<Row>, u128) {
             drive
                 .step(&inject, tick)
                 .expect("the ring holds a tick's drive");
-            let due = scheduled(exec);
+            let due = (census == Census::Held).then(|| scheduled(exec));
             let before = exec.turns();
             let start = Instant::now();
             exec.tick();
             nanos = nanos.saturating_add(start.elapsed().as_nanos());
             let served = exec.turns().saturating_sub(before);
-            assert_eq!(
-                served, due,
-                "the turns are the units the tick before scheduled"
-            );
+            if let Some(due) = due {
+                assert_eq!(
+                    served, due,
+                    "the turns are the units the tick before scheduled"
+                );
+            }
             fewest = fewest.min(served);
             most = most.max(served);
             full = full.saturating_add(u64::from(served == units));
@@ -288,18 +311,21 @@ fn read(exec: &mut Engine, drive: &Drive, lengths: &[u64]) -> (Vec<Row>, u128) {
     (rows, nanos)
 }
 
-/// The reference network at `units`: ADR-0044's prior synthesized at the instrument's gain,
-/// the controller off and the modulation baseline zero.
-fn network(units: u32) -> Engine {
-    let exec = at_gain(&prior(units), config(units, 2, 0), GAIN_1024);
+/// The workers every run is made on, ADR-0097's; ADR-0101's diagnostic times two runs on one.
+const WORKERS: usize = 2;
+
+/// The reference network at `units` on `workers`: ADR-0044's prior synthesized at the
+/// instrument's gain, the controller off and the modulation baseline zero.
+fn network(units: u32, workers: usize) -> Engine {
+    let exec = at_gain(&prior(units), config(units, workers, 0), GAIN_1024);
     assert_eq!(exec.modulation_baseline_q16(), 0, "no weight moves");
     exec
 }
 
-/// The control at `units`: the same executor and gain, every unit armed at its base threshold
-/// and wired to nothing, so that what serves a unit is the drive alone.
-fn unwired(units: u32) -> Engine {
-    let config = config(units, 2, 0);
+/// The control at `units` on `workers`: the same executor and gain, every unit armed at its
+/// base threshold and wired to nothing, so that what serves a unit is the drive alone.
+fn unwired(units: u32, workers: usize) -> Engine {
+    let config = config(units, workers, 0);
     let mut exec = Engine::new(config.clone()).unwrap();
     for u in exec.units_mut() {
         u.v_thresh = THRESHOLD_BASE;
@@ -329,9 +355,10 @@ fn ppm(row: &Row, units: u32, ticks: u64) -> u64 {
         .unwrap_or(0)
 }
 
-/// Dumps a run: its rows, its four windows beside the prediction, and its wall time per tick
-/// and per turn on one worker (the two workers' time over the turns), a developer machine's.
-fn dump(name: &str, k: usize, rows: &[Row], nanos: u128) {
+/// Dumps a run on `workers`: its rows, its four windows beside the prediction, and its wall
+/// time per tick and per turn on one worker (the workers' time over the turns), a developer
+/// machine's.
+fn dump(name: &str, k: usize, rows: &[Row], nanos: u128, workers: usize) {
     let units = RUNS[k].0;
     let windows: Vec<u64> = rows
         .iter()
@@ -346,7 +373,7 @@ fn dump(name: &str, k: usize, rows: &[Row], nanos: u128) {
         PREDICTED_PPM[k],
         nanos.checked_div(u128::from(ticks)).unwrap_or(0),
         nanos
-            .saturating_mul(2)
+            .saturating_mul(workers as u128)
             .checked_div(u128::from(turns))
             .unwrap_or(0),
     );
@@ -555,10 +582,17 @@ fn the_turns_are_counted_one_message_keeps_a_unit_awake_as_the_oracle_says_and_t
         assert_eq!(exec.delivered(), 1);
     }
 
-    // The first 512 ticks of run (a), held to the first rows of its table.
-    let mut exec = network(1024);
-    let (rows, _) = read(&mut exec, &run_drive(0), &[PREFIX_TICKS; PREFIX_ROWS]);
+    // The first 512 ticks of run (a), held to the first rows of its table: under the census on
+    // ADR-0097's two workers, and without it on each worker count a timed run is made on.
+    let prefix = [PREFIX_TICKS; PREFIX_ROWS];
+    let mut exec = network(1024, WORKERS);
+    let (rows, _) = read(&mut exec, &run_drive(0), &prefix, Census::Held);
     assert_eq!(rows, NETWORK_ROWS[0][..PREFIX_ROWS]);
+    for workers in [1, WORKERS] {
+        let mut exec = network(1024, workers);
+        let (rows, _) = read(&mut exec, &run_drive(0), &prefix, Census::Off);
+        assert_eq!(rows, NETWORK_ROWS[0][..PREFIX_ROWS], "{workers} workers");
+    }
 }
 
 // ------------------------------------------------------------------- the runs (weekly)
@@ -568,18 +602,40 @@ fn the_turns_are_counted_one_message_keeps_a_unit_awake_as_the_oracle_says_and_t
 fn active_set(k: usize) {
     let (units, _, _) = RUNS[k];
     let drive = run_drive(k);
-    let mut exec = network(units);
-    let (rows, nanos) = read(&mut exec, &drive, &layout());
-    dump(&format!("network {k}"), k, &rows, nanos);
+    let mut exec = network(units, WORKERS);
+    let (rows, nanos) = read(&mut exec, &drive, &layout(), Census::Held);
+    dump(&format!("network {k}"), k, &rows, nanos, WORKERS);
     let control = CONTROL_ROWS.get(k).map(|&table| {
-        let mut exec = unwired(units);
-        let (rows, nanos) = read(&mut exec, &drive, &layout());
-        dump(&format!("control {k}"), k, &rows, nanos);
+        let mut exec = unwired(units, WORKERS);
+        let (rows, nanos) = read(&mut exec, &drive, &layout(), Census::Held);
+        dump(&format!("control {k}"), k, &rows, nanos, WORKERS);
         (rows, table)
     });
     assert_eq!(rows, NETWORK_ROWS[k], "network {k}");
     if let Some((rows, table)) = control {
         assert_eq!(rows, table, "control {k}");
+    }
+}
+
+/// Run `k` as ADR-0101 times it, on `workers`: the reference network and, at 1 024 units, its
+/// control, with no census between the ticks, each dumped before either is held to ADR-0097's
+/// table. The rows are the engine's own counts, so a table holds on any worker count.
+fn timed(k: usize, workers: usize) {
+    let (units, _, _) = RUNS[k];
+    let drive = run_drive(k);
+    let mut exec = network(units, workers);
+    let (rows, nanos) = read(&mut exec, &drive, &layout(), Census::Off);
+    let label = format!("{k}, no census, {workers} workers");
+    dump(&format!("network {label}"), k, &rows, nanos, workers);
+    let control = CONTROL_ROWS.get(k).map(|&table| {
+        let mut exec = unwired(units, workers);
+        let (rows, nanos) = read(&mut exec, &drive, &layout(), Census::Off);
+        dump(&format!("control {label}"), k, &rows, nanos, workers);
+        (rows, table)
+    });
+    assert_eq!(rows, NETWORK_ROWS[k], "network {label}");
+    if let Some((rows, table)) = control {
+        assert_eq!(rows, table, "control {label}");
     }
 }
 
@@ -605,4 +661,42 @@ fn the_active_set_under_a_drive_256_times_sparser_at_1024_units_exhaustive() {
 #[ignore = "whole-domain: a lead-in and four windows at 4 096 units; weekly"]
 fn the_active_set_under_the_reference_drive_at_4096_units_exhaustive() {
     active_set(3);
+}
+
+// ------------------------------------------ the runs as ADR-0101 times them (weekly, brief 044)
+
+#[test]
+#[ignore = "whole-domain: run (a) and its control with no census, timed; weekly"]
+fn the_reference_drive_at_1024_units_timed_with_no_census_exhaustive() {
+    timed(0, WORKERS);
+}
+
+#[test]
+#[ignore = "whole-domain: run (b) and its control with no census, timed; weekly"]
+fn a_drive_sixteen_times_sparser_at_1024_units_timed_with_no_census_exhaustive() {
+    timed(1, WORKERS);
+}
+
+#[test]
+#[ignore = "whole-domain: run (c) and its control with no census, timed; weekly"]
+fn a_drive_256_times_sparser_at_1024_units_timed_with_no_census_exhaustive() {
+    timed(2, WORKERS);
+}
+
+#[test]
+#[ignore = "whole-domain: run (d) with no census, timed; weekly"]
+fn the_reference_drive_at_4096_units_timed_with_no_census_exhaustive() {
+    timed(3, WORKERS);
+}
+
+#[test]
+#[ignore = "whole-domain: run (a) and its control with no census on one worker, timed; weekly"]
+fn the_reference_drive_at_1024_units_timed_with_no_census_on_one_worker_exhaustive() {
+    timed(0, 1);
+}
+
+#[test]
+#[ignore = "whole-domain: run (c) and its control with no census on one worker, timed; weekly"]
+fn a_drive_256_times_sparser_at_1024_units_timed_with_no_census_on_one_worker_exhaustive() {
+    timed(2, 1);
 }
