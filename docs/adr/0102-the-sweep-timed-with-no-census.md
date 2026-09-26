@@ -47,7 +47,7 @@ For the controls: in the timed session, where ADR-0100's tests made them, or out
 
 `git revert 5aa57c5`. Under `runtime/`, `crates/` and `.cargo/`, `main` had not moved since `5aa57c5`, so the revert restores `ff6a297`'s tree there byte for byte, except `tests/active.rs`, where the instrument's commit had changed the lines the revert touched. The one conflict is resolved by keeping both: ADR-0100's `shares` dump of the turns each worker served stays in ADR-0097's four census tests, where ADR-0100 put it, after each run's timed ticks. The whitepaper's directive on `.cargo/mutants.toml` returns to ADR-0100's absence of the steal's exclusions. **No line of the sweep's code is changed.**
 
-To be completed by the round: any change the mutation gate requires, each committed before the first timed run.
+The mutation gate required none (below), so the code the session times is `ff6a297`'s.
 
 ### The pins
 
@@ -60,7 +60,7 @@ As ADR-0100 listed them, read on `a46cf33` before any timed run:
 
 ### The mutation gate, read before the first timed run
 
-To be completed by the round: the pull request's run, its mutants, caught, unviable and missed, and each survivor's disposition.
+The pull request's gate, run `36208294392` at `b839388` (the sweep's code as `a46cf33` holds it), on the lines the pull request changes: **50 mutants, 49 caught, 1 unviable, none missed, no timeout**, in 15 minutes after a baseline of 441 s. The unviable one is `replace >= with < in Shared::owner`: `unit as usize < self.units.len()` parses the `<` as the start of generic arguments, so it does not compile (the same on this machine, `cargo mutants --check`). The bound it would invert is held by the partition test's `exec.owner(units) == None`, and its other mutants (`Shared::owner` replaced by `None`, `Some(0)`, `Some(1)`) are caught. With no survivor there is nothing to meet, and the sweep's code is not changed.
 
 ### The measure, fixed before the first timed run
 
