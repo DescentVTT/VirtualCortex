@@ -4,11 +4,11 @@ date: 2026-09-26
 ---
 
 > **Executed 2026-09-26 in pull request #131.** Writes ADR-0104 (the membrane's rule in lanes, built and not kept);
-> opens and resolves finding F-51. The design was written in ADR-0104 before the code (`f026707`), chosen on development
+> opens and resolves finding F-51. The design was written in ADR-0104 before the code (`e2879c7`), chosen on development
 > readings it records: ADR-0103's first option, a chunk of eight scheduled units in two vectors of four `i32` lanes,
 > every step at one width (`integrate`'s two `i64` steps rewritten in `i32` with the same result, the inputs read in
-> every lane and masked), the spike's path in lanes, one reference to a record at a time. The lane form (`2aca7d3`) was
-> held to `integrate` on every lane by three property tests over the lattice, its use in phase 1 (`f57349d`) passed every
+> every lane and masked), the spike's path in lanes, one reference to a record at a time. The lane form (`b50ed8c`) was
+> held to `integrate` on every lane by three property tests over the lattice, its use in phase 1 (`dc9c5ad`) passed every
 > test of the tree, the compiler vectorized the rule at width 4, and the mutation gate caught 63 of 63 mutants on its
 > lines in CI before any run was timed. Timed by ADR-0099's protocol on ADR-0101's workload on an idle developer
 > machine (not admissible), in a session the disturbance rule found undisturbed, five alternating pairs, medians,
@@ -19,9 +19,9 @@ date: 2026-09-26
 >
 > **Not kept**, as ADR-0104 predicted before the run: moving a chunk's fields through the lanes cost more than the vector
 > rule saved, against a scalar rule whose branches the reference network makes predictable. The code is reverted
-> (`49fabb0`) and stays in the history. Beside the criterion, one worker read 1.174 and 1.364 at (a) and (c). F-51: the
+> (`413590f`) and stays in the history. Beside the criterion, one worker read 1.174 and 1.364 at (a) and (c). F-51: the
 > bench's `neuron/integrate` reads one unit's chain, which ADR-0100 and ADR-0102 set beside the sweep's turn as "the
-> integration is the turn"; the new case `neuron/integrate_x1024` (`8184d32`) reads the rule over independent units at
+> integration is the turn"; the new case `neuron/integrate_x1024` (`2ef7ae0`) reads the rule over independent units at
 > 5.67 ns a unit against a one-worker turn of 8.49 ns, about two thirds. The weekly dispatch at `scope=exhaustive` (run
 > 36225957998) was green: all 63 whole-domain tests passed, and the cost table is regenerated from it. Image format 16; no rule of the
 > engine changed; whitepaper 4.56.0. Every deliverable is dispositioned below. Relative links gained one `../` so that
@@ -165,16 +165,16 @@ quoted sentences are what to re-derive.
   - whether the spike's rare path runs in lanes or falls back to the scalar rule;
   - how the saturating steps are written so that the compiler can vectorize them at the baseline;
   - phase 1's `unsafe` restated if a chunk holds several units' references at once.
-  **Done** (ADR-0104, `f026707`, before the code): option 1, a chunk of eight units in two vectors of four `i32` lanes; the gather and write-back one unit at a time within phase 1 in unit order, the spikes recorded in the sweep's order; the spike's path in lanes; the saturating steps and the coupling's `i64` shift rewritten in `i32` with the same result, the inputs read in every lane and masked for the vectorizer; phase 1's `unsafe` unchanged, since a chunk holds copies and one reference at a time. Option 3 rejected: four different shifts where SSE2 shifts every lane by one count, and the soma's step waits on the other two potentials. Chunks of four and sixteen were read beside eight. The development readings that chose the design are recorded in the ADR.
+  **Done** (ADR-0104, `e2879c7`, before the code): option 1, a chunk of eight units in two vectors of four `i32` lanes; the gather and write-back one unit at a time within phase 1 in unit order, the spikes recorded in the sweep's order; the spike's path in lanes; the saturating steps and the coupling's `i64` shift rewritten in `i32` with the same result, the inputs read in every lane and masked for the vectorizer; phase 1's `unsafe` unchanged, since a chunk holds copies and one reference at a time. Option 3 rejected: four different shifts where SSE2 shifts every lane by one count, and the soma's step waits on the other two potentials. Chunks of four and sixteen were read beside eight. The development readings that chose the design are recorded in the ADR.
 - [x] **The lane form in `cortex-core`**, beside `integrate` and unchanged from it in behaviour. It is held to
   `integrate` on every lane by a property test over `testkit/prop.rs`'s lattice and its seeded walk, which covers every
   branch the Standing directives list. It adds no `unsafe`, no allocation and no dependency.
-  **Done** (`2aca7d3`), then **reverted** (`49fabb0`) as the verdict requires; it stays in the history. `MembraneLanes` in `crates/cortex-core/src/dynamics/lanes.rs`, `integrate` not edited; three property tests over `testkit/prop.rs` held every lane, every plain field and the return value to `integrate` (every lattice pair on units anywhere in the domain; a seeded walk of a million lane-ticks; the soma exactly at its threshold and the apical potential exactly at the plateau's), each asserting that it reached every branch the Standing directives list. No `unsafe`, no allocation, no dependency.
+  **Done** (`b50ed8c`), then **reverted** (`413590f`) as the verdict requires; it stays in the history. `MembraneLanes` in `crates/cortex-core/src/dynamics/lanes.rs`, `integrate` not edited; three property tests over `testkit/prop.rs` held every lane, every plain field and the return value to `integrate` (every lattice pair on units anywhere in the domain; a seeded walk of a million lane-ticks; the soma exactly at its threshold and the apical potential exactly at the plateau's), each asserting that it reached every branch the Standing directives list. No `unsafe`, no allocation, no dependency.
 - [x] **The executor's use of it**, if the design needs one. All of the tree's tests pass on it, the differential test
   at one, two and four workers included. `tests/no_alloc.rs` passes. **The mutation gate on the diff is read in CI on
   the round's pull request before the first timed run.** A survivor is met by a test, or by a change that moves neither
   behaviour nor the work, committed before the timing.
-  **Done** (`f57349d`), then **reverted** (`49fabb0`). Every test of the tree passed on it in debug and release, the differential test on one, two and four workers and `tests/no_alloc.rs` among them. The mutation gate was read in CI on the pull request before the first timed run: run `36224029050`, 63 mutants, 63 caught, none unviable, no timeout (ADR-0104, `89d414a`). No survivor, so no change before the timing.
+  **Done** (`dc9c5ad`), then **reverted** (`413590f`). Every test of the tree passed on it in debug and release, the differential test on one, two and four workers and `tests/no_alloc.rs` among them. The mutation gate was read in CI on the pull request before the first timed run: run `36224029050`, 63 mutants, 63 caught, none unviable, no timeout (ADR-0104, `9596276`). No survivor, so no change before the timing.
 - [x] **The gain, by ADR-0101's workload and ADR-0099's protocol.**
   - The four runs on two workers, base and change, five alternating pairs, each run's median and the ratio
     change/base, the load log beside them, recorded in `docs/benchmarks/results/` with the machine, `admissible: no`.
@@ -182,10 +182,10 @@ quoted sentences are what to re-derive.
   - Beside it, and not a criterion: one worker at (a) and (c).
   - A reading of whether the compiler vectorized the lanes, from the generated code (for example `--emit asm` on the
     release build of the test binary): a diagnostic, not a criterion.
-  **Done** (ADR-0104, `docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md`, `admissible: no`): two workers, (a) 1.209, (b) 1.132, (c) 1.211, (d) 1.122 — **not kept**. One worker: 1.174 at (a), 1.364 at (c). The load log beside them, no part disturbed. The vectorizer's reading from `--emit asm` on `cortex-core`'s release build at `2aca7d3` (x86-64; AArch64 not read): "vectorized loop (vectorization width: 4, interleaved count: 1)", two iterations of 231 instructions, all SSE2 but the loop's own.
+  **Done** (ADR-0104, `docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md`, `admissible: no`): two workers, (a) 1.209, (b) 1.132, (c) 1.211, (d) 1.122 — **not kept**. One worker: 1.174 at (a), 1.364 at (c). The load log beside them, no part disturbed. The vectorizer's reading from `--emit asm` on `cortex-core`'s release build at `b50ed8c` (x86-64; AArch64 not read): "vectorized loop (vectorization width: 4, interleaved count: 1)", two iterations of 231 instructions, all SSE2 but the loop's own.
 - [x] **The per-turn breakdown after the change**: the one-worker turn at (a) beside `neuron/integrate`, and what now
   bounds a turn. This is what the next decision weighs.
-  **Done** (ADR-0104, the results file, one session): on one worker at (a) the base's turn is 8.49 ns and the lanes' 9.97; `neuron/integrate`, one unit's chain, 6.86 ns; `neuron/integrate_x1024`, added (`8184d32`), the rule over 1 024 independent units, 5.67 ns a unit, about two thirds of a turn; the rest of a turn about 2.8 ns (the mail check, the batch's sort, sum and scaling, the rest check, the gate byte). Finding F-51 records the chain read as the turn's integration, and is resolved.
+  **Done** (ADR-0104, the results file, one session): on one worker at (a) the base's turn is 8.49 ns and the lanes' 9.97; `neuron/integrate`, one unit's chain, 6.86 ns; `neuron/integrate_x1024`, added (`2ef7ae0`), the rule over 1 024 independent units, 5.67 ns a unit, about two thirds of a turn; the rest of a turn about 2.8 ns (the mail check, the batch's sort, sum and scaling, the rest check, the gate byte). Finding F-51 records the chain read as the turn's integration, and is resolved.
 - [x] **The verdict in the round's ADR.**
   - If kept: the lane form and its use land, and ADR-0103's next decision is named and not taken (the lookahead, or
     the speed line closed and the learning line resumed).
@@ -196,7 +196,7 @@ quoted sentences are what to re-derive.
   stated in the ADR. It must be green in every job, every pinned number reproduced, and the sweep's survivors
   dispositioned. The shards' times are read beside ADR-0102's as a secondary reading, and the cost table is regenerated
   from that run.
-  **Done** (ADR-0104): run `36225957998` at `c665f30`, `scope=exhaustive` (ADR-0075: against `main` no file under a `src/` directory changes — the lanes and their revert net to nothing and the bench case is under `benches/` — no test is deleted or taken out of the swept suite, and `.cargo/mutants.toml` and the `mutants-weekly` job are unchanged). Green in every job: the shards took 31m40s, 29m00s, 22m25s and 15m47s against ADR-0102's 27m20s, 41m37s, 34m59s and 30m14s on the same engine (the runners'), all 63 tests passed and every pinned number of them is reproduced. No sweep ran, so there is no survivor. The cost table is regenerated from the run: 63 lines, 10 779 s.
+  **Done** (ADR-0104): run `36225957998` at the branch's `c665f30` (`ac46cb6` on `main`, the same tree), `scope=exhaustive` (ADR-0075: against `main` no file under a `src/` directory changes — the lanes and their revert net to nothing and the bench case is under `benches/` — no test is deleted or taken out of the swept suite, and `.cargo/mutants.toml` and the `mutants-weekly` job are unchanged). Green in every job: the shards took 31m40s, 29m00s, 22m25s and 15m47s against ADR-0102's 27m20s, 41m37s, 34m59s and 30m14s on the same engine (the runners'), all 63 tests passed and every pinned number of them is reproduced. No sweep ran, so there is no survivor. The cost table is regenerated from the run: 63 lines, 10 779 s.
 - [x] **The documents, in the same pull request.**
   - Always: whitepaper §11.1's question on the engine's speed, with this round's outcome; §9; the ADR index;
     `CHANGELOG.md`; `CLAUDE.md`; `docs/zh-TW`'s reader's guide as the result requires.
