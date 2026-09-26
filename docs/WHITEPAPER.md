@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.55.0
+version: 4.56.0
 status: active
 date: 2026-09-26
 ---
@@ -11,7 +11,7 @@ date: 2026-09-26
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.55.0 |
+| Version | 4.56.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-26 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -2331,6 +2331,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0101](adr/0101-the-sweep-measured-again.md) | The sweep measured again: of ADR-0100's named options the second is taken — the sweep without the gate, as ADR-0100 built it, timed again on ADR-0097's four runs with no census in the timed ticks, against ADR-0099's bounds unchanged; the workload chosen after the first reading failed, which the record says; the census kept in the tests of behaviour; a lever's gain read on a workload whose instrument reads no record the engine does not; F-50 resolved; brief 044 |
 | [ADR-0102](adr/0102-the-sweep-timed-with-no-census.md) | The sweep timed with no census, and kept: ADR-0100's sweep without the gate, re-applied as built by reverting its revert, read 0.517, 0.527, 0.745 and 0.643 of the base's wall time per tick at ADR-0097's runs (a) to (d) on ADR-0101's workload, inside every bound of ADR-0099, with every reading of behaviour held bit for bit; ADR-0099's census workload read again beside it at 1.156 at (c); the census-free path, the mutation gate and the protocol written before the first timed run; axiom A3 enforced by ownership, ADR-0017's and ADR-0023's decisions amended; brief 044 |
 | [ADR-0103](adr/0103-the-working-layout.md) | The working layout: ADR-0099's second lever — phase 1 may gather a chunk of a worker's scheduled units' integrated fields into lanes, integrate them together and write them back within the phase, or run `integrate`'s arithmetic in lanes within one record; the 64-byte record stays the only home of a unit's state across ticks, so quality goal 2 holds unchanged (ADR-0001's scratch); safe Rust for the compiler's vectorizer as ADR-0039's hypervector, no intrinsic, no target feature, no dependency; `integrate` unchanged and every lane held to it by a property test over the lattice; the gain on ADR-0101's workload against ADR-0099's bounds; a persistent working copy left to an ADR of its own; brief 045 |
+| [ADR-0104](adr/0104-the-membrane-in-lanes.md) | The membrane's rule in lanes: ADR-0103's first option — phase 1 integrates a chunk of eight scheduled units in two vectors of four `i32` lanes, loaded and stored one unit at a time in unit order, so phase 1's `unsafe` stands; every step at one width, `integrate`'s two `i64` steps rewritten in `i32` with the same result and the inputs read in every lane and masked, which the loop vectorizer takes at the baseline; the spike's path in lanes; lanes within a record rejected (four shifts, the soma waiting on the other two); development readings on run (a) predict no gain, written before the first timed run; brief 045 |
 
 ---
 
