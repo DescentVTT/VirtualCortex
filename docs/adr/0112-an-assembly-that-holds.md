@@ -73,6 +73,23 @@ Each run starts from the frozen image decoded at its written tick, so every run 
   - the volley: within `VOLLEY_TOLERANCE_TENTHS` tenths of one spike per member per kick, and at most one;
   - the after: at most `AFTER_MAX_TENTHS` tenths of a spike per member per kick in the pair window after the span.
   If it does not, no cell is run and the kick is derived again. The gate holds the probe: the ramp into one unit at rest, with no drive, fires it on the tick the oracle says, once.
+- **The kick derived again, after its first reading and before any cell.** The first run of `the_kick_and_the_background_at_1024_units_exhaustive` (at `a95a1c3`, 70 s in the release profile on a developer machine) read the ramp alone:
+  - the growth changing nothing unkicked, at sixteen units, before the test stopped;
+  - the volley within the tolerance at every size: 254 of 256 at 16 units, 510 of 512 at 32 and 1 022 of 1 024 at 64, each size missing one member in the first kicked epoch and one other kick, 14 of 16 kicks a full volley;
+  - the after: 26, 49 and 84 spikes over the sixteen kicks. Against the marks of 25.6, 51.2 and 102.4, sixteen units failed by one spike.
+
+  By the rule above, no cell ran. The background run in the same test put the members' spikes in the same windows with no kick at 7 at sixteen units, so the kick's own excess was about 19 spikes, 0.07 a member a kick. The oracle says where they come from: a member leaves its refractory window with its basal compartment at about 1.49 and its soma at about 0.75, while the drive alone holds a unit at 0.875 and 0.436. So the kick leaves a residual in every member it fires.
+
+  A ramp cannot lower that residual. Firing takes a basal of about 2.0, which decays over the window to about 1.35 whatever the ramp.
+
+  The re-derivation adds **a reset** (`KICK_RESET_Q16`, `reset_rule`). The protocol reads each member's kick spike from its record, `last_soma_spike_tick`, on the tick it fires inside the span. It then injects one basal message into that member before the epoch's tick after the member's refractory window, so the message lands on the first tick the member integrates again. The message's efficacy is the one the gain takes nearest to putting the member's basal compartment at the drive's mean standing, from what the ramp left there, by the oracle kicked from that standing: **−23 062** of $2^{16}$ before the gain, −0.616 after it. From every standing of `KICK_STANDINGS` the oracle then fires the unit once. On the tick the reset lands, it puts the basal at:
+  - 0.875 from rest and from the drive's mean standing;
+  - 0.870 and 0.866 from one and two thresholds below rest;
+  - 0.754 from the extreme.
+
+  Sixty-four ticks later the soma stands within 0.004 of the drive's mean standing, and at 0.382 from the extreme. The gate holds the engine to the oracle on one unit at rest with no drive: it fires on the oracle's tick, once, and its basal potential after every tick of the span and the pair window after it is the oracle's, the reset's tick included.
+
+  The reset is the kick's and not a release. It takes back only what the kick put in, and it lands on the member's first tick after its own refractory window. A recurrent message of its assembly that lands while the member is refractory is dropped either way. One that lands after adds to the standing the reset leaves, not to the kick's residual. The measure, its marks and every other constant are unchanged. Nothing else is derived again.
 - **The release** (`release`): ADR-0076's cancel as built — six messages at −2.0 into every member before each of nine ticks — from the epoch's quarter, tick 4 096. A member refractory through all nine ticks escapes it: at a rate of $r$ Hz, about $192r / 10^5$ of the members, 3.8 per cent at 20 Hz and 19 per cent at 100 Hz. The tail is the last half, from tick 8 192. It opens after the release's direct effect has passed on a member it reached: at the drive's mean standing, the oracle has the soma back within a tenth of the threshold of that standing 3 510 ticks after the first message (`RELEASE_RECOVERED`).
 - **Rows** (`EpochRow`): per window, the members' spikes, the rest of the network's spikes, and the sums over the members of the pair `(u, R)` a spike on the next tick would release with. That pair is `step_stp` on a copy of each member's factors, with the ticks since its last spike as the executor reads them. Per epoch, the kick's reading: the members' spikes in the span and in the pair window after it.
 - **The runs**:
@@ -136,17 +153,17 @@ No single spike fires a unit at the drive's mean standing at any weight. At rest
 
 **In no cell does the members' mean input, at any rate, bring the mean soma to the threshold.** The largest, 64 units at 1.0 firing at 100 Hz, stands at 0.90 of it, and depression caps what a higher rate adds. A hold, if one exists, is the fluctuations above a mean below threshold: the drive's shot noise and the members' own messages. It is not a mean above threshold. This is the arithmetic the readings are set beside. It makes no prediction of the region, and the brief asks for none.
 
-**The kick by the oracle** (`KICK_ORACLE`: the drive's mean input every tick, the ramp on its first 160 ticks), from each standing:
+**The kick by the oracle** (`KICK_ORACLE`: the drive's mean input every tick, the ramp on its first 160 ticks, and, as derived again after the kick's first reading, the reset on the tick after the refractory window), from each standing:
 
-| Standing (basal, soma) | Fires on | Basal at the spike | Soma as the refractory window ends | Basal then |
-| :--- | ---: | ---: | ---: | ---: |
-| rest (0, 0) | 82 | 2.204 | 0.753 | 1.492 |
-| the drive's mean (0.875, 0.436) | 51 | 2.204 | 0.753 | 1.492 |
-| the extreme (2.0⁻, 1.0⁻) | 1 | 2.025 | 0.692 | 1.371 |
-| one threshold below (−1.0, −0.5) | 115 | 2.197 | 0.751 | 1.487 |
-| two thresholds below (−2.0, −1.0) | 146 | 2.190 | 0.749 | 1.483 |
+| Standing (basal, soma) | Fires on | Basal at the spike | Soma on the window's last tick | Basal then | Basal as the reset lands | Soma 64 ticks after |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| rest (0, 0) | 82 | 2.204 | 0.753 | 1.492 | 0.875 | 0.436 |
+| the drive's mean (0.875, 0.436) | 51 | 2.204 | 0.753 | 1.492 | 0.875 | 0.436 |
+| the extreme (2.0⁻, 1.0⁻) | 1 | 2.025 | 0.692 | 1.371 | 0.754 | 0.382 |
+| one threshold below (−1.0, −0.5) | 115 | 2.197 | 0.751 | 1.487 | 0.870 | 0.434 |
+| two thresholds below (−2.0, −1.0) | 146 | 2.190 | 0.749 | 1.483 | 0.866 | 0.432 |
 
-Each fires once. When its window ends, a unit stands about 0.27 below the adapted threshold of about 1.02, where F-46's drive left it above (ADR-0076).
+Each fires once. When its window ends, a unit stands about 0.27 below the adapted threshold of about 1.02, where F-46's drive left it above (ADR-0076). The reset takes the rest.
 
 **The release by the oracle** (`RELEASE_ORACLE`, the drive's mean input every tick):
 - from the drive's mean standing: no spike for the rest of the epoch, the basal down to −186.7, the soma back within a tenth of the threshold of the standing after 3 510 ticks;
@@ -154,8 +171,8 @@ Each fires once. When its window ends, a unit stands about 0.27 below the adapte
 
 ### The order of the work
 
-1. This ADR, the constants, the rules and the oracles, and the gate's checks of them, committed before any run.
-2. The kick and the background run, their tables pinned, and the kick shown to fire every member once.
+1. This ADR, the constants, the rules and the oracles, and the gate's checks of them, committed before any run (`6cfc32f`, `a95a1c3`).
+2. The kick and the background run; the kick, read once and derived again with its reset before any cell (above), read again, its tables pinned, and shown to fire every member once.
 3. The twelve cells run against the background pinned in step 2, their tables pinned.
 4. The readings recorded below.
 

@@ -13,7 +13,11 @@
 //! the engine are untouched, as ADR-0097's controls were wired to nothing. The kick is
 //! derived from the membrane rule rather than taken from the task: ADR-0076's stimulus fires
 //! each unit once only because its cancel then holds the unit below rest for about 3 500
-//! ticks, which is a release, and is this round's release.
+//! ticks, which is a release, and is this round's release. The kick is a ramp that each member
+//! stops taking when it fires, and a reset on the tick its refractory window ends that puts its
+//! basal compartment back at the drive's mean standing: the reset was derived again after the
+//! first reading of the kick on the engine, when the ramp alone left the members of sixteen one
+//! spike over the measure's mark in the pair window after the span.
 //!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083).
 
@@ -156,7 +160,8 @@ fn kind_of(row: usize) -> Epoch {
 /// epoch's first `KICK_TICKS` ticks, a ramp. A member fires when its soma crosses the
 /// threshold and drops the rest of the ramp in its refractory window, so it fires once
 /// whatever its standing potential, with about what firing takes left in its basal
-/// compartment. The message is derived by `kick_rule`: the least power of two, of the five
+/// compartment, which the reset (`KICK_RESET_Q16`) takes back on the tick the window ends.
+/// The message is derived by `kick_rule`: the least power of two, of the five
 /// from $2^{-8}$ to $2^{-4}$, under which the oracle fires a unit exactly once within the span
 /// and not again within a pair window after it from every standing of `KICK_STANDINGS`
 /// under the drive's mean input: 1/64.
@@ -187,6 +192,17 @@ const KICK_STANDINGS: [(i32, i32); 5] = [
 
 /// The messages the kick's rule scans, in order.
 const KICK_SCAN: [i32; 5] = [0x0100, 0x0200, 0x0400, 0x0800, 0x1000];
+
+/// The kick's reset, derived again after the first reading of the kick on the engine
+/// (ADR-0112): one basal message into each member on the tick after its kick spike's
+/// refractory window, whose efficacy the gain takes nearest to putting the member's basal
+/// compartment back at the drive's mean standing from what the ramp left in it
+/// (`reset_rule`). The ramp alone left a member about 0.27 below its threshold with its basal
+/// at about 1.49 as its window ended, where the drive alone holds a unit at 0.875, and at
+/// sixteen units the members' spikes in the pair window after the span read 26 over sixteen
+/// kicks against the measure's 25.6. With the reset the kick fires each member once and leaves
+/// nothing of itself in the member.
+const KICK_RESET_Q16: i32 = -23_062;
 
 /// The release: ADR-0076's cancel as built — `CANCEL_AT_THE_EXTREME` messages of
 /// `CANCEL_MESSAGE_Q16` into every member before each of `CANCEL_TICKS` ticks — from the
@@ -573,10 +589,9 @@ fn recurrent(size: u32, weight: i16, interval: u32) -> (i64, i64) {
     )
 }
 
-/// The kick's input to one unit: the drive's mean every tick, and the ramp's message scaled by
-/// the gain before each of the ramp's ticks.
-fn kick_input(message: i32) -> impl Fn(u32) -> i32 {
-    let mean = drive_mean_per_tick();
+/// The kick's input to one unit: `mean` every tick (the drive's mean input, or nothing), and
+/// the ramp's message scaled by the gain before each of the ramp's ticks.
+fn kick_input(message: i32, mean: i32) -> impl Fn(u32) -> i32 {
     let per = scaled_q16(batch_q16(1, message), GAIN_1024);
     move |k| {
         if k < KICK_TICKS {
@@ -587,26 +602,106 @@ fn kick_input(message: i32) -> impl Fn(u32) -> i32 {
     }
 }
 
-/// The kick by the oracle from `standing`: over the span and a pair window after it, the ticks
-/// the unit fires on, its basal potential on the tick it first fires, and its somatic and
-/// basal potentials on the tick its refractory window ends.
-fn kick_oracle(standing: (i32, i32), message: i32) -> (Vec<u32>, i32, i32, i32) {
+/// The kick by the oracle from `standing` under `mean` every tick, the ramp of `message` and,
+/// when given, the reset of
+/// `reset` landing on the first tick after the unit's first spike's refractory window: the
+/// stepped unit over the span and a pair window after it, and the tick of its first spike.
+fn kicked(
+    standing: (i32, i32),
+    message: i32,
+    reset: Option<i32>,
+    mean: i32,
+) -> (Stepped, Option<u32>) {
+    let ticks = KICK_SPAN.saturating_add(PAIR_WINDOW);
+    let first = stepped(standing, kick_input(message, mean), ticks)
+        .fires
+        .first()
+        .copied();
+    let ramp = kick_input(message, mean);
+    let per = reset.map_or(0, |r| scaled_q16(batch_q16(1, r), GAIN_1024));
+    // A spike on tick `t` leaves the unit refractory through tick `t + 200`; the reset lands on
+    // tick `t + 201`, the input of index `t + 200`.
+    let at = first.map(|t| t.saturating_add(u32::from(REFRACTORY_TICKS)));
     let s = stepped(
         standing,
-        kick_input(message),
-        KICK_SPAN.saturating_add(PAIR_WINDOW),
+        |k| {
+            if Some(k) == at {
+                ramp(k).saturating_add(per)
+            } else {
+                ramp(k)
+            }
+        },
+        ticks,
     );
-    let first = s.fires.first().copied().unwrap_or(0) as usize;
-    let at = first.saturating_sub(1);
-    let end = at
-        .saturating_add(usize::from(REFRACTORY_TICKS))
-        .min(s.soma.len().saturating_sub(1));
+    (s, first)
+}
+
+/// The ticks after the reset at which the kick's oracle reads the soma again.
+const SETTLED_AFTER_RESET: usize = 64;
+
+/// The kick by the oracle from `standing` (`kicked` with `KICK_RESET_Q16`): the ticks the unit
+/// fires on; its basal potential on the tick it first fires; its somatic and basal potentials
+/// on the last tick of its refractory window; its basal potential on the tick the reset lands;
+/// and its somatic potential `SETTLED_AFTER_RESET` ticks after it.
+fn kick_oracle(standing: (i32, i32), message: i32) -> KickRead {
+    let (s, first) = kicked(
+        standing,
+        message,
+        Some(KICK_RESET_Q16),
+        drive_mean_per_tick(),
+    );
+    let at = first.unwrap_or(0).saturating_sub(1) as usize;
+    let last = s.soma.len().saturating_sub(1);
+    let end = at.saturating_add(usize::from(REFRACTORY_TICKS)).min(last);
+    let reset = end.saturating_add(1).min(last);
+    let later = reset.saturating_add(SETTLED_AFTER_RESET).min(last);
     (
         s.fires.clone(),
         s.basal.get(at).copied().unwrap_or(0),
         s.soma[end],
         s.basal[end],
+        s.basal[reset],
+        s.soma[later],
     )
+}
+
+/// The reset by the rule: the one message, before the gain, that the gain takes nearest to the
+/// input putting a unit's basal compartment at the drive's mean standing on the tick it lands,
+/// from what the ramp left there, by the oracle kicked from the drive's mean standing with no
+/// reset: the basal after the refractory window's last tick, leaked by the rule, less the
+/// drive's mean input, less the standing, negated.
+fn reset_rule() -> i32 {
+    let (s, first) = kicked(
+        DRIVE_STANDING,
+        KICK_MESSAGE_Q16,
+        None,
+        drive_mean_per_tick(),
+    );
+    let t = first.expect("the kick fires the unit");
+    let b = s.basal[t
+        .saturating_add(u32::from(REFRACTORY_TICKS))
+        .saturating_sub(1) as usize];
+    let leaked = b.saturating_sub((b >> BASAL_LEAK_SHIFT).max(1));
+    let wanted = DRIVE_STANDING
+        .0
+        .saturating_sub(leaked)
+        .saturating_sub(drive_mean_per_tick());
+    let estimate = (i64::from(wanted) << 16)
+        .checked_div(i64::from(GAIN_1024))
+        .unwrap_or(0) as i32;
+    // The nearest of the estimate and its two neighbours, by what the gain makes of each.
+    [
+        estimate.saturating_sub(1),
+        estimate,
+        estimate.saturating_add(1),
+    ]
+    .into_iter()
+    .min_by_key(|&e| {
+        scaled_q16(batch_q16(1, e), GAIN_1024)
+            .saturating_sub(wanted)
+            .unsigned_abs()
+    })
+    .unwrap_or(estimate)
 }
 
 /// The kick fires a unit once by the oracle: one spike, inside the span.
@@ -620,7 +715,7 @@ fn kick_rule() -> Option<i32> {
     KICK_SCAN.iter().copied().find(|&m| {
         KICK_STANDINGS
             .iter()
-            .all(|&s| once_by_oracle(&kick_oracle(s, m).0))
+            .all(|&s| once_by_oracle(&kicked(s, m, None, drive_mean_per_tick()).0.fires))
     })
 }
 
@@ -811,6 +906,7 @@ fn protocol(exec: &mut Engine, reads: &[Vec<u32>], kicks: Option<&[u32]>) -> Vec
     let inject = exec.injector();
     let of: Vec<Vec<bool>> = reads.iter().map(|s| membership(s)).collect();
     let kick = spike_message(KICK_MESSAGE_Q16, false);
+    let reset = spike_message(KICK_RESET_Q16, false);
     let r = release();
     let cancel = spike_message(r.efficacy_q16, false);
     let mut rows: Vec<Vec<EpochRow>> = vec![Vec::with_capacity(ROWS); reads.len()];
@@ -819,6 +915,9 @@ fn protocol(exec: &mut Engine, reads: &[Vec<u32>], kicks: Option<&[u32]>) -> Vec
         let kind = kicks.map_or(Epoch::Unkicked, |_| kind_of(row));
         let start = exec.ticks() as u32;
         let mut epoch: Vec<EpochRow> = vec![([[0u32; 4]; WINDOWS], [0u32; 2]); reads.len()];
+        // Each member's reset, due before the epoch's tick after its kick spike's refractory
+        // window, in the order the members fired.
+        let mut resets: Vec<(u32, u32)> = Vec::new();
         for w in 0..WINDOWS {
             for j in 0..WINDOW_SPAN {
                 let k = (w as u32).saturating_mul(WINDOW_SPAN).saturating_add(j);
@@ -829,6 +928,9 @@ fn protocol(exec: &mut Engine, reads: &[Vec<u32>], kicks: Option<&[u32]>) -> Vec
                             inject.inject(m, kick).expect("the ring has room");
                         }
                     }
+                    for &(_, m) in resets.iter().filter(|&&(due, _)| due == k) {
+                        inject.inject(m, reset).expect("the ring has room");
+                    }
                     if kind == Epoch::Released && r.is_due(k) {
                         for &m in set {
                             for _ in 0..r.messages {
@@ -838,6 +940,18 @@ fn protocol(exec: &mut Engine, reads: &[Vec<u32>], kicks: Option<&[u32]>) -> Vec
                     }
                 }
                 exec.tick();
+                // A member's kick spike on this tick, inside the span: its reset is due before
+                // the tick after its refractory window.
+                if let Some(set) = kicks {
+                    if kind != Epoch::Unkicked && (1..=KICK_SPAN).contains(&k) {
+                        let stamp = start.wrapping_add(k);
+                        for &m in set {
+                            if exec.units()[m as usize].last_soma_spike_tick == stamp {
+                                resets.push((k.saturating_add(u32::from(REFRACTORY_TICKS)), m));
+                            }
+                        }
+                    }
+                }
             }
             let total = (exec.train().len() as u64).saturating_add(exec.train_overwritten());
             let new = total.saturating_sub(seen);
@@ -930,7 +1044,7 @@ fn arithmetic() -> (
     Vec<Delivered>,
     Vec<Vec<Vec<(i64, i64)>>>,
     Option<i32>,
-    Vec<(Vec<u32>, i32, i32, i32)>,
+    Vec<KickRead>,
     Vec<(Vec<u32>, i32, Option<u32>)>,
 ) {
     let steadies: Vec<(u8, u8)> = INTERVALS.iter().map(|&i| steady(i)).collect();
@@ -1054,6 +1168,7 @@ fn the_grid_the_arithmetic_the_rules_and_an_assembly_kicked_on_the_engine() {
     eprintln!("DUMP DELIVERED = {by_weight:?}");
     eprintln!("DUMP RECURRENT = {by_cell:?}");
     eprintln!("DUMP KICK_RULE = {rule:?}");
+    eprintln!("DUMP KICK_RESET_Q16 = {}", reset_rule());
     eprintln!("DUMP KICK_ORACLE = {kicks:?}");
     eprintln!("DUMP RELEASE_ORACLE = {releases:?}");
     assert_eq!(rest, STP_AT_REST);
@@ -1074,9 +1189,17 @@ fn the_grid_the_arithmetic_the_rules_and_an_assembly_kicked_on_the_engine() {
     }
     // The kick, derived; the release.
     assert_eq!(rule, Some(KICK_MESSAGE_Q16));
-    for (k, (fires, basal, soma, basal_end)) in kicks.iter().enumerate() {
+    assert_eq!(reset_rule(), KICK_RESET_Q16);
+    for (k, (fires, basal, soma, basal_end, basal_reset, soma_later)) in kicks.iter().enumerate() {
         assert_eq!(
-            (fires.as_slice(), *basal, *soma, *basal_end),
+            (
+                fires.as_slice(),
+                *basal,
+                *soma,
+                *basal_end,
+                *basal_reset,
+                *soma_later
+            ),
             KICK_ORACLE[k],
             "the kick from {:?}",
             KICK_STANDINGS[k]
@@ -1088,9 +1211,9 @@ fn the_grid_the_arithmetic_the_rules_and_an_assembly_kicked_on_the_engine() {
         );
     }
     assert!(
-        !KICK_STANDINGS
-            .iter()
-            .all(|&s| once_by_oracle(&kick_oracle(s, KICK_SCAN[1]).0)),
+        !KICK_STANDINGS.iter().all(|&s| once_by_oracle(
+            &kicked(s, KICK_SCAN[1], None, drive_mean_per_tick()).0.fires
+        )),
         "the message below fails"
     );
     for (k, (fires, lowest, back)) in releases.iter().enumerate() {
@@ -1251,15 +1374,10 @@ fn prior_image() -> Vec<u8> {
     Image::encode(&exec).expect("quiescent")
 }
 
-/// The kick into one unit at rest with no drive, by the oracle: the ticks it fires on.
-fn kick_alone() -> Vec<u32> {
-    let per = scaled_q16(batch_q16(1, KICK_MESSAGE_Q16), GAIN_1024);
-    stepped(
-        (0, 0),
-        |k| if k < KICK_TICKS { per } else { 0 },
-        KICK_SPAN.saturating_add(PAIR_WINDOW),
-    )
-    .fires
+/// The kick, its reset included, into one unit at rest with no drive, by the oracle: the unit
+/// stepped, and the tick of its spike.
+fn kick_alone() -> (Stepped, Option<u32>) {
+    kicked((0, 0), KICK_MESSAGE_Q16, Some(KICK_RESET_Q16), 0)
 }
 
 fn wiring_on_the_prior() {
@@ -1347,17 +1465,29 @@ fn wiring_on_the_prior() {
         "the grown image unwired runs as the image"
     );
     // The kick on the engine: into member 5 of the network at rest with no drive, alone, it
-    // fires on the tick the oracle says, and once.
+    // fires on the tick the oracle says, once, and its basal potential after every tick is the
+    // oracle's, the reset's tick among them.
+    let (oracle, first) = kick_alone();
+    let due = first
+        .expect("the oracle fires the unit")
+        .saturating_add(u32::from(REFRACTORY_TICKS));
     let mut exec = frozen_from(&image, 1024);
     let inject = exec.injector();
     let start = exec.ticks() as u32;
+    let mut basal = Vec::new();
     for k in 0..KICK_SPAN.saturating_add(PAIR_WINDOW) {
         if k < KICK_TICKS {
             inject
                 .inject(5, spike_message(KICK_MESSAGE_Q16, false))
                 .expect("the ring has room");
         }
+        if k == due {
+            inject
+                .inject(5, spike_message(KICK_RESET_Q16, false))
+                .expect("the ring has room");
+        }
         exec.tick();
+        basal.push(exec.units()[5].v_basal);
     }
     let fires: Vec<u32> = exec
         .train()
@@ -1365,8 +1495,15 @@ fn wiring_on_the_prior() {
         .filter(|&&(_, unit)| unit == 5)
         .map(|&(tick, _)| tick.wrapping_sub(start))
         .collect();
-    assert_eq!(fires, kick_alone(), "the engine is the oracle");
+    // The engine's tick `start + k` is the oracle's tick `k`: the oracle's first input lands on
+    // its tick one, the engine's on `start + 1`.
+    assert_eq!(fires, oracle.fires, "the engine fires as the oracle");
     assert_eq!(fires.len(), 1);
+    assert_eq!(
+        basal[1..],
+        oracle.basal[..oracle.basal.len().saturating_sub(1)],
+        "the engine's basal potential is the oracle's"
+    );
 }
 
 /// The ticks the growth's check runs under the drive.
@@ -1415,6 +1552,8 @@ fn the_kick_and_the_background_at_1024_units_exhaustive() {
             backgrounds[k][..2],
             "{name} {size}: the growth changes nothing unkicked"
         );
+    }
+    for (k, &size) in SIZES.iter().enumerate() {
         assert!(
             readings[k].2,
             "{name} {size}: the kick fires every member once, or it is derived again"
@@ -1521,16 +1660,42 @@ const CONTROLS_1024: [Cell; 3] = [Cell {
 }; 3];
 
 /// Each cell's rows, by size and weight.
-const CELL_ROWS_1024: [[&[EpochRow]; 4]; 3] = [[&[]; 4]; 3];
+const CELL_ROWS_1024: [[&[EpochRow]; 4]; 3] = [CELL_ROWS_16, CELL_ROWS_32, CELL_ROWS_64];
 
 /// Each cell read by the rules, by size and weight.
-const GRID_1024: [[Cell; 4]; 3] = [[Cell {
+const GRID_1024: [[Cell; 4]; 3] = [GRID_16, GRID_32, GRID_64];
+
+/// A kick by the oracle: the ticks the unit fires on, its basal potential on the tick it fires,
+/// its somatic and basal potentials on the last tick of its refractory window, its basal
+/// potential on the tick the reset lands, and its soma `SETTLED_AFTER_RESET` ticks after.
+type KickRead = (Vec<u32>, i32, i32, i32, i32, i32);
+
+/// A cell not yet read.
+const UNREAD: Cell = Cell {
     held: 0,
     ignited: 0,
     let_go: 0,
     before: 0,
     spills: None,
-}; 4]; 3];
+};
+
+/// The assembly of 16's rows at each weight.
+const CELL_ROWS_16: [&[EpochRow]; 4] = [&[]; 4];
+
+/// The assembly of 16 read by the rules at each weight.
+const GRID_16: [Cell; 4] = [UNREAD; 4];
+
+/// The assembly of 32's rows at each weight.
+const CELL_ROWS_32: [&[EpochRow]; 4] = [&[]; 4];
+
+/// The assembly of 32 read by the rules at each weight.
+const GRID_32: [Cell; 4] = [UNREAD; 4];
+
+/// The assembly of 64's rows at each weight.
+const CELL_ROWS_64: [&[EpochRow]; 4] = [&[]; 4];
+
+/// The assembly of 64 read by the rules at each weight.
+const GRID_64: [Cell; 4] = [UNREAD; 4];
 
 // ------------------------------------------------ the arithmetic, pinned before any run
 
@@ -1591,13 +1756,14 @@ const RECURRENT: [[[(i64, i64); 3]; 4]; 3] = [
 ];
 
 /// The kick by the oracle from each standing: the ticks it fires on, its basal potential on
-/// the tick it fires, and its somatic and basal potentials as its refractory window ends.
-const KICK_ORACLE: [(&[u32], i32, i32, i32); 5] = [
-    (&[82], 144438, 49369, 97779),
-    (&[51], 144439, 49369, 97780),
-    (&[1], 132720, 45365, 89853),
-    (&[115], 143968, 49203, 97456),
-    (&[146], 143553, 49064, 97180),
+/// the tick it fires, its somatic and basal potentials on the last tick of its refractory
+/// window, its basal potential on the tick the reset lands, and its soma 64 ticks after.
+const KICK_ORACLE: [(&[u32], i32, i32, i32, i32, i32); 5] = [
+    (&[82], 144438, 49369, 97779, 57343, 28563),
+    (&[51], 144439, 49369, 97780, 57344, 28563),
+    (&[1], 132720, 45365, 89853, 49432, 25047),
+    (&[115], 143968, 49203, 97456, 57020, 28432),
+    (&[146], 143553, 49064, 97180, 56745, 28317),
 ];
 
 /// The release by the oracle at the drive's mean standing and at the extreme: the ticks it
