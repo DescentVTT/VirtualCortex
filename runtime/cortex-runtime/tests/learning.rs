@@ -182,6 +182,7 @@ fn task(units: u32, feedback: Feedback, mirrored: bool) -> Task {
         mirrored,
         feedback,
         delivery: Delivery::Global,
+        critic: None,
     }
 }
 

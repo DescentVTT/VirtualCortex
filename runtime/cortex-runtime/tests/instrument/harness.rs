@@ -336,6 +336,7 @@ pub(crate) fn task(
         mirrored,
         feedback,
         delivery,
+        critic: None,
     }
 }
 
@@ -4988,6 +4989,7 @@ pub(crate) fn probe_task(shape: Shape, cancel: Option<Cancel>) -> Vec<u32> {
         mirrored: false,
         feedback: Feedback::Withheld,
         delivery: Delivery::Global,
+        critic: None,
     };
     let trial = (0..8u64)
         .find(|&k| t.stimulus_at(k) == 0)

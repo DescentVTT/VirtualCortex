@@ -31,6 +31,13 @@
 //! spike; a set whose volley spreads over several ticks is covered by as many ticks of the
 //! cancel. A stimulus with no cancel injects what it injected before the cancel existed, and
 //! every run pinned before ADR-0076 reruns unchanged.
+//!
+//! A task may carry a [`Critic`] (ADR-0106, ADR-0107): an expected reward for each stimulus,
+//! from which the outcome's reward is taken before the modulator receives it, so that the
+//! dopamine signal receives a prediction error and not the reward itself. The critic is the
+//! task's state, as the seed and the trial's index are: no record holds it and no image carries
+//! it. A task with no critic delivers the outcome's reward, and every run pinned before
+//! ADR-0107 reruns unchanged.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -425,6 +432,45 @@ pub enum Delivery {
     Addressed,
 }
 
+/// The critic of the reward-prediction error (ADR-0106, ADR-0107): the expected reward of each
+/// stimulus, Q16.16, and the shift its update takes. At a trial the outcome's reward `r` — the
+/// task's magnitude signed as the feedback signs it — meets the presented stimulus's
+/// expectation `V`: the prediction error `δ = r − V`, saturating, is what [`Executor::reward`]
+/// receives and what the trial records as its reward, and `V` then moves by `δ ≫ shift`, an
+/// arithmetic shift, the floor of `δ / 2^shift`, saturating. The step is never larger than the
+/// error and has its sign, so from an expectation within `[−|r|, |r|]` the expectation moves
+/// toward the reward and never past it and stays within the bound, which [`Task::check`] holds
+/// it to before every trial. A shift of 31 or more is taken as 31, where the floor already is
+/// what any wider shift gives: none for an error at or above zero, one LSB down below it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Critic {
+    /// The expected reward of each stimulus, Q16.16; zero at a run's start.
+    pub expected_q16: [i32; 2],
+    /// The update's shift: the expectation moves by `2^-shift` of the error, rounded down.
+    pub shift: u32,
+}
+
+impl Critic {
+    /// A critic whose every expectation is zero, as a run starts, with the update's `shift`.
+    pub const fn new(shift: u32) -> Self {
+        Self {
+            expected_q16: [0; 2],
+            shift,
+        }
+    }
+
+    /// The prediction error of `reward_q16` against the expectation of `stimulus` (0 or 1),
+    /// and that expectation moved by the error shifted: returns the error, and the expectation
+    /// before and after the move.
+    pub fn predict(&mut self, stimulus: u8, reward_q16: i32) -> (i32, i32, i32) {
+        let expected = &mut self.expected_q16[usize::from(stimulus)];
+        let before = *expected;
+        let error = reward_q16.saturating_sub(before);
+        *expected = before.saturating_add(error >> self.shift.min(31));
+        (error, before, *expected)
+    }
+}
+
 /// Why a task is refused, or a trial not run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskError {
@@ -465,6 +511,10 @@ pub enum TaskError {
     NegativeReward,
     /// A reward magnitude of zero with feedback that would deliver it.
     NoReward,
+    /// A critic whose expectation of a stimulus lies beyond the reward's magnitude, where the
+    /// rule, which moves an expectation toward the reward and never past it, could not have
+    /// taken it from zero (ADR-0107).
+    ExpectationBeyondReward,
     /// The modulation baseline at 1.0 with a reward that would be delivered: a positive reward
     /// adds nothing at the ceiling (the clamp is there already), the configuration that
     /// silently does nothing.
@@ -502,16 +552,21 @@ pub struct Outcome {
     pub selection: Option<u8>,
     /// Whether the selection was the stimulus's rewarded readout.
     pub correct: bool,
-    /// The reward delivered, signed; zero when withheld.
+    /// The reward delivered, signed; zero when withheld. Under a critic, the prediction error
+    /// the modulator received (ADR-0107).
     pub reward_q16: i32,
     /// The modulator's dopamine signal after the reward.
     pub signal_q16: i32,
+    /// Under a critic, the presented stimulus's expected reward before the trial and after it,
+    /// `[before, after]`, the same when the reward is withheld; none without a critic.
+    pub expected_q16: Option<[i32; 2]>,
 }
 
 /// A two-alternative task on an executor: two stimuli, two readouts, a background drive, a
-/// trial's length, a seed, a reward magnitude, the assignment of stimuli to readouts and
-/// where the reward's sign comes from. Every field is the caller's; `check` says what a run
-/// needs of them and of the executor.
+/// trial's length, a seed, a reward magnitude, the assignment of stimuli to readouts, where
+/// the reward's sign comes from, where its dopamine term reaches, and the critic, when it has
+/// one. Every field is the caller's; `check` says what a run needs of them and of the
+/// executor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Task {
     pub stimuli: [Stimulus; 2],
@@ -533,6 +588,9 @@ pub struct Task {
     pub feedback: Feedback,
     /// Where the dopamine term reaches (ADR-0068).
     pub delivery: Delivery,
+    /// The critic (ADR-0107): the reward delivered is the outcome's less the presented
+    /// stimulus's expected reward; none delivers the outcome's reward itself.
+    pub critic: Option<Critic>,
 }
 
 impl Task {
@@ -561,7 +619,8 @@ impl Task {
     /// stimulus carries one) with a message and a tick, after the first injection, inside the
     /// trial and negative, a readout window with a tick and inside the trial, a train that
     /// holds the most spikes a trial can produce, a readout count that cannot reach the
-    /// drive's width, and a reward that is delivered only where it can do something.
+    /// drive's width, a reward that is delivered only where it can do something, and a
+    /// critic's expectations, where the task has one, within the reward's magnitude.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
         let sets = [
@@ -634,6 +693,14 @@ impl Task {
         if self.reward_q16 < 0 {
             return Err(TaskError::NegativeReward);
         }
+        // The magnitude is at least zero here, so its bound is its own value.
+        let bound = self.reward_q16.unsigned_abs();
+        if self
+            .critic
+            .is_some_and(|c| c.expected_q16.iter().any(|v| v.unsigned_abs() > bound))
+        {
+            return Err(TaskError::ExpectationBeyondReward);
+        }
         if self.feedback != Feedback::Withheld {
             if self.reward_q16 == 0 {
                 return Err(TaskError::NoReward);
@@ -648,8 +715,9 @@ impl Task {
     /// One trial: the stimulus injected, `ticks` ticks under the drive with the stimulus's
     /// cancel, if it carries one, injected before each tick it is due at, the train read once
     /// over the task's window of the trial, the selection, and the reward delivered between
-    /// ticks, its sign by `feedback`. Refused as `check` refuses, and when the injector
-    /// refuses a message.
+    /// ticks, its sign by `feedback` — under a critic, the reward less the presented
+    /// stimulus's expectation, which then moves (ADR-0107). Refused as `check` refuses, and
+    /// when the injector refuses a message.
     pub fn trial<const CAP: usize>(
         &mut self,
         exec: &mut Executor<CAP>,
@@ -703,13 +771,25 @@ impl Task {
                     correct,
                     reward_q16: 0,
                     signal_q16: exec.modulator().dopamine_rpe,
+                    expected_q16: self
+                        .critic
+                        .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
                 });
             }
         };
-        let reward_q16 = if positive {
+        let outcome_q16 = if positive {
             self.reward_q16
         } else {
             self.reward_q16.saturating_neg()
+        };
+        // The critic takes the stimulus's expectation from the outcome's reward and moves it
+        // (ADR-0107); without one the outcome's reward is delivered itself.
+        let (reward_q16, expected_q16) = match self.critic.as_mut() {
+            Some(critic) => {
+                let (error, before, after) = critic.predict(stimulus, outcome_q16);
+                (error, Some([before, after]))
+            }
+            None => (outcome_q16, None),
         };
         let signal_q16 = exec.reward(reward_q16);
         Ok(Outcome {
@@ -720,6 +800,7 @@ impl Task {
             correct,
             reward_q16,
             signal_q16,
+            expected_q16,
         })
     }
 }
@@ -798,6 +879,7 @@ mod tests {
             mirrored: false,
             feedback,
             delivery: Delivery::Global,
+            critic: None,
         }
     }
 
@@ -1266,6 +1348,83 @@ mod tests {
         });
         assert_eq!(t.trial(&mut exec, 0), Err(TaskError::CancelNotNegative));
         assert!(exec.is_quiescent(), "a refused cancel injects nothing");
+        // The critic's refusal (ADR-0107), at its edges: an expectation of either stimulus
+        // beyond the reward's magnitude, whatever the shift.
+        let critic = |expected_q16: [i32; 2]| Task {
+            critic: Some(Critic {
+                expected_q16,
+                shift: 5,
+            }),
+            ..ok
+        };
+        assert_eq!(
+            critic([REWARD, -REWARD]).check(&exec),
+            Ok(()),
+            "at the bound, either sign"
+        );
+        assert_eq!(
+            critic([REWARD + 1, 0]).check(&exec),
+            Err(TaskError::ExpectationBeyondReward)
+        );
+        assert_eq!(
+            critic([0, -REWARD - 1]).check(&exec),
+            Err(TaskError::ExpectationBeyondReward),
+            "the second stimulus's too"
+        );
+        assert_eq!(
+            critic([i32::MIN, 0]).check(&exec),
+            Err(TaskError::ExpectationBeyondReward),
+            "the most negative, whose magnitude is past the width"
+        );
+        assert_eq!(
+            Task {
+                critic: Some(Critic::new(u32::MAX)),
+                ..ok
+            }
+            .check(&exec),
+            Ok(()),
+            "any shift runs"
+        );
+        let withheld = Task {
+            reward_q16: 0,
+            feedback: Feedback::Withheld,
+            ..ok
+        };
+        assert_eq!(
+            Task {
+                critic: Some(Critic::new(5)),
+                ..withheld
+            }
+            .check(&exec),
+            Ok(()),
+            "a magnitude of zero bounds the expectations at zero"
+        );
+        assert_eq!(
+            Task {
+                critic: Some(Critic {
+                    expected_q16: [0, 1],
+                    shift: 5
+                }),
+                ..withheld
+            }
+            .check(&exec),
+            Err(TaskError::ExpectationBeyondReward)
+        );
+        assert_eq!(
+            Task {
+                reward_q16: -1,
+                ..critic([0, 0])
+            }
+            .check(&exec),
+            Err(TaskError::NegativeReward),
+            "the magnitude is refused first"
+        );
+        let mut t = critic([0, REWARD + 1]);
+        assert_eq!(
+            t.trial(&mut exec, 0),
+            Err(TaskError::ExpectationBeyondReward)
+        );
+        assert!(exec.is_quiescent(), "a refused critic injects nothing");
         // A trial refuses as `check` refuses, before it injects anything.
         let mut exec = network(1, ONE / 2);
         let mut t = ok;
@@ -1627,6 +1786,225 @@ mod tests {
         assert_eq!(none.selection, Some(0));
         assert_eq!((none.reward_q16, none.signal_q16), (0, 0));
         assert!(exec.modulator().is_at_rest());
+        assert_eq!(
+            (first.expected_q16, heads.expected_q16, none.expected_q16),
+            (None, None, None),
+            "no critic, no expectation"
+        );
+    }
+
+    /// The critic's rule at its edges (ADR-0107): the error against an expectation at either
+    /// end of the bound, twice the reward from the far end, the arithmetic shift's floor on
+    /// either side of zero, saturation at the width, and a shift of zero, at the width and past
+    /// it; the other stimulus's expectation never moves.
+    #[test]
+    fn the_critic_s_error_and_update_at_their_edges() {
+        const R: i32 = ONE;
+        let at = |expected: i32| Critic {
+            expected_q16: [expected, 7],
+            shift: 5,
+        };
+        assert_eq!(
+            Critic::new(5),
+            Critic {
+                expected_q16: [0; 2],
+                shift: 5
+            }
+        );
+        let mut c = at(R);
+        assert_eq!(c.predict(0, R), (0, R, R), "a reward expected is no error");
+        let mut c = at(-R);
+        assert_eq!(
+            c.predict(0, R),
+            (2 * R, -R, -R + R / 16),
+            "from −r, an error of 2r moves the expectation up by a sixteenth of r"
+        );
+        let mut c = at(R);
+        assert_eq!(c.predict(0, -R), (-2 * R, R, R - R / 16));
+        assert_eq!(
+            c.expected_q16,
+            [R - R / 16, 7],
+            "the other stimulus's stays"
+        );
+        let mut c = at(-R);
+        assert_eq!(c.predict(0, -R), (0, -R, -R));
+        let mut c = Critic {
+            expected_q16: [7, -R],
+            shift: 5,
+        };
+        assert_eq!(
+            c.predict(1, R),
+            (2 * R, -R, -R + R / 16),
+            "stimulus 1's own"
+        );
+        assert_eq!(c.expected_q16[0], 7);
+        // The step is the floor of the error over 32: below zero one LSB down from −1 to −32,
+        // two from −33; above it nothing up to 31, one from 32.
+        for (error, step) in [
+            (-65, -3),
+            (-64, -2),
+            (-33, -2),
+            (-32, -1),
+            (-31, -1),
+            (-1, -1),
+            (0, 0),
+            (1, 0),
+            (31, 0),
+            (32, 1),
+            (63, 1),
+            (64, 2),
+        ] {
+            let mut c = Critic::new(5);
+            assert_eq!(c.predict(0, error), (error, 0, step), "{error}");
+        }
+        // Saturation: the error at the width, and the step within it.
+        let mut c = Critic {
+            expected_q16: [-i32::MAX, 0],
+            shift: 5,
+        };
+        assert_eq!(
+            c.predict(0, i32::MAX),
+            (i32::MAX, -i32::MAX, -i32::MAX + (i32::MAX >> 5))
+        );
+        let mut c = Critic {
+            expected_q16: [i32::MAX, 0],
+            shift: 5,
+        };
+        assert_eq!(
+            c.predict(0, -i32::MAX),
+            (i32::MIN, i32::MAX, i32::MAX + (i32::MIN >> 5))
+        );
+        // A shift of zero takes the whole error; at the width and past it the floor is none
+        // above zero and one LSB below it.
+        let mut c = Critic::new(0);
+        assert_eq!(c.predict(0, -R), (-R, 0, -R));
+        let mut c = Critic::new(30);
+        assert_eq!(c.predict(0, i32::MAX), (i32::MAX, 0, 1));
+        for shift in [31, 32, 33, 64, u32::MAX] {
+            let mut c = Critic::new(shift);
+            assert_eq!(c.predict(1, R), (R, 0, 0), "{shift}");
+            assert_eq!(c.predict(1, -R), (-R, 0, -1), "{shift}");
+            assert_eq!(c.predict(1, i32::MIN), (i32::MIN + 1, -1, -2), "{shift}");
+        }
+    }
+
+    /// The critic on a trial (ADR-0107): the reward delivered is the outcome's less the
+    /// presented stimulus's expectation — a tie an error — the modulator receives it as the
+    /// oracle does, and the expectation moves by the error shifted by five while the other
+    /// stimulus's stays; at an expectation of zero the trial is the trial without a critic in
+    /// every field but the expectation's; withheld, nothing moves and the outcome reads the
+    /// presented stimulus's expectation twice; shuffled, the coin's reward less it.
+    #[test]
+    fn a_trial_under_the_critic_delivers_the_error_and_moves_the_expectation() {
+        let mut exec = network(1, ONE / 2);
+        let mut plain_exec = network(1, ONE / 2);
+        let mut oracle = NeuromodulatorState::new();
+        let mut t = Task {
+            critic: Some(Critic::new(5)),
+            ..task(Feedback::Answer)
+        };
+        let mut plain = task(Feedback::Answer);
+        let s = t.stimulus_at(0);
+        let same = (1..16u64).find(|&k| t.stimulus_at(k) == s).unwrap();
+        let other = (1..16u64).find(|&k| t.stimulus_at(k) != s).unwrap();
+        let mut expected = [0i32; 2];
+        // Trial 0, no readout cued: a tie, an error, against an expectation of zero.
+        let tie = t.trial(&mut exec, 0).unwrap();
+        let bare = plain.trial(&mut plain_exec, 0).unwrap();
+        assert_eq!(tie.selection, None);
+        assert_eq!(
+            (tie.reward_q16, tie.expected_q16),
+            (-REWARD, Some([0, -REWARD / 32]))
+        );
+        assert_eq!(
+            Outcome {
+                expected_q16: None,
+                ..tie
+            },
+            bare,
+            "at an expectation of zero the critic delivers the outcome's reward"
+        );
+        assert_eq!(oracle.reward(-REWARD), tie.signal_q16);
+        expected[usize::from(s)] = -REWARD / 32;
+        assert_eq!(t.critic.map(|c| c.expected_q16), Some(expected));
+        // The same stimulus, its answer cued: correct, the error r + r/32, and the
+        // expectation up by the error's thirty-second rounded down, −512 + 528.
+        exec.run(400 - TICKS as u64);
+        for _ in 0..(400 - TICKS) {
+            oracle.decay_dopamine(DOPAMINE_TAU_SHIFT);
+        }
+        cue(&exec, t.readout.sets()[usize::from(t.answer(s))]);
+        let right = t.trial(&mut exec, same).unwrap();
+        for _ in 0..TICKS {
+            oracle.decay_dopamine(DOPAMINE_TAU_SHIFT);
+        }
+        assert!(right.correct);
+        assert_eq!(
+            (right.reward_q16, right.expected_q16),
+            (REWARD + REWARD / 32, Some([-REWARD / 32, 16]))
+        );
+        assert_eq!(oracle.reward(right.reward_q16), right.signal_q16);
+        assert_eq!(exec.modulator().dopamine_rpe, right.signal_q16);
+        expected[usize::from(s)] = 16;
+        assert_eq!(t.critic.map(|c| c.expected_q16), Some(expected));
+        // The other stimulus, a tie: its own expectation, and the first's stays.
+        exec.run(400 - TICKS as u64);
+        for _ in 0..(400 - TICKS) {
+            oracle.decay_dopamine(DOPAMINE_TAU_SHIFT);
+        }
+        let next = t.trial(&mut exec, other).unwrap();
+        for _ in 0..TICKS {
+            oracle.decay_dopamine(DOPAMINE_TAU_SHIFT);
+        }
+        assert_eq!(next.selection, None);
+        assert_eq!(
+            (next.reward_q16, next.expected_q16),
+            (-REWARD, Some([0, -REWARD / 32]))
+        );
+        assert_eq!(oracle.reward(-REWARD), next.signal_q16);
+        expected[usize::from(s ^ 1)] = -REWARD / 32;
+        assert_eq!(t.critic.map(|c| c.expected_q16), Some(expected));
+        // Withheld: no reward, each stimulus's expectation read twice and none moved.
+        let mut exec = network(1, ONE);
+        let held = Critic {
+            expected_q16: [3, -5],
+            shift: 5,
+        };
+        let mut w = Task {
+            critic: Some(held),
+            ..task(Feedback::Withheld)
+        };
+        for k in [0, other] {
+            let v = held.expected_q16[usize::from(w.stimulus_at(k))];
+            let none = w.trial(&mut exec, k).unwrap();
+            assert_eq!(
+                (none.reward_q16, none.expected_q16),
+                (0, Some([v, v])),
+                "trial {k}"
+            );
+        }
+        assert_eq!(w.critic, Some(held));
+        assert!(exec.modulator().is_at_rest());
+        // Shuffled: the coin's reward less the expectation.
+        let mut exec = network(1, ONE / 2);
+        let mut sh = Task {
+            critic: Some(Critic {
+                expected_q16: [100, 100],
+                shift: 5,
+            }),
+            ..task(Feedback::Shuffled)
+        };
+        let coin = sh.coin_at(0);
+        let (error, after) = if coin {
+            (REWARD - 100, 100 + ((REWARD - 100) >> 5))
+        } else {
+            (-REWARD - 100, 100 + ((-REWARD - 100) >> 5))
+        };
+        let flipped = sh.trial(&mut exec, 0).unwrap();
+        assert_eq!(
+            (flipped.reward_q16, flipped.expected_q16, flipped.signal_q16),
+            (error, Some([100, after]), error)
+        );
     }
 
     #[test]
@@ -2153,6 +2531,78 @@ mod prop {
                     );
                     assert_eq!(c.end(), u64::from(offset).saturating_add(u64::from(ticks)));
                 }
+            }
+        }
+    }
+
+    /// The critic over the lattice (ADR-0107): for every reward magnitude of the `i32` lattice
+    /// at or above zero, either sign, every expectation of the lattice within the magnitude
+    /// and the bound's two ends, and shifts from zero to past the width, the error is the
+    /// difference taken wide and clamped to the width, the expectation after is the one
+    /// before plus the floor of the error over $2^{\text{shift}}$ taken by `div_euclid` in
+    /// `i64` and not by a shift, and it lies between the one before and the reward, so within
+    /// the bound; and seeded walks of signed rewards from seeded expectations keep every
+    /// expectation within its bound at every step.
+    #[test]
+    fn the_expectation_moves_toward_the_reward_and_stays_within_it() {
+        const SHIFTS: [u32; 10] = [0, 1, 4, 5, 6, 30, 31, 32, 62, u32::MAX];
+        let one = |reward: i32, expected: i32, shift: u32| {
+            let mut c = Critic {
+                expected_q16: [!expected, expected],
+                shift,
+            };
+            let (error, before, after) = c.predict(1, reward);
+            let wide = i64::from(reward)
+                .saturating_sub(i64::from(expected))
+                .clamp(i64::from(i32::MIN), i64::from(i32::MAX));
+            let divisor = 1i64.checked_shl(shift.min(62)).unwrap();
+            let moved = i64::from(expected).saturating_add(wide.div_euclid(divisor));
+            let case = format!("{reward} {expected} {shift}");
+            assert_eq!(i64::from(error), wide, "{case}");
+            assert_eq!(before, expected, "{case}");
+            assert_eq!(i64::from(after), moved, "{case}");
+            assert!(
+                (expected.min(reward)..=expected.max(reward)).contains(&after),
+                "{case}: toward the reward and never past it: {after}"
+            );
+            assert_eq!(c.expected_q16, [!expected, after], "{case}");
+            after
+        };
+        for &magnitude in I32_LATTICE.iter().filter(|&&m| m >= 0) {
+            for reward in [magnitude, magnitude.saturating_neg()] {
+                let ends = [magnitude, magnitude.saturating_neg()];
+                for &expected in I32_LATTICE
+                    .iter()
+                    .filter(|v| v.unsigned_abs() <= magnitude.unsigned_abs())
+                    .chain(ends.iter())
+                {
+                    for &shift in &SHIFTS {
+                        let after = one(reward, expected, shift);
+                        assert!(after.unsigned_abs() <= magnitude.unsigned_abs());
+                    }
+                }
+            }
+        }
+        let mut lcg = Lcg::new(37);
+        for _ in 0..256 {
+            let magnitude = lcg.i32_edge_biased().saturating_abs();
+            let span = u64::from(magnitude.unsigned_abs())
+                .saturating_mul(2)
+                .saturating_add(1);
+            let mut expected = (lcg.next_u64().checked_rem(span).unwrap() as i64)
+                .saturating_sub(i64::from(magnitude)) as i32;
+            let shift = lcg.pick(&SHIFTS);
+            for _ in 0..64 {
+                let reward = if lcg.below(2) == 0 {
+                    magnitude
+                } else {
+                    magnitude.saturating_neg()
+                };
+                expected = one(reward, expected, shift);
+                assert!(
+                    expected.unsigned_abs() <= magnitude.unsigned_abs(),
+                    "{magnitude} {shift}: {expected}"
+                );
             }
         }
     }
