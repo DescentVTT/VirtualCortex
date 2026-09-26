@@ -505,15 +505,42 @@ pub(crate) fn run_on(
 /// `run_on` with the task's mapping flipped once (brief 040): before the trial of index
 /// `flip`, if one is given, `task.mirrored` is negated and nothing else is touched, so the
 /// trials before it are `run_on`'s and a trial after it is judged, rewarded and counted
-/// correct under the other mapping; with none it is `run_on`, which calls it so.
+/// correct under the other mapping; with none it is `run_on`, which calls it so. It is
+/// `run_on_scheduled` with a schedule of one flip or none, which it calls so.
 pub(crate) fn run_on_flipped(
     exec: &mut Engine,
-    mut task: Task,
+    task: Task,
     units: u32,
     trials: usize,
     flip: Option<usize>,
     observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
 ) -> (Vec<Block>, u64) {
+    run_on_scheduled(exec, task, units, trials, flip.as_slice(), observe)
+}
+
+/// Whether the mapping in force at the trial of index `trial` is the other than the run's
+/// first under a schedule of flips (brief 047): an odd number of the flips at or before it.
+/// With one flip it is whether the trial is at or after it, and with none it is never.
+pub(crate) fn flipped_at(flips: &[usize], trial: usize) -> bool {
+    flips.iter().filter(|&&f| f <= trial).count() & 1 == 1
+}
+
+/// `run_on_flipped` under a schedule of flips (brief 047): before the trial of each index in
+/// `flips`, which strictly increase, `task.mirrored` is negated and nothing else is touched,
+/// so a trial is judged, rewarded and counted correct under the mapping `flipped_at` gives
+/// it; with one flip or none it is `run_on_flipped`, which calls it so.
+pub(crate) fn run_on_scheduled(
+    exec: &mut Engine,
+    mut task: Task,
+    units: u32,
+    trials: usize,
+    flips: &[usize],
+    observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
+) -> (Vec<Block>, u64) {
+    assert!(
+        flips.windows(2).all(|w| w[0] < w[1]),
+        "a schedule's flips strictly increase: {flips:?}"
+    );
     assert_eq!(
         exec.addressed_counts(),
         (units as usize, units as usize),
@@ -542,7 +569,7 @@ pub(crate) fn run_on_flipped(
     let mut seen = 0u32;
     let mut ties = 0u32;
     for trial in 0..trials {
-        if flip == Some(trial) {
+        if flips.contains(&trial) {
             task.mirrored = !task.mirrored;
         }
         let overwritten = exec.train_overwritten();
@@ -9036,7 +9063,8 @@ pub(crate) fn critic_step(expected_q16: i32, reward_q16: i32, shift: u32) -> (i3
 /// delivered, holds the record's signal, traces and weights to the oracle as it does without
 /// one. Returns the run, the moves, and each trial's expectations after it, `[A, B]`, as the
 /// oracle holds them; with no critic the outcome carries no expectation, the reward is the
-/// outcome's, the run is `earned_run_signed`'s, and the third value is empty.
+/// outcome's, the run is `earned_run_signed`'s, and the third value is empty. It is
+/// `earned_run_scheduled` with a schedule of one flip or none, which it calls so.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_predicted(
     exec: &mut Engine,
@@ -9046,6 +9074,38 @@ pub(crate) fn earned_run_predicted(
     trials: usize,
     baseline_q16: i32,
     flip: Option<usize>,
+    signed: bool,
+    critic: Option<Critic>,
+    after: &mut dyn FnMut(&Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
+    earned_run_scheduled(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flip.as_slice(),
+        signed,
+        critic,
+        after,
+    )
+}
+
+/// `earned_run_predicted` under a schedule of flips (brief 047): `run_on_scheduled` negates
+/// the task's `mirrored` before the trial of each index in `flips`, and every trial's contract
+/// is asserted under the mapping in force at it, `mirrored` where `flipped_at` is false and
+/// the other where it is true; the critic's expectations are carried across every flip. With
+/// one flip or none it is `earned_run_predicted`, which calls it so.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_scheduled(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flips: &[usize],
     signed: bool,
     critic: Option<Critic>,
     after: &mut dyn FnMut(&Engine, usize),
@@ -9092,12 +9152,12 @@ pub(crate) fn earned_run_predicted(
     let mut expectations = critic.map(|c| c.expected_q16);
     let shift = critic.map_or(0, |c| c.shift);
     let mut expected_after: Vec<[i32; 2]> = Vec::new();
-    let (blocks, trace) = run_on_flipped(
+    let (blocks, trace) = run_on_scheduled(
         exec,
         task,
         units,
         trials,
-        flip,
+        flips,
         &mut |exec, trial, start, outcome| {
             // The task rewarded at the trial's end, before this reading: the oracle holds the
             // record's signal to the course's end plus it.
@@ -9108,8 +9168,9 @@ pub(crate) fn earned_run_predicted(
                 selected(outcome.counts),
                 "trial {trial}: the selection is the sign of the count difference"
             );
-            // The mapping in force: the run's before the flip, the other from it on.
-            let in_force = mirrored != flip.is_some_and(|f| trial >= f);
+            // The mapping in force: the run's before the first flip, the other from it on,
+            // and back at the next.
+            let in_force = mirrored != flipped_at(flips, trial);
             let answer = answer_of(outcome.stimulus, in_force) as u8;
             assert_eq!(
                 outcome.correct,
