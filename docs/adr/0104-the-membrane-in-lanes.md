@@ -1,11 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-26
 depends-on: ADR-0103
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0104: The membrane's rule in lanes — ADR-0103's first option: phase 1 integrates a chunk of eight of a worker's scheduled units in two vectors of four `i32` lanes, each unit's inputs taken and its fields loaded into a lane in unit order, the chunk integrated together, and each unit's fields stored back and its spike recorded in unit order again; every step of the rule written at one width, `integrate`'s two `i64` steps rewritten in `i32` with the same result and the inputs read in every lane and masked, so that the compiler's loop vectorizer takes it at the baseline; the spike's path in lanes; one reference to a record at a time, so phase 1's `unsafe` stands as ADR-0100 wrote it; development readings that predict no gain at (a), written before the first timed run; brief 045
+# ADR-0104: The membrane's rule in lanes, built and not kept — ADR-0103's first option, a chunk of eight scheduled units in two vectors of four `i32` lanes with every step at one width and every lane held to `integrate` over the lattice, was vectorized by the compiler at the baseline and read 1.209, 1.132, 1.211 and 1.122 of the base's wall time per tick at ADR-0097's runs (a) to (d), against ADR-0099's bounds of 0.80 and 1.10, as predicted before the run; moving the fields through the lanes cost more than the vector rule saved against a scalar rule whose branches the reference network makes predictable; the code stays in the history; finding F-51, the integration about two thirds of a turn and not all of it, resolved by a bench case of the rule's throughput; the next decision named and not taken
 
 ## Context and Problem Statement
 
@@ -34,7 +34,9 @@ For the chunk: four units (one vector), eight (two), sixteen (four). For the lay
 
 ## Decision Outcome
 
-**Option 1: a chunk of eight units, one array per field, in `cortex-core`'s `MembraneLanes`.**
+**Option 1 — a chunk of eight units, one array per field, `cortex-core`'s `MembraneLanes` — was built and measured, and is not kept**: no bound of ADR-0099 is met (1.209 at (a) against 0.80). The code is `2aca7d3` and `f57349d` and is reverted in the same pull request (`49fabb0`); what the pull request keeps is this record, the readings in `docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md` and a bench case of the rule's throughput.
+
+### The design built (`2aca7d3`, `f57349d`)
 
 - **Why not within a record.** The four lanes would take four different steps: the three leaks by shifts of 11, 9 and 10 and the threshold's decay by 12 toward its base, where SSE2 shifts every lane by one count; and the soma's step reads the basal and apical potentials the same tick has just moved, so three of the four lanes feed the fourth in sequence. What is left to run in parallel is the leak of three potentials, against the shuffles and the per-lane shift emulation it would cost.
 - **The lane form.** `MembraneLanes` (`crates/cortex-core/src/dynamics/lanes.rs`) holds `LANES = 8` lanes of each integrated field and input, every one widened to `i32` so that every step runs at one width: the four potentials, the plateau's and the refractory countdowns, the burst bit, the basal and apical inputs, and the spike. `load(lane, unit, basal, apical)` takes a unit's fields and inputs into a lane; `integrate()` runs one tick in every lane; `store(lane, unit, now)` writes a lane back, stamps the tick if it fired, and returns what `integrate` returns. `integrate` itself is not edited. No `unsafe`, no allocation, no dependency; `#![no_std]` as the crate is.
@@ -53,6 +55,9 @@ For the chunk: four units (one vector), eight (two), sixteen (four). For the lay
   - a seeded walk of $2^{17}$ ticks of eight lanes, a million lane-ticks, from armed units under edge-biased inputs and a working-range drive, a lane restarting anywhere in the domain one tick in 64;
   - the two comparisons a walk meets at equality only by chance: a soma exactly at its threshold (fires) and one LSB short (does not), and an apical potential exactly at the plateau's threshold on a spike (starts one) and one LSB below (does not).
   Each lane is compared with `integrate` on a copy of the same record: every plain field of the record, and the return value.
+
+### The acceptance and the measure, fixed before the first timed run
+
 - **The acceptance** is ADR-0099's, unchanged.
 - **The measure**, fixed here before the first timed run, is ADR-0102's on ADR-0101's workload with ADR-0099's bounds:
   - *Builds:* the base is `main` at the round's start, `f3083d7`, the sweep kept; the change is the round's commit of the code, the code the mutation gate read in CI. Each is exported with `git archive` into a directory of its own and built with `cargo test -p cortex-runtime --release --locked --test active --no-run` into a target directory of its own.
@@ -66,7 +71,7 @@ For the chunk: four units (one vector), eight (two), sixteen (four). For the lay
 
 The design was chosen on readings taken on the developer machine before this ADR was written, and they are recorded here because they predict the criterion's outcome. They are not admissible, and not a criterion; none is pinned.
 
-- **Where run (a) sits.** A snapshot of the reference network's 1 024 units after run (a)'s lead-in (the first nine rows of its layout, one worker): every unit in the working range, soma about 0.3 to 0.5 and basal about 0.9 of the threshold, apical zero, threshold at its base, no window running. Every branch of `integrate` goes the same way on every unit: on this workload the scalar rule's branches are predictable.
+- **Where run (a) sits.** A snapshot of the reference network's 1 024 units after run (a)'s lead-in and first window (the first ten rows of its layout, one worker): every unit in the working range, soma about 0.3 to 0.5 and basal about 0.9 of the threshold, apical zero, threshold at its base, no window running. Every branch of `integrate` goes the same way on every unit: on this workload the scalar rule's branches are predictable.
 - **On that snapshot** (a bench in the session's scratch directory, 1 024 units, 64 ticks from the snapshot, 2 000 rounds; nanoseconds a unit): `integrate` over the independent units 4.8 to 5.1; `MembraneLanes::integrate` alone 2.7 to 2.8; the lanes with `load` and `store` 5.7 to 6.1 at a chunk of eight, 7.7 at four and 6.2 at sixteen; the second layout (each unit's sixteen bytes of potentials copied whole into a row, the compiler transposing: fully unrolled, vectorized) 6.0, and 6.4 inlined into the chunk's loop.
 - **In the executor**, this ADR's design at run (a) on one worker, two readings each: 14 573 and 13 586 ns a tick against the base's 11 799 and 11 576, every row of ADR-0097's table held.
 - **The ceiling.** The vector rule saves at most about 2.2 ns a unit on this snapshot (4.9 against 2.75), against a turn of about 11.2 ns on one worker: even if loading and storing a chunk cost nothing, the turn would be about 0.8 of the base's at (a). Moving eight units' fields into the lanes and back costs about 3 ns a unit, more than the vector rule saves, because the scalar rule's branches are predictable here and SSE2's four lanes take about 58 instructions a unit for the rule.
@@ -77,12 +82,59 @@ The design was chosen on readings taken on the developer machine before this ADR
 
 Run `36224029050` on the pull request, at `f57349d`, the code the session times: 63 mutants in the lines the pull request changes (the lane form, its registration and the executor's `phase_turns`, `take_inputs` and `finish_turn`), **63 caught**, none unviable, no timeout, none missed, in 11 minutes. No survivor, so the code is not changed before the timing. On the developer machine the same gate over `lanes.rs` alone read 28 caught and none missed; its other 29 did not link (`LNK1104`, the machine's), which is why the reading is CI's.
 
+### The readings
+
+The session of 2026-09-26, 06:45:57Z to 06:55:11Z, on the developer machine (`docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md`, not admissible). The idle check passed on six samples at 5.1 to 8.4 per cent. The sampler's log was judged by ADR-0102's rule before any reading was looked at: other processes held at most 1.26 logical processors in part 1 and 0.69 in part 2, against the rule's four, so **neither part was disturbed**. Every run of both builds held ADR-0097's pinned rows, 110 runs in all.
+
+Part 1, the criterion: two workers, five alternating pairs, the median of five readings a build, change/base:
+
+| Run | Base (ns a tick) | Change | Change/base | Bound |
+| :--- | ---: | ---: | ---: | :--- |
+| (a) 1 024 units, ADR-0044's drive | 5 003 | 6 047 | **1.209** | 0.80, not met |
+| (b) sixteen times sparser | 3 594 | 4 070 | **1.132** | 1.10, not met |
+| (c) 256 times sparser | 722 | 874 | **1.211** | 1.10, not met |
+| (d) 4 096 units, ADR-0044's drive | 26 628 | 29 877 | **1.122** | 0.80, not met |
+
+The controls, beside them: 1.083, 1.149 and 1.244 at (a) to (c). Part 2, one worker, beside it and not a criterion: 1.174 at (a) (8 692 against 10 205 ns a tick) and 1.364 at (c) (711 against 970), the controls 1.141 and 1.370. The prediction, written first, held: slower at every run, above 1.0 at (a) and (d).
+
+**The vectorizer** (`cargo rustc -p cortex-core --release --locked --lib -- --emit asm -C remark=loop-vectorize` at `2aca7d3`, x86-64; AArch64 not read): `MembraneLanes::integrate` is "vectorized loop (vectorization width: 4, interleaved count: 1)", two iterations of 231 instructions, every one SSE2 but the loop's counter and branch, against `integrate`'s 168 instructions and 17 branches. The compiler did what the design asked of it. It is the rest that did not pay.
+
+### The per-turn breakdown, and F-51
+
+From the same session and the bench four minutes after it (`8184d32`, not disturbed; figures of one session only, since this machine's frequency is not fixed and the whole bench read 20 to 52 per cent below brief 044's that morning):
+
+- **`neuron/integrate` reads one unit's chain.** The case steps one unit on its own state, so each call waits on the one before: 6.86 ns. The sweep integrates units that do not wait on one another. `neuron/integrate_x1024`, added by this round, integrates 1 024 armed units each on its own record, from where run (a) leaves them after its lead-in: **5.67 ns a unit**.
+- **On one worker at (a) the base's turn is 8.49 ns.** The integration is about two thirds of it. The rest, about **2.8 ns**, is the turn's other steps: the mail check, the batch's sort, sum and scaling, the rest check and the gate byte, and the schedule's bit.
+- **The lanes' turn was 9.97 ns**, 1.48 ns more. Taking a chunk's fields into the lanes and back, and serving the turn in two passes, cost more than the vector rule saved. On the snapshot the vector rule alone read 2.75 ns a unit against the scalar rule's 4.9, a ceiling of about 2 ns a turn even if moving the fields had cost nothing: short of the 0.80 bound at (a) by itself.
+- **At (c)** on two workers, an idle tick's synchronisation (`executor/idle_tick/2`, 206 ns) is about two sevenths of the base's tick (722 ns). A message costs `mailbox/push_drain_x16` / 16 = 4.45 ns.
+
+**Finding F-51** (whitepaper §11). The chain was read as the turn's integration. ADR-0100's and ADR-0102's breakdowns set the one-worker turn at (a) beside `neuron/integrate` from other sessions and read "on the sweep the integration is the turn". ADR-0103 and brief 045 took that as the working layout's measured need. Read in one session, the integration is about two thirds of the turn and the rest about a third. The lever was still aimed at the larger part, but the need was a third smaller than written, and a lever on the rest of the turn was never named. **Resolved here:** `neuron/integrate_x1024` reads the rule's throughput beside the chain, and whitepaper §11.1 says what a turn is made of. ADR-0100, ADR-0102 and ADR-0103 are records and are not edited.
+
+### The verdict and what the pull request carries
+
+- **Not kept.** No bound is met. Under ADR-0099 no constant moves and there is no further attempt at this lever in this form.
+- **Reverted** in `49fabb0`: the lane form (`lanes.rs`, its registration and its property tests) and its use in phase 1. Against `f3083d7` the tree's code under `crates/` and `runtime/` is unchanged. The code stays in the history at `2aca7d3` and `f57349d`: every lane held to `integrate` over the lattice, the loop vectorized at width 4, the gate 63 caught of 63, every pinned row held.
+- **Kept:** this record, the readings, and the bench case `neuron/integrate_x1024` (`8184d32`, `docs/benchmarks/README.md`), which reads the rule's throughput beside the chain for whatever lever comes next. Adding it is within the brief's empowerment ("whether a bench case … is added").
+- **The mutation gate** on the pull request's final diff has no source line to mutate: the lanes and their revert net to nothing, and `benches/**` is excluded (`.cargo/mutants.toml`). The lanes' own lines were gated before the timing (above).
+- **The weekly dispatch's scope** ([ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`. Against `main` the diff changes no file under a `src/` directory (the lanes and their revert net to nothing, and the bench case is in `benches/cortex-bench/benches/`), deletes no test and takes none out of the swept suite, and leaves `.cargo/mutants.toml` and the `mutants-weekly` job as they were.
+
+### The next decision (named, not taken)
+
+ADR-0103: after this lever, "the round's ADR names the next decision and does not take it". The readings above say what each candidate would meet:
+
+1. **The lookahead**, ADR-0099's third lever. At (c) the synchronisation of a tick is about two sevenths of it on two workers. At (a) and (d) there is little to take, since the barriers are a few per cent of a tick.
+2. **The rest of the turn** (F-51), a lever ADR-0099 did not name. About a third of a turn at (a) on one worker is not the integration: the mail check, the empty batch's sort, sum and scaling, the rest check and the gate byte. It changes no rule.
+3. **A persistent working copy of the integrated fields**, which removes what cost the lanes here, the transposition every tick. It amends quality goal 2 and ADR-0001 (ADR-0103), and the snapshot bounds its gain: the vector rule saves about 2 ns of a turn of about 8.5 at (a).
+4. **A wider baseline**: target features beyond SSE2 and NEON, eight lanes and a vector `min`, `max` and `abs`. It is a decision about every build and every CI job (ADR-0103), and alone it leaves the transposition as it is.
+5. **The speed line closed** and the learning line resumed from H-18's named next decision ([ADR-0098](0098-the-integration-model.md)).
+
 ### Consequences
 
-- Good: the lane form exists, is held to `integrate` on every lane over the lattice, and is vectorized at the baseline with no intrinsic, no target feature and no dependency; the i32 rewrite of the two `i64` steps is proved and tested, and is what any later vector form of the rule starts from.
-- Good: the readings say where the lever meets the baseline: not in the rule's `i64` steps, which the rewrite removes, but in moving the fields through the lanes, against a scalar rule whose branches the reference network makes predictable.
-- Bad: if the prediction holds, the lever in this form is spent, and what the next decision can weigh is a wider baseline (a decision about every build, left to an ADR of its own by ADR-0103), the lookahead, or closing the speed line.
-- Neutral: two forms of one rule, held to each other by the property test, while the lanes are in the tree.
+- Good: the round read what it was built to read, and the prediction written before the run held. The lever is spent in this form, and the reading says why: the baseline's four lanes take the rule, but a scalar rule whose branches the reference network makes predictable leaves them less to save than moving the fields costs.
+- Good: the rewrite of `integrate`'s two `i64` steps in `i32` is proved, tested over the lattice and in the history at `2aca7d3`, for any later vector form of the rule.
+- Good: F-51 corrects the need the speed line was steered by, and the bench now reads the rule's throughput beside the chain.
+- Bad: the engine is not faster.
+- Neutral: two forms of one rule are not kept in step, since the lanes are not in the tree.
 
 ## Alternatives considered and why rejected
 
@@ -94,4 +146,9 @@ Run `36224029050` on the pull request, at `f57349d`, the code the session times:
 
 ## Confirmation
 
-`crates/cortex-core/src/dynamics/lanes.rs` holds the lane form and its property test; `runtime/cortex-runtime/src/executor.rs`'s `phase_turns`, `take_inputs` and `finish_turn` use it. The mutation gate's reading, the timed session's readings, the one-worker readings, the vectorizer's reading from the generated code, the per-turn breakdown after the change and the verdict are completed by the round.
+- `2aca7d3`: the lane form and its three property tests; `f57349d`: its use in phase 1; every test of the tree passed on it, the differential test on one, two and four workers and `tests/no_alloc.rs` among them, and ADR-0097's rows held in every timed run.
+- Run `36224029050`: the mutation gate on the lanes' lines, 63 caught of 63, before the first timed run.
+- `49fabb0`: the revert; against `f3083d7` the code under `crates/` and `runtime/` is unchanged.
+- `8184d32`: `neuron/integrate_x1024`.
+- `docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md`: every reading above, the session's load log judged, the scripts, the snapshot and the scratch bench.
+- The evidence: the weekly dispatched on this round's branch with `scope=exhaustive`, completed by the round.
