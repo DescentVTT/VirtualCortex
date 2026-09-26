@@ -5,9 +5,9 @@ date: 2026-09-26
 
 > **Executed 2026-09-26 in pull request #128.** Writes ADR-0102 (the sweep timed with no census, and kept); closes no
 > finding (F-50 was resolved by ADR-0101 before the round). The census-free path is a parameter of `tests/active.rs`'s
-> `read` (`ad32761`), the base of the timing: six weekly tests time ADR-0097's four runs with no census, (a) to (d) on
+> `read` (`700e849` on `main`, `ad32761` on the branch), the base of the timing: six weekly tests time ADR-0097's four runs with no census, (a) to (d) on
 > two workers and (a) and (c) on one, each held to the pinned tables, and ADR-0097's census tests keep their census. The
-> sweep was re-applied by reverting its revert (`a46cf33`) with no line of its code changed, and the mutation gate was
+> sweep was re-applied by reverting its revert (`c880bdb` on `main`, `a46cf33` on the branch) with no line of its code changed, and the mutation gate was
 > read on its lines in CI before any run was timed: 50 mutants, 49 caught, 1 unviable, none missed. Every reading of
 > behaviour held bit for bit and no pin was restated. Timed by ADR-0099's protocol on an idle developer machine (not
 > admissible), under a disturbance rule written before the session (no part disturbed), five alternating pairs,
