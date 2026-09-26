@@ -16,6 +16,7 @@ use cortex_runtime::{Config, Executor};
 use cortex_workspace::GlobalWorkspaceSlot;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
+use std::time::{Duration, Instant};
 
 /// A production-geometry wheel (4 MB) built on a thread with a large stack and moved to the
 /// heap; `Box::new(WorkerWheel::new())` on the main thread would overflow its stack.
@@ -226,6 +227,48 @@ fn neuron(c: &mut Criterion) {
             let apical = (rng.next_u32() >> 23) as i32;
             tick = tick.wrapping_add(1);
             black_box(unit.integrate(black_box(basal), black_box(apical), tick))
+        });
+    });
+
+    // One tick of 1 024 armed units, each on its own record, as phase 1's sweep serves them
+    // (ADR-0104, F-51): `integrate` above steps one unit on its own state, so each call waits
+    // on the one before and it reads one unit's chain; here no call waits on another, which
+    // reads the rule's throughput. The units start where ADR-0097's run (a) leaves the
+    // reference network after its lead-in: soma a quarter to a half of the threshold, basal
+    // three quarters to all of it, apical at rest, threshold at its base, no window running;
+    // every tick is the first from that state, with no input, and only the integrations are
+    // timed.
+    const UNITS: usize = 1024;
+    group.throughput(Throughput::Elements(UNITS as u64));
+    group.bench_function("integrate_x1024", |b| {
+        let mut rng = Lcg(Lcg::SEED);
+        let start: Vec<(i32, i32)> = (0..UNITS)
+            .map(|_| {
+                let quarter = (THRESHOLD_BASE / 4) as u32;
+                (
+                    rng.range(quarter, 2 * quarter) as i32,
+                    rng.range(3 * quarter, 4 * quarter) as i32,
+                )
+            })
+            .collect();
+        let mut units: Vec<DendriticSuperNeuron> =
+            (0..UNITS as u64).map(DendriticSuperNeuron::new).collect();
+        b.iter_custom(|iters| {
+            let mut timed = Duration::ZERO;
+            for tick in 0..iters {
+                for (u, &(soma, basal)) in units.iter_mut().zip(&start) {
+                    u.v_soma = soma;
+                    u.v_basal = basal;
+                    u.v_apical = 0;
+                    u.v_thresh = THRESHOLD_BASE;
+                }
+                let begun = Instant::now();
+                for u in &mut units {
+                    black_box(u.integrate(black_box(0), black_box(0), tick as u32));
+                }
+                timed += begun.elapsed();
+            }
+            timed
         });
     });
     group.finish();
