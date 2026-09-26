@@ -1,21 +1,43 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-26
 ---
+
+> **Executed 2026-09-26 in pull request #128.** Writes ADR-0102 (the sweep timed with no census, and kept); closes no
+> finding (F-50 was resolved by ADR-0101 before the round). The census-free path is a parameter of `tests/active.rs`'s
+> `read` (`ad32761`), the base of the timing: six weekly tests time ADR-0097's four runs with no census, (a) to (d) on
+> two workers and (a) and (c) on one, each held to the pinned tables, and ADR-0097's census tests keep their census. The
+> sweep was re-applied by reverting its revert (`a46cf33`) with no line of its code changed, and the mutation gate was
+> read on its lines in CI before any run was timed: 50 mutants, 49 caught, 1 unviable, none missed. Every reading of
+> behaviour held bit for bit and no pin was restated. Timed by ADR-0099's protocol on an idle developer machine (not
+> admissible), under a disturbance rule written before the session (no part disturbed), five alternating pairs,
+> medians, change/base:
+>
+> - (a) 0.517 and (d) 0.643, within their bound of 0.80;
+> - (b) 0.527 and (c) 0.745, within their bound of 1.10.
+>
+> **Kept**: axiom A3 is enforced by ownership, ADR-0017's and ADR-0023's decisions are amended, and the whitepaper's
+> A3, §5, §6.1, §8.5 and §11.1 are restated (4.54.0). Beside the criterion, ADR-0099's census workload read 1.156 at
+> (c) again, and one worker read 0.521 and 0.649 at (a) and (c). The weekly dispatch at `scope=both` (run
+> 36209381108) was green: all 63 whole-domain tests passed, and the whole-tree sweep caught 3 411 of 3 577 mutants
+> with none missed and the same 25 timeouts as before the sweep. The cost table is regenerated from it. Image format
+> 16; no rule of the engine changed. Every deliverable is dispositioned below. Relative links gained one `../` so
+> that they resolve from `archive/`; no other word, claim or figure changed.
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 044: The sweep measured again — ADR-0100's sweep without the gate, re-applied as built and timed on ADR-0097's four runs with no census in the timed ticks, against ADR-0099's bounds unchanged; kept or not by that reading alone
 
 ## Mission
 
 **This brief makes the engine faster, or reads that it does not, and changes no rule.**
-[ADR-0100](../docs/adr/0100-the-sweep-without-the-gate.md) built the sweep without the gate: each worker owns a fixed
+[ADR-0100](../../docs/adr/0100-the-sweep-without-the-gate.md) built the sweep without the gate: each worker owns a fixed
 range of the units and serves it in unit order from a schedule bitmap, with no deque, no stealing and no
 compare-and-swap in the turn. It held every reading of behaviour bit for bit. It did not keep the sweep, because
-[ADR-0099](../docs/adr/0099-the-engines-speed.md)'s workload read 1.178 of the base's wall time per tick at
-[ADR-0097](../docs/adr/0097-the-active-set-measured.md)'s run (c), against a bound of 1.10. That workload's harness reads
+[ADR-0099](../../docs/adr/0099-the-engines-speed.md)'s workload read 1.178 of the base's wall time per tick at
+[ADR-0097](../../docs/adr/0097-the-active-set-measured.md)'s run (c), against a bound of 1.10. That workload's harness reads
 every unit's gate byte on worker 0 between the timed ticks (F-50).
 
-[ADR-0101](../docs/adr/0101-the-sweep-measured-again.md) takes ADR-0100's second option: the same sweep, timed again on
+[ADR-0101](../../docs/adr/0101-the-sweep-measured-again.md) takes ADR-0100's second option: the same sweep, timed again on
 a workload whose timed ticks carry no census, against the same bounds. ADR-0101 says openly that this workload was chosen
 after the first reading failed.
 
@@ -67,12 +89,12 @@ not worth keeping. In both cases it holds:
   moved: the determinism pin with those bytes masked is the pin. Any other pin that moves stops the round: it is a
   finding, the change is not merged, and there is no re-pin and no second attempt.
 - No record field and no image format moves (16). `unsafe` stays in the runtime, under its invariant restated with its
-  test ([ADR-0023](../docs/adr/0023-executor.md)). No `f32`/`f64`; saturating or named-wrapping arithmetic on state
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). Nothing allocates after start-up.
+  test ([ADR-0023](../../docs/adr/0023-executor.md)). No `f32`/`f64`; saturating or named-wrapping arithmetic on state
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). Nothing allocates after start-up.
 - A heavy run is an `#[ignore]`d `exhaustive` test; the runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The engine is read before a description of it is trusted**, this brief's included.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -115,45 +137,45 @@ the symbols and the quoted sentences are what to re-derive.
    quiet run before an image. It is not in the timed workload.
 5. **ADR-0100's first session was discarded** because another repository's mutation run held every logical processor.
    Nothing on the machine is the round's to stop. If the machine is not idle, the round waits and says so.
-6. **The weekly job** ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md),
-   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): the scope follows the round's own diff, and the
+6. **The weekly job** ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md),
+   [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): the scope follows the round's own diff, and the
    cost table is regenerated from its dispatch.
 
 ## Deliverables
 
-- [ ] **The census-free timing path, in the base, before the sweep.** A way to run ADR-0097's four configurations whose
+- [x] **The census-free timing path, in the base, before the sweep.** A way to run ADR-0097's four configurations whose
   timed ticks carry no census, every row still held to `NETWORK_ROWS` (and to `CONTROL_ROWS` where a control is run).
   ADR-0097's four weekly tests keep their census as they are. Committed on the round's branch before the sweep's commit;
   the base build is this commit.
-- [ ] **The sweep re-applied**, by reverting `5aa57c5`, with only the changes the standing directives allow, each listed
+- [x] **The sweep re-applied**, by reverting `5aa57c5`, with only the changes the standing directives allow, each listed
   in the round's ADR. All of the tree's tests pass on it, the differential test at one, two and four workers included.
   **The mutation gate on its diff is read before the first timed run**, in CI on the round's pull request (the Windows
   linker's LNK1104 makes a local unviable mark unreliable). A survivor is met by a test, or by a change that moves neither
   behaviour nor a turn's work, committed before the timing.
-- [ ] **The gain, by ADR-0101's workload and ADR-0099's protocol.**
+- [x] **The gain, by ADR-0101's workload and ADR-0099's protocol.**
   - The four runs, base and change, five alternating pairs, each run's median and the ratio change/base, the processor
     samples beside them, recorded in `docs/benchmarks/results/` with the machine, `admissible: no`.
   - **Kept** when (a) and (d) are ≤ 0.80 and (b) and (c) ≤ 1.10.
   - Beside it, and not a criterion: the same five pairs on ADR-0099's census workload, and one worker at (a) and (c).
-- [ ] **A new ADR at the next free number (`ls docs/adr`)**: the instrument, the sweep's re-application and any listed
+- [x] **A new ADR at the next free number (`ls docs/adr`)**: the instrument, the sweep's re-application and any listed
   change, the pins, the readings and the verdict.
   - **If kept**: the sweep lands as ADR-0100 designed it; ADR-0017's and ADR-0023's decisions amended where it says; and
     what the working layout's round should weigh.
   - **If not kept**: the pull request carries the readings, the instrument and the ADR, not the sweep; there is no
     further attempt at the sweep in this form; and the next decision is named among ADR-0100's options 1, 3, 4 and 5 and
     not taken.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff, the clause stated
+- [x] **The evidence.** A weekly dispatched on this round's branch at the scope ADR-0075 gives the diff, the clause stated
   in the ADR. It must be green in every job, every pinned number reproduced, and the sweep's survivors dispositioned
   (which is the whole-tree reading of the sweep's lines if it is kept). The shards' times are read beside ADR-0100's as a
   secondary reading, and the cost table is regenerated from that run.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - If kept: whitepaper §4's A3 row and every sentence that says the gate enforces it; §6.1's executor paragraph and its
     assertions; §8.5.
   - Always: §11.1's question on the engine's speed, with this round's outcome; §9; the ADR index; `CHANGELOG.md`;
     `CLAUDE.md`; `docs/zh-TW`'s reader's guide.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 
