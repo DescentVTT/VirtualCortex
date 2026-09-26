@@ -2,10 +2,13 @@
 status: accepted
 date: 2026-09-10
 decision-makers: VirtualCortex maintainers
+amended-by: ADR-0102
 depends-on: ADR-0017
 ---
 
 # ADR-0023: The executor — a runtime crate, in-house work-stealing deques, three barrier-separated phases per tick, and the one `unsafe` in the workspace
+
+> Amended by [ADR-0102](0102-the-sweep-timed-with-no-census.md) (2026-09-26), under which the executor has no deque and no stealing: each worker owns a fixed, contiguous range of the unit arena and serves in unit order the units of it a schedule bitmap names, with no stealing and no compare-and-swap in the turn ([ADR-0100](0100-the-sweep-without-the-gate.md)'s design). The three barrier-separated phases, the fixed pool, the one `unsafe` and its invariant stand; in phase 1 the invariant is upheld by the partition, not by the gate's claim. The deque described below is in the history.
 
 ## Context and Problem Statement
 
