@@ -34,9 +34,9 @@ For the chunk: four units (one vector), eight (two), sixteen (four). For the lay
 
 ## Decision Outcome
 
-**Option 1 — a chunk of eight units, one array per field, `cortex-core`'s `MembraneLanes` — was built and measured, and is not kept**: no bound of ADR-0099 is met (1.209 at (a) against 0.80). The code is `2aca7d3` and `f57349d` and is reverted in the same pull request (`49fabb0`); what the pull request keeps is this record, the readings in `docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md` and a bench case of the rule's throughput.
+**Option 1 — a chunk of eight units, one array per field, `cortex-core`'s `MembraneLanes` — was built and measured, and is not kept**: no bound of ADR-0099 is met (1.209 at (a) against 0.80). The code is `b50ed8c` and `dc9c5ad` and is reverted in the same pull request (`413590f`); what the pull request keeps is this record, the readings in `docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md` and a bench case of the rule's throughput.
 
-### The design built (`2aca7d3`, `f57349d`)
+### The design built (`b50ed8c`, `dc9c5ad`)
 
 - **Why not within a record.** The four lanes would take four different steps: the three leaks by shifts of 11, 9 and 10 and the threshold's decay by 12 toward its base, where SSE2 shifts every lane by one count; and the soma's step reads the basal and apical potentials the same tick has just moved, so three of the four lanes feed the fourth in sequence. What is left to run in parallel is the leak of three potentials, against the shuffles and the per-lane shift emulation it would cost.
 - **The lane form.** `MembraneLanes` (`crates/cortex-core/src/dynamics/lanes.rs`) holds `LANES = 8` lanes of each integrated field and input, every one widened to `i32` so that every step runs at one width: the four potentials, the plateau's and the refractory countdowns, the burst bit, the basal and apical inputs, and the spike. `load(lane, unit, basal, apical)` takes a unit's fields and inputs into a lane; `integrate()` runs one tick in every lane; `store(lane, unit, now)` writes a lane back, stamps the tick if it fired, and returns what `integrate` returns. `integrate` itself is not edited. No `unsafe`, no allocation, no dependency; `#![no_std]` as the crate is.
@@ -80,7 +80,7 @@ The design was chosen on readings taken on the developer machine before this ADR
 
 ### The mutation gate, before the first timed run
 
-Run `36224029050` on the pull request, at `f57349d`, the code the session times: 63 mutants in the lines the pull request changes (the lane form, its registration and the executor's `phase_turns`, `take_inputs` and `finish_turn`), **63 caught**, none unviable, no timeout, none missed, in 11 minutes. No survivor, so the code is not changed before the timing. On the developer machine the same gate over `lanes.rs` alone read 28 caught and none missed; its other 29 did not link (`LNK1104`, the machine's), which is why the reading is CI's.
+Run `36224029050` on the pull request, at the branch's `f57349d` (`dc9c5ad` on `main`, the same tree), the code the session times: 63 mutants in the lines the pull request changes (the lane form, its registration and the executor's `phase_turns`, `take_inputs` and `finish_turn`), **63 caught**, none unviable, no timeout, none missed, in 11 minutes. No survivor, so the code is not changed before the timing. On the developer machine the same gate over `lanes.rs` alone read 28 caught and none missed; its other 29 did not link (`LNK1104`, the machine's), which is why the reading is CI's.
 
 ### The readings
 
@@ -97,11 +97,11 @@ Part 1, the criterion: two workers, five alternating pairs, the median of five r
 
 The controls, beside them: 1.083, 1.149 and 1.244 at (a) to (c). Part 2, one worker, beside it and not a criterion: 1.174 at (a) (8 692 against 10 205 ns a tick) and 1.364 at (c) (711 against 970), the controls 1.141 and 1.370. The prediction, written first, held: slower at every run, above 1.0 at (a) and (d).
 
-**The vectorizer** (`cargo rustc -p cortex-core --release --locked --lib -- --emit asm -C remark=loop-vectorize` at `2aca7d3`, x86-64; AArch64 not read): `MembraneLanes::integrate` is "vectorized loop (vectorization width: 4, interleaved count: 1)", two iterations of 231 instructions, every one SSE2 but the loop's counter and branch, against `integrate`'s 168 instructions and 17 branches. The compiler did what the design asked of it. It is the rest that did not pay.
+**The vectorizer** (`cargo rustc -p cortex-core --release --locked --lib -- --emit asm -C remark=loop-vectorize` at `b50ed8c`, x86-64; AArch64 not read): `MembraneLanes::integrate` is "vectorized loop (vectorization width: 4, interleaved count: 1)", two iterations of 231 instructions, every one SSE2 but the loop's counter and branch, against `integrate`'s 168 instructions and 17 branches. The compiler did what the design asked of it. It is the rest that did not pay.
 
 ### The per-turn breakdown, and F-51
 
-From the same session and the bench four minutes after it (`8184d32`, not disturbed; figures of one session only, since this machine's frequency is not fixed and the whole bench read 20 to 52 per cent below brief 044's that morning):
+From the same session and the bench four minutes after it (`2ef7ae0`, not disturbed; figures of one session only, since this machine's frequency is not fixed and the whole bench read 20 to 52 per cent below brief 044's that morning):
 
 - **`neuron/integrate` reads one unit's chain.** The case steps one unit on its own state, so each call waits on the one before: 6.86 ns. The sweep integrates units that do not wait on one another. `neuron/integrate_x1024`, added by this round, integrates 1 024 armed units each on its own record, from where run (a) leaves them after its lead-in: **5.67 ns a unit**.
 - **On one worker at (a) the base's turn is 8.49 ns.** The integration is about two thirds of it. The rest, about **2.8 ns**, is the turn's other steps: the mail check, the batch's sort, sum and scaling, the rest check and the gate byte, and the schedule's bit.
@@ -113,8 +113,8 @@ From the same session and the bench four minutes after it (`8184d32`, not distur
 ### The verdict and what the pull request carries
 
 - **Not kept.** No bound is met. Under ADR-0099 no constant moves and there is no further attempt at this lever in this form.
-- **Reverted** in `49fabb0`: the lane form (`lanes.rs`, its registration and its property tests) and its use in phase 1. Against `f3083d7` the tree's code under `crates/` and `runtime/` is unchanged. The code stays in the history at `2aca7d3` and `f57349d`: every lane held to `integrate` over the lattice, the loop vectorized at width 4, the gate 63 caught of 63, every pinned row held.
-- **Kept:** this record, the readings, and the bench case `neuron/integrate_x1024` (`8184d32`, `docs/benchmarks/README.md`), which reads the rule's throughput beside the chain for whatever lever comes next. Adding it is within the brief's empowerment ("whether a bench case … is added").
+- **Reverted** in `413590f`: the lane form (`lanes.rs`, its registration and its property tests) and its use in phase 1. Against `f3083d7` the tree's code under `crates/` and `runtime/` is unchanged. The code stays in the history at `b50ed8c` and `dc9c5ad`: every lane held to `integrate` over the lattice, the loop vectorized at width 4, the gate 63 caught of 63, every pinned row held.
+- **Kept:** this record, the readings, and the bench case `neuron/integrate_x1024` (`2ef7ae0`, `docs/benchmarks/README.md`), which reads the rule's throughput beside the chain for whatever lever comes next. Adding it is within the brief's empowerment ("whether a bench case … is added").
 - **The mutation gate** on the pull request's final diff has no source line to mutate: the lanes and their revert net to nothing, and `benches/**` is excluded (`.cargo/mutants.toml`). The lanes' own lines were gated before the timing (above).
 - **The weekly dispatch's scope** ([ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`. Against `main` the diff changes no file under a `src/` directory (the lanes and their revert net to nothing, and the bench case is in `benches/cortex-bench/benches/`), deletes no test and takes none out of the swept suite, and leaves `.cargo/mutants.toml` and the `mutants-weekly` job as they were.
 
@@ -131,7 +131,7 @@ ADR-0103: after this lever, "the round's ADR names the next decision and does no
 ### Consequences
 
 - Good: the round read what it was built to read, and the prediction written before the run held. The lever is spent in this form, and the reading says why: the baseline's four lanes take the rule, but a scalar rule whose branches the reference network makes predictable leaves them less to save than moving the fields costs.
-- Good: the rewrite of `integrate`'s two `i64` steps in `i32` is proved, tested over the lattice and in the history at `2aca7d3`, for any later vector form of the rule.
+- Good: the rewrite of `integrate`'s two `i64` steps in `i32` is proved, tested over the lattice and in the history at `b50ed8c`, for any later vector form of the rule.
 - Good: F-51 corrects the need the speed line was steered by, and the bench now reads the rule's throughput beside the chain.
 - Bad: the engine is not faster.
 - Neutral: two forms of one rule are not kept in step, since the lanes are not in the tree.
@@ -146,9 +146,11 @@ ADR-0103: after this lever, "the round's ADR names the next decision and does no
 
 ## Confirmation
 
-- `2aca7d3`: the lane form and its three property tests; `f57349d`: its use in phase 1; every test of the tree passed on it, the differential test on one, two and four workers and `tests/no_alloc.rs` among them, and ADR-0097's rows held in every timed run.
+The pull request (#131) was merged by rebase. Its commits are cited as `main` holds them; on the round's branch the same trees were `f026707` (`e2879c7`), `2aca7d3` (`b50ed8c`), `f57349d` (`dc9c5ad`), `89d414a` (`9596276`), `49fabb0` (`413590f`), `8184d32` (`2ef7ae0`), `c665f30` (`ac46cb6`) and `a55dc1e` (`78171e9`), and each run names the branch's commit it ran on.
+
+- `b50ed8c`: the lane form and its three property tests; `dc9c5ad`: its use in phase 1; every test of the tree passed on it, the differential test on one, two and four workers and `tests/no_alloc.rs` among them, and ADR-0097's rows held in every timed run.
 - Run `36224029050`: the mutation gate on the lanes' lines, 63 caught of 63, before the first timed run.
-- `49fabb0`: the revert; against `f3083d7` the code under `crates/` and `runtime/` is unchanged.
-- `8184d32`: `neuron/integrate_x1024`.
+- `413590f`: the revert; against `f3083d7` the code under `crates/` and `runtime/` is unchanged.
+- `2ef7ae0`: `neuron/integrate_x1024`.
 - `docs/benchmarks/results/2026-09-26-dancr-win11-brief-045.md`: every reading above, the session's load log judged, the scripts, the snapshot and the scratch bench.
-- The evidence: the weekly dispatched on this round's branch at `c665f30`, run `36225957998`, with `scope=exhaustive` (the clause above), green in every job it runs. The four whole-domain shards took 31m40s, 29m00s, 22m25s and 15m47s, their tests' wall 1 843, 1 693, 1 303 and 912 s: 26, 24, 18 and 13 per cent of the 7 200-second bound. All 63 tests passed, so every pinned number of those tests is reproduced on the tree as it merges, whose engine is `f3083d7`'s. Beside ADR-0102's run `36209381108` on the same engine, the secondary reading: 27m20s, 41m37s, 34m59s and 30m14s. The 34 tests that took a minute or more there took 0.66 of their seconds here at the median (0.15 to 1.07), the runners' variance on identical code (F-45's kind). The cost table is regenerated from this run: 63 lines, 10 779 seconds, against 15 263. No sweep was dispatched, so there is no survivor to disposition. The lanes' code passed every job of the pull request's gate before its revert (run `36224692199` at `89d414a`: check, test, fmt and clippy; the minimum supported version; AArch64; the mutation gate), and the final head passed it again (run `36225950793`).
+- The evidence: the weekly dispatched on this round's branch at the branch's `c665f30` (`ac46cb6` on `main`, the same tree), run `36225957998`, with `scope=exhaustive` (the clause above), green in every job it runs. The four whole-domain shards took 31m40s, 29m00s, 22m25s and 15m47s, their tests' wall 1 843, 1 693, 1 303 and 912 s: 26, 24, 18 and 13 per cent of the 7 200-second bound. All 63 tests passed, so every pinned number of those tests is reproduced on the tree as it merges, whose engine is `f3083d7`'s. Beside ADR-0102's run `36209381108` on the same engine, the secondary reading: 27m20s, 41m37s, 34m59s and 30m14s. The 34 tests that took a minute or more there took 0.66 of their seconds here at the median (0.15 to 1.07), the runners' variance on identical code (F-45's kind). The cost table is regenerated from this run: 63 lines, 10 779 seconds, against 15 263. No sweep was dispatched, so there is no survivor to disposition. The lanes' code passed every job of the pull request's gate before its revert (run `36224692199` at the branch's `89d414a`, `9596276` on `main`: check, test, fmt and clippy; the minimum supported version; AArch64; the mutation gate), and the final head passed it again (run `36225950793`).
