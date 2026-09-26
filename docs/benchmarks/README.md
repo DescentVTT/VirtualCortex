@@ -14,7 +14,8 @@
 | `ignition/step_ignition_x64` | 64 sub-threshold `step_ignition` calls on a fresh slot (divide by 64) | §5.2.8 |
 | `mailbox/push_drain_x16` | sixteen `mailbox_push` calls into one unit then one `mailbox_drain` walking them (divide by 16) | R-1 steps 2–3, ADR-0017 |
 | `gate/schedule_begin_end` | `try_schedule`, `begin_turn`, `end_turn` on an idle unit with an empty mailbox | R-1 step 3, ADR-0017 |
-| `neuron/integrate` | one `integrate` tick under a pseudo-random drive that fires the unit now and then | R-1 step 5, ADR-0018 |
+| `neuron/integrate` | one `integrate` tick under a pseudo-random drive that fires the unit now and then: one unit on its own state, so each call waits on the one before, which reads one unit's chain (F-51) | R-1 step 5, ADR-0018 |
+| `neuron/integrate_x1024` | one tick of 1 024 armed units, each on its own record, from where ADR-0097's run (a) leaves the reference network after its lead-in (divide by 1 024): the rule's throughput over units that do not wait on one another, as phase 1's sweep serves them | R-1 step 5, ADR-0104, F-51 |
 | `stp/step_stp` | one `step_stp` per presynaptic spike with a pseudo-random interval, both exponentiations included | §8.8, ADR-0019 |
 | `synapse/fan_out_x8` | one walk of a two-block chain of eight synapses (divide by 8) | R-1 step 6, ADR-0022 |
 | `synapse/step_stdp` | one `step_stdp_all` on a full block with pseudo-random postsynaptic stamps, four window exponentiations included | §8.8, ADR-0022 |
