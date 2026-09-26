@@ -150,8 +150,21 @@ impl DendriticSuperNeuron {
         GateState::from_u8(self.gate_state.load(Ordering::Acquire))
     }
 
-    /// Pusher, after [`mailbox_push`](Self::mailbox_push): claims the right to enqueue the unit
-    /// on a worker deque (idle → scheduled). `true` means the caller MUST enqueue it; `false`
+    /// Records the unit's schedule without claiming it: a relaxed store of `state`. For a
+    /// scheduler that keeps one writer per record by ownership and separates its phases by a
+    /// barrier, which orders the store, as the executor does since ADR-0100: the unit's owner
+    /// records scheduled or idle at the end of a turn, and a pusher records scheduled when it
+    /// finds the unit idle. A scheduler without ownership claims instead, with
+    /// [`try_schedule`](Self::try_schedule) and [`begin_turn`](Self::begin_turn).
+    #[inline]
+    pub fn set_gate(&self, state: GateState) {
+        self.gate_state.store(state as u8, Ordering::Relaxed);
+    }
+
+    /// Pusher, after [`mailbox_push`](Self::mailbox_push), in a scheduler without ownership
+    /// (ADR-0017; the executor records its schedule with [`set_gate`](Self::set_gate) since
+    /// ADR-0100): claims the right to enqueue the unit on a worker's queue (idle →
+    /// scheduled). `true` means the caller MUST enqueue it; `false`
     /// means it is already scheduled or running and the message will be drained by that turn or
     /// caught by [`end_turn`](Self::end_turn). Sequentially consistent, with the head
     /// compare-exchange before it, the idle store and the head load of `end_turn`: the four
@@ -404,6 +417,27 @@ mod tests {
         assert!(!u.try_schedule(), "a pusher cannot schedule a running unit");
         assert!(!u.end_turn(), "an empty mailbox ends the turn idle");
         assert_eq!(u.gate(), Some(GateState::Idle));
+    }
+
+    #[test]
+    fn set_gate_records_each_state_without_a_claim() {
+        let u = DendriticSuperNeuron::new(1);
+        for state in [
+            GateState::Scheduled,
+            GateState::Running,
+            GateState::Scheduled,
+            GateState::Idle,
+        ] {
+            u.set_gate(state);
+            assert_eq!(u.gate(), Some(state));
+            assert_eq!(u.encode()[56], state as u8, "the byte the image holds");
+        }
+        u.set_gate(GateState::Scheduled);
+        assert!(
+            !u.try_schedule(),
+            "a recorded schedule is one the claim sees"
+        );
+        assert!(u.mailbox_is_empty(), "the mailbox is not touched");
     }
 
     #[test]
