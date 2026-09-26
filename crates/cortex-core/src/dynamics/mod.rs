@@ -1,9 +1,11 @@
 pub mod delta;
+pub mod lanes;
 pub mod membrane;
 pub mod neuron;
 pub mod plasticity;
 pub mod synapse;
 pub use delta::{DELTA_END, DeltaChain, PlasticDelta};
+pub use lanes::{LANES, MembraneLanes};
 pub use membrane::{
     APICAL_LEAK_SHIFT, BAC_APICAL_THRESHOLD, BAC_PLATEAU_TICKS, BASAL_LEAK_SHIFT,
     BURST_REFRACTORY_TICKS, CAUSAL_LATENCY_TICKS, COUPLING_SHIFT, FLAG_BURST_MODE, FLAG_INHIBITORY,
