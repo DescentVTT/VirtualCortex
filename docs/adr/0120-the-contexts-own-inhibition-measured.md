@@ -222,6 +222,29 @@ On a developer machine in the release profile a run took about 100 s with six ot
   - The drained image's own prior synapses give the members 0.035 of excitatory and 0.002 of inhibitory input at (c)'s rates (`DRAINED_INPUT_051`, 2 274 and −110), beside the arithmetic's scaled estimate of 2 267 and −136.
   - No mean describes the failure: every cell that fails by running away fails by bursts, which is what ADR-0117 read.
 - **Under (d), the readouts** (`BG_TASK_051`, `CELL_TASK_051`). The added inhibition leaves the backgrounds' readouts within about a tenth of a spike a trial of ADR-0117's, 7.67 to 7.68 and 9.30 to 9.32 on A's trials and 8.55 to 8.58 and 9.68 to 9.74 on B's with the context quiet, and ADR-0065's measure resolves the stimulus in 58 to 64 trials of 64 in every block at every inhibitory weight (`BG_SIGHT_051`). In the cell that holds most at a quarter, against −0.25 (5 rounds), the held context adds 2.0 and 1.5 spikes a trial to readout 0 and readout 1 on A's trials and 1.3 and 0.7 on B's: to both, as ADR-0117 read. In every cell that ignites the quiet spans are not quiet, and both readouts count 1.3 to 3.8 spikes a trial more than the background's there.
+- **The evidence.** Only tests and documents change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**: run [36346275507](https://github.com/DescentVTT/VirtualCortex/actions/runs/36346275507) at `9937acc`, the documents commit, after which only this evidence, the cost table and the brief's archive change. **Every job it ran is green.**
+  - **The whole-domain tests.** All ninety-eight passed on the hosted runners: the eighty-eight before this round reproduced their pinned numbers, ADR-0115's and ADR-0117's among them through the refactored functions, and this round's ten reproduced their tables. The cost table did not know the ten and costed each at 900 s; on the runners eight took 477 to 776 s, condition (c)'s backgrounds 1 678 s and its cells 2 680 s, 9 520 s in all against the protocol's estimate of about 8 100. The eighty-eight earlier tests took 30 743 s against the table's 25 743, 19 per cent more on these runners. The five shards took:
+
+    | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
+    | ---: | ---: | ---: | ---: | :--- | :--- |
+    | 0 | 60 m 48 s | 19 | 7 146 | 3 602 s, 50 % | ADR-0117's condition (c) 1 868 |
+    | 1 | 71 m 14 s | 19 | 8 314 | 4 223 s, 59 % | H-20 from the assignment 1 761 |
+    | 2 | 88 m 12 s | 20 | 10 462 | 5 242 s, 73 % | this round's condition (c) cells 2 680 |
+    | 3 | 64 m 02 s | 20 | 7 450 | 3 786 s, 53 % | plasticity everywhere 1 115 |
+    | 4 | 58 m 45 s | 20 | 6 891 | 3 468 s, 48 % | inhibition off the gate 1 092 |
+
+    **Shard 2 passed the brief's 60 per cent in this run, at 73.** It drew this round's condition (c) cells, costed at 900 s and taking 2 680, 1 780 s over their plan where the protocol said about 1 200, beside H-20's arm from the mirrored assignment, which took 1 896 s against the table's 1 275. The brief's rule reads the regenerated deal, below; this run is what a round's dispatch costs when the table does not know its tests.
+  - **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: ninety-eight lines, 40 263 s, its source line naming the run; `npm run spec:costs` passing). Replayed through the deal, it plans each shard at 8 052 to 8 053 s summed. At this run's ratio of summed seconds to wall time, 1.97 to 2.00, that is about 4 030 to 4 090 s of tests' wall time, **56 to 57 per cent of the bound**: under the brief's 60, with less room than after any round before, since the table now carries these runners' slower times for every test. A round that adds about 2 000 s more on runners as slow would pass it.
+  - **No mutation sweep**, by the scope: the diff changes nothing under `src/`, so the sweep has nothing to find.
+
+  The pull request's gate on `9937acc` is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which found no mutant to make.
+
+  On the developer machine every command of brief 051's verification list exited 0 (a ratio, not admissible):
+  - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 651 passed in each and 98 ignored;
+  - check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
+  - `--list`, 98 tests;
+  - the in-diff mutation run, "No mutants to filter";
+  - this round's ten whole-domain tests twice, the second run at `6173ed3` against the pins, every table reproduced.
 - **Not done:**
   - The grid was not widened: nothing between a quarter and three eighths, where the region would lie if anywhere; no size of 96; no eight or thirty-two sources a member.
   - No feedback inhibition, no readout gated by the context, no switch on errors and no reward in a measured run.
@@ -241,7 +264,7 @@ On a developer machine in the release profile a run took about 100 s with six ot
 - Bad: no cell is usable. The inhibition the network drives lowered the members' excitability as a whole: at a quarter of the range nothing holds, and from three eighths up every cell ignites, so the region is no wider than ADR-0117's and lies, if anywhere, between two of the grid's steps.
 - Bad: the sources are shared and fire together with the network, so a cell's inhibition is not sixteen independent inputs; the draw is one seed's.
 - Neutral: the sources fire faster while the assembly bursts, so the inhibition ADR-0119 chose as the network's is in part the assembly's own already, after the prior's delays.
-- Bad: the weekly job grows by about 8 100 s by the estimate, and condition (c) pays H-20's arm twice.
+- Bad: the weekly job grows by 9 520 s on the runners by this round's dispatch, condition (c) paying H-20's arm twice, and the regenerated deal plans each shard at 56 to 57 per cent of its bound, near the brief's 60.
 - Neutral: the arithmetic's rates for the sources are the rest's, which under (d) count the stimulus's own units; the backgrounds read the sources' own.
 
 ## Alternatives considered and why rejected
