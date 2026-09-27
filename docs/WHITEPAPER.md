@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.67.0
+version: 4.68.0
 status: active
 date: 2026-09-27
 ---
@@ -11,7 +11,7 @@ date: 2026-09-27
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.67.0 |
+| Version | 4.68.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-27 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -2386,6 +2386,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0115](adr/0115-the-assemblies-marked.md) | The assemblies marked, measured: ADR-0112's assemblies of 16, 32 and 64 units at six recurrent weights under each of ADR-0113's two sets, every member marked and every weight frozen, through a lead-in and eight rounds of an unkicked span, a hold span with ADR-0112's kick, a release derived from the class and a tail, by rules written before any run; the arithmetic with the class's own step agreeing with ADR-0113's tables but for one sentence of its prose (F-55); one cell usable, 64 units under set (ii) at a quarter of the range, holding as a train of bursts refreshed inside the class's primed window, quiet unkicked and letting go when released, while every other cell never holds or runs away; the next decision, a readout gated by the context, named and not taken; brief 049 |
 | [ADR-0116](adr/0116-the-region-before-the-readout.md) | The region before the readout: ADR-0115's next decision deferred by one round — before a readout is gated by the context, the usable region is measured for its width and for whether it survives another draw of the delays, a network drained as H-20's arm leaves it and the task's own stimulus, on the geometry the task and the context will share; F-54 decided: the readouts give up places 5 and 16, eight places each, so that an assembly of up to 102 units at ADR-0112's placement is in no set, beside the task's geometry, which every earlier test keeps; a cell robust when usable in the core grid and under each condition, the second round's cell the robust one with the most usable neighbours; brief 050 measures, nothing of the engine changed |
 | [ADR-0117](adr/0117-the-region-measured.md) | The region measured: brief 050, nothing of the engine changed — ADR-0115's marked assemblies under set (ii) at 48 to 96 units and five weights from 0.125 to 0.375 of Q1.15's range on the settled network, and a subset of six cells under another draw of the delays, on the image H-20's arm leaves frozen and with the task's stimulus every epoch, on the geometry F-54's decision gives the context, by ADR-0115's protocol and rules for a robust cell written first; the usable region one weight, a quarter of the range, at 64, 80 and 96 units; no cell robust — the stimulus and the drained network each tip the usable cells into igniting, and 96 units fail under the other seed — so no cell for the second round; a held context reaches both readouts alike; the eight-place readouts still resolve the stimulus; the drained image's dopamine signal put at rest (F-56); the next decision named and not taken |
+| [ADR-0118](adr/0118-a-fifth-shard.md) | A fifth shard: the weekly job's whole-domain tests dealt to five shards where ADR-0088 dealt them to four, by ADR-0092's deal unchanged — each round's new tests are costed at the table's default of 900 s until their own dispatch measures them, and ADR-0117's first dispatch put one shard at 59 per cent of its bound where the regenerated table replays at 45; at five the present table plans about 36 per cent, and a round the size of brief 050's about 46; one matrix entry and one argument, the script unchanged, no required check renamed |
 
 ---
 
@@ -2762,7 +2763,7 @@ git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff tar
 cargo test --workspace --release --locked -- --ignored exhaustive
 ```
 
-The whole-domain line runs as one command here and as four shards in the weekly job ([ADR-0088](adr/0088-a-fourth-shard.md)), taken from the tests `--list` names at run time and dealt longest first to the least-loaded shard by the seconds `scripts/exhaustive-costs.tsv` records for each ([ADR-0092](adr/0092-the-shards-dealt-by-cost.md); a test it does not know costed as a heavy one), each test run in a process of its own and checked to have exited 0 with one test passed ([ADR-0084](adr/0084-the-shards-take-tests.md), [ADR-0073](adr/0073-the-whole-domain-tests-sharded.md)); a listing that fails or names nothing fails the shard (F-48); each shard reports every test's seconds ([ADR-0071](adr/0071-the-exhaustive-job-times-its-own-binaries.md), F-45), from which the table is regenerated, and `npm run spec:costs` fails on a line of it that names no test in the tree.
+The whole-domain line runs as one command here and as five shards in the weekly job ([ADR-0088](adr/0088-a-fourth-shard.md), [ADR-0118](adr/0118-a-fifth-shard.md)), taken from the tests `--list` names at run time and dealt longest first to the least-loaded shard by the seconds `scripts/exhaustive-costs.tsv` records for each ([ADR-0092](adr/0092-the-shards-dealt-by-cost.md); a test it does not know costed as a heavy one), each test run in a process of its own and checked to have exited 0 with one test passed ([ADR-0084](adr/0084-the-shards-take-tests.md), [ADR-0073](adr/0073-the-whole-domain-tests-sharded.md)); a listing that fails or names nothing fails the shard (F-48); each shard reports every test's seconds ([ADR-0071](adr/0071-the-exhaustive-job-times-its-own-binaries.md), F-45), from which the table is regenerated, and `npm run spec:costs` fails on a line of it that names no test in the tree.
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="exhaustive-shard.sh" min="1" reason="ADR-0073: the weekly job runs the whole-domain tests in shards" -->
 <!-- @assert-present file="scripts/exhaustive-shard.sh" reason="ADR-0073: the shard takes its slice from --list and checks what it ran" -->
 
