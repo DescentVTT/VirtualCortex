@@ -5,7 +5,7 @@ depends-on: ADR-0116
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0117: The region measured — brief 050's measurement: ADR-0115's marked assemblies under set (ii) at 48, 64, 80 and 96 units and five weights from an eighth to three eighths of Q1.15's range on the settled network, and a subset of six cells under another draw of the delays, on the image H-20's arm leaves and with the task's stimulus presented every epoch, on the geometry F-54's decision gives the context, every weight frozen and ADR-0115's protocol, measures and thresholds unchanged, by rules for a robust cell and for the second round's cell written before any run; the drained image frozen with its dopamine signal put at rest as well (F-56)
+# ADR-0117: The region measured — brief 050's measurement: ADR-0115's marked assemblies under set (ii) at 48, 64, 80 and 96 units and five weights from an eighth to three eighths of Q1.15's range on the settled network, and a subset of six cells under another draw of the delays, on the image H-20's arm leaves and with the task's stimulus presented every epoch, on the geometry F-54's decision gives the context, every weight frozen and ADR-0115's protocol, measures and thresholds unchanged, by rules for a robust cell and for the second round's cell written before any run; the drained image frozen with its dopamine signal put at rest as well (F-56); the usable region is one weight, a quarter of the range, at 64, 80 and 96 units, and no cell is robust — the task's stimulus ignites the context in half the rounds, so does the drained network, and 96 units fail under another draw of the delays — so there is no cell for the second round, and the next decision, among the branches ADR-0116 names for those failures, is named and not taken
 
 ## Context and Problem Statement
 
@@ -142,11 +142,92 @@ That is 54 runs of 400 epochs and one arm of H-20. At ADR-0115's hundred seconds
 5. The subset under (c) whole, its kick read on the engine before its cells inside the one test.
 6. The readings, the documents, the weekly dispatched on the round's branch at `scope=exhaustive`, its evidence and the cost table regenerated from it.
 
+### The readings
+
+Every reading below is from the pinned tables of `tests/assembly.rs`. The runs were made in the order above, from the protocol's commit, `04fda04` on the branch:
+- the core grid's backgrounds and controls, (d)'s backgrounds and controls and the test of 64 units, side by side, pinned at `dfc778b`;
+- the other three sizes and the subset under (b) and (d), pinned at `936bdd5`;
+- the subset under (c), started once the test of 64 units had held ADR-0115's two cells, pinned at `eacc7b4`.
+
+A second run of all nine tests at `eacc7b4` reproduced every table. On a developer machine in the release profile a run took about 65 s with two other tests beside it and about 85 s with four; H-20's arm took about 24 minutes beside five other tests (a ratio, not admissible). **No weight of any arena moved in any measured run.**
+
+- **ADR-0115's two cells, reproduced.** The test of 64 units ran 0.25 and 0.375 first and held each to ADR-0115's pinned stretches, kicks, windows' hash, reading and bursts before its other weights ran; 64 units' background and control are ADR-0115's bit for bit.
+- **The backgrounds** (the members marked and unwired, the drive alone after the lead-in):
+  - the core grid's members fired at 1.601, 1.613, 1.643 and 1.648 Hz a member at 48, 64, 80 and 96 units, and the rest at 1.670 to 1.683 Hz a unit;
+  - under (c) the members fired at 1.818 and 1.841 Hz at 64 and 96 units and the rest at 1.897 and 1.886, about 13 per cent above the settled network's;
+  - under (d) the members fired at 1.735 and 1.767 Hz, 7 per cent above the core's, and the rest at 2.077, 24 per cent above, the stimulus's own units among them.
+- **The kick, read on the engine before each condition's cells** (each control's eight kicks). It fires every member once by ADR-0112's measure at every size under every condition, and was not derived again:
+  - in the core grid the volley is 384, 512, 640 and 768, every kick a full volley, and the after 7, 10, 16 and 19 against marks of 38.4 to 76.8;
+  - under (c) the volley is 512 and 767 (one member missing from one kick at 96 units, within the measure's tolerance), and the after 25 and 35;
+  - under (d) the volley is 512 and 768, and the after 6 and 14;
+  - under (b) the kick is the core control's (an unwired run draws no delay).
+
+  Each control's lead-in and first unkicked span are its background's bit for bit, and no control holds, ignites or fails to let go.
+- **The core grid** (`GRID_050`, by the rules committed first, against the backgrounds pinned before any cell ran):
+
+  | Size | Weight | First half, of 8 | Holds, of 8 | Ignites, of 8 | Lets go, of 8 | Spills | Usable | What failed |
+  | ---: | :--- | ---: | ---: | ---: | ---: | :--- | :--- | :--- |
+  | 48 to 96 | 0.125, 0.1875 | 0 | 0 | 0 | 8 | not read | no | never holding |
+  | 48 | 0.25 | 4 | 5 | 0 | 8 | no | no | never holding |
+  | **64** | **0.25** | 6 | **8** | **0** | **8** | **no** | **yes** | — |
+  | **80** | **0.25** | 7 | **7** | **0** | **8** | **no** | **yes** | — |
+  | **96** | **0.25** | 8 | **8** | **0** | **8** | **no** | **yes** | — |
+  | 48 | 0.3125 | 8 | 8 | 8 | 6 | no | no | running away; not letting go |
+  | 64 | 0.3125 | 8 | 8 | 7 | 6 | no | no | running away; not letting go |
+  | 80 | 0.3125 | 8 | 8 | 8 | 7 | no | no | running away |
+  | 96 | 0.3125 | 8 | 8 | 8 | 6 | yes | no | running away; not letting go |
+  | 48 to 80 | 0.375 | 8 | 8 | 8 | 1 or 2 | no | no | running away; not letting go |
+  | 96 | 0.375 | 8 | 8 | 8 | 2 | yes | no | running away; not letting go |
+
+  **The usable region is one weight, a quarter of the range, at 64, 80 and 96 units.** It is bounded on every side the grid reaches:
+  - a sixteenth lighter nothing holds at any size;
+  - a sixteenth heavier every size ignites in 7 or 8 rounds;
+  - at 48 units the quarter holds in 5 rounds and ignites in none.
+
+  The usable cells hold as ADR-0115's did, a train of bursts in the hold spans and none anywhere else (`GRID_BURSTS_050`): 140, 131 and 158 burst windows at 64, 80 and 96 units, their intervals mostly five to sixteen windows apart (99 of 132, 97 of 123 and 110 of 150), and the members' product over the held stretches 1.451, 1.420 and 1.401 times the unkicked one, against 1.118 to 1.123 over the unkicked spans.
+- **The conditions** (`CONDITION_GRID_050`, each against its own backgrounds):
+
+  | Condition | Size | 0.1875 | 0.25 | 0.3125 |
+  | :--- | ---: | :--- | :--- | :--- |
+  | (b) seed 49 | 64 | never holds | **usable**: holds 7, ignites 1, lets go 8 | ignites 8, lets go 7 |
+  | (b) seed 49 | 96 | never holds | holds 6, ignites 0, spills | ignites 8, lets go 6, spills |
+  | (c) drained | 64 | never holds | holds 7, **ignites 2**, lets go 7 | ignites 8, lets go 3 |
+  | (c) drained | 96 | never holds | holds 8, **ignites 4**, lets go 7, spills | ignites 8, lets go 2, spills |
+  | (d) stimulus | 64 | never holds | holds 8, **ignites 4**, lets go 8 | ignites 8, lets go 3 |
+  | (d) stimulus | 96 | never holds | holds 8, **ignites 4**, lets go 8 | ignites 8, lets go 5 |
+
+  **No cell is robust** (`ROBUST_050` empty), **so there is no cell for the second round** (`ROUND_TWO_050` none). The two cells usable in the core that the subset holds, 64 and 96 units at a quarter, fail by ADR-0115's `failed` (`FAILURES_050`):
+  - 64 units: usable under (b), running away under (c) and under (d);
+  - 96 units: never holding and running away (its hold spills) under (b), running away under (c) and under (d).
+
+  Under (c) and (d) both cells hold in 7 or 8 rounds and ignite without a kick: the unkicked spans of 64 and 96 units hold 23 and 44 burst windows under (d), none in the core grid. Neither condition keeps a cell from holding; each tips it into igniting.
+- **Condition (c)'s image** (`DRAINED_050`): H-20's arm reproduced ADR-0110's accuracy sequence and its sums after the last block exactly. The quiet run before the image took 2 541 ticks and moved no weight. **The image carried a dopamine signal of 21 860, 0.33, from the arm's last reward**, which `frozen_again` put at rest (F-56). The frozen image's inhibitory sum is 0.0723 of the settled image's and its excitatory sum 1.0049. The couplings from the stimuli onto the places the readouts give up moved as the arm's last mapping, the mirrored one, rewarded them: A onto place 16 and B onto place 5, both readout places of their answers there, rose by 18.8 and 5.6 per cent of the settled image's; A onto place 5 and B onto place 16 fell by 8.3 and 3.8 per cent. That is the confound written before the run, read.
+- **Under (d), the readouts with the context held and with it quiet** (`STIMULUS_TASK_050`, `STIMULUS_CELL_TASK_050`): readout 0's and readout 1's spikes per trial in the window after the stimulus, A's trials and B's.
+
+  | Run | Quiet (unkicked), A | Quiet, B | Held (the hold's second half), A | Held, B |
+  | :--- | :--- | :--- | :--- | :--- |
+  | background, 64 units | 7.65, 9.41 | 8.61, 9.73 | 8.46, 10.07 | 8.89, 9.81 |
+  | 64 units at 0.25 | 7.80, 9.55 | 8.79, 9.82 | 10.29, 11.46 | 13.03, 13.11 |
+  | background, 96 units | 7.58, 9.36 | 8.56, 9.79 | 8.39, 10.07 | 8.81, 9.78 |
+  | 96 units at 0.25 | 9.59, 11.18 | 8.84, 10.15 | 10.04, 12.04 | 15.67, 15.53 |
+
+  **A held context reaches both readouts, by about the same number of spikes**: 1.8 and 1.4 more a trial on A's trials and 4.1 and 3.3 on B's at 64 units, 1.7 and 2.0 and 6.9 and 5.8 at 96, over the background's held spans. The members sit at places 5 and 16, each inside the prior's window of both readouts' places, so the prior carries the context to both. The quiet row at 96 units holds its ignitions. A readout gated by the context would have to make that input selective; the prior does not.
+- **Under (d), ADR-0065's measure on the backgrounds** (`STIMULUS_SIGHT_050`): the eight-place readouts resolve the stimulus from the window before it in all six blocks at both sizes, the trials seen 61, 64, 64, 63, 58 and 62 of 64 at 64 units and 62, 64, 64, 63, 58 and 62 at 96, each readout's spikes after above its spikes before. The nine-place readouts beside them see 62 to 64. Giving up a place each costs the measure at most four trials of a block.
+- **The next decision, named and not taken.** By ADR-0116's branch for a round in which no cell is robust, the next decision follows from what failed, and all three conditions failed a cell the core grid holds usable:
+  - under (d), the context's isolation from the task's stimulus: a placement beyond the prior's window from the stimulus places, which needs another geometry;
+  - under (c), the inhibitory drain (one of H-20's four open questions), or an inhibition of the context's own;
+  - under (b), at 96 units only, the class's constants: the region is not one draw's at 64 units and is at 96.
+
+  An ADR choosing among them has as its need these readings: the region is one sixteenth of the range wide between never holding and igniting, both (c) and (d) push the usable cells over the igniting edge rather than below the holding one, and a held context reaches both readouts alike through the prior. ADR-0111's second round is not taken.
+
 ## Consequences
 
 - Good: the region's width, and whether it survives three changes one at a time, are read by ADR-0115's own rules on the geometry the second round would use.
 - Good: condition (d) presents the stimulus with the task's own code, held to `Task::trial` bit for bit.
 - Good: condition (c)'s image is H-20's arm by its accuracy sequence and sums, and frozen by a rule the gate holds.
+- Good: the eight-place readouts still resolve the task's stimulus by ADR-0065's measure, so the geometry F-54's decision chose costs the readout little.
+- Bad: no cell is robust. The region is one weight wide, and the task's stimulus and a drained network each tip its cells into igniting, so ADR-0111's second round has no cell to build on as the rules define one.
+- Bad: a held context reaches both readouts alike through the prior, which a gated readout would have to undo.
 - Bad: the weekly job grows by about a third, and one test, condition (c)'s, runs for about 2 500 s on the runners.
 - Neutral: the geometry lives in `tests/assembly.rs` for now, not in the harness as ADR-0116 wrote.
 - Neutral: condition (c)'s image carries the old geometry's answer pairs onto the members' places; the couplings are read, and the confound stands.
@@ -170,6 +251,7 @@ That is 54 runs of 400 epochs and one arm of H-20. At ADR-0115's hundred seconds
 - condition (c): `h20_image`, `frozen_again`, `h20_task`, `drained_image`, `H20_IMAGE_CRC`, `H20_TRACE`, `H20_SUMS`;
 - condition (d): `stimulus_task`, `span_protocol_under`, `task_read`, `sight_050`, `resolves`, `epochs_hash`;
 - the runs: `delay_drawn`, `wire_drawn`, `marked_engine_drawn`, `run_050`, `backgrounds_controls_050`;
-- the gate and the nine weekly tests; the arithmetic's tables `DELIVERED_050`, `STIMULUS_REACH_050`, `SEEDED_WIRING_050`, `PRESENTED_050`, `GATE_KICKED_050`.
+- the gate and the nine weekly tests; the arithmetic's tables `DELIVERED_050`, `STIMULUS_REACH_050`, `SEEDED_WIRING_050`, `PRESENTED_050`, `GATE_KICKED_050`;
+- the runs' tables `CORE_RUNS_050`, `CORE_READ_050`, `GRID_RUNS_050`, `GRID_050`, `GRID_BURSTS_050`, `DRAINED_050`, `DRAINED_RUNS_050`, `DRAINED_READ_050`, `STIMULUS_RUNS_050`, `STIMULUS_READ_050`, `STIMULUS_TASK_050`, `STIMULUS_SIGHT_050`, `CONDITION_RUNS_050`, `CONDITION_GRID_050`, `CONDITION_BURSTS_050`, `STIMULUS_CELL_TASK_050`, and the reading `ROBUST_050`, `ROUND_TWO_050` and `FAILURES_050` (`over_the_050_tables`).
 
 Whitepaper §11 carries F-56, and §11.1's question on a rule held by the network the reading.
