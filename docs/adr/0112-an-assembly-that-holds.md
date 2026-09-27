@@ -73,7 +73,7 @@ Each run starts from the frozen image decoded at its written tick, so every run 
   - the volley: within `VOLLEY_TOLERANCE_TENTHS` tenths of one spike per member per kick, and at most one;
   - the after: at most `AFTER_MAX_TENTHS` tenths of a spike per member per kick in the pair window after the span.
   If it does not, no cell is run and the kick is derived again. The gate holds the probe: the ramp into one unit at rest, with no drive, fires it on the tick the oracle says, once.
-- **The kick derived again, after its first reading and before any cell.** The first run of `the_kick_and_the_background_at_1024_units_exhaustive` (at `a95a1c3`, 70 s in the release profile on a developer machine) read the ramp alone:
+- **The kick derived again, after its first reading and before any cell.** The first run of `the_kick_and_the_background_at_1024_units_exhaustive` (at `95f5b75` on `main`, `a95a1c3` on the branch before the rebase that merged pull request #140; 70 s in the release profile on a developer machine) read the ramp alone:
   - the growth changing nothing unkicked, at sixteen units, before the test stopped;
   - the volley within the tolerance at every size: 254 of 256 at 16 units, 510 of 512 at 32 and 1 022 of 1 024 at 64, each size missing one member in the first kicked epoch and one other kick, 14 of 16 kicks a full volley;
   - the after: 26, 49 and 84 spikes over the sixteen kicks. Against the marks of 25.6, 51.2 and 102.4, sixteen units failed by one spike.
@@ -171,16 +171,16 @@ Each fires once. When its window ends, a unit stands about 0.27 below the adapte
 
 ### The order of the work
 
-1. This ADR, the constants, the rules and the oracles, and the gate's checks of them, committed before any run (`6cfc32f`, `a95a1c3`).
+1. This ADR, the constants, the rules and the oracles, and the gate's checks of them, committed before any run (`11b4c8d` and `95f5b75` on `main`; `6cfc32f` and `a95a1c3` on the branch before the rebase that merged pull request #140).
 2. The kick and the background run; the kick, read once and derived again with its reset before any cell (above), read again, its tables pinned, and shown to fire every member once.
 3. The twelve cells run against the background pinned in step 2, their tables pinned.
 4. The readings recorded below, then the weekly dispatched on the documents commit and its evidence.
 
 ### The readings
 
-Every reading below is from the pinned tables of `tests/assembly.rs`, and a second run of every test reproduced them. The runs are in the order above:
-- the kick and the background at `cc05cd8`, and again at `712ef21` after the kick's helpers were shared with the gate;
-- the three cell tests at `712ef21` side by side, and again against their tables.
+Every reading below is from the pinned tables of `tests/assembly.rs`, and a second run of every test reproduced them. The runs are in the order above, at the commits `main` holds after the rebase that merged pull request #140:
+- the kick and the background at `4f70250` (`cc05cd8` on the branch), and again at `06cfb41` (`712ef21`) after the kick's helpers were shared with the gate;
+- the three cell tests at `06cfb41` side by side, and again against their tables.
 
 On a developer machine in the release profile the kick and background test took 70 s, and each cell test 93 s alone or 138 s three at a time (a ratio, not admissible). No weight of any arena moved in any run.
 
@@ -229,7 +229,7 @@ On a developer machine in the release profile the kick and background test took 
 - **The arithmetic beside the readings.** Before any run, the arithmetic said that no cell's mean input can hold a member at threshold at any rate: depression caps what a rate transmits at about 5.5 times the background's. So a hold would have to be the fluctuations riding above a mean below threshold. The runs read no such state. They read the other behaviour the rule allows: a regenerative burst on the pool the members have, then silence while the pool recovers. The bursts' strength follows the arithmetic's order:
   - at a quarter of the range nothing bursts on its own at any size; there one spike at rest delivers 0.157, and eight must land together to fire a unit;
   - the most bursts come where the fan and the weight are largest.
-- **The evidence.** None of [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s clauses for `scope=both` applies to the diff: no file under a `src/` directory changed; no test was deleted or taken out of the suite the sweep runs, since the gate gains one test and the weekly job four new `#[ignore]`d ones; and neither `.cargo/mutants.toml` nor the `mutants-weekly` job changed. So its last clause applies, and the weekly was dispatched on this round's branch at **`scope=exhaustive`** alone: run [36267201620](https://github.com/DescentVTT/VirtualCortex/actions/runs/36267201620) at `c1cf774`, the documents commit, after which only this evidence, the cost table and the brief's archive change. **Every job it ran is green.** All seventy-one whole-domain tests passed on the hosted runners: the sixty-seven before this round reproduced their pinned numbers, and this round's four reproduced their tables. [ADR-0092](0092-the-shards-dealt-by-cost.md)'s table did not know the four and costed each at 900 s, so it dealt one to each shard; on the runners each took 167 to 171 s. The four shards took:
+- **The evidence.** None of [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s clauses for `scope=both` applies to the diff: no file under a `src/` directory changed; no test was deleted or taken out of the suite the sweep runs, since the gate gains one test and the weekly job four new `#[ignore]`d ones; and neither `.cargo/mutants.toml` nor the `mutants-weekly` job changed. So its last clause applies, and the weekly was dispatched on this round's branch at **`scope=exhaustive`** alone: run [36267201620](https://github.com/DescentVTT/VirtualCortex/actions/runs/36267201620) at `c1cf774`, the documents commit on the branch (`e396f5b` on `main`), after which only this evidence, the cost table and the brief's archive change. The round's commits as `main` holds them after the rebase that merged pull request #140: `11b4c8d` the tests, rules and oracles and `95f5b75` this ADR's protocol, before any run; `a2caa1a` the kick derived again with its reset and `4f70250` its type named, before any cell; `06cfb41` the kick and the background pinned; `bc8e1fb` the grid pinned and the burst reading; `e396f5b` the readings and the documents at 4.63.0; `3e61e50` this evidence, the cost table and the brief's archive. On the branch they were `6cfc32f`, `a95a1c3`, `3f3c6f2`, `cc05cd8`, `712ef21`, `6d8cfe4`, `c1cf774` and `d9e43d6`. **Every job it ran is green.** All seventy-one whole-domain tests passed on the hosted runners: the sixty-seven before this round reproduced their pinned numbers, and this round's four reproduced their tables. [ADR-0092](0092-the-shards-dealt-by-cost.md)'s table did not know the four and costed each at 900 s, so it dealt one to each shard; on the runners each took 167 to 171 s. The four shards took:
 
   | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
   | ---: | ---: | ---: | ---: | ---: | :--- |
@@ -240,7 +240,7 @@ On a developer machine in the release profile the kick and background test took 
 
   **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: seventy-one lines, 20 789 s, its source line naming the run; `npm run spec:costs` passing). No sweep ran: the diff gives the sweep nothing new to find, and Monday's run sweeps the tree as it always does.
 
-  The pull request's gate on `c1cf774` (run [36267193282](https://github.com/DescentVTT/VirtualCortex/actions/runs/36267193282)) is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which found no mutant to make (*"No mutants to filter"*), since the diff touches no file `cargo-mutants` mutates.
+  The pull request's gate on `c1cf774` (`e396f5b` on `main`; run [36267193282](https://github.com/DescentVTT/VirtualCortex/actions/runs/36267193282)) and on `d9e43d6` (`3e61e50`; run [36270792004](https://github.com/DescentVTT/VirtualCortex/actions/runs/36270792004)), the branch's last commit, is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which found no mutant to make (*"No mutants to filter"*), since the diff touches no file `cargo-mutants` mutates.
 
   On the developer machine every command of brief 048's verification list exited 0 (a ratio, not admissible):
   - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 641 tests passed in each, the 640 before this round and its gate test, and 71 ignored;
