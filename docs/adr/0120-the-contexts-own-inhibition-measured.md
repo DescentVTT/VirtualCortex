@@ -5,7 +5,7 @@ depends-on: ADR-0119
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0120: The context's own inhibition measured — brief 051's measurement: ADR-0117's assembly of 64 marked members given sixteen added inhibitory synapses a member from the prior's inhibitory units drawn over the ring, at recurrent weights of a quarter to three quarters of Q1.15's range against added inhibitory weights of a quarter, a half and the whole of it, under ADR-0117's four conditions, every weight frozen and ADR-0117's substrate, protocol, measures, thresholds and rules unchanged, the grid, the draw, the rules and the arithmetic written before any run
+# ADR-0120: The context's own inhibition measured — brief 051's measurement: ADR-0117's assembly of 64 marked members given sixteen added inhibitory synapses a member from the prior's inhibitory units drawn over the ring, at recurrent weights of a quarter to three quarters of Q1.15's range against added inhibitory weights of a quarter, a half and the whole of it, under ADR-0117's four conditions, every weight frozen and ADR-0117's substrate, protocol, measures, thresholds and rules unchanged, the grid, the draw, the rules and the arithmetic written before any run; no cell of the core grid is usable — at a quarter of the range the inhibition keeps the assembly from holding at every inhibitory weight, and from three eighths up every cell ignites without a kick — so no cell is robust and there is no cell for the second round; the inhibition moves the assembly's threshold rather than widening the gap between holding and igniting, and its sources fire 1.4 to 2.0 times faster while the assembly bursts; the next decision, among a feedback inhibition, the context's isolation, the class's constants and the inhibitory drain, is named and not taken
 
 ## Context and Problem Statement
 
@@ -163,11 +163,84 @@ That is 70 runs of 400 epochs — 18 backgrounds and controls, 4 reproductions a
 3. The cells' seven tests, each against the backgrounds pinned first; pinned.
 4. The readings, the documents, the weekly dispatched on the round's branch at `scope=exhaustive`, its evidence and the cost table regenerated from it.
 
+### The readings
+
+Every reading below is from the pinned tables of `tests/assembly.rs`. The runs were made in the order above, from the protocol's commit, `f696974`:
+- the three backgrounds' tests, ADR-0117's cell reproduced first in each, pinned at `7e55921` before any cell of this round ran;
+- the seven cells' tests, against those pins, pinned at `6173ed3`.
+
+On a developer machine in the release profile a run took about 100 s with six other tests beside it, and H-20's arm about 25 minutes (a ratio, not admissible). **No weight of any arena moved in any measured run, the added synapses' included.**
+
+- **ADR-0117's cell, reproduced.** 64 units at 0.25 with no added inhibition, run through ADR-0117's `run_050`, held to ADR-0117's stretches, kicks, windows' and epochs' hashes, reading and bursts under each of the four conditions, and under (d) to its readouts: usable in the core and under (b), igniting in 2 rounds under (c) and in 4 under (d), as ADR-0117 read it. Condition (c)'s arm reproduced ADR-0110's accuracy sequence and sums, and its frozen image ADR-0117's reading of it.
+- **The backgrounds** (the inhibition wired, the assembly not, the drive alone after the lead-in; ADR-0117's at 64 units beside them):
+
+  | Condition | Inhibitory weight | Members, Hz | Rest, Hz | Sources, Hz |
+  | :--- | :--- | ---: | ---: | ---: |
+  | the core | none (ADR-0117) | 1.613 | 1.679 | — |
+  | the core | −0.25 / −0.5 / −1.0 | 1.451 / 1.350 / 1.229 | 1.672 / 1.668 / 1.663 | 1.966 / 1.960 / 1.954 |
+  | (c) | none (ADR-0117) | 1.818 | 1.897 | — |
+  | (c) | −0.25 / −0.5 / −1.0 | 1.625 / 1.495 / 1.348 | 1.888 / 1.880 / 1.873 | 2.247 / 2.234 / 2.223 |
+  | (d) | none (ADR-0117) | 1.735 | 2.077 | — |
+  | (d) | −0.25 / −0.5 / −1.0 | 1.547 / 1.433 / 1.298 | 2.069 / 2.065 / 2.060 | 2.120 / 2.114 / 2.106 |
+
+  The added inhibition lowers the members' background by 10 to 11, 16 to 18 and 24 to 26 per cent at the three weights, under every condition alike, and the rest's by 0.4 to 1.3 per cent. The sources, the prior's inhibitory units, fire faster than the rest, 1.95 to 1.97 Hz in the core; under (c) 14 per cent faster than in the core, under (d) 8 per cent.
+- **The kick, read on the engine before each condition's cells** (each control's eight kicks) fires every member once by ADR-0112's measure at every inhibitory weight under every condition: the volley is 512, every kick a full one, and the after 6, 6 and 4 in the core and under (d) and 18, 18 and 14 under (c), against a mark of 51.2. It was not derived again. Each control's lead-in and first unkicked span are its background's bit for bit, and no control holds, ignites or fails to let go.
+- **The core grid** (`GRID_051[0]`, by the rules committed first, against the backgrounds pinned before any cell ran):
+
+  | Recurrent | Inhibitory | Holds, of 8 | Ignites, of 8 | Lets go, of 8 | What failed |
+  | :--- | :--- | ---: | ---: | ---: | :--- |
+  | 0.25 | −0.25 / −0.5 / −1.0 | 2 / 1 / 0 | 0 | 8 | never holding |
+  | 0.375 | −0.25 / −0.5 / −1.0 | 8 | 8 / 8 / 5 | 3 / 5 / 6 | running away; not letting go |
+  | 0.5 | −0.25 / −0.5 / −1.0 | 8 | 8 | 0 / 0 / 1 | running away; not letting go |
+  | 0.75 | −0.25 / −0.5 / −1.0 | 8 | 8 | 0 | running away; not letting go |
+
+  No cell spills. **No cell of the core grid is usable** (`USABLE_051` empty). The added inhibition moved the holding edge above a quarter of the range at every inhibitory weight — ADR-0117's usable cell, 64 units at a quarter, holds in 2, 1 and 0 rounds of 8 with it — and from three eighths up every cell ignites without a kick and does not let go. The heaviest inhibition is the nearest: at three eighths and the whole of the range the cell ignites in 5 rounds and lets go in 6. Between a quarter and three eighths the grid has no step.
+- **The bursts** (`BURSTS_051`) say how. At a quarter the kick sets off the members' burst and the class's priming does not keep it: the hold spans hold 76, 23 and 8 burst windows at the three inhibitory weights, against ADR-0115's 140 without the inhibition, and the unkicked spans none. At three eighths the unkicked spans hold 238, 204 and 105 burst windows, and at a half 351, 340 and 313: the heavier inhibition makes the ignitions rarer and does not stop them. At three quarters the assembly bursts in almost every window outside the release: 1 019 to 1 024 of the unkicked spans' 1 024 at the two lighter inhibitions, 891 at the heaviest.
+- **The sources follow the assembly.** In every cell that ignites in more than one round, the sources fire at 2.8 to 4.5 Hz over the unkicked spans, 1.4 to 2.0 times their background rate (the sources' reading of `CELL_RUNS_051`): the assembly's bursts drive the network the sources sit in, so the added inhibition rises with the assembly's own activity, after the prior's delays, and not only with the network's. It did not stop the ignitions.
+- **The conditions** (`GRID_051[1..]`, each against its own backgrounds):
+
+  | Condition | Recurrent | −0.25 | −0.5 | −1.0 |
+  | :--- | :--- | :--- | :--- | :--- |
+  | (b) seed 49 | 0.25 | holds 1 | holds 1 | holds 0 |
+  | (b) seed 49 | 0.375 | ignites 8, lets go 3 | ignites 8, lets go 3 | ignites 6, lets go 6 |
+  | (b) seed 49 | 0.5 | ignites 8, lets go 0 | ignites 8, lets go 1 | ignites 8, lets go 2 |
+  | (b) seed 49 | 0.75 | ignites 8, lets go 0 | ignites 8, lets go 0 | ignites 8, lets go 0 |
+  | (c) drained | 0.25 | holds 6 | holds 3 | holds 0 |
+  | (c) drained | 0.375 | ignites 8, lets go 0 | ignites 8, lets go 3 | ignites 8, lets go 5 |
+  | (c) drained | 0.5 | ignites 8, lets go 0 | ignites 8, lets go 0 | ignites 8, lets go 0 |
+  | (c) drained | 0.75 | ignites 8, lets go 0 | ignites 8, lets go 0 | ignites 8, lets go 0 |
+  | (d) stimulus | 0.25 | holds 5, ignites 1 | holds 3 | holds 0 |
+  | (d) stimulus | 0.375 | ignites 8, lets go 0 | ignites 8, lets go 3 | ignites 7, lets go 7 |
+  | (d) stimulus | 0.5 | ignites 8, lets go 0 | ignites 8, lets go 0 | ignites 8, lets go 0 |
+  | (d) stimulus | 0.75 | ignites 8, lets go 0 | ignites 8, lets go 0 | ignites 8, lets go 0 |
+
+  Every cell from three eighths up holds in all 8 rounds under every condition; none spills. At a quarter the drained network and the stimulus hold the assembly in more rounds than the core does, 6 and 5 at −0.25 against 2, and never in the 7 the rule asks. **No cell is robust** (`ROBUST_051` empty), **so there is no cell for the second round** (`ROUND_TWO_051` none). What failed (`FAILURES_051`): every cell at a quarter never holds under every condition; every heavier cell runs away under every condition and does not let go under every condition but one, three eighths at the whole of the range under (d), which lets go in 7 rounds and ignites in 7.
+- **The arithmetic beside the readings.**
+  - The arithmetic took the sources at the rest's rate; they fire 17 per cent faster, so the added inhibition's mean input is about a sixth above its table. Under (d) the sources rose 8 per cent, not the rest's 24, as the arithmetic's own caveat said; under (c) 14 per cent, as the rest's 13.
+  - The members' background fell by 10, 16 and 24 per cent in the core where the added inhibition's mean input is 2, 5 and 9 per cent of the drive's standing: the members fire in the drive's tail, where a small shift of the mean moves the rate by more.
+  - Under (c) and (d) the added inhibition took back at most a quarter of the members' excess: their background stood 12.7 per cent above the core's under (c) without it, and 12.0, 10.7 and 9.7 with it; under (d) 7.6 per cent without and 6.6, 6.1 and 5.6 with it. The arithmetic's estimate against the net change under (c), 8, 16 and 33 per cent, is near what was read there, 6, 16 and 24; its estimate against the mean excitatory change, and every estimate under (d), does not, since the members' excess under (d) is the stimulus's volleys and not a rise of the rest's mean.
+  - The drained image's own prior synapses give the members 0.035 of excitatory and 0.002 of inhibitory input at (c)'s rates (`DRAINED_INPUT_051`, 2 274 and −110), beside the arithmetic's scaled estimate of 2 267 and −136.
+  - No mean describes the failure: every cell that fails by running away fails by bursts, which is what ADR-0117 read.
+- **Under (d), the readouts** (`BG_TASK_051`, `CELL_TASK_051`). The added inhibition leaves the backgrounds' readouts within about a tenth of a spike a trial of ADR-0117's, 7.67 to 7.68 and 9.30 to 9.32 on A's trials and 8.55 to 8.58 and 9.68 to 9.74 on B's with the context quiet, and ADR-0065's measure resolves the stimulus in 58 to 64 trials of 64 in every block at every inhibitory weight (`BG_SIGHT_051`). In the cell that holds most at a quarter, against −0.25 (5 rounds), the held context adds 2.0 and 1.5 spikes a trial to readout 0 and readout 1 on A's trials and 1.3 and 0.7 on B's: to both, as ADR-0117 read. In every cell that ignites the quiet spans are not quiet, and both readouts count 1.3 to 3.8 spikes a trial more than the background's there.
+- **Not done:**
+  - The grid was not widened: nothing between a quarter and three eighths, where the region would lie if anywhere; no size of 96; no eight or thirty-two sources a member.
+  - No feedback inhibition, no readout gated by the context, no switch on errors and no reward in a measured run.
+  - The added synapses were frozen; whether a context's inhibitory synapses learn under the inhibitory baseline stays ADR-0119's open consequence.
+- **The next decision, named and not taken.** By ADR-0119's branch for a round in which no cell is robust: the feedback inhibition (ADR-0119's option 1(b)), the context's isolation from the task's stimulus, the class's constants, or the inhibitory drain. An ADR choosing among them has as its need these readings:
+  - an inhibition driven by the network's inhibitory units moves the assembly's threshold and not the gap between holding and igniting: at a quarter of the range nothing holds under any of the three inhibitory weights, and from three eighths up every cell ignites; the heaviest inhibition makes the ignitions rarer, 105 burst windows in the unkicked spans against 238, and does not stop them;
+  - the sources fire 1.4 to 2.0 times faster while the assembly bursts, so part of this inhibition follows the assembly after the prior's delays, and it did not stop an ignition once begun;
+  - under (c) and (d) it took back at most a quarter of the members' excess rate;
+  - a cell between a quarter and three eighths under the heavier inhibition is unread.
+
+  ADR-0111's second round is not taken.
+
 ## Consequences
 
 - Good: the added inhibition is measured under the same conditions, protocol and rules as the reading it answers, beside ADR-0117's cell reproduced under each.
 - Good: nothing of the engine changes; every earlier run wires and reads as it did, and its pins stand.
+- Bad: no cell is usable. The inhibition the network drives lowered the members' excitability as a whole: at a quarter of the range nothing holds, and from three eighths up every cell ignites, so the region is no wider than ADR-0117's and lies, if anywhere, between two of the grid's steps.
 - Bad: the sources are shared and fire together with the network, so a cell's inhibition is not sixteen independent inputs; the draw is one seed's.
+- Neutral: the sources fire faster while the assembly bursts, so the inhibition ADR-0119 chose as the network's is in part the assembly's own already, after the prior's delays.
 - Bad: the weekly job grows by about 8 100 s by the estimate, and condition (c) pays H-20's arm twice.
 - Neutral: the arithmetic's rates for the sources are the rest's, which under (d) count the stimulus's own units; the backgrounds read the sources' own.
 
@@ -185,4 +258,7 @@ That is 70 runs of 400 epochs — 18 backgrounds and controls, 4 reproductions a
 - the inhibition and the grid: `SIZE_051`, `CELL_050`, `SOURCES_PER_MEMBER`, `INHIBITION_SEED`, `RECURRENT_051`, `INHIBITORY_051`, `CONDITIONS_051`, `inhibitory_units`, `sources_of`, `inhibition_plan`, `inhibition_sources`, `inhibition_blocks`, `wire_inhibition`, `engine_051`, and `wire_among`, `span_protocol_counting` and `kicked_on` beside the functions that call them;
 - the rules: `Grid051`, `robust_051`, `usable_neighbours`, `round_two_051`, `failures_051`;
 - the arithmetic: `inhibition_delivered`, `assembly_input`, `inhibition_input`, `prior_input`, `arithmetic_051` and their tables `SOURCES_051`, `INHIBITION_DELIVERED_051`, `ASSEMBLY_INPUT_051`, `INHIBITION_INPUT_051`, `ARITHMETIC_051`;
-- the runs: `run_051`, `reproduce_050`, `backgrounds_controls_051`, `cells_051`, the gate and the ten weekly tests.
+- the runs: `run_051`, `reproduce_050`, `backgrounds_controls_051`, `cells_051`, the gate and the ten weekly tests;
+- the runs' tables `BG_RUNS_051`, `BG_READ_051`, `BG_TASK_051`, `BG_SIGHT_051`, `DRAINED_INPUT_051`, `CELL_RUNS_051`, `GRID_051`, `BURSTS_051`, `CELL_TASK_051`, and the reading `USABLE_051`, `ROBUST_051`, `ROUND_TWO_051` and `FAILURES_051` (`over_the_051_tables`).
+
+Whitepaper §11.1's question on a rule held by the network carries the reading, and §9 its row.
