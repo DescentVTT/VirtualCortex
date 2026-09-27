@@ -191,17 +191,17 @@ The one runtime test this measurement adds:
 
 ### The order of the work
 
-1. ADR-0114's build (`abb29be`, `5b38a5d` on the branch).
-2. This protocol, the rules, the oracles, the arithmetic pinned and the gate, committed before any run of the measurement (`8f192d6` on the branch, pushed with pull request #143 opened as a draft before any run).
-3. `the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_exhaustive` and `…_set_ii_…`: each set's three backgrounds and three controls. The kick is read on the engine with the members marked, and must fire every member once at every size under each set before any cell is run (pinned at `fcb3830`).
-4. The six cell tests (`a_marked_assembly_of_{16,32,64}_units_at_six_weights_under_set_{i,ii}_exhaustive`), against the backgrounds pinned in step 3 (pinned at `cf6e485`).
-5. The readings below and the documents at 4.65.0 (`339babd`), then the weekly dispatched on that commit, and its evidence, the cost table and the brief's archive.
+1. ADR-0114's build (`8e3ec71` and `f62b955` on `main`; `abb29be` and `5b38a5d` on the branch before the rebase that merged pull request #143).
+2. This protocol, the rules, the oracles, the arithmetic pinned and the gate, committed before any run of the measurement (`c19edff` on `main`, `8f192d6` on the branch, pushed with pull request #143 opened as a draft before any run).
+3. `the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_exhaustive` and `…_set_ii_…`: each set's three backgrounds and three controls. The kick is read on the engine with the members marked, and must fire every member once at every size under each set before any cell is run (pinned at `78dfe0f` on `main`, `fcb3830` on the branch).
+4. The six cell tests (`a_marked_assembly_of_{16,32,64}_units_at_six_weights_under_set_{i,ii}_exhaustive`), against the backgrounds pinned in step 3 (pinned at `d193265` on `main`, `cf6e485` on the branch).
+5. The readings below and the documents at 4.65.0 (`240fd35` on `main`, `339babd` on the branch), then the weekly dispatched on that commit, and its evidence, the cost table and the brief's archive.
 
 ### The readings
 
-Every reading below is from the pinned tables of `tests/assembly.rs`, and a second run of every test reproduced them. The runs are in the order above, at the branch's commits:
-- the kick, the backgrounds and the controls at `8f192d6`, read against their pins at `fcb3830`;
-- the six cell tests at `fcb3830` side by side, read against their pins at `cf6e485`.
+Every reading below is from the pinned tables of `tests/assembly.rs`, and a second run of every test reproduced them. The runs are in the order above, at the commits `main` holds after the rebase that merged pull request #143, the branch's in brackets:
+- the kick, the backgrounds and the controls at `c19edff` (`8f192d6`), read against their pins at `78dfe0f` (`fcb3830`);
+- the six cell tests at `78dfe0f` (`fcb3830`) side by side, read against their pins at `d193265` (`cf6e485`).
 
 On a developer machine in the release profile each kick-and-background test took 337 to 344 s run two at a time, and each cell test 470 to 595 s run six at a time (a ratio, not admissible). No weight of any arena moved in any run.
 
@@ -256,7 +256,7 @@ On a developer machine in the release profile each kick-and-background test took
   - Under set (i) no cell holds without also running away. The class's unkicked product is 1.31 times ADR-0019's there, and every cell from 16 units at 0.375 up ignites in all eight rounds.
 - **What running away is.** At the top weight of 32 and 64 units under both sets, and at 0.75 of 64, the members fire in nearly every window: 1 022 to 1 024 of the unkicked spans' 1 024 are burst windows. Their product is 0.06 to 0.15 of the unkicked one, the pool drained, and the release silences them for its span only.
 - **The arithmetic beside the readings.** The arithmetic said a hold, if any, would be bursts set off by the drive's fluctuations on an assembly whose members need several spikes together to fire a target: at the usable cell twelve at the unkicked product and eight at the primed peak. That is what the run read — a train of bursts whose timing sits inside the primed window and whose product, 1.45 of the unkicked, approaches the primed peak's 1.60 — and an unkicked assembly of the same cell that never bursts. The class did what ADR-0113's account said it would, at one cell of the grid.
-- **The evidence.** [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s first clause for `scope=both` applies to the diff: files under `src/` changed, in `cortex-core`, `cortex-connectome` and `runtime/cortex-runtime`. The weekly was dispatched on this round's branch at **`scope=both`**: run [36295847527](https://github.com/DescentVTT/VirtualCortex/actions/runs/36295847527) at `339babd`, the documents commit, after which only this evidence, the cost table and the brief's archive change. **Every job it ran is green.**
+- **The evidence.** [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s first clause for `scope=both` applies to the diff: files under `src/` changed, in `cortex-core`, `cortex-connectome` and `runtime/cortex-runtime`. The weekly was dispatched on this round's branch at **`scope=both`**: run [36295847527](https://github.com/DescentVTT/VirtualCortex/actions/runs/36295847527) at `339babd`, the documents commit on the branch (`240fd35` on `main`), after which only this evidence, the cost table and the brief's archive change. The round's commits as `main` holds them after the rebase that merged pull request #143: `8e3ec71` the class and `f62b955` its range held in one place; `c19edff` this ADR's protocol, before any run; `78dfe0f` the kick, the backgrounds and the controls pinned, before any cell; `d193265` the grid pinned; `240fd35` the readings and the documents at 4.65.0; `8a7726a` this evidence, the cost table and the brief's archive. On the branch they were `abb29be`, `5b38a5d`, `8f192d6`, `fcb3830`, `cf6e485`, `339babd` and `785ba8c`. **Every job it ran is green.**
   - **The whole-domain tests.** All seventy-nine passed on the hosted runners. The seventy-one before this round reproduced their pinned numbers. Among them, H-17's, H-18's, H-19's and H-20's arms read their images at format 17 with the CRCs ADR-0114 re-pinned, and each image, written back to its earlier version, read the CRC it read before. This round's eight reproduced their tables. [ADR-0092](0092-the-shards-dealt-by-cost.md)'s table did not know the eight and costed each at 900 s; on the runners they took 465 to 650 s. The four shards took:
 
     | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
@@ -272,7 +272,7 @@ On a developer machine in the release profile each kick-and-background test took
     - Twenty-four are mutants the scheduled run of 2026-09-21 (35578231335) also timed out on: the iterators', the barrier's, the injector's, the workers' stop, and the loader's `terms` field.
     - Two are not: the loader's `clauses` field and the negation of `load_clause`, in code this round moved down and did not change. Two injector mutants that run timed out on were caught here. A timeout's list moves with the runner's timing (ADR-0063), and ADR-0062's triage of the two is the weekly job's reading, not this round's.
 
-  The pull request's gate on `339babd` (run [36295839144](https://github.com/DescentVTT/VirtualCortex/actions/runs/36295839144)) is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, 42 mutants of which 34 were caught and 8 unviable. The build's in-diff run on a developer machine had found one survivor, an equivalent guard in the loader, which `5b38a5d` removed.
+  The pull request's gate on `339babd` (`240fd35` on `main`; run [36295839144](https://github.com/DescentVTT/VirtualCortex/actions/runs/36295839144)) is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, 42 mutants of which 34 were caught and 8 unviable. The build's in-diff run on a developer machine had found one survivor, an equivalent guard in the loader, which `5b38a5d` (`f62b955` on `main`) removed.
 
   On the developer machine every command of brief 049's verification list exited 0 (a ratio, not admissible):
   - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 649 passed in each and 79 ignored;
