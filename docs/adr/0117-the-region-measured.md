@@ -144,12 +144,12 @@ That is 54 runs of 400 epochs and one arm of H-20. At ADR-0115's hundred seconds
 
 ### The readings
 
-Every reading below is from the pinned tables of `tests/assembly.rs`. The runs were made in the order above, from the protocol's commit, `04fda04` on the branch:
-- the core grid's backgrounds and controls, (d)'s backgrounds and controls and the test of 64 units, side by side, pinned at `dfc778b`;
-- the other three sizes and the subset under (b) and (d), pinned at `936bdd5`;
-- the subset under (c), started once the test of 64 units had held ADR-0115's two cells, pinned at `eacc7b4`.
+Every reading below is from the pinned tables of `tests/assembly.rs`. The runs were made in the order above, from the protocol's commit, `0887e4e` on `main` (`04fda04` on the branch); at the commits `main` holds after the rebase that merged pull request #146, the branch's in brackets:
+- the core grid's backgrounds and controls, (d)'s backgrounds and controls and the test of 64 units, side by side, pinned at `ed82828` (`dfc778b`);
+- the other three sizes and the subset under (b) and (d), pinned at `fd5593a` (`936bdd5`);
+- the subset under (c), started once the test of 64 units had held ADR-0115's two cells, pinned at `7fca0cf` (`eacc7b4`).
 
-A second run of all nine tests at `eacc7b4` reproduced every table. On a developer machine in the release profile a run took about 65 s with two other tests beside it and about 85 s with four; H-20's arm took about 24 minutes beside five other tests (a ratio, not admissible). **No weight of any arena moved in any measured run.**
+A second run of all nine tests at `7fca0cf` (`eacc7b4`) reproduced every table. On a developer machine in the release profile a run took about 65 s with two other tests beside it and about 85 s with four; H-20's arm took about 24 minutes beside five other tests (a ratio, not admissible). **No weight of any arena moved in any measured run.**
 
 - **ADR-0115's two cells, reproduced.** The test of 64 units ran 0.25 and 0.375 first and held each to ADR-0115's pinned stretches, kicks, windows' hash, reading and bursts before its other weights ran; 64 units' background and control are ADR-0115's bit for bit.
 - **The backgrounds** (the members marked and unwired, the drive alone after the lead-in):
@@ -213,7 +213,7 @@ A second run of all nine tests at `eacc7b4` reproduced every table. On a develop
 
   **A held context reaches both readouts, by about the same number of spikes**: 1.8 and 1.4 more a trial on A's trials and 4.1 and 3.3 on B's at 64 units, 1.7 and 2.0 and 6.9 and 5.8 at 96, over the background's held spans. The members sit at places 5 and 16, each inside the prior's window of both readouts' places, so the prior carries the context to both. The quiet row at 96 units holds its ignitions. A readout gated by the context would have to make that input selective; the prior does not.
 - **Under (d), ADR-0065's measure on the backgrounds** (`STIMULUS_SIGHT_050`): the eight-place readouts resolve the stimulus from the window before it in all six blocks at both sizes, the trials seen 61, 64, 64, 63, 58 and 62 of 64 at 64 units and 62, 64, 64, 63, 58 and 62 at 96, each readout's spikes after above its spikes before. The nine-place readouts beside them see 62 to 64. Giving up a place each costs the measure at most four trials of a block.
-- **The evidence.** Only tests and documents change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**: run [36313742568](https://github.com/DescentVTT/VirtualCortex/actions/runs/36313742568) at `376c702`, the documents commit on the branch, after which only this evidence, the cost table and the brief's archive change. The round's commits on the branch are `04fda04` (this protocol, before any run), `dfc778b` (the core grid's and (d)'s backgrounds and controls, and 64 units, ADR-0115's two cells reproduced first), `936bdd5` (the core grid and the subset under (b) and (d)), `eacc7b4` (the subset under (c), and the reading in the gate) and `376c702` (the readings and the documents at 4.67.0). **Every job it ran is green.**
+- **The evidence.** Only tests and documents change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**: run [36313742568](https://github.com/DescentVTT/VirtualCortex/actions/runs/36313742568) at `376c702`, the documents commit on the branch (`8a95d66` on `main`), after which only this evidence, the cost table and the brief's archive change. The round's commits as `main` holds them after the rebase that merged pull request #146 are `0887e4e` (this protocol, before any run), `ed82828` (the core grid's and (d)'s backgrounds and controls, and 64 units, ADR-0115's two cells reproduced first), `fd5593a` (the core grid and the subset under (b) and (d)), `7fca0cf` (the subset under (c), and the reading in the gate), `8a95d66` (the readings and the documents at 4.67.0) and `9f9e343` (this evidence, the cost table and the brief's archive). On the branch they were `04fda04`, `dfc778b`, `936bdd5`, `eacc7b4`, `376c702` and `d6961f5`. **Every job it ran is green.**
   - **The whole-domain tests.** All eighty-eight passed on the hosted runners: the seventy-nine before this round reproduced their pinned numbers, ADR-0115's among them through the refactored functions, and this round's nine reproduced their tables. The cost table did not know the nine and costed each at 900 s; on the runners they took 259 to 795 s, and condition (c)'s 1 890 s. The four shards took:
 
     | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
@@ -227,14 +227,14 @@ A second run of all nine tests at `eacc7b4` reproduced every table. On a develop
   - **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: eighty-eight lines, 25 743 s, its source line naming the run; `npm run spec:costs` passing). Replayed through the deal, it plans each shard at 6 435 to 6 436 s summed. At this run's ratio of summed seconds to wall time, 1.97 to 2.00, that is about 3 220 to 3 270 s of tests' wall time, 45 per cent of the bound, under the brief's 60.
   - **No mutation sweep**, by the scope: the diff changes nothing under `src/`, so the sweep has nothing to find.
 
-  The pull request's gate on `376c702` is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which found no mutant to make.
+  The pull request's gate on `376c702` (`8a95d66` on `main`) is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which found no mutant to make.
 
   On the developer machine every command of brief 050's verification list exited 0 (a ratio, not admissible):
   - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 650 passed in each and 88 ignored;
   - check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
   - `--list`, 88 tests;
   - the in-diff mutation run, "No mutants to filter";
-  - this round's nine whole-domain tests twice, the second run at `eacc7b4` against the pins.
+  - this round's nine whole-domain tests twice, the second run at `7fca0cf` (`eacc7b4`) against the pins.
 - **Not done:**
   - The grid was not widened: nothing between 0.1875 and 0.25, nor between 0.25 and 0.3125, where the region's edges are, and no size above 96.
   - ADR-0116's option 3(b), the settled image's inhibitory weights scaled, was not run beside condition (c).
