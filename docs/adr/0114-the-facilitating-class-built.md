@@ -124,4 +124,4 @@ Brief 049's empowerment names the choices: which bit marks a unit, where the con
 - `crates/cortex-connectome/src/lib.rs`: `FORMAT_VERSION` 17 and its note; `SECTION_MODULATOR`'s comment.
 - `runtime/cortex-runtime/tests/inhibition.rs`: `REVERSAL_IMAGE_CRC_1024`, `PUNISHED_IMAGE_CRC_1024`, `PUNISHED_IMAGE_CRC_FORMAT_16_1024` and the arms' assertions.
 - The tests named above; the mutation gate on the changed lines.
-- Whitepaper §5.2.1 (the record's `flags` and short-term plasticity), §5.2.2 (the format's version row), §5.2.14 (the modulation state's bytes), §8.7 (the container's version), §8.8 (the short-term plasticity row), §9; `CHANGELOG.md`; the image format 17.
+- Whitepaper §5.2.1 (the record's `flags`, the public API and short-term plasticity), §5.2.2 (the format's public API and version row), §8.7 (the container's version and the modulator section's line), §8.8 (the short-term plasticity row), §9; `CHANGELOG.md`; the image format 17.

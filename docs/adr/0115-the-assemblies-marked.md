@@ -5,7 +5,7 @@ depends-on: ADR-0114
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0115: The assemblies marked — brief 049's measurement with ADR-0114's class: ADR-0112's assemblies of 16, 32 and 64 units at six recurrent weights under each of ADR-0113's two sets, every member marked, every weight frozen, run through a lead-in and eight rounds of an unkicked span, a hold span with ADR-0112's kick, a release that keeps the members silent until the class's priming has faded, and a tail, read in stretches of two epochs by rules written before any run; the arithmetic computed with the class's own step first, agreeing with ADR-0113's tables and naming one sentence of its prose (F-55)
+# ADR-0115: The assemblies marked, measured — brief 049's measurement with ADR-0114's class: ADR-0112's assemblies of 16, 32 and 64 units at six recurrent weights under each of ADR-0113's two sets, every member marked and every weight frozen, run through a lead-in and eight rounds of an unkicked span, a hold span with ADR-0112's kick, a release derived from the class and a tail, by rules written before any run; the arithmetic with the class's own step agreeing with ADR-0113's tables but for one sentence of its prose (F-55); one cell usable — 64 units under set (ii) at a quarter of the range: kicked, it holds as a train of bursts refreshed inside the class's primed window; unkicked, it stays quiet; released, it lets go — while every other cell never holds or runs away; the next decision, a readout gated by the context, named and not taken
 
 ## Context and Problem Statement
 
@@ -192,15 +192,83 @@ The one runtime test this measurement adds:
 ### The order of the work
 
 1. ADR-0114's build (`abb29be`, `5b38a5d` on the branch).
-2. This protocol, the rules, the oracles, the arithmetic pinned and the gate, committed before any run of the measurement.
-3. `the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_exhaustive` and `…_set_ii_…`: each set's three backgrounds and three controls. The kick is read on the engine with the members marked, and must fire every member once at every size under each set before any cell is run.
-4. The six cell tests (`a_marked_assembly_of_{16,32,64}_units_at_six_weights_under_set_{i,ii}_exhaustive`), against the backgrounds pinned in step 3.
+2. This protocol, the rules, the oracles, the arithmetic pinned and the gate, committed before any run of the measurement (`8f192d6` on the branch, pushed with pull request #143 opened as a draft before any run).
+3. `the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_exhaustive` and `…_set_ii_…`: each set's three backgrounds and three controls. The kick is read on the engine with the members marked, and must fire every member once at every size under each set before any cell is run (pinned at `fcb3830`).
+4. The six cell tests (`a_marked_assembly_of_{16,32,64}_units_at_six_weights_under_set_{i,ii}_exhaustive`), against the backgrounds pinned in step 3 (pinned at `cf6e485`).
 5. The readings below, then the weekly dispatched on the documents' commit and its evidence.
+
+### The readings
+
+Every reading below is from the pinned tables of `tests/assembly.rs`, and a second run of every test reproduced them. The runs are in the order above, at the branch's commits:
+- the kick, the backgrounds and the controls at `8f192d6`, read against their pins at `fcb3830`;
+- the six cell tests at `fcb3830` side by side, read against their pins at `cf6e485`.
+
+On a developer machine in the release profile each kick-and-background test took 337 to 344 s run two at a time, and each cell test 470 to 595 s run six at a time (a ratio, not admissible). No weight of any arena moved in any run.
+
+- **The backgrounds** (`BACKGROUNDS_049`: each size's members marked and unwired, the drive alone over the protocol's ticks after the lead-in):
+  - the members fired at 1.655, 1.659 and 1.634 Hz a member at 16, 32 and 64 units under set (i), and 1.623, 1.639 and 1.613 Hz under set (ii);
+  - the rest fired at 1.68 to 1.76 Hz a unit.
+
+  ADR-0112's unmarked members read 1.72 to 1.75 Hz over a run sixteen times shorter.
+- **The kick, read on the engine with the members marked** (`KICKS_049`, each control's eight kicks). Every member fires once by ADR-0112's measure at every size under both sets:
+  - the volley is 128, 256 and 512, every kick a full volley;
+  - the after is 7, 18 and 31 under set (i) and 0, 5 and 10 under set (ii), against marks of 12.8, 25.6 and 51.2.
+
+  Each control's lead-in and first unkicked span are its background's bit for bit. The kick was not derived again.
+- **The controls** (`CONTROLS_049`: grown, marked, unwired, the kick and the release). At every size under both sets no stretch of a hold span is held, no unkicked span ignites, and every tail lets go. The only burst windows are the eight kicks'. The kick alone holds nothing.
+- **The grid** (`GRID_049`, by the rules committed first, against the backgrounds pinned before any cell ran):
+
+  | Set | Size | Weight | First half, of 8 | Holds, of 8 | Ignites, of 8 | Lets go, of 8 | Spills | Usable | What failed |
+  | :--- | ---: | :--- | ---: | ---: | ---: | ---: | :--- | :--- | :--- |
+  | (i) | 16 | 0.25 | 0 | 0 | 2 | 8 | no | no | never holding; running away |
+  | (i) | 16 | 0.375 | 6 | 6 | 8 | 2 | no | no | never holding; running away; not letting go |
+  | (i) | 16 | 0.5 to 1.0 | 8 | 8 | 8 | 0 | no | no | running away; not letting go |
+  | (i) | 32 | every weight | 8 | 8 | 8 | 0 | no | no | running away; not letting go |
+  | (i) | 64 | every weight | 8 | 8 | 8 | 0 | no | no | running away; not letting go |
+  | (ii) | 16 | 0.25 | 0 | 0 | 0 | 8 | not read | no | never holding |
+  | (ii) | 16 | 0.375 | 1 | 0 | 0 | 8 | no | no | never holding |
+  | (ii) | 16 | 0.5 | 8 | 7 | 8 | 8 | no | no | running away |
+  | (ii) | 16 | 0.625 | 8 | 8 | 8 | 3 | no | no | running away; not letting go |
+  | (ii) | 16 | 0.75, 1.0 | 8 | 8 | 8 | 0 | no | no | running away; not letting go |
+  | (ii) | 32 | 0.25 | 6 | 5 | 2 | 7 | no | no | never holding; running away |
+  | (ii) | 32 | 0.375 | 8 | 8 | 8 | 2 | no | no | running away; not letting go |
+  | (ii) | 32 | 0.5 to 1.0 | 8 | 8 | 8 | 0 | no | no | running away; not letting go |
+  | **(ii)** | **64** | **0.25** | 6 | **8** | **0** | **8** | **no** | **yes** | — |
+  | (ii) | 64 | 0.375 | 8 | 8 | 8 | 2 | no | no | running away; not letting go |
+  | (ii) | 64 | 0.5 to 1.0 | 8 | 8 | 8 | 0 | no | no | running away; not letting go |
+
+  **One cell is usable: 64 units under set (ii) at a quarter of the range.** Over the thirty-six cells, 5 never hold, 33 run away and 30 do not let go; nothing spills anywhere.
+- **The usable cell, read** (its stretches and `CELL_BURSTS_049`):
+  - **It holds by refreshing.** In every round the four stretches of the hold span's second half read 6.8 to 19.7 times the background. The hold spans hold 140 burst windows between them, and none falls in an unkicked span, a release or a tail. The intervals between consecutive burst windows are:
+    - 26 of one window (a burst across a window's edge);
+    - 3 of three to four;
+    - 57 of five to eight;
+    - 42 of nine to sixteen;
+    - 3 of 17 to 32, and 1 of 33 to 64.
+
+    So the bursts come mostly 10 000 to 33 000 ticks apart, around the primed peak's 19 242 ticks and well inside the window in which the class leaves the product above the unkicked one (4 046 to 113 388 ticks). Over the held stretches the members' product stands at 1.451 times the unkicked product, against 1.118 over the unkicked spans. Each kick sets off a burst: 3.8 spikes a member a kick in the pair window after its span.
+  - **It pauses and resumes.** In two rounds one stretch of the first half fell to 2.1 and 1.1 times the background, and the next stretch held again: the priming outlasts a missed refresh. So the first half reads 6 of 8, while the second half holds in 8 of 8.
+  - **It stays quiet unkicked.** Every stretch of every unkicked span reads 0.8 to 2.6 times the background.
+  - **It lets go.** Every tail reads 0.9 to 1.5 times the background. The release kept the members silent: 19 spikes in all over the eight releases.
+- **The border of the region.**
+  - Under set (ii), at 32 units and 0.25, a stretch of the second half falls short in three rounds: in two the train of bursts dies, and in one it pauses for a stretch. In two rounds an unkicked span ignites in its second half and holds. At 64 units and 0.375 the assembly ignites in every round and does not let go.
+  - Below 0.25 and above 64 units the grid does not reach, so the region is bounded on two sides and open on two.
+  - Under set (i) no cell holds without also running away. The class's unkicked product is 1.31 times ADR-0019's there, and every cell from 16 units at 0.375 up ignites in all eight rounds.
+- **What running away is.** At the top weight of 32 and 64 units under both sets, and at 0.75 of 64, the members fire in nearly every window: 1 022 to 1 024 of the unkicked spans' 1 024 are burst windows. Their product is 0.06 to 0.15 of the unkicked one, the pool drained, and the release silences them for its span only.
+- **The arithmetic beside the readings.** The arithmetic said a hold, if any, would be bursts set off by the drive's fluctuations on an assembly whose members need several spikes together to fire a target: at the usable cell twelve at the unkicked product and eight at the primed peak. That is what the run read — a train of bursts whose timing sits inside the primed window and whose product, 1.45 of the unkicked, approaches the primed peak's 1.60 — and an unkicked assembly of the same cell that never bursts. The class did what ADR-0113's account said it would, at one cell of the grid.
+- **Not done:**
+  - The grid was not widened, before the runs or after; below 0.25 and at 128 units the region's extent is unread.
+  - There is one seed of the delays, one placement and one drive, on the settled network and not a drained one.
+  - No readout was gated, no context switched and no reward delivered.
+- **The next decision, named and not taken.** By brief 049's branch for a usable region: **ADR-0111's second round, a readout gated by the context**, with F-54's geometry to solve first, since the usable assembly shares its units with the task's readouts at 1 024 units. Its need is this reading: one assembly that holds by refreshing, stays quiet unkicked and lets go, at one cell of the grid.
 
 ## Consequences
 
 - Good: the question ADR-0112 asked is asked again with the one mechanism ADR-0113 chose, on the same substrate, over spans that separate a refreshed hold from a fading priming by the class's own arithmetic.
 - Good: the release is derived from the class and bounded over every state a member can be in, not from one burst's course.
+- Good: one cell holds a context by the network's own activity, stays quiet without a kick and lets go on a signal, by rules written first. ADR-0111's first round has a substrate, and its second has a measured need.
+- Bad: the usable region is one cell, at the grid's lightest weight and largest size. It is a band, not a margin: 32 units at the same weight, and 64 at the next, fail. Its extent below 0.25 and above 64 units is unread.
+- Bad: under set (i), the constants closest to Mongillo's, no cell is usable. The class's larger release at the background's rate makes every assembly heavy enough to hold also ignite without a kick.
 - Neutral: the per-window tables are pinned by a hash, not in full. A reader has the stretches and the dumps, and a later round that needs a window's numbers reruns the test.
 - Bad: F-55 — ADR-0113's primed window, as written, ends about 4 600 and 4 100 ticks later than the product stays strictly above the unkicked one.
 
@@ -221,6 +289,6 @@ The one runtime test this measurement adds:
 - the constants and types: `SETS`, `SET_NAMES`, `WEIGHTS_049`, `Span`, `LEAD_IN_EPOCHS_049`, `UNKICKED_EPOCHS`, `HOLD_EPOCHS`, `TAIL_EPOCHS`, `STRETCH_EPOCHS`, `CEILING`, `FADE_HORIZON`, `COURSE_TICKS`, `ADR_0113_STEADY`, `ADR_0113_COURSE`, `StretchRow`, `ClassWindow`, `Holding`, `BurstRead049`;
 - the functions: `layout`, `stretches_of`, `cancel_due`, `fade`, `silence_of`, `release_rule`, `release_span_oracle`, `after_burst`, `burst_course`, `primed`, `delivered_049`, `stepped_pair`, `stp_course`, `steady_under`, `at_rest_under`, `next_pair`, `stp_sums`, `stretch_rows`, `background_049`, `holding`, `failed`, `kick_reading_049`, `kicked_once_049`, `fires_every_member_once`, `bursts_049`, `marked`, `marked_engine`, `span_protocol`, `windows_hash`, `class_run`;
 - the gate `the_facilitating_class_the_arithmetic_the_spans_the_rules_and_a_marked_assembly_on_the_engine`, and the weekly `the_kick_the_backgrounds_and_the_controls_under_set_{i,ii}_at_1024_units_exhaustive` and `a_marked_assembly_of_{16,32,64}_units_at_six_weights_under_set_{i,ii}_exhaustive`;
-- the tables `CLASS_AT_REST_049`, `CLASS_STEADY_049`, `UNKICKED_PRODUCT_049`, `BURST_COURSE_049`, `PRIMED_049`, `DELIVERED_049`, `FADE_049`, `RELEASE_STRETCHES_049`, `RUN_EPOCHS_049`, `RELEASE_SPAN_ORACLE_049`, `GATE_KICKED_049` and the runs' tables.
+- the tables `CLASS_AT_REST_049`, `CLASS_STEADY_049`, `UNKICKED_PRODUCT_049`, `BURST_COURSE_049`, `PRIMED_049`, `DELIVERED_049`, `FADE_049`, `RELEASE_STRETCHES_049`, `RUN_EPOCHS_049`, `RELEASE_SPAN_ORACLE_049`, `GATE_KICKED_049`; the runs' `BACKGROUND_049`, `CONTROL_049`, `CONTROL_KICKS_049`, `WINDOWS_HASH_049`, `BACKGROUNDS_049`, `KICKS_049`, `CONTROLS_049`, `CONTROL_BURSTS_049`, `CELLS_049`, `CELL_KICKS_049`, `CELL_HASH_049`, `GRID_049` and `CELL_BURSTS_049`; and the gate's reading of the usable cell (`over_the_049_tables`).
 
-Whitepaper §11 carries F-55.
+Whitepaper §11 carries F-55, and §11.1's question on a rule held by the network this reading.
