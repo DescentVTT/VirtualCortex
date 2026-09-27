@@ -1,18 +1,42 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-27
 ---
+
+> **Executed 2026-09-27 in pull request #143.** Writes ADR-0114 (the facilitating class built) and ADR-0115 (the
+> assemblies marked, measured); opens and resolves finding F-55.
+> The class: `FLAG_FACILITATING` (bit 2 of `flags`), `StpClass` and `step_stp_class` beside the untouched `step_stp`, the
+> executor's selection with each worker holding the class, the modulator section's `[32..36)`, image format 17. Unset,
+> every pinned number stands but the two whole-image CRCs, which moved with the header alone and were re-pinned as
+> ADR-0095 did; each image written back to its earlier version reads the CRC pinned before.
+> The grid, the spans, the release, the measures and the arithmetic were committed and pushed before any run
+> (`8f192d6`). The class's step reproduces ADR-0113's tables; one sentence of its prose reads "above" where the product
+> is only at or above (F-55). The kick fired every marked member once at every size under both sets, so it was not
+> derived again.
+>
+> **One cell is usable: 64 units under set (ii) at a quarter of the range.** It holds in 8 of 8 rounds as a train of
+> bursts mostly 10 000 to 33 000 ticks apart, inside the class's primed window, ignites in no unkicked span and lets go
+> after every release. Every other cell never holds or runs away, and under set (i) none is usable. **The next
+> decision** — ADR-0111's second round, a readout gated by the context, with F-54's geometry first — is named and not
+> taken.
+>
+> The weekly dispatched at `scope=both` (run 36295847527) was green in every job: all seventy-nine whole-domain tests
+> passed, the eight of this round among them and the re-pinned images read as before when written back, and the sweep
+> found no survivor; the cost table is regenerated from it. Image format 17; whitepaper 4.65.0.
+> Every deliverable is dispositioned below. Relative links gained one `../` so that they resolve from `archive/`; no
+> other word, claim or figure changed.
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 049: A facilitating class — the class of short-term plasticity ADR-0113 decided, built beside `step_stp` and unset bit for bit; then ADR-0112's assemblies measured again with their members marked, over spans that tell a refreshed hold from a fading one
 
 ## Mission
 
 **This brief builds one mechanism and measures with it.** ADR-0112 read no assembly usable
-([ADR-0112](../docs/adr/0112-an-assembly-that-holds.md)). A kick set off one population burst, the burst drained the
+([ADR-0112](../../docs/adr/0112-an-assembly-that-holds.md)). A kick set off one population burst, the burst drained the
 members' vesicle pool, and the assembly then fell silent. The strong cells burst again of their own whether kicked or
 not.
 
-[ADR-0113](../docs/adr/0113-a-facilitating-class-of-synapses.md) chose a mechanism of persistence: **a facilitating
+[ADR-0113](../../docs/adr/0113-a-facilitating-class-of-synapses.md) chose a mechanism of persistence: **a facilitating
 class of synapses**. A unit may be marked facilitating, and its synapses then release under short-term plasticity
 whose facilitation outlasts its depression. The class's constants are a parameter of the image. By ADR-0113's
 arithmetic, under either of its two sets a kicked assembly is primed for a while after its burst, up to 1.38 or 1.60
@@ -41,7 +65,7 @@ When the round is done, the tree holds:
     bit for bit over the lattice of `testkit/prop.rs`.
   - With no unit marked, every pinned number of the tree holds and the determinism pin does not move.
   - A pin of a whole image moves with the format number and nothing else, restated under a masked check as
-    [ADR-0095](../docs/adr/0095-an-image-pin-moves-with-its-format.md) restated H-17's.
+    [ADR-0095](../../docs/adr/0095-an-image-pin-moves-with-its-format.md) restated H-17's.
 - **Every weight frozen in the measurement.** The excitatory baseline is zero, the inhibitory baseline unset, the
   signed gate unset, and no reward is delivered. Every weight at the end of each run equals its value at the start.
 - **The grid, the spans, the measures, their thresholds and the release are written before any run**, and none moves
@@ -53,14 +77,14 @@ When the round is done, the tree holds:
   every reading that steps a member's short-term state (ADR-0112's `stp_sums`, `steady`, `stp_course` among them)
   steps a marked member with the class's step.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. For the measurement, the runtime's gate grows by
-  at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are
+  at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are
   beside it. The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The runs are dealt so that no shard of the weekly job passes 60 per cent of its bound** under the regenerated deal
-  ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md)). By ADR-0113's spans a cell is about fifteen times
+  ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md)). By ADR-0113's spans a cell is about fifteen times
   ADR-0112's ticks.
 - No pinned number of an earlier round moves, but for the whole-image pins restated above.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
@@ -100,13 +124,13 @@ quoted sentences are what to re-derive.
    - after a burst of four spikes 220 ticks apart, the primed window: about 7 400 to 106 000 ticks at up to 1.38 times
      the unkicked product for (i), and about 4 100 to 117 500 ticks at up to 1.60 for (ii);
    - faded below the unkicked product by 131 072 ticks under both.
-8. **The weekly job** ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md),
-   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). A round that changes `src/` dispatches
+8. **The weekly job** ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md),
+   [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). A round that changes `src/` dispatches
    `scope=both`. The cost table is regenerated from its own dispatch.
 
 ## Deliverables
 
-- [ ] **The class built, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The class built, in a new ADR at the next free number (`ls docs/adr`).**
   - *The mark*: a bit of `flags`, named, that `integrate` leaves as it finds it.
   - *The constants*: the class's $U$ (Q0.8, 1 to 255) and its two shifts (1 to 16), a parameter of the image. The
     loader refuses a value out of range, refuses a marked unit while the class is unset, and refuses the reserved bytes
@@ -123,7 +147,7 @@ quoted sentences are what to re-derive.
     - the image: the class written and read set and unset, each refusal, and a version-16 header refused;
     - `crates/cortex-connectome`: the version's assertions at 17;
     - the whole-image pins restated under a masked check.
-- [ ] **The measurement's protocol, in an ADR, before any run.** At least:
+- [x] **The measurement's protocol, in an ADR, before any run.** At least:
   - *The grid*:
     - sizes 16, 32 and 64 at ADR-0112's placement, wiring and delays;
     - weights at least 0.25, 0.375, 0.5, 0.625, 0.75 and 1.0 of Q1.15's range;
@@ -151,36 +175,41 @@ quoted sentences are what to re-derive.
   - *Readings, no clause*: the intervals between bursts in the hold spans (ADR-0112's burst window); the members' sums
     of $(u, R)$ at each window's end; the product a member's next spike would release with, in held and in unkicked
     spans.
-- [ ] **The arithmetic, before any run, with the class's step**:
+- [x] **The arithmetic, before any run, with the class's step**:
   - both sets' steady pairs at ADR-0112's eight rates;
   - the post-burst course through $2^{18}$ ticks, held to ADR-0113's tables or recorded as a finding;
   - what one spike delivers to a target at each weight, at the unkicked product and at the primed peak, against the
     threshold;
   - the release's length.
-- [ ] **The kick read on the engine with the members marked**, by ADR-0112's measure, before any cell. It fires every
+- [x] **The kick read on the engine with the members marked**, by ADR-0112's measure, before any cell. It fires every
   member once, or it is derived again before any cell.
-- [ ] **The runs.** Every cell and each set's background and control. The weights shown unchanged at each run's end.
+- [x] **The runs.** Every cell and each set's background and control. The weights shown unchanged at each run's end.
   Tables pinned per window, as ADR-0112's rows, and per span.
-- [ ] **The ADR's reading.**
+
+  **Rejected:** every window in full, about 150 000 rows over the forty-eight runs. Each run's windows are pinned by a
+  hash of every window's row and its stretches in full, and each run's windows are in its dump (ADR-0115, option 7).
+- [x] **The ADR's reading.**
   - The grid table: holds, ignites, lets go, spills and usable, per cell.
   - The usable region, if one exists, and the arithmetic beside what the runs read.
   - If no cell is usable, what failed in each: never holding, running away, or not letting go.
   - **The next decision named and not taken**:
     - if a region is usable, ADR-0111's second round, a readout gated by the context, with F-54's geometry to solve;
     - otherwise a longer $\tau_f$ (the factor's bound) or the slower current, with this round's readings as its need.
-- [ ] **The gate.** The build's tests, and at most one runtime test for the measurement: the rules at their edges over
+
+  One cell is usable, so the first branch is the one named (ADR-0115); the second does not apply.
+- [x] **The gate.** The build's tests, and at most one runtime test for the measurement: the rules at their edges over
   tables written by hand, and one marked assembly wired and kicked for a few hundred ticks.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at `scope=both`, since `src/` changes
-  ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). It must be green in every job, with no survivor
+- [x] **The evidence.** A weekly dispatched on this round's branch at `scope=both`, since `src/` changes
+  ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). It must be green in every job, with no survivor
   of the sweep on the class and every pinned number reproduced. The cost table is regenerated from that run's
   artifacts.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper: §5.2's record tables (the mark's bit and the image's bytes), the format's version row, §8.8's
     short-term plasticity row, §11.1's question on a rule held by the network with this round's reading, and §9.
   - The ADR index, `CHANGELOG.md`, `CLAUDE.md`, and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 

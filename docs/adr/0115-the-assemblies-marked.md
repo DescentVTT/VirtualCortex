@@ -195,7 +195,7 @@ The one runtime test this measurement adds:
 2. This protocol, the rules, the oracles, the arithmetic pinned and the gate, committed before any run of the measurement (`8f192d6` on the branch, pushed with pull request #143 opened as a draft before any run).
 3. `the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_exhaustive` and `…_set_ii_…`: each set's three backgrounds and three controls. The kick is read on the engine with the members marked, and must fire every member once at every size under each set before any cell is run (pinned at `fcb3830`).
 4. The six cell tests (`a_marked_assembly_of_{16,32,64}_units_at_six_weights_under_set_{i,ii}_exhaustive`), against the backgrounds pinned in step 3 (pinned at `cf6e485`).
-5. The readings below, then the weekly dispatched on the documents' commit and its evidence.
+5. The readings below and the documents at 4.65.0 (`339babd`), then the weekly dispatched on that commit, and its evidence, the cost table and the brief's archive.
 
 ### The readings
 
@@ -256,6 +256,29 @@ On a developer machine in the release profile each kick-and-background test took
   - Under set (i) no cell holds without also running away. The class's unkicked product is 1.31 times ADR-0019's there, and every cell from 16 units at 0.375 up ignites in all eight rounds.
 - **What running away is.** At the top weight of 32 and 64 units under both sets, and at 0.75 of 64, the members fire in nearly every window: 1 022 to 1 024 of the unkicked spans' 1 024 are burst windows. Their product is 0.06 to 0.15 of the unkicked one, the pool drained, and the release silences them for its span only.
 - **The arithmetic beside the readings.** The arithmetic said a hold, if any, would be bursts set off by the drive's fluctuations on an assembly whose members need several spikes together to fire a target: at the usable cell twelve at the unkicked product and eight at the primed peak. That is what the run read — a train of bursts whose timing sits inside the primed window and whose product, 1.45 of the unkicked, approaches the primed peak's 1.60 — and an unkicked assembly of the same cell that never bursts. The class did what ADR-0113's account said it would, at one cell of the grid.
+- **The evidence.** [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s first clause for `scope=both` applies to the diff: files under `src/` changed, in `cortex-core`, `cortex-connectome` and `runtime/cortex-runtime`. The weekly was dispatched on this round's branch at **`scope=both`**: run [36295847527](https://github.com/DescentVTT/VirtualCortex/actions/runs/36295847527) at `339babd`, the documents commit, after which only this evidence, the cost table and the brief's archive change. **Every job it ran is green.**
+  - **The whole-domain tests.** All seventy-nine passed on the hosted runners. The seventy-one before this round reproduced their pinned numbers. Among them, H-17's, H-18's, H-19's and H-20's arms read their images at format 17 with the CRCs ADR-0114 re-pinned, and each image, written back to its earlier version, read the CRC it read before. This round's eight reproduced their tables. [ADR-0092](0092-the-shards-dealt-by-cost.md)'s table did not know the eight and costed each at 900 s; on the runners they took 465 to 650 s. The four shards took:
+
+    | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
+    | ---: | ---: | ---: | ---: | :--- | :--- |
+    | 0 | 50 m 44 s | 20 | 5 721 | 2 989 s, 42 % | H-20 from the mirrored 1 733 |
+    | 1 | 44 m 23 s | 19 | 5 203 | 2 611 s, 36 % | H-20 from the assignment 1 505 |
+    | 2 | 53 m 50 s | 20 | 6 338 | 3 171 s, 44 % | H-19 from the mirrored 1 367 |
+    | 3 | 52 m 43 s | 20 | 6 095 | 3 105 s, 43 % | H-18 from the mirrored 1 058 |
+
+  - **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: seventy-nine lines, 23 357 s, its source line naming the run; `npm run spec:costs` passing). Replayed through the deal, it plans each shard at 5 839 to 5 840 s summed. At this run's ratio of summed seconds to wall time, 1.91 to 2.00, that is about 2 920 to 3 060 s of tests' wall time, 41 to 43 per cent of the bound, under the brief's 60.
+  - **The mutation sweep**, all seven shards green: 3 637 mutants, 3 466 caught, 145 unviable, 26 timed out and **no survivor**, so none on the class.
+    - No timeout is on the class's lines: `step_stp_class`, `StpClass::is_valid`, `stp_class_of`, the turn's selection or the mark's refusal.
+    - Twenty-four are mutants the scheduled run of 2026-09-21 (35578231335) also timed out on: the iterators', the barrier's, the injector's, the workers' stop, and the loader's `terms` field.
+    - Two are not: the loader's `clauses` field and the negation of `load_clause`, in code this round moved down and did not change. Two injector mutants that run timed out on were caught here. A timeout's list moves with the runner's timing (ADR-0063), and ADR-0062's triage of the two is the weekly job's reading, not this round's.
+
+  The pull request's gate on `339babd` (run [36295839144](https://github.com/DescentVTT/VirtualCortex/actions/runs/36295839144)) is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, 42 mutants of which 34 were caught and 8 unviable. The build's in-diff run on a developer machine had found one survivor, an equivalent guard in the loader, which `5b38a5d` removed.
+
+  On the developer machine every command of brief 049's verification list exited 0 (a ratio, not admissible):
+  - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 649 passed in each and 79 ignored;
+  - check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
+  - `--list`, 79 tests;
+  - the whole-domain suite, one process a test and eight at a time, 79 of 79 in 3 593 s of wall time.
 - **Not done:**
   - The grid was not widened, before the runs or after; below 0.25 and at 128 units the region's extent is unread.
   - There is one seed of the delays, one placement and one drive, on the settled network and not a drained one.
