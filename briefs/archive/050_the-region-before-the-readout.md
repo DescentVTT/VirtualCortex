@@ -1,17 +1,38 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-27
 ---
+
+> **Executed 2026-09-27 in pull request #146.** Writes ADR-0117 (the region measured); builds F-54's decision as the
+> test's geometry; opens and resolves finding F-56. No rule of the engine changed and no pinned number moved.
+> The geometry, the grid, the subset, the conditions and the rules were committed and pushed before any run
+> (`04fda04`), with the pull request opened as a draft. ADR-0115's two cells were reproduced bit for bit before any other
+> cell ran. The kick fired every member once at every size under every condition, so it was not derived again; under
+> (b) it is the core control's, since an unwired run draws no delay (ADR-0117). The image H-20's arm leaves carried its
+> last reward's dopamine signal, which the brief did not name among the bytes to unset (F-56).
+>
+> **The usable region is one weight, a quarter of the range, at 64, 80 and 96 units, and no cell is robust.** Under the
+> task's stimulus and on the drained image both usable cells of the subset ignite without a kick in 2 to 4 rounds of 8;
+> under the other seed 64 units stay usable and 96 units do not. There is no cell for the second round. A held context
+> raises both readouts alike; the eight-place readouts still resolve the stimulus. **The next decision**, among the
+> branches ADR-0116 names for those failures, is named and not taken.
+>
+> The weekly dispatched at `scope=exhaustive` (run 36313742568) was green in every job: all eighty-eight whole-domain
+> tests passed, this round's nine and ADR-0115's among them reproducing their tables; the cost table is regenerated from
+> it. Whitepaper 4.67.0.
+> Every deliverable is dispositioned below. Relative links gained one `../` so that they resolve from `archive/`; no
+> other word, claim or figure changed.
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 050: The region before the readout — on the geometry F-54's decision gives the task and the context, the usable region of ADR-0115's marked assemblies measured for its width and for whether it survives another seed, a drained network and the task's own stimulus; measured, nothing changed
 
 ## Mission
 
 **This brief measures and changes no rule.** ADR-0115 read one usable cell: 64 members marked under set (ii) at a
-quarter of Q1.15's range ([ADR-0115](../docs/adr/0115-the-assemblies-marked.md)). It sits at the grid's lightest weight
+quarter of Q1.15's range ([ADR-0115](../../docs/adr/0115-the-assemblies-marked.md)). It sits at the grid's lightest weight
 and largest size, on one draw of the delays, on the settled network, with no task running.
 
-[ADR-0116](../docs/adr/0116-the-region-before-the-readout.md) deferred the gated readout by one round to ask four
+[ADR-0116](../../docs/adr/0116-the-region-before-the-readout.md) deferred the gated readout by one round to ask four
 things first:
 - **where the context sits** beside the task: F-54 decided, the readouts give up places 5 and 16;
 - **how wide the usable region is**;
@@ -47,13 +68,13 @@ When the round is done, the tree holds:
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0116's included. The kick is read
   on the engine under every condition before its cells run, by ADR-0112's measure.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`; the runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal
-  ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md)). ADR-0116 estimates the round at about a third of the
+  ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md)). ADR-0116 estimates the round at about a third of the
   present cost.
 - No pinned number of an earlier round moves.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
@@ -89,13 +110,13 @@ quoted sentences are what to re-derive.
 7. **ADR-0115's readings**: the usable cell's bursts mostly 10 000 to 33 000 ticks apart, its product 1.45 times the
    unkicked over the held stretches; 32 units at 0.25 holding in 5 rounds and igniting in 2; 64 units at 0.375
    igniting in every round.
-8. **The weekly job** ([ADR-0092](../docs/adr/0092-the-shards-dealt-by-cost.md),
-   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a round that changes only tests dispatches
+8. **The weekly job** ([ADR-0092](../../docs/adr/0092-the-shards-dealt-by-cost.md),
+   [ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a round that changes only tests dispatches
    `scope=exhaustive`. The cost table is regenerated from its own dispatch.
 
 ## Deliverables
 
-- [ ] **The protocol, in a new ADR at the next free number (`ls docs/adr`), before any run.** At least:
+- [x] **The protocol, in a new ADR at the next free number (`ls docs/adr`), before any run.** At least:
   - *The geometry*: beside `geometry`, readouts at `0xAA28A` and `0x45554`, shown disjoint from every member at every
     size of the grid.
   - *The core grid*: the settled image, seed 48, no task; set (ii); sizes 48, 64, 80 and 96 at ADR-0112's nested
@@ -116,13 +137,19 @@ quoted sentences are what to re-derive.
   - *Readings, no clause*:
     - under (d), each readout's count per trial with the context held and with it quiet;
     - under (d), whether the eight-place readouts resolve the stimulus from the background by ADR-0065's measure.
-- [ ] **ADR-0115's two cells reproduced**, 64 units at 0.25 and at 0.375, bit for bit against ADR-0115's pins, before
+
+  Committed at `04fda04` before any run (ADR-0117). The geometry lives in `tests/assembly.rs` beside the runs that read
+  it, not in the harness, which `tests/instrument.rs` compiles without allowing an unused item (ADR-0117, option 1(b)).
+- [x] **ADR-0115's two cells reproduced**, 64 units at 0.25 and at 0.375, bit for bit against ADR-0115's pins, before
   any other cell.
-- [ ] **The kick read on the engine under each condition**, by ADR-0112's measure, before that condition's cells. It
+- [x] **The kick read on the engine under each condition**, by ADR-0112's measure, before that condition's cells. It
   fires every member once, or it is derived again before any cell.
-- [ ] **The runs.** Every cell, background and control. The weights shown unchanged at each run's end. The tables pinned
+
+  It fired every member once under every condition. Under (b) the kick is the core control's: an unwired run draws no
+  delay, so (b)'s background and control would be the core grid's bit for bit (ADR-0117, option 2(b)).
+- [x] **The runs.** Every cell, background and control. The weights shown unchanged at each run's end. The tables pinned
   as ADR-0115's: stretches in full, windows by hash.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - The core grid's table and its usable region.
   - Each condition's table and the robust cells.
   - The cell for the second round, or what failed under which condition.
@@ -132,18 +159,21 @@ quoted sentences are what to re-derive.
       H-20's schedule on this geometry without a context as the third round's baseline;
     - if none is, the branch ADR-0116 names for what failed: under (c), the inhibitory drain or an inhibition of the
       context's own; under (d), the context's isolation from the task's stimulus; under (b), the class's constants.
-- [ ] **The gate.** At most one runtime test: the geometry's disjointness at every size, the rules for robust and for
+
+  No cell is robust, and a usable cell failed under every condition, so all three branches are named (ADR-0117); the
+  first does not apply.
+- [x] **The gate.** At most one runtime test: the geometry's disjointness at every size, the rules for robust and for
   the second round's cell over tables written by hand, and a marked assembly on the new geometry kicked for a few
   hundred ticks.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at `scope=exhaustive`, since only tests change
-  ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). It must be green in every job and reproduce
+- [x] **The evidence.** A weekly dispatched on this round's branch at `scope=exhaustive`, since only tests change
+  ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). It must be green in every job and reproduce
   every pinned number. The cost table is regenerated from that run's artifacts.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's question on a rule held by the network, F-54's row, and §9.
   - The ADR index, `CHANGELOG.md`, `CLAUDE.md`, and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 
