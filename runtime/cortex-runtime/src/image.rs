@@ -164,9 +164,10 @@ const STP_CLASS_TAU_D: usize = 35;
 const STP_CLASS_SET: u8 = 1;
 
 /// The class a modulator record carries (ADR-0114): none while its flag and its three bytes
-/// are zero; the class while its flag is `STP_CLASS_SET`, refused as the configuration's is
-/// when the rule does not resolve it; any other flag, or a byte beside a zero flag, is one the
-/// writer never produces.
+/// are zero; the class while its flag is `STP_CLASS_SET`, which `Executor::new` refuses as it
+/// refuses the configuration's when the rule does not resolve it, the one place the class's
+/// range is held; any other flag, or a byte beside a zero flag, is one the writer never
+/// produces.
 fn stp_class_of(record: &[u8]) -> Result<Option<StpClass>, ImageError> {
     let class = StpClass {
         u: record[STP_CLASS_U],
@@ -175,8 +176,7 @@ fn stp_class_of(record: &[u8]) -> Result<Option<StpClass>, ImageError> {
     };
     match record[STP_CLASS_FLAG] {
         0 if record[STP_CLASS_U..=STP_CLASS_TAU_D] == [0; 3] => Ok(None),
-        STP_CLASS_SET if class.is_valid() => Ok(Some(class)),
-        STP_CLASS_SET => Err(ImageError::Config(ConfigError::StpClassOutOfRange)),
+        STP_CLASS_SET => Ok(Some(class)),
         _ => Err(ImageError::ReservedNotZero {
             section: SECTION_MODULATOR,
             index: 0,
