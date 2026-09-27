@@ -9,6 +9,12 @@
 //! costs at most 32 multiplications and no table. The fields stay Q0.8; the update is computed
 //! in Q16.16 and rounded back, and every relaxation toward a target takes at least one LSB, so
 //! the state reaches its rest exactly instead of stalling near it.
+//!
+//! One set of constants is ADR-0019's and every unit steps under it by default
+//! ([`DendriticSuperNeuron::step_stp`]). Since ADR-0114 the image may carry a class of its own
+//! ([`StpClass`], ADR-0113), and a unit marked `FLAG_FACILITATING` steps under that class
+//! ([`DendriticSuperNeuron::step_stp_class`]): the same rule at other constants, and
+//! `step_stp` itself at ADR-0019's.
 
 use super::neuron::DendriticSuperNeuron;
 
@@ -22,6 +28,43 @@ pub const STP_U: u8 = 51;
 pub const STP_TAU_F_SHIFT: u32 = 14;
 /// Depression recovery time constant $\tau_d = 2^{15}$ ticks ≈ 328 ms.
 pub const STP_TAU_D_SHIFT: u32 = 15;
+
+/// A class of short-term plasticity (ADR-0113, ADR-0114): the baseline release fraction $U$ in
+/// Q0.8 and the two time constants as shifts, $\tau_f = 2^{\text{tau\_f\_shift}}$ and
+/// $\tau_d = 2^{\text{tau\_d\_shift}}$ ticks. The image carries one; a unit marked
+/// `FLAG_FACILITATING` steps under it
+/// ([`step_stp_class`](DendriticSuperNeuron::step_stp_class)) and every other unit under
+/// ADR-0019's constants ([`step_stp`](DendriticSuperNeuron::step_stp)), which are
+/// [`StpClass::REFERENCE`]. Not a record: its three bytes sit in the image's modulator section.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StpClass {
+    /// $U$ in Q0.8, from 1 to 255.
+    pub u: u8,
+    /// $\log_2 \tau_f$, from 1 to 16.
+    pub tau_f_shift: u8,
+    /// $\log_2 \tau_d$, from 1 to 16.
+    pub tau_d_shift: u8,
+}
+
+impl StpClass {
+    /// ADR-0019's constants: $U = 51/256$, $\tau_f = 2^{14}$, $\tau_d = 2^{15}$ ticks.
+    pub const REFERENCE: Self = Self {
+        u: STP_U,
+        tau_f_shift: STP_TAU_F_SHIFT as u8,
+        tau_d_shift: STP_TAU_D_SHIFT as u8,
+    };
+
+    /// True for a class the rule resolves: $U$ from 1 to 255, and each shift from 1 to 16. A
+    /// $U$ of zero never facilitates and never releases; a shift of zero is no time constant;
+    /// and a shift above 16 is one [`stp_decay_factor_q16`] reads as 16 (ADR-0028), so a
+    /// class that named it would name a time constant the rule does not run.
+    pub const fn is_valid(self) -> bool {
+        self.u != 0 && matches!(self.tau_f_shift, 1..=16) && matches!(self.tau_d_shift, 1..=16)
+    }
+}
+
+const _: () = assert!(StpClass::REFERENCE.is_valid());
+const _: () = assert!(STP_TAU_F_SHIFT <= 16 && STP_TAU_D_SHIFT <= 16);
 
 /// $(1 - 2^{-\text{tau\_shift}})^{\text{elapsed}}$ in Q16.16, by binary exponentiation: the
 /// fraction of a deviation that survives `elapsed_ticks` of relaxation with time constant
@@ -81,6 +124,31 @@ impl DendriticSuperNeuron {
         let r = relax_q0_8(self.stp_r_ves, STP_MAX, f_d);
 
         let facilitation = (STP_U as i64)
+            .saturating_mul(256_i64.saturating_sub(u as i64))
+            .saturating_add(128)
+            >> 8;
+        let u = (u as i64).saturating_add(facilitation).min(STP_MAX as i64) as u8;
+        let released = (u as i64).saturating_mul(r as i64).saturating_add(128) >> 8;
+        self.stp_u_rel = u;
+        self.stp_r_ves = (r as i64).saturating_sub(released).max(0) as u8;
+        (u, r)
+    }
+
+    /// [`step_stp`](Self::step_stp) under `class` (ADR-0113, ADR-0114): the same rule with the
+    /// class's $U$ and time constants in place of ADR-0019's — `stp_u_rel` relaxes toward the
+    /// class's $U$ with its $\tau_f$ and `stp_r_ves` toward `STP_MAX` with its $\tau_d$, $u$
+    /// facilitates by $U(1-u)$, the pair `(u, R)` the release uses is returned and `R` is
+    /// depleted by $uR$. `step_stp` is not touched, and at [`StpClass::REFERENCE`] this is it
+    /// bit for bit. The executor calls it for a unit marked `FLAG_FACILITATING` while the
+    /// image carries a class; a class the rule does not resolve (`StpClass::is_valid`) is
+    /// refused before it reaches here, and stepping under one changes no field's range.
+    pub fn step_stp_class(&mut self, elapsed_ticks: u32, class: StpClass) -> (u8, u8) {
+        let f_f = stp_decay_factor_q16(elapsed_ticks, u32::from(class.tau_f_shift));
+        let f_d = stp_decay_factor_q16(elapsed_ticks, u32::from(class.tau_d_shift));
+        let u = relax_q0_8(self.stp_u_rel, class.u, f_f);
+        let r = relax_q0_8(self.stp_r_ves, STP_MAX, f_d);
+
+        let facilitation = (class.u as i64)
             .saturating_mul(256_i64.saturating_sub(u as i64))
             .saturating_add(128)
             >> 8;
@@ -251,6 +319,84 @@ mod tests {
         }
     }
 
+    /// A class is valid with $U$ from 1 to 255 and each shift from 1 to 16, and at no edge
+    /// beyond (ADR-0114); ADR-0019's constants are one.
+    #[test]
+    fn a_class_is_valid_from_one_to_255_and_its_shifts_from_one_to_sixteen() {
+        let class = |u, tau_f_shift, tau_d_shift| StpClass {
+            u,
+            tau_f_shift,
+            tau_d_shift,
+        };
+        assert_eq!(StpClass::REFERENCE, class(51, 14, 15));
+        assert!(StpClass::REFERENCE.is_valid());
+        for u in [1, 26, 51, 255] {
+            for (f, d) in [(1, 1), (1, 16), (16, 1), (16, 16), (16, 13)] {
+                assert!(class(u, f, d).is_valid(), "{u} {f} {d}");
+            }
+        }
+        assert!(!class(0, 16, 13).is_valid(), "a U of zero");
+        for bad in [0, 17, 255] {
+            assert!(!class(51, bad, 13).is_valid(), "tau_f shift {bad}");
+            assert!(!class(51, 16, bad).is_valid(), "tau_d shift {bad}");
+        }
+    }
+
+    /// The class's step at its edges (ADR-0114), each pair and each state after it computed
+    /// by hand from the rule: a first spike after any state is the class's rest, facilitated
+    /// once, at $U$ of 1, 26, 51 and 255; an empty pool with no time elapsed stays empty and
+    /// releases nothing; a shift of one halves a deviation a tick, and a shift of sixteen
+    /// moves it by the one LSB the rule guarantees; and each time constant is its own field's.
+    #[test]
+    fn the_class_s_step_at_its_edges() {
+        let class = |u, tau_f_shift, tau_d_shift| StpClass {
+            u,
+            tau_f_shift,
+            tau_d_shift,
+        };
+        let step = |state: (u8, u8), elapsed: u32, c: StpClass| {
+            let mut n = DendriticSuperNeuron::new(1);
+            (n.stp_u_rel, n.stp_r_ves) = state;
+            let pair = n.step_stp_class(elapsed, c);
+            (pair, (n.stp_u_rel, n.stp_r_ves))
+        };
+        // A first spike: every state relaxes to the class's rest before it facilitates.
+        assert_eq!(
+            step((0, 0), u32::MAX, class(1, 16, 16)),
+            ((2, 255), (2, 253))
+        );
+        assert_eq!(
+            step((0, 0), u32::MAX, class(255, 16, 16)),
+            ((255, 255), (255, 1)),
+            "the ceiling"
+        );
+        assert_eq!(
+            step((200, 3), u32::MAX, class(26, 16, 13)),
+            ((49, 255), (49, 206)),
+            "ADR-0113's set (ii)"
+        );
+        assert_eq!(
+            step((7, 9), u32::MAX, class(51, 16, 13)),
+            ((92, 255), (92, 163)),
+            "set (i): ADR-0019's first release"
+        );
+        // An empty pool, no time: nothing recovers and nothing is released.
+        assert_eq!(step((100, 0), 0, class(51, 16, 13)), ((131, 0), (131, 0)));
+        assert_eq!(step((0, 0), 0, class(255, 1, 1)), ((255, 0), (255, 0)));
+        // A shift of one: half of each deviation survives a tick, a quarter two.
+        assert_eq!(step((255, 0), 1, class(51, 1, 1)), ((174, 127), (174, 41)));
+        assert_eq!(step((255, 0), 2, class(51, 1, 1)), ((133, 191), (133, 92)));
+        // A shift of sixteen: one tick moves each field by one LSB; 2^16 ticks by 1 - 1/e.
+        assert_eq!(step((255, 0), 1, class(51, 16, 16)), ((254, 1), (254, 0)));
+        assert_eq!(
+            step((255, 0), 65_536, class(51, 16, 16)),
+            ((152, 162), (152, 66))
+        );
+        // The facilitation's time constant is u's and the depression's is R's.
+        assert_eq!(step((255, 0), 1, class(51, 1, 16)), ((174, 1), (174, 0)));
+        assert_eq!(step((255, 0), 1, class(51, 16, 1)), ((254, 127), (254, 1)));
+    }
+
     #[test]
     fn two_units_given_the_same_train_stay_identical() {
         let mut a = rested();
@@ -359,6 +505,145 @@ mod prop {
                 u.stp_r_ves as i64,
                 (r2 as i64 - released).max(0),
                 "then depletion by exactly the release"
+            );
+        }
+    }
+
+    /// A unit with the factors `(u, r)`.
+    fn with(u: u8, r: u8) -> DendriticSuperNeuron {
+        let mut n = DendriticSuperNeuron::new(1);
+        n.stp_u_rel = u;
+        n.stp_r_ves = r;
+        n
+    }
+
+    /// ADR-0114: the class's step at ADR-0019's constants is `step_stp` bit for bit — the pair
+    /// it returns and the two fields it leaves — over the lattice of factors and intervals, and
+    /// over a seeded walk of trains that carries each state into the next spike.
+    #[test]
+    fn the_class_s_step_at_adr_0019_s_constants_is_step_stp_bit_for_bit() {
+        for &u in U8_LATTICE.iter() {
+            for &r in U8_LATTICE.iter() {
+                for &elapsed in U32_LATTICE.iter() {
+                    let (mut a, mut b) = (with(u, r), with(u, r));
+                    assert_eq!(
+                        a.step_stp(elapsed),
+                        b.step_stp_class(elapsed, StpClass::REFERENCE),
+                        "{u} {r} {elapsed}"
+                    );
+                    assert_eq!((a.stp_u_rel, a.stp_r_ves), (b.stp_u_rel, b.stp_r_ves));
+                }
+            }
+        }
+        let mut rng = Lcg::new(0x0114);
+        for _ in 0..2_000 {
+            let (u, r) = (rng.next_u8(), rng.next_u8());
+            let (mut a, mut b) = (with(u, r), with(u, r));
+            for _ in 0..100 {
+                let elapsed = if rng.below(8) == 0 {
+                    rng.u32_edge_biased()
+                } else {
+                    rng.below(1 << 18)
+                };
+                assert_eq!(
+                    a.step_stp(elapsed),
+                    b.step_stp_class(elapsed, StpClass::REFERENCE)
+                );
+                assert_eq!((a.stp_u_rel, a.stp_r_ves), (b.stp_u_rel, b.stp_r_ves));
+            }
+        }
+    }
+
+    /// Tsodyks–Markram in `i64`, written from the rule rather than from the step: each factor's
+    /// deviation from its rest — $u$ from $U$, $R$ from `STP_MAX` — survives the interval by the
+    /// factor, rounded to nearest, and is at least one LSB smaller once time has passed, so a
+    /// state reaches its rest; then $u \mathrel{+}= U(1 - u)$, rounded, at most `STP_MAX`; the
+    /// release is $uR$, rounded, and $R$ loses it, at least zero. Returns the pair the release
+    /// uses and the two fields after it.
+    fn tsodyks_markram(u: u8, r: u8, elapsed: u32, c: StpClass) -> ((u8, u8), (u8, u8)) {
+        let survives = |deviation: i64, shift: u8| -> i64 {
+            let f = i64::from(decay_factor_before_the_range(elapsed, u32::from(shift)));
+            if deviation == 0 || f == Q16_ONE {
+                return deviation;
+            }
+            let kept = deviation
+                .abs()
+                .saturating_mul(f)
+                .saturating_add(Q16_ONE / 2)
+                .checked_div(Q16_ONE)
+                .unwrap_or(0)
+                .min(deviation.abs().saturating_sub(1));
+            kept.saturating_mul(deviation.signum())
+        };
+        let big_u = i64::from(c.u);
+        let u1 = big_u.saturating_add(survives(i64::from(u).saturating_sub(big_u), c.tau_f_shift));
+        let r1 = 255_i64.saturating_add(survives(i64::from(r).saturating_sub(255), c.tau_d_shift));
+        let facilitation = big_u
+            .saturating_mul(256_i64.saturating_sub(u1))
+            .saturating_add(128)
+            .checked_div(256)
+            .unwrap_or(0);
+        let u2 = u1.saturating_add(facilitation).min(255);
+        let released = u2
+            .saturating_mul(r1)
+            .saturating_add(128)
+            .checked_div(256)
+            .unwrap_or(0);
+        let r2 = r1.saturating_sub(released).max(0);
+        ((u2 as u8, r1 as u8), (u2 as u8, r2 as u8))
+    }
+
+    /// ADR-0114: at any constants the rule resolves, the class's step is the `i64` oracle —
+    /// over the lattice of factors and intervals at the edges of each constant ($U$ of 1, 2,
+    /// 26, 51, 254 and 255; shifts of 1, 2, 13, 15 and 16, in every pairing), and over 400 000
+    /// seeded draws of a class, a state and an interval.
+    #[test]
+    fn the_class_s_step_is_tsodyks_markram_at_any_constants_by_an_i64_oracle() {
+        let shifts = [1u8, 2, 13, 15, 16];
+        for &big_u in [1u8, 2, 26, 51, 254, 255].iter() {
+            for &f in shifts.iter() {
+                for &d in shifts.iter() {
+                    let c = StpClass {
+                        u: big_u,
+                        tau_f_shift: f,
+                        tau_d_shift: d,
+                    };
+                    for &u in U8_LATTICE.iter() {
+                        for &r in U8_LATTICE.iter() {
+                            for &elapsed in U32_LATTICE.iter() {
+                                let mut n = with(u, r);
+                                let pair = n.step_stp_class(elapsed, c);
+                                assert_eq!(
+                                    (pair, (n.stp_u_rel, n.stp_r_ves)),
+                                    tsodyks_markram(u, r, elapsed, c),
+                                    "{c:?} {u} {r} {elapsed}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut rng = Lcg::new(0x0113);
+        for _ in 0..400_000 {
+            let c = StpClass {
+                u: rng.below(255).saturating_add(1) as u8,
+                tau_f_shift: rng.below(16).saturating_add(1) as u8,
+                tau_d_shift: rng.below(16).saturating_add(1) as u8,
+            };
+            assert!(c.is_valid());
+            let (u, r) = (rng.next_u8(), rng.next_u8());
+            let elapsed = if rng.below(4) == 0 {
+                rng.u32_edge_biased()
+            } else {
+                rng.below(1 << 20)
+            };
+            let mut n = with(u, r);
+            let pair = n.step_stp_class(elapsed, c);
+            assert_eq!(
+                (pair, (n.stp_u_rel, n.stp_r_ves)),
+                tsodyks_markram(u, r, elapsed, c),
+                "{c:?} {u} {r} {elapsed}"
             );
         }
     }

@@ -6024,9 +6024,11 @@ const REVERSAL_CENSUS_1024: [&[(u32, u64)]; 2] = [
     ],
 ];
 /// The one inhibited image both arms decode, its CRC-64: the same bytes in both tests. Since
-/// ADR-0094 the image is format 16, so its header's version and seal are not the bytes H-17
-/// read, and ADR-0095 pins the image as it is now beside the CRC H-17 read.
-const REVERSAL_IMAGE_CRC_1024: u64 = 0xd2965219775c394a;
+/// ADR-0094 the image's format is not the one H-17 read, so its header's version and seal are
+/// not the bytes H-17 read, and ADR-0095 pins the image as it is now beside the CRC H-17 read;
+/// ADR-0114 moved the format from 16 to 17 and re-pinned it the same way (it was
+/// `0xd2965219775c394a` at format 16).
+const REVERSAL_IMAGE_CRC_1024: u64 = 0x938ad516b6badd90;
 /// The same image with its header's version written back to 15 and the header resealed: the
 /// CRC-64 H-17 read (ADR-0091), so that every byte of the image but the version and the seal is
 /// the image H-17 ran from (ADR-0095).
@@ -7126,6 +7128,11 @@ fn punished_arm(arm: Reversal) {
         "{name}: the moves per block"
     );
     assert_eq!(image_crc, PUNISHED_IMAGE_CRC_1024, "{name}: the one image");
+    assert_eq!(
+        crc64(&with_version(&signed, 16)),
+        PUNISHED_IMAGE_CRC_FORMAT_16_1024,
+        "{name}: every byte but the header's version and seal is the image H-18 read (ADR-0114)"
+    );
     assert_eq!(at_carry, PUNISHED_CARRY_1024[k]);
     assert_eq!(correct, CORRECT_PUNISHED_1024[k]);
     assert_eq!(reach, REACH_PUNISHED_1024[k]);
@@ -7626,6 +7633,7 @@ fn a_few_trials_over_a_punishment_at_1024_units_and_the_rules_of_the_punished_pa
     assert_eq!(verdict, PUNISHED_1024, "the verdict as written");
     assert_eq!(PUNISHED_PREDICTED, None, "and no prediction to hold it to");
     assert_ne!(PUNISHED_IMAGE_CRC_1024, 0);
+    assert_ne!(PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024);
     for (k, &arm) in PUNISHED_ARMS.iter().enumerate() {
         let blocks = PUNISHED_BLOCKS_1024[k];
         let earned = PUNISHED_EARNED_1024[k];
@@ -13715,8 +13723,14 @@ const PUNISHED_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
-/// The one signed image both arms decode, its CRC-64.
-const PUNISHED_IMAGE_CRC_1024: u64 = 0x3771636d385191ac;
+/// The one signed image every arm of H-18, H-19 and H-20 decodes, its CRC-64. ADR-0114 moved
+/// the format from 16 to 17, so its header's version and seal are not the bytes those arms
+/// read; the image as it is now, re-pinned as ADR-0095 re-pinned H-17's.
+const PUNISHED_IMAGE_CRC_1024: u64 = 0x766de462f9b77576;
+/// The same image with its header's version written back to 16 and the header resealed: the
+/// CRC-64 H-18, H-19 and H-20 read (ADR-0096, ADR-0108, ADR-0110), so that every byte of the
+/// image but the version and the seal is the image they ran from (ADR-0114, as ADR-0095).
+const PUNISHED_IMAGE_CRC_FORMAT_16_1024: u64 = 0x3771636d385191ac;
 /// The four couplings at the end of the 1 537th trial, per arm, as read.
 const PUNISHED_CARRY_1024: [[[i64; 2]; 2]; 2] = [
     [[8621458, 6428657], [6361667, 9355767]],
@@ -14097,6 +14111,11 @@ fn critic_arm(arm: Reversal) {
         image_crc, PUNISHED_IMAGE_CRC_1024,
         "{name}: H-18's one image"
     );
+    assert_eq!(
+        crc64(&with_version(&signed, 16)),
+        PUNISHED_IMAGE_CRC_FORMAT_16_1024,
+        "{name}: every byte but the header's version and seal is the image H-19 read (ADR-0114)"
+    );
     {
         let mut frozen = frozen_from(&zero, 1024);
         assert_eq!(
@@ -14381,8 +14400,9 @@ fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
     assert_eq!((PUNISHED_TRIALS, PUNISHED_ARMS), (4_608, REVERSAL_ARMS));
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
-        PUNISHED_IMAGE_CRC_1024, 0x3771_636d_3851_91ac,
-        "H-18's image"
+        (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
+        (0x766d_e462_f9b7_7576, 0x3771_636d_3851_91ac),
+        "H-18's image, at format 17 and as read at format 16"
     );
     // The criterion's clauses 1 and 2 at their edges over blocks written by hand, as H-18's.
     let blocks_of = |correct: &[u32]| -> Vec<Block> {
@@ -21823,6 +21843,11 @@ fn schedule_arm(arm: Reversal) {
         image_crc, PUNISHED_IMAGE_CRC_1024,
         "{name}: H-19's image, H-18's"
     );
+    assert_eq!(
+        crc64(&with_version(&signed, 16)),
+        PUNISHED_IMAGE_CRC_FORMAT_16_1024,
+        "{name}: every byte but the header's version and seal is the image H-20 read (ADR-0114)"
+    );
     {
         let mut frozen = frozen_from(&zero, 1024);
         assert_eq!(
@@ -22173,8 +22198,9 @@ fn a_few_trials_over_a_schedule_at_1024_units_and_the_rules_of_the_schedule() {
     assert_eq!((PUNISHED_TRIALS, PUNISHED_ARMS), (4_608, REVERSAL_ARMS));
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
-        PUNISHED_IMAGE_CRC_1024, 0x3771_636d_3851_91ac,
-        "H-19's image, H-18's"
+        (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
+        (0x766d_e462_f9b7_7576, 0x3771_636d_3851_91ac),
+        "H-19's image, H-18's, at format 17 and as H-19 read it at format 16"
     );
     // The schedule's rule: the mapping in force is the other than the first from the 1 537th
     // trial to the 3 584th and from the 5 633rd to the last; under H-19's one flip, from the

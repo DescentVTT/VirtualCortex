@@ -9,10 +9,11 @@
 //!    unit's owner when its turn left it awake and by a push or an activation that found it
 //!    idle (ADR-0100). For each, the worker drains the mailbox if it holds mail, orders the
 //!    batch by message value (§8.3), scales the two compartment sums by the tick's synaptic
-//!    gain (ADR-0036), integrates, steps the short-term plasticity if the unit fired, and keeps
-//!    the unit on the schedule for the next tick while it is not at rest. Only the owner
-//!    references the unit, exclusively, and no push happens in the phase, so the turn takes no
-//!    claim. At the end of the phase the worker publishes how many of its units fired.
+//!    gain (ADR-0036), integrates, steps the short-term plasticity if the unit fired (under the
+//!    image's class for a unit marked facilitating, ADR-0114), and keeps the unit on the
+//!    schedule for the next tick while it is not at rest. Only the owner references the unit,
+//!    exclusively, and no push happens in the phase, so the turn takes no claim. At the end of
+//!    the phase the worker publishes how many of its units fired.
 //! 2. **Fan-out.** For each unit that fired in phase 1, the worker that ran it walks its chain:
 //!    per block, STDP against the targets' last spikes (settled, since every turn has ended)
 //!    into the eligibility traces, the traces consolidated into the weights under the tick's
@@ -49,11 +50,12 @@ use crate::pool::Pools;
 use crate::store::{Induction, TermError};
 use cortex_affect::InteroceptiveState;
 use cortex_core::{
-    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FlatTimingWheel, GateState,
-    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16,
-    NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SynapseBlock,
-    THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical,
-    message_is_synaptic, spike_message, synapse_token, synaptic_message, token_block, token_slot,
+    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FLAG_FACILITATING, FlatTimingWheel,
+    GateState, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS,
+    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS,
+    SYNAPSES_PER_BLOCK, StpClass, SynapseBlock, THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15,
+    message_efficacy_q16, message_is_apical, message_is_synaptic, spike_message, synapse_token,
+    synaptic_message, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
@@ -166,6 +168,15 @@ pub struct Config {
     /// For an engine built from an image, the image's outranks this one: it changes what the
     /// run does, so it is part of the image (§8.3).
     pub signed_gate: bool,
+    /// The class of short-term plasticity (ADR-0113, ADR-0114): while set, a unit marked
+    /// `FLAG_FACILITATING` steps its short-term state under the class's constants
+    /// (`DendriticSuperNeuron::step_stp_class`) and every other unit under ADR-0019's
+    /// (`step_stp`); unset (the default), every unit steps under ADR-0019's, marked or not, bit
+    /// for bit. Refused unless the rule resolves it (`StpClass::is_valid`). Each worker holds it
+    /// from `Executor::new`, so the tick reads no word for it. For an engine built from an image,
+    /// the image's outranks this one: it changes what the run does, so it is part of the image
+    /// (§8.3).
+    pub stp_class: Option<StpClass>,
 }
 
 impl Default for Config {
@@ -192,6 +203,7 @@ impl Default for Config {
             istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
             inhibitory_baseline_q16: None,
             signed_gate: false,
+            stp_class: None,
         }
     }
 }
@@ -304,6 +316,9 @@ pub enum ConfigError {
     IstdpPeriodOutOfRange,
     /// `inhibitory_baseline_q16` is set outside [0, 1] (ADR-0086).
     InhibitoryBaselineOutOfRange,
+    /// `stp_class` is set to a class the rule does not resolve: a $U$ of zero, or a shift
+    /// outside 1 to 16 (ADR-0114).
+    StpClassOutOfRange,
 }
 
 /// Why an episode could not be tagged (ADR-0038).
@@ -707,6 +722,9 @@ struct Worker<const CAP: usize> {
     /// Descendants this worker fired this tick (ADR-0054).
     descended: u32,
     in_flight: i64,
+    /// The class a marked unit steps under (ADR-0114): the executor's, copied at
+    /// `Executor::new` and never written after, so the turn reads the worker's own field.
+    stp_class: Option<StpClass>,
 }
 
 /// What a worker kept.
@@ -782,6 +800,8 @@ pub struct Executor<const CAP: usize> {
     inhibitory_baseline_q16: Option<i32>,
     /// The signed gate (ADR-0094): the configuration's, or the image's.
     signed_gate: bool,
+    /// The class of short-term plasticity (ADR-0114): the configuration's, or the image's.
+    stp_class: Option<StpClass>,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -878,6 +898,9 @@ impl<const CAP: usize> Executor<CAP> {
         {
             return Err(ConfigError::InhibitoryBaselineOutOfRange);
         }
+        if config.stp_class.is_some_and(|c| !c.is_valid()) {
+            return Err(ConfigError::StpClassOutOfRange);
+        }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -948,6 +971,7 @@ impl<const CAP: usize> Executor<CAP> {
                 turns: 0,
                 in_flight: 0,
                 descended: 0,
+                stp_class: config.stp_class,
             })
             .collect();
         let worker0 = states.remove(0);
@@ -981,6 +1005,7 @@ impl<const CAP: usize> Executor<CAP> {
             modulation_baseline_q16: config.modulation_baseline_q16,
             inhibitory_baseline_q16: config.inhibitory_baseline_q16,
             signed_gate: config.signed_gate,
+            stp_class: config.stp_class,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1058,6 +1083,13 @@ impl<const CAP: usize> Executor<CAP> {
     /// unset, every synapse consolidates as before ADR-0094.
     pub fn signed_gate(&self) -> bool {
         self.signed_gate
+    }
+
+    /// The class of short-term plasticity (ADR-0114), from the configuration or the image: while
+    /// set, a unit marked `FLAG_FACILITATING` steps under it; none while unset, where every unit
+    /// steps under ADR-0019's constants as before ADR-0114.
+    pub fn stp_class(&self) -> Option<StpClass> {
+        self.stp_class
     }
 
     /// A reward-prediction error into the dopamine signal, between ticks (ADR-0032): an input,
@@ -2278,7 +2310,12 @@ impl<const CAP: usize> Worker<CAP> {
             } else {
                 now.wrapping_sub(previous_spike)
             };
-            let (release_u, release_r) = u.step_stp(elapsed);
+            // A marked unit under the image's class, every other under ADR-0019's (ADR-0114);
+            // with no class every unit takes `step_stp`, marked or not.
+            let (release_u, release_r) = match self.stp_class {
+                Some(class) if u.flags & FLAG_FACILITATING != 0 => u.step_stp_class(elapsed, class),
+                _ => u.step_stp(elapsed),
+            };
             if u.is_descendant(now) {
                 // Below the unit count, as the spikes are.
                 self.descended = self.descended.wrapping_add(1);
@@ -3030,6 +3067,115 @@ mod tests {
         exec.reward(-3 * MODULATION_ONE_Q16);
         exec.tick();
         assert_eq!(published(&exec), (0, 0), "unset again");
+    }
+
+    /// The class of short-term plasticity (ADR-0114): unset by default; refused by `new` at
+    /// every edge the rule does not resolve and taken at every edge it does. In one run under
+    /// a class, the marked unit's factors step under it and the unmarked unit's under ADR-0019's
+    /// constants, each held to the step on a copy of its factors from rest, spike by spike, with
+    /// the intervals the executor's own train read; with no class the marked unit steps as the
+    /// unmarked one does, bit for bit.
+    #[test]
+    fn a_marked_unit_steps_under_the_class_and_an_unmarked_one_under_adr_0019_s_constants() {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        assert_eq!(Config::default().stp_class, None, "unset by default");
+        let class = |u, tau_f_shift, tau_d_shift| StpClass {
+            u,
+            tau_f_shift,
+            tau_d_shift,
+        };
+        let with = |stp_class| Config {
+            units: 2,
+            nodes_per_worker: 64,
+            train_capacity: 64,
+            stp_class,
+            ..Config::default()
+        };
+        for bad in [
+            class(0, 16, 13),
+            class(51, 0, 13),
+            class(51, 17, 13),
+            class(51, 16, 0),
+            class(51, 16, 17),
+        ] {
+            assert_eq!(
+                Executor::<8>::new(with(Some(bad))).err(),
+                Some(ConfigError::StpClassOutOfRange),
+                "{bad:?}"
+            );
+        }
+        for good in [class(1, 1, 1), class(255, 16, 16), class(26, 16, 13)] {
+            let exec = Executor::<8>::new(with(Some(good))).unwrap();
+            assert_eq!(exec.stp_class(), Some(good));
+        }
+        assert_eq!(Executor::<8>::new(with(None)).unwrap().stp_class(), None);
+        // Both units at rest, unit 0 marked; each round fires both with fourteen strong
+        // messages and runs the round's ticks, so the intervals between spikes vary.
+        let rounds = [400u32, 1_000, 250, 5_000, 20_000, 300, 70_000, 600];
+        let run = |stp_class: Option<StpClass>| {
+            let mut exec = Executor::<8>::new(with(stp_class)).unwrap();
+            for unit in exec.units_mut() {
+                unit.v_thresh = THRESHOLD_BASE;
+                unit.stp_u_rel = STP_U;
+                unit.stp_r_ves = STP_MAX;
+            }
+            exec.units_mut()[0].flags |= FLAG_FACILITATING;
+            let inject = exec.injector();
+            let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+            let mut train = Vec::new();
+            for &ticks in &rounds {
+                for unit in [0, 1] {
+                    for _ in 0..14 {
+                        inject.inject(unit, strong).unwrap();
+                    }
+                }
+                exec.run(u64::from(ticks));
+                train.extend_from_slice(exec.train());
+                exec.train.clear();
+            }
+            let factors: Vec<(u8, u8)> = exec
+                .units()
+                .iter()
+                .map(|u| (u.stp_u_rel, u.stp_r_ves))
+                .collect();
+            (train, factors)
+        };
+        // The factors a unit's spikes leave, by the step on a copy from rest: `class` for the
+        // class's step, none for `step_stp`.
+        let stepped = |train: &[(u32, u32)], unit: u32, class: Option<StpClass>| {
+            let mut copy = DendriticSuperNeuron::new(0);
+            copy.stp_u_rel = STP_U;
+            copy.stp_r_ves = STP_MAX;
+            let mut last: Option<u32> = None;
+            let mut spikes = 0u32;
+            for &(tick, _) in train.iter().filter(|&&(_, u)| u == unit) {
+                let elapsed = last.map_or(u32::MAX, |l| tick.wrapping_sub(l));
+                match class {
+                    Some(c) => copy.step_stp_class(elapsed, c),
+                    None => copy.step_stp(elapsed),
+                };
+                last = Some(tick);
+                spikes = spikes.saturating_add(1);
+            }
+            ((copy.stp_u_rel, copy.stp_r_ves), spikes)
+        };
+        let set = class(26, 16, 13);
+        let (train, factors) = run(Some(set));
+        let (marked, marked_spikes) = stepped(&train, 0, Some(set));
+        let (unmarked, unmarked_spikes) = stepped(&train, 1, None);
+        assert!(
+            marked_spikes >= 8 && unmarked_spikes >= 8,
+            "every round fires both: {train:?}"
+        );
+        assert_eq!(factors, [marked, unmarked], "{train:?}");
+        assert_ne!(marked, stepped(&train, 0, None).0, "the class tells");
+        assert_ne!(unmarked, stepped(&train, 1, Some(set)).0);
+        // No class: the mark is read by nothing, and both units step under ADR-0019's.
+        let (train, factors) = run(None);
+        assert_eq!(
+            factors,
+            [stepped(&train, 0, None).0, stepped(&train, 1, None).0]
+        );
     }
 }
 
