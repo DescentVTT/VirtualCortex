@@ -32,8 +32,11 @@
 mod harness;
 use harness::*;
 
-use cortex_connectome::SECTION_SYNAPSE;
-use cortex_core::{BASAL_LEAK_SHIFT, STP_MAX, STP_U, SYNAPSES_PER_BLOCK, synaptic_efficacy_q16};
+use cortex_connectome::{SECTION_NEURON, SECTION_SYNAPSE};
+use cortex_core::{
+    BASAL_LEAK_SHIFT, FLAG_FACILITATING, STP_MAX, STP_U, SYNAPSES_PER_BLOCK, StpClass,
+    synaptic_efficacy_q16,
+};
 use cortex_runtime::{Inject, mix64};
 
 // ------------------------------------------------ the grid (brief 048), before any run
@@ -411,7 +414,12 @@ fn kick_reading(rows: &[EpochRow], size: u32) -> (u64, u64, u64, u32) {
 /// of one spike per member per kick and at most one, and the members' spikes in the pair
 /// window after the span at most `AFTER_MAX_TENTHS` tenths per member per kick.
 fn kicked_once(rows: &[EpochRow], size: u32) -> bool {
-    let (volley, after, kicks, _) = kick_reading(rows, size);
+    fires_every_member_once(kick_reading(rows, size), size)
+}
+
+/// `kicked_once`'s measure over a kick's reading `(volley, after, kicks, full)`, shared with
+/// brief 049's reading over rounds.
+fn fires_every_member_once((volley, after, kicks, _): (u64, u64, u64, u32), size: u32) -> bool {
     let once = u64::from(size).saturating_mul(10).saturating_mul(kicks);
     let tolerance = VOLLEY_TOLERANCE_TENTHS.saturating_mul(kicks);
     kicks > 0
@@ -455,20 +463,48 @@ fn stepped(standing: (i32, i32), input: impl Fn(u32) -> i32, ticks: u32) -> Step
     out
 }
 
+/// One spike of `unit` after `elapsed` ticks, as the executor's turn steps it (ADR-0114):
+/// under `class` when the unit is marked facilitating and a class is set, under ADR-0019's
+/// constants (`step_stp`) otherwise.
+fn stepped_pair(
+    unit: &mut DendriticSuperNeuron,
+    elapsed: u32,
+    class: Option<StpClass>,
+) -> (u8, u8) {
+    match class {
+        Some(c) if unit.flags & FLAG_FACILITATING != 0 => unit.step_stp_class(elapsed, c),
+        _ => unit.step_stp(elapsed),
+    }
+}
+
 /// The pairs `(u, R)` a unit's spikes release with when it fires every `interval` ticks from
-/// short-term plasticity at rest: `step_stp` itself on a unit whose factors are the prior's at
-/// rest, the first spike after a rest of `u32::MAX` ticks as the executor reads a first spike.
-fn stp_course(interval: u32, spikes: usize) -> Vec<(u8, u8)> {
+/// short-term plasticity at rest, the first spike after a rest of `u32::MAX` ticks as the
+/// executor reads a first spike: `step_stp` itself on a unit whose factors are the prior's at
+/// rest when `class` is none, and since brief 049 the class's step on a unit marked
+/// facilitating from the class's rest when it is set (`stepped_pair`).
+fn stp_course(interval: u32, spikes: usize, class: Option<StpClass>) -> Vec<(u8, u8)> {
+    course_unit(interval, spikes, class).0
+}
+
+/// `stp_course_under`'s pairs and the unit its last spike leaves.
+fn course_unit(
+    interval: u32,
+    spikes: usize,
+    class: Option<StpClass>,
+) -> (Vec<(u8, u8)>, DendriticSuperNeuron) {
     let mut unit = DendriticSuperNeuron::new(0);
-    unit.stp_u_rel = STP_U;
+    unit.stp_u_rel = class.map_or(STP_U, |c| c.u);
     unit.stp_r_ves = STP_MAX;
+    if class.is_some() {
+        unit.flags = FLAG_FACILITATING;
+    }
     let mut elapsed = u32::MAX;
     let mut out = Vec::with_capacity(spikes);
     for _ in 0..spikes {
-        out.push(unit.step_stp(elapsed));
+        out.push(stepped_pair(&mut unit, elapsed, class));
         elapsed = interval;
     }
-    out
+    (out, unit)
 }
 
 /// The spikes a course runs before its pair is read as steady.
@@ -477,7 +513,12 @@ const STP_SPIKES: usize = 256;
 /// The steady pair at `interval`: the last of a course of `STP_SPIKES` spikes, whose last two
 /// pairs are equal (asserted: the integer rule reaches a fixed point).
 fn steady(interval: u32) -> (u8, u8) {
-    let course = stp_course(interval, STP_SPIKES);
+    steady_under(interval, None)
+}
+
+/// `steady` for a member marked facilitating under `class`, or unmarked with none.
+fn steady_under(interval: u32, class: Option<StpClass>) -> (u8, u8) {
+    let course = stp_course(interval, STP_SPIKES, class);
     let last = course[STP_SPIKES.wrapping_sub(1)];
     assert_eq!(
         course[STP_SPIKES.wrapping_sub(2)],
@@ -489,7 +530,12 @@ fn steady(interval: u32) -> (u8, u8) {
 
 /// The pair a spike after a long rest releases with.
 fn at_rest() -> (u8, u8) {
-    stp_course(0, 1)[0]
+    at_rest_under(None)
+}
+
+/// `at_rest` for a member marked facilitating under `class`, or unmarked with none.
+fn at_rest_under(class: Option<StpClass>) -> (u8, u8) {
+    stp_course(0, 1, class)[0]
 }
 
 /// The factor a release takes from short-term plasticity: `u × R`, both Q0.8.
@@ -876,26 +922,38 @@ fn membership(set: &[u32]) -> Vec<bool> {
     of
 }
 
-/// The sums over `set` of the pair a spike on tick `now` would release with: `step_stp` on a
+/// The sums over `set` of the pair a spike on tick `now` would release with: the step on a
 /// copy of each member's two factors, with the ticks since its last spike as the executor
-/// reads them.
-fn stp_sums(units: &[DendriticSuperNeuron], set: &[u32], now: u32) -> (u32, u32) {
+/// reads them, under the image's `class` for a member marked facilitating (`next_pair`,
+/// ADR-0114) and `step_stp` otherwise.
+fn stp_sums(
+    units: &[DendriticSuperNeuron],
+    set: &[u32],
+    now: u32,
+    class: Option<StpClass>,
+) -> (u32, u32) {
     let (mut su, mut sr) = (0u32, 0u32);
     for &m in set {
-        let unit = &units[m as usize];
-        let mut copy = DendriticSuperNeuron::new(0);
-        copy.stp_u_rel = unit.stp_u_rel;
-        copy.stp_r_ves = unit.stp_r_ves;
-        let elapsed = if unit.last_soma_spike_tick == NO_SPIKE_ON_RECORD {
-            u32::MAX
-        } else {
-            now.wrapping_sub(unit.last_soma_spike_tick)
-        };
-        let (u, r) = copy.step_stp(elapsed);
+        let (u, r) = next_pair(&units[m as usize], now, class);
         su = su.saturating_add(u32::from(u));
         sr = sr.saturating_add(u32::from(r));
     }
     (su, sr)
+}
+
+/// The pair `unit`'s spike on tick `now` would release with, on a copy of its factors, as the
+/// executor's turn would step it (`stepped_pair`), with the ticks since its last spike.
+fn next_pair(unit: &DendriticSuperNeuron, now: u32, class: Option<StpClass>) -> (u8, u8) {
+    let mut copy = DendriticSuperNeuron::new(0);
+    copy.stp_u_rel = unit.stp_u_rel;
+    copy.stp_r_ves = unit.stp_r_ves;
+    copy.flags = unit.flags;
+    let elapsed = if unit.last_soma_spike_tick == NO_SPIKE_ON_RECORD {
+        u32::MAX
+    } else {
+        now.wrapping_sub(unit.last_soma_spike_tick)
+    };
+    stepped_pair(&mut copy, elapsed, class)
 }
 
 /// The protocol from the executor's clock: the lead-in and the twenty-four epochs under
@@ -997,7 +1055,7 @@ fn protocol(exec: &mut Engine, reads: &[Vec<u32>], kicks: Option<&[u32]>) -> Vec
             seen = total;
             let now = exec.ticks() as u32;
             for (read, set) in epoch.iter_mut().zip(reads.iter()) {
-                let (su, sr) = stp_sums(exec.units(), set, now);
+                let (su, sr) = stp_sums(exec.units(), set, now, exec.stp_class());
                 read.0[w][2] = su;
                 read.0[w][3] = sr;
             }
@@ -8078,3 +8136,1785 @@ const KICK_ORACLE: [KickPinned; 5] = [
 /// threshold of the drive's mean standing.
 const RELEASE_ORACLE: [(&[u32], i32, Option<u32>); 2] =
     [(&[], -12232635, Some(3510)), (&[], -12160192, Some(3507))];
+
+// ================================================ brief 049 (ADR-0115): the facilitating class
+
+// ------------------------------------------------ the grid (brief 049), before any run
+
+/// ADR-0113's two sets of the class, `(U, τ_f shift, τ_d shift)`: (i) $(51, 16, 13)$, ADR-0019's
+/// release fraction with facilitation over $2^{16}$ ticks, the longest the factor resolves, and
+/// depression over $2^{13}$; (ii) $(26, 16, 13)$, half the release fraction.
+const SETS: [StpClass; 2] = [
+    StpClass {
+        u: 51,
+        tau_f_shift: 16,
+        tau_d_shift: 13,
+    },
+    StpClass {
+        u: 26,
+        tau_f_shift: 16,
+        tau_d_shift: 13,
+    },
+];
+
+const _: () = assert!(SETS[0].is_valid() && SETS[1].is_valid());
+
+/// The sets' names, as ADR-0113 numbers them.
+const SET_NAMES: [&str; 2] = ["(i)", "(ii)"];
+
+/// Brief 049's weights, Q1.15: a quarter to three quarters of the range by eighths, and its top,
+/// `i16::MAX`. ADR-0112's four are among them.
+const WEIGHTS_049: [i16; 6] = [0x2000, 0x3000, 0x4000, 0x5000, 0x6000, i16::MAX];
+
+// ------------------------------------------------ the spans (brief 049), before any run
+
+/// A span of a run (brief 049).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Span {
+    /// The drive alone, read by no rule.
+    LeadIn,
+    /// No kick and no release.
+    Unkicked,
+    /// ADR-0112's kick, its ramp and its reset, from the span's first tick.
+    Hold,
+    /// The members kept from firing: ADR-0076's cancel at the start of every window of the span
+    /// but its last two (`cancel_due`).
+    Release,
+    /// The drive alone, after the release.
+    Tail,
+}
+
+/// The lead-in, in epochs: sixteen, $2^{18}$ ticks, four of the class's $\tau_f$, over which the
+/// short-term state the image's members carry from ADR-0019's constants relaxes to within two
+/// per cent of the class's own.
+const LEAD_IN_EPOCHS_049: u32 = 16;
+
+/// The unkicked span, in epochs: the brief's sixteen.
+const UNKICKED_EPOCHS: u32 = 16;
+
+/// The hold span, in epochs: the brief's sixteen. By ADR-0113's arithmetic a kick's priming has
+/// faded below the unkicked product by $2^{17}$ ticks, eight epochs, so a hold read in its
+/// second half is not what the kick left fading.
+const HOLD_EPOCHS: u32 = 16;
+
+/// The tail, in epochs: four, two stretches, opening two windows after the release's last cancel,
+/// past `RELEASE_RECOVERED`.
+const TAIL_EPOCHS: u32 = 4;
+
+/// A stretch: two consecutive epochs of a span, from its first, 32 768 ticks, sixteen windows.
+const STRETCH_EPOCHS: u32 = 2;
+
+const STRETCH_WINDOWS: usize = 16;
+
+const STRETCH_TICKS: u64 = 32_768;
+
+const _: () = assert!(STRETCH_TICKS == (STRETCH_EPOCHS * EPOCH_TICKS) as u64);
+const _: () = assert!(STRETCH_WINDOWS == STRETCH_EPOCHS as usize * WINDOWS);
+const _: () = assert!(
+    LEAD_IN_EPOCHS_049 % STRETCH_EPOCHS == 0
+        && UNKICKED_EPOCHS % STRETCH_EPOCHS == 0
+        && HOLD_EPOCHS % STRETCH_EPOCHS == 0
+        && TAIL_EPOCHS % STRETCH_EPOCHS == 0
+);
+
+/// The hold span's stretches, and the first of its second half.
+const HOLD_STRETCHES: u32 = HOLD_EPOCHS / STRETCH_EPOCHS;
+
+const SECOND_HALF_FROM: u32 = HOLD_STRETCHES / 2;
+
+const _: () = assert!(HOLD_STRETCHES == 8 && SECOND_HALF_FROM == 4);
+
+/// A run's spans in order, `(span, round, epochs)`: the lead-in, then `ROUNDS` rounds of an
+/// unkicked span, a hold span, a release span of `release` stretches and a tail.
+fn layout(release: u32) -> Vec<(Span, usize, u32)> {
+    let mut out = vec![(Span::LeadIn, 0, LEAD_IN_EPOCHS_049)];
+    for round in 0..ROUNDS {
+        out.push((Span::Unkicked, round, UNKICKED_EPOCHS));
+        out.push((Span::Hold, round, HOLD_EPOCHS));
+        out.push((Span::Release, round, release.saturating_mul(STRETCH_EPOCHS)));
+        out.push((Span::Tail, round, TAIL_EPOCHS));
+    }
+    out
+}
+
+/// A run's stretches in order: `(span, round, the stretch's index within its span)`.
+fn stretches_of(spans: &[(Span, usize, u32)]) -> Vec<(Span, usize, u32)> {
+    spans
+        .iter()
+        .flat_map(|&(span, round, epochs)| {
+            (0..epochs.checked_div(STRETCH_EPOCHS).unwrap_or(0)).map(move |k| (span, round, k))
+        })
+        .collect()
+}
+
+/// The release's cancel is due before the span's tick `k` of a span of `windows` windows: its
+/// first `CANCEL_TICKS` ticks of every window but the last two.
+fn cancel_due(k: u32, windows: u32) -> bool {
+    let w = k.checked_div(WINDOW_SPAN).unwrap_or(0);
+    let j = k.checked_rem(WINDOW_SPAN).unwrap_or(0);
+    w.saturating_add(2) < windows && j < CANCEL_TICKS
+}
+
+// ------------------------------------------------ the release, derived from the class
+
+/// The ceiling of both factors: the pair from which a silence leaves the most a spike can
+/// release with, since the pair after any silence is non-decreasing in each factor it starts
+/// from (relaxation toward a target keeps the order, and facilitation $u + U(1 - u)$ grows with
+/// $u$).
+const CEILING: (u8, u8) = (STP_MAX, STP_MAX);
+
+/// The pair a member marked under `class` releases with after `silence` ticks from `state`.
+fn after_silence(state: (u8, u8), silence: u32, class: StpClass) -> (u8, u8) {
+    let mut unit = DendriticSuperNeuron::new(0);
+    (unit.stp_u_rel, unit.stp_r_ves) = state;
+    unit.step_stp_class(silence, class)
+}
+
+/// The unkicked product under `class`: $uR$ of the steady pair at the background's interval,
+/// ADR-0113's reference.
+fn unkicked_product(class: StpClass) -> u32 {
+    factor(steady_under(INTERVALS[0], Some(class)))
+}
+
+/// The longest silence the fade is searched over, $2^{20}$ ticks.
+const FADE_HORIZON: u32 = 1 << 20;
+
+/// The fade under `class`: the least silence after which a member at the ceiling of both
+/// factors releases with a product below the unkicked one. From the ceiling the pool stays full
+/// and $u$ only relaxes, so the product is non-increasing in the silence and every longer silence
+/// is below it too; and from any other pair it is lower still. So a member kept silent this long
+/// is unprimed, whatever its spikes before.
+fn fade(class: StpClass) -> Option<u32> {
+    let unkicked = unkicked_product(class);
+    (0..=FADE_HORIZON).find(|&t| factor(after_silence(CEILING, t, class)) < unkicked)
+}
+
+/// The most stretches the release's rule searches.
+const RELEASE_STRETCHES_MAX: u32 = 16;
+
+/// The silence a release of `stretches` stretches guarantees a member: from the span's second
+/// window, whose cancel catches a member the first found refractory, to `RELEASE_RECOVERED`
+/// after its last cancel, at the start of its third window from the end: $(16S - 4) \cdot 2\,048
+/// + 3\,510$ ticks.
+fn silence_of(stretches: u32) -> u64 {
+    u64::from(stretches)
+        .saturating_mul(STRETCH_WINDOWS as u64)
+        .saturating_sub(4)
+        .saturating_mul(u64::from(WINDOW_SPAN))
+        .saturating_add(u64::from(RELEASE_RECOVERED))
+}
+
+/// The release's span under `class`, in stretches: the least whole number whose silence is at
+/// least the fade.
+fn release_rule(class: StpClass) -> Option<u32> {
+    let need = u64::from(fade(class)?);
+    (1..=RELEASE_STRETCHES_MAX).find(|&s| silence_of(s) >= need)
+}
+
+/// The release by the oracle over a span of `stretches` stretches, from `standing`, under the
+/// drive's mean input and the cancel at the start of every window but the last two: the ticks it
+/// fires on, its lowest basal potential, and the first tick after the span's last cancel at which
+/// its soma is back within a tenth of the threshold of the drive's mean standing.
+fn release_span_oracle(standing: (i32, i32), stretches: u32) -> (Vec<u32>, i32, Option<u32>) {
+    let mean = drive_mean_per_tick();
+    let per = scaled_q16(
+        batch_q16(CANCEL_AT_THE_EXTREME, CANCEL_MESSAGE_Q16),
+        GAIN_1024,
+    );
+    let windows = stretches.saturating_mul(STRETCH_WINDOWS as u32);
+    let ticks = windows.saturating_mul(WINDOW_SPAN);
+    let s = stepped(
+        standing,
+        |k| {
+            if cancel_due(k, windows) {
+                mean.saturating_add(per)
+            } else {
+                mean
+            }
+        },
+        ticks,
+    );
+    let last = windows.saturating_sub(3).saturating_mul(WINDOW_SPAN) as usize;
+    let near = DRIVE_STANDING.1.saturating_sub(RECOVERED_WITHIN);
+    let back = s.soma[last..]
+        .iter()
+        .position(|&v| v > near)
+        .map(|k| k.saturating_add(1) as u32);
+    (s.fires, s.basal.iter().copied().min().unwrap_or(0), back)
+}
+
+// ------------------------------------------------ the arithmetic (brief 049), before any run
+
+/// The ticks after a burst the course is read at: ADR-0113's.
+const COURSE_TICKS: [u32; 8] = [220, 2_048, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144];
+
+/// The burst of ADR-0113's arithmetic: four spikes 220 ticks apart, the first one background
+/// interval after the unkicked steady state's last spike.
+const BURST_SPIKES: usize = 4;
+
+const BURST_INTERVAL: u32 = 220;
+
+/// The ticks after the burst the primed window is searched over, $2^{18}$.
+const COURSE_HORIZON: u32 = 1 << 18;
+
+/// A member marked under `class` after ADR-0113's burst: the unkicked steady course, then the
+/// burst.
+fn after_burst(class: StpClass) -> DendriticSuperNeuron {
+    let (_, mut unit) = course_unit(INTERVALS[0], STP_SPIKES, Some(class));
+    let mut elapsed = INTERVALS[0];
+    for _ in 0..BURST_SPIKES {
+        stepped_pair(&mut unit, elapsed, Some(class));
+        elapsed = BURST_INTERVAL;
+    }
+    unit
+}
+
+/// The pair a member's next spike releases with `t` ticks after ADR-0113's burst.
+fn after_burst_at(class: StpClass, t: u32) -> (u8, u8) {
+    let unit = after_burst(class);
+    after_silence((unit.stp_u_rel, unit.stp_r_ves), t, class)
+}
+
+/// A product per mille of the unkicked one, rounded down.
+fn per_mille(product: u32, class: StpClass) -> u32 {
+    u64::from(product)
+        .saturating_mul(1_000)
+        .checked_div(u64::from(unkicked_product(class)))
+        .unwrap_or(0) as u32
+}
+
+/// The course after the burst: at each of `COURSE_TICKS`, the pair and its product per mille of
+/// the unkicked one.
+fn burst_course(class: StpClass) -> Vec<((u8, u8), u32)> {
+    COURSE_TICKS
+        .iter()
+        .map(|&t| {
+            let pair = after_burst_at(class, t);
+            (pair, per_mille(factor(pair), class))
+        })
+        .collect()
+}
+
+/// The primed window after the burst, over `COURSE_HORIZON`: the first and the last tick at which
+/// the product is above the unkicked one; the last at which it is at or above it; the first tick
+/// of the highest product, the pair there, and that product per mille of the unkicked one.
+type Primed = (u32, u32, u32, u32, (u8, u8), u32);
+
+fn primed(class: StpClass) -> Primed {
+    let unit = after_burst(class);
+    let state = (unit.stp_u_rel, unit.stp_r_ves);
+    let unkicked = unkicked_product(class);
+    let (mut first, mut last, mut last_at) = (0u32, 0u32, 0u32);
+    let (mut peak_at, mut peak) = (0u32, (0u8, 0u8));
+    for t in 1..=COURSE_HORIZON {
+        let pair = after_silence(state, t, class);
+        let p = factor(pair);
+        if p > unkicked {
+            if first == 0 {
+                first = t;
+            }
+            last = t;
+        }
+        if p >= unkicked {
+            last_at = t;
+        }
+        if p > factor(peak) {
+            peak_at = t;
+            peak = pair;
+        }
+    }
+    (
+        first,
+        last,
+        last_at,
+        peak_at,
+        peak,
+        per_mille(factor(peak), class),
+    )
+}
+
+/// What one spike of a marked member delivers at each of `WEIGHTS_049` under `class`, at the
+/// unkicked steady pair and at the primed peak's pair: ADR-0112's `Delivered` of each.
+fn delivered_049(class: StpClass) -> Vec<Delivered> {
+    let unkicked = steady_under(INTERVALS[0], Some(class));
+    let peak = primed(class).4;
+    WEIGHTS_049
+        .iter()
+        .map(|&w| {
+            let at = delivered(w, unkicked);
+            let primed = delivered(w, peak);
+            (
+                at,
+                rise(at).0,
+                least_together(w, unkicked),
+                primed,
+                rise(primed).0,
+                least_together(w, peak),
+            )
+        })
+        .collect()
+}
+
+/// ADR-0113's steady pairs, per set, at rest and at `INTERVALS` but 200 Hz, which its table
+/// does not hold: 1.76, 5, 10, 20, 40, 100 and 400 Hz.
+const ADR_0113_STEADY: [[(u8, u8); 8]; 2] = [
+    [
+        (92, 255),
+        (113, 255),
+        (149, 242),
+        (182, 197),
+        (208, 130),
+        (226, 74),
+        (242, 31),
+        (250, 8),
+    ],
+    [
+        (49, 255),
+        (63, 255),
+        (93, 247),
+        (128, 211),
+        (163, 146),
+        (199, 81),
+        (225, 33),
+        (243, 8),
+    ],
+];
+
+/// ADR-0113's course after the burst, per set, per mille at `COURSE_TICKS`, as its table rounds
+/// them to hundredths.
+const ADR_0113_COURSE: [[u32; 8]; 2] = [
+    [110, 430, 1_050, 1_330, 1_350, 1_150, 930, 820],
+    [430, 750, 1_330, 1_550, 1_520, 1_240, 950, 810],
+];
+
+// ------------------------------------------------ the measures (brief 049), before any run
+
+/// One window of a run under the class: the members' spikes, the rest's, and the sums over the
+/// members of $u$, of $R$ and of $uR$ a spike on the next tick would release with (`next_pair`).
+type ClassWindow = [u32; 5];
+
+/// One stretch's row: the members' spikes, the rest's, the members' burst windows (ADR-0112's:
+/// at least one spike a member in a window), the sums over the members of $u$ and of $R$ at the
+/// stretch's last window's end, and the sum over its windows of the members' sum of $uR$.
+type StretchRow = [u32; 6];
+
+/// The stretches of a run's windows, for an assembly of `size`.
+fn stretch_rows(windows: &[ClassWindow], size: u32) -> Vec<StretchRow> {
+    windows
+        .chunks(STRETCH_WINDOWS)
+        .map(|c| {
+            let mut row = [0u32; 6];
+            for w in c {
+                row[0] = row[0].saturating_add(w[0]);
+                row[1] = row[1].saturating_add(w[1]);
+                row[2] = row[2].saturating_add(u32::from(w[0] >= size));
+                row[5] = row[5].saturating_add(w[4]);
+            }
+            if let Some(w) = c.last() {
+                row[3] = w[2];
+                row[4] = w[3];
+            }
+            row
+        })
+        .collect()
+}
+
+/// The background of a run's stretches: every stretch after the lead-in.
+fn background_049(rows: &[StretchRow], spans: &[(Span, usize, u32)]) -> Background {
+    let mut b = Background {
+        members: 0,
+        rest: 0,
+        ticks: 0,
+    };
+    for (row, &(span, _, _)) in rows.iter().zip(stretches_of(spans).iter()) {
+        if span != Span::LeadIn {
+            b.members = b.members.saturating_add(u64::from(row[0]));
+            b.rest = b.rest.saturating_add(u64::from(row[1]));
+            b.ticks = b.ticks.saturating_add(STRETCH_TICKS);
+        }
+    }
+    b
+}
+
+/// A held stretch: the members' spikes over it at least `HOLD_TIMES` the background.
+fn held_stretch(row: &StretchRow, bg: Background) -> bool {
+    at_least(
+        u64::from(row[0]),
+        STRETCH_TICKS,
+        bg.members,
+        bg.ticks,
+        HOLD_TIMES,
+    )
+}
+
+/// A quiet stretch: the members' spikes over it at most `LET_GO_TIMES` the background.
+fn quiet_stretch(row: &StretchRow, bg: Background) -> bool {
+    u64::from(row[0]).saturating_mul(bg.ticks)
+        <= LET_GO_TIMES
+            .saturating_mul(bg.members)
+            .saturating_mul(STRETCH_TICKS)
+}
+
+/// A run's reading by the rules (brief 049).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Holding {
+    /// Rounds whose hold span's first half was held in every stretch, of eight: a reading, no
+    /// clause.
+    first_half: u32,
+    /// Rounds whose hold span's second half was held in every stretch, of eight.
+    held: u32,
+    /// Rounds whose unkicked span held any stretch, of eight.
+    ignited: u32,
+    /// Rounds whose tail stood at most twice the background in every stretch, of eight.
+    let_go: u32,
+    /// Whether the rest of the network fired more than twice its background over the held
+    /// stretches of the hold spans' second halves; none when none was held.
+    spills: Option<bool>,
+}
+
+impl Holding {
+    fn holds(&self) -> bool {
+        self.held >= OF_EIGHT_MIN
+    }
+
+    fn lets_go(&self) -> bool {
+        self.let_go >= OF_EIGHT_MIN
+    }
+
+    fn quiet_unkicked(&self) -> bool {
+        self.ignited <= IGNITIONS_MAX
+    }
+
+    /// Usable: holds, lets go, ignites in at most one round of eight, does not spill.
+    fn usable(&self) -> bool {
+        self.holds() && self.lets_go() && self.quiet_unkicked() && self.spills == Some(false)
+    }
+}
+
+/// A run's stretches read by the rules against `bg`.
+fn holding(rows: &[StretchRow], spans: &[(Span, usize, u32)], bg: Background) -> Holding {
+    let (mut first, mut second, mut ignited, mut quiet) = (
+        [true; ROUNDS],
+        [true; ROUNDS],
+        [false; ROUNDS],
+        [true; ROUNDS],
+    );
+    let (mut rest, mut held_ticks) = (0u64, 0u64);
+    for (row, &(span, round, k)) in rows.iter().zip(stretches_of(spans).iter()) {
+        let high = held_stretch(row, bg);
+        match span {
+            Span::Hold if k < SECOND_HALF_FROM => first[round] &= high,
+            Span::Hold => {
+                second[round] &= high;
+                if high {
+                    rest = rest.saturating_add(u64::from(row[1]));
+                    held_ticks = held_ticks.saturating_add(STRETCH_TICKS);
+                }
+            }
+            Span::Unkicked => ignited[round] |= high,
+            Span::Tail => quiet[round] &= quiet_stretch(row, bg),
+            Span::LeadIn | Span::Release => {}
+        }
+    }
+    let count = |flags: [bool; ROUNDS]| flags.iter().filter(|&&f| f).count() as u32;
+    Holding {
+        first_half: count(first),
+        held: count(second),
+        ignited: count(ignited),
+        let_go: count(quiet),
+        spills: (held_ticks > 0).then(|| {
+            rest.saturating_mul(bg.ticks)
+                > SPILL_TIMES
+                    .saturating_mul(bg.rest)
+                    .saturating_mul(held_ticks)
+        }),
+    }
+}
+
+/// What failed in a cell that is not usable, as ADR-0112 names it: never holding, running away
+/// (ignites in more than one round, or spills), not letting go.
+fn failed(h: &Holding) -> [bool; 3] {
+    [
+        !h.holds(),
+        !h.quiet_unkicked() || h.spills == Some(true),
+        !h.lets_go(),
+    ]
+}
+
+/// The kick's reading over a run's rounds: the members' spikes in each hold span's first
+/// `KICK_SPAN` ticks and in the pair window after, summed; the kicks; the kicks whose volley was
+/// every member — ADR-0112's `kick_reading` over rounds.
+fn kick_reading_049(kicks: &[[u32; 2]], size: u32) -> (u64, u64, u64, u32) {
+    let (mut volley, mut after, mut full) = (0u64, 0u64, 0u32);
+    for k in kicks {
+        volley = volley.saturating_add(u64::from(k[0]));
+        after = after.saturating_add(u64::from(k[1]));
+        full = full.saturating_add(u32::from(k[0] == size));
+    }
+    (volley, after, kicks.len() as u64, full)
+}
+
+/// The kick fires every member once, by ADR-0112's measure (`kicked_once`) over a run's rounds.
+fn kicked_once_049(kicks: &[[u32; 2]], size: u32) -> bool {
+    fires_every_member_once(kick_reading_049(kicks, size), size)
+}
+
+/// A run's burst reading (brief 049): the burst windows in the lead-in, the unkicked spans, the
+/// hold spans, the release spans and the tails; the intervals between consecutive burst windows
+/// within a hold span, in windows, counted in the bins 1, 2, 3–4, 5–8, 9–16, 17–32, 33–64 and
+/// 65–128; and the members' mean product a spike would release with, per member per window, per
+/// mille of the unkicked product, over the held stretches of the hold spans' second halves (none
+/// when none was held) and over the unkicked spans.
+type BurstRead049 = ([u32; 5], [u32; 8], Option<u32>, u32);
+
+/// The bin of an interval of `windows` between two burst windows.
+fn interval_bin(windows: u32) -> usize {
+    let bin = u32::BITS.saturating_sub(windows.saturating_sub(1).leading_zeros());
+    bin.min(7) as usize
+}
+
+fn bursts_049(
+    windows: &[ClassWindow],
+    spans: &[(Span, usize, u32)],
+    size: u32,
+    bg: Background,
+    class: StpClass,
+) -> BurstRead049 {
+    let (mut by_span, mut bins) = ([0u32; 5], [0u32; 8]);
+    let (mut held_sum, mut held_windows, mut unkicked_sum, mut unkicked_windows) =
+        (0u64, 0u64, 0u64, 0u64);
+    let mut at = 0usize;
+    for &(span, _, epochs) in spans {
+        let n = epochs.saturating_mul(WINDOWS as u32) as usize;
+        let these = &windows[at..at.saturating_add(n)];
+        at = at.saturating_add(n);
+        let kind = match span {
+            Span::LeadIn => 0,
+            Span::Unkicked => 1,
+            Span::Hold => 2,
+            Span::Release => 3,
+            Span::Tail => 4,
+        };
+        let mut last: Option<u32> = None;
+        for (i, w) in these.iter().enumerate() {
+            if w[0] >= size {
+                by_span[kind] = by_span[kind].saturating_add(1);
+                if span == Span::Hold {
+                    if let Some(l) = last {
+                        let b = interval_bin((i as u32).saturating_sub(l));
+                        bins[b] = bins[b].saturating_add(1);
+                    }
+                    last = Some(i as u32);
+                }
+            }
+        }
+        match span {
+            Span::Unkicked => {
+                for w in these {
+                    unkicked_sum = unkicked_sum.saturating_add(u64::from(w[4]));
+                }
+                unkicked_windows = unkicked_windows.saturating_add(n as u64);
+            }
+            Span::Hold => {
+                for (k, c) in these.chunks(STRETCH_WINDOWS).enumerate() {
+                    let row = stretch_rows(c, size)[0];
+                    if k as u32 >= SECOND_HALF_FROM && held_stretch(&row, bg) {
+                        held_sum = held_sum.saturating_add(u64::from(row[5]));
+                        held_windows = held_windows.saturating_add(STRETCH_WINDOWS as u64);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mean = |sum: u64, n: u64| {
+        sum.saturating_mul(1_000)
+            .checked_div(
+                n.saturating_mul(u64::from(size))
+                    .saturating_mul(u64::from(unkicked_product(class))),
+            )
+            .unwrap_or(0) as u32
+    };
+    (
+        by_span,
+        bins,
+        (held_windows > 0).then(|| mean(held_sum, held_windows)),
+        mean(unkicked_sum, unkicked_windows),
+    )
+}
+
+// ------------------------------------------------ the image, marked (brief 049)
+
+/// `image` with `class` set in its modulator record and the members of `size` marked
+/// facilitating in their records, each section re-sealed: the test's own marks, as `grown` and
+/// `wire` are its own wiring, and every other byte the image's.
+fn marked(image: &[u8], class: StpClass, size: u32) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    let m = members(size);
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        let (offset, length) = (entry.offset as usize, entry.length as usize);
+        let section = &mut img[offset..][..length];
+        match entry.kind {
+            SECTION_MODULATOR => {
+                assert_eq!(&section[32..36], &[0u8; 4], "no class before");
+                section[32..36].copy_from_slice(&[
+                    1,
+                    class.u,
+                    class.tau_f_shift,
+                    class.tau_d_shift,
+                ]);
+            }
+            SECTION_NEURON => {
+                for &u in &m {
+                    let flags = (u as usize).saturating_mul(64).saturating_add(57);
+                    section[flags] |= FLAG_FACILITATING;
+                }
+            }
+            _ => continue,
+        }
+        entry.crc64 = crc64(&img[offset..][..length]);
+        img[at..][..64].copy_from_slice(&entry.encode());
+    }
+    img
+}
+
+/// The engine of a run under set `set` for the assembly of `size`: the frozen image marked;
+/// grown by the assembly's blocks when `grow` (a control or a cell), and wired at `weight` when
+/// given. The class and the marks asserted on the engine.
+fn marked_engine(image: &[u8], set: usize, size: u32, grow: bool, weight: Option<i16>) -> Engine {
+    let img = marked(image, SETS[set], size);
+    let mut exec = if grow {
+        frozen_from(&grown(&img, extra_blocks(size)), 1024)
+    } else {
+        frozen_from(&img, 1024)
+    };
+    assert_eq!(exec.stp_class(), Some(SETS[set]), "the image's class");
+    let of = membership(&members(size));
+    for unit in exec.units() {
+        assert_eq!(
+            unit.flags & FLAG_FACILITATING != 0,
+            of[unit.id as usize],
+            "unit {} marked as a member",
+            unit.id
+        );
+    }
+    if let Some(w) = weight {
+        wire(&mut exec, size, w);
+    }
+    exec
+}
+
+// ------------------------------------------------ the protocol (brief 049), run
+
+/// The sums over `set` of $u$, $R$ and $uR$ a spike on tick `now` would release with
+/// (`next_pair`).
+fn stp_reading(
+    units: &[DendriticSuperNeuron],
+    set: &[u32],
+    now: u32,
+    class: Option<StpClass>,
+) -> (u32, u32, u32) {
+    let (mut su, mut sr, mut sp) = (0u32, 0u32, 0u32);
+    for &m in set {
+        let pair = next_pair(&units[m as usize], now, class);
+        su = su.saturating_add(u32::from(pair.0));
+        sr = sr.saturating_add(u32::from(pair.1));
+        sp = sp.saturating_add(factor(pair));
+    }
+    (su, sr, sp)
+}
+
+/// A run under the protocol: every window's row, and each hold span's kick reading — the
+/// members' spikes in the span's first `KICK_SPAN` ticks and in the pair window after.
+struct SpanRun {
+    windows: Vec<ClassWindow>,
+    kicks: Vec<[u32; 2]>,
+}
+
+/// The protocol from the executor's clock under ADR-0044's drive: `spans` in order, `set`'s
+/// windows read; with `kick`, the kick into `set` at each hold span's start and the release's
+/// cancels in each release span; without, the drive alone over the same ticks (a background).
+fn span_protocol(
+    exec: &mut Engine,
+    set: &[u32],
+    spans: &[(Span, usize, u32)],
+    kick: bool,
+) -> SpanRun {
+    let drive = drive(1024);
+    let inject = exec.injector();
+    let class = exec.stp_class();
+    let of = membership(set);
+    let mut run = SpanRun {
+        windows: Vec::new(),
+        kicks: Vec::new(),
+    };
+    let mut seen = (exec.train().len() as u64).saturating_add(exec.train_overwritten());
+    for &(span, _, epochs) in spans {
+        let start = exec.ticks() as u32;
+        let windows = epochs.saturating_mul(WINDOWS as u32);
+        let mut resets: Vec<(u32, u32)> = Vec::new();
+        let mut kick_read = [0u32; 2];
+        for w in 0..windows {
+            for j in 0..WINDOW_SPAN {
+                let k = w.saturating_mul(WINDOW_SPAN).saturating_add(j);
+                drive.step(&inject, exec.ticks()).expect("the drive runs");
+                if kick && span == Span::Hold {
+                    inject_before(&inject, set, Epoch::Kicked, k, &resets);
+                }
+                if kick && span == Span::Release && cancel_due(k, windows) {
+                    for &m in set {
+                        for _ in 0..CANCEL_AT_THE_EXTREME {
+                            inject
+                                .inject(m, spike_message(CANCEL_MESSAGE_Q16, false))
+                                .expect("the ring has room");
+                        }
+                    }
+                }
+                exec.tick();
+                if kick && span == Span::Hold {
+                    note_kick_spikes(exec, set, Epoch::Kicked, k, start, &mut resets);
+                }
+            }
+            let total = (exec.train().len() as u64).saturating_add(exec.train_overwritten());
+            let new = total.saturating_sub(seen);
+            let train = exec.train();
+            assert!(new <= train.len() as u64, "the train held the window");
+            let mut row = [0u32; 5];
+            for &(stamp, unit) in &train[train.len().saturating_sub(new as usize)..] {
+                if of[unit as usize] {
+                    row[0] = row[0].saturating_add(1);
+                    let t = stamp.wrapping_sub(start);
+                    if span == Span::Hold && (1..=KICK_SPAN).contains(&t) {
+                        kick_read[0] = kick_read[0].saturating_add(1);
+                    } else if span == Span::Hold
+                        && t > KICK_SPAN
+                        && t <= KICK_SPAN.saturating_add(PAIR_WINDOW)
+                    {
+                        kick_read[1] = kick_read[1].saturating_add(1);
+                    }
+                } else {
+                    row[1] = row[1].saturating_add(1);
+                }
+            }
+            seen = total;
+            let (su, sr, sp) = stp_reading(exec.units(), set, exec.ticks() as u32, class);
+            row[2] = su;
+            row[3] = sr;
+            row[4] = sp;
+            run.windows.push(row);
+        }
+        if span == Span::Hold {
+            run.kicks.push(kick_read);
+        }
+    }
+    run
+}
+
+/// A run's windows as one number: FNV-1a over every window's five words in order, each as the
+/// `i32` of its bits.
+fn windows_hash(windows: &[ClassWindow]) -> u64 {
+    let words: Vec<i32> = windows
+        .iter()
+        .flat_map(|w| w.iter().map(|&v| v as i32))
+        .collect();
+    fnv1a_64(&words)
+}
+
+/// A run under set `set` for the assembly of `size`, dumped: a background (`grow` false, no
+/// kick), a control (grown, unwired, the protocol) or a cell (wired at `weight`); the weights
+/// shown unchanged at its end.
+fn class_run(
+    image: &[u8],
+    set: usize,
+    size: u32,
+    weight: Option<i16>,
+    background: bool,
+    name: &str,
+) -> SpanRun {
+    let spans = layout(RELEASE_STRETCHES_049[set]);
+    let mut exec = marked_engine(image, set, size, !background, weight);
+    let m = members(size);
+    let before = weights_of(&exec);
+    let run = span_protocol(&mut exec, &m, &spans, !background);
+    let rows = stretch_rows(&run.windows, size);
+    eprintln!("DUMP {name} stretches = {rows:?}");
+    eprintln!("DUMP {name} kicks = {:?}", run.kicks);
+    eprintln!(
+        "DUMP {name} windows hash = {:#018x}",
+        windows_hash(&run.windows)
+    );
+    assert_eq!(weights_of(&exec), before, "{name}: no weight moved");
+    run
+}
+
+// ------------------------------------------------ the gate (brief 049)
+
+/// The arithmetic of brief 049 as the oracles compute it with the class's step, per set: the
+/// pair at rest; the steady pairs at `INTERVALS`; the unkicked product; the course after the
+/// burst; the primed window; the delivery at each weight; the fade and the release's stretches;
+/// and the release by the oracle from the drive's mean standing and from the extreme.
+#[allow(clippy::type_complexity)]
+fn arithmetic_049(
+    set: usize,
+) -> (
+    (u8, u8),
+    Vec<(u8, u8)>,
+    u32,
+    Vec<((u8, u8), u32)>,
+    Primed,
+    Vec<Delivered>,
+    Option<u32>,
+    Option<u32>,
+    Vec<(Vec<u32>, i32, Option<u32>)>,
+) {
+    let class = SETS[set];
+    let release = release_rule(class);
+    (
+        at_rest_under(Some(class)),
+        INTERVALS
+            .iter()
+            .map(|&i| steady_under(i, Some(class)))
+            .collect(),
+        unkicked_product(class),
+        burst_course(class),
+        primed(class),
+        delivered_049(class),
+        fade(class),
+        release,
+        [DRIVE_STANDING, EXTREME_STANDING]
+            .iter()
+            .map(|&s| release_span_oracle(s, release.unwrap_or(0)))
+            .collect(),
+    )
+}
+
+/// The ticks the gate runs a marked assembly kicked: ADR-0112's 800.
+const GATE_KICK_TICKS_049: u32 = GATE_KICK_TICKS;
+
+#[test]
+fn the_facilitating_class_the_arithmetic_the_spans_the_rules_and_a_marked_assembly_on_the_engine() {
+    // The grid.
+    assert_eq!(
+        SETS[0].u, STP_U,
+        "set (i) keeps ADR-0019's release fraction"
+    );
+    assert_eq!(SETS[1].u, 26);
+    for class in SETS {
+        assert_eq!((class.tau_f_shift, class.tau_d_shift), (16, 13));
+    }
+    assert!(WEIGHTS_049.windows(2).all(|w| w[0] < w[1]));
+    for w in WEIGHTS {
+        assert!(WEIGHTS_049.contains(&w), "ADR-0112's weight {w:#x}");
+    }
+    // The arithmetic with the class's step, as ADR-0115 writes it: dumped, then held, and held to
+    // ADR-0113's replica.
+    let arithmetic: Vec<_> = (0..SETS.len()).map(arithmetic_049).collect();
+    for (set, a) in arithmetic.iter().enumerate() {
+        let (rest, steadies, unkicked, course, primed_read, by_weight, fade_read, release, oracle) =
+            a;
+        let name = SET_NAMES[set];
+        eprintln!("DUMP {name} CLASS_AT_REST = {rest:?}");
+        eprintln!("DUMP {name} CLASS_STEADY = {steadies:?}");
+        eprintln!("DUMP {name} UNKICKED_PRODUCT = {unkicked}");
+        eprintln!("DUMP {name} BURST_COURSE = {course:?}");
+        eprintln!("DUMP {name} PRIMED = {primed_read:?}");
+        eprintln!("DUMP {name} DELIVERED = {by_weight:?}");
+        eprintln!("DUMP {name} FADE = {fade_read:?} RELEASE = {release:?}");
+        eprintln!("DUMP {name} RELEASE_SPAN_ORACLE = {oracle:?}");
+        eprintln!(
+            "DUMP {name} RUN_EPOCHS = {:?}",
+            release.map(|r| layout(r).iter().map(|s| s.2).sum::<u32>())
+        );
+    }
+    for (set, class) in SETS.iter().enumerate() {
+        let (rest, steadies, unkicked, course, primed_read, by_weight, fade_read, release, oracle) =
+            arithmetic[set].clone();
+        let name = SET_NAMES[set];
+        assert_eq!(rest, CLASS_AT_REST_049[set]);
+        assert_eq!(steadies.as_slice(), CLASS_STEADY_049[set].as_slice());
+        assert_eq!(unkicked, UNKICKED_PRODUCT_049[set]);
+        assert_eq!(course.as_slice(), BURST_COURSE_049[set].as_slice());
+        assert_eq!(primed_read, PRIMED_049[set]);
+        assert_eq!(by_weight.as_slice(), DELIVERED_049[set].as_slice());
+        assert_eq!(fade_read, Some(FADE_049[set]));
+        assert_eq!(release, Some(RELEASE_STRETCHES_049[set]));
+        for (k, (fires, lowest, back)) in oracle.iter().enumerate() {
+            assert_eq!(
+                (fires.as_slice(), *lowest, *back),
+                RELEASE_SPAN_ORACLE_049[set][k]
+            );
+            assert!(
+                fires.is_empty(),
+                "{name}: a released unit fires in no tick of the span"
+            );
+            assert!(
+                back.is_some_and(|b| b <= 2 * WINDOW_SPAN),
+                "{name}: and is back before the tail"
+            );
+        }
+        // ADR-0113's replica: the steady table pair for pair, at rest and at every rate its
+        // table holds, and the course to its hundredths.
+        let held_rates = [0usize, 1, 2, 3, 4, 5, 7];
+        assert_eq!(rest, ADR_0113_STEADY[set][0]);
+        for (j, &i) in held_rates.iter().enumerate() {
+            assert_eq!(steadies[i], ADR_0113_STEADY[set][j.saturating_add(1)]);
+        }
+        for (k, &(_, pm)) in course.iter().enumerate() {
+            assert!(
+                pm.abs_diff(ADR_0113_COURSE[set][k]) <= 5,
+                "{name}: the course at {} ticks, {pm} per mille",
+                COURSE_TICKS[k]
+            );
+        }
+        // The release's rule at its edge: one stretch fewer leaves the fade uncovered.
+        let s = RELEASE_STRETCHES_049[set];
+        assert!(silence_of(s) >= u64::from(FADE_049[set]));
+        assert!(silence_of(s.saturating_sub(1)) < u64::from(FADE_049[set]));
+        // The fade from the ceiling bounds the fade from any pair: at the fade no pair of the
+        // lattice releases at or above the unkicked product, and one tick before the ceiling
+        // does.
+        for &u in U8_LATTICE.iter() {
+            for &r in U8_LATTICE.iter() {
+                assert!(
+                    factor(after_silence((u, r), FADE_049[set], *class)) < unkicked,
+                    "{name}: ({u}, {r})"
+                );
+            }
+        }
+        assert!(
+            factor(after_silence(
+                CEILING,
+                FADE_049[set].saturating_sub(1),
+                *class
+            )) >= unkicked
+        );
+    }
+    // The spans.
+    for set in 0..SETS.len() {
+        let spans = layout(RELEASE_STRETCHES_049[set]);
+        assert_eq!(spans.len(), 1usize.saturating_add(ROUNDS.saturating_mul(4)));
+        assert_eq!(spans[0], (Span::LeadIn, 0, LEAD_IN_EPOCHS_049));
+        let kinds: Vec<Span> = spans[1..5].iter().map(|s| s.0).collect();
+        assert_eq!(
+            kinds,
+            [Span::Unkicked, Span::Hold, Span::Release, Span::Tail]
+        );
+        assert_eq!(spans[3].2, RELEASE_STRETCHES_049[set] * STRETCH_EPOCHS);
+        let stretches = stretches_of(&spans);
+        let epochs: u32 = spans.iter().map(|s| s.2).sum();
+        assert_eq!(
+            stretches.len() as u32,
+            epochs / STRETCH_EPOCHS,
+            "whole stretches"
+        );
+        assert_eq!(epochs, RUN_EPOCHS_049[set]);
+    }
+    let windows = 16u32;
+    assert!(cancel_due(0, windows) && cancel_due(CANCEL_TICKS - 1, windows));
+    assert!(!cancel_due(CANCEL_TICKS, windows));
+    assert!(cancel_due(13 * WINDOW_SPAN, windows) && !cancel_due(14 * WINDOW_SPAN, windows));
+    assert!(!cancel_due(15 * WINDOW_SPAN, windows));
+    assert_eq!(
+        (1..=128).map(interval_bin).fold([0u32; 8], |mut b, i| {
+            b[i] += 1;
+            b
+        }),
+        [1, 1, 2, 4, 8, 16, 32, 64]
+    );
+    // The rules at their edges, over rows written by hand.
+    rules_049_at_their_edges();
+    // The marks and one marked assembly on the engine, and the release on the engine.
+    marked_on_the_prior();
+    let kicked = a_marked_assembly_kicked_for_a_few_hundred_ticks();
+    eprintln!("DUMP GATE_KICKED_049 = {kicked:?}");
+    assert_eq!(
+        kicked.as_slice(),
+        GATE_KICKED_049,
+        "the marked assembly kicked"
+    );
+    // The rules over the pinned tables.
+    over_the_049_tables();
+}
+
+/// Hand-written stretches: a run of set `set` whose every stretch reads `unkicked` members'
+/// spikes in the unkicked spans, `first` and `second` in the hold spans' halves with `rest` of
+/// the rest's in the second, `tail` in the tails, and nothing elsewhere.
+fn hand_stretches(
+    spans: &[(Span, usize, u32)],
+    unkicked: u32,
+    first: u32,
+    second: u32,
+    rest: u32,
+    tail: u32,
+) -> Vec<StretchRow> {
+    stretches_of(spans)
+        .iter()
+        .map(|&(span, _, k)| match span {
+            Span::Unkicked => [unkicked, 0, 0, 0, 0, 0],
+            Span::Hold if k < SECOND_HALF_FROM => [first, 0, 0, 0, 0, 0],
+            Span::Hold => [second, rest, 0, 0, 0, 0],
+            Span::Tail => [tail, 0, 0, 0, 0, 0],
+            _ => [0; 6],
+        })
+        .collect()
+}
+
+/// The index in a run's stretches of round `round`'s span `span`, stretch `k`.
+fn stretch_at(spans: &[(Span, usize, u32)], span: Span, round: usize, k: u32) -> usize {
+    stretches_of(spans)
+        .iter()
+        .position(|&s| s == (span, round, k))
+        .expect("a stretch of the run")
+}
+
+fn rules_049_at_their_edges() {
+    let spans = layout(5);
+    // A background of one member's spike per stretch and a hundred of the rest's: five in a
+    // stretch is five times it, two is twice it.
+    let n = stretches_of(&spans).len() as u64;
+    let lead = u64::from(LEAD_IN_EPOCHS_049 / STRETCH_EPOCHS);
+    let bg = Background {
+        members: n.saturating_sub(lead),
+        rest: n.saturating_sub(lead).saturating_mul(100),
+        ticks: n.saturating_sub(lead).saturating_mul(STRETCH_TICKS),
+    };
+    let mut quiet: Vec<StretchRow> = stretches_of(&spans)
+        .iter()
+        .map(|_| [1, 100, 0, 0, 0, 0])
+        .collect();
+    quiet[0] = [9, 900, 0, 0, 0, 0];
+    assert_eq!(
+        background_049(&quiet, &spans),
+        bg,
+        "the lead-in is not in a background"
+    );
+    // Holds at five times exactly, lets go at twice exactly, ignites at nothing below five
+    // times, spills at nothing above twice.
+    let usable = hand_stretches(&spans, 4, 5, 5, 200, 2);
+    let read = holding(&usable, &spans, bg);
+    assert_eq!(
+        read,
+        Holding {
+            first_half: 8,
+            held: 8,
+            ignited: 0,
+            let_go: 8,
+            spills: Some(false)
+        }
+    );
+    assert!(read.usable());
+    assert_eq!(failed(&read), [false; 3]);
+    // One LSB past each edge, in one round, then in two.
+    let mut run = usable.clone();
+    run[stretch_at(&spans, Span::Hold, 0, 7)][0] = 4;
+    assert_eq!(holding(&run, &spans, bg).held, 7);
+    assert!(holding(&run, &spans, bg).usable(), "seven of eight hold");
+    run[stretch_at(&spans, Span::Hold, 5, SECOND_HALF_FROM)][0] = 4;
+    let read = holding(&run, &spans, bg);
+    assert_eq!(read.held, 6);
+    assert!(!read.holds() && !read.usable());
+    assert_eq!(failed(&read), [true, false, false], "never holding");
+    let mut run = usable.clone();
+    run[stretch_at(&spans, Span::Hold, 2, SECOND_HALF_FROM - 1)][0] = 4;
+    let read = holding(&run, &spans, bg);
+    assert_eq!(
+        (read.first_half, read.held),
+        (7, 8),
+        "the first half is a reading"
+    );
+    assert!(read.usable());
+    let mut run = usable.clone();
+    run[stretch_at(&spans, Span::Tail, 3, 1)][0] = 3;
+    assert_eq!(holding(&run, &spans, bg).let_go, 7);
+    assert!(holding(&run, &spans, bg).usable());
+    run[stretch_at(&spans, Span::Tail, 4, 0)][0] = 3;
+    let read = holding(&run, &spans, bg);
+    assert!(!read.lets_go() && !read.usable());
+    assert_eq!(failed(&read), [false, false, true], "not letting go");
+    let mut run = usable.clone();
+    run[stretch_at(&spans, Span::Unkicked, 0, 7)][0] = 5;
+    assert_eq!(holding(&run, &spans, bg).ignited, 1);
+    assert!(holding(&run, &spans, bg).usable());
+    run[stretch_at(&spans, Span::Unkicked, 6, 0)][0] = 5;
+    run[stretch_at(&spans, Span::Unkicked, 6, 3)][0] = 5;
+    let read = holding(&run, &spans, bg);
+    assert_eq!(
+        read.ignited, 2,
+        "a round ignites once however many stretches"
+    );
+    assert_eq!(failed(&read), [false, true, false], "running away");
+    // Spills: the rest over the held stretches of the second halves more than twice its
+    // background; a held stretch of a first half is not read.
+    let mut run = usable.clone();
+    run[stretch_at(&spans, Span::Hold, 1, 6)][1] = 201;
+    assert_eq!(holding(&run, &spans, bg).spills, Some(true));
+    assert_eq!(failed(&holding(&run, &spans, bg)), [false, true, false]);
+    let mut run = usable.clone();
+    run[stretch_at(&spans, Span::Hold, 1, 0)][1] = 100_000;
+    run[stretch_at(&spans, Span::Hold, 2, 5)] = [4, 100_000, 0, 0, 0, 0];
+    let read = holding(&run, &spans, bg);
+    assert_eq!((read.spills, read.held), (Some(false), 7));
+    // Nothing held: no spill is read.
+    let none = holding(&hand_stretches(&spans, 0, 0, 4, 100_000, 0), &spans, bg);
+    assert_eq!((none.held, none.spills, none.let_go), (0, None, 8));
+    assert!(!none.usable());
+    // The stretches of windows: sums, the burst windows, and the sums of u and R at the last
+    // window's end, zero when that window read none.
+    let mut w = vec![[0u32; 5]; STRETCH_WINDOWS * 2];
+    w[0] = [16, 3, 7, 8, 9];
+    w[15] = [15, 1, 70, 80, 90];
+    w[16] = [17, 2, 1, 2, 3];
+    assert_eq!(
+        stretch_rows(&w, 16),
+        [[31, 4, 1, 70, 80, 99], [17, 2, 1, 0, 0, 3]]
+    );
+    // The kick's measure over eight kicks of sixteen members: ADR-0112's.
+    assert!(kicked_once_049(&[[16, 1]; 8], 16));
+    assert!(
+        !kicked_once_049(&[[16, 2]; 8], 16),
+        "an after of 0.125 a member"
+    );
+    assert!(!kicked_once_049(&[[17, 0]; 8], 16));
+    assert!(kicked_once_049(&[[14, 0]; 8], 16), "within the tolerance");
+    assert!(!kicked_once_049(&[[13, 0]; 8], 16));
+    assert_eq!(kick_reading_049(&[[16, 1], [15, 0]], 16), (31, 1, 2, 1));
+}
+
+/// The marks on the instrument's network at rest: the loader takes the marked image with the
+/// class set and every member marked and no other unit, grown or not, and the marked image with
+/// no class is refused at its first member; unwired, one marked member's short-term state steps
+/// under the class and an unmarked unit's under ADR-0019's constants in one run under the drive;
+/// and the release on the engine: one member at rest with no drive keeps the oracle's basal
+/// potential through two windows of cancels.
+fn marked_on_the_prior() {
+    let image = prior_image();
+    for set in 0..SETS.len() {
+        for &size in &SIZES {
+            let exec = marked_engine(&image, set, size, true, None);
+            let plain = frozen_from(&image, 1024);
+            assert_eq!(&exec.blocks()[..plain.blocks().len()], plain.blocks());
+        }
+    }
+    let mut unclassed = marked(&image, SETS[0], 16);
+    let header = CortexFileHeader::decode(unclassed[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(unclassed[at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_MODULATOR {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            unclassed[offset..][32..36].copy_from_slice(&[0; 4]);
+            entry.crc64 = crc64(&unclassed[offset..][..length]);
+            unclassed[at..][..64].copy_from_slice(&entry.encode());
+        }
+    }
+    assert!(matches!(
+        Image::decode::<2048>(&unclassed, config(1024, 2, 0)),
+        Err(cortex_runtime::ImageError::MarkWithoutClass(5))
+    ));
+    // Under the drive, unwired: each member's pair is the class's step on a copy with its own
+    // spikes' intervals, and each other unit's `step_stp`.
+    let mut exec = marked_engine(&image, 1, 64, false, None);
+    let drive = drive(1024);
+    let until = exec.ticks().saturating_add(u64::from(GROWTH_TICKS) * 4);
+    let start = exec.ticks() as u32;
+    let rested: Vec<(u8, u8, u32)> = exec
+        .units()
+        .iter()
+        .map(|u| (u.stp_u_rel, u.stp_r_ves, u.last_soma_spike_tick))
+        .collect();
+    run_driven(&mut exec, &drive, until).expect("the drive runs");
+    let of = membership(&members(64));
+    let mut checked = [0u32; 2];
+    let train = exec.train().to_vec();
+    for unit in exec.units() {
+        let id = unit.id as usize;
+        let spikes: Vec<u32> = train
+            .iter()
+            .filter(|&&(_, u)| u as usize == id)
+            .map(|&(t, _)| t)
+            .collect();
+        if spikes.is_empty() {
+            continue;
+        }
+        let (u0, r0, last) = rested[id];
+        let mut copy = DendriticSuperNeuron::new(0);
+        copy.stp_u_rel = u0;
+        copy.stp_r_ves = r0;
+        copy.flags = unit.flags;
+        let mut previous = (last != NO_SPIKE_ON_RECORD).then_some(last);
+        for &t in &spikes {
+            let elapsed = previous.map_or(u32::MAX, |p| t.wrapping_sub(p));
+            stepped_pair(&mut copy, elapsed, Some(SETS[1]));
+            previous = Some(t);
+        }
+        assert_eq!(
+            (unit.stp_u_rel, unit.stp_r_ves),
+            (copy.stp_u_rel, copy.stp_r_ves),
+            "unit {id}"
+        );
+        checked[usize::from(of[id])] = checked[usize::from(of[id])].saturating_add(1);
+    }
+    assert!(
+        checked[0] > 100 && checked[1] > 0,
+        "the drive fired members and others: {checked:?} since {start}"
+    );
+    // The release on the engine: member 5 at rest with no drive, two windows of the cancel as the
+    // protocol lands it, its basal potential the oracle's after every tick.
+    let windows = 16u32;
+    let mut exec = marked_engine(&image, 0, 16, false, None);
+    let inject = exec.injector();
+    let per = scaled_q16(
+        batch_q16(CANCEL_AT_THE_EXTREME, CANCEL_MESSAGE_Q16),
+        GAIN_1024,
+    );
+    let oracle = stepped(
+        (0, 0),
+        |k| if cancel_due(k, windows) { per } else { 0 },
+        2 * WINDOW_SPAN,
+    );
+    let mut basal = Vec::new();
+    for k in 0..2 * WINDOW_SPAN {
+        if cancel_due(k, windows) {
+            for _ in 0..CANCEL_AT_THE_EXTREME {
+                inject
+                    .inject(5, spike_message(CANCEL_MESSAGE_Q16, false))
+                    .expect("the ring has room");
+            }
+        }
+        exec.tick();
+        basal.push(exec.units()[5].v_basal);
+    }
+    assert!(oracle.fires.is_empty());
+    assert_eq!(
+        basal[1..],
+        oracle.basal[..oracle.basal.len().saturating_sub(1)],
+        "the engine's basal potential is the oracle's"
+    );
+}
+
+/// The assembly of sixteen at the top weight under set (i), marked and wired on the instrument's
+/// network at rest and frozen, kicked at the first tick under ADR-0044's drive through the
+/// protocol's own kick and run for `GATE_KICK_TICKS_049`: every member fires once in the span,
+/// sixteen resets are scheduled, no weight moves, and every member's short-term state is the
+/// class's step over its spikes; the members' spikes as `(tick after the start, unit)`.
+fn a_marked_assembly_kicked_for_a_few_hundred_ticks() -> Vec<(u32, u32)> {
+    let image = prior_image();
+    let mut exec = marked_engine(&image, 0, 16, true, Some(i16::MAX));
+    let set = members(16);
+    let before = weights_of(&exec);
+    let rested: Vec<(u8, u8, u32)> = set
+        .iter()
+        .map(|&m| {
+            let u = &exec.units()[m as usize];
+            (u.stp_u_rel, u.stp_r_ves, u.last_soma_spike_tick)
+        })
+        .collect();
+    let drive = drive(1024);
+    let inject = exec.injector();
+    let start = exec.ticks() as u32;
+    let mut resets = Vec::new();
+    for k in 0..GATE_KICK_TICKS_049 {
+        drive.step(&inject, exec.ticks()).expect("the drive runs");
+        inject_before(&inject, &set, Epoch::Kicked, k, &resets);
+        exec.tick();
+        note_kick_spikes(&exec, &set, Epoch::Kicked, k, start, &mut resets);
+    }
+    assert_eq!(weights_of(&exec), before, "no weight moved");
+    assert_eq!(resets.len(), set.len(), "every member's reset scheduled");
+    let of = membership(&set);
+    let spikes: Vec<(u32, u32)> = exec
+        .train()
+        .iter()
+        .filter(|&&(_, unit)| of[unit as usize])
+        .map(|&(tick, unit)| (tick.wrapping_sub(start), unit))
+        .collect();
+    for (k, &m) in set.iter().enumerate() {
+        assert_eq!(
+            spikes
+                .iter()
+                .filter(|&&(t, u)| u == m && (1..=KICK_SPAN).contains(&t))
+                .count(),
+            1,
+            "member {m} fires once in the span"
+        );
+        let (u0, r0, last) = rested[k];
+        let mut copy = DendriticSuperNeuron::new(0);
+        copy.stp_u_rel = u0;
+        copy.stp_r_ves = r0;
+        copy.flags = FLAG_FACILITATING;
+        let mut previous = (last != NO_SPIKE_ON_RECORD).then_some(last);
+        for &(t, _) in spikes.iter().filter(|&&(_, u)| u == m) {
+            let stamp = start.wrapping_add(t);
+            let elapsed = previous.map_or(u32::MAX, |p| stamp.wrapping_sub(p));
+            copy.step_stp_class(elapsed, SETS[0]);
+            previous = Some(stamp);
+        }
+        let unit = &exec.units()[m as usize];
+        assert_eq!(
+            (unit.stp_u_rel, unit.stp_r_ves),
+            (copy.stp_u_rel, copy.stp_r_ves),
+            "member {m} under the class"
+        );
+    }
+    spikes
+}
+
+/// The rules over the pinned tables of brief 049, once they are pinned: each run's stretches and
+/// kicks as the rules read them; each set's backgrounds; the kick firing every member once at
+/// every size under each set; each control's lead-in and first unkicked span the background's;
+/// and every cell's reading and burst reading.
+fn over_the_049_tables() {
+    for set in 0..SETS.len() {
+        let spans = layout(RELEASE_STRETCHES_049[set]);
+        let n = stretches_of(&spans).len();
+        let first = stretches_of(&spans)
+            .iter()
+            .position(|s| s.0 == Span::Hold)
+            .expect("a hold span");
+        for (s, &size) in SIZES.iter().enumerate() {
+            let (bg_rows, ctl_rows) = (BACKGROUND_049[set][s], CONTROL_049[set][s]);
+            if bg_rows.is_empty() {
+                continue;
+            }
+            assert_eq!((bg_rows.len(), ctl_rows.len()), (n, n));
+            let bg = background_049(bg_rows, &spans);
+            assert_eq!(bg, BACKGROUNDS_049[set][s]);
+            assert_eq!(
+                kick_reading_049(CONTROL_KICKS_049[set][s], size),
+                KICKS_049[set][s]
+            );
+            assert!(
+                kicked_once_049(CONTROL_KICKS_049[set][s], size),
+                "the kick fires every member of {size} once under {}",
+                SET_NAMES[set]
+            );
+            assert_eq!(holding(ctl_rows, &spans, bg), CONTROLS_049[set][s]);
+            assert_eq!(
+                ctl_rows[..first],
+                bg_rows[..first],
+                "the growth changes nothing unkicked"
+            );
+            for (k, rows) in CELLS_049[set][s].iter().enumerate() {
+                if rows.is_empty() {
+                    continue;
+                }
+                assert_eq!(rows.len(), n);
+                assert_eq!(
+                    holding(rows, &spans, bg),
+                    GRID_049[set][s][k],
+                    "{} {size} at weight {k}",
+                    SET_NAMES[set]
+                );
+            }
+        }
+    }
+}
+
+// ------------------------------------------------ the runs, weekly (brief 049)
+
+/// The kick, the backgrounds and the controls under set `set` (brief 049, the order ADR-0115
+/// writes): on ADR-0077's settled image frozen, for each size, the background — the members
+/// marked, unwired, the protocol's ticks under the drive with no kick and no release — and the
+/// control — the grown image, the members marked and unwired, the kick and the release — before
+/// any cell is run. Each control's lead-in and first unkicked span are its background's bit for
+/// bit, and the kick fires every member once by ADR-0112's measure, or no cell is run.
+fn kick_backgrounds_controls(set: usize) {
+    let name = format!("the backgrounds and the controls under {}", SET_NAMES[set]);
+    let image = settled(&name);
+    let spans = layout(RELEASE_STRETCHES_049[set]);
+    let first = stretches_of(&spans)
+        .iter()
+        .position(|s| s.0 == Span::Hold)
+        .expect("a hold span");
+    let mut read = Vec::new();
+    for (s, &size) in SIZES.iter().enumerate() {
+        let bg = class_run(
+            &image,
+            set,
+            size,
+            None,
+            true,
+            &format!("BACKGROUND_049[{set}][{s}]"),
+        );
+        let ctl = class_run(
+            &image,
+            set,
+            size,
+            None,
+            false,
+            &format!("CONTROL_049[{set}][{s}]"),
+        );
+        let (bg_rows, ctl_rows) = (
+            stretch_rows(&bg.windows, size),
+            stretch_rows(&ctl.windows, size),
+        );
+        let background = background_049(&bg_rows, &spans);
+        let kick = kick_reading_049(&ctl.kicks, size);
+        let once = kicked_once_049(&ctl.kicks, size);
+        let control = holding(&ctl_rows, &spans, background);
+        let bursts = bursts_049(&ctl.windows, &spans, size, background, SETS[set]);
+        eprintln!(
+            "DUMP {name} {size}: background {background:?} kick {kick:?} once {once} control {control:?} bursts {bursts:?} hashes {:#018x} {:#018x}",
+            windows_hash(&bg.windows),
+            windows_hash(&ctl.windows)
+        );
+        read.push((
+            bg, ctl, bg_rows, ctl_rows, background, kick, once, control, bursts,
+        ));
+    }
+    for (s, &size) in SIZES.iter().enumerate() {
+        let (_, _, bg_rows, ctl_rows, _, _, once, _, _) = &read[s];
+        assert_eq!(
+            ctl_rows[..first],
+            bg_rows[..first],
+            "{name} {size}: the growth changes nothing unkicked"
+        );
+        assert!(
+            *once,
+            "{name} {size}: the kick fires every member once, or it is derived again"
+        );
+    }
+    for (s, (bg, ctl, bg_rows, ctl_rows, background, kick, once, control, bursts)) in
+        read.iter().enumerate()
+    {
+        assert_eq!(
+            bg_rows.as_slice(),
+            BACKGROUND_049[set][s],
+            "the background {s}"
+        );
+        assert_eq!(ctl_rows.as_slice(), CONTROL_049[set][s], "the control {s}");
+        assert_eq!(ctl.kicks.as_slice(), CONTROL_KICKS_049[set][s]);
+        assert_eq!(
+            [windows_hash(&bg.windows), windows_hash(&ctl.windows)],
+            WINDOWS_HASH_049[set][s],
+            "every window"
+        );
+        assert_eq!(*background, BACKGROUNDS_049[set][s]);
+        assert_eq!(*kick, KICKS_049[set][s]);
+        assert!(*once);
+        assert_eq!(*control, CONTROLS_049[set][s]);
+        assert_eq!(*bursts, CONTROL_BURSTS_049[set][s]);
+    }
+}
+
+/// The six weights of one size under set `set` (brief 049): on ADR-0077's settled image frozen,
+/// the members marked, grown by the assembly's blocks and wired at each weight in `WEIGHTS_049`'s
+/// order, the protocol, the weights shown unchanged at each run's end; each run read against the
+/// background pinned before any cell ran, and every run dumped before any is held to its table.
+fn six_weights(set: usize, s: usize) {
+    let size = SIZES[s];
+    let name = format!("the assembly of {size} under {}", SET_NAMES[set]);
+    let image = settled(&name);
+    let spans = layout(RELEASE_STRETCHES_049[set]);
+    let bg = background_049(BACKGROUND_049[set][s], &spans);
+    assert_eq!(
+        bg, BACKGROUNDS_049[set][s],
+        "{name}: the background, pinned first"
+    );
+    let mut runs = Vec::new();
+    for (k, &w) in WEIGHTS_049.iter().enumerate() {
+        let run = class_run(
+            &image,
+            set,
+            size,
+            Some(w),
+            false,
+            &format!("CELLS_049[{set}][{s}][{k}]"),
+        );
+        let rows = stretch_rows(&run.windows, size);
+        let read = holding(&rows, &spans, bg);
+        let bursts = bursts_049(&run.windows, &spans, size, bg, SETS[set]);
+        eprintln!(
+            "DUMP {name} at {w:#x}: {read:?} holds {} lets go {} quiet {} usable {} failed {:?} kick {:?} bursts {bursts:?}",
+            read.holds(),
+            read.lets_go(),
+            read.quiet_unkicked(),
+            read.usable(),
+            failed(&read),
+            kick_reading_049(&run.kicks, size)
+        );
+        runs.push((run, rows, read, bursts));
+    }
+    for (k, (run, rows, read, bursts)) in runs.iter().enumerate() {
+        assert_eq!(rows.as_slice(), CELLS_049[set][s][k], "{name}: weight {k}");
+        assert_eq!(run.kicks.as_slice(), CELL_KICKS_049[set][s][k]);
+        assert_eq!(windows_hash(&run.windows), CELL_HASH_049[set][s][k]);
+        assert_eq!(*read, GRID_049[set][s][k], "{name}: weight {k}");
+        assert_eq!(*bursts, CELL_BURSTS_049[set][s][k], "{name}: weight {k}");
+    }
+}
+
+#[test]
+#[ignore]
+fn the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_exhaustive() {
+    kick_backgrounds_controls(0);
+}
+
+#[test]
+#[ignore]
+fn the_kick_the_backgrounds_and_the_controls_under_set_ii_at_1024_units_exhaustive() {
+    kick_backgrounds_controls(1);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_16_units_at_six_weights_under_set_i_exhaustive() {
+    six_weights(0, 0);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_32_units_at_six_weights_under_set_i_exhaustive() {
+    six_weights(0, 1);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_64_units_at_six_weights_under_set_i_exhaustive() {
+    six_weights(0, 2);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_16_units_at_six_weights_under_set_ii_exhaustive() {
+    six_weights(1, 0);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_32_units_at_six_weights_under_set_ii_exhaustive() {
+    six_weights(1, 1);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_64_units_at_six_weights_under_set_ii_exhaustive() {
+    six_weights(1, 2);
+}
+
+// ------------------------------------------------ brief 049's arithmetic, pinned before any run
+
+/// The pair a marked member's spike after a long rest releases with, per set.
+const CLASS_AT_REST_049: [(u8, u8); 2] = [(92, 255), (49, 255)];
+
+/// The steady pairs at `INTERVALS`, per set.
+const CLASS_STEADY_049: [[(u8, u8); 8]; 2] = [
+    [
+        (113, 255),
+        (149, 242),
+        (182, 197),
+        (208, 130),
+        (226, 74),
+        (242, 31),
+        (248, 15),
+        (250, 8),
+    ],
+    [
+        (63, 255),
+        (93, 247),
+        (128, 211),
+        (163, 146),
+        (199, 81),
+        (225, 33),
+        (234, 16),
+        (243, 8),
+    ],
+];
+
+/// The unkicked product, per set: $uR$ of the steady pair at the background's interval.
+const UNKICKED_PRODUCT_049: [u32; 2] = [28_815, 16_065];
+
+/// The course after ADR-0113's burst at `COURSE_TICKS`, per set: the pair and its product per
+/// mille of the unkicked one.
+const BURST_COURSE_049: [[((u8, u8), u32); 8]; 2] = [
+    [
+        ((195, 16), 108),
+        ((193, 64), 428),
+        ((184, 165), 1053),
+        ((173, 222), 1332),
+        ((155, 251), 1350),
+        ((130, 255), 1150),
+        ((105, 255), 929),
+        ((93, 255), 823),
+    ],
+    [
+        ((128, 54), 430),
+        ((126, 95), 745),
+        ((119, 179), 1325),
+        ((110, 227), 1554),
+        ((97, 251), 1515),
+        ((78, 255), 1238),
+        ((60, 255), 952),
+        ((51, 255), 809),
+    ],
+];
+
+/// The primed window after the burst, per set (`Primed`).
+const PRIMED_049: [Primed; 2] = [
+    (7_389, 101_429, 106_358, 24_319, (164, 243), 1_383),
+    (4_046, 113_388, 117_742, 19_242, (109, 236), 1_601),
+];
+
+/// The delivery at each of `WEIGHTS_049`, per set, at the unkicked pair and at the primed peak's.
+const DELIVERED_049: [[Delivered; 6]; 2] = [
+    [
+        (12605, 34468, Some(7), 17435, 36732, Some(5)),
+        (18909, 37415, Some(5), 26152, 40813, Some(4)),
+        (25212, 40370, Some(4), 34871, 44894, Some(3)),
+        (31516, 43320, Some(3), 43587, 48979, Some(2)),
+        (37819, 46274, Some(3), 52306, 53060, Some(2)),
+        (50425, 52178, Some(2), 69738, 61224, Some(2)),
+    ],
+    [
+        (7028, 31856, Some(12), 11254, 33834, Some(8)),
+        (10542, 33499, Some(8), 16881, 36470, Some(5)),
+        (14056, 35143, Some(6), 22509, 39104, Some(4)),
+        (17570, 36794, Some(5), 28135, 41737, Some(3)),
+        (21084, 38438, Some(4), 33763, 44375, Some(3)),
+        (28112, 41729, Some(3), 45015, 49643, Some(2)),
+    ],
+];
+
+/// The fade from the ceiling, per set, in ticks.
+const FADE_049: [u32; 2] = [135_785, 180_192];
+
+/// The release's span, per set, in stretches.
+const RELEASE_STRETCHES_049: [u32; 2] = [5, 6];
+
+/// A run's epochs, per set: the lead-in and eight rounds.
+const RUN_EPOCHS_049: [u32; 2] = [384, 400];
+
+/// The release by the oracle over its span, per set, from the drive's mean standing and from the
+/// extreme: the ticks it fires on, its lowest basal potential, and the tick after the last cancel
+/// its soma is back within a tenth of the threshold of the drive's mean standing.
+const RELEASE_SPAN_ORACLE_049: [[ReleasePinned; 2]; 2] = [[(&[], -12_461_267, Some(3_519)); 2]; 2];
+
+/// A release by the oracle as pinned: its ticks borrowed.
+type ReleasePinned = (&'static [u32], i32, Option<u32>);
+
+/// The members' spikes, `(tick after the start, unit)`, of the marked assembly of sixteen at the
+/// top weight under set (i), kicked on the instrument's network at rest for
+/// `GATE_KICK_TICKS_049`.
+const GATE_KICKED_049: &[(u32, u32)] = &[
+    (78, 5),
+    (78, 25),
+    (78, 56),
+    (78, 85),
+    (78, 105),
+    (79, 116),
+    (85, 16),
+    (86, 125),
+    (87, 36),
+    (87, 45),
+    (87, 65),
+    (87, 76),
+    (87, 96),
+    (87, 136),
+    (87, 145),
+    (87, 156),
+    (288, 116),
+    (296, 5),
+    (301, 156),
+    (302, 36),
+    (310, 125),
+    (313, 65),
+    (315, 16),
+    (315, 96),
+    (315, 105),
+    (321, 85),
+    (327, 45),
+    (329, 25),
+    (337, 145),
+    (338, 76),
+    (346, 56),
+    (347, 136),
+    (494, 116),
+    (510, 5),
+    (516, 96),
+    (519, 125),
+    (528, 45),
+    (530, 25),
+    (532, 36),
+    (536, 16),
+    (543, 156),
+    (546, 65),
+    (546, 76),
+    (558, 105),
+    (559, 56),
+    (559, 145),
+    (565, 136),
+    (570, 85),
+    (716, 116),
+    (738, 96),
+    (739, 125),
+    (743, 5),
+    (746, 36),
+    (746, 156),
+    (757, 25),
+    (759, 76),
+    (765, 16),
+    (776, 145),
+    (782, 105),
+    (784, 56),
+    (793, 136),
+    (794, 65),
+];
+
+// ------------------------------------------------ brief 049's readings, pinned from the runs
+
+/// Each set's background run's stretches, per size.
+const BACKGROUND_049: [[&[StretchRow]; 3]; 2] = [[&[], &[], &[]], [&[], &[], &[]]];
+
+/// Each set's control run's stretches, per size.
+const CONTROL_049: [[&[StretchRow]; 3]; 2] = [[&[], &[], &[]], [&[], &[], &[]]];
+
+/// Each set's control run's kicks, per size.
+const CONTROL_KICKS_049: [[&[[u32; 2]]; 3]; 2] = [[&[], &[], &[]], [&[], &[], &[]]];
+
+/// Each set's background's and control's windows hash, per size.
+const WINDOWS_HASH_049: [[[u64; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+
+/// Each set's background, per size, as `background_049` reads it.
+const BACKGROUNDS_049: [[Background; 3]; 2] = [[Background {
+    members: 0,
+    rest: 0,
+    ticks: 0,
+}; 3]; 2];
+
+/// Each set's kick over its control's eight kicks, per size: the volley, the after, the kicks,
+/// the kicks whose volley was every member.
+const KICKS_049: [[(u64, u64, u64, u32); 3]; 2] = [[(0, 0, 0, 0); 3]; 2];
+
+/// Each set's control read by the rules, per size.
+const CONTROLS_049: [[Holding; 3]; 2] = [[Holding {
+    first_half: 0,
+    held: 0,
+    ignited: 0,
+    let_go: 0,
+    spills: None,
+}; 3]; 2];
+
+/// Each set's control's burst reading, per size.
+const CONTROL_BURSTS_049: [[BurstRead049; 3]; 2] = [[([0; 5], [0; 8], None, 0); 3]; 2];
+
+/// Each cell's stretches, by set, size and weight.
+const CELLS_049: [[[&[StretchRow]; 6]; 3]; 2] = [[[&[]; 6]; 3]; 2];
+
+/// Each cell's kicks, by set, size and weight.
+const CELL_KICKS_049: [[[&[[u32; 2]]; 6]; 3]; 2] = [[[&[]; 6]; 3]; 2];
+
+/// Each cell's windows hash, by set, size and weight.
+const CELL_HASH_049: [[[u64; 6]; 3]; 2] = [[[0; 6]; 3]; 2];
+
+/// Each cell read by the rules, by set, size and weight.
+const GRID_049: [[[Holding; 6]; 3]; 2] = [[[Holding {
+    first_half: 0,
+    held: 0,
+    ignited: 0,
+    let_go: 0,
+    spills: None,
+}; 6]; 3]; 2];
+
+/// Each cell's burst reading, by set, size and weight.
+const CELL_BURSTS_049: [[[BurstRead049; 6]; 3]; 2] = [[[([0; 5], [0; 8], None, 0); 6]; 3]; 2];
