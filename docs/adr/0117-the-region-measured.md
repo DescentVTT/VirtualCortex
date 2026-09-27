@@ -213,6 +213,33 @@ A second run of all nine tests at `eacc7b4` reproduced every table. On a develop
 
   **A held context reaches both readouts, by about the same number of spikes**: 1.8 and 1.4 more a trial on A's trials and 4.1 and 3.3 on B's at 64 units, 1.7 and 2.0 and 6.9 and 5.8 at 96, over the background's held spans. The members sit at places 5 and 16, each inside the prior's window of both readouts' places, so the prior carries the context to both. The quiet row at 96 units holds its ignitions. A readout gated by the context would have to make that input selective; the prior does not.
 - **Under (d), ADR-0065's measure on the backgrounds** (`STIMULUS_SIGHT_050`): the eight-place readouts resolve the stimulus from the window before it in all six blocks at both sizes, the trials seen 61, 64, 64, 63, 58 and 62 of 64 at 64 units and 62, 64, 64, 63, 58 and 62 at 96, each readout's spikes after above its spikes before. The nine-place readouts beside them see 62 to 64. Giving up a place each costs the measure at most four trials of a block.
+- **The evidence.** Only tests and documents change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**: run [36313742568](https://github.com/DescentVTT/VirtualCortex/actions/runs/36313742568) at `376c702`, the documents commit on the branch, after which only this evidence, the cost table and the brief's archive change. The round's commits on the branch are `04fda04` (this protocol, before any run), `dfc778b` (the core grid's and (d)'s backgrounds and controls, and 64 units, ADR-0115's two cells reproduced first), `936bdd5` (the core grid and the subset under (b) and (d)), `eacc7b4` (the subset under (c), and the reading in the gate) and `376c702` (the readings and the documents at 4.67.0). **Every job it ran is green.**
+  - **The whole-domain tests.** All eighty-eight passed on the hosted runners: the seventy-nine before this round reproduced their pinned numbers, ADR-0115's among them through the refactored functions, and this round's nine reproduced their tables. The cost table did not know the nine and costed each at 900 s; on the runners they took 259 to 795 s, and condition (c)'s 1 890 s. The four shards took:
+
+    | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
+    | ---: | ---: | ---: | ---: | :--- | :--- |
+    | 0 | 50 m 30 s | 22 | 5 955 | 2 983 s, 41 % | H-20 from the mirrored 1 275 |
+    | 1 | 71 m 04 s | 22 | 8 347 | 4 216 s, 59 % | condition (c) 1 890 |
+    | 2 | 41 m 18 s | 22 | 4 873 | 2 440 s, 34 % | H-18 from the mirrored 907 |
+    | 3 | 56 m 33 s | 22 | 6 568 | 3 340 s, 46 % | plasticity everywhere 1 122 |
+
+    Shard 1 drew condition (c) and H-20's arm from the assignment together under the old table's default cost, and came within a point of the brief's 60 per cent.
+  - **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: eighty-eight lines, 25 743 s, its source line naming the run; `npm run spec:costs` passing). Replayed through the deal, it plans each shard at 6 435 to 6 436 s summed. At this run's ratio of summed seconds to wall time, 1.97 to 2.00, that is about 3 220 to 3 270 s of tests' wall time, 45 per cent of the bound, under the brief's 60.
+  - **No mutation sweep**, by the scope: the diff changes nothing under `src/`, so the sweep has nothing to find.
+
+  The pull request's gate on `376c702` is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which found no mutant to make.
+
+  On the developer machine every command of brief 050's verification list exited 0 (a ratio, not admissible):
+  - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 650 passed in each and 88 ignored;
+  - check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
+  - `--list`, 88 tests;
+  - the in-diff mutation run, "No mutants to filter";
+  - this round's nine whole-domain tests twice, the second run at `eacc7b4` against the pins.
+- **Not done:**
+  - The grid was not widened: nothing between 0.1875 and 0.25, nor between 0.25 and 0.3125, where the region's edges are, and no size above 96.
+  - ADR-0116's option 3(b), the settled image's inhibitory weights scaled, was not run beside condition (c).
+  - The geometry is in `tests/assembly.rs`, not the harness; no test runs the task on it.
+  - No readout was gated, no context switched and no reward delivered in a measured run.
 - **The next decision, named and not taken.** By ADR-0116's branch for a round in which no cell is robust, the next decision follows from what failed, and all three conditions failed a cell the core grid holds usable:
   - under (d), the context's isolation from the task's stimulus: a placement beyond the prior's window from the stimulus places, which needs another geometry;
   - under (c), the inhibitory drain (one of H-20's four open questions), or an inhibition of the context's own;
@@ -228,7 +255,7 @@ A second run of all nine tests at `eacc7b4` reproduced every table. On a develop
 - Good: the eight-place readouts still resolve the task's stimulus by ADR-0065's measure, so the geometry F-54's decision chose costs the readout little.
 - Bad: no cell is robust. The region is one weight wide, and the task's stimulus and a drained network each tip its cells into igniting, so ADR-0111's second round has no cell to build on as the rules define one.
 - Bad: a held context reaches both readouts alike through the prior, which a gated readout would have to undo.
-- Bad: the weekly job grows by about a third, and one test, condition (c)'s, runs for about 2 500 s on the runners.
+- Bad: the weekly job grows by 5 793 s on the runners by this round's dispatch, and one test, condition (c)'s, runs for 1 890 s there, the longest in the table.
 - Neutral: the geometry lives in `tests/assembly.rs` for now, not in the harness as ADR-0116 wrote.
 - Neutral: condition (c)'s image carries the old geometry's answer pairs onto the members' places; the couplings are read, and the confound stands.
 
