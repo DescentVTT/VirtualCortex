@@ -88,9 +88,12 @@ pub const SECTION_TERM: u32 = 40;
 /// policy, committed and rejected, so that the policy an image runs under is in the image.
 pub const SECTION_AMENDMENT: u32 = 41;
 /// The engine's modulation state (ADR-0032): one 64-byte record holding the 16 bytes of
-/// `cortex-neuromod`'s `NeuromodulatorState`, the modulation baseline at `[16..20)` and 44
-/// reserved bytes that MUST be zero; always written and required, so that the modulation a
-/// run continues under is in the image.
+/// `cortex-neuromod`'s `NeuromodulatorState`, the modulation baseline at `[16..20)`, the
+/// inhibitory rule's target period at `[20..24)` (ADR-0053), the inhibitory baseline's flag
+/// at `[24]` and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
+/// (ADR-0094), the class of short-term plasticity's flag at `[32]` and its $U$ and two shifts
+/// at `[33..36)` (ADR-0114), and 30 reserved bytes that MUST be zero; always written and
+/// required, so that the modulation a run continues under is in the image.
 pub const SECTION_MODULATOR: u32 = 42;
 /// The engine's homeostasis state (ADR-0036): one 64-byte record, `cortex-homeostasis`'s
 /// `HomeostaticDrivePool` with its synaptic gain, its control step and the open window of the
@@ -235,7 +238,15 @@ impl CortexFileHeader {
     ///   stay reserved. A version-15 image's zero there reads as unset, which is the rule
     ///   before this version bit for bit; the loader still refuses a version-15 header, as it
     ///   refuses every foreign version.
-    pub const FORMAT_VERSION: u32 = 16;
+    /// - 17: the modulator section's `[32]` is the flag of a class of short-term plasticity (0
+    ///   unset, 1 set) and `[33]`, `[34]` and `[35]` the class's $U$ in Q0.8 and its
+    ///   $\tau_f$ and $\tau_d$ as shifts, zero while unset; `DendriticSuperNeuron`'s `flags`
+    ///   bit 2 (`FLAG_FACILITATING`) marks a unit whose synapses release under the class
+    ///   (ADR-0113, ADR-0114). `[26..28)` and `[36..64)` stay reserved. A version-16 image's
+    ///   zeros there read as unset and its units carry no mark, which is the rule before this
+    ///   version bit for bit; the loader still refuses a version-16 header, as it refuses every
+    ///   foreign version.
+    pub const FORMAT_VERSION: u32 = 17;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -419,7 +430,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 16);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 17);
     }
 
     #[test]
@@ -465,8 +476,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            16,
-            "ADR-0094: the signed gate in the modulator section"
+            17,
+            "ADR-0114: the class of short-term plasticity in the modulator section"
         );
     }
 

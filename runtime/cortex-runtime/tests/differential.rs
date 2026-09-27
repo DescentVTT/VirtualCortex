@@ -359,6 +359,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             istdp_target_period_ticks: ISTDP_TARGET_PERIOD_TICKS,
             inhibitory_baseline_q16: None,
             signed_gate: false,
+            stp_class: None,
         },
         wire_random,
         20_000,

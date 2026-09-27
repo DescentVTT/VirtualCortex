@@ -11,8 +11,9 @@ use cortex_connectome::{
     SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
-    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16,
-    PlasticDelta, STP_MAX, STP_U, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
+    FLAG_FACILITATING, FLAG_INHIBITORY, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS,
+    ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, PlasticDelta, STP_MAX, STP_U, StpClass,
+    THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
 };
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX};
 use cortex_homeostasis::{
@@ -1179,7 +1180,8 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
         None,
         "the flag and the value zero, as a format-14 writer left them, read as unset"
     );
-    for at in [26, 27, 32, 40, 63] {
+    // `[32..36)` is the class of short-term plasticity's since ADR-0114.
+    for at in [26, 27, 36, 40, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1201,7 +1203,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(15)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(16)))
         ),
         "the previous format's header fails closed, as every foreign version does"
     );
@@ -1290,7 +1292,8 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "flag {flag}: a byte the writer never produces"
         );
     }
-    for at in [26, 27, 32, 63] {
+    // `[32..36)` is the class of short-term plasticity's since ADR-0114.
+    for at in [26, 27, 36, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1304,7 +1307,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "byte {at} is reserved"
         );
     }
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 16);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 17);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 15;
@@ -1316,5 +1319,203 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             Err(ImageError::Header(HeaderError::ForeignVersion(15)))
         ),
         "a format-15 header fails closed, as every foreign version does (L-6)"
+    );
+}
+
+/// The class of short-term plasticity in the modulator section (ADR-0114; format 17): a flag
+/// byte at `[32]` and the class's $U$ and two shifts at `[33]`, `[34]` and `[35]`. Unset, all
+/// four are zero — the bytes a format-16 writer left there — and read as unset whatever the
+/// configuration says; set, the flag is 1 and the class is read back, whatever the
+/// configuration says, at the edges the rule resolves, beside the inhibitory baseline and the
+/// signed gate, which it leaves as they are. A unit's mark (`FLAG_FACILITATING`) is carried
+/// in its record. Refused: a class the rule does not resolve, as the configuration's is; a
+/// flag that is neither zero nor one, a byte beside a zero flag and a reserved byte after the
+/// class, which the writer never produces; a unit marked while no class is set; and a header
+/// stamped with format 16, as every foreign version is.
+#[test]
+fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads_as_unset()
+ {
+    let class = |u, tau_f_shift, tau_d_shift| StpClass {
+        u,
+        tau_f_shift,
+        tau_d_shift,
+    };
+    let set_ii = class(26, 16, 13);
+    let unset = small_image_with_modulator();
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(&section[32..64], &[0u8; 32], "unset writes zeros");
+    let loaded = Image::decode::<8>(
+        &unset,
+        Config {
+            stp_class: Some(set_ii),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        loaded.stp_class(),
+        None,
+        "the image's unset outranks the configuration's set"
+    );
+    // Set beside the inhibitory baseline and the signed gate, with unit 1 marked.
+    let mut exec = Executor::<8>::new(Config {
+        units: 2,
+        blocks: 1,
+        inhibitory_baseline_q16: Some(0x8000),
+        signed_gate: true,
+        stp_class: Some(set_ii),
+        ..Config::default()
+    })
+    .unwrap();
+    exec.units_mut()[1].flags = FLAG_FACILITATING | FLAG_INHIBITORY;
+    let set = Image::encode(&exec).unwrap();
+    let section = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(
+        (section[24], section[25]),
+        (1, 1),
+        "the inhibitory flag and the signed gate's"
+    );
+    assert_eq!(&section[28..32], &0x8000i32.to_le_bytes());
+    assert_eq!(
+        &section[32..36],
+        &[1, 26, 16, 13],
+        "the flag, U and the shifts"
+    );
+    assert_eq!(&section[36..64], &[0u8; 28]);
+    assert_eq!(
+        section_bytes(&set, SECTION_NEURON)[64 + 57],
+        FLAG_FACILITATING | FLAG_INHIBITORY,
+        "the mark in the unit's record"
+    );
+    let loaded = Image::decode::<8>(&set, Config::default()).unwrap();
+    assert_eq!(
+        loaded.stp_class(),
+        Some(set_ii),
+        "the image's set outranks the configuration's unset"
+    );
+    assert_eq!(
+        (loaded.inhibitory_baseline_q16(), loaded.signed_gate()),
+        (Some(0x8000), true),
+        "and the three are apart"
+    );
+    assert_eq!(loaded.units()[1].flags, FLAG_FACILITATING | FLAG_INHIBITORY);
+    assert_eq!(loaded.units()[0].flags, 0);
+    assert_eq!(Image::encode(&loaded).unwrap(), set, "one image, twice");
+    let with_class = |bytes: [u8; 4]| {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[32..36].copy_from_slice(&bytes)
+        });
+        img
+    };
+    for (u, f, d) in [
+        (1, 1, 1),
+        (255, 16, 16),
+        (1, 16, 1),
+        (255, 1, 16),
+        (51, 16, 13),
+    ] {
+        assert_eq!(
+            Image::decode::<8>(&with_class([1, u, f, d]), Config::default())
+                .unwrap()
+                .stp_class(),
+            Some(class(u, f, d)),
+            "({u}, {f}, {d}) is set"
+        );
+    }
+    for (u, f, d) in [
+        (0, 16, 13),
+        (51, 0, 13),
+        (51, 17, 13),
+        (51, 16, 0),
+        (51, 16, 17),
+        (51, 0xFF, 0xFF),
+        (0, 0, 0),
+    ] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_class([1, u, f, d]), Config::default()),
+                Err(ImageError::Config(ConfigError::StpClassOutOfRange))
+            ),
+            "({u}, {f}, {d}): refused as the configuration's is"
+        );
+    }
+    for bytes in [
+        [0, 26, 16, 13],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+        [2, 26, 16, 13],
+        [0xFF, 26, 16, 13],
+        [2, 0, 0, 0],
+    ] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_class(bytes), Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "{bytes:?}: bytes the writer never produces"
+        );
+    }
+    for at in [26, 27, 36, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    // A mark while no class is set: refused at the marked unit, whatever the configuration
+    // says; the inhibitory flag alone is no mark.
+    let unmarked = with_class([0; 4]);
+    let loaded = Image::decode::<8>(
+        &unmarked,
+        Config {
+            stp_class: Some(set_ii),
+            ..Config::default()
+        },
+    );
+    assert!(
+        matches!(loaded, Err(ImageError::MarkWithoutClass(1))),
+        "the image's unset class, and unit 1 marked"
+    );
+    let mut inhibitory = unmarked.clone();
+    patch_section(&mut inhibitory, SECTION_NEURON, |s| {
+        s[64 + 57] = FLAG_INHIBITORY
+    });
+    assert_eq!(
+        Image::decode::<8>(&inhibitory, Config::default())
+            .unwrap()
+            .stp_class(),
+        None
+    );
+    let mut first = inhibitory.clone();
+    patch_section(&mut first, SECTION_NEURON, |s| s[57] = FLAG_FACILITATING);
+    assert!(matches!(
+        Image::decode::<8>(&first, Config::default()),
+        Err(ImageError::MarkWithoutClass(0))
+    ));
+    // A header stamped with format 16, as every foreign version is (L-6).
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 17);
+    let mut older = set.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 16;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, Config::default()),
+            Err(ImageError::Header(HeaderError::ForeignVersion(16)))
+        ),
+        "a format-16 header fails closed, as every foreign version does (L-6)"
     );
 }

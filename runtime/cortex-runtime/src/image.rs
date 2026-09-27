@@ -12,11 +12,12 @@
 //! and resumed by the loader, so the stamps keep their meaning (ADR-0033). The engine's
 //! modulation state (ADR-0032: the modulator record and the baseline; since ADR-0086 the
 //! inhibitory baseline beside them, set or unset; since ADR-0094 the signed gate, set or
-//! unset), its homeostasis state
-//! (ADR-0036, ADR-0037) and its hippocampal state (ADR-0038) are sections of their own, always
-//! written, and the episodic ledger a section written when it is not empty, so that the image
-//! defines the run (§8.3); since ADR-0052 so are the engine's affect state and induction
-//! record, always, and its term arena and clause store when they hold anything.
+//! unset; since ADR-0114 the class of short-term plasticity, set or unset), its homeostasis
+//! state (ADR-0036, ADR-0037) and its hippocampal state (ADR-0038) are sections of their own,
+//! always written, and the episodic ledger a section written when it is not empty, so that the
+//! image defines the run (§8.3); since ADR-0052 so are the engine's affect state and induction
+//! record, always, and its term arena and clause store when they hold anything. A unit's mark
+//! for the class (ADR-0114) is a bit of its record's `flags`.
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_affect::InteroceptiveState;
@@ -27,8 +28,8 @@ use cortex_connectome::{
     SectionEntry, crc64,
 };
 use cortex_core::{
-    DendriticSuperNeuron, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK, SynapseBlock, TICK_NS,
-    WorkerWheel,
+    DendriticSuperNeuron, FLAG_FACILITATING, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK,
+    StpClass, SynapseBlock, TICK_NS, WorkerWheel,
 };
 use cortex_executive::PolicyAmendment;
 use cortex_hippocampus::{Episode, HippocampalAttractorState};
@@ -119,6 +120,9 @@ pub enum ImageError {
     /// The affect record (section kind 47, ADR-0052) is not well formed or is not primed to
     /// the loaded store's description length.
     MalformedAffect,
+    /// A unit is marked `FLAG_FACILITATING` while the image carries no class of short-term
+    /// plasticity for it to step under (ADR-0114).
+    MarkWithoutClass(u32),
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -143,11 +147,42 @@ const INHIBITORY_VALUE: core::ops::Range<usize> = 28..32;
 const INHIBITORY_BASELINE_SET: u8 = 1;
 
 /// The modulator section's signed gate (ADR-0094; format 16): a flag byte at `[25]`,
-/// `SIGNED_GATE_SET` while the gate is set and zero while it is unset. `[26..28)` and
-/// `[32..64)` stay reserved and must be zero. A record a format-15 writer left zero there
-/// reads as unset, which is the rule before ADR-0094 bit for bit.
+/// `SIGNED_GATE_SET` while the gate is set and zero while it is unset. A record a format-15
+/// writer left zero there reads as unset, which is the rule before ADR-0094 bit for bit.
 const SIGNED_GATE_FLAG: usize = 25;
 const SIGNED_GATE_SET: u8 = 1;
+
+/// The modulator section's class of short-term plasticity (ADR-0114; format 17): a flag byte at
+/// `[32]`, `STP_CLASS_SET` while a class is set and zero while none is, and the class's $U$,
+/// $\tau_f$ shift and $\tau_d$ shift at `[33]`, `[34]` and `[35]`, zero while unset.
+/// `[26..28)` and `[36..64)` stay reserved and must be zero. A record a format-16 writer left
+/// zero there reads as unset, which is the rule before ADR-0114 bit for bit.
+const STP_CLASS_FLAG: usize = 32;
+const STP_CLASS_U: usize = 33;
+const STP_CLASS_TAU_F: usize = 34;
+const STP_CLASS_TAU_D: usize = 35;
+const STP_CLASS_SET: u8 = 1;
+
+/// The class a modulator record carries (ADR-0114): none while its flag and its three bytes
+/// are zero; the class while its flag is `STP_CLASS_SET`, refused as the configuration's is
+/// when the rule does not resolve it; any other flag, or a byte beside a zero flag, is one the
+/// writer never produces.
+fn stp_class_of(record: &[u8]) -> Result<Option<StpClass>, ImageError> {
+    let class = StpClass {
+        u: record[STP_CLASS_U],
+        tau_f_shift: record[STP_CLASS_TAU_F],
+        tau_d_shift: record[STP_CLASS_TAU_D],
+    };
+    match record[STP_CLASS_FLAG] {
+        0 if record[STP_CLASS_U..=STP_CLASS_TAU_D] == [0; 3] => Ok(None),
+        STP_CLASS_SET if class.is_valid() => Ok(Some(class)),
+        STP_CLASS_SET => Err(ImageError::Config(ConfigError::StpClassOutOfRange)),
+        _ => Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0,
+        }),
+    }
+}
 
 impl From<io::Error> for ImageError {
     fn from(e: io::Error) -> Self {
@@ -392,9 +427,10 @@ impl Image {
         // The engine's modulation state, always: one 64-byte record holding the modulator's 16
         // bytes, the baseline at `[16..20)`, the inhibitory rule's target period at `[20..24)`
         // (ADR-0053), the inhibitory baseline's flag at `[24]` and its value at `[28..32)`
-        // (ADR-0086), the signed gate's flag at `[25]` (ADR-0094; format 16) and 34 reserved
-        // bytes. The baselines, the period and the gate change what a run does, so they are
-        // in the image, not in a configuration (§8.3).
+        // (ADR-0086), the signed gate's flag at `[25]` (ADR-0094), the class of short-term
+        // plasticity's flag at `[32]` and its three bytes at `[33..36)` (ADR-0114; format 17)
+        // and 30 reserved bytes. The baselines, the period, the gate and the class change what
+        // a run does, so they are in the image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -405,6 +441,12 @@ impl Image {
         }
         if exec.signed_gate() {
             modulator_bytes[SIGNED_GATE_FLAG] = SIGNED_GATE_SET;
+        }
+        if let Some(class) = exec.stp_class() {
+            modulator_bytes[STP_CLASS_FLAG] = STP_CLASS_SET;
+            modulator_bytes[STP_CLASS_U] = class.u;
+            modulator_bytes[STP_CLASS_TAU_F] = class.tau_f_shift;
+            modulator_bytes[STP_CLASS_TAU_D] = class.tau_d_shift;
         }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
@@ -581,6 +623,14 @@ impl Image {
         let episodes = episode.map_or(0, |e| e.record_count() as usize);
         let terms = term.map_or(0, |t| t.record_count() as usize);
         let clauses = clause.map_or(0, |c| c.record_count() as usize);
+        // The modulator's one record (ADR-0032), read here for the class of short-term
+        // plasticity (ADR-0114): each worker holds the class from `Executor::new`, and a unit
+        // marked for it is refused below while there is none. The image's class, set or
+        // unset, outranks the configuration's (§8.3).
+        if modulator.record_count() != 1 {
+            return Err(ImageError::Directory(SECTION_MODULATOR));
+        }
+        let stp_class = stp_class_of(section_of(bytes, &modulator)?)?;
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
@@ -589,6 +639,7 @@ impl Image {
             episodes: episodes.saturating_add(config.episodes),
             terms: terms.saturating_add(config.terms),
             clauses: clauses.saturating_add(config.clauses),
+            stp_class,
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -661,6 +712,9 @@ impl Image {
                 if !unit.is_at_rest_image() {
                     return Err(ImageError::NotAtRest(i as u32));
                 }
+                if unit.flags & FLAG_FACILITATING != 0 && stp_class.is_none() {
+                    return Err(ImageError::MarkWithoutClass(i as u32));
+                }
                 if unit.first_block().is_some_and(|b| b as usize >= blocks)
                     || unit.delta_head().is_some_and(|d| d as usize >= deltas)
                 {
@@ -691,16 +745,14 @@ impl Image {
             // the inhibitory rule's target period at `[20..24)` (each within its bounds, as
             // `Executor::new` would have demanded), the inhibitory baseline's flag at `[24]`
             // and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
-            // (ADR-0094), 34 reserved bytes.
-            if modulator.record_count() != 1 {
-                return Err(ImageError::Directory(SECTION_MODULATOR));
-            }
+            // (ADR-0094), the class of short-term plasticity at `[32..36)`, read above
+            // (ADR-0114), 30 reserved bytes; its count was held to one above.
             let record = section_of(bytes, &modulator)?;
             let reserved_not_zero = || ImageError::ReservedNotZero {
                 section: SECTION_MODULATOR,
                 index: 0,
             };
-            if record[26..28].iter().any(|&b| b != 0) || record[32..64].iter().any(|&b| b != 0) {
+            if record[26..28].iter().any(|&b| b != 0) || record[36..64].iter().any(|&b| b != 0) {
                 return Err(reserved_not_zero());
             }
             let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));

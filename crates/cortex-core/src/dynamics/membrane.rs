@@ -48,6 +48,11 @@ pub const FLAG_BURST_MODE: u8 = 0x01;
 /// `flags` bit: the unit is inhibitory (its fan-out weights are negative); read by the
 /// runtime, not by this method.
 pub const FLAG_INHIBITORY: u8 = 0x02;
+/// `flags` bit: the unit is facilitating (ADR-0113, ADR-0114): its synapses release under the
+/// image's class of short-term plasticity (`DendriticSuperNeuron::step_stp_class`) rather than
+/// ADR-0019's constants; read by the runtime, not by this method, which leaves it as it finds
+/// it.
+pub const FLAG_FACILITATING: u8 = 0x04;
 
 /// The ticks within which a spike is a descendant of the last synapse's message that reached
 /// the unit (ADR-0054): 128 ticks, 1.28 ms, the latency the oracle of ADR-0044 attributes a
@@ -487,6 +492,48 @@ mod tests {
         assert_eq!(u.flags & FLAG_BURST_MODE, 0);
     }
 
+    /// The facilitating mark and the inhibitory flag are the runtime's (ADR-0114): a plateau
+    /// that begins sets the burst bit beside them and one that ends clears it alone, so the two
+    /// stand as they were through a burst and a quiet spike, set or clear.
+    #[test]
+    fn a_plateau_sets_and_clears_the_burst_bit_alone_and_leaves_the_other_flags() {
+        for others in [
+            0,
+            FLAG_FACILITATING,
+            FLAG_INHIBITORY,
+            FLAG_FACILITATING | FLAG_INHIBITORY,
+            !FLAG_BURST_MODE,
+        ] {
+            let mut u = unit();
+            u.flags = others;
+            u.v_soma = 2 * THRESHOLD_BASE;
+            u.v_apical = 3 * BAC_APICAL_THRESHOLD / 2;
+            assert!(u.integrate(0, 0, 0));
+            assert_eq!(
+                u.flags,
+                others | FLAG_BURST_MODE,
+                "{others:#04x}: a plateau begins"
+            );
+            for t in 1..=BAC_PLATEAU_TICKS as u32 {
+                u.integrate(0, 0, t);
+            }
+            assert_eq!(u.flags, others, "{others:#04x}: and ends");
+            let mut quiet = unit();
+            quiet.flags = others;
+            quiet.v_soma = 2 * THRESHOLD_BASE;
+            assert!(quiet.integrate(0, 0, 0));
+            assert_eq!(
+                quiet.flags, others,
+                "{others:#04x}: a spike without a plateau"
+            );
+        }
+        assert_eq!(
+            FLAG_FACILITATING & (FLAG_BURST_MODE | FLAG_INHIBITORY),
+            0,
+            "a bit of its own"
+        );
+    }
+
     #[test]
     fn the_threshold_steps_up_per_spike_and_decays_back_to_its_base() {
         let mut u = unit();
@@ -554,6 +601,8 @@ mod prop {
         let mut rng = Lcg::new(0x9E37_79B9_7F4A_7C15);
         let mut u = DendriticSuperNeuron::new(1);
         u.v_thresh = THRESHOLD_BASE;
+        // Every bit but the burst bit set: `integrate` leaves them as it finds them (ADR-0114).
+        u.flags = FLAG_FACILITATING | FLAG_INHIBITORY | 0xF8;
         let mut fired = 0u32;
         for t in 0..1_000_000u32 {
             let (basal, apical) = (rng.i32_edge_biased(), rng.i32_edge_biased());
@@ -561,6 +610,11 @@ mod prop {
             let (basal_before, apical_before) = (u.v_basal, u.v_apical);
             let spiked = u.integrate(basal, apical, t);
             check(&u);
+            assert_eq!(
+                u.flags & !FLAG_BURST_MODE,
+                FLAG_FACILITATING | FLAG_INHIBITORY | 0xF8,
+                "the other flags as they were"
+            );
             if spiked {
                 assert_eq!(refractory_before, 0, "a spike only outside the window");
                 assert_eq!(u.v_soma, V_RESET);
