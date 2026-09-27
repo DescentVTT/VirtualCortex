@@ -106,9 +106,14 @@ fn extra_blocks(size: u32) -> u64 {
 
 /// The delay of the synapse from `from` to `to`: the prior's local band, drawn.
 fn delay_of(from: u32, to: u32) -> u16 {
+    delay_drawn(DELAY_SEED, from, to)
+}
+
+/// `delay_of` drawn by `mix64` of `seed` in place of `DELAY_SEED` (brief 050's condition (b)).
+fn delay_drawn(seed: u64, from: u32, to: u32) -> u16 {
     let p = prior(1024);
     let width = u64::from(p.delay_max.saturating_sub(p.delay_min)).saturating_add(1);
-    let draw = mix64(DELAY_SEED ^ (u64::from(from) << 32 | u64::from(to)));
+    let draw = mix64(seed ^ (u64::from(from) << 32 | u64::from(to)));
     p.delay_min
         .saturating_add(draw.checked_rem(width).unwrap_or(0) as u16)
 }
@@ -867,6 +872,12 @@ fn grown(image: &[u8], extra: u64) -> Vec<u8> {
 /// basal, with the drawn delays; its blocks are chained in order, the first after the last
 /// block of its own chain.
 fn wire(exec: &mut Engine, size: u32, weight: i16) {
+    wire_drawn(exec, size, weight, DELAY_SEED);
+}
+
+/// `wire` with the delays drawn by `seed` (`delay_drawn`); every target, weight and block the
+/// same.
+fn wire_drawn(exec: &mut Engine, size: u32, weight: i16, seed: u64) {
     let base = blocks_for(&prior(1024)) as u32;
     let m = members(size);
     let per = blocks_per_member(size);
@@ -902,7 +913,7 @@ fn wire(exec: &mut Engine, size: u32, weight: i16) {
                     slot,
                     target,
                     weight,
-                    delay_of(unit, target),
+                    delay_drawn(seed, unit, target),
                     false
                 ),
                 "the synapse written"
@@ -8784,6 +8795,18 @@ fn marked(image: &[u8], class: StpClass, size: u32) -> Vec<u8> {
 /// grown by the assembly's blocks when `grow` (a control or a cell), and wired at `weight` when
 /// given. The class and the marks asserted on the engine.
 fn marked_engine(image: &[u8], set: usize, size: u32, grow: bool, weight: Option<i16>) -> Engine {
+    marked_engine_drawn(image, set, size, grow, weight, DELAY_SEED)
+}
+
+/// `marked_engine` with the assembly's delays drawn by `seed` (`wire_drawn`, brief 050).
+fn marked_engine_drawn(
+    image: &[u8],
+    set: usize,
+    size: u32,
+    grow: bool,
+    weight: Option<i16>,
+    seed: u64,
+) -> Engine {
     let img = marked(image, SETS[set], size);
     let mut exec = if grow {
         frozen_from(&grown(&img, extra_blocks(size)), 1024)
@@ -8801,7 +8824,7 @@ fn marked_engine(image: &[u8], set: usize, size: u32, grow: bool, weight: Option
         );
     }
     if let Some(w) = weight {
-        wire(&mut exec, size, w);
+        wire_drawn(&mut exec, size, w, seed);
     }
     exec
 }
@@ -8842,23 +8865,62 @@ fn span_protocol(
     spans: &[(Span, usize, u32)],
     kick: bool,
 ) -> SpanRun {
+    span_protocol_under(exec, set, spans, kick, None).0
+}
+
+/// `span_protocol` with, when `task` is given (brief 050's condition (d)), the task's stimulus
+/// presented at every epoch's middle as `Task::trial` presents it at a trial's first tick: the
+/// stimulus the task draws for the epoch's index in the run injected before the epoch's tick
+/// `STIMULUS_AT`, and its cancel before each tick it is due at, both before the drive's step;
+/// and each epoch's reading (`TaskEpoch`). With none it is `span_protocol`, which calls it so:
+/// nothing is injected and nothing the engine reads is read.
+fn span_protocol_under(
+    exec: &mut Engine,
+    set: &[u32],
+    spans: &[(Span, usize, u32)],
+    kick: bool,
+    task: Option<&Task>,
+) -> (SpanRun, Vec<TaskEpoch>) {
     let drive = drive(1024);
     let inject = exec.injector();
     let class = exec.stp_class();
     let of = membership(set);
+    let counted = task.map(|_| counted_sets());
     let mut run = SpanRun {
         windows: Vec::new(),
         kicks: Vec::new(),
     };
+    let mut read: Vec<TaskEpoch> = Vec::new();
     let mut seen = (exec.train().len() as u64).saturating_add(exec.train_overwritten());
     for &(span, _, epochs) in spans {
         let start = exec.ticks() as u32;
         let windows = epochs.saturating_mul(WINDOWS as u32);
         let mut resets: Vec<(u32, u32)> = Vec::new();
         let mut kick_read = [0u32; 2];
+        // The epochs of the span under a task: the stimulus each draws by its index in the run.
+        let first = read.len() as u64;
+        let mut here: Vec<TaskEpoch> = match task {
+            Some(t) => (0..u64::from(epochs))
+                .map(|e| (t.stimulus_at(first.saturating_add(e)), [[0u32; 4]; 2]))
+                .collect(),
+            None => Vec::new(),
+        };
         for w in 0..windows {
             for j in 0..WINDOW_SPAN {
                 let k = w.saturating_mul(WINDOW_SPAN).saturating_add(j);
+                if let Some(t) = task {
+                    let e = k.checked_div(EPOCH_TICKS).unwrap_or(0) as usize;
+                    let at = k.checked_rem(EPOCH_TICKS).unwrap_or(0);
+                    let presented = t.stimuli[usize::from(here[e].0)];
+                    if at == STIMULUS_AT {
+                        presented.inject(&inject).expect("the ring has room");
+                    }
+                    if let Some(trial_k) = at.checked_sub(STIMULUS_AT) {
+                        presented
+                            .cancel_at(&inject, trial_k)
+                            .expect("the ring has room");
+                    }
+                }
                 drive.step(&inject, exec.ticks()).expect("the drive runs");
                 if kick && span == Span::Hold {
                     inject_before(&inject, set, Epoch::Kicked, k, &resets);
@@ -8897,6 +8959,18 @@ fn span_protocol(
                 } else {
                     row[1] = row[1].saturating_add(1);
                 }
+                if let Some(sets) = &counted {
+                    let t = stamp.wrapping_sub(start);
+                    let e = t.checked_div(EPOCH_TICKS).unwrap_or(0) as usize;
+                    let at = t.checked_rem(EPOCH_TICKS).unwrap_or(0);
+                    if let (Some(side), Some(epoch)) = (task_side(at), here.get_mut(e)) {
+                        for (count, of_set) in epoch.1[side].iter_mut().zip(sets.iter()) {
+                            if of_set[unit as usize] {
+                                *count = count.saturating_add(1);
+                            }
+                        }
+                    }
+                }
             }
             seen = total;
             let (su, sr, sp) = stp_reading(exec.units(), set, exec.ticks() as u32, class);
@@ -8908,8 +8982,9 @@ fn span_protocol(
         if span == Span::Hold {
             run.kicks.push(kick_read);
         }
+        read.extend(here);
     }
-    run
+    (run, read)
 }
 
 /// A run's windows as one number: FNV-1a over every window's five words in order, each as the
@@ -9399,9 +9474,15 @@ fn marked_on_the_prior() {
 /// sixteen resets are scheduled, no weight moves, and every member's short-term state is the
 /// class's step over its spikes; the members' spikes as `(tick after the start, unit)`.
 fn a_marked_assembly_kicked_for_a_few_hundred_ticks() -> Vec<(u32, u32)> {
+    marked_assembly_kicked(0, 16, i16::MAX)
+}
+
+/// `a_marked_assembly_kicked_for_a_few_hundred_ticks` for the assembly of `size` marked under
+/// set `set` and wired at `weight` (brief 050's gate kicks one on the new geometry).
+fn marked_assembly_kicked(set_index: usize, size: u32, weight: i16) -> Vec<(u32, u32)> {
     let image = prior_image();
-    let mut exec = marked_engine(&image, 0, 16, true, Some(i16::MAX));
-    let set = members(16);
+    let mut exec = marked_engine(&image, set_index, size, true, Some(weight));
+    let set = members(size);
     let before = weights_of(&exec);
     let rested: Vec<(u8, u8, u32)> = set
         .iter()
@@ -9447,7 +9528,7 @@ fn a_marked_assembly_kicked_for_a_few_hundred_ticks() -> Vec<(u32, u32)> {
         for &(t, _) in spikes.iter().filter(|&&(_, u)| u == m) {
             let stamp = start.wrapping_add(t);
             let elapsed = previous.map_or(u32::MAX, |p| stamp.wrapping_sub(p));
-            copy.step_stp_class(elapsed, SETS[0]);
+            copy.step_stp_class(elapsed, SETS[set_index]);
             previous = Some(stamp);
         }
         let unit = &exec.units()[m as usize];
@@ -20627,3 +20708,2126 @@ const CELL_049_II_64_5: &[StretchRow] = &[
     [5570, 1035, 16, 15552, 428, 1795689],
     [5237, 906, 16, 15552, 513, 1870614],
 ];
+
+// ================================================ brief 050 (ADR-0117): the region before the readout
+
+// ------------------------------------------------ the geometry (ADR-0116), before any run
+
+/// Readout 0 of the geometry beside the task's (ADR-0116, F-54 decided): `R0_MASK` without
+/// place 5, the eight odd places but 5 and 11 — 1, 3, 7, 9, 13, 15, 17 and 19.
+const R0_MASK_050: u32 = R0_MASK & !PLACES;
+
+/// Readout 1 of that geometry: `R1_MASK` without place 16, the eight even places but 0 and 16 —
+/// 2, 4, 6, 8, 10, 12, 14 and 18.
+const R1_MASK_050: u32 = R1_MASK & !PLACES;
+
+/// The two places the readouts give up, one mask each: 5, readout 0's, and 16, readout 1's.
+const CONTEXT_PLACE_MASKS: [u32; 2] = [1 << 5, 1 << 16];
+
+const _: () = assert!(R0_MASK_050 == 0xAA28A && R1_MASK_050 == 0x45554);
+const _: () = assert!(R0_MASK_050.count_ones() == 8 && R1_MASK_050.count_ones() == 8);
+const _: () = assert!(CONTEXT_PLACE_MASKS[0] | CONTEXT_PLACE_MASKS[1] == PLACES);
+const _: () =
+    assert!((R0_MASK_050 & R1_MASK_050) == 0 && (PLACES & (R0_MASK_050 | R1_MASK_050)) == 0);
+const _: () = assert!(
+    ((1 << A_OFFSET) | (1 << B_OFFSET) | R0_MASK_050 | R1_MASK_050 | PLACES) == (1 << PERIOD) - 1
+);
+
+/// The geometry beside the task's (ADR-0116): `geometry`'s two stimuli over the same whole
+/// periods from `rotation`, and its two readouts without the places the context takes, eight
+/// places each. `geometry` is unchanged and every earlier test keeps it; this one lives beside
+/// the only runs that read it (ADR-0117).
+fn context_geometry(units: u32, rotation: u32) -> [Set; 4] {
+    let [a, b, r0, r1] = geometry(units, rotation);
+    [
+        a,
+        b,
+        Set {
+            mask: R0_MASK_050,
+            ..r0
+        },
+        Set {
+            mask: R1_MASK_050,
+            ..r1
+        },
+    ]
+}
+
+/// The places the readouts give up, over the geometry's whole periods, both places or one
+/// (`mask`): at 1 024 units, 102 units, fifty-one periods of two, in no set of
+/// `context_geometry`, and every assembly of the grid among them.
+fn context_places(units: u32, rotation: u32, mask: u32) -> Set {
+    Set {
+        mask,
+        ..geometry(units, rotation)[0]
+    }
+}
+
+// ------------------------------------------------ the grid, the subset and the conditions (brief 050)
+
+/// The core grid's sizes: 48, 64, 80 and 96 units at ADR-0112's placement (`members`), nested.
+/// Each member sends and receives 32 synapses at every one of them (`fan`).
+const SIZES_050: [u32; 4] = [48, 64, 80, 96];
+
+/// The core grid's weights, Q1.15: an eighth to three eighths of the range by sixteenths.
+/// ADR-0115's 0.25 and 0.375 are among them.
+const WEIGHTS_050: [i16; 5] = [0x1000, 0x1800, 0x2000, 0x2800, 0x3000];
+
+/// The set every run of brief 050 marks its members under: ADR-0113's (ii).
+const SET_050: usize = 1;
+
+/// ADR-0115's two cells in the grid, `(size, weight)` by index — 64 units at 0.25 and at 0.375 —
+/// and the places of their weights in ADR-0115's grid at 64 units (`WEIGHTS_049`).
+const ADR_0115_CELLS: [(usize, usize); 2] = [(1, 2), (1, 4)];
+
+const ADR_0115_WEIGHTS: [usize; 2] = [0, 1];
+
+/// The subset the three conditions run on, by index into the grid: sizes 64 and 96, weights
+/// 0.1875, 0.25 and 0.3125.
+const SUBSET_SIZES: [usize; 2] = [1, 3];
+
+const SUBSET_WEIGHTS: [usize; 3] = [1, 2, 3];
+
+/// Condition (b)'s seed of the assembly's delays: the next after `DELAY_SEED`.
+const DELAY_SEED_050: u64 = 49;
+
+const _: () = assert!(DELAY_SEED_050 == DELAY_SEED + 1);
+
+/// The three conditions, in the order ADR-0116 names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Condition {
+    /// (b): the settled image, the assembly's delays drawn with `DELAY_SEED_050`.
+    Seed,
+    /// (c): the image H-20's arm from the assignment leaves at its last trial, frozen.
+    Drained,
+    /// (d): the settled image, the task's stimulus at every epoch's middle.
+    Stimulus,
+}
+
+const CONDITIONS: [Condition; 3] = [Condition::Seed, Condition::Drained, Condition::Stimulus];
+
+/// The conditions' names, as ADR-0116 letters them.
+const CONDITION_NAMES: [&str; 3] = ["(b)", "(c)", "(d)"];
+
+// ------------------------------------------------ the rules (brief 050), before any run
+
+/// The core grid's readings by ADR-0115's rules, `[size][weight]` over `SIZES_050` and
+/// `WEIGHTS_050`.
+type Grid050 = [[Holding; 5]; 4];
+
+/// A condition's readings by ADR-0115's rules, `[size][weight]` over `SUBSET_SIZES` and
+/// `SUBSET_WEIGHTS`.
+type Subset050 = [[Holding; 3]; 2];
+
+/// Robust: the subset's cells, `(size, weight)` by index into the grid, usable in the core grid
+/// and under each of (b), (c) and (d), in the grid's order.
+fn robust_cells(core: &Grid050, under: &[Subset050; 3]) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for (i, &s) in SUBSET_SIZES.iter().enumerate() {
+        for (j, &w) in SUBSET_WEIGHTS.iter().enumerate() {
+            if core[s][w].usable() && under.iter().all(|c| c[i][j].usable()) {
+                out.push((s, w));
+            }
+        }
+    }
+    out
+}
+
+/// A cell's usable neighbours in the core grid: of the cells one weight step either way at its
+/// size and one size step either way at its weight, at most four, those usable.
+fn usable_neighbours(core: &Grid050, (s, w): (usize, usize)) -> u32 {
+    let near = [
+        (s.checked_sub(1), Some(w)),
+        (s.checked_add(1), Some(w)),
+        (Some(s), w.checked_sub(1)),
+        (Some(s), w.checked_add(1)),
+    ];
+    let mut n = 0u32;
+    for pair in near {
+        if let (Some(ns), Some(nw)) = pair {
+            let usable = core
+                .get(ns)
+                .and_then(|row| row.get(nw))
+                .is_some_and(Holding::usable);
+            n = n.saturating_add(u32::from(usable));
+        }
+    }
+    n
+}
+
+/// The cell for the second round: of the robust cells, the one with the most usable neighbours
+/// in the core grid; ties to the lighter weight, then the smaller size. None when no cell is
+/// robust.
+fn round_two_cell(core: &Grid050, robust: &[(usize, usize)]) -> Option<(usize, usize)> {
+    let mut ordered = robust.to_vec();
+    ordered.sort_by_key(|&(s, w)| (w, s));
+    let mut best: Option<((usize, usize), u32)> = None;
+    for cell in ordered {
+        let n = usable_neighbours(core, cell);
+        if best.is_none_or(|(_, most)| n > most) {
+            best = Some((cell, n));
+        }
+    }
+    best.map(|(cell, _)| cell)
+}
+
+/// What failed in each cell of the subset, `[size][weight]`, in the core grid and under (b),
+/// (c) and (d) in that order, each by ADR-0115's `failed`: the reading ADR-0117 gives where no
+/// cell is robust.
+fn failures_050(core: &Grid050, under: &[Subset050; 3]) -> [[[[bool; 3]; 4]; 3]; 2] {
+    let mut out = [[[[false; 3]; 4]; 3]; 2];
+    for (i, &s) in SUBSET_SIZES.iter().enumerate() {
+        for (j, &w) in SUBSET_WEIGHTS.iter().enumerate() {
+            out[i][j][0] = failed(&core[s][w]);
+            for (c, condition) in under.iter().enumerate() {
+                out[i][j][c.saturating_add(1)] = failed(&condition[i][j]);
+            }
+        }
+    }
+    out
+}
+
+// ------------------------------------------------ the arithmetic (brief 050), before any run
+
+/// What one spike of a marked member delivers at each of `weights` under `class`, at the
+/// unkicked steady pair and at the primed peak's pair: ADR-0112's `Delivered` of each.
+fn delivered_at(class: StpClass, weights: &[i16]) -> Vec<Delivered> {
+    let unkicked = steady_under(INTERVALS[0], Some(class));
+    let peak = primed(class).4;
+    weights
+        .iter()
+        .map(|&w| {
+            let at = delivered(w, unkicked);
+            let primed = delivered(w, peak);
+            (
+                at,
+                rise(at).0,
+                least_together(w, unkicked),
+                primed,
+                rise(primed).0,
+                least_together(w, peak),
+            )
+        })
+        .collect()
+}
+
+/// The reach of the task's stimulus on `exec`'s synapses: for each size of the grid, the
+/// synapses stimulus A's units and stimulus B's send onto its members and the members that
+/// receive one, `[A, B, members]`; and over the whole ring, the synapses and the sum of their
+/// weights from each stimulus onto each place the readouts give up, `[A, B][place 5, place 16]`.
+#[allow(clippy::type_complexity)]
+fn stimulus_reach(exec: &Engine) -> ([[u32; 3]; 4], [[(u32, i64); 2]; 2]) {
+    let [a, b, _, _] = context_geometry(1024, ROTATION_1024);
+    let places = CONTEXT_PLACE_MASKS.map(|m| context_places(1024, ROTATION_1024, m));
+    let mut by_size = [[0u32; 3]; 4];
+    let mut ring = [[(0u32, 0i64); 2]; 2];
+    let mut reached = [vec![false; 1024], vec![false; 1024]];
+    let of: Vec<Vec<bool>> = SIZES_050
+        .iter()
+        .map(|&size| membership(&members(size)))
+        .collect();
+    for unit in exec.units() {
+        let id = unit.id as u32;
+        let from = if a.contains(id) {
+            0
+        } else if b.contains(id) {
+            1
+        } else {
+            continue;
+        };
+        for s in unit.fan_out(exec.blocks()) {
+            for (p, place) in places.iter().enumerate() {
+                if place.contains(s.target) {
+                    let cell = &mut ring[from][p];
+                    cell.0 = cell.0.saturating_add(1);
+                    cell.1 = cell.1.saturating_add(i64::from(s.weight_q1_15));
+                }
+            }
+            reached[from][s.target as usize] = true;
+            for (k, of_size) in of.iter().enumerate() {
+                if of_size[s.target as usize] {
+                    by_size[k][from] = by_size[k][from].saturating_add(1);
+                }
+            }
+        }
+    }
+    for (k, &size) in SIZES_050.iter().enumerate() {
+        let hit = members(size)
+            .iter()
+            .filter(|&&m| reached[0][m as usize] || reached[1][m as usize])
+            .count();
+        by_size[k][2] = hit as u32;
+    }
+    (by_size, ring)
+}
+
+/// Condition (b)'s wiring on the instrument's network at `size`: the assembly wired at `weight`
+/// with the delays of `DELAY_SEED` and with those of `DELAY_SEED_050`, every target, weight and
+/// link of the two the same and every delay in the prior's local band; the synapses whose delay
+/// differs, and all the assembly's synapses.
+fn seeded_wiring(size: u32, weight: i16) -> (u32, u32) {
+    let image = grown(&prior_image(), extra_blocks(size));
+    let base = blocks_for(&prior(1024)) as usize;
+    let mut first = frozen_from(&image, 1024);
+    let mut second = frozen_from(&image, 1024);
+    wire_drawn(&mut first, size, weight, DELAY_SEED);
+    wire_drawn(&mut second, size, weight, DELAY_SEED_050);
+    let p = prior(1024);
+    let (mut differ, mut all) = (0u32, 0u32);
+    for (x, y) in first.blocks()[base..].iter().zip(&second.blocks()[base..]) {
+        assert_eq!(x.next(), y.next(), "the same links");
+        for slot in 0..SYNAPSES_PER_BLOCK {
+            assert_eq!(x.target(slot), y.target(slot), "the same targets");
+            assert_eq!(
+                x.weights_q1_15[slot], y.weights_q1_15[slot],
+                "the same weights"
+            );
+            if x.target(slot).is_none() {
+                continue;
+            }
+            for d in [x.delays_ticks[slot], y.delays_ticks[slot]] {
+                assert!(
+                    (p.delay_min..=p.delay_max).contains(&d),
+                    "a delay in the local band"
+                );
+            }
+            all = all.saturating_add(1);
+            differ = differ.saturating_add(u32::from(x.delays_ticks[slot] != y.delays_ticks[slot]));
+        }
+    }
+    (differ, all)
+}
+
+// ------------------------------------------------ condition (c): the image H-20's arm leaves
+
+/// The modulator record's bytes condition (c) writes: the dopamine signal (`[0..4)`, the first
+/// field of the modulator's sixteen bytes), the inhibitory baseline's flag and value (`[24]`,
+/// `[28..32)`, ADR-0086) and the signed gate's flag (`[25]`, ADR-0094), as `Image::encode` lays
+/// them.
+const SIGNAL_BYTES: core::ops::Range<usize> = 0..4;
+
+const INHIBITORY_FLAG_BYTE: usize = 24;
+
+const INHIBITORY_VALUE_BYTES: core::ops::Range<usize> = 28..32;
+
+const SIGNED_GATE_BYTE: usize = 25;
+
+/// `image` with its modulator record rewritten by `write` and the section re-sealed; every other
+/// byte the image's.
+fn with_modulator(image: &[u8], write: impl Fn(&mut [u8])) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_MODULATOR {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            write(&mut img[offset..][..length]);
+            entry.crc64 = crc64(&img[offset..][..length]);
+            img[at..][..64].copy_from_slice(&entry.encode());
+            return img;
+        }
+    }
+    panic!("the image holds a modulator section");
+}
+
+/// H-20's image (ADR-0109): the settled image with the inhibitory baseline set at 0.5 and the
+/// signed gate set, the bytes `tests/inhibition.rs` writes (`inhibited_image`, then
+/// `signed_image`), held to that file's CRC-64 (`H20_IMAGE_CRC`).
+fn h20_image(settled: &[u8]) -> Vec<u8> {
+    with_modulator(settled, |m| {
+        assert_eq!(
+            (m[INHIBITORY_FLAG_BYTE], m[SIGNED_GATE_BYTE]),
+            (0, 0),
+            "both unset before"
+        );
+        m[INHIBITORY_FLAG_BYTE] = 1;
+        m[INHIBITORY_VALUE_BYTES].copy_from_slice(&BASELINE_Q16.to_le_bytes());
+        m[SIGNED_GATE_BYTE] = 1;
+    })
+}
+
+/// An image a learning run leaves, frozen (ADR-0117): the dopamine signal the last reward left
+/// put at rest, the inhibitory baseline and the signed gate unset; every other byte the image's.
+/// Under the baseline of zero H-20's image carries, no synapse then consolidates: an excitatory
+/// one's modulation is the baseline plus the signal, zero, and an inhibitory one's the same with
+/// its own baseline unset.
+fn frozen_again(image: &[u8]) -> Vec<u8> {
+    with_modulator(image, |m| {
+        m[SIGNAL_BYTES].copy_from_slice(&[0; 4]);
+        m[INHIBITORY_FLAG_BYTE] = 0;
+        m[INHIBITORY_VALUE_BYTES].copy_from_slice(&[0; 4]);
+        m[SIGNED_GATE_BYTE] = 0;
+    })
+}
+
+/// H-20's image by its CRC-64: `PUNISHED_IMAGE_CRC_1024` of `tests/inhibition.rs`, restated.
+const H20_IMAGE_CRC: u64 = 0x766d_e462_f9b7_7576;
+
+/// H-20's run (ADR-0109): 7 680 trials, the mapping flipped before the trials of index 1 536,
+/// 3 584 and 5 632 (`SCHEDULE_TRIALS` and `SCHEDULE_FLIPS` of `tests/inhibition.rs`).
+const H20_TRIALS: usize = 7_680;
+
+const H20_FLIPS: [usize; 3] = [1_536, 3_584, 5_632];
+
+/// H-19's critic (ADR-0106): an expectation moves by a thirty-second of the error.
+const H20_CRITIC_SHIFT: u32 = 5;
+
+/// ADR-0110's arm from the assignment as its table pins it: the accuracy sequence's FNV-1a
+/// (`SCHEDULE_TRACES_1024[0]`) and the arena's sums by polarity after its last block
+/// (`SUMS_AFTER_SCHEDULE_1024[0]`), restated.
+const H20_TRACE: u64 = 0xdd2a_9318_b3c5_d288;
+
+const H20_SUMS: (i64, i64) = (11_999_067, 219_302_252);
+
+/// The task of H-20's arm from the assignment: F-46's shape with ADR-0076's cancel, the answer's
+/// feedback, the addressed delivery, stimulus A's answer readout 0 first, and H-19's critic from
+/// expectations of zero; on the task's geometry, the one it learned on.
+fn h20_task() -> Task {
+    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
+    Task {
+        critic: Some(Critic::new(H20_CRITIC_SHIFT)),
+        ..task(
+            SHAPE_F46,
+            Some(cancel_of(picked)),
+            1024,
+            Feedback::Answer,
+            false,
+            Delivery::Addressed,
+        )
+    }
+}
+
+/// What producing condition (c)'s image reads: the arm's accuracy sequence and the arena's sums
+/// by polarity at its end; the ticks the quiet run before the image took; the dopamine signal
+/// the image carried before it was frozen; the frozen image's sums and its CRC-64; and the
+/// excitatory couplings from each stimulus onto each place the readouts give up, `[A, B][place
+/// 5, place 16]`, on the settled image and on the drained one.
+type DrainedRead = (
+    u64,
+    (i64, i64),
+    u64,
+    i32,
+    (i64, i64),
+    u64,
+    [[[i64; 2]; 2]; 2],
+);
+
+/// The couplings from each stimulus onto each place the readouts give up, on `exec`.
+fn context_couplings(exec: &Engine) -> [[i64; 2]; 2] {
+    let [a, b, _, _] = context_geometry(1024, ROTATION_1024);
+    let places = CONTEXT_PLACE_MASKS.map(|m| context_places(1024, ROTATION_1024, m));
+    [a, b].map(|from| places.map(|into| coupling(exec, from, into)))
+}
+
+/// Condition (c)'s image (ADR-0117): H-20's arm from the assignment run from H-20's image as
+/// `tests/inhibition.rs` runs it, without its oracle, which reads and never writes, and held to
+/// ADR-0110's accuracy sequence and sums; then quieted as every image is before it is written,
+/// written, and frozen again (`frozen_again`). Returns the frozen image and its reading.
+fn drained_image(name: &str, settled: &[u8]) -> (Vec<u8>, DrainedRead) {
+    let h20 = h20_image(settled);
+    assert_eq!(
+        crc64(&h20),
+        H20_IMAGE_CRC,
+        "{name}: H-20's image, by its CRC"
+    );
+    let mut exec = Image::decode::<2048>(&h20, config(1024, 2, 0)).expect("a well-formed record");
+    assert_eq!(
+        (
+            exec.modulation_baseline_q16(),
+            exec.inhibitory_baseline_q16(),
+            exec.signed_gate(),
+            exec.modulator().dopamine_rpe
+        ),
+        (0, Some(BASELINE_Q16), true, 0),
+        "{name}: H-20's configuration"
+    );
+    let (blocks, trace) = run_on_scheduled(
+        &mut exec,
+        h20_task(),
+        1024,
+        H20_TRIALS,
+        &H20_FLIPS,
+        &mut |_, _, _, _| {},
+    );
+    let sums = weights_by_polarity(&exec);
+    eprintln!(
+        "DUMP {name} H-20's arm: trace {trace:#018x} sums {sums:?} curve {:?}",
+        curve(&blocks)
+    );
+    assert_eq!(
+        (trace, sums),
+        (H20_TRACE, H20_SUMS),
+        "{name}: ADR-0110's arm from the assignment, its accuracy sequence and its sums"
+    );
+    let ticks = quiet(&mut exec);
+    let signal = exec.modulator().dopamine_rpe;
+    let image = frozen_again(&Image::encode(&exec).expect("quiescent"));
+    let frozen = frozen_from(&image, 1024);
+    assert_eq!(
+        (
+            frozen.inhibitory_baseline_q16(),
+            frozen.signed_gate(),
+            frozen.modulator().dopamine_rpe,
+            frozen.stp_class()
+        ),
+        (None, false, 0, None),
+        "{name}: frozen, no class"
+    );
+    let settled_couplings = context_couplings(&frozen_from(settled, 1024));
+    let read = (
+        trace,
+        sums,
+        ticks,
+        signal,
+        weights_by_polarity(&frozen),
+        crc64(&image),
+        [settled_couplings, context_couplings(&frozen)],
+    );
+    eprintln!("DUMP {name} DRAINED_050 = {read:?}");
+    (image, read)
+}
+
+// ------------------------------------------------ condition (d): the task's stimulus
+
+/// The tick of every epoch before which condition (d) presents the task's stimulus: the epoch's
+/// middle. The kick's reading — its span and the pair window after it — closes 5 444 ticks before
+/// the window the trial reads before its stimulus opens; the stimulus's cancel and the window it
+/// reads after it end inside the epoch, as the prior's far band does (the gate); and the next
+/// epoch's kick comes 8 192 ticks after the stimulus, past the far band.
+const STIMULUS_AT: u32 = EPOCH_TICKS / 2;
+
+/// The trial's window before its stimulus (`WINDOW.ticks` before it, as `run_on_scheduled`
+/// reads it) and after it (`WINDOW`), in the epoch's ticks.
+const BEFORE_FROM: u32 = STIMULUS_AT - WINDOW.ticks;
+
+const AFTER_FROM: u32 = STIMULUS_AT + WINDOW.from;
+
+const AFTER_END: u32 = AFTER_FROM + WINDOW.ticks;
+
+const _: () = assert!(KICK_SPAN + PAIR_WINDOW < BEFORE_FROM);
+const _: () = assert!(STIMULUS_AT + CANCEL_OFFSET + CANCEL_TICKS < EPOCH_TICKS);
+const _: () = assert!(AFTER_END < EPOCH_TICKS && KICK_SPAN + PAIR_WINDOW == 2_248);
+
+/// The task whose stimulus condition (d) presents: H-20's arms' — F-46's shape, ADR-0076's cancel,
+/// A or B by the task's draw from `SEED` — and nothing else of it: no trial is run, no readout
+/// selects and no reward is delivered.
+fn stimulus_task() -> Task {
+    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
+    task(
+        SHAPE_F46,
+        Some(cancel_of(picked)),
+        1024,
+        Feedback::Withheld,
+        false,
+        Delivery::Addressed,
+    )
+}
+
+/// One epoch's reading under (d): the stimulus presented, and the spikes in the trial's window
+/// before the stimulus and in its window after it, `[before, after]`, of each of the eight-place
+/// readouts and of the places they give up, `[R0, R1, place 5, place 16]`.
+type TaskEpoch = (u8, [[u32; 4]; 2]);
+
+/// The sets an epoch's reading counts, as memberships of the arena: `context_geometry`'s two
+/// readouts and `context_places` by place.
+fn counted_sets() -> [Vec<bool>; 4] {
+    let [_, _, r0, r1] = context_geometry(1024, ROTATION_1024);
+    let [p5, p16] = CONTEXT_PLACE_MASKS.map(|m| context_places(1024, ROTATION_1024, m));
+    [r0, r1, p5, p16].map(|s| membership(&s.units().collect::<Vec<u32>>()))
+}
+
+/// Which window of the trial the epoch's tick `at` is in: 0 the window before the stimulus, 1 the
+/// window after it, none elsewhere.
+fn task_side(at: u32) -> Option<usize> {
+    if (BEFORE_FROM..STIMULUS_AT).contains(&at) {
+        Some(0)
+    } else if (AFTER_FROM..AFTER_END).contains(&at) {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+/// The kind of span an epoch is summed by under (d), from the epoch's index within its span: the
+/// unkicked span, the hold's first half, its second half, the release, the tail; the lead-in is
+/// summed by none.
+fn task_kind(span: Span, epoch: u32) -> Option<usize> {
+    match span {
+        Span::LeadIn => None,
+        Span::Unkicked => Some(0),
+        Span::Hold if epoch < SECOND_HALF_FROM * STRETCH_EPOCHS => Some(1),
+        Span::Hold => Some(2),
+        Span::Release => Some(3),
+        Span::Tail => Some(4),
+    }
+}
+
+/// Under (d), a run's readout reading by kind of span (`task_kind`) and by stimulus `[A, B]`: the
+/// trials, and the eight-place readouts' spikes in the window after the stimulus, `[R0, R1]`,
+/// summed.
+type TaskRead = [[(u32, [u64; 2]); 2]; 5];
+
+fn task_read(epochs: &[TaskEpoch], spans: &[(Span, usize, u32)]) -> TaskRead {
+    let mut out = [[(0u32, [0u64; 2]); 2]; 5];
+    let mut at = 0usize;
+    for &(span, _, n) in spans {
+        for e in 0..n {
+            if let (Some(kind), Some(&(stimulus, counts))) = (task_kind(span, e), epochs.get(at)) {
+                let cell = &mut out[kind][usize::from(stimulus)];
+                cell.0 = cell.0.saturating_add(1);
+                for (sum, &count) in cell.1.iter_mut().zip(&counts[1]) {
+                    *sum = sum.saturating_add(u64::from(count));
+                }
+            }
+            at = at.saturating_add(1);
+        }
+    }
+    out
+}
+
+/// ADR-0065's reading over one block of trials: the readouts' spikes after the stimulus and
+/// before it, `[R0, R1]` each, and the trials in which the window after held more readout spikes
+/// than the window before.
+type Sight050 = ([u64; 2], [u64; 2], u32);
+
+/// A run's trials after the lead-in read by ADR-0065's measure in blocks of `BLOCK`: for the
+/// eight-place readouts, or when `nine` for the nine-place ones — each eight-place readout with
+/// the place it gave up, the task's `R0_MASK` and `R1_MASK`.
+fn sight_050(epochs: &[TaskEpoch], nine: bool) -> Vec<Sight050> {
+    let lead = LEAD_IN_EPOCHS_049 as usize;
+    epochs
+        .get(lead..)
+        .unwrap_or(&[])
+        .chunks_exact(BLOCK)
+        .map(|block| {
+            let (mut after, mut before, mut seen) = ([0u64; 2], [0u64; 2], 0u32);
+            for &(_, counts) in block {
+                let spikes = |side: usize, r: usize| {
+                    let place = if nine {
+                        counts[side][r.saturating_add(2)]
+                    } else {
+                        0
+                    };
+                    u64::from(counts[side][r]).saturating_add(u64::from(place))
+                };
+                let mut totals = [0u64; 2];
+                for r in 0..2 {
+                    before[r] = before[r].saturating_add(spikes(0, r));
+                    after[r] = after[r].saturating_add(spikes(1, r));
+                    totals[0] = totals[0].saturating_add(spikes(0, r));
+                    totals[1] = totals[1].saturating_add(spikes(1, r));
+                }
+                seen = seen.saturating_add(u32::from(totals[1] > totals[0]));
+            }
+            (after, before, seen)
+        })
+        .collect()
+}
+
+/// Whether a block's reading passes ADR-0065's measure: the harness's `calibrated` over a block
+/// that holds those three readings and nothing else.
+fn resolves(sight: &Sight050) -> bool {
+    let &(after, before, seen) = sight;
+    calibrated(&(
+        0,
+        0,
+        [after, [0; 2]],
+        [0; 2],
+        [0; 2],
+        before,
+        seen,
+        0,
+        0,
+        0,
+        [[0; 2]; 2],
+        0,
+    ))
+}
+
+/// A run's epochs as one number: FNV-1a over every epoch's stimulus and eight counts in order.
+fn epochs_hash(epochs: &[TaskEpoch]) -> u64 {
+    let words: Vec<i32> = epochs
+        .iter()
+        .flat_map(|&(stimulus, counts)| {
+            core::iter::once(i32::from(stimulus))
+                .chain(counts.into_iter().flatten().map(|c| c as i32))
+        })
+        .collect();
+    fnv1a_64(&words)
+}
+
+/// The hash of no epoch: a run with no task.
+const NO_EPOCHS_HASH: u64 = 0xcbf2_9ce4_8422_2325;
+
+// ------------------------------------------------ the runs (brief 050)
+
+/// A run of brief 050 as read: the protocol's windows and kicks, its stretches, and its epochs
+/// under (d).
+struct Run050 {
+    run: SpanRun,
+    rows: Vec<StretchRow>,
+    epochs: Vec<TaskEpoch>,
+}
+
+/// A run of brief 050 as pinned: its stretches in full, each hold span's kick reading (none for
+/// a background), its windows' hash, and its epochs' hash (`NO_EPOCHS_HASH` without a task).
+#[derive(Clone, Copy, Debug)]
+struct Pinned050 {
+    rows: &'static [StretchRow],
+    kicks: &'static [[u32; 2]],
+    windows: u64,
+    epochs: u64,
+}
+
+impl Run050 {
+    /// Holds the run to its pin: every stretch, the kicks unless it is a background, every
+    /// window and every epoch.
+    fn held_to(&self, pin: &Pinned050, background: bool, name: &str) {
+        assert_eq!(self.rows.as_slice(), pin.rows, "{name}: the stretches");
+        if !background {
+            assert_eq!(self.run.kicks.as_slice(), pin.kicks, "{name}: the kicks");
+        }
+        assert_eq!(
+            windows_hash(&self.run.windows),
+            pin.windows,
+            "{name}: every window"
+        );
+        assert_eq!(epochs_hash(&self.epochs), pin.epochs, "{name}: every epoch");
+    }
+}
+
+/// A run of brief 050 under set (ii) for the assembly of `size` on `image`, dumped: a background
+/// (not grown, no kick, no release), a control (grown, unwired, the kick and the release) or a
+/// cell (wired at `weight` with the delays drawn by `seed`); with `stimulus`, the task's stimulus
+/// at every epoch's middle (condition (d)). Every weight of the arena at its end is its value at
+/// the start.
+fn run_050(
+    image: &[u8],
+    size: u32,
+    weight: Option<i16>,
+    background: bool,
+    seed: u64,
+    stimulus: bool,
+    name: &str,
+) -> Run050 {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let mut exec = marked_engine_drawn(image, SET_050, size, !background, weight, seed);
+    let m = members(size);
+    let before = weights_of(&exec);
+    let task = stimulus.then(stimulus_task);
+    let (run, epochs) = span_protocol_under(&mut exec, &m, &spans, !background, task.as_ref());
+    let rows = stretch_rows(&run.windows, size);
+    eprintln!("DUMP {name} stretches = {rows:?}");
+    eprintln!("DUMP {name} kicks = {:?}", run.kicks);
+    eprintln!(
+        "DUMP {name} hashes = {:#018x} {:#018x}",
+        windows_hash(&run.windows),
+        epochs_hash(&epochs)
+    );
+    assert_eq!(weights_of(&exec), before, "{name}: no weight moved");
+    Run050 { run, rows, epochs }
+}
+
+/// A size's background and control read by the rules: the background, the kick's reading, the
+/// control's holding and its bursts.
+type BackgroundControl = (Background, (u64, u64, u64, u32), Holding, BurstRead049);
+
+/// A cell read by the rules: its holding and its bursts.
+type CellRead = (Holding, BurstRead049);
+
+/// Reads a cell against `bg` and dumps the reading.
+fn cell_read(run: &Run050, size: u32, bg: Background, name: &str) -> CellRead {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let read = holding(&run.rows, &spans, bg);
+    let bursts = bursts_049(&run.run.windows, &spans, size, bg, SETS[SET_050]);
+    eprintln!(
+        "DUMP {name} read = {read:?} usable {} failed {:?} kick {:?} bursts = {bursts:?}",
+        read.usable(),
+        failed(&read),
+        kick_reading_049(&run.run.kicks, size)
+    );
+    (read, bursts)
+}
+
+/// The backgrounds and the controls of brief 050 at `sizes` (by index into the grid) on
+/// `image`, with the task's stimulus when `stimulus`: for each size the background and the
+/// control, each dumped with its readings; then each control's lead-in and first unkicked span
+/// shown to be its background's, and the kick read on the engine by ADR-0112's measure, which
+/// fires every member once at every size or no cell of the condition runs.
+fn backgrounds_controls_050(
+    image: &[u8],
+    sizes: &[usize],
+    stimulus: bool,
+    name: &str,
+) -> Vec<(Run050, Run050, BackgroundControl)> {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let first = stretches_of(&spans)
+        .iter()
+        .position(|s| s.0 == Span::Hold)
+        .expect("a hold span");
+    let mut out = Vec::new();
+    for &s in sizes {
+        let size = SIZES_050[s];
+        let bg = run_050(
+            image,
+            size,
+            None,
+            true,
+            DELAY_SEED,
+            stimulus,
+            &format!("{name} background {size}"),
+        );
+        let ctl = run_050(
+            image,
+            size,
+            None,
+            false,
+            DELAY_SEED,
+            stimulus,
+            &format!("{name} control {size}"),
+        );
+        let background = background_049(&bg.rows, &spans);
+        let (control, bursts) =
+            cell_read(&ctl, size, background, &format!("{name} control {size}"));
+        let kick = kick_reading_049(&ctl.run.kicks, size);
+        eprintln!(
+            "DUMP {name} {size}: background {background:?} kick {kick:?} once {}",
+            kicked_once_049(&ctl.run.kicks, size)
+        );
+        if stimulus {
+            for (k, run) in [&bg, &ctl].into_iter().enumerate() {
+                eprintln!(
+                    "DUMP {name} {size} task[{k}] = {:?}",
+                    task_read(&run.epochs, &spans)
+                );
+            }
+            eprintln!(
+                "DUMP {name} {size} sight = {:?} nine = {:?}",
+                sight_050(&bg.epochs, false),
+                sight_050(&bg.epochs, true)
+            );
+        }
+        out.push((bg, ctl, (background, kick, control, bursts)));
+    }
+    for (&s, (bg, ctl, _)) in sizes.iter().zip(&out) {
+        let size = SIZES_050[s];
+        assert_eq!(
+            ctl.rows[..first],
+            bg.rows[..first],
+            "{name} {size}: the growth changes nothing unkicked"
+        );
+        assert!(
+            kicked_once_049(&ctl.run.kicks, size),
+            "{name} {size}: the kick fires every member once, or it is derived again"
+        );
+    }
+    out
+}
+
+// ------------------------------------------------ the gate (brief 050)
+
+/// The gate's assembly on the new geometry, by index into the grid: the largest, 96 units, at the
+/// heaviest weight, 0.375, marked under set (ii).
+const GATE_SIZE_050: usize = 3;
+
+const GATE_WEIGHT_050: usize = 4;
+
+#[test]
+fn the_region_before_the_readout_the_geometry_the_conditions_the_rules_and_a_marked_assembly_on_the_new_geometry()
+ {
+    // The geometry beside the task's, and the task's unchanged.
+    let sets = context_geometry(1024, ROTATION_1024);
+    let task_sets = geometry(1024, ROTATION_1024);
+    assert_eq!(
+        task_sets.map(|s| s.mask),
+        [1 << A_OFFSET, 1 << B_OFFSET, R0_MASK, R1_MASK],
+        "the task's geometry unchanged"
+    );
+    assert_eq!(sets[..2], task_sets[..2], "the same stimuli");
+    for s in &sets {
+        assert!(s.is_well_formed());
+        assert_eq!((s.first, s.period, s.count), (ROTATION_1024, PERIOD, 51));
+    }
+    assert_eq!(sets.map(|s| s.len()), [51, 51, 408, 408]);
+    for (i, a) in sets.iter().enumerate() {
+        for b in sets.iter().skip(i.saturating_add(1)) {
+            assert!(!a.overlaps(b), "no two sets share a unit");
+        }
+    }
+    let places = context_places(1024, ROTATION_1024, PLACES);
+    assert_eq!(places.len(), 102, "the places given up");
+    for s in &sets {
+        assert!(!places.overlaps(s));
+    }
+    let covered = (0..1024u32)
+        .filter(|&u| places.contains(u) || sets.iter().any(|s| s.contains(u)))
+        .count();
+    assert_eq!(
+        covered, 1020,
+        "every unit of the whole periods in one set or given up"
+    );
+    let mut on_it = stimulus_task();
+    on_it.readout = Readout::new([sets[2], sets[3]]);
+    on_it
+        .check(&frozen_from(&prior_image(), 1024))
+        .expect("the task fits the new geometry");
+    // Every member of every size in no set of it, the sizes nested.
+    for (k, &size) in SIZES_050.iter().enumerate() {
+        let m = members(size);
+        assert_eq!(m.len(), size as usize);
+        assert_eq!(fan(size), FAN_MAX, "32 synapses a member at {size}");
+        for &u in &m {
+            assert!(
+                places.contains(u),
+                "member {u} of {size} at a place given up"
+            );
+            for s in &sets {
+                assert!(!s.contains(u), "member {u} of {size} in no set");
+            }
+        }
+        if let Some(&next) = SIZES_050.get(k.saturating_add(1)) {
+            assert_eq!(members(next)[..m.len()], m[..], "the sizes nest");
+        }
+    }
+    // The grid, the subset and ADR-0115's two cells in it.
+    assert!(
+        WEIGHTS_050
+            .windows(2)
+            .all(|w| w[0].checked_add(0x800) == Some(w[1]))
+    );
+    assert!(
+        SIZES_050
+            .windows(2)
+            .all(|s| s[0].checked_add(16) == Some(s[1]))
+    );
+    assert_eq!(SIZES[2], 64);
+    for (&(s, w), &k) in ADR_0115_CELLS.iter().zip(&ADR_0115_WEIGHTS) {
+        assert_eq!((SIZES_050[s], WEIGHTS_050[w]), (SIZES[2], WEIGHTS_049[k]));
+    }
+    assert_eq!(SUBSET_SIZES.map(|s| SIZES_050[s]), [64, 96]);
+    assert_eq!(
+        SUBSET_WEIGHTS.map(|w| WEIGHTS_050[w]),
+        [0x1800, 0x2000, 0x2800]
+    );
+    assert_eq!(
+        (SETS[SET_050].u, RELEASE_STRETCHES_049[SET_050]),
+        (26, 6),
+        "set (ii), its release of six stretches"
+    );
+    assert_eq!(CONDITIONS.len(), CONDITION_NAMES.len());
+    // The arithmetic, dumped, then held: the delivery at the grid's weights under set (ii),
+    // ADR-0115's where the weights are its; the stimulus's reach onto the members and the places
+    // given up, on the prior whose synapses the settled image keeps; the far band inside an
+    // epoch's second half; and condition (b)'s delays.
+    let delivered_read = delivered_at(SETS[SET_050], &WEIGHTS_050);
+    eprintln!("DUMP DELIVERED_050 = {delivered_read:?}");
+    let reach = stimulus_reach(&frozen_from(&prior_image(), 1024));
+    eprintln!("DUMP STIMULUS_REACH_050 = {reach:?}");
+    let seeded = SIZES_050.map(|size| seeded_wiring(size, WEIGHTS_050[2]));
+    eprintln!("DUMP SEEDED_WIRING_050 = {seeded:?}");
+    assert_eq!(delivered_read.as_slice(), DELIVERED_050.as_slice());
+    for (&(_, w), &k) in ADR_0115_CELLS.iter().zip(&ADR_0115_WEIGHTS) {
+        assert_eq!(delivered_read[w], DELIVERED_049[SET_050][k]);
+    }
+    assert_eq!(reach, STIMULUS_REACH_050);
+    assert_eq!(seeded, SEEDED_WIRING_050);
+    for (&size, &(differ, all)) in SIZES_050.iter().zip(&seeded) {
+        assert_eq!(all, size.saturating_mul(FAN_MAX));
+        assert!(differ > 0 && differ < all, "another draw, the same band");
+    }
+    let far = u32::from(prior(1024).far_delay_max);
+    assert!(STIMULUS_AT.saturating_add(far) < EPOCH_TICKS && far < STIMULUS_AT);
+    // Condition (c)'s patches, and condition (d)'s presentation held to the task's.
+    the_patches_on_the_prior();
+    let presented = presented_as_the_task_presents();
+    eprintln!("DUMP PRESENTED_050 = {presented:?}");
+    assert_eq!(presented, PRESENTED_050);
+    // The rules at their edges, over tables written by hand.
+    rules_050_at_their_edges();
+    // A marked assembly on the new geometry kicked for a few hundred ticks.
+    let kicked = marked_assembly_kicked(
+        SET_050,
+        SIZES_050[GATE_SIZE_050],
+        WEIGHTS_050[GATE_WEIGHT_050],
+    );
+    eprintln!("DUMP GATE_KICKED_050 = {kicked:?}");
+    for &(_, u) in &kicked {
+        assert!(sets.iter().all(|s| !s.contains(u)), "a member in no set");
+    }
+    assert_eq!(kicked.as_slice(), GATE_KICKED_050);
+    // The rules over the pinned tables.
+    over_the_050_tables();
+}
+
+/// Condition (c)'s patches on the instrument's network: H-20's two flags written and read back,
+/// and nothing of the modulator record but them and the value; frozen again, the image before
+/// them bit for bit; and a reward delivered and written into an image, which carries its signal
+/// until `frozen_again` puts it at rest with the two flags unset.
+fn the_patches_on_the_prior() {
+    let image = prior_image();
+    let h20 = h20_image(&image);
+    let exec = Image::decode::<2048>(&h20, config(1024, 2, 0)).expect("a well-formed record");
+    assert_eq!(
+        (
+            exec.modulation_baseline_q16(),
+            exec.inhibitory_baseline_q16(),
+            exec.signed_gate()
+        ),
+        (0, Some(BASELINE_Q16), true)
+    );
+    let differing = image.iter().zip(&h20).filter(|(a, b)| a != b).count();
+    assert!(
+        differing > 0 && differing <= 11,
+        "the flags, the value's one byte and the section's CRC: {differing} bytes"
+    );
+    assert_eq!(frozen_again(&h20), image, "frozen again, the image before");
+    let mut rewarded =
+        Image::decode::<2048>(&h20, config(1024, 2, 0)).expect("a well-formed record");
+    rewarded.reward(REWARD_Q16);
+    assert_eq!(quiet(&mut rewarded), 0, "at rest");
+    let carried = Image::encode(&rewarded).expect("quiescent");
+    let read = Image::decode::<2048>(&carried, config(1024, 2, 0)).expect("a well-formed record");
+    assert_eq!(
+        (read.modulator().dopamine_rpe, read.signed_gate()),
+        (REWARD_Q16, true),
+        "an image carries the signal the last reward left"
+    );
+    let frozen = frozen_from(&frozen_again(&carried), 1024);
+    assert_eq!(
+        (
+            frozen.modulator().dopamine_rpe,
+            frozen.inhibitory_baseline_q16(),
+            frozen.signed_gate()
+        ),
+        (0, None, false),
+        "frozen again: the signal at rest, both unset"
+    );
+}
+
+/// Condition (d)'s presentation held to the task's own on the instrument's network at rest: one
+/// epoch of `span_protocol_under` with no member, the stimulus at its middle; beside it, the drive
+/// alone to the same tick and then one `Task::trial` of the task whose stimulus it presents, the
+/// reward withheld. Over the epoch the two trains are one train bit for bit, the stimulus is the
+/// trial's, and the epoch's counts after the stimulus, each eight-place readout with the place it
+/// gave up, are the trial's nine-place counts. Returns the epoch's reading.
+fn presented_as_the_task_presents() -> TaskEpoch {
+    let image = prior_image();
+    let task = stimulus_task();
+    let mut ours = frozen_from(&image, 1024);
+    let start = ours.ticks() as u32;
+    let (_, epochs) =
+        span_protocol_under(&mut ours, &[], &[(Span::LeadIn, 0, 1)], false, Some(&task));
+    let mut theirs = frozen_from(&image, 1024);
+    let drive = drive(1024);
+    let inject = theirs.injector();
+    for _ in 0..STIMULUS_AT {
+        drive.step(&inject, theirs.ticks()).expect("the drive runs");
+        theirs.tick();
+    }
+    let mut trial = task;
+    let outcome = trial.trial(&mut theirs, 0).expect("a trial runs");
+    assert_eq!(
+        (ours.train_overwritten(), theirs.train_overwritten()),
+        (0, 0)
+    );
+    let theirs_epoch: Vec<(u32, u32)> = theirs
+        .train()
+        .iter()
+        .copied()
+        .filter(|&(t, _)| t.wrapping_sub(start) < EPOCH_TICKS)
+        .collect();
+    assert!(!theirs_epoch.is_empty(), "the network fired");
+    assert_eq!(ours.train(), theirs_epoch.as_slice(), "one train");
+    let (stimulus, counts) = epochs[0];
+    assert_eq!(stimulus, outcome.stimulus, "the trial's stimulus");
+    assert_eq!(
+        [
+            counts[1][0].saturating_add(counts[1][2]),
+            counts[1][1].saturating_add(counts[1][3])
+        ],
+        outcome.counts,
+        "the trial's counts, each readout with its place"
+    );
+    epochs[0]
+}
+
+/// The rules of brief 050 at their edges, over tables written by hand: robust, the neighbours,
+/// the second round's cell and its ties, what failed; the windows and kinds of (d)'s reading, its
+/// sums and ADR-0065's measure over it.
+fn rules_050_at_their_edges() {
+    let usable = Holding {
+        first_half: 8,
+        held: 8,
+        ignited: 0,
+        let_go: 8,
+        spills: Some(false),
+    };
+    let never = Holding { held: 6, ..usable };
+    let runs = Holding {
+        ignited: 2,
+        ..usable
+    };
+    assert!(usable.usable() && !never.usable() && !runs.usable());
+    let all: [Subset050; 3] = [[[usable; 3]; 2]; 3];
+    let mut core: Grid050 = [[never; 5]; 4];
+    // Robust: usable in the core grid and under every condition; a cell outside the subset never.
+    assert!(robust_cells(&core, &all).is_empty());
+    assert_eq!(round_two_cell(&core, &[]), None);
+    core[1][2] = usable;
+    core[0][0] = usable;
+    assert_eq!(robust_cells(&core, &all), [(1, 2)]);
+    for (c, name) in CONDITION_NAMES.iter().enumerate() {
+        let mut under = all;
+        under[c][0][1] = runs;
+        assert!(robust_cells(&core, &under).is_empty(), "{name} fails it");
+    }
+    // The neighbours: one weight step and one size step either way, a diagonal not.
+    let mut core: Grid050 = [[never; 5]; 4];
+    core[2][3] = usable;
+    assert_eq!(
+        usable_neighbours(&core, (1, 2)),
+        0,
+        "a diagonal is not a neighbour"
+    );
+    for cell in [(0, 2), (2, 2), (1, 1), (1, 3)] {
+        core[cell.0][cell.1] = usable;
+    }
+    assert_eq!(usable_neighbours(&core, (1, 2)), 4);
+    assert_eq!(usable_neighbours(&core, (0, 0)), 0);
+    core[1][0] = usable;
+    core[0][1] = usable;
+    assert_eq!(usable_neighbours(&core, (0, 0)), 2, "a corner has two");
+    assert_eq!(usable_neighbours(&core, (3, 4)), 0);
+    // The second round's cell: the most usable neighbours, then the lighter weight, then the
+    // smaller size.
+    let mut core: Grid050 = [[never; 5]; 4];
+    for cell in [(1, 1), (1, 2), (1, 3), (3, 3), (2, 3)] {
+        core[cell.0][cell.1] = usable;
+    }
+    assert_eq!(
+        [(1, 1), (1, 2), (3, 3)].map(|c| usable_neighbours(&core, c)),
+        [1, 2, 1]
+    );
+    assert_eq!(
+        round_two_cell(&core, &[(3, 3), (1, 1), (1, 2)]),
+        Some((1, 2))
+    );
+    assert_eq!(
+        round_two_cell(&core, &[(3, 3), (1, 1)]),
+        Some((1, 1)),
+        "a tie to the lighter weight"
+    );
+    let mut core: Grid050 = [[never; 5]; 4];
+    for cell in [(1, 2), (3, 2), (0, 2), (2, 1)] {
+        core[cell.0][cell.1] = usable;
+    }
+    assert_eq!(
+        [(1, 2), (3, 2)].map(|c| usable_neighbours(&core, c)),
+        [1, 0]
+    );
+    core[3][1] = usable;
+    assert_eq!(usable_neighbours(&core, (3, 2)), 1);
+    assert_eq!(
+        round_two_cell(&core, &[(3, 2), (1, 2)]),
+        Some((1, 2)),
+        "at one weight a tie to the smaller size"
+    );
+    // What failed, per condition.
+    let mut under = all;
+    under[1][1][2] = runs;
+    under[2][0][0] = never;
+    let failures = failures_050(&[[never; 5]; 4], &under);
+    assert_eq!(
+        failures[1][2],
+        [
+            [true, false, false],
+            [false; 3],
+            [false, true, false],
+            [false; 3]
+        ]
+    );
+    assert_eq!(
+        failures[0][0],
+        [
+            [true, false, false],
+            [false; 3],
+            [false; 3],
+            [true, false, false]
+        ]
+    );
+    // (d)'s windows at their edges, and the kinds of span.
+    for (at, side) in [
+        (BEFORE_FROM - 1, None),
+        (BEFORE_FROM, Some(0)),
+        (STIMULUS_AT - 1, Some(0)),
+        (STIMULUS_AT, None),
+        (AFTER_FROM - 1, None),
+        (AFTER_FROM, Some(1)),
+        (AFTER_END - 1, Some(1)),
+        (AFTER_END, None),
+    ] {
+        assert_eq!(task_side(at), side, "tick {at}");
+    }
+    assert_eq!(
+        (
+            task_kind(Span::LeadIn, 0),
+            task_kind(Span::Unkicked, 15),
+            task_kind(Span::Hold, 7),
+            task_kind(Span::Hold, 8),
+            task_kind(Span::Release, 0),
+            task_kind(Span::Tail, 3)
+        ),
+        (None, Some(0), Some(1), Some(2), Some(3), Some(4))
+    );
+    // (d)'s sums by kind and stimulus, the lead-in left out.
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let epochs: Vec<TaskEpoch> = (0..RUN_EPOCHS_049[SET_050])
+        .map(|e| ((e & 1) as u8, [[1, 2, 3, 4], [5, 6, 7, 8]]))
+        .collect();
+    let read = task_read(&epochs, &spans);
+    assert_eq!(
+        read[0],
+        [(64, [320, 384]), (64, [320, 384])],
+        "unkicked: 128 trials"
+    );
+    assert_eq!(read[1][0], (32, [160, 192]), "the hold's first half");
+    assert_eq!(read[3][1], (48, [240, 288]), "the release, six stretches");
+    assert_eq!(read[4][0], (16, [80, 96]), "the tail");
+    // ADR-0065's measure over the blocks after the lead-in: 56 of 64 seen and more after than
+    // before at each readout, at its edges; the nine-place readouts add each place's spikes.
+    let lead = LEAD_IN_EPOCHS_049 as usize;
+    let mut epochs: Vec<TaskEpoch> = vec![(0, [[0; 4]; 2]); lead.saturating_add(BLOCK)];
+    for (k, e) in epochs.iter_mut().skip(lead).enumerate() {
+        e.1 = if k < 56 {
+            [[1, 1, 0, 0], [2, 1, 0, 0]]
+        } else {
+            [[1, 1, 0, 0], [1, 1, 0, 0]]
+        };
+    }
+    let sight = sight_050(&epochs, false);
+    assert_eq!(sight, [([120, 64], [64, 64], 56)]);
+    assert!(!resolves(&sight[0]), "readout 1 no more after than before");
+    epochs[lead].1[1][1] = 2;
+    let sight = sight_050(&epochs, false);
+    assert_eq!(sight, [([120, 65], [64, 64], 56)]);
+    assert!(resolves(&sight[0]));
+    epochs[lead].1[1] = [1, 1, 0, 0];
+    epochs[lead.saturating_add(60)].1 = [[2, 1, 0, 0], [0, 3, 0, 0]];
+    let sight = sight_050(&epochs, false);
+    assert_eq!(sight, [([118, 66], [65, 64], 55)]);
+    assert!(
+        !resolves(&sight[0]),
+        "more after than before at each readout, but 55 of 64 seen"
+    );
+    epochs[lead].1[1] = [1, 1, 5, 1];
+    assert_eq!(
+        sight_050(&epochs, false),
+        sight,
+        "the eight-place readouts count no place"
+    );
+    let nine = sight_050(&epochs, true);
+    assert_eq!(nine, [([123, 67], [65, 64], 56)]);
+    assert!(
+        resolves(&nine[0]),
+        "the nine-place readouts add each place's spikes"
+    );
+    assert!(
+        sight_050(&epochs[..lead.saturating_add(BLOCK - 1)], false).is_empty(),
+        "a block is whole"
+    );
+}
+
+/// The rules over brief 050's pinned tables, once they are pinned: each run's stretches as the
+/// rules read them against its own background; the kick firing every member once at every size
+/// under each condition; each control's lead-in and first unkicked span its background's; and,
+/// with every table pinned, the robust cells and the cell for the second round.
+fn over_the_050_tables() {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let n = stretches_of(&spans).len();
+    let first = stretches_of(&spans)
+        .iter()
+        .position(|s| s.0 == Span::Hold)
+        .expect("a hold span");
+    let pair_read = |runs: &[Pinned050; 2], read: &BackgroundControl, size: u32| {
+        let [bg, ctl] = runs;
+        assert_eq!((bg.rows.len(), ctl.rows.len()), (n, n));
+        let background = background_049(bg.rows, &spans);
+        assert_eq!(background, read.0);
+        assert_eq!(kick_reading_049(ctl.kicks, size), read.1);
+        assert!(
+            kicked_once_049(ctl.kicks, size),
+            "the kick fires every member of {size} once"
+        );
+        assert_eq!(holding(ctl.rows, &spans, background), read.2);
+        assert_eq!(
+            ctl.rows[..first],
+            bg.rows[..first],
+            "the growth changes nothing unkicked"
+        );
+        background
+    };
+    let mut pinned = true;
+    let mut backgrounds = [None; 4];
+    for (s, &size) in SIZES_050.iter().enumerate() {
+        if CORE_RUNS_050[s][0].rows.is_empty() {
+            pinned = false;
+            continue;
+        }
+        let bg = pair_read(&CORE_RUNS_050[s], &CORE_READ_050[s], size);
+        backgrounds[s] = Some(bg);
+        for (w, pin) in GRID_RUNS_050[s].iter().enumerate() {
+            if pin.rows.is_empty() {
+                pinned = false;
+                continue;
+            }
+            assert_eq!(pin.rows.len(), n);
+            assert_eq!(pin.kicks.len(), ROUNDS, "a kick a round");
+            assert_eq!(
+                holding(pin.rows, &spans, bg),
+                GRID_050[s][w],
+                "{size} at weight {w}"
+            );
+        }
+    }
+    for (c, name) in CONDITION_NAMES.iter().enumerate() {
+        for (i, &s) in SUBSET_SIZES.iter().enumerate() {
+            let size = SIZES_050[s];
+            let bg = match CONDITIONS[c] {
+                Condition::Seed => backgrounds[s],
+                Condition::Drained | Condition::Stimulus => {
+                    let (runs, read) = if CONDITIONS[c] == Condition::Drained {
+                        (&DRAINED_RUNS_050[i], &DRAINED_READ_050[i])
+                    } else {
+                        (&STIMULUS_RUNS_050[i], &STIMULUS_READ_050[i])
+                    };
+                    (!runs[0].rows.is_empty()).then(|| pair_read(runs, read, size))
+                }
+            };
+            let Some(bg) = bg else {
+                pinned = false;
+                continue;
+            };
+            for (j, pin) in CONDITION_RUNS_050[c][i].iter().enumerate() {
+                if pin.rows.is_empty() {
+                    pinned = false;
+                    continue;
+                }
+                assert_eq!(pin.rows.len(), n);
+                assert_eq!(
+                    holding(pin.rows, &spans, bg),
+                    CONDITION_GRID_050[c][i][j],
+                    "{name} {size} at weight {j}"
+                );
+            }
+        }
+    }
+    if pinned {
+        let robust = robust_cells(&GRID_050, &CONDITION_GRID_050);
+        assert_eq!(robust.as_slice(), ROBUST_050);
+        assert_eq!(round_two_cell(&GRID_050, &robust), ROUND_TWO_050);
+    }
+}
+
+// ------------------------------------------------ the runs, weekly (brief 050)
+
+/// The kick, the backgrounds and the controls of the core grid (brief 050): on ADR-0077's
+/// settled image frozen, for each size the background and the control, the kick read on the
+/// engine before any cell; each held to its pins, 64 units' to ADR-0115's.
+fn core_backgrounds_controls() {
+    let name = "brief 050's core backgrounds and controls";
+    let image = settled(name);
+    let sizes = [0, 1, 2, 3];
+    let read = backgrounds_controls_050(&image, &sizes, false, name);
+    for (&s, (bg, ctl, reading)) in sizes.iter().zip(&read) {
+        let size = SIZES_050[s];
+        bg.held_to(
+            &CORE_RUNS_050[s][0],
+            true,
+            &format!("{name}: the background {size}"),
+        );
+        ctl.held_to(
+            &CORE_RUNS_050[s][1],
+            false,
+            &format!("{name}: the control {size}"),
+        );
+        assert_eq!(*reading, CORE_READ_050[s], "{name}: {size} read");
+    }
+}
+
+/// The five weights of one size of the core grid (brief 050): on the settled image, the members
+/// marked, grown and wired at each weight, the protocol, each run read against its size's
+/// background pinned first. At 64 units ADR-0115's two cells run first and are held to
+/// ADR-0115's pins before any other cell runs.
+fn five_weights_050(s: usize) {
+    let size = SIZES_050[s];
+    let name = format!("brief 050's assembly of {size}");
+    let image = settled(&name);
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let bg = background_049(CORE_RUNS_050[s][0].rows, &spans);
+    assert_eq!(
+        bg, CORE_READ_050[s].0,
+        "{name}: the background, pinned first"
+    );
+    let cell = |w: usize| {
+        let label = format!("{name} at {:#x}", WEIGHTS_050[w]);
+        let run = run_050(
+            &image,
+            size,
+            Some(WEIGHTS_050[w]),
+            false,
+            DELAY_SEED,
+            false,
+            &label,
+        );
+        let read = cell_read(&run, size, bg, &label);
+        (run, read)
+    };
+    let reproduced: Vec<usize> = ADR_0115_CELLS
+        .iter()
+        .filter(|c| c.0 == s)
+        .map(|c| c.1)
+        .collect();
+    let mut runs: Vec<Option<(Run050, CellRead)>> = (0..WEIGHTS_050.len()).map(|_| None).collect();
+    for &w in &reproduced {
+        let (run, read) = cell(w);
+        run.held_to(
+            &GRID_RUNS_050[s][w],
+            false,
+            &format!("{name}: ADR-0115's cell at {w}"),
+        );
+        assert_eq!(
+            read,
+            (GRID_050[s][w], GRID_BURSTS_050[s][w]),
+            "{name}: ADR-0115's reading"
+        );
+        runs[w] = Some((run, read));
+    }
+    for (w, slot) in runs.iter_mut().enumerate() {
+        if slot.is_none() {
+            *slot = Some(cell(w));
+        }
+    }
+    for (w, slot) in runs.iter().enumerate() {
+        let (run, read) = slot.as_ref().expect("every weight run");
+        run.held_to(&GRID_RUNS_050[s][w], false, &format!("{name}: weight {w}"));
+        assert_eq!(
+            *read,
+            (GRID_050[s][w], GRID_BURSTS_050[s][w]),
+            "{name}: weight {w}"
+        );
+    }
+}
+
+/// The subset's six cells under condition (b) or (d) (brief 050), on the settled image, each
+/// size's read against the condition's background pinned first — for (b) the core grid's, since
+/// an unwired run draws no delay, and its kick the core control's — every run dumped before any
+/// is held.
+fn subset_under(c: usize) {
+    let condition = CONDITIONS[c];
+    let name = format!("brief 050's subset under {}", CONDITION_NAMES[c]);
+    let image = settled(&name);
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let mut out = Vec::new();
+    for (i, &s) in SUBSET_SIZES.iter().enumerate() {
+        let size = SIZES_050[s];
+        let (runs, read, seed, stimulus) = match condition {
+            Condition::Seed => (&CORE_RUNS_050[s], &CORE_READ_050[s], DELAY_SEED_050, false),
+            Condition::Stimulus => (
+                &STIMULUS_RUNS_050[i],
+                &STIMULUS_READ_050[i],
+                DELAY_SEED,
+                true,
+            ),
+            Condition::Drained => panic!("condition (c) runs in one test with its image"),
+        };
+        let bg = background_049(runs[0].rows, &spans);
+        assert_eq!(bg, read.0, "{name} {size}: the background, pinned first");
+        assert!(
+            kicked_once_049(runs[1].kicks, size),
+            "{name} {size}: the kick read on the engine first"
+        );
+        for (j, &w) in SUBSET_WEIGHTS.iter().enumerate() {
+            let label = format!("{name} {size} at {:#x}", WEIGHTS_050[w]);
+            let run = run_050(
+                &image,
+                size,
+                Some(WEIGHTS_050[w]),
+                false,
+                seed,
+                stimulus,
+                &label,
+            );
+            let cell = cell_read(&run, size, bg, &label);
+            if stimulus {
+                eprintln!("DUMP {label} task = {:?}", task_read(&run.epochs, &spans));
+            }
+            out.push((i, j, run, cell));
+        }
+    }
+    for (i, j, run, cell) in &out {
+        run.held_to(
+            &CONDITION_RUNS_050[c][*i][*j],
+            false,
+            &format!("{name}: {i} {j}"),
+        );
+        assert_eq!(
+            *cell,
+            (
+                CONDITION_GRID_050[c][*i][*j],
+                CONDITION_BURSTS_050[c][*i][*j]
+            ),
+            "{name}: {i} {j}"
+        );
+        if CONDITIONS[c] == Condition::Stimulus {
+            assert_eq!(
+                task_read(&run.epochs, &spans),
+                STIMULUS_CELL_TASK_050[*i][*j]
+            );
+        }
+    }
+}
+
+/// Condition (c) whole (brief 050): the settled image, H-20's image and its arm from the
+/// assignment, held to ADR-0110's; the drained image frozen and read; the backgrounds and the
+/// controls at the subset's sizes, the kick read on the engine before any cell; the subset's six
+/// cells; every run dumped before any is held.
+fn drained_subset() {
+    let c = 1;
+    let name = "brief 050's subset under (c)";
+    let settled_image = settled(name);
+    let (image, drained) = drained_image(name, &settled_image);
+    let pairs = backgrounds_controls_050(&image, &SUBSET_SIZES, false, name);
+    let mut cells = Vec::new();
+    for (i, &s) in SUBSET_SIZES.iter().enumerate() {
+        let size = SIZES_050[s];
+        let bg = pairs[i].2.0;
+        for (j, &w) in SUBSET_WEIGHTS.iter().enumerate() {
+            let label = format!("{name} {size} at {:#x}", WEIGHTS_050[w]);
+            let run = run_050(
+                &image,
+                size,
+                Some(WEIGHTS_050[w]),
+                false,
+                DELAY_SEED,
+                false,
+                &label,
+            );
+            let cell = cell_read(&run, size, bg, &label);
+            cells.push((i, j, run, cell));
+        }
+    }
+    assert_eq!(drained, DRAINED_050, "{name}: the drained image");
+    for (i, (bg, ctl, reading)) in pairs.iter().enumerate() {
+        bg.held_to(
+            &DRAINED_RUNS_050[i][0],
+            true,
+            &format!("{name}: the background {i}"),
+        );
+        ctl.held_to(
+            &DRAINED_RUNS_050[i][1],
+            false,
+            &format!("{name}: the control {i}"),
+        );
+        assert_eq!(*reading, DRAINED_READ_050[i], "{name}: {i} read");
+    }
+    for (i, j, run, cell) in &cells {
+        run.held_to(
+            &CONDITION_RUNS_050[c][*i][*j],
+            false,
+            &format!("{name}: {i} {j}"),
+        );
+        assert_eq!(
+            *cell,
+            (
+                CONDITION_GRID_050[c][*i][*j],
+                CONDITION_BURSTS_050[c][*i][*j]
+            ),
+            "{name}: {i} {j}"
+        );
+    }
+}
+
+/// Condition (d)'s backgrounds and controls (brief 050): on the settled image with the task's
+/// stimulus at every epoch's middle, at the subset's sizes; the kick read on the engine before
+/// any cell; the readouts' reading and ADR-0065's measure on each background.
+fn stimulus_backgrounds_controls() {
+    let name = "brief 050's backgrounds and controls under (d)";
+    let image = settled(name);
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let pairs = backgrounds_controls_050(&image, &SUBSET_SIZES, true, name);
+    for (i, (bg, ctl, reading)) in pairs.iter().enumerate() {
+        bg.held_to(
+            &STIMULUS_RUNS_050[i][0],
+            true,
+            &format!("{name}: the background {i}"),
+        );
+        ctl.held_to(
+            &STIMULUS_RUNS_050[i][1],
+            false,
+            &format!("{name}: the control {i}"),
+        );
+        assert_eq!(*reading, STIMULUS_READ_050[i], "{name}: {i} read");
+        assert_eq!(
+            [
+                task_read(&bg.epochs, &spans),
+                task_read(&ctl.epochs, &spans)
+            ],
+            STIMULUS_TASK_050[i]
+        );
+        assert_eq!(
+            [sight_050(&bg.epochs, false), sight_050(&bg.epochs, true)],
+            STIMULUS_SIGHT_050[i].map(|s| s.to_vec())
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn the_kick_the_backgrounds_and_the_controls_of_the_core_grid_under_set_ii_exhaustive() {
+    core_backgrounds_controls();
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_48_units_at_five_weights_under_set_ii_exhaustive() {
+    five_weights_050(0);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_64_units_at_five_weights_under_set_ii_exhaustive() {
+    five_weights_050(1);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_80_units_at_five_weights_under_set_ii_exhaustive() {
+    five_weights_050(2);
+}
+
+#[test]
+#[ignore]
+fn a_marked_assembly_of_96_units_at_five_weights_under_set_ii_exhaustive() {
+    five_weights_050(3);
+}
+
+#[test]
+#[ignore]
+fn the_subset_with_the_delays_of_seed_49_exhaustive() {
+    subset_under(0);
+}
+
+#[test]
+#[ignore]
+fn the_subset_on_the_image_h_20_leaves_exhaustive() {
+    drained_subset();
+}
+
+#[test]
+#[ignore]
+fn the_kick_the_backgrounds_and_the_controls_under_the_tasks_stimulus_exhaustive() {
+    stimulus_backgrounds_controls();
+}
+
+#[test]
+#[ignore]
+fn the_subset_under_the_tasks_stimulus_exhaustive() {
+    subset_under(2);
+}
+
+// ------------------------------------------------ brief 050's arithmetic, pinned before any run
+
+/// The delivery at each of `WEIGHTS_050` under set (ii), at the unkicked pair and at the primed
+/// peak's.
+const DELIVERED_050: [Delivered; 5] = [
+    (3514, 30212, Some(23), 5626, 31198, Some(15)),
+    (5271, 31027, Some(15), 8440, 32518, Some(10)),
+    (7028, 31856, Some(12), 11254, 33834, Some(8)),
+    (8785, 32680, Some(9), 14067, 35148, Some(6)),
+    (10542, 33499, Some(8), 16881, 36470, Some(5)),
+];
+
+/// The task's stimulus's reach on the prior: per size the synapses from A and from B onto the
+/// members and the members reached; over the ring, per stimulus and place, the synapses and their
+/// weights' sum.
+#[allow(clippy::type_complexity)]
+const STIMULUS_REACH_050: ([[u32; 3]; 4], [[(u32, i64); 2]; 2]) = (
+    [
+        [94, 100, 48],
+        [123, 123, 64],
+        [159, 160, 80],
+        [191, 190, 95],
+    ],
+    [[(105, 946433), (95, 856929)], [(108, 969937), (91, 792548)]],
+);
+
+/// Condition (b)'s delays per size at 0.25: the synapses whose delay differs from seed 48's, of
+/// the assembly's.
+const SEEDED_WIRING_050: [(u32, u32); 4] = [(1532, 1536), (2042, 2048), (2553, 2560), (3062, 3072)];
+
+/// Condition (d)'s presentation on the instrument's network at rest, the epoch's reading.
+const PRESENTED_050: TaskEpoch = (0, [[5, 2, 1, 0], [18, 26, 2, 3]]);
+
+/// The members' spikes, `(tick after the start, unit)`, of the gate's assembly on the new
+/// geometry kicked on the instrument's network at rest for `GATE_KICK_TICKS_049`.
+const GATE_KICKED_050: &[(u32, u32)] = &[
+    (57, 225),
+    (61, 436),
+    (64, 245),
+    (66, 616),
+    (70, 565),
+    (70, 896),
+    (71, 325),
+    (72, 516),
+    (78, 5),
+    (78, 25),
+    (78, 56),
+    (78, 85),
+    (78, 105),
+    (78, 236),
+    (78, 256),
+    (78, 305),
+    (78, 345),
+    (78, 405),
+    (78, 416),
+    (78, 425),
+    (78, 465),
+    (78, 545),
+    (78, 636),
+    (78, 665),
+    (78, 776),
+    (78, 885),
+    (78, 936),
+    (78, 945),
+    (79, 116),
+    (79, 445),
+    (79, 476),
+    (79, 525),
+    (79, 705),
+    (79, 725),
+    (79, 796),
+    (79, 825),
+    (79, 905),
+    (79, 916),
+    (80, 285),
+    (81, 836),
+    (82, 176),
+    (82, 316),
+    (85, 16),
+    (86, 125),
+    (86, 296),
+    (87, 36),
+    (87, 45),
+    (87, 65),
+    (87, 76),
+    (87, 96),
+    (87, 136),
+    (87, 145),
+    (87, 156),
+    (87, 165),
+    (87, 185),
+    (87, 196),
+    (87, 205),
+    (87, 216),
+    (87, 265),
+    (87, 276),
+    (87, 336),
+    (87, 356),
+    (87, 365),
+    (87, 376),
+    (87, 385),
+    (87, 396),
+    (87, 456),
+    (87, 485),
+    (87, 496),
+    (87, 505),
+    (87, 536),
+    (87, 556),
+    (87, 576),
+    (87, 585),
+    (87, 596),
+    (87, 605),
+    (87, 625),
+    (87, 645),
+    (87, 656),
+    (87, 676),
+    (87, 685),
+    (87, 696),
+    (87, 716),
+    (87, 736),
+    (87, 745),
+    (87, 756),
+    (87, 765),
+    (87, 785),
+    (87, 805),
+    (87, 816),
+    (87, 845),
+    (87, 856),
+    (87, 865),
+    (87, 876),
+    (87, 925),
+    (87, 956),
+    (315, 425),
+    (318, 245),
+    (319, 225),
+    (322, 345),
+    (324, 776),
+    (325, 876),
+    (326, 945),
+    (327, 5),
+    (328, 825),
+    (329, 25),
+    (329, 505),
+    (329, 625),
+    (330, 565),
+    (330, 836),
+    (331, 516),
+    (333, 736),
+    (334, 156),
+    (334, 765),
+    (334, 896),
+    (335, 285),
+    (335, 745),
+    (338, 616),
+    (338, 645),
+    (339, 725),
+    (340, 296),
+    (340, 376),
+    (340, 705),
+    (341, 116),
+    (341, 305),
+    (341, 636),
+    (342, 456),
+    (343, 525),
+    (343, 865),
+    (344, 176),
+    (344, 576),
+    (345, 85),
+    (345, 416),
+    (346, 925),
+    (347, 96),
+    (347, 936),
+    (348, 385),
+    (348, 596),
+    (349, 325),
+    (349, 585),
+    (350, 125),
+    (350, 196),
+    (351, 65),
+    (352, 256),
+    (353, 145),
+    (353, 205),
+    (353, 405),
+    (355, 76),
+    (355, 545),
+    (356, 165),
+    (356, 236),
+    (356, 436),
+    (356, 665),
+    (356, 885),
+    (356, 956),
+    (357, 476),
+    (359, 105),
+    (360, 396),
+    (360, 445),
+    (360, 785),
+    (361, 465),
+    (363, 16),
+    (363, 805),
+    (363, 905),
+    (364, 45),
+    (364, 136),
+    (365, 536),
+    (366, 56),
+    (366, 605),
+    (367, 716),
+    (367, 856),
+    (368, 685),
+    (369, 365),
+    (370, 185),
+    (370, 336),
+    (370, 656),
+    (372, 356),
+    (373, 316),
+    (373, 845),
+    (374, 676),
+    (374, 756),
+    (374, 916),
+    (375, 556),
+    (376, 816),
+    (377, 485),
+    (378, 265),
+    (379, 496),
+    (383, 796),
+    (386, 216),
+    (388, 276),
+    (470, 696),
+    (487, 36),
+    (545, 776),
+    (548, 245),
+    (551, 565),
+    (552, 425),
+    (553, 616),
+    (555, 25),
+    (555, 505),
+    (556, 225),
+    (556, 945),
+    (557, 285),
+    (557, 765),
+    (559, 156),
+    (559, 645),
+    (560, 625),
+    (560, 705),
+    (562, 376),
+    (565, 896),
+    (566, 936),
+    (567, 416),
+    (567, 456),
+    (567, 736),
+    (568, 516),
+    (569, 205),
+    (571, 296),
+    (571, 725),
+    (572, 745),
+    (574, 145),
+    (574, 345),
+    (574, 385),
+    (574, 636),
+    (575, 305),
+    (576, 176),
+    (576, 865),
+    (577, 96),
+    (577, 876),
+    (578, 805),
+    (578, 825),
+    (579, 116),
+    (580, 65),
+    (581, 5),
+    (581, 256),
+    (581, 545),
+    (582, 576),
+    (583, 836),
+    (584, 196),
+    (585, 125),
+    (586, 185),
+    (586, 465),
+    (587, 405),
+    (587, 716),
+    (589, 525),
+    (590, 956),
+    (591, 585),
+    (592, 396),
+    (593, 105),
+    (593, 445),
+    (593, 925),
+    (595, 596),
+    (599, 476),
+    (600, 76),
+    (600, 905),
+    (601, 536),
+    (602, 16),
+    (603, 436),
+    (603, 885),
+    (604, 45),
+    (606, 236),
+    (607, 316),
+    (608, 85),
+    (609, 665),
+    (609, 756),
+    (609, 785),
+    (612, 325),
+    (613, 685),
+    (614, 56),
+    (614, 136),
+    (615, 336),
+    (615, 496),
+    (615, 796),
+    (617, 165),
+    (617, 265),
+    (618, 365),
+    (619, 216),
+    (619, 485),
+    (620, 856),
+    (624, 605),
+    (624, 656),
+    (629, 916),
+    (630, 276),
+    (630, 816),
+    (630, 845),
+    (638, 356),
+    (651, 676),
+    (656, 556),
+    (725, 36),
+    (730, 696),
+    (764, 776),
+    (776, 425),
+    (777, 245),
+    (779, 616),
+    (779, 945),
+    (782, 285),
+    (783, 645),
+    (785, 565),
+    (785, 625),
+    (789, 156),
+    (791, 505),
+    (793, 25),
+    (793, 416),
+    (794, 636),
+    (796, 736),
+    (797, 516),
+    (798, 765),
+];
+
+// ------------------------------------------------ brief 050's readings, pinned from the runs
+
+/// A run not yet pinned.
+const UNPINNED_050: Pinned050 = Pinned050 {
+    rows: &[],
+    kicks: &[],
+    windows: 0,
+    epochs: 0,
+};
+
+/// A reading not yet pinned.
+const UNREAD_050: Holding = Holding {
+    first_half: 0,
+    held: 0,
+    ignited: 0,
+    let_go: 0,
+    spills: None,
+};
+
+const NO_BURSTS_050: BurstRead049 = ([0; 5], [0; 8], None, 0);
+
+const NO_BACKGROUND_050: Background = Background {
+    members: 0,
+    rest: 0,
+    ticks: 0,
+};
+
+/// The core grid's background and control per size, `[background, control]`; 64 units'
+/// ADR-0115's.
+const CORE_RUNS_050: [[Pinned050; 2]; 4] = [
+    [UNPINNED_050; 2],
+    [
+        Pinned050 {
+            rows: BACKGROUND_049_II_64,
+            kicks: &[],
+            windows: WINDOWS_HASH_049[1][2][0],
+            epochs: NO_EPOCHS_HASH,
+        },
+        Pinned050 {
+            rows: CONTROL_049_II_64,
+            kicks: CONTROL_KICKS_049[1][2],
+            windows: WINDOWS_HASH_049[1][2][1],
+            epochs: NO_EPOCHS_HASH,
+        },
+    ],
+    [UNPINNED_050; 2],
+    [UNPINNED_050; 2],
+];
+
+/// The core grid's background and control per size read by the rules; 64 units' ADR-0115's.
+const CORE_READ_050: [BackgroundControl; 4] = [
+    (NO_BACKGROUND_050, (0, 0, 0, 0), UNREAD_050, NO_BURSTS_050),
+    (
+        BACKGROUNDS_049[1][2],
+        KICKS_049[1][2],
+        CONTROLS_049[1][2],
+        CONTROL_BURSTS_049[1][2],
+    ),
+    (NO_BACKGROUND_050, (0, 0, 0, 0), UNREAD_050, NO_BURSTS_050),
+    (NO_BACKGROUND_050, (0, 0, 0, 0), UNREAD_050, NO_BURSTS_050),
+];
+
+/// The core grid's cells, `[size][weight]`; ADR-0115's two its own pins.
+const GRID_RUNS_050: [[Pinned050; 5]; 4] = [
+    [UNPINNED_050; 5],
+    [
+        UNPINNED_050,
+        UNPINNED_050,
+        Pinned050 {
+            rows: CELL_049_II_64_0,
+            kicks: CELL_KICKS_049[1][2][0],
+            windows: CELL_HASH_049[1][2][0],
+            epochs: NO_EPOCHS_HASH,
+        },
+        UNPINNED_050,
+        Pinned050 {
+            rows: CELL_049_II_64_1,
+            kicks: CELL_KICKS_049[1][2][1],
+            windows: CELL_HASH_049[1][2][1],
+            epochs: NO_EPOCHS_HASH,
+        },
+    ],
+    [UNPINNED_050; 5],
+    [UNPINNED_050; 5],
+];
+
+/// The core grid read by the rules, `[size][weight]`; ADR-0115's two its readings.
+const GRID_050: Grid050 = [
+    [UNREAD_050; 5],
+    [
+        UNREAD_050,
+        UNREAD_050,
+        GRID_049[1][2][0],
+        UNREAD_050,
+        GRID_049[1][2][1],
+    ],
+    [UNREAD_050; 5],
+    [UNREAD_050; 5],
+];
+
+/// The core grid's cells' burst readings, `[size][weight]`; ADR-0115's two its own.
+const GRID_BURSTS_050: [[BurstRead049; 5]; 4] = [
+    [NO_BURSTS_050; 5],
+    [
+        NO_BURSTS_050,
+        NO_BURSTS_050,
+        CELL_BURSTS_049[1][2][0],
+        NO_BURSTS_050,
+        CELL_BURSTS_049[1][2][1],
+    ],
+    [NO_BURSTS_050; 5],
+    [NO_BURSTS_050; 5],
+];
+
+/// Condition (c)'s image as `drained_image` reads it.
+const DRAINED_050: DrainedRead = (0, (0, 0), 0, 0, (0, 0), 0, [[[0; 2]; 2]; 2]);
+
+/// Condition (c)'s background and control per subset size, and their readings.
+const DRAINED_RUNS_050: [[Pinned050; 2]; 2] = [[UNPINNED_050; 2]; 2];
+
+const DRAINED_READ_050: [BackgroundControl; 2] =
+    [(NO_BACKGROUND_050, (0, 0, 0, 0), UNREAD_050, NO_BURSTS_050); 2];
+
+/// Condition (d)'s background and control per subset size, and their readings.
+const STIMULUS_RUNS_050: [[Pinned050; 2]; 2] = [[UNPINNED_050; 2]; 2];
+
+const STIMULUS_READ_050: [BackgroundControl; 2] =
+    [(NO_BACKGROUND_050, (0, 0, 0, 0), UNREAD_050, NO_BURSTS_050); 2];
+
+/// Condition (d)'s readouts' reading per subset size, `[background, control]`.
+const STIMULUS_TASK_050: [[TaskRead; 2]; 2] = [[[[(0, [0; 2]); 2]; 5]; 2]; 2];
+
+/// Condition (d)'s backgrounds by ADR-0065's measure per subset size, `[eight places, nine]`, six
+/// blocks each.
+const STIMULUS_SIGHT_050: [[&[Sight050]; 2]; 2] = [[&[]; 2]; 2];
+
+/// Each condition's cells, `[condition][subset size][subset weight]`.
+const CONDITION_RUNS_050: [[[Pinned050; 3]; 2]; 3] = [[[UNPINNED_050; 3]; 2]; 3];
+
+/// Each condition's cells read by the rules.
+const CONDITION_GRID_050: [Subset050; 3] = [[[UNREAD_050; 3]; 2]; 3];
+
+/// Each condition's cells' burst readings.
+const CONDITION_BURSTS_050: [[[BurstRead049; 3]; 2]; 3] = [[[NO_BURSTS_050; 3]; 2]; 3];
+
+/// Condition (d)'s cells' readouts' reading.
+const STIMULUS_CELL_TASK_050: [[TaskRead; 3]; 2] = [[[[(0, [0; 2]); 2]; 5]; 3]; 2];
+
+/// The robust cells, `(size, weight)` by index into the grid.
+const ROBUST_050: &[(usize, usize)] = &[];
+
+/// The cell for the second round.
+const ROUND_TWO_050: Option<(usize, usize)> = None;
