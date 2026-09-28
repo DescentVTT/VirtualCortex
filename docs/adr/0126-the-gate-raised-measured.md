@@ -250,12 +250,37 @@ Every reading below is from the pinned tables of `tests/assembly.rs`. The protoc
 
 What the six rounds say together, as a reading and not a clause: on this network, at this size, with the drive this round's quiet soma reads, every mechanism tried that lets a wired assembly sustain its firing also lifts the same assembly's quiet state, because the quiet state's own recurrent input feeds the same mechanism, and the drive's fluctuations reach any voltage the held state could be told apart by.
 
+### The evidence
+
+Only tests change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**: run [36460574405](https://github.com/DescentVTT/VirtualCortex/actions/runs/36460574405) at `2640f5c`, the runs pinned, after which only the documents, the cost table and the brief's archive change. **Every job it ran is green.**
+- **The whole-domain tests.** All 111 passed on the hosted runners, each in a process of its own reporting one test passed. The 100 before this round reproduced their pinned numbers with no unit marked: the whole-image pins, and H-17's to H-20's arms, among them. This round's eleven reproduced their tables: the quiet soma in 469 s, the backgrounds and controls in 708 to 784 s, the cells in 531 to 554 s, 6 992 s together against the protocol's estimate of about 6 600. The six shards took:
+
+  | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
+  | ---: | ---: | ---: | ---: | :--- | :--- |
+  | 0 | 63 m 52 s | 18 | 7 276 | 3 772 s, 52 % | ADR-0120's condition (c) cells 2 816 |
+  | 1 | 67 m 00 s | 17 | 7 917 | 3 960 s, 55 % | ADR-0120's condition (c) backgrounds 2 348 |
+  | 2 | 84 m 26 s | 17 | 9 439 | 5 008 s, 70 % | ADR-0117's condition (c) 2 500 |
+  | 3 | 71 m 14 s | 19 | 8 312 | 4 213 s, 59 % | H-20 from the mirrored 1 690 |
+  | 4 | 81 m 45 s | 20 | 9 643 | 4 849 s, 67 % | H-20 from the assignment 1 794 |
+  | 5 | 76 m 00 s | 20 | 8 834 | 4 499 s, 62 % | plasticity everywhere 1 146 |
+
+  Three shards passed the brief's 60 per cent in this run. It dealt by the table from ADR-0124's dispatch, which costed this round's eleven tests at 900 s each where they took 6 992 s together, and the older tests ran 4.1 per cent over their table, 44 429 s against 42 699.
+- **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: 111 lines, 51 421 s, its source line naming the run; `npm run spec:costs` passing). Replayed through the deal at six shards, it plans every shard at 8 569 to 8 571 s summed. At this run's ratio of summed seconds to wall time, 1.88 to 2.00 and 1.96 overall, that is 4 285 to 4 559 s of tests' wall time: **59.5 to 63.3 per cent of the bound, about 61 at the run's overall ratio — past brief 053's 60 per cent.** The protocol's own estimate, 57 to 60 with sixteen cells, did not count the older tests' drift. The round is not empowered to change the shard count or the scripts, so **this standing directive is not met**, and it is recorded rather than met by dropping pinned runs. The levers are the known two, named for a decision of its own and not taken: a seventh shard (the lever of ADR-0118 and ADR-0121), or fewer copies of H-20's arm, which the condition (c) tests of ADR-0117 and ADR-0120 each rebuild, 2 348 to 2 816 s apiece. The longest test, ADR-0120's condition (c) cells, is 39 per cent of the bound alone.
+- **The pull request's gate** on `68d5e71` and on `c2338b5` is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which has no mutant to make, since only tests and documents change. Locally `cargo mutants --in-diff` reports no mutant to filter.
+
+On the developer machine every command of brief 053's verification list exited 0 (a ratio, not admissible):
+- the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 665 passed in each and 111 ignored. The MSRV test's first attempt failed to link one test binary (LNK1104, a file held open on this platform) and passed on the retry;
+- check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
+- `--list`, 111 tests;
+- every weekly test of this round twice, the second run at `2640f5c` against the pins.
+
 ## Consequences
 
 - Good: the last try is a parameter and a measurement, read by ADR-0124's protocol and measures beside ADR-0117's cell reproduced bit for bit, and it ends the line by a rule written before the run.
 - Good: the arithmetic written first said where the gate could matter and why a wired quiet state would cross it at 0.9, and it did; its prediction for the backgrounds' rates failed in six pairs of eleven, in a way the rule's own algebra accounts for.
 - Good: the kick passes where ADR-0124's could not, so the cells were read, and the reading is about the assembly and not the measure.
 - Bad: the line paused leaves ADR-0111's need open: H-20's reversals still take 13 to 23 blocks with no representation of the rule in force.
+- Bad: the weekly job's regenerated deal plans every shard at about 61 per cent of its bound, past the briefs' 60, with the levers named and not taken.
 - Neutral: the facilitating class and the slow current stay in the engine, unset bit for bit, for a later need.
 
 ## Alternatives considered and why rejected
