@@ -1,18 +1,40 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-28
 ---
+
+> **Executed 2026-09-28 in pull request #154.** Writes ADR-0123 (the slow current built) and ADR-0124 (the slow current
+> measured), and opens and resolves F-57 (the slow potential a staircase). The current was built beside `integrate`, image
+> format 18, unset bit for bit, the four whole-image pins re-pinned with the format under a masked check; the mutation
+> gate's one survivor on the changed lines was caught by a test of the firing edge. The measurement's protocol, the
+> arithmetic by the slow rule itself and the three shifts, placed by a rule written before the arithmetic was read, were
+> committed and pushed before any run, with the pull request opened as a draft. ADR-0117's cell was reproduced bit for bit
+> first.
+>
+> **No cell ran.** Fed by the prior's synapses alone, with no assembly wired, the slow current raised the members' rate from
+> 1.6 Hz to 31, 11 and 4.1 Hz under arm (A) and 54, 16 and 4.3 Hz under arm (B) at shifts 0, 1 and 2: its gate at the
+> drive's mean standing opens on every upward excursion and shrinks the distance a fluctuation must cover to the threshold
+> by the ratio of the slow potential to its critical level. The kick's volley was full at every arm and shift, and the
+> second clause of ADR-0112's measure failed at every one, at shifts 0 and 1 by the members' background alone. By the
+> protocol no cell runs until the kick passes; the maintainers chose to stop the round there rather than move the measure
+> after a run. **The next decision** — the gate's voltages, the input's shift beyond the grid, the slow time constant, or
+> the line paused — is named and not taken.
+>
+> The weekly dispatched at `scope=both` (run 36418523313) was green in every job: all one hundred whole-domain tests passed, the ninety-eight before this round reproducing their pinned numbers with no unit marked, the four whole-image pins at format 18 among them; no shard's tests passed 54 per cent of its bound; the mutation sweep caught 3 544 mutants and missed none, 87 of them in the slow current's code. The cost table is regenerated from it (one hundred lines, 42 699 s), and replayed through the deal it plans each of the six shards at about 51 per cent of its bound.
+>
+> The body below describes the tree before execution and is not maintained. Its relative links gained one `../` when it
+> moved to `archive/`; no word, claim or figure changed.
 
 # Brief 052: A slow, voltage-gated current — the current ADR-0122 decided, built beside `integrate` and unset bit for bit; then ADR-0117's assembly measured with its members marked, alone and with the facilitating class, under ADR-0117's conditions and rules
 
 ## Mission
 
 **This brief builds one mechanism and measures with it.** Four rounds of the rule held by the network read one
-bottleneck ([ADR-0120](../docs/adr/0120-the-contexts-own-inhibition-measured.md)): a held assembly and a quiet one
+bottleneck ([ADR-0120](../../docs/adr/0120-the-contexts-own-inhibition-measured.md)): a held assembly and a quiet one
 differ by the release their synapses make per spike, at most about 1.4 to 1.6 times, and every change tried acted on
 both states alike.
 
-[ADR-0122](../docs/adr/0122-a-slow-voltage-gated-current.md) took ADR-0111's other candidate: **a slow, voltage-gated
+[ADR-0122](../../docs/adr/0122-a-slow-voltage-gated-current.md) took ADR-0111's other candidate: **a slow, voltage-gated
 current**. A marked unit carries a slow potential that integrates its excitatory synaptic input over tens of
 milliseconds. That potential reaches the soma only as far as the soma is depolarised, so its contrast between the two
 states follows the members' rate ratio, and the quiet state's background input barely reaches the soma.
@@ -39,7 +61,7 @@ When the round is done, the tree holds:
     input it is `integrate` bit for bit over the lattice of `testkit/prop.rs`.
   - With no unit marked, every pinned number of the tree holds and the determinism pin does not move.
   - A pin of a whole image moves with the format number and nothing else, restated under a masked check
-    ([ADR-0095](../docs/adr/0095-an-image-pin-moves-with-its-format.md)).
+    ([ADR-0095](../../docs/adr/0095-an-image-pin-moves-with-its-format.md)).
 - **An unmarked unit's turn costs nothing new**: no word, no allocation, no syscall, and no work but a test of its mark.
 - **Every weight frozen in every measured run**, as ADR-0117 froze them (F-56 included). Every weight at the end of
   each run equals its value at the start.
@@ -51,13 +73,13 @@ When the round is done, the tree holds:
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0122's included. The kick is read on
   the engine under each arm and condition before those cells run, by ADR-0112's measure.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. For the measurement, the runtime's gate grows by
-  at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
-  it. The mutation gate on the changed lines must pass ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
+  it. The mutation gate on the changed lines must pass ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal, six shards
-  ([ADR-0121](../docs/adr/0121-a-sixth-shard.md)). A test the cost table does not know is costed at 900 s, so the round
+  ([ADR-0121](../../docs/adr/0121-a-sixth-shard.md)). A test the cost table does not know is costed at 900 s, so the round
   deals its runs into tests of about that size or says why not.
 - No pinned number of an earlier round moves, but for the whole-image pins restated above.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
@@ -67,7 +89,7 @@ When the round is done, the tree holds:
 Re-derived on 2026-09-28 against `main` after ADR-0120, ADR-0121 and ADR-0122 merged. Line numbers move; the symbols
 and the quoted sentences are what to re-derive.
 
-1. **The membrane** (`crates/cortex-core/src/dynamics/membrane.rs`, [ADR-0018](../docs/adr/0018-membrane-integration.md)).
+1. **The membrane** (`crates/cortex-core/src/dynamics/membrane.rs`, [ADR-0018](../../docs/adr/0018-membrane-integration.md)).
    - `integrate(basal_q16, apical_q16, now_tick)`: the compartments leak (`BASAL_LEAK_SHIFT` 9, `APICAL_LEAK_SHIFT`
      10) and take their inputs, which are dropped in the refractory window.
    - The soma leaks (`SOMA_LEAK_SHIFT` 11) and takes each compartment's difference `>> COUPLING_SHIFT` (4), the
@@ -92,12 +114,12 @@ and the quoted sentences are what to re-derive.
 6. **The drive's standing** (ADR-0112's arithmetic): the drive's mean input holds a unit at 0.875 basal and 0.436 soma,
    0.564 below the base threshold.
 7. **The weekly job**: six shards since ADR-0121. A round that changes `src/` dispatches `scope=both`
-   ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The cost table is regenerated from its own
+   ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The cost table is regenerated from its own
    dispatch.
 
 ## Deliverables
 
-- [ ] **The current built, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The current built, in a new ADR at the next free number (`ls docs/adr`).**
   - *The mark*: a bit of `flags`, named, that `integrate` and the slow rule leave as they find it.
   - *The state*: the slow potential in `[20..24)`, the field renamed, `is_at_rest_image` and the serial form updated;
     format 18; whitepaper §5.2's table.
@@ -117,7 +139,9 @@ and the quoted sentences are what to re-derive.
     - the image: the constants written and read set and unset, each refusal, and a version-17 header refused;
     - `crates/cortex-connectome`: the version's assertions at 18;
     - the whole-image pins restated under a masked check.
-- [ ] **The measurement's protocol, in an ADR, before any measurement run.** At least:
+
+  ADR-0123, `2038c6f`: `FLAG_SLOW` (bit 3), `v_slow` at `[20..24)`, `SlowCurrent` at the modulator section's `[36..48)` with `[39]` reserved, `integrate_slow` beside the untouched `integrate`, format 18. The mutation gate on the changed lines found one survivor, the firing comparison of `integrate_slow`, caught by `e7eeb61`.
+- [x] **The measurement's protocol, in an ADR, before any measurement run.** At least:
   - *The arms*: (A) the members marked for the slow current under ADR-0019's short-term plasticity; (B) marked for the
     slow current and facilitating under ADR-0114's set (ii).
   - *The slow constants*: $\tau_s = 2^{13}$ ticks; $V_{lo}$ at the soma's standing under the drive's mean input and
@@ -130,7 +154,9 @@ and the quoted sentences are what to re-derive.
     with the most usable neighbours; **if none is robust**, what failed where, by `failed`.
   - *Readings, no clause*: the members' slow potential and the gate's opening per window in the held and the unkicked
     spans; the bursts; under (d), each readout's count per trial with the context held and quiet.
-- [ ] **The arithmetic, before any measurement run, with the slow rule itself**, at the backgrounds' rates:
+
+  ADR-0124, `d0cb546`, pushed with the pull request opened as a draft before any run.
+- [x] **The arithmetic, before any measurement run, with the slow rule itself**, at the backgrounds' rates:
   - the slow potential's steady level under the background's synaptic input, and at a sustained 5, 10 and 20 Hz of
     the assembly, at each weight, shift and arm;
   - the gate's opening at the drive's mean standing and near the threshold;
@@ -138,13 +164,21 @@ and the quoted sentences are what to re-derive.
   - the contrast between the held and the quiet state's slow current, beside the per-spike ratio of 1.4 to 1.6.
 
   The three shifts are chosen from it, committed with the reason, before any run.
-- [ ] **ADR-0117's cell reproduced** with nothing marked for the slow current, bit for bit against ADR-0117's pins, before
+
+  Pinned at `d0cb546` (`SLOW_CRITICAL_052`, `GATE_052`, `PER_SPIKE_052`, `ARITHMETIC_052`): the critical slow potential 1.138 of the threshold; the shifts 0, 1 and 2 by a rule written before the arithmetic was read. The slow potential reads as a staircase (F-57).
+- [x] **ADR-0117's cell reproduced** with nothing marked for the slow current, bit for bit against ADR-0117's pins, before
   any cell of this round.
+
+  First in arm (A)'s core test, held to ADR-0117's pins, pinned at `3428e1e`.
 - [ ] **The kick read on the engine** under each arm and condition, before those cells. It fires every member once, or
   it is derived again before any cell.
+
+  **Rejected:** read under both arms at every shift in the core: the volley full, the second clause of ADR-0112's measure failed at every one (ADR-0124). Not derived again: at shifts 0 and 1 the members' own background alone passes the clause's mark, so no kick could pass there, and the maintainers chose on 2026-09-28 to stop the round rather than move the measure after a run. Not read under the conditions, which ran no cell.
 - [ ] **The runs.** Every cell, background and control. The weights shown unchanged at each run's end. The tables pinned
   as ADR-0117's: stretches in full, windows by hash.
-- [ ] **The ADR's reading.**
+
+  **Rejected:** the core's twelve backgrounds and controls and ADR-0117's cell ran, their weights unchanged at each run's end, pinned as ADR-0117's with the slow readings beside them; no cell ran, by the kick's failure and the maintainers' choice (ADR-0124).
+- [x] **The ADR's reading.**
   - The core grid's table per arm, and its usable region.
   - Each condition's table for the cells run under it, and the robust cells.
   - The cell for the second round, or what failed under which condition.
@@ -153,19 +187,25 @@ and the quoted sentences are what to re-derive.
     - if a cell is robust, ADR-0111's second round, a readout gated by the context, with ADR-0117's reading that the
       prior carries a held context to both readouts alike as its need;
     - if none is, what the readings name: the gate's voltages, the slow time constant, or the line paused.
-- [ ] **The gate.** The build's tests, and at most one runtime test for the measurement: the rules at their edges over
+
+  ADR-0124: the backgrounds' and the kick's tables, the slow potential and the gate over the unkicked spans, the arithmetic beside them, and the next decision named and not taken. The core grid's and the conditions' tables, the robust cells and the second round's cell are not made, since no cell ran; what failed is the kick's measure, at every arm and shift.
+- [x] **The gate.** The build's tests, and at most one runtime test for the measurement: the rules at their edges over
   tables written by hand, and one marked assembly with the slow current kicked for a few hundred ticks.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at `scope=both`, since `src/` changes
-  ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). It must be green in every job, with no survivor
+
+  The build's tests in `cortex-core`, the executor and `tests/image.rs`, and one runtime test for the measurement (`a_slow_current_the_arms_the_grid_the_arithmetic_the_rules_and_a_marked_assembly_kicked_with_it`).
+- [x] **The evidence.** A weekly dispatched on this round's branch at `scope=both`, since `src/` changes
+  ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). It must be green in every job, with no survivor
   of the sweep on the current and every pinned number reproduced. The cost table is regenerated from that run's
   artifacts.
-- [ ] **The documents, in the same pull request.**
+
+  Run 36418523313 at `880bcf5`, `scope=both` since `src/` changes (ADR-0075): green in every job; the whole-domain tests' six shards at 38 to 54 per cent of their bound, this round's two tests 796 and 734 s; the sweep 3 544 caught and none missed. The cost table regenerated from its artifacts: one hundred lines, 42 699 s, each shard planned at 7 116 to 7 118 s summed, about 51 per cent of the bound (ADR-0124).
+- [x] **The documents, in the same pull request.**
   - Whitepaper §5.2's record table and the image's bytes, the format's version row, §8.8's membrane row, §11.1's
     question on a rule held by the network with this round's reading, and §9.
   - The ADR index, `CHANGELOG.md`, `CLAUDE.md`, and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 
