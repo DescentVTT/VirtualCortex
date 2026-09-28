@@ -99,7 +99,7 @@ pub struct DendriticSuperNeuron {
     pub id: u64,                     // [0..8] Global neuron ID
     pub mailbox_head_ptr: AtomicU64, // [8..16] Mailbox head: node index + 1, MAILBOX_EMPTY when empty (an index despite the name; L-3 reserves the suffix for it)
     pub last_synaptic_tick: u32, // [16..20] The tick a synapse's message last reached the unit; 0 = none (ADR-0054; the ABA tag of ADR-0006 lived at [16..24) until ADR-0017)
-    pub _reserved_20: u32,       // [20..24] Reserved; MUST be zero
+    pub v_slow: i32,             // [20..24] Slow potential (Q16.16); 0 unless FLAG_SLOW (ADR-0123)
     pub v_soma: i32,             // [24..28] Soma potential (Q16.16)
     pub v_basal: i32,            // [28..32] Basal feedforward potential (Q16.16)
     pub v_apical: i32,           // [32..36] Apical contextual potential (Q16.16)
@@ -125,7 +125,7 @@ impl DendriticSuperNeuron {
             id,
             mailbox_head_ptr: AtomicU64::new(MAILBOX_EMPTY),
             last_synaptic_tick: 0,
-            _reserved_20: 0,
+            v_slow: 0,
             v_soma: 0,
             v_basal: 0,
             v_apical: 0,
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(u.id, 7);
         assert_eq!(u.gate(), Some(GateState::Idle));
         assert!(u.mailbox_is_empty());
-        assert_eq!((u.last_synaptic_tick, u._reserved_20), (0, 0));
+        assert_eq!((u.last_synaptic_tick, u.v_slow), (0, 0));
         assert_eq!(GateState::from_u8(0), Some(GateState::Idle));
         assert_eq!(GateState::from_u8(1), Some(GateState::Scheduled));
         assert_eq!(GateState::from_u8(2), Some(GateState::Running));

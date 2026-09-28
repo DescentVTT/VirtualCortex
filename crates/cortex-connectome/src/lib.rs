@@ -92,8 +92,10 @@ pub const SECTION_AMENDMENT: u32 = 41;
 /// inhibitory rule's target period at `[20..24)` (ADR-0053), the inhibitory baseline's flag
 /// at `[24]` and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
 /// (ADR-0094), the class of short-term plasticity's flag at `[32]` and its $U$ and two shifts
-/// at `[33..36)` (ADR-0114), and 30 reserved bytes that MUST be zero; always written and
-/// required, so that the modulation a run continues under is in the image.
+/// at `[33..36)` (ADR-0114), the slow current's flag at `[36]`, its leak and input shifts at
+/// `[37]` and `[38]` and its two voltages at `[40..48)` (ADR-0123), and 19 reserved bytes
+/// that MUST be zero (`[26..28)`, `[39]` and `[48..64)`); always written and required, so that
+/// the modulation a run continues under is in the image.
 pub const SECTION_MODULATOR: u32 = 42;
 /// The engine's homeostasis state (ADR-0036): one 64-byte record, `cortex-homeostasis`'s
 /// `HomeostaticDrivePool` with its synaptic gain, its control step and the open window of the
@@ -246,7 +248,16 @@ impl CortexFileHeader {
     ///   zeros there read as unset and its units carry no mark, which is the rule before this
     ///   version bit for bit; the loader still refuses a version-16 header, as it refuses every
     ///   foreign version.
-    pub const FORMAT_VERSION: u32 = 17;
+    /// - 18: `DendriticSuperNeuron` `[20..24)`, reserved since version 4, is `v_slow`, the slow
+    ///   potential of the slow current, Q16.16, zero in every unit not marked for it; `flags` bit
+    ///   3 (`FLAG_SLOW`) marks a unit that integrates under the slow current; the modulator
+    ///   section's `[36]` is the slow current's flag (0 unset, 1 set), `[37]` and `[38]` its leak
+    ///   and input shifts and `[40..44)` and `[44..48)` its gate's two voltages in Q16.16, zero
+    ///   while unset (ADR-0122, ADR-0123). `[26..28)`, `[39]` and `[48..64)` stay reserved. A
+    ///   version-17 image's zeros there read as unset and its units carry no mark and no slow
+    ///   potential, which is the rule before this version bit for bit; the loader still refuses a
+    ///   version-17 header, as it refuses every foreign version.
+    pub const FORMAT_VERSION: u32 = 18;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -430,7 +441,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 17);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 18);
     }
 
     #[test]
@@ -476,8 +487,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            17,
-            "ADR-0114: the class of short-term plasticity in the modulator section"
+            18,
+            "ADR-0123: the slow current in the modulator section and the unit record"
         );
     }
 

@@ -11,9 +11,9 @@ use cortex_connectome::{
     SECTION_MODULATOR, SECTION_NEURON, SECTION_PLASTIC_DELTA, SECTION_SYNAPSE, SectionEntry, crc64,
 };
 use cortex_core::{
-    FLAG_FACILITATING, FLAG_INHIBITORY, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS,
-    ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, PlasticDelta, STP_MAX, STP_U, StpClass,
-    THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
+    FLAG_FACILITATING, FLAG_INHIBITORY, FLAG_SLOW, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS,
+    ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, PlasticDelta, STP_MAX, STP_U, SlowCurrent,
+    StpClass, THRESHOLD_BASE, TICK_NS, spike_message, synaptic_efficacy_q16,
 };
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX};
 use cortex_homeostasis::{
@@ -1180,8 +1180,9 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
         None,
         "the flag and the value zero, as a format-14 writer left them, read as unset"
     );
-    // `[32..36)` is the class of short-term plasticity's since ADR-0114.
-    for at in [26, 27, 36, 40, 63] {
+    // `[32..36)` is the class of short-term plasticity's since ADR-0114, and `[36..48)` but
+    // `[39]` the slow current's since ADR-0123.
+    for at in [26, 27, 39, 48, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1203,7 +1204,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(16)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(17)))
         ),
         "the previous format's header fails closed, as every foreign version does"
     );
@@ -1292,8 +1293,9 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "flag {flag}: a byte the writer never produces"
         );
     }
-    // `[32..36)` is the class of short-term plasticity's since ADR-0114.
-    for at in [26, 27, 36, 63] {
+    // `[32..36)` is the class of short-term plasticity's since ADR-0114, and `[36..48)` but
+    // `[39]` the slow current's since ADR-0123.
+    for at in [26, 27, 39, 48, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1307,7 +1309,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "byte {at} is reserved"
         );
     }
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 17);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 18);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 15;
@@ -1460,7 +1462,8 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
             "{bytes:?}: bytes the writer never produces"
         );
     }
-    for at in [26, 27, 36, 63] {
+    // `[36..48)` but `[39]` is the slow current's since ADR-0123.
+    for at in [26, 27, 39, 48, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1505,7 +1508,7 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
         Err(ImageError::MarkWithoutClass(0))
     ));
     // A header stamped with format 16, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 17);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 18);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 16;
@@ -1517,5 +1520,271 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
             Err(ImageError::Header(HeaderError::ForeignVersion(16)))
         ),
         "a format-16 header fails closed, as every foreign version does (L-6)"
+    );
+}
+
+/// The slow current in the modulator section and the unit's record (ADR-0123; format 18): a flag
+/// byte at `[36]`, the leak and input shifts at `[37]` and `[38]`, the gate's two voltages at
+/// `[40..44)` and `[44..48)`; a unit's mark (`FLAG_SLOW`) and its slow potential at `[20..24)`
+/// of its record. Unset, the section's bytes are zero — those a format-17 writer left there — and
+/// read as unset whatever the configuration says; set, they are read back whatever the
+/// configuration says, at the edges the rule resolves, beside the inhibitory baseline, the signed
+/// gate and the class, which it leaves as they are. A marked unit with a slow potential and
+/// nothing else is woken on load and leaks it. Refused: constants the rule does not resolve, as
+/// the configuration's are; a flag that is neither zero nor one, a byte beside a zero flag and a
+/// reserved byte, which the writer never produces; a unit marked while no slow current is set; an
+/// unmarked unit with a slow potential; and a header stamped with format 17, as every foreign
+/// version is.
+#[test]
+fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads_as_unset() {
+    let slow = |leak_shift, input_shift, v_lo_q16, v_hi_q16| SlowCurrent {
+        leak_shift,
+        input_shift,
+        v_lo_q16,
+        v_hi_q16,
+    };
+    let current = slow(13, 1, 28_561, THRESHOLD_BASE);
+    let set_ii = StpClass {
+        u: 26,
+        tau_f_shift: 16,
+        tau_d_shift: 13,
+    };
+    let unset = small_image_with_modulator();
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(&section[36..64], &[0u8; 28], "unset writes zeros");
+    let loaded = Image::decode::<8>(
+        &unset,
+        Config {
+            slow_current: Some(current),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        loaded.slow_current(),
+        None,
+        "the image's unset outranks the configuration's set"
+    );
+    // Set beside the inhibitory baseline, the signed gate and the class, with unit 1 marked for
+    // both and carrying a slow potential.
+    let mut exec = Executor::<8>::new(Config {
+        units: 2,
+        blocks: 1,
+        inhibitory_baseline_q16: Some(0x8000),
+        signed_gate: true,
+        stp_class: Some(set_ii),
+        slow_current: Some(current),
+        ..Config::default()
+    })
+    .unwrap();
+    exec.units_mut()[1].flags = FLAG_SLOW | FLAG_FACILITATING;
+    exec.units_mut()[1].v_slow = 0x1_2345;
+    let set = Image::encode(&exec).unwrap();
+    let section = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!((section[24], section[25]), (1, 1));
+    assert_eq!(&section[28..32], &0x8000i32.to_le_bytes());
+    assert_eq!(&section[32..36], &[1, 26, 16, 13], "the class");
+    assert_eq!(
+        &section[36..40],
+        &[1, 13, 1, 0],
+        "the flag, the two shifts, a reserved byte"
+    );
+    assert_eq!(
+        &section[40..44],
+        &28_561i32.to_le_bytes(),
+        "the low voltage"
+    );
+    assert_eq!(
+        &section[44..48],
+        &THRESHOLD_BASE.to_le_bytes(),
+        "the high voltage"
+    );
+    assert_eq!(&section[48..64], &[0u8; 16]);
+    let neurons = section_bytes(&set, SECTION_NEURON);
+    assert_eq!(neurons[64 + 57], FLAG_SLOW | FLAG_FACILITATING, "the mark");
+    assert_eq!(
+        &neurons[64 + 20..64 + 24],
+        &0x1_2345i32.to_le_bytes(),
+        "the slow potential in the unit's record"
+    );
+    let loaded = Image::decode::<8>(&set, Config::default()).unwrap();
+    assert_eq!(
+        loaded.slow_current(),
+        Some(current),
+        "the image's set outranks the configuration's unset"
+    );
+    assert_eq!(
+        (
+            loaded.inhibitory_baseline_q16(),
+            loaded.signed_gate(),
+            loaded.stp_class()
+        ),
+        (Some(0x8000), true, Some(set_ii)),
+        "and the four are apart"
+    );
+    assert_eq!(
+        (loaded.units()[1].flags, loaded.units()[1].v_slow),
+        (FLAG_SLOW | FLAG_FACILITATING, 0x1_2345)
+    );
+    assert_eq!((loaded.units()[0].flags, loaded.units()[0].v_slow), (0, 0));
+    assert_eq!(Image::encode(&loaded).unwrap(), set, "one image, twice");
+    // The marked unit, at rest but for its slow potential, is woken on load: its first tick leaks
+    // 2^-13 of the slow potential, nine LSB.
+    let mut woken = loaded;
+    woken.tick();
+    assert_eq!(woken.units()[1].v_slow, 0x1_2345 - (0x1_2345 >> 13));
+    assert_eq!(woken.units()[0].v_slow, 0);
+    let with_current = |flag: u8, bytes: [u8; 11]| {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[36] = flag;
+            s[37..48].copy_from_slice(&bytes);
+        });
+        img
+    };
+    let bytes_of = |c: SlowCurrent| {
+        let mut b = [0u8; 11];
+        b[0] = c.leak_shift;
+        b[1] = c.input_shift;
+        b[3..7].copy_from_slice(&c.v_lo_q16.to_le_bytes());
+        b[7..11].copy_from_slice(&c.v_hi_q16.to_le_bytes());
+        b
+    };
+    for good in [
+        slow(1, 0, 1, 2),
+        slow(16, 16, 1, THRESHOLD_BASE),
+        slow(13, 3, THRESHOLD_BASE - 1, THRESHOLD_BASE),
+        current,
+    ] {
+        assert_eq!(
+            Image::decode::<8>(&with_current(1, bytes_of(good)), Config::default())
+                .unwrap()
+                .slow_current(),
+            Some(good),
+            "{good:?} is set"
+        );
+    }
+    for bad in [
+        slow(0, 1, 28_561, THRESHOLD_BASE),
+        slow(17, 1, 28_561, THRESHOLD_BASE),
+        slow(13, 17, 28_561, THRESHOLD_BASE),
+        slow(13, 0xFF, 28_561, THRESHOLD_BASE),
+        slow(13, 1, 0, THRESHOLD_BASE),
+        slow(13, 1, -1, THRESHOLD_BASE),
+        slow(13, 1, THRESHOLD_BASE, THRESHOLD_BASE),
+        slow(13, 1, 0xC000, 0x4000),
+        slow(13, 1, 28_561, THRESHOLD_BASE + 1),
+        slow(0, 0, 0, 0),
+    ] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_current(1, bytes_of(bad)), Config::default()),
+                Err(ImageError::Config(ConfigError::SlowCurrentOutOfRange))
+            ),
+            "{bad:?}: refused as the configuration's is"
+        );
+    }
+    let mut stray = [0u8; 11];
+    for at in [0, 1, 3, 6, 7, 10] {
+        stray[at] = 1;
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_current(0, stray), Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {} beside a zero flag: one the writer never produces",
+            at + 37
+        );
+        stray[at] = 0;
+    }
+    for flag in [2, 3, 0xFF] {
+        for bytes in [bytes_of(current), [0; 11]] {
+            assert!(
+                matches!(
+                    Image::decode::<8>(&with_current(flag, bytes), Config::default()),
+                    Err(ImageError::ReservedNotZero {
+                        section: SECTION_MODULATOR,
+                        index: 0
+                    })
+                ),
+                "flag {flag}: a byte the writer never produces"
+            );
+        }
+    }
+    for at in [39, 48, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, Config::default()),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    // A mark while no slow current is set: refused at the marked unit, whatever the configuration
+    // says; the facilitating mark alone is no mark for it.
+    let unset_current = with_current(0, [0; 11]);
+    assert!(
+        matches!(
+            Image::decode::<8>(
+                &unset_current,
+                Config {
+                    slow_current: Some(current),
+                    ..Config::default()
+                }
+            ),
+            Err(ImageError::MarkWithoutSlowCurrent(1))
+        ),
+        "the image's unset slow current, and unit 1 marked"
+    );
+    let mut facilitating = unset_current.clone();
+    patch_section(&mut facilitating, SECTION_NEURON, |s| {
+        s[64 + 57] = FLAG_FACILITATING;
+        s[64 + 20..64 + 24].copy_from_slice(&[0; 4]);
+    });
+    assert_eq!(
+        Image::decode::<8>(&facilitating, Config::default())
+            .unwrap()
+            .slow_current(),
+        None
+    );
+    let mut first = facilitating.clone();
+    patch_section(&mut first, SECTION_NEURON, |s| s[57] = FLAG_SLOW);
+    assert!(matches!(
+        Image::decode::<8>(&first, Config::default()),
+        Err(ImageError::MarkWithoutSlowCurrent(0))
+    ));
+    // An unmarked unit carries no slow potential: nothing writes one in it.
+    let mut unmarked = set.clone();
+    patch_section(&mut unmarked, SECTION_NEURON, |s| {
+        s[64 + 57] = FLAG_FACILITATING
+    });
+    assert!(
+        matches!(
+            Image::decode::<8>(&unmarked, Config::default()),
+            Err(ImageError::NotAtRest(1))
+        ),
+        "a slow potential without the mark"
+    );
+    // A header stamped with format 17, as every foreign version is (L-6).
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 18);
+    let mut older = set.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 17;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, Config::default()),
+            Err(ImageError::Header(HeaderError::ForeignVersion(17)))
+        ),
+        "a format-17 header fails closed, as every foreign version does (L-6)"
     );
 }
