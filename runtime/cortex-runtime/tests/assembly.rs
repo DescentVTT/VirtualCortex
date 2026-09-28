@@ -21106,8 +21106,28 @@ fn frozen_again(image: &[u8]) -> Vec<u8> {
     })
 }
 
-/// H-20's image by its CRC-64: `PUNISHED_IMAGE_CRC_1024` of `tests/inhibition.rs`, restated.
-const H20_IMAGE_CRC: u64 = 0x766d_e462_f9b7_7576;
+/// H-20's image by its CRC-64: `PUNISHED_IMAGE_CRC_1024` of `tests/inhibition.rs`, restated;
+/// ADR-0123 moved the format from 17 to 18 and re-pinned it there (it was
+/// `0x766d_e462_f9b7_7576` at format 17).
+const H20_IMAGE_CRC: u64 = 0xb548_6d72_bb9c_5818;
+
+/// An image with its header's version written as `version` and the header resealed, every other
+/// byte as it was (ADR-0095): the image a writer of that version would have produced from the
+/// same records, where no record's bytes differ between the two versions. `tests/inhibition.rs`'s,
+/// written here a second time for the drained image.
+fn with_version(image: &[u8], version: u32) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let mut header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    header.version = version;
+    header.crc64 = header.checksum();
+    img[0..64].copy_from_slice(&header.encode());
+    img
+}
+
+/// The frozen drained image's CRC-64 with its header's version written back to 17 and resealed:
+/// the CRC ADR-0117 read (`DRAINED_050`'s at format 17), so that every byte of the image but the
+/// version and the seal is the image ADR-0117 and ADR-0120 ran from (ADR-0123, as ADR-0095).
+const DRAINED_IMAGE_CRC_FORMAT_17: u64 = 0xd763_b4a5_8364_291e;
 
 /// H-20's run (ADR-0109): 7 680 trials, the mapping flipped before the trials of index 1 536,
 /// 3 584 and 5 632 (`SCHEDULE_TRIALS` and `SCHEDULE_FLIPS` of `tests/inhibition.rs`).
@@ -21208,6 +21228,11 @@ fn drained_image(name: &str, settled: &[u8]) -> (Vec<u8>, DrainedRead) {
     let ticks = quiet(&mut exec);
     let signal = exec.modulator().dopamine_rpe;
     let image = frozen_again(&Image::encode(&exec).expect("quiescent"));
+    assert_eq!(
+        crc64(&with_version(&image, 17)),
+        DRAINED_IMAGE_CRC_FORMAT_17,
+        "{name}: every byte but the header's version and seal is the image ADR-0117 froze"
+    );
     let frozen = frozen_from(&image, 1024);
     assert_eq!(
         (
@@ -23380,14 +23405,16 @@ const GRID_BURSTS_050: [[BurstRead049; 5]; 4] = [
     ],
 ];
 
-/// Condition (c)'s image as `drained_image` reads it.
+/// Condition (c)'s image as `drained_image` reads it. ADR-0123 moved the format from 17 to 18,
+/// and the frozen image's CRC-64, the fifth field, with it: it was `0xd763_b4a5_8364_291e` at 17,
+/// which `drained_image` holds the image written back to 17 to (`DRAINED_IMAGE_CRC_FORMAT_17`).
 const DRAINED_050: DrainedRead = (
     0xdd2a_9318_b3c5_d288,
     (11999067, 219302252),
     2541,
     21860,
     (11999067, 219302252),
-    0xd763_b4a5_8364_291e,
+    0x1446_3db5_c14f_0470,
     [
         [[895229, 796796], [835204, 723315]],
         [[820924, 946459], [882146, 695808]],

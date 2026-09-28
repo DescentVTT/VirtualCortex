@@ -9,8 +9,9 @@
 //!    unit's owner when its turn left it awake and by a push or an activation that found it
 //!    idle (ADR-0100). For each, the worker drains the mailbox if it holds mail, orders the
 //!    batch by message value (§8.3), scales the two compartment sums by the tick's synaptic
-//!    gain (ADR-0036), integrates, steps the short-term plasticity if the unit fired (under the
-//!    image's class for a unit marked facilitating, ADR-0114), and keeps the unit on the
+//!    gain (ADR-0036), integrates (under the image's slow current for a unit marked for it,
+//!    ADR-0123), steps the short-term plasticity if the unit fired (under the image's class for
+//!    a unit marked facilitating, ADR-0114), and keeps the unit on the
 //!    schedule for the next tick while it is not at rest. Only the owner references the unit,
 //!    exclusively, and no push happens in the phase, so the turn takes no claim. At the end of
 //!    the phase the worker publishes how many of its units fired.
@@ -50,12 +51,12 @@ use crate::pool::Pools;
 use crate::store::{Induction, TermError};
 use cortex_affect::InteroceptiveState;
 use cortex_core::{
-    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FLAG_FACILITATING, FlatTimingWheel,
-    GateState, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS,
-    MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity, REFRACTORY_TICKS,
-    SYNAPSES_PER_BLOCK, StpClass, SynapseBlock, THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15,
-    message_efficacy_q16, message_is_apical, message_is_synaptic, spike_message, synapse_token,
-    synaptic_message, token_block, token_slot,
+    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FLAG_FACILITATING, FLAG_SLOW,
+    FlatTimingWheel, GateState, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS,
+    ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity,
+    REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SlowCurrent, StpClass, SynapseBlock, THRESHOLD_BASE,
+    WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical, message_is_synaptic,
+    spike_message, synapse_token, synaptic_message, token_block, token_slot,
 };
 use cortex_ethics::EthicalEvaluationGate;
 use cortex_executive::{
@@ -177,6 +178,15 @@ pub struct Config {
     /// the image's outranks this one: it changes what the run does, so it is part of the image
     /// (§8.3).
     pub stp_class: Option<StpClass>,
+    /// The slow current (ADR-0122, ADR-0123): while set, a unit marked `FLAG_SLOW` integrates
+    /// under its constants (`DendriticSuperNeuron::integrate_slow`), its slow potential taking
+    /// the positive efficacies of the synaptic messages that land in its basal compartment,
+    /// scaled by the gain; every other unit integrates under `integrate`. Unset (the default),
+    /// every unit integrates under `integrate`, marked or not, bit for bit. Refused unless the
+    /// rule resolves it (`SlowCurrent::is_valid`). Each worker holds it from `Executor::new`,
+    /// so the tick reads no word for it. For an engine built from an image, the image's
+    /// outranks this one: it changes what the run does, so it is part of the image (§8.3).
+    pub slow_current: Option<SlowCurrent>,
 }
 
 impl Default for Config {
@@ -204,6 +214,7 @@ impl Default for Config {
             inhibitory_baseline_q16: None,
             signed_gate: false,
             stp_class: None,
+            slow_current: None,
         }
     }
 }
@@ -319,6 +330,10 @@ pub enum ConfigError {
     /// `stp_class` is set to a class the rule does not resolve: a $U$ of zero, or a shift
     /// outside 1 to 16 (ADR-0114).
     StpClassOutOfRange,
+    /// `slow_current` is set to constants the rule does not resolve: a leak shift outside 1 to
+    /// 16, an input shift above 16, or voltages outside `0 < V_lo < V_hi <= THRESHOLD_BASE`
+    /// (ADR-0123).
+    SlowCurrentOutOfRange,
 }
 
 /// Why an episode could not be tagged (ADR-0038).
@@ -725,6 +740,9 @@ struct Worker<const CAP: usize> {
     /// The class a marked unit steps under (ADR-0114): the executor's, copied at
     /// `Executor::new` and never written after, so the turn reads the worker's own field.
     stp_class: Option<StpClass>,
+    /// The slow current a marked unit integrates under (ADR-0123): the executor's, copied at
+    /// `Executor::new` and never written after, as `stp_class` is.
+    slow_current: Option<SlowCurrent>,
 }
 
 /// What a worker kept.
@@ -802,6 +820,8 @@ pub struct Executor<const CAP: usize> {
     signed_gate: bool,
     /// The class of short-term plasticity (ADR-0114): the configuration's, or the image's.
     stp_class: Option<StpClass>,
+    /// The slow current (ADR-0123): the configuration's, or the image's.
+    slow_current: Option<SlowCurrent>,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -901,6 +921,9 @@ impl<const CAP: usize> Executor<CAP> {
         if config.stp_class.is_some_and(|c| !c.is_valid()) {
             return Err(ConfigError::StpClassOutOfRange);
         }
+        if config.slow_current.is_some_and(|c| !c.is_valid()) {
+            return Err(ConfigError::SlowCurrentOutOfRange);
+        }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -972,6 +995,7 @@ impl<const CAP: usize> Executor<CAP> {
                 in_flight: 0,
                 descended: 0,
                 stp_class: config.stp_class,
+                slow_current: config.slow_current,
             })
             .collect();
         let worker0 = states.remove(0);
@@ -1006,6 +1030,7 @@ impl<const CAP: usize> Executor<CAP> {
             inhibitory_baseline_q16: config.inhibitory_baseline_q16,
             signed_gate: config.signed_gate,
             stp_class: config.stp_class,
+            slow_current: config.slow_current,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1090,6 +1115,13 @@ impl<const CAP: usize> Executor<CAP> {
     /// steps under ADR-0019's constants as before ADR-0114.
     pub fn stp_class(&self) -> Option<StpClass> {
         self.stp_class
+    }
+
+    /// The slow current (ADR-0123), from the configuration or the image: while set, a unit marked
+    /// `FLAG_SLOW` integrates under it; none while unset, where every unit integrates under
+    /// `integrate` as before ADR-0123.
+    pub fn slow_current(&self) -> Option<SlowCurrent> {
+        self.slow_current
     }
 
     /// A reward-prediction error into the dopamine signal, between ticks (ADR-0032): an input,
@@ -2176,15 +2208,34 @@ fn build_wheels<const CAP: usize>(count: usize) -> Vec<Box<FlatTimingWheel<CAP>>
         .expect("the wheel builder ended by panicking")
 }
 
-/// A unit at rest has nothing to integrate: every potential zero, no window running, the
-/// threshold at or below its base. It leaves the active set until a message wakes it.
+/// A unit at rest has nothing to integrate: every potential zero, the slow potential among them
+/// (ADR-0123), no window running, the threshold at or below its base. It leaves the active set
+/// until a message wakes it; the loader wakes and the sweep keeps every unit that is not.
 pub(crate) fn at_rest(u: &DendriticSuperNeuron) -> bool {
+    membrane_at_rest(u) && u.v_slow == 0
+}
+
+/// `at_rest` but for the slow potential, which is zero in every unit not marked for the slow
+/// current: the turn reads the slow potential for a marked unit only, in that unit's own arm.
+fn membrane_at_rest(u: &DendriticSuperNeuron) -> bool {
     u.v_soma == 0
         && u.v_basal == 0
         && u.v_apical == 0
         && u.refractory_ticks == 0
         && u.bac_plateau_ticks == 0
         && u.v_thresh <= THRESHOLD_BASE
+}
+
+/// A marked unit's slow input (ADR-0122): the positive efficacies of the synapses' messages in
+/// the batch that land in the basal compartment, the excitatory synapses' releases, summed and
+/// saturating. The drive's, the injector's and the replay's messages, an inhibitory synapse's
+/// and an apical one's give nothing.
+fn slow_input(batch: &[u32]) -> i32 {
+    batch
+        .iter()
+        .filter(|&&m| message_is_synaptic(m) && !message_is_apical(m))
+        .map(|&m| message_efficacy_q16(m).max(0))
+        .fold(0, i32::saturating_add)
 }
 
 impl<const CAP: usize> Worker<CAP> {
@@ -2304,7 +2355,18 @@ impl<const CAP: usize> Worker<CAP> {
         // rescaling of every weight, as one factor per turn.
         let (basal, apical) = (scaled(basal, gain), scaled(apical, gain));
         let previous_spike = u.last_soma_spike_tick;
-        if u.integrate(basal, apical, now) {
+        // A marked unit under the image's slow current, its slow input scaled by the gain as its
+        // basal input is, and every other under `integrate` (ADR-0123); with no slow current every
+        // unit takes `integrate`, marked or not. A marked unit's slow potential keeps it awake.
+        let (fired, slow_awake) = match self.slow_current {
+            Some(current) if u.flags & FLAG_SLOW != 0 => {
+                let slow = scaled(slow_input(&self.batch), gain);
+                let fired = u.integrate_slow(basal, apical, slow, now, current);
+                (fired, u.v_slow != 0)
+            }
+            _ => (u.integrate(basal, apical, now), false),
+        };
+        if fired {
             let elapsed = if previous_spike == NO_SPIKE_ON_RECORD {
                 u32::MAX
             } else {
@@ -2342,7 +2404,7 @@ impl<const CAP: usize> Worker<CAP> {
         }
         // The schedule's record (ADR-0100): the unit stays on it while it is not at rest and
         // leaves it at rest, until a message or an activation marks it again.
-        let awake = !at_rest(u);
+        let awake = slow_awake || !membrane_at_rest(u);
         u.set_gate(if awake {
             GateState::Scheduled
         } else {
@@ -3176,6 +3238,200 @@ mod tests {
             factors,
             [stepped(&train, 0, None).0, stepped(&train, 1, None).0]
         );
+    }
+
+    /// The slow current (ADR-0123): unset by default; refused by `new` at every edge the rule
+    /// does not resolve and taken at every edge it does. In one run under it at a gain of 1.75,
+    /// both units fed the same batches — excitatory and inhibitory synapses' messages into the
+    /// basal compartment, a synapse's into the apical one, and injected messages into both — the
+    /// marked unit is `integrate_slow` on a copy whose slow input is the positive efficacies of
+    /// the synapses' basal messages alone, scaled by the gain, and the unmarked unit is
+    /// `integrate` on a copy, tick by tick; with no slow current the marked unit is `integrate`'s
+    /// too. A marked unit with a slow potential and nothing else stays on the schedule, leaking it,
+    /// until it is zero; an unmarked unit's turn does not read it.
+    #[test]
+    fn a_marked_unit_takes_its_excitatory_synaptic_basal_input_into_its_slow_potential_and_an_unmarked_one_integrates_as_before()
+     {
+        use cortex_core::{FLAG_SLOW, SlowCurrent, synaptic_message};
+        assert_eq!(Config::default().slow_current, None, "unset by default");
+        let slow = |leak_shift, input_shift, v_lo_q16, v_hi_q16| SlowCurrent {
+            leak_shift,
+            input_shift,
+            v_lo_q16,
+            v_hi_q16,
+        };
+        let with = |slow_current| Config {
+            units: 2,
+            nodes_per_worker: 64,
+            slow_current,
+            ..Config::default()
+        };
+        for bad in [
+            slow(0, 1, 0x4000, THRESHOLD_BASE),
+            slow(17, 1, 0x4000, THRESHOLD_BASE),
+            slow(6, 17, 0x4000, THRESHOLD_BASE),
+            slow(6, 1, 0, THRESHOLD_BASE),
+            slow(6, 1, 0x4000, 0x4000),
+            slow(6, 1, 0x4000, THRESHOLD_BASE + 1),
+        ] {
+            assert_eq!(
+                Executor::<8>::new(with(Some(bad))).err(),
+                Some(ConfigError::SlowCurrentOutOfRange),
+                "{bad:?}"
+            );
+        }
+        for good in [
+            slow(1, 0, 1, 2),
+            slow(16, 16, 1, THRESHOLD_BASE),
+            slow(13, 1, 28_561, THRESHOLD_BASE),
+        ] {
+            let exec = Executor::<8>::new(with(Some(good))).unwrap();
+            assert_eq!(exec.slow_current(), Some(good));
+        }
+        assert_eq!(Executor::<8>::new(with(None)).unwrap().slow_current(), None);
+        // The batch injected before tick `k`, into both units: a pattern of every kind of message.
+        let batch = |k: u32| -> Vec<u32> {
+            let at = |m: u32, a: u32, b: u32| (k.wrapping_mul(m) % b).wrapping_add(a) as i32;
+            let mut out = Vec::new();
+            if k % 3 != 2 {
+                out.push(synaptic_message(at(97, 0x180, 0x300), false));
+            }
+            if k % 7 == 0 {
+                out.push(synaptic_message(at(13, 0x40, 0x100), false));
+            }
+            if k % 5 == 1 {
+                out.push(synaptic_message(-at(31, 0x80, 0x200), false));
+            }
+            if k % 4 == 3 {
+                out.push(synaptic_message(at(53, 0x100, 0x400), true));
+            }
+            if k % 2 == 0 {
+                out.push(spike_message(at(71, 0x100, 0x200), false));
+            }
+            if k % 6 == 5 {
+                out.push(spike_message(at(19, 0x80, 0x200), true));
+            }
+            out
+        };
+        let gain = 0x1_C000u32;
+        const TICKS: u32 = 3_000;
+        let current = slow(6, 1, 0x4000, THRESHOLD_BASE);
+        let run = |slow_current: Option<SlowCurrent>| {
+            let mut exec = Executor::<8>::new(with(slow_current)).unwrap();
+            exec.homeostasis.synaptic_gain_q16 = gain;
+            let mut copies = [DendriticSuperNeuron::new(0), DendriticSuperNeuron::new(1)];
+            for (unit, copy) in exec.units_mut().iter_mut().zip(copies.iter_mut()) {
+                unit.v_thresh = THRESHOLD_BASE;
+                copy.v_thresh = THRESHOLD_BASE;
+            }
+            exec.units_mut()[0].flags = FLAG_SLOW;
+            copies[0].flags = FLAG_SLOW;
+            let inject = exec.injector();
+            let (mut pending, mut fired, mut highest) = (Vec::new(), [0u32; 2], 0i32);
+            for k in 0..TICKS {
+                let now = exec.ticks() as u32;
+                let this = batch(k);
+                for unit in [0, 1] {
+                    for &m in &this {
+                        inject.inject(unit, m).unwrap();
+                    }
+                }
+                exec.tick();
+                // What the tick integrated: the batch injected before the tick before it.
+                let (mut basal, mut apical, mut input) = (0i32, 0i32, 0i32);
+                for &m in &pending {
+                    let e = message_efficacy_q16(m);
+                    if message_is_apical(m) {
+                        apical = apical.saturating_add(e);
+                    } else {
+                        basal = basal.saturating_add(e);
+                        if message_is_synaptic(m) && e > 0 {
+                            input = input.saturating_add(e);
+                        }
+                    }
+                }
+                let (basal, apical, input) = (
+                    scaled(basal, gain),
+                    scaled(apical, gain),
+                    scaled(input, gain),
+                );
+                let marked = match slow_current {
+                    Some(c) => copies[0].integrate_slow(basal, apical, input, now, c),
+                    None => copies[0].integrate(basal, apical, now),
+                };
+                let unmarked = copies[1].integrate(basal, apical, now);
+                for (i, (unit, copy)) in exec.units().iter().zip(copies.iter()).enumerate() {
+                    assert_eq!(
+                        (
+                            unit.v_soma,
+                            unit.v_basal,
+                            unit.v_apical,
+                            unit.v_thresh,
+                            unit.refractory_ticks,
+                            unit.last_soma_spike_tick,
+                            unit.flags,
+                            unit.v_slow,
+                        ),
+                        (
+                            copy.v_soma,
+                            copy.v_basal,
+                            copy.v_apical,
+                            copy.v_thresh,
+                            copy.refractory_ticks,
+                            copy.last_soma_spike_tick,
+                            copy.flags,
+                            copy.v_slow,
+                        ),
+                        "unit {i} at tick {k}"
+                    );
+                }
+                fired[0] = fired[0].saturating_add(u32::from(marked));
+                fired[1] = fired[1].saturating_add(u32::from(unmarked));
+                highest = highest.max(exec.units()[0].v_slow);
+                pending = this;
+            }
+            (fired, highest)
+        };
+        let (fired, highest) = run(Some(current));
+        assert!(fired[1] > 10, "the batches fire the units: {fired:?}");
+        assert!(fired[0] > fired[1], "the slow current tells: {fired:?}");
+        assert!(highest > 0x4000, "the slow potential rose: {highest:#x}");
+        let (fired, highest) = run(None);
+        assert_eq!(
+            (fired[0], highest),
+            (fired[1], 0),
+            "no slow current: {fired:?}"
+        );
+        // A marked unit with a slow potential and nothing else: on the schedule, leaking it by
+        // 2^-6 a tick and at least one LSB, until it is zero within 200 ticks; the gate below 0.25 shut, so the soma
+        // stays at rest. An unmarked unit's turn does not read the field.
+        let mut exec = Executor::<8>::new(with(Some(current))).unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.v_slow = 0x100;
+        }
+        exec.units_mut()[0].flags = FLAG_SLOW;
+        let inject = exec.injector();
+        inject.activate(0).unwrap();
+        inject.activate(1).unwrap();
+        exec.tick();
+        let mut expected = 0x100i32;
+        for t in 0..200 {
+            exec.tick();
+            expected = expected.saturating_sub((expected >> 6).max(1).min(expected));
+            let marked = &exec.units()[0];
+            assert_eq!(marked.v_slow, expected, "tick {t}");
+            assert_eq!(marked.v_soma, 0, "the soma at rest");
+            let schedule = if expected == 0 {
+                GateState::Idle
+            } else {
+                GateState::Scheduled
+            };
+            assert_eq!(marked.gate(), Some(schedule), "tick {t}");
+            assert_eq!(exec.units()[1].v_slow, 0x100, "untouched");
+            assert_eq!(exec.units()[1].gate(), Some(GateState::Idle));
+        }
+        assert_eq!(expected, 0, "the slow potential leaked away");
     }
 }
 

@@ -17,7 +17,9 @@
 //! always written, and the episodic ledger a section written when it is not empty, so that the
 //! image defines the run (§8.3); since ADR-0052 so are the engine's affect state and induction
 //! record, always, and its term arena and clause store when they hold anything. A unit's mark
-//! for the class (ADR-0114) is a bit of its record's `flags`.
+//! for the class (ADR-0114) is a bit of its record's `flags`; since ADR-0123 the slow current's
+//! constants sit in the modulation state beside the class, set or unset, and a unit's mark for
+//! it is another bit of `flags`, its slow potential a field of its record.
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_affect::InteroceptiveState;
@@ -28,8 +30,8 @@ use cortex_connectome::{
     SectionEntry, crc64,
 };
 use cortex_core::{
-    DendriticSuperNeuron, FLAG_FACILITATING, MAX_TOKEN_BLOCK, PlasticDelta, SYNAPSES_PER_BLOCK,
-    StpClass, SynapseBlock, TICK_NS, WorkerWheel,
+    DendriticSuperNeuron, FLAG_FACILITATING, FLAG_SLOW, MAX_TOKEN_BLOCK, PlasticDelta,
+    SYNAPSES_PER_BLOCK, SlowCurrent, StpClass, SynapseBlock, TICK_NS, WorkerWheel,
 };
 use cortex_executive::PolicyAmendment;
 use cortex_hippocampus::{Episode, HippocampalAttractorState};
@@ -123,6 +125,9 @@ pub enum ImageError {
     /// A unit is marked `FLAG_FACILITATING` while the image carries no class of short-term
     /// plasticity for it to step under (ADR-0114).
     MarkWithoutClass(u32),
+    /// A unit is marked `FLAG_SLOW` while the image carries no slow current for it to integrate
+    /// under (ADR-0123).
+    MarkWithoutSlowCurrent(u32),
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -155,13 +160,54 @@ const SIGNED_GATE_SET: u8 = 1;
 /// The modulator section's class of short-term plasticity (ADR-0114; format 17): a flag byte at
 /// `[32]`, `STP_CLASS_SET` while a class is set and zero while none is, and the class's $U$,
 /// $\tau_f$ shift and $\tau_d$ shift at `[33]`, `[34]` and `[35]`, zero while unset.
-/// `[26..28)` and `[36..64)` stay reserved and must be zero. A record a format-16 writer left
-/// zero there reads as unset, which is the rule before ADR-0114 bit for bit.
+/// `[26..28)` stay reserved and must be zero. A record a format-16 writer left zero there reads
+/// as unset, which is the rule before ADR-0114 bit for bit.
 const STP_CLASS_FLAG: usize = 32;
 const STP_CLASS_U: usize = 33;
 const STP_CLASS_TAU_F: usize = 34;
 const STP_CLASS_TAU_D: usize = 35;
 const STP_CLASS_SET: u8 = 1;
+
+/// The modulator section's slow current (ADR-0123; format 18): a flag byte at `[36]`,
+/// `SLOW_CURRENT_SET` while the constants are set and zero while they are not; the leak shift at
+/// `[37]` and the input shift at `[38]`; `[39]` reserved; $V_{lo}$ at `[40..44)` and
+/// $V_{hi}$ at `[44..48)`, `i32` in Q16.16; every byte zero while unset. `[48..64)` stay
+/// reserved and must be zero. A record a format-17 writer left zero there reads as unset, which
+/// is the rule before ADR-0123 bit for bit.
+const SLOW_CURRENT_FLAG: usize = 36;
+const SLOW_CURRENT_LEAK: usize = 37;
+const SLOW_CURRENT_INPUT: usize = 38;
+const SLOW_CURRENT_V_LO: core::ops::Range<usize> = 40..44;
+const SLOW_CURRENT_V_HI: core::ops::Range<usize> = 44..48;
+const SLOW_CURRENT_SET: u8 = 1;
+/// The slow current's bytes after its flag, `[37..48)`, the reserved `[39]` among them.
+const SLOW_CURRENT_BYTES: core::ops::Range<usize> = 37..48;
+/// The modulator record's reserved bytes: between the signed gate and the target period, the
+/// slow current's one, and its tail.
+const MODULATOR_RESERVED: [core::ops::Range<usize>; 3] = [26..28, 39..40, 48..64];
+
+/// The slow current a modulator record carries (ADR-0123): none while its flag and its bytes
+/// are zero; the constants while its flag is `SLOW_CURRENT_SET` and its reserved byte zero,
+/// which `Executor::new` refuses as it refuses the configuration's when the rule does not
+/// resolve them; any other flag, or a byte beside a zero flag, is one the writer never produces.
+fn slow_current_of(record: &[u8]) -> Result<Option<SlowCurrent>, ImageError> {
+    let word =
+        |at: core::ops::Range<usize>| i32::from_le_bytes(record[at].try_into().unwrap_or([0; 4]));
+    let current = SlowCurrent {
+        leak_shift: record[SLOW_CURRENT_LEAK],
+        input_shift: record[SLOW_CURRENT_INPUT],
+        v_lo_q16: word(SLOW_CURRENT_V_LO),
+        v_hi_q16: word(SLOW_CURRENT_V_HI),
+    };
+    match record[SLOW_CURRENT_FLAG] {
+        0 if record[SLOW_CURRENT_BYTES].iter().all(|&b| b == 0) => Ok(None),
+        SLOW_CURRENT_SET => Ok(Some(current)),
+        _ => Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0,
+        }),
+    }
+}
 
 /// The class a modulator record carries (ADR-0114): none while its flag and its three bytes
 /// are zero; the class while its flag is `STP_CLASS_SET`, which `Executor::new` refuses as it
@@ -428,9 +474,11 @@ impl Image {
         // bytes, the baseline at `[16..20)`, the inhibitory rule's target period at `[20..24)`
         // (ADR-0053), the inhibitory baseline's flag at `[24]` and its value at `[28..32)`
         // (ADR-0086), the signed gate's flag at `[25]` (ADR-0094), the class of short-term
-        // plasticity's flag at `[32]` and its three bytes at `[33..36)` (ADR-0114; format 17)
-        // and 30 reserved bytes. The baselines, the period, the gate and the class change what
-        // a run does, so they are in the image, not in a configuration (§8.3).
+        // plasticity's flag at `[32]` and its three bytes at `[33..36)` (ADR-0114; format 17),
+        // the slow current's flag at `[36]`, its shifts at `[37]` and `[38]` and its voltages
+        // at `[40..48)` (ADR-0123; format 18) and 19 reserved bytes. The baselines, the period,
+        // the gate, the class and the slow current change what a run does, so they are in the
+        // image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -447,6 +495,13 @@ impl Image {
             modulator_bytes[STP_CLASS_U] = class.u;
             modulator_bytes[STP_CLASS_TAU_F] = class.tau_f_shift;
             modulator_bytes[STP_CLASS_TAU_D] = class.tau_d_shift;
+        }
+        if let Some(current) = exec.slow_current() {
+            modulator_bytes[SLOW_CURRENT_FLAG] = SLOW_CURRENT_SET;
+            modulator_bytes[SLOW_CURRENT_LEAK] = current.leak_shift;
+            modulator_bytes[SLOW_CURRENT_INPUT] = current.input_shift;
+            modulator_bytes[SLOW_CURRENT_V_LO].copy_from_slice(&current.v_lo_q16.to_le_bytes());
+            modulator_bytes[SLOW_CURRENT_V_HI].copy_from_slice(&current.v_hi_q16.to_le_bytes());
         }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
@@ -624,13 +679,14 @@ impl Image {
         let terms = term.map_or(0, |t| t.record_count() as usize);
         let clauses = clause.map_or(0, |c| c.record_count() as usize);
         // The modulator's one record (ADR-0032), read here for the class of short-term
-        // plasticity (ADR-0114): each worker holds the class from `Executor::new`, and a unit
-        // marked for it is refused below while there is none. The image's class, set or
-        // unset, outranks the configuration's (§8.3).
+        // plasticity (ADR-0114) and the slow current (ADR-0123): each worker holds both from
+        // `Executor::new`, and a unit marked for either is refused below while there is none.
+        // The image's, set or unset, outrank the configuration's (§8.3).
         if modulator.record_count() != 1 {
             return Err(ImageError::Directory(SECTION_MODULATOR));
         }
         let stp_class = stp_class_of(section_of(bytes, &modulator)?)?;
+        let slow_current = slow_current_of(section_of(bytes, &modulator)?)?;
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
@@ -640,6 +696,7 @@ impl Image {
             terms: terms.saturating_add(config.terms),
             clauses: clauses.saturating_add(config.clauses),
             stp_class,
+            slow_current,
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -715,6 +772,9 @@ impl Image {
                 if unit.flags & FLAG_FACILITATING != 0 && stp_class.is_none() {
                     return Err(ImageError::MarkWithoutClass(i as u32));
                 }
+                if unit.flags & FLAG_SLOW != 0 && slow_current.is_none() {
+                    return Err(ImageError::MarkWithoutSlowCurrent(i as u32));
+                }
                 if unit.first_block().is_some_and(|b| b as usize >= blocks)
                     || unit.delta_head().is_some_and(|d| d as usize >= deltas)
                 {
@@ -745,14 +805,18 @@ impl Image {
             // the inhibitory rule's target period at `[20..24)` (each within its bounds, as
             // `Executor::new` would have demanded), the inhibitory baseline's flag at `[24]`
             // and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
-            // (ADR-0094), the class of short-term plasticity at `[32..36)`, read above
-            // (ADR-0114), 30 reserved bytes; its count was held to one above.
+            // (ADR-0094), the class of short-term plasticity at `[32..36)` and the slow current
+            // at `[36..48)`, read above (ADR-0114, ADR-0123), 19 reserved bytes; its count was
+            // held to one above.
             let record = section_of(bytes, &modulator)?;
             let reserved_not_zero = || ImageError::ReservedNotZero {
                 section: SECTION_MODULATOR,
                 index: 0,
             };
-            if record[26..28].iter().any(|&b| b != 0) || record[36..64].iter().any(|&b| b != 0) {
+            if MODULATOR_RESERVED
+                .iter()
+                .any(|r| record[r.clone()].iter().any(|&b| b != 0))
+            {
                 return Err(reserved_not_zero());
             }
             let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));
