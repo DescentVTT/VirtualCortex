@@ -5,7 +5,7 @@ depends-on: ADR-0123
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0124: The slow current measured — brief 052's measurement: ADR-0117's assembly of 64 members marked for ADR-0123's slow current, (A) under ADR-0019's short-term plasticity and (B) marked facilitating under ADR-0114's set (ii) as well, at recurrent weights of an eighth to a half of Q1.15's range and three input shifts placed by an arithmetic of the slow rule itself, the slow potential leaking over $2^{13}$ ticks and its gate opening from the drive's mean standing to the threshold's base, on ADR-0117's substrate, geometry, protocol, measures, thresholds, conditions and rules, every weight frozen; the grid, the shifts, the arithmetic and the rule that picks the cells run under the conditions written before any run
+# ADR-0124: The slow current measured — brief 052's measurement: ADR-0117's assembly of 64 members marked for ADR-0123's slow current, (A) under ADR-0019's short-term plasticity and (B) marked facilitating under ADR-0114's set (ii) as well, at recurrent weights of an eighth to a half of Q1.15's range and three input shifts placed by an arithmetic of the slow rule itself, the slow potential leaking over $2^{13}$ ticks and its gate opening from the drive's mean standing to the threshold's base, on ADR-0117's substrate, geometry, protocol, measures, thresholds, conditions and rules, every weight frozen; the grid, the shifts, the arithmetic and the rule that picks the cells run under the conditions written before any run; the backgrounds read first, and there the slow current, fed by the prior's synapses alone, raises the unwired members' rate from ADR-0117's 1.6 Hz to 4 to 54 Hz, since its gate at the drive's mean standing opens on every upward excursion of the soma and so lowers the distance a fluctuation must cover to the threshold by the ratio of the slow potential to its critical level; the kick's volley is a full one at every arm and shift and its second clause fails at every one, at shifts 0 and 1 because the members' own background alone passes its mark, so by the protocol no cell runs, and the maintainers chose to stop the round there rather than move the measure after a run; the next decision named and not taken
 
 ## Context and Problem Statement
 
@@ -166,3 +166,76 @@ That is 37 runs of 400 epochs. At ADR-0120's rates on the hosted runners, about 
 4. The core grid's cells against those pins; pinned.
 5. The conditions' tests for the cells the rule picks, then their runs, each condition's backgrounds and controls before its cells; pinned.
 6. The readings, the documents, the weekly dispatched on the round's branch at `scope=both`, its evidence and the cost table regenerated from it.
+
+### The readings
+
+Every reading below is from the pinned tables of `tests/assembly.rs`. On the branch the build is `2038c6f`, the edge its mutation gate found `e7eeb61`, and this protocol `d0cb546`, all before any run; the backgrounds and controls were pinned at `3428e1e`, and a second run of both tests there reproduced every table. On a developer machine in the release profile a run took about a minute with one other test beside it (a ratio, not admissible). **No weight of any arena moved in any measured run.**
+
+- **ADR-0117's cell, reproduced** with nothing marked for the slow current, first in arm (A)'s test: held to ADR-0117's stretches, kicks and windows, and read against ADR-0117's background to ADR-0117's reading and bursts — holds in 8, ignites in 0, lets go in 8, usable.
+- **The arithmetic held** in both core tests to `ARITHMETIC_052` before their first run, and the rule placed the same shifts.
+- **The backgrounds** (the members marked and unwired, the drive alone after the lead-in), `BG_READ_052`; the slow potential and the gate's opening per member and tick over the unkicked spans, from `BG_RUNS_052`'s slow readings; beside them the distance to the threshold an upward excursion must cover under the gate, $0.564 \cdot (1 - s / s_c)$:
+
+  | Arm | Shift | Members, Hz | Rest, Hz | Slow potential | Gate | Distance to the threshold |
+  | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | ADR-0117, no slow current | — | 1.61 | 1.68 | — | — | 0.564 |
+  | (A) | 0 | 31.20 | 1.84 | 0.562 | 0.162 | 0.286 |
+  | (A) | 1 | 11.12 | 1.82 | 0.294 | 0.142 | 0.418 |
+  | (A) | 2 | 4.07 | 1.75 | 0.114 | 0.125 | 0.508 |
+  | (B) | 0 | 53.64 | 2.68 | 0.809 | 0.182 | 0.163 |
+  | (B) | 1 | 15.66 | 2.28 | 0.367 | 0.149 | 0.382 |
+  | (B) | 2 | 4.32 | 1.82 | 0.122 | 0.126 | 0.504 |
+
+  **The slow current does not keep the quiet state quiet.** Fed by the prior's synapses alone, with no assembly wired, it raises the members' rate 2.5 to 33 times. The mean slow potential stays below the critical level everywhere — 0.11 to 0.81 against 1.138 — as the arithmetic said, and the soma's mean hardly moves, but the members fire in the drive's tail. There the gate is open, and an open gate adds $\gamma(v) \cdot s / 2$ to the soma's steady level, so it multiplies every upward excursion by $1 / (1 - s / s_c)$: the distance a fluctuation must cover to the threshold falls from 0.564 to 0.51 at the smallest slow potential and to 0.16 at the largest, and the rate climbs as that distance shrinks. The gate is open by 0.13 to 0.18 on average at the drive's standing, because $V_{lo}$ sits at the soma's mean and every upward excursion crosses it. Under (B) the members' faster firing through the prior's 28 member-to-member synapses, facilitating under set (ii), and the rest's rise to 2.3 to 2.7 Hz add to the slow potential: 0.81 against the arithmetic's 0.56 at shift 0. At shift 2 the slow potential reads 3.4 to 4.8 times the arithmetic's level, because the prior's messages arrive at random and a cluster lifts the slow potential off the staircase's lowest step, which the arithmetic's regular train cannot (F-57).
+- **The kick, read on the engine** from each control's eight kicks, by ADR-0112's measure (`KICK_AFTER_052`, held by the gate over the pinned tables):
+
+  | Arm | Shift | Volley, of 512 | After, the control | After, the background's | Mark |
+  | :--- | ---: | ---: | ---: | ---: | ---: |
+  | (A) | 0 | 509 | 327 | 327 | 51 |
+  | (A) | 1 | 510 | 126 | 116 | 51 |
+  | (A) | 2 | 512 | 62 | 42 | 51 |
+  | (B) | 0 | 501 | 678 | 562 | 51 |
+  | (B) | 1 | 509 | 241 | 164 | 51 |
+  | (B) | 2 | 512 | 67 | 45 | 51 |
+
+  The volley fires every member once at every arm and shift, within the measure's tolerance. The second clause — the members' spikes in the pair window after the span, at most a tenth of a spike a member a kick — **fails at every one**. At shifts 0 and 1 the members' own background alone gives that window more than the mark, so no kick could pass there. At shift 2 the background gives it 42 and 45, under the mark, and the control's members fire 62 and 67: the kick's volley, echoed through the prior onto members whose gate is open, leaves about 0.04 of a spike a member a kick beyond their background, where ADR-0117's kick left fewer spikes than its background (10 against about 17). Each control's lead-in and first unkicked span are its background's bit for bit, the slow potential with them; no control holds, ignites or fails to let go by the rules, and under (B) at shift 0 the unwired members' high rate makes 756 of the control's 1 024 unkicked windows bursts by ADR-0112's reading (`bursts_049`). The release's cancel shuts the gate, to 0.002 on average over the release spans, while the slow potential, fed by the prior, falls only to 0.48 and 0.49 at shift 0 against 0.56 and 0.81 unkicked.
+- **No cell ran.** By the protocol the kick must fire every member once by ADR-0112's measure, or be derived again, before any cell of its arm runs. No kick can meet the second clause where the members' background alone passes it, and moving the measure after these runs is outside what brief 052 empowers. The maintainers chose on 2026-09-28 to stop the round here and write the backgrounds as its reading, rather than amend the measure before the cells or run them against a failed kick. So the core grid, the rule that picks the conditions' cells, and the conditions (b), (c) and (d) did not run; the rules are held at their edges by the gate, as written first. The four weekly tests of the core grid's cells were removed before the dispatch; the two of the backgrounds and controls stay.
+- **The arithmetic beside the readings.** The mean levels of the slow potential were near what the runs read under (A) at shifts 0 and 1 (0.562 and 0.294 against 0.565 and 0.307), and the critical level held: no background's mean slow potential reached it. What the arithmetic of means could not say is what the gate does to a fluctuation. It placed the grid on the held state's mean crossing the critical level and the quiet state's mean staying below it, and the quiet state's rate is set by its tail, where the gate is open.
+
+**The next decision, named and not taken.** By brief 052's branch for a round with no robust cell, what the readings name:
+- **the gate's voltages**: $V_{lo}$ above the band the drive's fluctuations reach, so that the gate stays shut on the quiet state's excursions and opens only on the sustained depolarisation of a held state; the backgrounds read the gate open by 0.13 to 0.18 on average at the drive's standing;
+- **the input's shift beyond the grid**: the staircase (F-57) floors a mean input below one LSB a tick to almost nothing, so at a shift of 3 the same arithmetic, stepped there before the shifts were placed and not pinned, puts the background's slow potential under a hundredth of the threshold, while arm (B)'s held state at 20 Hz at a quarter of the range just reaches the critical level and arm (A)'s reaches it at no weight of the grid; the runs read shift 2's background 3.4 to 4.8 times the regular train's level, so a larger shift's would sit above its arithmetic too;
+- **the slow time constant**, which the readings do not single out;
+- **or the line paused**, after five rounds.
+
+An ADR choosing among them has as its need these readings: an unwired member's rate rises with $s / s_c$ as its distance to the threshold shrinks, 2.5 times at a tenth of the critical level and 33 times at seven tenths, and a kick leaves a small excess beyond the background even where the background passes the kick's measure. ADR-0111's second round is not taken.
+
+### The evidence
+
+The weekly is dispatched on this round's branch at `scope=both`, since `src/` changes ([ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)); its run, the shards' times and the cost table regenerated from it are recorded here once it is green.
+
+## Consequences
+
+- Good: the slow current is measured by ADR-0117's substrate, protocol and measures, beside ADR-0117's cell reproduced bit for bit, and the reading is the mechanism's own: what the gate does to the quiet state's fluctuations, with a number for it.
+- Good: nothing of the engine changes in the measurement; every earlier run wires and reads as it did, the slow reading of the protocol empty for them.
+- Bad: no cell ran, so whether the slow current holds a kicked assembly, and whether it widens the facilitating class's one cell, is not read. The grid, its rule for the conditions and the conditions stay written and unrun.
+- Bad: the arithmetic of means placed the shifts where the quiet state's mean stays below the critical level; the quiet state's rate is set by its fluctuations, which the arithmetic did not read.
+- Neutral: the kick's measure (ADR-0074, ADR-0112) presumes a background of a spike or two a second; under the slow current its second clause measures the members' background as much as the kick.
+
+## Alternatives considered and why rejected
+
+- **The kick's second clause read net of the members' background**, amended before the cells: it would have let the cells of (A) at every shift and of (B) at shift 2 run, and still stopped (B) at shifts 0 and 1, where the kick leaves 116 and 77 spikes beyond the background against a mark of 51. It moves a threshold after a run, which brief 052 does not empower; the maintainers chose to stop instead.
+- **The cells run against a failed kick**: every cell would be read against a background of 4 to 54 Hz, where holding asks for five times it, and the kick's failure would stand under every reading.
+- **A kick derived again to suppress the members after the volley**: a kick that holds the members below their background for a pair window would pass the clause by hiding the very activity a hold is made of.
+
+## Confirmation
+
+`runtime/cortex-runtime/tests/assembly.rs`:
+- the arms, the constants and the grid: `SIZE_052`, `ARMS_052`, `LEAK_SHIFT_052`, `V_LO_052`, `V_HI_052`, `WEIGHTS_052`, `SHIFTS_052`, `CONDITION_CELLS_MAX`, `current_052`, `class_052`;
+- the marks: `slow_marked`, `slow_marks_held`, `engine_052`;
+- the rules: `Grid052`, `Cell052`, `tie_key`, `neighbours_052`, `usable_052`, `condition_cells_052`, `robust_052`, `round_two_052`, `failures_052`;
+- the arithmetic: `slow_level`, `assembly_train`, `prior_onto_members`, `train_of`, `slow_levels`, `fires_held`, `slow_critical`, `gate_openings`, `per_spike_052`, `arithmetic_052`, `shift_placed`, and their pins `SLOW_CRITICAL_052`, `GATE_052`, `PER_SPIKE_052`, `SHIFT_PLACED_052`, `ARITHMETIC_052`;
+- the runs: the slow reading of `span_protocol_counting`, `slow_read`, `Pinned052`, `held_052`, `slow_held`, `run_052`, `cell_read_052`, `backgrounds_controls_052`, `backgrounds_held_052`, `reproduce_050_in_the_core`, `core_backgrounds_052` and the two weekly tests;
+- the gate `a_slow_current_the_arms_the_grid_the_arithmetic_the_rules_and_a_marked_assembly_kicked_with_it`, with `slow_marked_on_the_prior`, `rules_052_at_their_edges`, `kicked_on_keeping`, `GATE_KICKED_052`, `GATE_SLOW_052`, `background_after` and `over_the_052_tables`;
+- the runs' tables `BG_RUNS_052`, `BG_READ_052` and `KICK_AFTER_052`.
+
+Whitepaper §11 carries F-57, and §11.1's question on a rule held by the network the reading.
