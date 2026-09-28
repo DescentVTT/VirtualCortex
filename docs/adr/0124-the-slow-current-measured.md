@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-28
 depends-on: ADR-0123
 decision-makers: VirtualCortex maintainers
@@ -169,7 +169,7 @@ That is 37 runs of 400 epochs. At ADR-0120's rates on the hosted runners, about 
 
 ### The readings
 
-Every reading below is from the pinned tables of `tests/assembly.rs`. On the branch the build is `2038c6f`, the edge its mutation gate found `e7eeb61`, and this protocol `d0cb546`, all before any run; the backgrounds and controls were pinned at `3428e1e`, and a second run of both tests there reproduced every table. On a developer machine in the release profile a run took about a minute with one other test beside it (a ratio, not admissible). **No weight of any arena moved in any measured run.**
+Every reading below is from the pinned tables of `tests/assembly.rs`. At the commits `main` holds after the rebase that merged pull request #154, the branch's in brackets: the build is `44e400b` (`2038c6f`), the edge its mutation gate found `f07f96e` (`e7eeb61`), and this protocol `651eef8` (`d0cb546`), all before any run; the backgrounds and controls were pinned at `34326ac` (`3428e1e`), and a second run of both tests there reproduced every table. On a developer machine in the release profile a run took about a minute with one other test beside it (a ratio, not admissible). **No weight of any arena moved in any measured run.**
 
 - **ADR-0117's cell, reproduced** with nothing marked for the slow current, first in arm (A)'s test: held to ADR-0117's stretches, kicks and windows, and read against ADR-0117's background to ADR-0117's reading and bursts — holds in 8, ignites in 0, lets go in 8, usable.
 - **The arithmetic held** in both core tests to `ARITHMETIC_052` before their first run, and the rule placed the same shifts.
@@ -211,7 +211,7 @@ An ADR choosing among them has as its need these readings: an unwired member's r
 
 ### The evidence
 
-`src/` changes, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**: run [36418523313](https://github.com/DescentVTT/VirtualCortex/actions/runs/36418523313) at `880bcf5`, the documents commit on the branch, after which only this evidence, the cost table and the brief's archive change. **Every job it ran is green.**
+`src/` changes, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**: run [36418523313](https://github.com/DescentVTT/VirtualCortex/actions/runs/36418523313) at `880bcf5`, the documents commit on the branch (`1d1b14c` on `main`), after which only this evidence, the cost table and the brief's archive change. The round's commits as `main` holds them are `44e400b` (the current built), `651eef8` (the protocol, before any run), `f07f96e` (the firing edge), `34326ac` (the backgrounds and controls pinned), `1d1b14c` (the readings and the documents at 4.73.0), `e67054e` (this evidence, the cost table and the brief's archive) and `fb92fe9` (the archive's two rejected boxes ticked); on the branch they were `2038c6f`, `d0cb546`, `e7eeb61`, `3428e1e`, `880bcf5`, `ff5d255` and `695916d`. **Every job it ran is green.**
 - **The whole-domain tests.** All one hundred passed on the hosted runners, each in a process of its own reporting one test passed. The ninety-eight before this round reproduced their pinned numbers with no unit marked for the slow current: the four whole-image pins at format 18 among them, H-17's and H-18's images held to the CRCs their arms read, and H-20's arm reproducing ADR-0110's accuracy sequence and sums with its frozen image written back to format 17 reading ADR-0117's CRC. This round's two reproduced their tables and took 796 and 734 s. The six shards took:
 
   | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
@@ -227,13 +227,13 @@ An ADR choosing among them has as its need these readings: an unwired member's r
 - **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: one hundred lines, 42 699 s, its source line naming the run; `npm run spec:costs` passing). The ninety-eight earlier tests took 41 169 s against the table's 40 263, about 2 per cent more. Replayed through the deal at six shards, the table plans each shard at 7 116 to 7 118 s summed; at this run's ratio of summed seconds to wall time, 1.90 to 1.99, that is about 3 580 to 3 750 s of tests' wall time, **50 to 52 per cent of the bound**, under the brief's 60. The longest test, ADR-0120's condition (c) cells, took 2 885 s, 40 per cent of the bound by itself.
 - **The mutation sweep.** Seven jobs, the crates and six slices of the runtime, took 25 minutes to 2 hours 49 minutes: **3 544 mutants caught and none missed**, 147 unviable, and 25 timed out. Every timeout is one ADR-0062's triage reads as an inherent detection — the iterators' walks, the barrier, the injector's ring, the workers' loop and their stop, the term arena's load — and none is in this round's lines. Of the caught mutants, 87 are in the slow current's code: `integrate_slow` and `SlowCurrent` in `membrane.rs`, `is_at_rest_image` in `serial.rs`, `slow_input`, `membrane_at_rest`, `at_rest` and `Executor::slow_current` in the executor, and `slow_current_of` in the loader.
 
-The pull request's gate on `880bcf5` is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which made 100 mutants and caught 94, the other 6 unviable. Its first run, at `d0cb546`, had found one survivor, `<` to `<=` at the firing comparison of `integrate_slow`, which `e7eeb61` caught with a test of the firing edge (ADR-0123).
+The pull request's gate on `880bcf5` (`1d1b14c` on `main`) is green in every job, and again on `695916d` (`fb92fe9`) before the merge: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which made 100 mutants and caught 94, the other 6 unviable. Its first run, at `d0cb546` (`651eef8`), had found one survivor, `<` to `<=` at the firing comparison of `integrate_slow`, which `e7eeb61` (`f07f96e`) caught with a test of the firing edge (ADR-0123).
 
 On the developer machine every command of brief 052's verification list exited 0 (a ratio, not admissible):
 - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 664 passed in each and 100 ignored;
 - check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
 - `--list`, 100 tests;
-- this round's two whole-domain tests twice, the second run at `3428e1e` against the pins.
+- this round's two whole-domain tests twice, the second run at `34326ac` (`3428e1e`) against the pins.
 
 The in-diff mutation run was left to the pull request's gate, which is the one the round meets; on this platform a local run marks a locked binary's mutants unviable (LNK1104), so it is not the evidence.
 
