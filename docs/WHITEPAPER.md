@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.70.0
+version: 4.71.0
 status: active
 date: 2026-09-28
 ---
@@ -11,7 +11,7 @@ date: 2026-09-28
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.70.0 |
+| Version | 4.71.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-09-28 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -2394,6 +2394,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0118](adr/0118-a-fifth-shard.md) | A fifth shard: the weekly job's whole-domain tests dealt to five shards where ADR-0088 dealt them to four, by ADR-0092's deal unchanged — each round's new tests are costed at the table's default of 900 s until their own dispatch measures them, and ADR-0117's first dispatch put one shard at 59 per cent of its bound where the regenerated table replays at 45; at five the present table plans about 36 per cent, and a round the size of brief 050's about 46; one matrix entry and one argument, the script unchanged, no required check renamed |
 | [ADR-0119](adr/0119-an-inhibition-of-the-contexts-own.md) | An inhibition of the context's own: among the branches ADR-0117 named for a region no condition leaves robust, the maintainers take the context's own inhibition — every one of the 64 marked members receives sixteen added inhibitory synapses from the network's inhibitory units drawn over the ring, so that the inhibition it meets rises when the network it sits in does, and its recurrent weight is raised against it; the one branch aimed at both the drained network and the task's stimulus, which each tipped the usable cells into igniting; brief 051 measures recurrent weights of 0.25 to 0.75 against added inhibitory weights of −0.25 to −1.0 under ADR-0117's four conditions and rules, nothing of the engine changed |
 | [ADR-0120](adr/0120-the-contexts-own-inhibition-measured.md) | The context's own inhibition measured: brief 051, nothing of the engine changed — each of ADR-0117's 64 marked members given sixteen added inhibitory synapses from sixteen of the prior's inhibitory units drawn over the ring, frozen, and the assembly measured at recurrent weights of 0.25 to 0.75 against inhibitory weights of −0.25, −0.5 and −1.0 under ADR-0117's four conditions, ADR-0117's cell reproduced bit for bit under each first, by ADR-0117's rules written first; no cell of the core grid usable — at a quarter of the range nothing holds, from three eighths every cell ignites without a kick — so no cell robust and no cell for the second round; the inhibition lowers the members' background by 10 to 26 per cent and moves the assembly's threshold rather than widening the gap between holding and igniting; its sources fire 1.4 to 2.0 times faster while the assembly bursts; the next decision named and not taken | accepted |
+| [ADR-0121](adr/0121-a-sixth-shard.md) | A sixth shard: the weekly job's whole-domain tests dealt to six shards where ADR-0118 dealt them to five, because the table ADR-0120's dispatch regenerated, read on runners about a fifth slower, plans every shard at 57 per cent of its bound at five, and about 47 at six; one matrix entry and one argument, the script unchanged, no required check renamed; the last shard the lever buys, since the longest test alone is 37 per cent |
 
 ---
 
@@ -2770,7 +2771,7 @@ git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff tar
 cargo test --workspace --release --locked -- --ignored exhaustive
 ```
 
-The whole-domain line runs as one command here and as five shards in the weekly job ([ADR-0088](adr/0088-a-fourth-shard.md), [ADR-0118](adr/0118-a-fifth-shard.md)), taken from the tests `--list` names at run time and dealt longest first to the least-loaded shard by the seconds `scripts/exhaustive-costs.tsv` records for each ([ADR-0092](adr/0092-the-shards-dealt-by-cost.md); a test it does not know costed as a heavy one), each test run in a process of its own and checked to have exited 0 with one test passed ([ADR-0084](adr/0084-the-shards-take-tests.md), [ADR-0073](adr/0073-the-whole-domain-tests-sharded.md)); a listing that fails or names nothing fails the shard (F-48); each shard reports every test's seconds ([ADR-0071](adr/0071-the-exhaustive-job-times-its-own-binaries.md), F-45), from which the table is regenerated, and `npm run spec:costs` fails on a line of it that names no test in the tree.
+The whole-domain line runs as one command here and as six shards in the weekly job ([ADR-0088](adr/0088-a-fourth-shard.md), [ADR-0118](adr/0118-a-fifth-shard.md), [ADR-0121](adr/0121-a-sixth-shard.md)), taken from the tests `--list` names at run time and dealt longest first to the least-loaded shard by the seconds `scripts/exhaustive-costs.tsv` records for each ([ADR-0092](adr/0092-the-shards-dealt-by-cost.md); a test it does not know costed as a heavy one), each test run in a process of its own and checked to have exited 0 with one test passed ([ADR-0084](adr/0084-the-shards-take-tests.md), [ADR-0073](adr/0073-the-whole-domain-tests-sharded.md)); a listing that fails or names nothing fails the shard (F-48); each shard reports every test's seconds ([ADR-0071](adr/0071-the-exhaustive-job-times-its-own-binaries.md), F-45), from which the table is regenerated, and `npm run spec:costs` fails on a line of it that names no test in the tree.
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="exhaustive-shard.sh" min="1" reason="ADR-0073: the weekly job runs the whole-domain tests in shards" -->
 <!-- @assert-present file="scripts/exhaustive-shard.sh" reason="ADR-0073: the shard takes its slice from --list and checks what it ran" -->
 
