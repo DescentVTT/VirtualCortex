@@ -170,11 +170,11 @@ and the quoted sentences are what to re-derive.
   any cell of this round.
 
   First in arm (A)'s core test, held to ADR-0117's pins, pinned at `3428e1e`.
-- [ ] **The kick read on the engine** under each arm and condition, before those cells. It fires every member once, or
+- [x] **The kick read on the engine** under each arm and condition, before those cells. It fires every member once, or
   it is derived again before any cell.
 
   **Rejected:** read under both arms at every shift in the core: the volley full, the second clause of ADR-0112's measure failed at every one (ADR-0124). Not derived again: at shifts 0 and 1 the members' own background alone passes the clause's mark, so no kick could pass there, and the maintainers chose on 2026-09-28 to stop the round rather than move the measure after a run. Not read under the conditions, which ran no cell.
-- [ ] **The runs.** Every cell, background and control. The weights shown unchanged at each run's end. The tables pinned
+- [x] **The runs.** Every cell, background and control. The weights shown unchanged at each run's end. The tables pinned
   as ADR-0117's: stretches in full, windows by hash.
 
   **Rejected:** the core's twelve backgrounds and controls and ADR-0117's cell ran, their weights unchanged at each run's end, pinned as ADR-0117's with the slow readings beside them; no cell ran, by the kick's failure and the maintainers' choice (ADR-0124).
