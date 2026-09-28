@@ -211,7 +211,31 @@ An ADR choosing among them has as its need these readings: an unwired member's r
 
 ### The evidence
 
-The weekly is dispatched on this round's branch at `scope=both`, since `src/` changes ([ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)); its run, the shards' times and the cost table regenerated from it are recorded here once it is green.
+`src/` changes, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**: run [36418523313](https://github.com/DescentVTT/VirtualCortex/actions/runs/36418523313) at `880bcf5`, the documents commit on the branch, after which only this evidence, the cost table and the brief's archive change. **Every job it ran is green.**
+- **The whole-domain tests.** All one hundred passed on the hosted runners, each in a process of its own reporting one test passed. The ninety-eight before this round reproduced their pinned numbers with no unit marked for the slow current: the four whole-image pins at format 18 among them, H-17's and H-18's images held to the CRCs their arms read, and H-20's arm reproducing ADR-0110's accuracy sequence and sums with its frozen image written back to format 17 reading ADR-0117's CRC. This round's two reproduced their tables and took 796 and 734 s. The six shards took:
+
+  | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
+  | ---: | ---: | ---: | ---: | :--- | :--- |
+  | 0 | 66 m 14 s | 16 | 7 809 | 3 918 s, 54 % | ADR-0120's condition (c) cells 2 885 |
+  | 1 | 63 m 05 s | 18 | 7 285 | 3 723 s, 52 % | H-20 from the mirrored 1 774 |
+  | 2 | 62 m 31 s | 17 | 7 052 | 3 703 s, 51 % | ADR-0117's condition (c) 2 327 |
+  | 3 | 46 m 06 s | 16 | 5 240 | 2 720 s, 38 % | H-20 from the assignment 1 308 |
+  | 4 | 65 m 33 s | 16 | 7 704 | 3 878 s, 54 % | ADR-0120's condition (c) backgrounds 2 374 |
+  | 5 | 64 m 53 s | 17 | 7 609 | 3 839 s, 53 % | plasticity everywhere 1 146 |
+
+  No shard passed the brief's 60 per cent in this run, though the table costed this round's two tests at 900 s each.
+- **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: one hundred lines, 42 699 s, its source line naming the run; `npm run spec:costs` passing). The ninety-eight earlier tests took 41 169 s against the table's 40 263, about 2 per cent more. Replayed through the deal at six shards, the table plans each shard at 7 116 to 7 118 s summed; at this run's ratio of summed seconds to wall time, 1.90 to 1.99, that is about 3 580 to 3 750 s of tests' wall time, **50 to 52 per cent of the bound**, under the brief's 60. The longest test, ADR-0120's condition (c) cells, took 2 885 s, 40 per cent of the bound by itself.
+- **The mutation sweep.** Seven jobs, the crates and six slices of the runtime, took 25 minutes to 2 hours 49 minutes: **3 544 mutants caught and none missed**, 147 unviable, and 25 timed out. Every timeout is one ADR-0062's triage reads as an inherent detection — the iterators' walks, the barrier, the injector's ring, the workers' loop and their stop, the term arena's load — and none is in this round's lines. Of the caught mutants, 87 are in the slow current's code: `integrate_slow` and `SlowCurrent` in `membrane.rs`, `is_at_rest_image` in `serial.rs`, `slow_input`, `membrane_at_rest`, `at_rest` and `Executor::slow_current` in the executor, and `slow_current_of` in the loader.
+
+The pull request's gate on `880bcf5` is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which made 100 mutants and caught 94, the other 6 unviable. Its first run, at `d0cb546`, had found one survivor, `<` to `<=` at the firing comparison of `integrate_slow`, which `e7eeb61` caught with a test of the firing edge (ADR-0123).
+
+On the developer machine every command of brief 052's verification list exited 0 (a ratio, not admissible):
+- the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 664 passed in each and 100 ignored;
+- check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
+- `--list`, 100 tests;
+- this round's two whole-domain tests twice, the second run at `3428e1e` against the pins.
+
+The in-diff mutation run was left to the pull request's gate, which is the one the round meets; on this platform a local run marks a locked binary's mutants unviable (LNK1104), so it is not the evidence.
 
 ## Consequences
 
