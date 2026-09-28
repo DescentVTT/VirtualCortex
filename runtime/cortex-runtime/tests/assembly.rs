@@ -34,8 +34,8 @@ use harness::*;
 
 use cortex_connectome::{SECTION_NEURON, SECTION_SYNAPSE};
 use cortex_core::{
-    BASAL_LEAK_SHIFT, FLAG_FACILITATING, STP_MAX, STP_U, SYNAPSES_PER_BLOCK, StpClass,
-    synaptic_efficacy_q16,
+    BASAL_LEAK_SHIFT, FLAG_FACILITATING, FLAG_SLOW, STP_MAX, STP_U, SYNAPSES_PER_BLOCK,
+    SlowCurrent, StpClass, synaptic_efficacy_q16,
 };
 use cortex_runtime::{Inject, mix64};
 
@@ -8861,13 +8861,16 @@ fn stp_reading(
 }
 
 /// A run under the protocol: every window's row, and each hold span's kick reading — the
-/// members' spikes in the span's first `KICK_SPAN` ticks and in the pair window after; and every
+/// members' spikes in the span's first `KICK_SPAN` ticks and in the pair window after; every
 /// window's spikes of the units counted beside the members (`span_protocol_counting`, brief
-/// 051's sources), none counted before brief 051.
+/// 051's sources), none counted before brief 051; and, while the engine carries a slow current
+/// (brief 052), every window's sums over the members and its ticks of the slow potential and of
+/// the gate's opening at the soma as each tick left them, none without one.
 struct SpanRun {
     windows: Vec<ClassWindow>,
     kicks: Vec<[u32; 2]>,
     sources: Vec<u32>,
+    slow: Vec<[u64; 2]>,
 }
 
 /// The protocol from the executor's clock under ADR-0044's drive: `spans` in order, `set`'s
@@ -8912,6 +8915,7 @@ fn span_protocol_counting(
     let drive = drive(1024);
     let inject = exec.injector();
     let class = exec.stp_class();
+    let current = exec.slow_current();
     let of = membership(set);
     let of_sources = membership(sources);
     let counted = task.map(|_| counted_sets());
@@ -8919,6 +8923,7 @@ fn span_protocol_counting(
         windows: Vec::new(),
         kicks: Vec::new(),
         sources: Vec::new(),
+        slow: Vec::new(),
     };
     let mut read: Vec<TaskEpoch> = Vec::new();
     let mut seen = (exec.train().len() as u64).saturating_add(exec.train_overwritten());
@@ -8936,6 +8941,9 @@ fn span_protocol_counting(
             None => Vec::new(),
         };
         for w in 0..windows {
+            // The window's slow reading (brief 052): a reading of the records, which no input of
+            // the run sees.
+            let mut slow = [0u64; 2];
             for j in 0..WINDOW_SPAN {
                 let k = w.saturating_mul(WINDOW_SPAN).saturating_add(j);
                 if let Some(t) = task {
@@ -8968,6 +8976,18 @@ fn span_protocol_counting(
                 if kick && span == Span::Hold {
                     note_kick_spikes(exec, set, Epoch::Kicked, k, start, &mut resets);
                 }
+                if let Some(c) = current {
+                    let units = exec.units();
+                    for &m in set {
+                        let u = &units[m as usize];
+                        slow[0] = slow[0].saturating_add(u64::from(u.v_slow.max(0).unsigned_abs()));
+                        slow[1] =
+                            slow[1].saturating_add(u64::from(c.gate_q16(u.v_soma).unsigned_abs()));
+                    }
+                }
+            }
+            if current.is_some() {
+                run.slow.push(slow);
             }
             let total = (exec.train().len() as u64).saturating_add(exec.train_overwritten());
             let new = total.saturating_sub(seen);
@@ -9523,7 +9543,13 @@ fn marked_assembly_kicked(set_index: usize, size: u32, weight: i16) -> Vec<(u32,
 
 /// The body of `marked_assembly_kicked` on an engine already built — its members of `size`
 /// marked under set `set_index` and wired (brief 051's gate builds one with its inhibition).
-fn kicked_on(mut exec: Engine, set_index: usize, size: u32) -> Vec<(u32, u32)> {
+fn kicked_on(exec: Engine, set_index: usize, size: u32) -> Vec<(u32, u32)> {
+    kicked_on_keeping(exec, set_index, size).0
+}
+
+/// `kicked_on`, returning the engine it kicked beside the members' spikes (brief 052's gate reads
+/// the members' slow potentials after the kick).
+fn kicked_on_keeping(mut exec: Engine, set_index: usize, size: u32) -> (Vec<(u32, u32)>, Engine) {
     let set = members(size);
     let before = weights_of(&exec);
     let rested: Vec<(u8, u8, u32)> = set
@@ -9580,7 +9606,7 @@ fn kicked_on(mut exec: Engine, set_index: usize, size: u32) -> Vec<(u32, u32)> {
             "member {m} under the class"
         );
     }
-    spikes
+    (spikes, exec)
 }
 
 /// The rules over the pinned tables of brief 049: each run's stretches and kicks as the rules
@@ -51787,3 +51813,1645 @@ const CELL_051_STIMULUS_3_2: &[StretchRow] = &[
     [2787, 1110, 10, 15091, 633, 10461491],
     [3712, 1018, 16, 15484, 475, 2555756],
 ];
+
+// ================================================ brief 052 (ADR-0124): the slow current, measured
+
+// ------------------------------------------------ the arms, the constants and the grid (brief 052), before any run
+
+/// The assembly every run of brief 052 wires: ADR-0117's cell's 64 members, at ADR-0112's
+/// placement on ADR-0116's geometry.
+const SIZE_052: u32 = 64;
+
+/// The two arms (ADR-0122): every member marked for the slow current, (A) under ADR-0019's
+/// short-term plasticity — no class — and (B) marked facilitating under ADR-0114's set (ii) as
+/// well.
+const ARMS_052: [Option<StpClass>; 2] = [None, Some(SETS[SET_050])];
+
+const ARM_NAMES_052: [&str; 2] = ["(A)", "(B)"];
+
+/// The slow potential's leak shift: $\tau_s = 2^{13}$ ticks, 82 ms (ADR-0122).
+const LEAK_SHIFT_052: u8 = 13;
+
+/// The gate's two voltages (ADR-0122): $V_{lo}$ the soma's standing under the drive's mean
+/// input as the oracle reads it (`DRIVE_STANDING`, 0.436), and $V_{hi}$ the threshold's base.
+const V_LO_052: i32 = DRIVE_STANDING.1;
+
+const V_HI_052: i32 = THRESHOLD_BASE;
+
+/// The recurrent weights, Q1.15: an eighth, a quarter, three eighths and a half of the range.
+const WEIGHTS_052: [i16; 4] = [0x1000, 0x2000, 0x3000, 0x4000];
+
+/// The three input shifts $g$, placed by a rule written before the arithmetic was read (ADR-0124):
+/// the middle one is the largest at which, under arm (A) at ADR-0117's weight, the slow potential of
+/// the held state at 20 Hz is at or above the critical level (`SLOW_CRITICAL_052`), and the other two
+/// are one step either side — 0, 1 and 2 when it is 0. By the arithmetic it is 1: 119 859 at shift 1
+/// and 60 113 at shift 2 against 74 589 (`ARITHMETIC_052`, the gate).
+const SHIFTS_052: [u8; 3] = [0, 1, 2];
+
+/// The most cells the conditions run (ADR-0124): past it, those with the most usable neighbours.
+const CONDITION_CELLS_MAX: usize = 8;
+
+/// The slow current at input shift `shift`: ADR-0122's leak and voltages.
+const fn current_052(shift: u8) -> SlowCurrent {
+    SlowCurrent {
+        leak_shift: LEAK_SHIFT_052,
+        input_shift: shift,
+        v_lo_q16: V_LO_052,
+        v_hi_q16: V_HI_052,
+    }
+}
+
+/// The class a run's bursts are read against (`bursts_049`): the arm's, or ADR-0019's constants,
+/// which `step_stp_class` at `StpClass::REFERENCE` is bit for bit (ADR-0114).
+fn class_052(arm: usize) -> StpClass {
+    ARMS_052[arm].unwrap_or(StpClass::REFERENCE)
+}
+
+// ------------------------------------------------ the image, marked for the slow current (brief 052)
+
+/// `image` with arm `arm`'s constants and marks: the slow current at input shift `shift` set in
+/// its modulator record, and the arm's class when it has one; the members of `SIZE_052` marked for
+/// the slow current and, under a class, facilitating; each section re-sealed. The test's own marks,
+/// as `grown` and `wire` are its own wiring; every other byte the image's.
+fn slow_marked(image: &[u8], arm: usize, shift: u8) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    let m = members(SIZE_052);
+    let class = ARMS_052[arm];
+    let current = current_052(shift);
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        let (offset, length) = (entry.offset as usize, entry.length as usize);
+        let section = &mut img[offset..][..length];
+        match entry.kind {
+            SECTION_MODULATOR => {
+                assert_eq!(
+                    &section[32..48],
+                    &[0u8; 16],
+                    "no class and no slow current before"
+                );
+                if let Some(c) = class {
+                    section[32..36].copy_from_slice(&[1, c.u, c.tau_f_shift, c.tau_d_shift]);
+                }
+                section[36..40].copy_from_slice(&[1, current.leak_shift, current.input_shift, 0]);
+                section[40..44].copy_from_slice(&current.v_lo_q16.to_le_bytes());
+                section[44..48].copy_from_slice(&current.v_hi_q16.to_le_bytes());
+            }
+            SECTION_NEURON => {
+                let mark = if class.is_some() {
+                    FLAG_SLOW | FLAG_FACILITATING
+                } else {
+                    FLAG_SLOW
+                };
+                for &u in &m {
+                    let flags = (u as usize).saturating_mul(64).saturating_add(57);
+                    section[flags] |= mark;
+                }
+            }
+            _ => continue,
+        }
+        entry.crc64 = crc64(&img[offset..][..length]);
+        img[at..][..64].copy_from_slice(&entry.encode());
+    }
+    img
+}
+
+/// The arm's constants and marks asserted on `exec`: the slow current at `shift` and the arm's
+/// class; every member marked for the slow current and, under a class, facilitating, and no other
+/// unit; no slow potential in any unit.
+fn slow_marks_held(exec: &Engine, arm: usize, shift: u8) {
+    assert_eq!(
+        (exec.slow_current(), exec.stp_class()),
+        (Some(current_052(shift)), ARMS_052[arm]),
+        "the image's slow current and class"
+    );
+    let of = membership(&members(SIZE_052));
+    for unit in exec.units() {
+        let member = of[unit.id as usize];
+        assert_eq!(
+            (
+                unit.flags & FLAG_SLOW != 0,
+                unit.flags & FLAG_FACILITATING != 0
+            ),
+            (member, member && ARMS_052[arm].is_some()),
+            "unit {} marked as a member",
+            unit.id
+        );
+        assert_eq!(unit.v_slow, 0, "unit {}: no slow potential yet", unit.id);
+    }
+}
+
+/// The engine of a run of brief 052 under arm `arm` at input shift `shift`: the frozen image
+/// marked; grown by the assembly's blocks when `grow` (a control or a cell), and wired at `weight`
+/// with the delays of `seed` when given (a cell). The constants and the marks asserted.
+fn engine_052(
+    image: &[u8],
+    arm: usize,
+    shift: u8,
+    grow: bool,
+    weight: Option<i16>,
+    seed: u64,
+) -> Engine {
+    let img = slow_marked(image, arm, shift);
+    let mut exec = if grow {
+        frozen_from(&grown(&img, extra_blocks(SIZE_052)), 1024)
+    } else {
+        frozen_from(&img, 1024)
+    };
+    slow_marks_held(&exec, arm, shift);
+    if let Some(w) = weight {
+        wire_drawn(&mut exec, SIZE_052, w, seed);
+    }
+    exec
+}
+
+// ------------------------------------------------ the rules (brief 052), before any run
+
+/// Brief 052's core grid read by ADR-0115's rules, `[arm][shift][weight]` over `ARMS_052`,
+/// `SHIFTS_052` and `WEIGHTS_052`.
+type Grid052 = [[[Holding; 4]; 3]; 2];
+
+/// A cell of brief 052's grid by index: `(arm, shift, weight)`.
+type Cell052 = (usize, usize, usize);
+
+/// The order ties go by, ADR-0117's: the lighter weight, then the smaller shift, then arm (A).
+fn tie_key((a, s, w): Cell052) -> (usize, usize, usize) {
+    (w, s, a)
+}
+
+/// A cell's usable neighbours in the core grid, within its arm: of the cells one weight step either
+/// way at its shift and one shift step either way at its weight, at most four, those usable.
+fn neighbours_052(core: &Grid052, (a, s, w): Cell052) -> u32 {
+    usable_neighbours(&core[a], (s, w))
+}
+
+/// The core grid's usable cells, in the grid's order.
+fn usable_052(core: &Grid052) -> Vec<Cell052> {
+    let mut out = Vec::new();
+    for (a, arm) in core.iter().enumerate() {
+        for (s, row) in arm.iter().enumerate() {
+            for (w, cell) in row.iter().enumerate() {
+                if cell.usable() {
+                    out.push((a, s, w));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The cells the conditions run (ADR-0124): every cell usable in the core grid; when more than
+/// `CONDITION_CELLS_MAX` are, those with the most usable neighbours, ties by `tie_key`. In the
+/// grid's order.
+fn condition_cells_052(core: &Grid052) -> Vec<Cell052> {
+    let mut cells = usable_052(core);
+    if cells.len() > CONDITION_CELLS_MAX {
+        cells.sort_by_key(|&c| (core::cmp::Reverse(neighbours_052(core, c)), tie_key(c)));
+        cells.truncate(CONDITION_CELLS_MAX);
+        cells.sort_unstable();
+    }
+    cells
+}
+
+/// Robust: of `cells` — the cells the conditions ran, each usable in the core grid — those usable
+/// under each of (b), (c) and (d), `under[c][i]` the reading of `cells[i]` under condition `c`; in
+/// the grid's order.
+fn robust_052(cells: &[Cell052], under: &[Vec<Holding>; 3]) -> Vec<Cell052> {
+    cells
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| under.iter().all(|c| c.get(i).is_some_and(Holding::usable)))
+        .map(|(_, &c)| c)
+        .collect()
+}
+
+/// The cell for the second round: of the robust cells, the one with the most usable neighbours in
+/// the core grid, ties by `tie_key`; none when none is robust.
+fn round_two_052(core: &Grid052, robust: &[Cell052]) -> Option<Cell052> {
+    let mut ordered = robust.to_vec();
+    ordered.sort_by_key(|&c| tie_key(c));
+    let mut best: Option<(Cell052, u32)> = None;
+    for cell in ordered {
+        let n = neighbours_052(core, cell);
+        if best.is_none_or(|(_, most)| n > most) {
+            best = Some((cell, n));
+        }
+    }
+    best.map(|(cell, _)| cell)
+}
+
+/// What failed in each cell the conditions ran, in the core grid and under (b), (c) and (d), each
+/// by ADR-0115's `failed`.
+fn failures_052(
+    core: &Grid052,
+    cells: &[Cell052],
+    under: &[Vec<Holding>; 3],
+) -> Vec<[[bool; 3]; 4]> {
+    cells
+        .iter()
+        .enumerate()
+        .map(|(i, &(a, s, w))| {
+            let mut out = [[false; 3]; 4];
+            out[0] = failed(&core[a][s][w]);
+            for (c, condition) in under.iter().enumerate() {
+                if let Some(h) = condition.get(i) {
+                    out[c.saturating_add(1)] = failed(h);
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+// ------------------------------------------------ the arithmetic (brief 052), before any run
+
+/// A slow input as a train: `(efficacy after the gain, period in ticks)`, its message landing on
+/// every tick of the run that is a multiple of its period.
+type Train = (i32, u32);
+
+/// The ticks the slow rule is stepped from zero before it is read, sixteen time constants, and
+/// the ticks it is read over.
+const SLOW_WARM: u32 = 1 << 17;
+
+const SLOW_READ: u32 = 1 << 17;
+
+/// The slow potential under `trains` by the slow rule itself: a unit marked for the slow current
+/// whose threshold is zero — it never fires, and nothing but its slow potential is read — stepped
+/// by `integrate_slow` at input shift `shift` with the trains' messages as its slow input, from
+/// zero; after `SLOW_WARM` ticks, its mean over `SLOW_READ`, Q16.16.
+fn slow_level(trains: &[Train], shift: u8) -> i32 {
+    let c = current_052(shift);
+    let mut unit = DendriticSuperNeuron::new(0);
+    unit.flags = FLAG_SLOW;
+    let mut sum = 0i64;
+    for t in 0..SLOW_WARM.saturating_add(SLOW_READ) {
+        let input = trains
+            .iter()
+            .filter(|&&(_, period)| t.checked_rem(period) == Some(0))
+            .fold(0i32, |s, &(e, _)| s.saturating_add(e));
+        unit.integrate_slow(0, 0, input, t, c);
+        if t >= SLOW_WARM {
+            sum = sum.saturating_add(i64::from(unit.v_slow));
+        }
+    }
+    sum.checked_div(i64::from(SLOW_READ)).unwrap_or(0) as i32
+}
+
+/// The assembly's input to one member while every member fires every `interval` ticks: `fan`
+/// synapses at `weight`, each delivering at the arm's pair steady at that interval, after the gain
+/// (`delivered`), as one train of `fan` times the members' rate.
+fn assembly_train(arm: usize, weight: i16, interval: u32) -> Train {
+    let pair = steady_under(interval, ARMS_052[arm]);
+    (
+        delivered(weight, pair),
+        interval.checked_div(fan(SIZE_052)).unwrap_or(0),
+    )
+}
+
+/// The weights of the prior's excitatory synapses onto the members that land in their basal
+/// compartment, on `exec`: `(from the rest, from the members)`. The prior's far band joins a few
+/// members to one another, whose synapses fire at the members' rate under the arm's plasticity.
+fn prior_onto_members(exec: &Engine) -> (Vec<i16>, Vec<i16>) {
+    let of = membership(&members(SIZE_052));
+    let (mut rest, mut from_members) = (Vec::new(), Vec::new());
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            if of[s.target as usize] && !s.apical {
+                if of[unit.id as usize] {
+                    from_members.push(s.weight_q1_15);
+                } else {
+                    rest.push(s.weight_q1_15);
+                }
+            }
+        }
+    }
+    (rest, from_members)
+}
+
+/// `weights`' synapses onto the members as one train, each source firing every `interval` ticks and
+/// delivering at `pair` after the gain: per member, `count / SIZE_052` messages every interval, as one
+/// message of the mean efficacy every `interval × SIZE_052 / count` ticks; none without a synapse.
+fn train_of(weights: &[i16], pair: (u8, u8), interval: u32) -> Option<Train> {
+    let count = weights.len() as i64;
+    let sum = weights.iter().fold(0i64, |s, &w| {
+        s.saturating_add(i64::from(delivered(w, pair)))
+    });
+    let efficacy = sum.checked_div(count)? as i32;
+    let period = i64::from(interval)
+        .saturating_mul(i64::from(SIZE_052))
+        .checked_div(count)? as u32;
+    Some((efficacy, period))
+}
+
+/// The intervals the held state is read at: 5, 10 and 20 Hz of every member.
+const HELD_INTERVALS: [u32; 3] = [20_000, 10_000, 5_000];
+
+/// The slow potential's levels by the slow rule, `[arm][weight][shift]`, with the prior's
+/// synapses from the rest at the rest's rate of ADR-0117's core background and the members' at the
+/// members' own rate: the background (the members unwired, at their rate in ADR-0117's core
+/// background); the quiet state (the assembly's input beside it at that rate); and the held state
+/// (every member at 5, 10 and 20 Hz, the assembly's input and the members' prior synapses at that
+/// rate).
+type Levels052 = [[[[i32; 5]; 3]; 4]; 2];
+
+fn slow_levels(exec: &Engine, shifts: &[u8; 3]) -> Levels052 {
+    let (rest_weights, member_weights) = prior_onto_members(exec);
+    let (quiet, rest) = (interval_of(rates_050()[0].0), interval_of(rates_050()[0].1));
+    let from_rest =
+        train_of(&rest_weights, steady(rest), rest).expect("the prior reaches the members");
+    let mut out = [[[[0i32; 5]; 3]; 4]; 2];
+    for (a, by_weight) in out.iter_mut().enumerate() {
+        // The trains at the members' interval `interval`: the prior's, and with the assembly's at
+        // weight `w` when given.
+        let trains = |interval: u32, weight: Option<i16>| -> Vec<Train> {
+            let pair = steady_under(interval, ARMS_052[a]);
+            [Some(from_rest), train_of(&member_weights, pair, interval)]
+                .into_iter()
+                .chain(core::iter::once(
+                    weight.map(|w| assembly_train(a, w, interval)),
+                ))
+                .flatten()
+                .collect()
+        };
+        for (w, by_shift) in by_weight.iter_mut().enumerate() {
+            let weight = WEIGHTS_052[w];
+            for (k, levels) in by_shift.iter_mut().enumerate() {
+                let g = shifts[k];
+                levels[0] = slow_level(&trains(quiet, None), g);
+                levels[1] = slow_level(&trains(quiet, Some(weight)), g);
+                for (level, &interval) in levels[2..].iter_mut().zip(HELD_INTERVALS.iter()) {
+                    *level = slow_level(&trains(interval, Some(weight)), g);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The ticks a held slow potential is given to fire a unit, an epoch.
+const CRITICAL_TICKS: u32 = EPOCH_TICKS;
+
+/// Whether a slow potential held at `level` — written back into the unit before every tick — fires
+/// a unit under the drive's mean input from the drive's mean standing, its soma an eighth of the
+/// gap above it, within `CRITICAL_TICKS`, by the slow rule itself.
+fn fires_held(level: i32) -> bool {
+    let c = current_052(0);
+    let mean = drive_mean_per_tick();
+    let gap = THRESHOLD_BASE.saturating_sub(V_LO_052);
+    let mut unit = DendriticSuperNeuron::new(0);
+    unit.flags = FLAG_SLOW;
+    unit.v_thresh = THRESHOLD_BASE;
+    unit.v_basal = DRIVE_STANDING.0;
+    unit.v_soma = DRIVE_STANDING.1.saturating_add(gap >> 3);
+    (1..=CRITICAL_TICKS).any(|t| {
+        unit.v_slow = level;
+        unit.integrate_slow(mean, 0, 0, t, c)
+    })
+}
+
+/// The highest slow potential the critical level is searched below: 4.0.
+const CRITICAL_MAX: i32 = 4 * THRESHOLD_BASE;
+
+/// The critical slow potential: the least level that, held, fires a unit at the drive's mean
+/// standing by the slow rule (`fires_held`), by bisection over `[0, CRITICAL_MAX]`: a larger level
+/// never gives the soma less, so the search is over a monotone predicate, and the found level is
+/// held to fire where one LSB less does not.
+fn slow_critical() -> i32 {
+    let (mut low, mut high) = (0i32, CRITICAL_MAX);
+    assert!(
+        !fires_held(low) && fires_held(high),
+        "the search brackets it"
+    );
+    for _ in 0..u32::BITS {
+        if high.saturating_sub(low) <= 1 {
+            break;
+        }
+        let mid = low.saturating_add(high.saturating_sub(low) >> 1);
+        if fires_held(mid) {
+            high = mid;
+        } else {
+            low = mid;
+        }
+    }
+    assert!(fires_held(high) && !fires_held(high.saturating_sub(1)));
+    high
+}
+
+/// The gate's opening at the soma's standing under the drive's mean input, a quarter, a half and
+/// three quarters of the gap above it, at 0.9 and at the threshold's base.
+fn gate_openings() -> [i32; 6] {
+    let c = current_052(0);
+    let gap = THRESHOLD_BASE.saturating_sub(V_LO_052);
+    [
+        V_LO_052,
+        V_LO_052.saturating_add(gap >> 2),
+        V_LO_052.saturating_add(gap >> 1),
+        V_LO_052.saturating_add(gap.saturating_sub(gap >> 2)),
+        58_982,
+        THRESHOLD_BASE,
+    ]
+    .map(|v| c.gate_q16(v))
+}
+
+/// The per-spike release the held state has over the quiet one, per mille, `[arm][interval]`: what
+/// one spike of a member delivers at the arm's pair steady at 5, 10 and 20 Hz over what it delivers
+/// at the members' rate of ADR-0117's core background. The four rounds before brief 052 read 1.40
+/// to 1.60 between a primed and an unkicked pair.
+fn per_spike_052() -> [[u32; 3]; 2] {
+    let quiet = interval_of(rates_050()[0].0);
+    core::array::from_fn(|a| {
+        let at = delivered(0x2000, steady_under(quiet, ARMS_052[a]));
+        HELD_INTERVALS.map(|interval| {
+            i64::from(delivered(0x2000, steady_under(interval, ARMS_052[a])))
+                .saturating_mul(1_000)
+                .checked_div(i64::from(at))
+                .unwrap_or(0) as u32
+        })
+    })
+}
+
+/// The arithmetic brief 052 computes on the settled image before any run (`arithmetic_052`): the
+/// prior's excitatory basal synapses onto the members, from the rest and from the members, and the
+/// sums of their weights; and the slow potential's levels by the slow rule at the grid's shifts.
+type Arithmetic052 = ([(u32, i64); 2], Levels052);
+
+fn arithmetic_052(settled: &[u8]) -> Arithmetic052 {
+    let exec = frozen_from(settled, 1024);
+    let (rest, from_members) = prior_onto_members(&exec);
+    let census = |w: &[i16]| {
+        (
+            w.len() as u32,
+            w.iter().fold(0i64, |s, &x| s.saturating_add(i64::from(x))),
+        )
+    };
+    (
+        [census(&rest), census(&from_members)],
+        slow_levels(&exec, &SHIFTS_052),
+    )
+}
+
+// ------------------------------------------------ the runs (brief 052)
+
+/// A run's slow reading (brief 052) by kind of span — the lead-in, the unkicked spans, the hold
+/// spans' first halves, their second halves, the release spans and the tails — each the sums over
+/// the members and the span's ticks of the slow potential and of the gate's opening; and every
+/// window's as one number (FNV-1a over each sum's two halves).
+type SlowRead = ([[u64; 2]; 6], u64);
+
+fn slow_read(slow: &[[u64; 2]], spans: &[(Span, usize, u32)]) -> SlowRead {
+    let mut by = [[0u64; 2]; 6];
+    let mut at = 0usize;
+    for &(span, _, epochs) in spans {
+        let n = epochs.saturating_mul(WINDOWS as u32) as usize;
+        for (i, window) in slow
+            .get(at..at.saturating_add(n))
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let first_half =
+                (i.checked_div(STRETCH_WINDOWS).unwrap_or(0) as u32) < SECOND_HALF_FROM;
+            let kind = match span {
+                Span::LeadIn => 0,
+                Span::Unkicked => 1,
+                Span::Hold if first_half => 2,
+                Span::Hold => 3,
+                Span::Release => 4,
+                Span::Tail => 5,
+            };
+            for (sum, &v) in by[kind].iter_mut().zip(window.iter()) {
+                *sum = sum.saturating_add(v);
+            }
+        }
+        at = at.saturating_add(n);
+    }
+    let words: Vec<i32> = slow
+        .iter()
+        .flat_map(|w| {
+            w.iter()
+                .flat_map(|&v| [v as u32 as i32, (v >> 32) as u32 as i32])
+        })
+        .collect();
+    (by, fnv1a_64(&words))
+}
+
+/// A run of brief 052 as pinned: ADR-0117's pin of it, and its slow reading.
+#[derive(Clone, Copy, Debug)]
+struct Pinned052 {
+    rows: &'static [StretchRow],
+    kicks: &'static [[u32; 2]],
+    windows: u64,
+    epochs: u64,
+    slow: SlowRead,
+}
+
+impl Pinned052 {
+    fn as_050(&self) -> Pinned050 {
+        Pinned050 {
+            rows: self.rows,
+            kicks: self.kicks,
+            windows: self.windows,
+            epochs: self.epochs,
+        }
+    }
+}
+
+/// Holds a run of brief 052 to its pin: ADR-0117's `held_to`, and the slow reading.
+fn held_052(run: &Run050, pin: &Pinned052, background: bool, name: &str) {
+    run.held_to(&pin.as_050(), background, name);
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    assert_eq!(
+        slow_read(&run.run.slow, &spans),
+        pin.slow,
+        "{name}: the slow potential and the gate"
+    );
+}
+
+/// The slow potential and the gate over the held stretches of a run's hold spans' second halves,
+/// held against `bg` (`held_stretch`): their sums over the members and the stretches' ticks, and
+/// the stretches.
+type SlowHeld = ([u64; 2], u32);
+
+fn slow_held(run: &Run050, bg: Background) -> SlowHeld {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let mut out = ([0u64; 2], 0u32);
+    for ((row, &(span, _, k)), windows) in run
+        .rows
+        .iter()
+        .zip(stretches_of(&spans).iter())
+        .zip(run.run.slow.chunks(STRETCH_WINDOWS))
+    {
+        if span == Span::Hold && k >= SECOND_HALF_FROM && held_stretch(row, bg) {
+            for w in windows {
+                for (sum, &v) in out.0.iter_mut().zip(w.iter()) {
+                    *sum = sum.saturating_add(v);
+                }
+            }
+            out.1 = out.1.saturating_add(1);
+        }
+    }
+    out
+}
+
+/// A run of brief 052 under arm `arm` at input shift `shift` on `image`, dumped: a background (not
+/// grown, no kick, no release), a control (grown, unwired, the kick and the release) or a cell
+/// (wired at `weight` with the delays of `seed`); with `stimulus`, the task's stimulus at every
+/// epoch's middle (condition (d)). Every weight of the arena at its end is its value at the start.
+fn run_052(
+    image: &[u8],
+    (arm, shift): (usize, u8),
+    weight: Option<i16>,
+    background: bool,
+    seed: u64,
+    stimulus: bool,
+    name: &str,
+) -> Run050 {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let mut exec = engine_052(image, arm, shift, !background, weight, seed);
+    let m = members(SIZE_052);
+    let before = weights_of(&exec);
+    let task = stimulus.then(stimulus_task);
+    let (run, epochs) = span_protocol_under(&mut exec, &m, &spans, !background, task.as_ref());
+    let rows = stretch_rows(&run.windows, SIZE_052);
+    eprintln!("DUMP {name} stretches = {rows:?}");
+    eprintln!("DUMP {name} kicks = {:?}", run.kicks);
+    eprintln!(
+        "DUMP {name} hashes = {:#018x} {:#018x}",
+        windows_hash(&run.windows),
+        epochs_hash(&epochs)
+    );
+    eprintln!("DUMP {name} slow = {:?}", slow_read(&run.slow, &spans));
+    assert_eq!(weights_of(&exec), before, "{name}: no weight moved");
+    Run050 { run, rows, epochs }
+}
+
+/// A cell of brief 052 read by the rules: its holding, its bursts, and the slow potential and the
+/// gate over its held stretches.
+type CellRead052 = (Holding, BurstRead049, SlowHeld);
+
+/// Reads a run of arm `arm` against `bg` and dumps the reading.
+fn cell_read_052(run: &Run050, arm: usize, bg: Background, name: &str) -> CellRead052 {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let read = holding(&run.rows, &spans, bg);
+    let bursts = bursts_049(&run.run.windows, &spans, SIZE_052, bg, class_052(arm));
+    let held = slow_held(run, bg);
+    eprintln!(
+        "DUMP {name} read = {read:?} usable {} failed {:?} kick {:?} bursts = {bursts:?} held = {held:?}",
+        read.usable(),
+        failed(&read),
+        kick_reading_049(&run.run.kicks, SIZE_052)
+    );
+    (read, bursts, held)
+}
+
+/// The backgrounds and the controls of arm `arm` at every shift on `image`, with the task's
+/// stimulus when `stimulus`: for each shift the background and the control, each dumped with its
+/// readings; then each control's lead-in and first unkicked span shown to be its background's, the
+/// slow readings with them, and the kick read on the engine by ADR-0112's measure, which fires
+/// every member once at every shift or no cell of the arm runs.
+fn backgrounds_controls_052(
+    image: &[u8],
+    arm: usize,
+    stimulus: bool,
+    name: &str,
+) -> Vec<(Run050, Run050, BackgroundControl)> {
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let first = stretches_of(&spans)
+        .iter()
+        .position(|s| s.0 == Span::Hold)
+        .expect("a hold span");
+    let mut out = Vec::new();
+    for &g in &SHIFTS_052 {
+        let label = |kind: &str| format!("{name} {kind} {} at {g}", ARM_NAMES_052[arm]);
+        let bg = run_052(
+            image,
+            (arm, g),
+            None,
+            true,
+            DELAY_SEED,
+            stimulus,
+            &label("background"),
+        );
+        let ctl = run_052(
+            image,
+            (arm, g),
+            None,
+            false,
+            DELAY_SEED,
+            stimulus,
+            &label("control"),
+        );
+        let background = background_049(&bg.rows, &spans);
+        let (control, bursts, _) = cell_read_052(&ctl, arm, background, &label("control"));
+        let kick = kick_reading_049(&ctl.run.kicks, SIZE_052);
+        eprintln!(
+            "DUMP {}: background {background:?} kick {kick:?} once {}",
+            label("pair"),
+            kicked_once_049(&ctl.run.kicks, SIZE_052)
+        );
+        if stimulus {
+            for (k, run) in [&bg, &ctl].into_iter().enumerate() {
+                eprintln!(
+                    "DUMP {} task[{k}] = {:?}",
+                    label("pair"),
+                    task_read(&run.epochs, &spans)
+                );
+            }
+            eprintln!(
+                "DUMP {} sight = {:?} nine = {:?}",
+                label("pair"),
+                sight_050(&bg.epochs, false),
+                sight_050(&bg.epochs, true)
+            );
+        }
+        out.push((bg, ctl, (background, kick, control, bursts)));
+    }
+    for (&g, (bg, ctl, _)) in SHIFTS_052.iter().zip(&out) {
+        assert_eq!(
+            ctl.rows[..first],
+            bg.rows[..first],
+            "{name} at {g}: the growth changes nothing unkicked"
+        );
+        let windows = first.saturating_mul(STRETCH_WINDOWS);
+        assert_eq!(
+            ctl.run.slow[..windows],
+            bg.run.slow[..windows],
+            "{name} at {g}: nor the slow potential"
+        );
+        assert!(
+            kicked_once_049(&ctl.run.kicks, SIZE_052),
+            "{name} at {g}: the kick fires every member once, or it is derived again"
+        );
+    }
+    out
+}
+
+/// Holds arm `arm`'s backgrounds and controls under condition `b` (the core, (c), (d)) to their
+/// pins.
+fn backgrounds_held_052(
+    pairs: &[(Run050, Run050, BackgroundControl)],
+    arm: usize,
+    b: usize,
+    name: &str,
+) {
+    for (k, (bg, ctl, reading)) in pairs.iter().enumerate() {
+        held_052(
+            bg,
+            &BG_RUNS_052[b][arm][k][0],
+            true,
+            &format!("{name}: the background at {k}"),
+        );
+        held_052(
+            ctl,
+            &BG_RUNS_052[b][arm][k][1],
+            false,
+            &format!("{name}: the control at {k}"),
+        );
+        assert_eq!(*reading, BG_READ_052[b][arm][k], "{name}: {k} read");
+    }
+}
+
+/// ADR-0117's cell reproduced with nothing marked for the slow current, before any cell of brief
+/// 052: 64 units at a quarter of the range under set (ii) in the core, run through ADR-0117's own
+/// `run_050` and held to ADR-0117's pinned stretches, kicks and windows and read against ADR-0117's
+/// background to ADR-0117's reading and bursts.
+fn reproduce_050_in_the_core(image: &[u8], name: &str) {
+    let (s, w) = CELL_050;
+    let size = SIZES_050[s];
+    let label = format!("{name}: ADR-0117's cell, nothing marked for the slow current");
+    let run = run_050(
+        image,
+        size,
+        Some(WEIGHTS_050[w]),
+        false,
+        DELAY_SEED,
+        false,
+        &label,
+    );
+    assert!(
+        run.run.slow.is_empty(),
+        "{label}: no slow current, no reading"
+    );
+    let cell = cell_read(&run, size, CORE_READ_050[s].0, &label);
+    run.held_to(&GRID_RUNS_050[s][w], false, &label);
+    assert_eq!(
+        cell,
+        (GRID_050[s][w], GRID_BURSTS_050[s][w]),
+        "{label}: ADR-0117's reading"
+    );
+}
+
+/// The core's backgrounds and controls of arm `arm` (brief 052): on the settled image, the
+/// arithmetic first, held to its pin before any run; under arm (A) ADR-0117's cell reproduced with
+/// nothing marked for the slow current; then at each shift the background and the control, the kick
+/// read on the engine.
+fn core_backgrounds_052(arm: usize) {
+    let name = format!(
+        "brief 052's backgrounds and controls of the core under {}",
+        ARM_NAMES_052[arm]
+    );
+    let image = settled(&name);
+    let arithmetic = arithmetic_052(&image);
+    eprintln!("DUMP ARITHMETIC_052 = {arithmetic:?}");
+    assert_eq!(
+        arithmetic, ARITHMETIC_052,
+        "{name}: the arithmetic, pinned before any run"
+    );
+    assert_eq!(
+        shift_placed(&arithmetic.1, &SHIFTS_052, SLOW_CRITICAL_052),
+        Some(SHIFT_PLACED_052),
+        "{name}: the shifts the rule places"
+    );
+    if arm == 0 {
+        reproduce_050_in_the_core(&image, &name);
+    }
+    let pairs = backgrounds_controls_052(&image, arm, false, &name);
+    backgrounds_held_052(&pairs, arm, 0, &name);
+}
+
+/// The core grid's cells of arm `arm` at the weights `weights` (by index) and every shift, each
+/// read against its shift's background pinned first, the kick read on the engine first by its
+/// control's pin; every run dumped before any is held.
+fn cells_052(arm: usize, weights: &[usize]) {
+    let name = format!(
+        "brief 052's core grid under {} at {weights:?}",
+        ARM_NAMES_052[arm]
+    );
+    let image = settled(&name);
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let bgs: Vec<Background> = (0..SHIFTS_052.len())
+        .map(|k| {
+            let bg = background_049(BG_RUNS_052[0][arm][k][0].rows, &spans);
+            assert_eq!(
+                bg, BG_READ_052[0][arm][k].0,
+                "{name}: the background at {k}, pinned first"
+            );
+            assert!(
+                kicked_once_049(BG_RUNS_052[0][arm][k][1].kicks, SIZE_052),
+                "{name}: the kick read on the engine at {k} first"
+            );
+            bg
+        })
+        .collect();
+    let mut out = Vec::new();
+    for (k, &g) in SHIFTS_052.iter().enumerate() {
+        for &w in weights {
+            let label = format!(
+                "brief 052's cell under {} at {g} and {:#x}",
+                ARM_NAMES_052[arm], WEIGHTS_052[w]
+            );
+            let run = run_052(
+                &image,
+                (arm, g),
+                Some(WEIGHTS_052[w]),
+                false,
+                DELAY_SEED,
+                false,
+                &label,
+            );
+            let cell = cell_read_052(&run, arm, bgs[k], &label);
+            out.push((k, w, run, cell));
+        }
+    }
+    for (k, w, run, cell) in &out {
+        held_052(
+            run,
+            &CELL_RUNS_052[arm][*k][*w],
+            false,
+            &format!("{name}: {k} {w}"),
+        );
+        assert_eq!(
+            *cell,
+            (
+                GRID_052[arm][*k][*w],
+                BURSTS_052[arm][*k][*w],
+                HELD_052[arm][*k][*w]
+            ),
+            "{name}: {k} {w}"
+        );
+    }
+}
+
+// ------------------------------------------------ the gate (brief 052)
+
+/// The gate's assembly kicked with the slow current: arm (B) at the heaviest weight and the smallest
+/// shift, the most the slow potential can take from the kick's volley.
+const GATE_CELL_052: Cell052 = (1, 0, 3);
+
+#[test]
+fn a_slow_current_the_arms_the_grid_the_arithmetic_the_rules_and_a_marked_assembly_kicked_with_it()
+{
+    // The grid: ADR-0117's cell's size, four weights, three distinct shifts the rule resolves.
+    assert_eq!(SIZES_050[CELL_050.0], SIZE_052);
+    assert_eq!(fan(SIZE_052), FAN_MAX);
+    assert!(WEIGHTS_052.windows(2).all(|w| w[0] < w[1]));
+    assert!(SHIFTS_052.windows(2).all(|w| w[0] < w[1]));
+    assert!(SHIFTS_052.iter().all(|&g| current_052(g).is_valid()));
+    assert_eq!(
+        WEIGHTS_052[1], WEIGHTS_050[CELL_050.1],
+        "ADR-0117's weight among them"
+    );
+    assert_eq!(ARMS_052, [None, Some(SETS[SET_050])]);
+    // The gate's voltages: the drive's mean standing as the oracle reads it, and the base.
+    assert_eq!(drive_standing().1, V_LO_052);
+    assert_eq!(V_HI_052, THRESHOLD_BASE);
+    // The release stands for both arms: its silence outlasts set (ii)'s fade (ADR-0115), and sixteen
+    // of the slow potential's time constants; under ADR-0019's constants no silence leaves a member
+    // releasing below the unkicked product, since a kick never primes one (ADR-0113), so there is
+    // nothing of it to fade.
+    let silence = silence_of(RELEASE_STRETCHES_049[SET_050]);
+    let faded = fade(SETS[SET_050]).expect("set (ii)'s fade");
+    eprintln!("DUMP RELEASE_052 = {silence} {faded}");
+    assert!(silence >= u64::from(faded));
+    assert_eq!(
+        fade(StpClass::REFERENCE),
+        None,
+        "ADR-0019's constants never prime"
+    );
+    assert!(silence >= 16u64 << LEAK_SHIFT_052);
+    // The arithmetic the settled image is not needed for, dumped, then held.
+    let critical = slow_critical();
+    let openings = gate_openings();
+    let per_spike = per_spike_052();
+    eprintln!("DUMP SLOW_CRITICAL_052 = {critical}");
+    eprintln!("DUMP GATE_052 = {openings:?}");
+    eprintln!("DUMP PER_SPIKE_052 = {per_spike:?}");
+    assert_eq!(critical, SLOW_CRITICAL_052);
+    assert_eq!(openings, GATE_052);
+    assert_eq!(per_spike, PER_SPIKE_052);
+    // The shifts, placed by the rule over the arithmetic on the settled image (pinned there before any
+    // run): the largest shift at which arm (A) at ADR-0117's weight reaches the critical level at 20
+    // Hz is 1, and one step either side. A larger shift only shrinks the input, so none above the
+    // grid's reaches it either: at shift 2 the level is already below.
+    let placed = shift_placed(&ARITHMETIC_052.1, &SHIFTS_052, SLOW_CRITICAL_052);
+    assert_eq!(placed, Some(SHIFT_PLACED_052));
+    assert_eq!(
+        SHIFTS_052,
+        [SHIFT_PLACED_052 - 1, SHIFT_PLACED_052, SHIFT_PLACED_052 + 1]
+    );
+    assert!(ARITHMETIC_052.1[0][1][2][4] < SLOW_CRITICAL_052);
+    // The marks on the instrument's network.
+    slow_marked_on_the_prior();
+    // The rules at their edges, over tables written by hand.
+    rules_052_at_their_edges();
+    // A marked assembly with the slow current, kicked for a few hundred ticks.
+    let (a, k, w) = GATE_CELL_052;
+    let (kicked, exec) = kicked_on_keeping(
+        engine_052(
+            &prior_image(),
+            a,
+            SHIFTS_052[k],
+            true,
+            Some(WEIGHTS_052[w]),
+            DELAY_SEED,
+        ),
+        SET_050,
+        SIZE_052,
+    );
+    let slow: Vec<i32> = members(SIZE_052)
+        .iter()
+        .map(|&m| exec.units()[m as usize].v_slow)
+        .collect();
+    eprintln!("DUMP GATE_KICKED_052 = {kicked:?}");
+    eprintln!("DUMP GATE_SLOW_052 = {slow:?}");
+    assert!(
+        slow.iter().all(|&s| s > 0),
+        "the volley charged every member's slow potential"
+    );
+    assert_eq!(kicked.as_slice(), GATE_KICKED_052);
+    assert_eq!(slow.as_slice(), GATE_SLOW_052);
+}
+
+/// The marks on the instrument's network: under each arm at each shift the image decodes with the
+/// slow current and the class, the members marked and no other unit, and the prior's blocks as they
+/// were; with the slow current unset in the record a member's mark is refused; under the drive,
+/// unwired, a member's slow potential rises from the prior's synapses and every other unit's stays
+/// zero.
+fn slow_marked_on_the_prior() {
+    let image = prior_image();
+    let plain = frozen_from(&image, 1024);
+    for arm in 0..ARMS_052.len() {
+        for &g in &SHIFTS_052 {
+            let exec = engine_052(&image, arm, g, true, None, DELAY_SEED);
+            assert_eq!(&exec.blocks()[..plain.blocks().len()], plain.blocks());
+        }
+    }
+    let mut unset = slow_marked(&image, 0, SHIFTS_052[0]);
+    let header = CortexFileHeader::decode(unset[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(unset[at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_MODULATOR {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            unset[offset..][36..48].copy_from_slice(&[0; 12]);
+            entry.crc64 = crc64(&unset[offset..][..length]);
+            unset[at..][..64].copy_from_slice(&entry.encode());
+        }
+    }
+    assert!(matches!(
+        Image::decode::<2048>(&unset, config(1024, 2, 0)),
+        Err(cortex_runtime::ImageError::MarkWithoutSlowCurrent(5))
+    ));
+    let mut exec = engine_052(&image, 0, SHIFTS_052[0], false, None, DELAY_SEED);
+    let drive = drive(1024);
+    let until = exec.ticks().saturating_add(u64::from(GROWTH_TICKS) * 4);
+    run_driven(&mut exec, &drive, until).expect("the drive runs");
+    let of = membership(&members(SIZE_052));
+    let charged = exec
+        .units()
+        .iter()
+        .filter(|u| {
+            assert!(of[u.id as usize] || u.v_slow == 0, "unit {} unmarked", u.id);
+            assert!(u.v_slow >= 0, "unit {}: the input is excitatory", u.id);
+            u.v_slow > 0
+        })
+        .count();
+    assert!(charged > 32, "the prior charged the members: {charged}");
+}
+
+/// The rules of brief 052 at their edges, over tables written by hand: the cells the conditions
+/// run and their cut at eight, the neighbours within an arm, robust, the second round's cell and
+/// its ties, what failed; and the slow reading by kind of span.
+fn rules_052_at_their_edges() {
+    let usable = Holding {
+        first_half: 8,
+        held: 8,
+        ignited: 0,
+        let_go: 8,
+        spills: Some(false),
+    };
+    let never = Holding { held: 6, ..usable };
+    let runs = Holding {
+        ignited: 2,
+        ..usable
+    };
+    let stays = Holding {
+        let_go: 6,
+        ..usable
+    };
+    let spills = Holding {
+        spills: Some(true),
+        ..usable
+    };
+    assert!(usable.usable() && !never.usable() && !runs.usable() && !stays.usable());
+    assert!(!spills.usable());
+    // Nothing usable: no cell for the conditions, none robust, no second round.
+    let mut core: Grid052 = [[[never; 4]; 3]; 2];
+    assert!(condition_cells_052(&core).is_empty());
+    assert_eq!(round_two_052(&core, &[]), None);
+    // Up to eight usable: every one, in the grid's order.
+    for &(a, s, w) in &[(1, 2, 0), (0, 1, 3), (0, 1, 2)] {
+        core[a][s][w] = usable;
+    }
+    assert_eq!(
+        condition_cells_052(&core),
+        [(0, 1, 2), (0, 1, 3), (1, 2, 0)]
+    );
+    // The neighbours: within an arm, one weight step and one shift step either way; a diagonal
+    // is not one, nor the same cell in the other arm.
+    assert_eq!(neighbours_052(&core, (0, 1, 2)), 1);
+    assert_eq!(
+        neighbours_052(&core, (1, 1, 3)),
+        0,
+        "a diagonal, and the other arm"
+    );
+    assert_eq!(neighbours_052(&core, (0, 2, 3)), 1, "one shift step");
+    // Ten usable: the eight with the most usable neighbours, ties to the lighter weight, then the
+    // smaller shift, then arm (A).
+    let mut core: Grid052 = [[[never; 4]; 3]; 2];
+    let ten = [
+        (0, 0, 0),
+        (0, 0, 1),
+        (0, 0, 2),
+        (0, 1, 1),
+        (0, 2, 3),
+        (1, 0, 3),
+        (1, 1, 0),
+        (1, 1, 1),
+        (1, 1, 2),
+        (1, 2, 1),
+    ];
+    for &(a, s, w) in &ten {
+        core[a][s][w] = usable;
+    }
+    assert_eq!(
+        ten.map(|c| neighbours_052(&core, c)),
+        [1, 3, 1, 1, 0, 0, 1, 3, 1, 1]
+    );
+    // By neighbours alone, no tie at the cut: (0,0,1) and (1,1,1) with three and the six with one
+    // are eight; (0,2,3) and (1,0,3), with none, are cut.
+    assert_eq!(
+        condition_cells_052(&core),
+        [
+            (0, 0, 0),
+            (0, 0, 1),
+            (0, 0, 2),
+            (0, 1, 1),
+            (1, 1, 0),
+            (1, 1, 1),
+            (1, 1, 2),
+            (1, 2, 1)
+        ]
+    );
+    // A tie at the cut: a row of four at shift 0 in arm (A), with one, two, two and one usable
+    // neighbours, and one of three in arm (B), with one, two and one, are seven; three cells with
+    // none tie for the eighth place, and it goes to the lighter weight, (0,2,0).
+    let mut cut: Grid052 = [[[never; 4]; 3]; 2];
+    let row = [
+        (0, 0, 0),
+        (0, 0, 1),
+        (0, 0, 2),
+        (0, 0, 3),
+        (1, 0, 0),
+        (1, 0, 1),
+        (1, 0, 2),
+    ];
+    let alone = [(0, 2, 0), (0, 2, 2), (1, 2, 3)];
+    for &(a, s, w) in row.iter().chain(alone.iter()) {
+        cut[a][s][w] = usable;
+    }
+    assert_eq!(row.map(|c| neighbours_052(&cut, c)), [1, 2, 2, 1, 1, 2, 1]);
+    assert_eq!(alone.map(|c| neighbours_052(&cut, c)), [0, 0, 0]);
+    assert_eq!(
+        condition_cells_052(&cut),
+        [
+            (0, 0, 0),
+            (0, 0, 1),
+            (0, 0, 2),
+            (0, 0, 3),
+            (0, 2, 0),
+            (1, 0, 0),
+            (1, 0, 1),
+            (1, 0, 2)
+        ]
+    );
+    // Robust: usable under every one of the three conditions.
+    let cells = [(0, 0, 1), (1, 1, 1)];
+    let all = [
+        vec![usable, usable],
+        vec![usable, usable],
+        vec![usable, usable],
+    ];
+    assert_eq!(robust_052(&cells, &all), cells);
+    for c in 0..3 {
+        let mut under = all.clone();
+        under[c][0] = runs;
+        assert_eq!(
+            robust_052(&cells, &under),
+            [(1, 1, 1)],
+            "condition {c} fails one"
+        );
+    }
+    let short = [vec![usable, usable], vec![usable, usable], vec![usable]];
+    assert_eq!(
+        robust_052(&cells, &short),
+        [(0, 0, 1)],
+        "a reading not made is no reading"
+    );
+    // The second round's cell: the most usable neighbours, then the lighter weight, then the
+    // smaller shift, then arm (A).
+    assert_eq!(
+        round_two_052(&core, &[(0, 0, 0), (1, 1, 1)]),
+        Some((1, 1, 1))
+    );
+    assert_eq!(
+        round_two_052(&core, &[(0, 0, 2), (1, 1, 0)]),
+        Some((1, 1, 0)),
+        "a tie to the lighter weight"
+    );
+    assert_eq!(
+        round_two_052(&core, &[(1, 1, 1), (0, 0, 1)]),
+        Some((0, 0, 1)),
+        "a tie to the smaller shift"
+    );
+    assert_eq!(
+        round_two_052(&cut, &[(1, 0, 0), (0, 0, 0)]),
+        Some((0, 0, 0)),
+        "a tie to arm (A)"
+    );
+    // What failed, per condition.
+    let under = [
+        vec![usable, runs],
+        vec![stays, usable],
+        vec![usable, spills],
+    ];
+    let mut failing = core;
+    failing[0][0][1] = never;
+    assert_eq!(
+        failures_052(&failing, &cells, &under),
+        [
+            [
+                [true, false, false],
+                [false, false, false],
+                [false, false, true],
+                [false, false, false]
+            ],
+            [
+                [false, false, false],
+                [false, true, false],
+                [false, false, false],
+                [false, true, false]
+            ]
+        ]
+    );
+    // The slow reading by kind of span: sixteen lead-in epochs, eight rounds of sixteen unkicked
+    // epochs, eight and eight of the hold's halves, twelve of the release and four of the tail, of
+    // eight windows each.
+    let spans = layout(RELEASE_STRETCHES_049[SET_050]);
+    let windows: Vec<[u64; 2]> = (0..RUN_EPOCHS_049[SET_050].saturating_mul(WINDOWS as u32))
+        .map(|_| [1, 2])
+        .collect();
+    let (by, _) = slow_read(&windows, &spans);
+    assert_eq!(
+        by.map(|[s, _]| s),
+        [128, 1_024, 512, 512, 768, 256],
+        "the windows of each kind"
+    );
+    assert!(by.iter().all(|&[s, g]| g == s.saturating_mul(2)));
+}
+
+// ------------------------------------------------ the runs, weekly (brief 052)
+
+#[test]
+#[ignore]
+fn the_slow_current_alone_the_backgrounds_and_the_controls_of_the_core_exhaustive() {
+    core_backgrounds_052(0);
+}
+
+#[test]
+#[ignore]
+fn the_slow_current_with_the_facilitating_class_the_backgrounds_and_the_controls_of_the_core_exhaustive()
+ {
+    core_backgrounds_052(1);
+}
+
+#[test]
+#[ignore]
+fn the_slow_current_alone_the_core_grid_at_the_lighter_weights_exhaustive() {
+    cells_052(0, &[0, 1]);
+}
+
+#[test]
+#[ignore]
+fn the_slow_current_alone_the_core_grid_at_the_heavier_weights_exhaustive() {
+    cells_052(0, &[2, 3]);
+}
+
+#[test]
+#[ignore]
+fn the_slow_current_with_the_facilitating_class_the_core_grid_at_the_lighter_weights_exhaustive() {
+    cells_052(1, &[0, 1]);
+}
+
+#[test]
+#[ignore]
+fn the_slow_current_with_the_facilitating_class_the_core_grid_at_the_heavier_weights_exhaustive() {
+    cells_052(1, &[2, 3]);
+}
+
+// ------------------------------------------------ brief 052's arithmetic, pinned before any run
+
+/// The critical slow potential (`slow_critical`): 1.138 of the threshold, where the soma's steady
+/// rise under an open gate, $s \cdot 128 / 257$, meets the gap of 0.564.
+const SLOW_CRITICAL_052: i32 = 74_589;
+
+/// The gate's opening at the drive's mean standing, a quarter, a half and three quarters of the gap
+/// above it, at 0.9 and at the threshold's base (`gate_openings`).
+const GATE_052: [i32; 6] = [0, 16_382, 32_767, 49_153, 53_919, 65_536];
+
+/// The per-spike release of the held state over the quiet one, per mille, `[arm][5, 10, 20 Hz]`
+/// (`per_spike_052`): under ADR-0019's constants the synapse depresses, under set (ii) it
+/// facilitates by the 1.4 to 1.6 the four rounds before were bounded by.
+const PER_SPIKE_052: [[u32; 3]; 2] = [[809, 601, 380], [1_453, 1_708, 1_505]];
+
+/// The shift rule's reading: the largest shift at which arm (A) at ADR-0117's weight holds the
+/// critical level at 20 Hz.
+const SHIFT_PLACED_052: u8 = 1;
+
+/// The arithmetic on the settled image (`arithmetic_052`): the prior's excitatory basal synapses
+/// onto the members, from the rest and from the members, as `(count, sum of weights)`; and the slow
+/// potential's levels, `[arm][weight][shift][background, quiet, 5 Hz, 10 Hz, 20 Hz]`.
+const ARITHMETIC_052: Arithmetic052 = (
+    [(1_577, 12_636_401), (28, 222_045)],
+    [
+        [
+            [
+                [37_027, 57_548, 89_379, 115_522, 136_140],
+                [20_121, 31_731, 47_825, 58_961, 71_556],
+                [2_184, 16_845, 24_977, 32_692, 39_273],
+            ],
+            [
+                [37_027, 78_200, 141_243, 192_455, 233_793],
+                [20_121, 41_191, 73_150, 98_389, 119_859],
+                [2_184, 24_012, 40_138, 49_850, 60_113],
+            ],
+            [
+                [37_027, 98_815, 193_016, 269_524, 331_375],
+                [20_121, 51_394, 98_558, 137_525, 167_000],
+                [2_184, 26_379, 50_095, 72_432, 83_659],
+            ],
+            [
+                [37_027, 119_417, 244_790, 346_588, 429_001],
+                [20_121, 61_798, 124_439, 175_071, 215_767],
+                [2_184, 33_030, 64_964, 90_001, 108_112],
+            ],
+        ],
+        [
+            [
+                [36_866, 51_540, 103_875, 195_501, 316_716],
+                [19_643, 26_636, 54_869, 99_669, 160_824],
+                [1_673, 16_445, 31_215, 50_431, 82_157],
+            ],
+            [
+                [36_866, 65_993, 169_790, 350_669, 590_081],
+                [19_643, 34_305, 87_269, 177_540, 296_764],
+                [1_673, 17_605, 47_379, 90_461, 148_993],
+            ],
+            [
+                [36_866, 80_634, 235_658, 505_759, 863_436],
+                [19_643, 42_024, 119_913, 254_971, 433_762],
+                [1_673, 24_223, 63_430, 130_251, 220_005],
+            ],
+            [
+                [36_866, 95_240, 301_455, 660_882, 1_136_816],
+                [19_643, 49_683, 152_702, 332_491, 570_365],
+                [1_673, 25_752, 79_464, 168_689, 287_056],
+            ],
+        ],
+    ],
+);
+
+/// The shift the rule places over a table of levels: the largest of `shifts` at which arm (A) at
+/// ADR-0117's weight reads the critical level at 20 Hz; none when no shift does.
+fn shift_placed(levels: &Levels052, shifts: &[u8; 3], critical: i32) -> Option<u8> {
+    let w = WEIGHTS_052
+        .iter()
+        .position(|&x| x == WEIGHTS_050[CELL_050.1])
+        .expect("ADR-0117's weight");
+    shifts
+        .iter()
+        .zip(levels[0][w].iter())
+        .filter(|(_, l)| l[4] >= critical)
+        .map(|(&g, _)| g)
+        .max()
+}
+
+/// The kicked assembly of the gate: its members' spikes, `(tick after the start, unit)`, and their
+/// slow potentials after the span.
+const GATE_KICKED_052: &[(u32, u32)] = &[
+    (57, 225),
+    (61, 436),
+    (64, 245),
+    (66, 616),
+    (70, 565),
+    (71, 325),
+    (72, 516),
+    (78, 5),
+    (78, 25),
+    (78, 56),
+    (78, 85),
+    (78, 105),
+    (78, 236),
+    (78, 256),
+    (78, 305),
+    (78, 345),
+    (78, 405),
+    (78, 416),
+    (78, 425),
+    (78, 465),
+    (78, 545),
+    (78, 636),
+    (79, 116),
+    (79, 445),
+    (79, 476),
+    (79, 525),
+    (80, 285),
+    (82, 176),
+    (82, 316),
+    (85, 16),
+    (86, 125),
+    (86, 296),
+    (87, 36),
+    (87, 45),
+    (87, 65),
+    (87, 76),
+    (87, 96),
+    (87, 136),
+    (87, 145),
+    (87, 156),
+    (87, 165),
+    (87, 185),
+    (87, 196),
+    (87, 205),
+    (87, 216),
+    (87, 265),
+    (87, 276),
+    (87, 336),
+    (87, 356),
+    (87, 365),
+    (87, 376),
+    (87, 385),
+    (87, 396),
+    (87, 456),
+    (87, 485),
+    (87, 496),
+    (87, 505),
+    (87, 536),
+    (87, 556),
+    (87, 576),
+    (87, 585),
+    (87, 596),
+    (87, 605),
+    (87, 625),
+    (258, 225),
+    (262, 436),
+    (265, 245),
+    (267, 616),
+    (271, 565),
+    (272, 325),
+    (273, 516),
+    (279, 5),
+    (279, 25),
+    (279, 56),
+    (279, 85),
+    (279, 105),
+    (279, 236),
+    (279, 256),
+    (279, 305),
+    (279, 345),
+    (279, 405),
+    (279, 416),
+    (279, 425),
+    (279, 465),
+    (279, 545),
+    (279, 636),
+    (280, 116),
+    (280, 445),
+    (280, 476),
+    (280, 525),
+    (281, 285),
+    (283, 176),
+    (283, 316),
+    (286, 16),
+    (287, 125),
+    (287, 296),
+    (288, 36),
+    (288, 45),
+    (288, 65),
+    (288, 76),
+    (288, 96),
+    (288, 136),
+    (288, 145),
+    (288, 156),
+    (288, 165),
+    (288, 185),
+    (288, 196),
+    (288, 205),
+    (288, 216),
+    (288, 265),
+    (288, 276),
+    (288, 336),
+    (288, 356),
+    (288, 365),
+    (288, 376),
+    (288, 385),
+    (288, 396),
+    (288, 456),
+    (288, 485),
+    (288, 496),
+    (288, 505),
+    (288, 536),
+    (288, 556),
+    (288, 576),
+    (288, 585),
+    (288, 596),
+    (288, 605),
+    (288, 625),
+    (459, 225),
+    (466, 245),
+    (468, 616),
+    (480, 56),
+    (480, 305),
+    (480, 345),
+    (480, 465),
+    (480, 636),
+    (487, 16),
+    (488, 125),
+    (488, 296),
+    (488, 325),
+    (488, 516),
+    (489, 36),
+    (489, 65),
+    (489, 96),
+    (489, 205),
+    (490, 425),
+    (491, 85),
+    (492, 25),
+    (495, 116),
+    (495, 565),
+    (496, 445),
+    (498, 285),
+    (498, 545),
+    (499, 405),
+    (499, 476),
+    (499, 556),
+    (500, 496),
+    (501, 416),
+    (502, 105),
+    (502, 256),
+    (504, 396),
+    (504, 505),
+    (505, 176),
+    (506, 5),
+    (506, 145),
+    (506, 156),
+    (506, 185),
+    (506, 525),
+    (506, 625),
+    (507, 485),
+    (508, 45),
+    (508, 236),
+    (508, 365),
+    (508, 385),
+    (508, 576),
+    (509, 605),
+    (510, 456),
+    (511, 76),
+    (511, 436),
+    (512, 276),
+    (513, 265),
+    (513, 585),
+    (514, 196),
+    (514, 316),
+    (514, 376),
+    (515, 165),
+    (515, 336),
+    (516, 136),
+    (519, 536),
+    (519, 596),
+    (521, 356),
+    (533, 216),
+    (681, 465),
+    (685, 245),
+    (689, 225),
+    (689, 325),
+    (689, 516),
+    (689, 616),
+    (690, 305),
+    (691, 425),
+    (692, 85),
+    (693, 25),
+    (696, 116),
+    (696, 565),
+    (697, 345),
+    (697, 445),
+    (699, 285),
+    (699, 545),
+    (700, 405),
+    (700, 476),
+    (700, 556),
+    (701, 496),
+    (702, 416),
+    (703, 105),
+    (703, 256),
+    (704, 56),
+    (705, 125),
+    (705, 396),
+    (705, 505),
+    (706, 176),
+    (707, 5),
+    (707, 145),
+    (707, 156),
+    (707, 185),
+    (707, 525),
+    (707, 625),
+    (708, 96),
+    (708, 485),
+    (709, 45),
+    (709, 236),
+    (709, 296),
+    (709, 365),
+    (709, 385),
+    (709, 576),
+    (710, 605),
+    (711, 456),
+    (712, 65),
+    (712, 76),
+    (712, 436),
+    (713, 36),
+    (713, 276),
+    (714, 265),
+    (714, 585),
+    (715, 16),
+    (715, 196),
+    (715, 316),
+    (715, 376),
+    (715, 636),
+    (716, 165),
+    (717, 136),
+    (720, 536),
+    (720, 596),
+    (722, 356),
+    (724, 205),
+    (734, 216),
+    (762, 336),
+];
+
+const GATE_SLOW_052: &[i32] = &[
+    1064683, 1082358, 1067147, 1070613, 1056291, 1033082, 1055896, 1050573, 1053280, 1102508,
+    1074089, 1065123, 1057603, 1052521, 1066821, 1058032, 1081997, 1077111, 1093050, 1053150,
+    1071892, 1060198, 1049686, 1068041, 1060814, 1082016, 1085781, 1060536, 1070158, 1061786,
+    1065572, 1059228, 1088153, 1101859, 1055127, 1045852, 1059181, 1050112, 1057912, 1061053,
+    1062363, 1041714, 1047959, 1042439, 1055802, 1065162, 1058506, 1068861, 1066590, 1061508,
+    1034649, 1067197, 1072160, 1086023, 1052003, 1056604, 1065533, 1023360, 1074219, 1064260,
+    1057977, 1047197, 1066171, 1069476,
+];
+
+// ------------------------------------------------ brief 052's readings, pinned from the runs
+
+/// A run not yet pinned.
+const UNPINNED_052: Pinned052 = Pinned052 {
+    rows: &[],
+    kicks: &[],
+    windows: 0,
+    epochs: 0,
+    slow: ([[0; 2]; 6], 0),
+};
+
+/// A reading not yet pinned.
+const UNREAD_052: Holding = Holding {
+    first_half: 0,
+    held: 0,
+    ignited: 0,
+    let_go: 0,
+    spills: None,
+};
+
+const NO_BURSTS_052: BurstRead049 = ([0; 5], [0; 8], None, 0);
+
+const NO_BACKGROUND_052: Background = Background {
+    members: 0,
+    rest: 0,
+    ticks: 0,
+};
+
+/// The backgrounds and controls, `[the core, (c), (d)][arm][shift][background, control]`.
+const BG_RUNS_052: [[[[Pinned052; 2]; 3]; 2]; 3] = [[[[UNPINNED_052; 2]; 3]; 2]; 3];
+
+/// The backgrounds and controls read by the rules, `[the core, (c), (d)][arm][shift]`.
+const BG_READ_052: [[[BackgroundControl; 3]; 2]; 3] =
+    [[[(NO_BACKGROUND_052, (0, 0, 0, 0), UNREAD_052, NO_BURSTS_052); 3]; 2]; 3];
+
+/// The core grid's cells, `[arm][shift][weight]`.
+const CELL_RUNS_052: [[[Pinned052; 4]; 3]; 2] = [[[UNPINNED_052; 4]; 3]; 2];
+
+/// The core grid read by the rules.
+const GRID_052: Grid052 = [[[UNREAD_052; 4]; 3]; 2];
+
+/// Every core cell's burst reading.
+const BURSTS_052: [[[BurstRead049; 4]; 3]; 2] = [[[NO_BURSTS_052; 4]; 3]; 2];
+
+/// Every core cell's slow potential and gate over its held stretches.
+const HELD_052: [[[SlowHeld; 4]; 3]; 2] = [[[([0; 2], 0); 4]; 3]; 2];
