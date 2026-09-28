@@ -870,6 +870,35 @@ mod tests {
         assert_eq!(u.refractory_ticks, 0);
     }
 
+    /// The slow rule fires "at or above", as `integrate` does. With no slow potential its soma lands
+    /// where `integrate`'s does, 0xFFD4 from every compartment at 1.0. With a slow potential of 1.0
+    /// under the gate open at 1.0, the potential leaks eight LSB to 0xFFF8 and the soma gains
+    /// 0x10000 · 0xFFF8 >> 20 = 4 095 more, landing at 0x10FD3; a threshold above its base first
+    /// decays by one LSB there, so the one it meets is the one set less one. Worked by hand from the
+    /// rule.
+    #[test]
+    fn the_slow_rule_fires_where_the_soma_lands_on_the_threshold_and_not_one_lsb_short() {
+        const LANDING: i32 = 0xFFD4;
+        for (slow, landing, decay) in [(0, LANDING, 0), (0x1_0000, LANDING + 4_095, 1)] {
+            for (thresh, fires) in [(landing + decay, true), (landing + decay + 1, false)] {
+                let mut u = unit();
+                u.v_thresh = thresh;
+                u.v_soma = Q16_ONE;
+                u.v_basal = Q16_ONE;
+                u.v_apical = Q16_ONE;
+                u.v_slow = slow;
+                assert_eq!(
+                    u.integrate_slow(0, 0, 0, 7, QUARTERS),
+                    fires,
+                    "slow {slow:#x} threshold {thresh:#x}"
+                );
+                if !fires {
+                    assert_eq!(u.v_soma, landing, "the soma landed one LSB short");
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_slow_potential_fires_a_unit_under_an_open_gate_that_the_same_inputs_do_not_fire() {
         let mut slow = unit();
