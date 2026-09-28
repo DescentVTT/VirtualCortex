@@ -8,6 +8,12 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **Brief 052: the slow current measured ([ADR-0124](docs/adr/0124-the-slow-current-measured.md)); no cell ran; finding F-57 opened and resolved; whitepaper 4.73.0.** In `runtime/cortex-runtime/tests/assembly.rs`, written before any run:
+  - **the arms**: ADR-0117's 64 members marked for the slow current, (A) under ADR-0019's short-term plasticity, (B) under set (ii) as well; $\tau_s = 2^{13}$, the gate from the drive's mean standing to the threshold's base;
+  - **the arithmetic by the slow rule itself**: the critical slow potential 1.138 of the threshold; the slow potential's levels under the prior's input and the assembly's; the per-spike ratio of the held state over the quiet one, 0.38 to 0.81 under (A) and 1.45 to 1.71 under (B); the slow potential a staircase of $2^{13}$ LSB, an input below one LSB a tick building nothing (F-57);
+  - **the shifts** 0, 1 and 2, placed by a rule written before the arithmetic was read; **the rules** ADR-0117's over arm, shift and weight, the conditions' cells cut to the eight with the most usable neighbours.
+
+  The readings, every weight frozen: ADR-0117's cell reproduced bit for bit; **the slow current raises the unwired members' rate from 1.6 Hz to 4 to 54 Hz**, its gate at the drive's mean standing multiplying every upward excursion by $1/(1 - s/s_c)$; the kick's volley full at every arm and shift and its second clause failed at every one, at shifts 0 and 1 by the members' background alone; **no cell ran**, by the protocol and the maintainers' choice to stop rather than move the measure; the next decision — the gate's voltages, the shift, the time constant or the line paused — named and not taken. `span_protocol_counting` reads the members' slow potential and gate per window while the engine carries a slow current, and nothing for any earlier run; `kicked_on` calls `kicked_on_keeping`. Two weekly tests.
 - **The slow current built ([ADR-0123](docs/adr/0123-the-slow-current-built.md)); image format 18; brief 052; unset, no pinned number moved but the four whole-image pins, re-pinned with the format under a masked check; whitepaper 4.73.0.**
   - **The mark**: `FLAG_SLOW`, bit 3 of `DendriticSuperNeuron::flags`, which `integrate` and `integrate_slow` leave as they find it.
   - **The state**: `DendriticSuperNeuron::v_slow`, `i32` Q16.16 at `[20..24)`, reserved from format 4 to 17; zero in every unmarked unit, and an image whose unmarked unit carries one is not at rest.
