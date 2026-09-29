@@ -13,7 +13,7 @@ pub(crate) use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, HomeostaticDrivePool,
 };
 
-pub(crate) use cortex_neuromod::DOPAMINE_TAU_SHIFT;
+pub(crate) use cortex_neuromod::{DOPAMINE_TAU_SHIFT, ValueCritic};
 
 pub(crate) use cortex_runtime::{
     Cancel, Config, Critic, Delivery, Drive, Executor, Feedback, Image, Outcome, Readout, Set,
@@ -9129,7 +9129,8 @@ pub(crate) fn earned_run_scheduled(
 /// `earned_run_scheduled` with `after` handed the executor mutably (brief 054), so that it can
 /// read the train, which `Executor::train` makes contiguous; it reads and never writes, as the
 /// task and the composer read the train at every trial already, so a run whose `after` reads
-/// the train is the run whose `after` does not.
+/// the train is the run whose `after` does not. It is `earned_run_valued` on an engine with no
+/// critic of its own, which it calls so and asserts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_observed(
     exec: &mut Engine,
@@ -9143,6 +9144,83 @@ pub(crate) fn earned_run_observed(
     critic: Option<Critic>,
     after: &mut dyn FnMut(&mut Engine, usize),
 ) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
+    assert_eq!(exec.critic(), None, "no critic of the engine's own");
+    let (run, moves, expected, values) = earned_run_valued(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flips,
+        signed,
+        critic,
+        after,
+    );
+    assert!(values.is_empty(), "no critic of the engine's, no value");
+    (run, moves, expected)
+}
+
+/// The critic's rule written a second time as the oracle's (brief 055, ADR-0131): the value of
+/// `counts` under `weights` — their products summed in `i128`, floored over $2^{\text{scale}}$
+/// by `div_euclid`, not a shift, and clamped to the width — the error of `reward_q16` against
+/// it, clamped to the width, and every weight moved by the error times its count floored over
+/// $2^{\text{shift}}$ by `div_euclid`, clamped to the `i16`. Returns the value, the error and
+/// the weights after.
+pub(crate) fn value_step(
+    weights: &[i16],
+    counts: &[u32],
+    critic: ValueCritic,
+    reward_q16: i32,
+) -> (i32, i32, Vec<i16>) {
+    assert_eq!(weights.len(), counts.len(), "one count a weight");
+    let width = |x: i128| x.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32;
+    let exact: i128 = weights
+        .iter()
+        .zip(counts)
+        .map(|(&w, &c)| i128::from(w).saturating_mul(i128::from(c)))
+        .fold(0, i128::saturating_add);
+    let value = width(exact.div_euclid(1i128 << critic.scale));
+    let error = width(i128::from(reward_q16).saturating_sub(i128::from(value)));
+    let moved = weights
+        .iter()
+        .zip(counts)
+        .map(|(&w, &c)| {
+            i128::from(w)
+                .saturating_add(
+                    i128::from(error)
+                        .saturating_mul(i128::from(c))
+                        .div_euclid(1i128 << critic.shift),
+                )
+                .clamp(i128::from(i16::MIN), i128::from(i16::MAX)) as i16
+        })
+        .collect();
+    (value, error, moved)
+}
+
+/// `earned_run_observed` under the engine's critic or none (brief 055, ADR-0131): with the
+/// engine's critic set the task carries none and delivers the outcome's reward, the engine takes
+/// its value from it, and the harness keeps its own weights, from the record's at the start, and
+/// its own counts, from the executor's at the start and every spike of the train since: at every
+/// rewarded trial it forms the value, the error and the step by `value_step`, holds the outcome's
+/// value, the reward it records as the modulator's and every unit's weight to them, and counts
+/// afresh; withheld, the outcome carries no value and the counts go on. The composer is fed the
+/// error the modulator received, as under the task's critic. Returns the run, the moves, the task
+/// critic's expectations, and the engine's value at each rewarded trial, empty without its
+/// critic. Without it this is `earned_run_observed`, which calls it so.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_valued(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flips: &[usize],
+    signed: bool,
+    critic: Option<Critic>,
+    after: &mut dyn FnMut(&mut Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>, Vec<i32>) {
     assert_eq!(exec.signed_gate(), signed, "the signed gate is the image's");
     assert_eq!(
         units, 1024,
@@ -9185,6 +9263,13 @@ pub(crate) fn earned_run_observed(
     let mut expectations = critic.map(|c| c.expected_q16);
     let shift = critic.map_or(0, |c| c.shift);
     let mut expected_after: Vec<[i32; 2]> = Vec::new();
+    // The engine's critic's oracle (ADR-0131): its constants, the weights and the counts as the
+    // record and the executor hold them at the start, and the value at each rewarded trial.
+    let engine_critic = exec.critic();
+    let mut weights: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
+    let mut pending: Vec<u32> = exec.features().to_vec();
+    let mut read_from = exec.ticks();
+    let mut values: Vec<i32> = Vec::new();
     let (blocks, trace) = run_on_scheduled(
         exec,
         task,
@@ -9248,7 +9333,67 @@ pub(crate) fn earned_run_observed(
                         outcome.expected_q16, None,
                         "trial {trial}: no critic, no expectation"
                     );
-                    expected
+                    match engine_critic {
+                        // The engine's critic (ADR-0131): the spikes since the last reading —
+                        // the lead-in's too, at the first — whole in the train, into the oracle's
+                        // counts; at a reward the value, the error and the step.
+                        Some(valued) => {
+                            let end = exec.ticks();
+                            assert!(end <= u64::from(u32::MAX), "the stamp is the tick");
+                            let mut reached = false;
+                            for &(tick, unit) in exec.train().iter().rev() {
+                                if u64::from(tick) < read_from {
+                                    reached = true;
+                                    break;
+                                }
+                                if let Some(count) = pending.get_mut(unit as usize) {
+                                    *count = count.saturating_add(1);
+                                }
+                            }
+                            assert!(
+                                reached || exec.train_overwritten() == 0,
+                                "trial {trial}: the train holds every spike since the last reading"
+                            );
+                            read_from = end;
+                            if feedback == Feedback::Withheld {
+                                assert_eq!(
+                                    outcome.value_q16, None,
+                                    "trial {trial}: no reward, no value"
+                                );
+                                expected
+                            } else {
+                                let (value, error, moved) =
+                                    value_step(&weights, &pending, valued, expected);
+                                assert_eq!(
+                                    outcome.value_q16,
+                                    Some(value),
+                                    "trial {trial}: the engine's value is the oracle's"
+                                );
+                                weights = moved;
+                                pending.iter_mut().for_each(|c| *c = 0);
+                                assert!(
+                                    exec.units()
+                                        .iter()
+                                        .zip(&weights)
+                                        .all(|(u, &w)| u.value_weight == w),
+                                    "trial {trial}: every weight is the oracle's"
+                                );
+                                assert!(
+                                    exec.features().iter().all(|&c| c == 0),
+                                    "trial {trial}: the counts start again"
+                                );
+                                values.push(value);
+                                error
+                            }
+                        }
+                        None => {
+                            assert_eq!(
+                                outcome.value_q16, None,
+                                "trial {trial}: no critic of the engine's, no value"
+                            );
+                            expected
+                        }
+                    }
                 }
             };
             assert_eq!(
@@ -9300,10 +9445,19 @@ pub(crate) fn earned_run_observed(
         expected_after.len(),
         if critic.is_some() { trials } else { 0 }
     );
+    assert_eq!(
+        values.len(),
+        if engine_critic.is_some() && feedback != Feedback::Withheld {
+            trials
+        } else {
+            0
+        }
+    );
     (
         (blocks, trace, composer.out, read, composer.volley_ticks),
         composer.moves,
         expected_after,
+        values,
     )
 }
 
