@@ -43,7 +43,7 @@ impl DendriticSuperNeuron {
         out[42..44].copy_from_slice(&self.refractory_ticks.to_le_bytes());
         out[44..48].copy_from_slice(&self.last_soma_spike_tick.to_le_bytes());
         out[48..52].copy_from_slice(&self.synapse_slab_idx.to_le_bytes());
-        out[52..54].copy_from_slice(&self._reserved.to_le_bytes());
+        out[52..54].copy_from_slice(&self.value_weight.to_le_bytes());
         out[54..56].copy_from_slice(&self.spatial_voxel_morton.to_le_bytes());
         out[56] = self.gate_state.load(Ordering::SeqCst);
         out[57] = self.flags;
@@ -68,7 +68,7 @@ impl DendriticSuperNeuron {
             refractory_ticks: u16_le(&bytes[42..44]),
             last_soma_spike_tick: u32_le(&bytes[44..48]),
             synapse_slab_idx: u32_le(&bytes[48..52]),
-            _reserved: u16_le(&bytes[52..54]),
+            value_weight: u16_le(&bytes[52..54]) as i16,
             spatial_voxel_morton: u16_le(&bytes[54..56]),
             gate_state: AtomicU8::new(bytes[56]),
             flags: bytes[57],
@@ -93,7 +93,7 @@ impl DendriticSuperNeuron {
         self.refractory_ticks = from.refractory_ticks;
         self.last_soma_spike_tick = from.last_soma_spike_tick;
         self.synapse_slab_idx = from.synapse_slab_idx;
-        self._reserved = from._reserved;
+        self.value_weight = from.value_weight;
         self.spatial_voxel_morton = from.spatial_voxel_morton;
         self.flags = from.flags;
         self.stp_r_ves = from.stp_r_ves;
@@ -106,14 +106,15 @@ impl DendriticSuperNeuron {
         self.encode() == other.encode()
     }
 
-    /// Whether the record decodes to an image at rest: an idle gate, an empty mailbox and zero
-    /// reserved bytes (§8.7); the stamp of a synapse's last message is a field the loop
-    /// writes (ADR-0054), so it may hold anything; and the slow potential is zero unless the
-    /// unit is marked for the slow current (ADR-0123), since nothing else writes it.
+    /// Whether the record decodes to an image at rest: an idle gate and an empty mailbox
+    /// (§8.7); the stamp of a synapse's last message is a field the loop writes (ADR-0054), so
+    /// it may hold anything; the slow potential is zero unless the unit is marked for the slow
+    /// current (ADR-0123), since nothing else writes it; and the value weight is what the critic
+    /// has learned (ADR-0131), so it may hold anything, the loader refusing one while the image
+    /// carries no critic. Since format 19 the record has no reserved byte.
     pub fn is_at_rest_image(&self) -> bool {
         self.is_image_ready()
             && (self.flags & FLAG_SLOW != 0 || self.v_slow == 0)
-            && self._reserved == 0
             && self.mailbox_head_ptr.load(Ordering::SeqCst) == MAILBOX_EMPTY
     }
 }
@@ -189,13 +190,17 @@ mod tests {
     use crate::dynamics::neuron::MailboxNode;
 
     #[test]
-    fn a_reserved_byte_that_is_not_zero_is_not_at_rest() {
-        let mut bytes = DendriticSuperNeuron::new(1).encode();
-        bytes[52] = 1;
-        let u = DendriticSuperNeuron::decode(&bytes);
-        assert_eq!(u._reserved, 1);
-        assert!(u.is_image_ready(), "the gate and the mailbox are fine");
-        assert!(!u.is_at_rest_image(), "but the reserved bytes are not zero");
+    fn what_a_unit_at_rest_may_carry_and_what_it_may_not() {
+        // The value weight (ADR-0131), what the critic learned: a unit at rest may carry any,
+        // signed, at [52..54).
+        for weight in [1i16, -1, i16::MIN, i16::MAX] {
+            let mut bytes = DendriticSuperNeuron::new(1).encode();
+            bytes[52..54].copy_from_slice(&weight.to_le_bytes());
+            let u = DendriticSuperNeuron::decode(&bytes);
+            assert_eq!(u.value_weight, weight);
+            assert!(u.is_image_ready());
+            assert!(u.is_at_rest_image(), "{weight}: the critic's, at rest");
+        }
         // The slow potential (ADR-0123): a unit marked for the slow current may carry one, and
         // an unmarked unit, which nothing writes it in, may not.
         let mut bytes = DendriticSuperNeuron::new(1).encode();
@@ -248,6 +253,7 @@ mod tests {
         u.spatial_voxel_morton = 0x1234;
         u.flags = 0x03 | FLAG_SLOW;
         u.v_slow = -0x0102_0304;
+        u.value_weight = -0x1234;
         u.stp_r_ves = 200;
         u.stp_u_rel = 51;
         assert!(u.set_delta_head(0x00FF_FFFF));
@@ -260,6 +266,11 @@ mod tests {
             &bytes[20..24],
             &(-0x0102_0304i32).to_le_bytes(),
             "the slow potential at [20..24)"
+        );
+        assert_eq!(
+            &bytes[52..54],
+            &(-0x1234i16).to_le_bytes(),
+            "the value weight at [52..54)"
         );
         assert_eq!(
             &bytes[60..64],
@@ -303,14 +314,21 @@ mod tests {
         cold.v_thresh = 456;
         cold.stp_u_rel = 77;
         cold.v_slow = 789;
+        cold.value_weight = -321;
         let nodes = [MailboxNode::new()];
         let mut slot = DendriticSuperNeuron::new(9);
         assert!(slot.mailbox_push(&nodes, 0, 42));
         assert!(slot.try_schedule());
         slot.restore_plain_fields(&cold);
         assert_eq!(
-            (slot.v_soma, slot.v_thresh, slot.stp_u_rel, slot.v_slow),
-            (123, 456, 77, 789)
+            (
+                slot.v_soma,
+                slot.v_thresh,
+                slot.stp_u_rel,
+                slot.v_slow,
+                slot.value_weight
+            ),
+            (123, 456, 77, 789, -321)
         );
         assert_eq!(
             slot.gate(),

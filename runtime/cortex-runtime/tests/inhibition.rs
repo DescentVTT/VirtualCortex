@@ -6045,9 +6045,10 @@ const REVERSAL_CENSUS_1024: [&[(u32, u64)]; 2] = [
 /// The one inhibited image both arms decode, its CRC-64: the same bytes in both tests. Since
 /// ADR-0094 the image's format is not the one H-17 read, so its header's version and seal are
 /// not the bytes H-17 read, and ADR-0095 pins the image as it is now beside the CRC H-17 read;
-/// ADR-0114 moved the format from 16 to 17 and ADR-0123 from 17 to 18, and each re-pinned it the
-/// same way (it was `0xd2965219775c394a` at format 16 and `0x938ad516b6badd90` at 17).
-const REVERSAL_IMAGE_CRC_1024: u64 = 0x50af5c06f491f0fe;
+/// ADR-0114 moved the format from 16 to 17, ADR-0123 from 17 to 18 and ADR-0131 from 18 to 19,
+/// and each re-pinned it the same way (it was `0xd2965219775c394a` at format 16,
+/// `0x938ad516b6badd90` at 17 and `0x50af5c06f491f0fe` at 18).
+const REVERSAL_IMAGE_CRC_1024: u64 = 0x11b3db0935771424;
 /// The same image with its header's version written back to 15 and the header resealed: the
 /// CRC-64 H-17 read (ADR-0091), so that every byte of the image but the version and the seal is
 /// the image H-17 ran from (ADR-0095).
@@ -13743,10 +13744,11 @@ const PUNISHED_MOVES_1024: [&[MovesBlock]; 2] = [
     ],
 ];
 /// The one signed image every arm of H-18, H-19 and H-20 decodes, its CRC-64. ADR-0114 moved
-/// the format from 16 to 17 and ADR-0123 from 17 to 18, so its header's version and seal are not
-/// the bytes those arms read; the image as it is now, re-pinned as ADR-0095 re-pinned H-17's (it
-/// was `0x766de462f9b77576` at format 17).
-const PUNISHED_IMAGE_CRC_1024: u64 = 0xb5486d72bb9c5818;
+/// the format from 16 to 17, ADR-0123 from 17 to 18 and ADR-0131 from 18 to 19, so its header's
+/// version and seal are not the bytes those arms read; the image as it is now, re-pinned as
+/// ADR-0095 re-pinned H-17's (it was `0x766de462f9b77576` at format 17 and
+/// `0xb5486d72bb9c5818` at 18, the CRC H-21 read).
+const PUNISHED_IMAGE_CRC_1024: u64 = 0xf454ea7d7a7abcc2;
 /// The same image with its header's version written back to 16 and the header resealed: the
 /// CRC-64 H-18, H-19 and H-20 read (ADR-0096, ADR-0108, ADR-0110), so that every byte of the
 /// image but the version and the seal is the image they ran from (ADR-0114, as ADR-0095).
@@ -14421,8 +14423,8 @@ fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
         (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
-        (0xb548_6d72_bb9c_5818, 0x3771_636d_3851_91ac),
-        "H-18's image, at format 18 and as read at format 16"
+        (0xf454_ea7d_7a7a_bcc2, 0x3771_636d_3851_91ac),
+        "H-18's image, at format 19 and as read at format 16"
     );
     // The criterion's clauses 1 and 2 at their edges over blocks written by hand, as H-18's.
     let blocks_of = |correct: &[u32]| -> Vec<Block> {
@@ -22219,8 +22221,8 @@ fn a_few_trials_over_a_schedule_at_1024_units_and_the_rules_of_the_schedule() {
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
         (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
-        (0xb548_6d72_bb9c_5818, 0x3771_636d_3851_91ac),
-        "H-19's image, H-18's, at format 18 and as H-19 read it at format 16"
+        (0xf454_ea7d_7a7a_bcc2, 0x3771_636d_3851_91ac),
+        "H-19's image, H-18's, at format 19 and as H-19 read it at format 16"
     );
     // The schedule's rule: the mapping in force is the other than the first from the 1 537th
     // trial to the 3 584th and from the 5 633rd to the last; under H-19's one flip, from the
@@ -29690,8 +29692,8 @@ fn the_target_s_rule_the_clauses_of_h_21_and_the_image_s_patch() {
     );
     assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
     assert_eq!(
-        PUNISHED_IMAGE_CRC_1024, 0xb548_6d72_bb9c_5818,
-        "H-20's image"
+        PUNISHED_IMAGE_CRC_1024, 0xf454_ea7d_7a7a_bcc2,
+        "H-20's image, at format 19 (ADR-0131)"
     );
     assert_eq!(
         (

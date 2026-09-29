@@ -2,7 +2,10 @@
 //! the reward that moves its dopamine (ADR-0027), and the modulation of three-factor
 //! plasticity that the dopamine signal sets (ADR-0032): the fraction of a synapse's
 //! eligibility trace that `cortex-core` consolidates into the weight at a presynaptic spike.
-//! The record's bytes for the image and the per-tick decay the executor applies are here too.
+//! The record's bytes for the image and the per-tick decay the executor applies are here too,
+//! and the rule of the critic that forms the prediction error the dopamine signal receives
+//! (ADR-0130, ADR-0131): the value, the error and the step over the units' value weights and
+//! their spikes since the previous reward, which the executor composes.
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -121,9 +124,83 @@ impl NeuromodulatorState {
     }
 }
 
+/// The longest step shift the critic's rule resolves (ADR-0131): at 31 or more one spike under
+/// any error of the `i32` lattice moves a weight by nothing or by the floor's one LSB down, the
+/// error's sign and not a step.
+pub const CRITIC_SHIFT_MAX: u8 = 30;
+/// The widest scale the critic's rule resolves (ADR-0131): at 15 or more one spike at the
+/// weight's positive rail, `i16::MAX`, predicts less than one LSB of reward.
+pub const CRITIC_SCALE_MAX: u8 = 14;
+
+/// The critic of the engine's own (ADR-0130, ADR-0131): a value weight on every unit, the
+/// value of a reward the weights times each unit's spikes since the previous reward, the
+/// prediction error the reward less the value, and each weight moved by the error times its
+/// unit's spikes — the delta rule of a linear critic (Sutton and Barto 2018). The rule is pure:
+/// the weights live in the units' records and the counts in the executor, which composes it.
+///
+/// The widths, written first: a weight is an `i16` whose one LSB predicts $2^{-\text{scale}}$
+/// of a Q16.16 LSB of reward per spike; a count is a `u32`, saturating; the value sums
+/// $w_i c_i$ in `i64` — each product within $2^{15} \cdot 2^{32} = 2^{47}$ — saturating, takes
+/// the floor over $2^{\text{scale}}$ and is clamped to the `i32` of a Q16.16 reward; the step
+/// is $\lfloor \delta c_i / 2^{\text{shift}} \rfloor$, the product within
+/// $2^{31} \cdot 2^{32} = 2^{63}$ in `i64`, and the weight after it is clamped to the `i16`.
+/// Not a record: the constants are a parameter of the image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueCritic {
+    /// The step's shift $k$: a weight moves by the floor of $\delta c / 2^k$.
+    pub shift: u8,
+    /// The weight's scale $s$: the value is the floor of $\sum_i w_i c_i / 2^s$, Q16.16.
+    pub scale: u8,
+}
+
+impl ValueCritic {
+    /// Constants the rule resolves: a shift of at most `CRITIC_SHIFT_MAX` and a scale of at
+    /// most `CRITIC_SCALE_MAX`.
+    pub const fn is_valid(&self) -> bool {
+        self.shift <= CRITIC_SHIFT_MAX && self.scale <= CRITIC_SCALE_MAX
+    }
+
+    /// The value, Q16.16: the floor of $\sum_i w_i c_i / 2^{\text{scale}}$ over the
+    /// `(weight, count)` pairs, the sum in `i64` saturating, clamped to the `i32`. A scale above
+    /// `CRITIC_SCALE_MAX` is taken as it, as the configuration and the loader refuse it.
+    pub fn value_q16<I: IntoIterator<Item = (i16, u32)>>(&self, features: I) -> i32 {
+        let sum = features.into_iter().fold(0i64, |sum, (weight, count)| {
+            sum.saturating_add(i64::from(weight).saturating_mul(i64::from(count)))
+        });
+        (sum >> self.scale.min(CRITIC_SCALE_MAX)).clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+            as i32
+    }
+
+    /// The prediction error of a reward against the value: the reward less the value,
+    /// saturating. It is what the modulator receives in the reward's place.
+    pub const fn error_q16(reward_q16: i32, value_q16: i32) -> i32 {
+        reward_q16.saturating_sub(value_q16)
+    }
+
+    /// A weight after the step of `error_q16` on a unit that fired `count` times since the
+    /// previous reward: the weight plus the floor of $\delta c / 2^{\text{shift}}$, clamped to
+    /// the `i16`. A count of zero moves nothing; a positive error moves a weight up by at least
+    /// nothing, a negative one down by at least one LSB. A shift above `CRITIC_SHIFT_MAX` is
+    /// taken as it.
+    pub fn step(&self, weight: i16, error_q16: i32, count: u32) -> i16 {
+        let step = i64::from(error_q16).saturating_mul(i64::from(count))
+            >> self.shift.min(CRITIC_SHIFT_MAX);
+        i64::from(weight)
+            .saturating_add(step)
+            .clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16
+    }
+}
+
 const _: () = {
     assert!(core::mem::size_of::<NeuromodulatorState>() == 16);
     assert!(core::mem::align_of::<NeuromodulatorState>() == 16);
+    // One spike at the positive rail predicts one LSB at the widest scale and none beyond it,
+    // and the largest positive error on one spike moves a weight by one LSB at the longest
+    // shift and by none beyond it.
+    assert!(i16::MAX as i64 >> CRITIC_SCALE_MAX == 1);
+    assert!(i16::MAX as i64 >> (CRITIC_SCALE_MAX + 1) == 0);
+    assert!(i32::MAX as i64 >> CRITIC_SHIFT_MAX == 1);
+    assert!(i32::MAX as i64 >> (CRITIC_SHIFT_MAX + 1) == 0);
 };
 
 #[cfg(test)]
@@ -279,6 +356,95 @@ mod tests {
         assert_eq!(m.modulation(0), 0, "where the gate's modulation is zero");
     }
 
+    /// The critic's constants (ADR-0131) at their bounds on both sides.
+    #[test]
+    fn the_critic_s_constants_are_valid_within_what_the_rule_resolves() {
+        let critic = |shift, scale| ValueCritic { shift, scale };
+        assert_eq!((CRITIC_SHIFT_MAX, CRITIC_SCALE_MAX), (30, 14));
+        for (shift, scale) in [(0, 0), (30, 0), (0, 14), (30, 14), (9, 2)] {
+            assert!(critic(shift, scale).is_valid(), "{shift} {scale}");
+        }
+        for (shift, scale) in [(31, 0), (0, 15), (31, 15), (u8::MAX, 2), (9, u8::MAX)] {
+            assert!(!critic(shift, scale).is_valid(), "{shift} {scale}");
+        }
+    }
+
+    /// The value (ADR-0131), each number worked by hand: the weights times the counts, summed,
+    /// over $2^{\text{scale}}$ and floored; a unit that did not fire adds nothing whatever its
+    /// weight; the sum saturates in `i64` and the value at the `i32`; a scale past the bound is
+    /// the bound.
+    #[test]
+    fn the_value_is_the_weights_times_the_counts_over_the_scale_floored_and_clamped() {
+        let at = |scale| ValueCritic { shift: 9, scale };
+        assert_eq!(at(0).value_q16([]), 0, "no unit, no value");
+        let pairs = [(4, 3), (-2, 5)];
+        assert_eq!(at(0).value_q16(pairs), 2, "12 less 10");
+        assert_eq!(at(1).value_q16(pairs), 1);
+        assert_eq!(at(2).value_q16(pairs), 0, "a half, floored");
+        assert_eq!(
+            at(1).value_q16([(-3, 1)]),
+            -2,
+            "minus one and a half, floored"
+        );
+        assert_eq!(
+            at(0).value_q16([(i16::MAX, 0), (i16::MIN, 0)]),
+            0,
+            "no spike"
+        );
+        assert_eq!(at(2).value_q16([(1_285, 51)]), 16_383, "65 535 over four");
+        assert_eq!(at(0).value_q16([(i16::MAX, u32::MAX)]), i32::MAX);
+        assert_eq!(at(0).value_q16([(i16::MIN, u32::MAX)]), i32::MIN);
+        // 2^16 products of 2^47 each reach the `i64` rail, which the sum holds.
+        let many = core::iter::repeat_n((i16::MAX, u32::MAX), 1 << 17);
+        assert_eq!(at(14).value_q16(many.clone()), i32::MAX);
+        let back = many.chain(core::iter::once((i16::MIN, u32::MAX)));
+        assert_eq!(at(14).value_q16(back), i32::MAX, "saturated, not wrapped");
+        let wide = [(i16::MAX, 3), (-7, 11)];
+        assert_eq!(at(14).value_q16(wide), 5, "98 224 over 16 384, floored");
+        assert_eq!(at(u8::MAX).value_q16(wide), at(14).value_q16(wide));
+        assert_eq!(at(15).value_q16(wide), at(14).value_q16(wide));
+    }
+
+    /// The error and the step (ADR-0131), each number worked by hand: the error saturates; a
+    /// unit that did not fire keeps its weight under any error; the step is the floor of the
+    /// error times the count over $2^{\text{shift}}$, so a positive error below one step moves
+    /// nothing and a negative one moves one LSB down; the weight saturates at its rails; a shift
+    /// past the bound is the bound.
+    #[test]
+    fn a_zero_feature_moves_nothing_and_the_step_has_the_error_s_sign_and_its_floor() {
+        assert_eq!(ValueCritic::error_q16(0x1_0000, 0x4000), 0xC000);
+        assert_eq!(ValueCritic::error_q16(-0x1_0000, 0x4000), -0x1_4000);
+        assert_eq!(ValueCritic::error_q16(i32::MIN, 1), i32::MIN, "saturates");
+        assert_eq!(ValueCritic::error_q16(i32::MAX, -1), i32::MAX);
+        let at = |shift| ValueCritic { shift, scale: 2 };
+        for error in [i32::MIN, -1, 0, 1, i32::MAX] {
+            for w in [i16::MIN, -1, 0, 1, i16::MAX] {
+                assert_eq!(at(0).step(w, error, 0), w, "{w} {error}: no spike");
+                assert_eq!(at(30).step(w, error, 0), w);
+            }
+        }
+        assert_eq!(at(9).step(0, 512, 1), 1);
+        assert_eq!(at(9).step(0, 511, 1), 0, "below one step, nothing");
+        assert_eq!(at(9).step(0, 0, 1), 0);
+        assert_eq!(at(9).step(0, -1, 1), -1, "the floor, one LSB down");
+        assert_eq!(at(9).step(0, -512, 1), -1);
+        assert_eq!(at(9).step(0, -513, 1), -2);
+        assert_eq!(at(9).step(0, 512, 3), 3, "the count multiplies");
+        assert_eq!(at(9).step(0, 100, 6), 1, "600 over 512");
+        assert_eq!(at(9).step(-100, 1_024, 2), -96);
+        assert_eq!(at(0).step(i16::MAX, 1 << 20, 1), i16::MAX, "the rail");
+        assert_eq!(at(0).step(i16::MIN, -(1 << 20), 1), i16::MIN);
+        assert_eq!(at(1).step(i16::MAX - 1, 2, 1), i16::MAX);
+        assert_eq!(at(1).step(i16::MAX - 1, 4, 1), i16::MAX);
+        assert_eq!(at(1).step(i16::MIN + 1, -3, 1), i16::MIN);
+        assert_eq!(at(30).step(0, i32::MAX, 1), 1);
+        assert_eq!(at(30).step(0, i32::MIN, 1), -2);
+        assert_eq!(at(30).step(0, i32::MIN, u32::MAX), i16::MIN, "in i64");
+        assert_eq!(at(0).step(0, i32::MAX, u32::MAX), i16::MAX);
+        assert_eq!(at(u8::MAX).step(0, i32::MAX, 1), 1, "the bound");
+        assert_eq!(at(31).step(0, -1_000, 1), at(30).step(0, -1_000, 1));
+    }
+
     #[test]
     fn the_record_round_trips_through_its_sixteen_bytes() {
         let m = NeuromodulatorState {
@@ -349,6 +515,92 @@ mod prop {
         let mut rng = Lcg::new(0x94);
         for _ in 0..100_000 {
             check(rng.i32_edge_biased(), rng.i32_edge_biased());
+        }
+    }
+
+    /// The critic's step over the lattice (ADR-0131): for every weight, error and count of the
+    /// lattices and every shift the rule resolves, the step is an `i128` oracle's — the weight
+    /// plus the error times the count, floored over $2^{\text{shift}}$ by `div_euclid`, clamped
+    /// to the `i16` — written from the rule's text and not from `step`.
+    #[test]
+    fn the_critic_s_step_is_the_error_times_the_count_floored_over_the_shift_at_every_lattice_point()
+     {
+        for shift in 0..=CRITIC_SHIFT_MAX {
+            let critic = ValueCritic { shift, scale: 0 };
+            let divisor = 1i128 << shift;
+            for &weight in I16_LATTICE.iter() {
+                for &error in I32_LATTICE.iter() {
+                    for &count in U32_LATTICE.iter() {
+                        let oracle = (i128::from(weight)
+                            + (i128::from(error) * i128::from(count)).div_euclid(divisor))
+                        .clamp(i128::from(i16::MIN), i128::from(i16::MAX));
+                        assert_eq!(
+                            i128::from(critic.step(weight, error, count)),
+                            oracle,
+                            "{shift} {weight} {error} {count}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The critic's value and its step together over seeded draws (ADR-0131): the value is an
+    /// `i128` oracle's — the weights times the counts summed exactly, floored over
+    /// $2^{\text{scale}}$, clamped to the `i32` — and after every unit steps under the error of a
+    /// reward against it, the value of the same features moves with the error's sign or not at
+    /// all: the delta rule moves the value toward the reward.
+    #[test]
+    fn the_critic_s_value_is_the_exact_sum_floored_and_a_step_moves_it_with_the_error_s_sign() {
+        let mut rng = Lcg::new(0x131);
+        for draw in 0..20_000 {
+            let critic = ValueCritic {
+                shift: rng.below(u32::from(CRITIC_SHIFT_MAX) + 1) as u8,
+                scale: rng.below(u32::from(CRITIC_SCALE_MAX) + 1) as u8,
+            };
+            let units = rng.below(9) as usize;
+            let mut weights = [0i16; 8];
+            let mut counts = [0u32; 8];
+            for k in 0..units {
+                weights[k] = if rng.below(2) == 0 {
+                    rng.pick(&I16_LATTICE)
+                } else {
+                    rng.next_i16()
+                };
+                counts[k] = if rng.below(2) == 0 {
+                    rng.below(4)
+                } else {
+                    rng.u32_edge_biased()
+                };
+            }
+            let pairs = || {
+                weights[..units]
+                    .iter()
+                    .copied()
+                    .zip(counts[..units].iter().copied())
+            };
+            let exact: i128 = pairs().map(|(w, c)| i128::from(w) * i128::from(c)).sum();
+            let oracle = exact
+                .div_euclid(1i128 << critic.scale)
+                .clamp(i128::from(i32::MIN), i128::from(i32::MAX));
+            let value = critic.value_q16(pairs());
+            assert_eq!(i128::from(value), oracle, "draw {draw}");
+            let reward = rng.i32_edge_biased();
+            let error = ValueCritic::error_q16(reward, value);
+            let mut after = weights;
+            for k in 0..units {
+                after[k] = critic.step(weights[k], error, counts[k]);
+            }
+            let moved = critic.value_q16(
+                after[..units]
+                    .iter()
+                    .copied()
+                    .zip(counts[..units].iter().copied()),
+            );
+            assert!(
+                (error >= 0 && moved >= value) || (error < 0 && moved <= value),
+                "draw {draw}: {value} to {moved} under {error}"
+            );
         }
     }
 }

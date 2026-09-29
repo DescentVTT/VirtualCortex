@@ -19,7 +19,9 @@
 //! record, always, and its term arena and clause store when they hold anything. A unit's mark
 //! for the class (ADR-0114) is a bit of its record's `flags`; since ADR-0123 the slow current's
 //! constants sit in the modulation state beside the class, set or unset, and a unit's mark for
-//! it is another bit of `flags`, its slow potential a field of its record.
+//! it is another bit of `flags`, its slow potential a field of its record; since ADR-0131 the
+//! critic's constants sit there too, set or unset, and a unit's weight onto it is a field of its
+//! record, zero in every unit while the critic is unset.
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_affect::InteroceptiveState;
@@ -36,7 +38,7 @@ use cortex_core::{
 use cortex_executive::PolicyAmendment;
 use cortex_hippocampus::{Episode, HippocampalAttractorState};
 use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, HomeostaticDrivePool, SLEEP_SHIFT_MAX};
-use cortex_neuromod::NeuromodulatorState;
+use cortex_neuromod::{NeuromodulatorState, ValueCritic};
 use cortex_reasoning::{INVENTED_BASE, INVENTED_LIMIT, InductionState, TermNode};
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -128,6 +130,9 @@ pub enum ImageError {
     /// A unit is marked `FLAG_SLOW` while the image carries no slow current for it to integrate
     /// under (ADR-0123).
     MarkWithoutSlowCurrent(u32),
+    /// A unit carries a value weight while the image carries no critic to read it (ADR-0131):
+    /// nothing but the critic writes one.
+    ValueWithoutCritic(u32),
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -182,9 +187,39 @@ const SLOW_CURRENT_V_HI: core::ops::Range<usize> = 44..48;
 const SLOW_CURRENT_SET: u8 = 1;
 /// The slow current's bytes after its flag, `[37..48)`, the reserved `[39]` among them.
 const SLOW_CURRENT_BYTES: core::ops::Range<usize> = 37..48;
+
+/// The modulator section's critic (ADR-0131; format 19): a flag byte at `[48]`, `CRITIC_SET`
+/// while the constants are set and zero while they are not; the step's shift at `[49]` and the
+/// weight's scale at `[50]`; every byte zero while unset. `[51..64)` stay reserved and must be
+/// zero. A record a format-18 writer left zero there reads as unset, which is the rule before
+/// ADR-0131 bit for bit.
+const CRITIC_FLAG: usize = 48;
+const CRITIC_SHIFT: usize = 49;
+const CRITIC_SCALE: usize = 50;
+const CRITIC_SET: u8 = 1;
+
 /// The modulator record's reserved bytes: between the signed gate and the target period, the
-/// slow current's one, and its tail.
-const MODULATOR_RESERVED: [core::ops::Range<usize>; 3] = [26..28, 39..40, 48..64];
+/// slow current's one, and its tail after the critic.
+const MODULATOR_RESERVED: [core::ops::Range<usize>; 3] = [26..28, 39..40, 51..64];
+
+/// The critic a modulator record carries (ADR-0131): none while its flag and its two bytes are
+/// zero; the constants while its flag is `CRITIC_SET`, which `Executor::new` refuses as it
+/// refuses the configuration's when the rule does not resolve them; any other flag, or a byte
+/// beside a zero flag, is one the writer never produces.
+fn critic_of(record: &[u8]) -> Result<Option<ValueCritic>, ImageError> {
+    let critic = ValueCritic {
+        shift: record[CRITIC_SHIFT],
+        scale: record[CRITIC_SCALE],
+    };
+    match record[CRITIC_FLAG] {
+        0 if record[CRITIC_SHIFT] == 0 && record[CRITIC_SCALE] == 0 => Ok(None),
+        CRITIC_SET => Ok(Some(critic)),
+        _ => Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0,
+        }),
+    }
+}
 
 /// The slow current a modulator record carries (ADR-0123): none while its flag and its bytes
 /// are zero; the constants while its flag is `SLOW_CURRENT_SET` and its reserved byte zero,
@@ -476,9 +511,10 @@ impl Image {
         // (ADR-0086), the signed gate's flag at `[25]` (ADR-0094), the class of short-term
         // plasticity's flag at `[32]` and its three bytes at `[33..36)` (ADR-0114; format 17),
         // the slow current's flag at `[36]`, its shifts at `[37]` and `[38]` and its voltages
-        // at `[40..48)` (ADR-0123; format 18) and 19 reserved bytes. The baselines, the period,
-        // the gate, the class and the slow current change what a run does, so they are in the
-        // image, not in a configuration (§8.3).
+        // at `[40..48)` (ADR-0123; format 18), the critic's flag at `[48]` and its shift and
+        // scale at `[49]` and `[50]` (ADR-0131; format 19) and 16 reserved bytes. The
+        // baselines, the period, the gate, the class, the slow current and the critic change what
+        // a run does, so they are in the image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -502,6 +538,11 @@ impl Image {
             modulator_bytes[SLOW_CURRENT_INPUT] = current.input_shift;
             modulator_bytes[SLOW_CURRENT_V_LO].copy_from_slice(&current.v_lo_q16.to_le_bytes());
             modulator_bytes[SLOW_CURRENT_V_HI].copy_from_slice(&current.v_hi_q16.to_le_bytes());
+        }
+        if let Some(critic) = exec.critic() {
+            modulator_bytes[CRITIC_FLAG] = CRITIC_SET;
+            modulator_bytes[CRITIC_SHIFT] = critic.shift;
+            modulator_bytes[CRITIC_SCALE] = critic.scale;
         }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
@@ -679,14 +720,17 @@ impl Image {
         let terms = term.map_or(0, |t| t.record_count() as usize);
         let clauses = clause.map_or(0, |c| c.record_count() as usize);
         // The modulator's one record (ADR-0032), read here for the class of short-term
-        // plasticity (ADR-0114) and the slow current (ADR-0123): each worker holds both from
-        // `Executor::new`, and a unit marked for either is refused below while there is none.
-        // The image's, set or unset, outrank the configuration's (§8.3).
+        // plasticity (ADR-0114), the slow current (ADR-0123) and the critic (ADR-0131): each
+        // worker holds the first two from `Executor::new`, which sizes the critic's counts, and
+        // a unit marked for either of the first two, or carrying a weight for the third, is
+        // refused below while there is none. The image's, set or unset, outrank the
+        // configuration's (§8.3).
         if modulator.record_count() != 1 {
             return Err(ImageError::Directory(SECTION_MODULATOR));
         }
         let stp_class = stp_class_of(section_of(bytes, &modulator)?)?;
         let slow_current = slow_current_of(section_of(bytes, &modulator)?)?;
+        let critic = critic_of(section_of(bytes, &modulator)?)?;
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
@@ -697,6 +741,7 @@ impl Image {
             clauses: clauses.saturating_add(config.clauses),
             stp_class,
             slow_current,
+            critic,
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -775,6 +820,9 @@ impl Image {
                 if unit.flags & FLAG_SLOW != 0 && slow_current.is_none() {
                     return Err(ImageError::MarkWithoutSlowCurrent(i as u32));
                 }
+                if unit.value_weight != 0 && critic.is_none() {
+                    return Err(ImageError::ValueWithoutCritic(i as u32));
+                }
                 if unit.first_block().is_some_and(|b| b as usize >= blocks)
                     || unit.delta_head().is_some_and(|d| d as usize >= deltas)
                 {
@@ -805,9 +853,9 @@ impl Image {
             // the inhibitory rule's target period at `[20..24)` (each within its bounds, as
             // `Executor::new` would have demanded), the inhibitory baseline's flag at `[24]`
             // and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
-            // (ADR-0094), the class of short-term plasticity at `[32..36)` and the slow current
-            // at `[36..48)`, read above (ADR-0114, ADR-0123), 19 reserved bytes; its count was
-            // held to one above.
+            // (ADR-0094), the class of short-term plasticity at `[32..36)`, the slow current at
+            // `[36..48)` and the critic at `[48..51)`, read above (ADR-0114, ADR-0123,
+            // ADR-0131), 16 reserved bytes; its count was held to one above.
             let record = section_of(bytes, &modulator)?;
             let reserved_not_zero = || ImageError::ReservedNotZero {
                 section: SECTION_MODULATOR,

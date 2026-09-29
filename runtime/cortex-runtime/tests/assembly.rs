@@ -21180,9 +21180,9 @@ fn frozen_again(image: &[u8]) -> Vec<u8> {
 }
 
 /// H-20's image by its CRC-64: `PUNISHED_IMAGE_CRC_1024` of `tests/inhibition.rs`, restated;
-/// ADR-0123 moved the format from 17 to 18 and re-pinned it there (it was
-/// `0x766d_e462_f9b7_7576` at format 17).
-const H20_IMAGE_CRC: u64 = 0xb548_6d72_bb9c_5818;
+/// ADR-0123 moved the format from 17 to 18 and ADR-0131 from 18 to 19, each re-pinning it (it
+/// was `0x766d_e462_f9b7_7576` at format 17 and `0xb548_6d72_bb9c_5818` at 18).
+const H20_IMAGE_CRC: u64 = 0xf454_ea7d_7a7a_bcc2;
 
 /// An image with its header's version written as `version` and the header resealed, every other
 /// byte as it was (ADR-0095): the image a writer of that version would have produced from the
@@ -23478,16 +23478,17 @@ const GRID_BURSTS_050: [[BurstRead049; 5]; 4] = [
     ],
 ];
 
-/// Condition (c)'s image as `drained_image` reads it. ADR-0123 moved the format from 17 to 18,
-/// and the frozen image's CRC-64, the fifth field, with it: it was `0xd763_b4a5_8364_291e` at 17,
-/// which `drained_image` holds the image written back to 17 to (`DRAINED_IMAGE_CRC_FORMAT_17`).
+/// Condition (c)'s image as `drained_image` reads it. ADR-0123 moved the format from 17 to 18 and
+/// ADR-0131 from 18 to 19, and the frozen image's CRC-64, the fifth field, with each: it was
+/// `0xd763_b4a5_8364_291e` at 17, which `drained_image` holds the image written back to 17 to
+/// (`DRAINED_IMAGE_CRC_FORMAT_17`), and `0x1446_3db5_c14f_0470` at 18.
 const DRAINED_050: DrainedRead = (
     0xdd2a_9318_b3c5_d288,
     (11999067, 219302252),
     2541,
     21860,
     (11999067, 219302252),
-    0x1446_3db5_c14f_0470,
+    0x555a_baba_00a9_e0aa,
     [
         [[895229, 796796], [835204, 723315]],
         [[820924, 946459], [882146, 695808]],

@@ -20,6 +20,7 @@ use cortex_homeostasis::{
     ACTIVITY_WINDOW_BINS, CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, HomeostaticDrivePool,
     PRESSURE_MAX_Q16, REM_WINDOWS, SLEEP_SHIFT_MAX, STAGE_REM, STAGE_SWS, SWS_WINDOWS,
 };
+use cortex_neuromod::ValueCritic;
 use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, WriteAheadLog};
 use std::path::PathBuf;
 
@@ -295,13 +296,15 @@ fn a_record_that_is_not_at_rest_in_its_reserved_bytes_or_its_slot_is_refused_at_
         })
     ));
     let mut img = small_image();
+    // `[52..54)` was reserved until ADR-0131 made it the value weight, which only the critic
+    // writes: refused while the image carries none.
     patch_section(&mut img, SECTION_NEURON, |s| {
         s[52] = 1;
         s[53] = 2;
     });
     assert!(matches!(
         Image::decode::<8>(&img, Config::default()),
-        Err(ImageError::NotAtRest(0))
+        Err(ImageError::ValueWithoutCritic(0))
     ));
     let mut img = small_image_with_modulator();
     patch_section(&mut img, SECTION_MODULATOR, |s| s[63] = 7);
@@ -1180,9 +1183,9 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
         None,
         "the flag and the value zero, as a format-14 writer left them, read as unset"
     );
-    // `[32..36)` is the class of short-term plasticity's since ADR-0114, and `[36..48)` but
-    // `[39]` the slow current's since ADR-0123.
-    for at in [26, 27, 39, 48, 63] {
+    // `[32..36)` is the class of short-term plasticity's since ADR-0114, `[36..48)` but `[39]`
+    // the slow current's since ADR-0123, and `[48..51)` the critic's since ADR-0131.
+    for at in [26, 27, 39, 51, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1204,7 +1207,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(17)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(18)))
         ),
         "the previous format's header fails closed, as every foreign version does"
     );
@@ -1293,9 +1296,9 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "flag {flag}: a byte the writer never produces"
         );
     }
-    // `[32..36)` is the class of short-term plasticity's since ADR-0114, and `[36..48)` but
-    // `[39]` the slow current's since ADR-0123.
-    for at in [26, 27, 39, 48, 63] {
+    // `[32..36)` is the class of short-term plasticity's since ADR-0114, `[36..48)` but `[39]`
+    // the slow current's since ADR-0123, and `[48..51)` the critic's since ADR-0131.
+    for at in [26, 27, 39, 51, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1309,7 +1312,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "byte {at} is reserved"
         );
     }
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 18);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 15;
@@ -1462,8 +1465,9 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
             "{bytes:?}: bytes the writer never produces"
         );
     }
-    // `[36..48)` but `[39]` is the slow current's since ADR-0123.
-    for at in [26, 27, 39, 48, 63] {
+    // `[36..48)` but `[39]` is the slow current's since ADR-0123, and `[48..51)` the critic's
+    // since ADR-0131.
+    for at in [26, 27, 39, 51, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1508,7 +1512,7 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
         Err(ImageError::MarkWithoutClass(0))
     ));
     // A header stamped with format 16, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 18);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 16;
@@ -1714,7 +1718,7 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
             );
         }
     }
-    for at in [39, 48, 63] {
+    for at in [39, 51, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1774,7 +1778,7 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
         "a slow potential without the mark"
     );
     // A header stamped with format 17, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 18);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 17;
@@ -1787,4 +1791,301 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
         ),
         "a format-17 header fails closed, as every foreign version does (L-6)"
     );
+}
+
+/// The critic in the modulator section and the unit record (ADR-0131; format 19): a flag byte at
+/// `[48]`, the step's shift at `[49]` and the weight's scale at `[50]`, and each unit's value
+/// weight at its record's `[52..54)`. Unset, the three bytes are zero — the bytes a format-18
+/// writer left there — and read as unset whatever the configuration says; set, they are read
+/// back whatever the configuration says, beside the slow current, with every weight, and the
+/// counts start from zero at the load. Refused: constants the rule does not resolve, as the
+/// configuration's are; a critic with no train to count from; a flag of zero with a byte
+/// beside it, a flag that is neither zero nor one, and a reserved byte after them, which the
+/// writer never produces; a weight while the image carries no critic; and a header stamped
+/// with the previous version, as every foreign version is.
+#[test]
+fn the_critic_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads_as_unset() {
+    let critic = ValueCritic { shift: 9, scale: 2 };
+    let with_train = |critic: Option<ValueCritic>| Config {
+        train_capacity: 8,
+        critic,
+        ..Config::default()
+    };
+    let unset = small_image_with_modulator();
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(&section[48..64], &[0u8; 16], "unset writes zeros");
+    let loaded = Image::decode::<8>(&unset, with_train(Some(critic))).unwrap();
+    assert_eq!(
+        (loaded.critic(), loaded.features()),
+        (None, &[][..]),
+        "the image's unset outranks the configuration's set"
+    );
+    // Set beside the slow current, with unit 1 carrying a weight.
+    let current = SlowCurrent {
+        leak_shift: 13,
+        input_shift: 1,
+        v_lo_q16: 28_561,
+        v_hi_q16: THRESHOLD_BASE,
+    };
+    let mut exec = Executor::<8>::new(Config {
+        units: 2,
+        blocks: 1,
+        slow_current: Some(current),
+        ..with_train(Some(critic))
+    })
+    .unwrap();
+    exec.units_mut()[1].value_weight = -1_234;
+    let set = Image::encode(&exec).unwrap();
+    let section = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(section[36], 1, "the slow current's flag");
+    assert_eq!(
+        &section[48..51],
+        &[1, 9, 2],
+        "the flag, the shift, the scale"
+    );
+    assert_eq!(&section[51..64], &[0u8; 13]);
+    let neurons = section_bytes(&set, SECTION_NEURON);
+    assert_eq!(
+        &neurons[64 + 52..64 + 54],
+        &(-1_234i16).to_le_bytes(),
+        "the weight in the unit's record"
+    );
+    assert_eq!(&neurons[52..54], &[0, 0]);
+    let loaded = Image::decode::<8>(&set, with_train(None)).unwrap();
+    assert_eq!(
+        (loaded.critic(), loaded.slow_current()),
+        (Some(critic), Some(current)),
+        "the image's set outranks the configuration's unset, and the two are apart"
+    );
+    assert_eq!(
+        (
+            loaded.units()[0].value_weight,
+            loaded.units()[1].value_weight
+        ),
+        (0, -1_234)
+    );
+    assert_eq!(
+        (loaded.features(), loaded.prediction()),
+        (&[0, 0][..], None),
+        "the counts start at the load"
+    );
+    assert_eq!(Image::encode(&loaded).unwrap(), set, "one image, twice");
+    assert!(
+        matches!(
+            Image::decode::<8>(&set, Config::default()),
+            Err(ImageError::Config(ConfigError::CriticWithoutTrain))
+        ),
+        "the image's critic needs a train the configuration gives"
+    );
+    let with_critic = |bytes: [u8; 3]| {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[48..51].copy_from_slice(&bytes)
+        });
+        img
+    };
+    for (shift, scale) in [(0, 0), (30, 14), (30, 0), (0, 14)] {
+        assert_eq!(
+            Image::decode::<8>(&with_critic([1, shift, scale]), with_train(None))
+                .unwrap()
+                .critic(),
+            Some(ValueCritic { shift, scale }),
+            "{shift} {scale} is set"
+        );
+    }
+    for (shift, scale) in [(31, 2), (9, 15), (0xFF, 0), (0, 0xFF)] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_critic([1, shift, scale]), with_train(None)),
+                Err(ImageError::Config(ConfigError::CriticOutOfRange))
+            ),
+            "{shift} {scale}: refused as the configuration's is"
+        );
+    }
+    for bytes in [
+        [0, 1, 0],
+        [0, 0, 1],
+        [0, 9, 2],
+        [2, 9, 2],
+        [3, 0, 0],
+        [0xFF, 9, 2],
+    ] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_critic(bytes), with_train(None)),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "{bytes:?}: bytes the writer never produces"
+        );
+    }
+    for at in [51, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, with_train(None)),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    // A weight while no critic is set: refused at the unit that carries it, whatever the
+    // configuration says; with every weight zero the image loads unset.
+    let unset_critic = with_critic([0, 0, 0]);
+    assert!(
+        matches!(
+            Image::decode::<8>(&unset_critic, with_train(Some(critic))),
+            Err(ImageError::ValueWithoutCritic(1))
+        ),
+        "the image's unset critic, and unit 1 carrying a weight"
+    );
+    let mut first = unset_critic.clone();
+    patch_section(&mut first, SECTION_NEURON, |s| {
+        s[64 + 52..64 + 54].copy_from_slice(&[0, 0]);
+        s[52] = 1;
+    });
+    assert!(matches!(
+        Image::decode::<8>(&first, with_train(None)),
+        Err(ImageError::ValueWithoutCritic(0))
+    ));
+    let mut none = unset_critic.clone();
+    patch_section(&mut none, SECTION_NEURON, |s| {
+        s[64 + 52..64 + 54].copy_from_slice(&[0, 0])
+    });
+    assert_eq!(
+        Image::decode::<8>(&none, with_train(None))
+            .unwrap()
+            .critic(),
+        None
+    );
+    // A header stamped with format 18, as every foreign version is (L-6).
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
+    let mut older = set.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 18;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, with_train(None)),
+            Err(ImageError::Header(HeaderError::ForeignVersion(18)))
+        ),
+        "a format-18 header fails closed, as every foreign version does (L-6)"
+    );
+}
+
+/// Milestone M4's exit test with the critic set (ADR-0131): a unit that fired since the previous
+/// reward is not evicted, so the critic reads and moves its weight in its slot at the next
+/// reward, and a run that sweeps, re-hydrates and rewards ends in the same image as one that
+/// never evicts, every weight included. A unit quiet and at rest with a spike pending stays
+/// through a sweep and goes at the first after a reward.
+#[test]
+fn with_the_critic_set_a_unit_with_spikes_pending_stays_and_evict_spike_rehydrate_keeps_every_weight()
+ {
+    let critic = Some(ValueCritic { shift: 9, scale: 2 });
+    let valued = || Config {
+        train_capacity: 1 << 12,
+        critic,
+        ..config()
+    };
+    let log_path = scratch("critic-sweep.wal");
+    let mut swept = Executor::<64>::new(valued()).unwrap();
+    let mut control = Executor::<64>::new(valued()).unwrap();
+    wire(&mut swept);
+    wire(&mut control);
+    swept.attach_log(&log_path).expect("a log");
+    let mut x = 0x9E37_79B9u32;
+    let mut next = || {
+        x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        x
+    };
+    let mut pending_kept = 0usize;
+    for round in 0..60u32 {
+        let unit = (next() >> 8) % 96;
+        kick(&swept, unit, 14);
+        kick(&control, unit, 14);
+        swept.run(100);
+        control.run(100);
+        if round % 3 == 2 {
+            let pending: Vec<usize> = (0..96)
+                .filter(|&i| swept.features()[i] != 0 && !swept.is_evicted(i as u32))
+                .collect();
+            swept.sweep(150, 96).expect("a sweep");
+            for &i in &pending {
+                assert!(
+                    !swept.is_evicted(i as u32),
+                    "round {round}: unit {i} pending"
+                );
+            }
+            pending_kept = pending_kept.saturating_add(pending.len());
+        }
+        for i in 0..96u32 {
+            if swept.is_evicted(i) {
+                assert_eq!(swept.features()[i as usize], 0, "round {round}: unit {i}");
+            }
+        }
+        if round % 5 == 4 {
+            let reward = if round % 2 == 0 { 0x1_0000 } else { -0x8000 };
+            assert_eq!(
+                swept.reward(reward),
+                control.reward(reward),
+                "round {round}"
+            );
+            assert_eq!(swept.prediction(), control.prediction());
+        }
+    }
+    assert!(swept.evictions() > 0 && swept.rehydrations() > 0);
+    assert!(pending_kept > 0, "a sweep met a unit with spikes pending");
+    assert!(
+        control.units().iter().any(|u| u.value_weight != 0),
+        "the critic moved weights"
+    );
+    settle(&mut swept, 40_000);
+    settle(&mut control, 40_000);
+    assert_eq!(
+        Image::encode(&swept).expect("the swept image"),
+        Image::encode(&control).expect("the control image"),
+        "every weight included"
+    );
+    let _ = std::fs::remove_file(&log_path);
+    // One unit, quiet and at rest with a spike pending: kept, then swept after a reward.
+    let mut exec = Executor::<64>::new(Config {
+        blocks: 0,
+        ..valued()
+    })
+    .unwrap();
+    for unit in exec.units_mut() {
+        unit.v_thresh = THRESHOLD_BASE;
+        unit.stp_u_rel = STP_U;
+        unit.stp_r_ves = STP_MAX;
+    }
+    exec.attach_log(&scratch("critic-pending.wal"))
+        .expect("a log");
+    kick(&exec, 5, 14);
+    settle(&mut exec, 40_000);
+    exec.run(20_000);
+    let five = &exec.units()[5];
+    assert!(
+        five.v_soma == 0
+            && five.v_basal == 0
+            && five.refractory_ticks == 0
+            && five.v_thresh == THRESHOLD_BASE,
+        "unit 5 at rest"
+    );
+    assert!(exec.features()[5] > 0, "unit 5 fired");
+    assert_eq!(
+        exec.sweep(0, 96).unwrap(),
+        95,
+        "every unit but the one pending"
+    );
+    assert!(!exec.is_evicted(5));
+    exec.reward(0x1_0000);
+    assert_eq!(exec.sweep(0, 96).unwrap(), 1, "after the reward it goes");
+    assert!(exec.is_evicted(5));
 }
