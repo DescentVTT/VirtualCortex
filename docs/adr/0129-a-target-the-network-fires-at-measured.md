@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-29
 depends-on: ADR-0128
 decision-makers: VirtualCortex maintainers
@@ -126,9 +126,9 @@ A failure at any of them stops the test there. Before the round's first rewarded
 
 ### The order of the work, as the history holds it
 
-1. **The protocol** (`e6b6340` on the branch, committed at 02:05Z on 2026-09-29 and pushed to pull request #161, opened as a draft before any run): the rules, the constants, the gate, the arms with empty pins, and this ADR's protocol.
-2. **The target** (`1bbbf59`, 02:10Z): the lead-in's first run, in the assignment arm's test, stopped at its empty pin after the calibration held and before the image was written; the target and the settled network's readings pinned in a commit of their own, before any rewarded trial.
-3. **The earlier tests on the new harness**, before any rewarded run: the eleven whole-domain tests that reach `earned_run_scheduled` — H-14's reinforced form, H-15's plasticity everywhere, and H-16 to H-20's nine arms — ran from the release build of `e6b6340`, four at a time, each in a process of its own, from about 02:08 to 03:00Z. **All eleven passed**, every table pinned, H-20's two arms in 1 576 and 1 580 s.
+1. **The protocol** (`86d3d8e` on `main`; `e6b6340` on the branch before the rebase that merged pull request #161, committed at 02:05Z on 2026-09-29 and pushed to pull request #161, opened as a draft before any run): the rules, the constants, the gate, the arms with empty pins, and this ADR's protocol.
+2. **The target** (`2c14b45`; `1bbbf59`, 02:10Z): the lead-in's first run, in the assignment arm's test, stopped at its empty pin after the calibration held and before the image was written; the target and the settled network's readings pinned in a commit of their own, before any rewarded trial.
+3. **The earlier tests on the new harness**, before any rewarded run: the eleven whole-domain tests that reach `earned_run_scheduled` — H-14's reinforced form, H-15's plasticity everywhere, and H-16 to H-20's nine arms — ran from the release build of `e6b6340` (`86d3d8e`), four at a time, each in a process of its own, from about 02:08 to 03:00Z. **All eleven passed**, every table pinned, H-20's two arms in 1 576 and 1 580 s.
 4. **The arms**, once, side by side from 10:42Z, the calibration and the lead-in held to their pins in each and the masked check passing (ten bytes differ from H-20's image, two of the period's and eight of the seal; the image's CRC-64 `0xafe7eff2d59da51f`); both ran their 7 680 trials and stopped at the first empty table at 11:04Z, 1 327 and 1 325 s. The tables were written from those dumps, and a second run side by side from 11:06Z reproduced every table and passed, in 901 and 911 s (on the developer machine, a ratio and not admissible).
 
 No constant, clause or rule moved after the first rewarded trial, and there was no second attempt: the second run is the pinned tables' reproduction.
@@ -217,7 +217,7 @@ The settled image's inhibition was not at the rail: 0.775 of the prior's sum, th
 
 ### The evidence
 
-- **The dispatch's scope.** None of [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s clauses for `scope=both` applies to the diff: no file under a `src/` directory changed, no test was deleted or taken out of the suite the sweep runs (the gate gains one test and the weekly job two new `#[ignore]`d ones), and neither `.cargo/mutants.toml` nor the `mutants-weekly` job changed. So the weekly was dispatched on this round's branch at **`scope=exhaustive`** alone, as brief 054 asks: run [36561924959](https://github.com/DescentVTT/VirtualCortex/actions/runs/36561924959) at `0e406f7`, the documents commit. After it only this evidence, the cost table and the brief's archive change, and no code.
+- **The dispatch's scope.** None of [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s clauses for `scope=both` applies to the diff: no file under a `src/` directory changed, no test was deleted or taken out of the suite the sweep runs (the gate gains one test and the weekly job two new `#[ignore]`d ones), and neither `.cargo/mutants.toml` nor the `mutants-weekly` job changed. So the weekly was dispatched on this round's branch at **`scope=exhaustive`** alone, as brief 054 asks: run [36561924959](https://github.com/DescentVTT/VirtualCortex/actions/runs/36561924959) at `0e406f7`, the documents commit (`f4303e3` on `main`). The round's commits as `main` holds them: `86d3d8e` the protocol, before any run; `2c14b45` the target, before any rewarded run; `3783c38` the arms' tables and the gate's checks over them; `f4303e3` this ADR's readings and the documents at 4.78.0; `95e6983` this evidence, the cost table and the brief's archive, which change no code (on the branch `e6b6340`, `1bbbf59`, `69fb09c`, `0e406f7` and `e91d818`). After it only this evidence, the cost table and the brief's archive change, and no code.
 - **Every job it ran is green.** All seventy-three `exhaustive` tests passed, each exit 0: the seventy-one before this round reproduced their pinned numbers on the hosted runners, and H-21's two arms reproduced their tables there as they did on the developer machine. The arms took **1 705 s from the assignment and 1 790 s from the mirrored**; H-20's took 1 743 and 1 704 s in the same run.
 - **The shards**, dealt by the table before this round, which did not know H-21's arms and costed each at 900 s:
 
@@ -232,7 +232,7 @@ The settled image's inhibition was not at the rail: 0.775 of the prior's sum, th
 
   Each shard's wall time was 0.50 to 0.60 of its tests' seconds summed. The seventy-one earlier tests ran at 0.988 of the table's figures.
 - **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`): seventy-three lines and 23 654 s, its source line naming the run; `npm run spec:costs` passes. Replayed through [ADR-0092](0092-the-shards-dealt-by-cost.md)'s deal at six shards, it plans each shard at 3 941 to 3 944 s summed. At this run's ratio that is about 2 000 s of wall time, **about 28 per cent of the bound**, inside brief 054's 60. The floor is H-21's arm from the mirrored assignment, 1 790 s alone, 25 per cent.
-- **The pull request's gate.** On `1bbbf59` (run [36511341297](https://github.com/DescentVTT/VirtualCortex/actions/runs/36511341297)), before any rewarded run, and on `0e406f7` (run [36561914579](https://github.com/DescentVTT/VirtualCortex/actions/runs/36561914579)), the gate is green in every job:
+- **The pull request's gate.** On `1bbbf59` (`2c14b45`; run [36511341297](https://github.com/DescentVTT/VirtualCortex/actions/runs/36511341297)), before any rewarded run, and on `0e406f7` (`f4303e3`; run [36561914579](https://github.com/DescentVTT/VirtualCortex/actions/runs/36561914579)), the gate is green in every job:
   - check, test, fmt and clippy;
   - the AArch64 determinism pin, unmoved;
   - the MSRV job and the documentation gate;
