@@ -29943,22 +29943,53 @@ fn the_target_s_rule_the_clauses_of_h_21_and_the_image_s_patch() {
             "{period}: refused by the loader"
         );
     }
+    // Over the lead-in's pins: the rule gives the pinned target from the pinned spikes, 18 449
+    // at 1 024 units over 2^20 ticks; its depression is 23; the rates' classes are the
+    // classes, and every unit is counted; the image's inhibition by class sums to the settled
+    // image's, and fewer of its synapses sit at the rail than the prior's 6 528 (F-59).
+    let spikes: u64 = TARGET_LEAD_IN_1024.iter().sum();
+    assert_eq!(spikes, 18_449);
+    assert_eq!(
+        target_period(1024, TARGET_LEAD_IN_TICKS, spikes),
+        TARGET_PERIOD_1024
+    );
+    assert_eq!(
+        (TARGET_PERIOD_1024, istdp_alpha_q1_15(TARGET_PERIOD_1024)),
+        (58_201, 23)
+    );
+    assert_eq!(TARGET_RATES_1024.2, [204, 102, 714, 4]);
+    assert_eq!(TARGET_RATES_1024.2.iter().sum::<u32>(), 1024);
+    assert_eq!(
+        TARGET_IMAGE_INHIBITION_1024.0.iter().sum::<i64>(),
+        QUIET_1024[SETTLED].1.0
+    );
+    assert!(TARGET_IMAGE_INHIBITION_1024.1 < inhibition.1);
 }
 
 // ----------------------------------------------------------- the measurement (brief 054)
 
 /// The target's lead-in at 1 024 units, pinned from its first run before any rewarded run: the
-/// spikes of each of its eight windows.
-const TARGET_LEAD_IN_1024: [u64; 8] = [0; 8];
-/// The target the rule gives from them, pinned before any rewarded run.
-const TARGET_PERIOD_1024: u32 = 0;
-/// The settled network's rates over the lead-in at that target.
-const TARGET_RATES_1024: Rates = ([0; 7], 0, [0; CLASSES], [0; CLASSES]);
+/// spikes of each of its eight windows, 18 449 in all, 1.718 Hz a unit.
+const TARGET_LEAD_IN_1024: [u64; 8] = [2367, 2310, 2349, 2261, 2274, 2312, 2338, 2238];
+/// The target the rule gives from them, pinned before any rewarded run: 58 201 ticks, where the
+/// depression per spike is 23, against the default's 20 000 and 67.
+const TARGET_PERIOD_1024: u32 = 58201;
+/// The settled network's rates over the lead-in at that target: the median unit fired 17 times,
+/// none was silent, and 411 of 1 024 fired at or above the target, 19 spikes or more.
+const TARGET_RATES_1024: Rates = (
+    [6, 11, 14, 17, 21, 25, 50],
+    0,
+    [204, 102, 714, 4],
+    [122, 31, 257, 1],
+);
 /// The fraction of units at the target by ADR-0057's rule over each of the lead-in's windows,
 /// at the default period and at the rule's, Q16.16.
-const TARGET_AT_START_1024: [[u32; 8]; 2] = [[0; 8]; 2];
-/// The settled image's inhibition by class and its synapses at the rail.
-const TARGET_IMAGE_INHIBITION_1024: ClassInhibition = ([0; CLASSES], 0);
+const TARGET_AT_START_1024: [[u32; 8]; 2] = [
+    [27136, 25216, 25408, 24832, 26048, 23872, 24576, 24512],
+    [50304, 51904, 51840, 52288, 52544, 52672, 51840, 51904],
+];
+/// The settled image's inhibition by class and its synapses at the rail: 45 of 6 528 (F-59).
+const TARGET_IMAGE_INHIBITION_1024: ClassInhibition = ([23484143, 17014646, 124682554, 694925], 45);
 
 /// The two arms at 1 024 units, in `TARGET_ARMS`'s order, each pinned whole from one run: the
 /// sight's blocks, the composition, the earned blocks, the moves, each stimulus's expectation,

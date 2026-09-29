@@ -61,6 +61,10 @@ Options 1(a), 2(a), 3(a), 4(a), 5(a), 6 both, and 7 one. Everything below is com
   - Every weight is asserted unmoved after it.
   - On the arms' image (option 3(b)) the inhibitory synapses would consolidate under their baseline, and the rate read would be a network moving under the default target.
 - **Pinned before any rewarded run**, in a commit of its own after the lead-in's first run: the spikes per window (`TARGET_LEAD_IN_1024`) and the target (`TARGET_PERIOD_1024`). With them go the settled network's readings below that need the target.
+- **What the rule gave**, read on that first run, which stopped at the empty pin before any rewarded trial:
+  - the lead-in's windows held 2 367, 2 310, 2 349, 2 261, 2 274, 2 312, 2 338 and 2 238 spikes, **18 449 in all, 1.718 Hz a unit**;
+  - **the target period is 58 201 ticks**, $1,073,741,824 / 18,449 = 58,200.5$ rounded up, where the depression per spike is **23** against the default's 67. Every period from 58 412 down to 55 979 gives 23, so the rule balances where a target fires at $23 / 1,343,488$ a tick, 1.712 Hz;
+  - the gate holds the rule over the pinned spikes.
 
 ### The image each arm decodes (options 1(a) and 2(a))
 
@@ -129,7 +133,7 @@ A failure at any of them stops the test there. Before the round's first rewarded
 
 ### F-59
 
-The settled image's inhibition is not at the rail: 0.775 of the prior's sum, the rule having run at the default target through ADR-0077's lead-in. ADR-0128's account and its step 4 read the start as the rail. The round reads the synapses at the rail on the image and at every block's end. The stopping rule is ADR-0128's and is applied as written; its step 4, if it is reached, is read with this finding beside it.
+The settled image's inhibition is not at the rail: 0.775 of the prior's sum, the rule having run at the default target through ADR-0077's lead-in, and **45 of its 6 528 inhibitory synapses sit at the rail** (`TARGET_IMAGE_INHIBITION_1024`), read on the lead-in's first run before any rewarded trial. ADR-0128's account and its step 4 read the start as the rail. The round reads the synapses at the rail on the image and at every block's end. The stopping rule is ADR-0128's and is applied as written; its step 4, if it is reached, is read with this finding beside it.
 
 ## Consequences
 
