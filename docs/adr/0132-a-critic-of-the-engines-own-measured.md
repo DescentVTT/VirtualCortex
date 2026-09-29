@@ -187,6 +187,26 @@ The first and the third reversals — the flips after which the value fell deepe
 
 **Step 5, no on clause 3 alone**: *"the engine learns the task without learning to predict its reward. The next decision is an ADR on the critic's scale or window."* The configuration learned every mapping in both arms with its couplings bounded, and its critic, reading only the engine's own spikes and rewards, learned what the task's critic held — a stimulus's expected reward — but not enough of it to meet clause 3 in the one mapping learned at three quarters. **The next decision is an ADR on the critic's scale or window, with this round's readings as its need**: the value per stimulus at $2p - 1$, which no scale or window of a linear critic over these features exceeds on a correct trial; F-61, that clause 3 bounds a stimulus-level critic's accuracy rather than its prediction; and the deeper trough after a flip beside the slower reversals. It is named and not taken.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes files under `src/` — the record, the rule, the executor, the image and the task — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**, as brief 055 asks: run [36597280260](https://github.com/DescentVTT/VirtualCortex/actions/runs/36597280260) at `492e409`, the pinned tables, the last commit that changes a test or a source file. The round's commits on the branch: `9e04f87` the critic built; `b589eb7` the protocol, before any run; `492e409` the arms' tables and the gate's checks over them; `7ebc4bd` this ADR's readings and the documents; and the commit that carries this section, the cost table and the brief's archive.
+- **Every exhaustive job is green.** All seventy-five `exhaustive` tests passed, each exit 0: the seventy-three before this round reproduced their pinned numbers on the hosted runners, the whole-image pins among them at format 19, and H-22's two arms reproduced their tables there as they did twice on the developer machine. The arms took **1 379 s from the assignment and 1 814 s from the mirrored**; H-21's took 1 800 and 1 804 s in the same run.
+- **The shards**, dealt by the table before this round, which did not know H-22's arms and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 44.4 min | H-22 from the mirrored 1 814; H-21 from the mirrored 1 804 | 12 | 5 200 | 2 601 s, 36 % |
+  | 1 | 38.3 min | H-22 from the assignment 1 379; H-20 from the assignment 1 379 | 12 | 4 272 | 2 248 s, 31 % |
+  | 2 | 40.8 min | H-21 from the assignment 1 800; H-18 from the mirrored 1 132 | 11 | 4 767 | 2 392 s, 33 % |
+  | 3 | 40.2 min | H-20 from the mirrored 1 978; H-18 from the assignment 1 137 | 13 | 4 653 | 2 353 s, 33 % |
+  | 4 | 40.0 min | H-15 1 126; H-16 1 116 | 14 | 4 682 | 2 343 s, 33 % |
+  | 5 | 37.1 min | H-19 from the assignment 1 164; H-19 from the mirrored 1 146 | 13 | 4 306 | 2 163 s, 30 % |
+
+  The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.90 to 2.00 of their summed seconds over the wall.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 36597280260`): 75 lines, 27 880 s, the seventy-three earlier tests at 1.044 of the table before. ADR-0092's deal plans each of the six shards at 4 646 to 4 648 s summed, about 2 350 s of wall time at the run's ratio, **about 33 per cent of the bound**, inside the brief's 60.
+- **The mutation sweep.** Seven jobs, green: 3 578 mutants caught over the tree and **none missed**, 2 398 in the state crates and 1 180 in the runtime, 150 unviable. Every mutant the sweep made in the critic's code was caught — `ValueCritic`'s sixteen, `Executor::{critic, features, prediction, reward}`, the count in `merge_spikes`, the pending unit's clause in `sweep` and every one of `critic_of`'s. Its 22 timeouts are the known protocol ones, in the iterators of `cortex-core`, the injector, the barrier and the workers' loop, none in the critic's code, read by [ADR-0062](0062-the-first-complete-sweeps-list.md)'s triage as detections. The runtime's six shards took 1 h 37 min to 2 h 58 min against their bound of 330 minutes.
+- **The pull request's gate** on `7ebc4bd` is green in every job, the mutation gate on the changed lines among them: 66 mutants in the lines the round changes, 58 caught, 8 unviable, none missed, as on `b589eb7`.
+
 ## Consequences
 
 - Good: the shift and the scale are read off an arithmetic committed before the first rewarded run, against the task critic's step the comparison is with, so a difference from H-21 is the critic's and not a tuning.
