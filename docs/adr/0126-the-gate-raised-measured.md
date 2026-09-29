@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-29
 depends-on: ADR-0125
 decision-makers: VirtualCortex maintainers
@@ -173,7 +173,7 @@ The cost table regenerated from ADR-0124's dispatch sums 42 699 s over 100 tests
 
 ### The readings
 
-Every reading below is from the pinned tables of `tests/assembly.rs`. The protocol was committed at `68d5e71` before any run; the runs were pinned at `2640f5c`, and a second run of every weekly test there reproduced every table. On a developer machine in the release profile a pair's test took about 690 s with six others beside it, and a cell's test about 390 s with three (a ratio, not admissible). **No weight of any arena moved in any measured run.**
+Every reading below is from the pinned tables of `tests/assembly.rs`. At the commits `main` holds after the rebase that merged pull request #157, the branch's in brackets: the protocol was committed at `a7be0fc` (`68d5e71`) before any run; the runs were pinned at `e235ac4` (`2640f5c`), and a second run of every weekly test there reproduced every table. On a developer machine in the release profile a pair's test took about 690 s with six others beside it, and a cell's test about 390 s with three (a ratio, not admissible). **No weight of any arena moved in any measured run.**
 
 - **ADR-0117's cell, reproduced** first, with nothing marked for the slow current: held to ADR-0117's stretches, kicks and windows, and read against ADR-0117's background to its reading and bursts — holds in 8, ignites in 0, lets go in 8, usable.
 - **The slow potential's levels** held to ADR-0124's table at each of the three voltages on the settled image, as the rule's text said they would be.
@@ -252,7 +252,7 @@ What the six rounds say together, as a reading and not a clause: on this network
 
 ### The evidence
 
-Only tests change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**: run [36460574405](https://github.com/DescentVTT/VirtualCortex/actions/runs/36460574405) at `2640f5c`, the runs pinned, after which only the documents, the cost table and the brief's archive change. **Every job it ran is green.**
+Only tests change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**: run [36460574405](https://github.com/DescentVTT/VirtualCortex/actions/runs/36460574405) at `2640f5c` (`e235ac4` on `main`), the runs pinned, after which only the documents, the cost table and the brief's archive change. **Every job it ran is green.**
 - **The whole-domain tests.** All 111 passed on the hosted runners, each in a process of its own reporting one test passed. The 100 before this round reproduced their pinned numbers with no unit marked: the whole-image pins, and H-17's to H-20's arms, among them. This round's eleven reproduced their tables: the quiet soma in 469 s, the backgrounds and controls in 708 to 784 s, the cells in 531 to 554 s, 6 992 s together against the protocol's estimate of about 6 600. The six shards took:
 
   | Shard | Job | Tests | Their seconds summed | Tests' wall time | The shard's heaviest test (s) |
@@ -266,13 +266,13 @@ Only tests change, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)
 
   Three shards passed the brief's 60 per cent in this run. It dealt by the table from ADR-0124's dispatch, which costed this round's eleven tests at 900 s each where they took 6 992 s together, and the older tests ran 4.1 per cent over their table, 44 429 s against 42 699.
 - **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`: 111 lines, 51 421 s, its source line naming the run; `npm run spec:costs` passing). Replayed through the deal at six shards, it plans every shard at 8 569 to 8 571 s summed. At this run's ratio of summed seconds to wall time, 1.88 to 2.00 and 1.96 overall, that is 4 285 to 4 559 s of tests' wall time: **59.5 to 63.3 per cent of the bound, about 61 at the run's overall ratio — past brief 053's 60 per cent.** The protocol's own estimate, 57 to 60 with sixteen cells, did not count the older tests' drift. The round is not empowered to change the shard count or the scripts, so **this standing directive is not met**, and it is recorded rather than met by dropping pinned runs. The levers are the known two, named for a decision of its own and not taken: a seventh shard (the lever of ADR-0118 and ADR-0121), or fewer copies of H-20's arm, which the condition (c) tests of ADR-0117 and ADR-0120 each rebuild, 2 348 to 2 816 s apiece. The longest test, ADR-0120's condition (c) cells, is 39 per cent of the bound alone.
-- **The pull request's gate** on `68d5e71` and on `c2338b5` is green in every job: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which has no mutant to make, since only tests and documents change. Locally `cargo mutants --in-diff` reports no mutant to filter.
+- **The pull request's gate** on `68d5e71` and on `c2338b5` (`a7be0fc` and `5e1fc3f` on `main`) is green in every job, and again on `3195e88` (`6380445`) before the merge: check, test, fmt and clippy; the AArch64 determinism pin, unmoved; the MSRV job; the documentation gate; and the mutation gate on the changed lines, which has no mutant to make, since only tests and documents change. Locally `cargo mutants --in-diff` reports no mutant to filter.
 
 On the developer machine every command of brief 053's verification list exited 0 (a ratio, not admissible):
 - the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own: 665 passed in each and 111 ignored. The MSRV test's first attempt failed to link one test binary (LNK1104, a file held open on this platform) and passed on the retry;
 - check, fmt, clippy, doc, the bench `--test`, `npm ci` and `npm run spec`;
 - `--list`, 111 tests;
-- every weekly test of this round twice, the second run at `2640f5c` against the pins.
+- every weekly test of this round twice, the second run at `2640f5c` (`e235ac4`) against the pins.
 
 ## Consequences
 
