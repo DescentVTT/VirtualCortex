@@ -217,7 +217,30 @@ The settled image's inhibition was not at the rail: 0.775 of the prior's sum, th
 
 ### The evidence
 
-To be written from the weekly dispatched on this round's branch.
+- **The dispatch's scope.** None of [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md)'s clauses for `scope=both` applies to the diff: no file under a `src/` directory changed, no test was deleted or taken out of the suite the sweep runs (the gate gains one test and the weekly job two new `#[ignore]`d ones), and neither `.cargo/mutants.toml` nor the `mutants-weekly` job changed. So the weekly was dispatched on this round's branch at **`scope=exhaustive`** alone, as brief 054 asks: run [36561924959](https://github.com/DescentVTT/VirtualCortex/actions/runs/36561924959) at `0e406f7`, the documents commit. After it only this evidence, the cost table and the brief's archive change, and no code.
+- **Every job it ran is green.** All seventy-three `exhaustive` tests passed, each exit 0: the seventy-one before this round reproduced their pinned numbers on the hosted runners, and H-21's two arms reproduced their tables there as they did on the developer machine. The arms took **1 705 s from the assignment and 1 790 s from the mirrored**; H-20's took 1 743 and 1 704 s in the same run.
+- **The shards**, dealt by the table before this round, which did not know H-21's arms and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 40.1 min | H-21 from the mirrored 1 790; H-20 from the assignment 1 743 | 12 | 4 558 | 2 348 s, 33 % |
+  | 1 | 44.0 min | H-21 from the assignment 1 705; H-20 from the mirrored 1 704 | 12 | 5 124 | 2 581 s, 36 % |
+  | 2 | 27.8 min | H-14's reinforced form 729; the gate raised to 0.9 with the class 653 | 13 | 2 708 | 1 614 s, 22 % |
+  | 3 | 32.9 min | H-15 1 149; H-16 1 094 | 12 | 3 775 | 1 912 s, 27 % |
+  | 4 | 33.3 min | H-19 from the mirrored 1 103; H-18 from the assignment 1 080 | 12 | 3 814 | 1 939 s, 27 % |
+  | 5 | 31.8 min | H-19 from the assignment 1 100; H-18 from the mirrored 1 069 | 12 | 3 675 | 1 849 s, 26 % |
+
+  Each shard's wall time was 0.50 to 0.60 of its tests' seconds summed. The seventy-one earlier tests ran at 0.988 of the table's figures.
+- **The cost table is regenerated from this run's artifacts** (`scripts/exhaustive-costs.tsv`): seventy-three lines and 23 654 s, its source line naming the run; `npm run spec:costs` passes. Replayed through [ADR-0092](0092-the-shards-dealt-by-cost.md)'s deal at six shards, it plans each shard at 3 941 to 3 944 s summed. At this run's ratio that is about 2 000 s of wall time, **about 28 per cent of the bound**, inside brief 054's 60. The floor is H-21's arm from the mirrored assignment, 1 790 s alone, 25 per cent.
+- **The pull request's gate.** On `1bbbf59` (run [36511341297](https://github.com/DescentVTT/VirtualCortex/actions/runs/36511341297)), before any rewarded run, and on `0e406f7` (run [36561914579](https://github.com/DescentVTT/VirtualCortex/actions/runs/36561914579)), the gate is green in every job:
+  - check, test, fmt and clippy;
+  - the AArch64 determinism pin, unmoved;
+  - the MSRV job and the documentation gate;
+  - the mutation gate on the changed lines, which found no mutant to make (*"No mutants to filter"*), since the diff touches no file `cargo-mutants` mutates.
+
+  The run on `e6b6340` was cancelled by the push of `1bbbf59`.
+- **On the developer machine** every command of brief 054's verification list exited 0. That is the workspace in the debug profile, in the release profile and on the MSRV toolchain in a target directory of its own (666 tests passed in each, the 665 before this round and its gate test, and 113 ignored); check, fmt, clippy, doc and the bench `--test`; `npm ci` and `npm run spec`; `--list` (73 tests); and the mutation gate on the diff. The timings are a ratio, not admissible.
+- **No sweep ran**: the diff gives it nothing new to find, and Monday's runs the tree as it always does.
 
 ## Consequences
 
