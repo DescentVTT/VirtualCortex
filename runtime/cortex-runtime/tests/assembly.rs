@@ -1907,19 +1907,19 @@ fn four_weights(s: usize) {
 
 #[test]
 #[ignore]
-fn an_assembly_of_16_units_at_four_weights_exhaustive() {
+fn an_assembly_of_16_units_at_four_weights_paused() {
     four_weights(0);
 }
 
 #[test]
 #[ignore]
-fn an_assembly_of_32_units_at_four_weights_exhaustive() {
+fn an_assembly_of_32_units_at_four_weights_paused() {
     four_weights(1);
 }
 
 #[test]
 #[ignore]
-fn an_assembly_of_64_units_at_four_weights_exhaustive() {
+fn an_assembly_of_64_units_at_four_weights_paused() {
     four_weights(2);
 }
 
@@ -9856,49 +9856,49 @@ fn six_weights(set: usize, s: usize) {
 
 #[test]
 #[ignore]
-fn the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_exhaustive() {
+fn the_kick_the_backgrounds_and_the_controls_under_set_i_at_1024_units_paused() {
     kick_backgrounds_controls(0);
 }
 
 #[test]
 #[ignore]
-fn the_kick_the_backgrounds_and_the_controls_under_set_ii_at_1024_units_exhaustive() {
+fn the_kick_the_backgrounds_and_the_controls_under_set_ii_at_1024_units_paused() {
     kick_backgrounds_controls(1);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_16_units_at_six_weights_under_set_i_exhaustive() {
+fn a_marked_assembly_of_16_units_at_six_weights_under_set_i_paused() {
     six_weights(0, 0);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_32_units_at_six_weights_under_set_i_exhaustive() {
+fn a_marked_assembly_of_32_units_at_six_weights_under_set_i_paused() {
     six_weights(0, 1);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_64_units_at_six_weights_under_set_i_exhaustive() {
+fn a_marked_assembly_of_64_units_at_six_weights_under_set_i_paused() {
     six_weights(0, 2);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_16_units_at_six_weights_under_set_ii_exhaustive() {
+fn a_marked_assembly_of_16_units_at_six_weights_under_set_ii_paused() {
     six_weights(1, 0);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_32_units_at_six_weights_under_set_ii_exhaustive() {
+fn a_marked_assembly_of_32_units_at_six_weights_under_set_ii_paused() {
     six_weights(1, 1);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_64_units_at_six_weights_under_set_ii_exhaustive() {
+fn a_marked_assembly_of_64_units_at_six_weights_under_set_ii_paused() {
     six_weights(1, 2);
 }
 
@@ -22419,55 +22419,55 @@ fn stimulus_backgrounds_controls() {
 
 #[test]
 #[ignore]
-fn the_kick_the_backgrounds_and_the_controls_of_the_core_grid_under_set_ii_exhaustive() {
+fn the_kick_the_backgrounds_and_the_controls_of_the_core_grid_under_set_ii_paused() {
     core_backgrounds_controls();
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_48_units_at_five_weights_under_set_ii_exhaustive() {
+fn a_marked_assembly_of_48_units_at_five_weights_under_set_ii_paused() {
     five_weights_050(0);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_64_units_at_five_weights_under_set_ii_exhaustive() {
+fn a_marked_assembly_of_64_units_at_five_weights_under_set_ii_paused() {
     five_weights_050(1);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_80_units_at_five_weights_under_set_ii_exhaustive() {
+fn a_marked_assembly_of_80_units_at_five_weights_under_set_ii_paused() {
     five_weights_050(2);
 }
 
 #[test]
 #[ignore]
-fn a_marked_assembly_of_96_units_at_five_weights_under_set_ii_exhaustive() {
+fn a_marked_assembly_of_96_units_at_five_weights_under_set_ii_paused() {
     five_weights_050(3);
 }
 
 #[test]
 #[ignore]
-fn the_subset_with_the_delays_of_seed_49_exhaustive() {
+fn the_subset_with_the_delays_of_seed_49_paused() {
     subset_under(0);
 }
 
 #[test]
 #[ignore]
-fn the_subset_on_the_image_h_20_leaves_exhaustive() {
+fn the_subset_on_the_image_h_20_leaves_paused() {
     drained_subset();
 }
 
 #[test]
 #[ignore]
-fn the_kick_the_backgrounds_and_the_controls_under_the_tasks_stimulus_exhaustive() {
+fn the_kick_the_backgrounds_and_the_controls_under_the_tasks_stimulus_paused() {
     stimulus_backgrounds_controls();
 }
 
 #[test]
 #[ignore]
-fn the_subset_under_the_tasks_stimulus_exhaustive() {
+fn the_subset_under_the_tasks_stimulus_paused() {
     subset_under(2);
 }
 
@@ -35860,67 +35860,63 @@ fn stimulus_backgrounds_051() {
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_the_backgrounds_and_the_controls_of_the_core_exhaustive() {
+fn the_contexts_own_inhibition_the_backgrounds_and_the_controls_of_the_core_paused() {
     core_backgrounds_051();
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_the_core_grid_at_the_lighter_recurrent_weights_exhaustive() {
+fn the_contexts_own_inhibition_the_core_grid_at_the_lighter_recurrent_weights_paused() {
     cells_051(0, &RECURRENT_HALVES[0]);
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_the_core_grid_at_the_heavier_recurrent_weights_exhaustive() {
+fn the_contexts_own_inhibition_the_core_grid_at_the_heavier_recurrent_weights_paused() {
     cells_051(0, &RECURRENT_HALVES[1]);
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_with_the_delays_of_seed_49_at_the_lighter_recurrent_weights_exhaustive()
- {
+fn the_contexts_own_inhibition_with_the_delays_of_seed_49_at_the_lighter_recurrent_weights_paused()
+{
     cells_051(1, &RECURRENT_HALVES[0]);
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_with_the_delays_of_seed_49_at_the_heavier_recurrent_weights_exhaustive()
- {
+fn the_contexts_own_inhibition_with_the_delays_of_seed_49_at_the_heavier_recurrent_weights_paused()
+{
     cells_051(1, &RECURRENT_HALVES[1]);
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_the_backgrounds_and_the_controls_on_the_image_h_20_leaves_exhaustive()
- {
+fn the_contexts_own_inhibition_the_backgrounds_and_the_controls_on_the_image_h_20_leaves_paused() {
     drained_backgrounds_051();
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_on_the_image_h_20_leaves_exhaustive() {
+fn the_contexts_own_inhibition_on_the_image_h_20_leaves_paused() {
     cells_051(2, &[0, 1, 2, 3]);
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_the_backgrounds_and_the_controls_under_the_tasks_stimulus_exhaustive()
- {
+fn the_contexts_own_inhibition_the_backgrounds_and_the_controls_under_the_tasks_stimulus_paused() {
     stimulus_backgrounds_051();
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_under_the_tasks_stimulus_at_the_lighter_recurrent_weights_exhaustive()
- {
+fn the_contexts_own_inhibition_under_the_tasks_stimulus_at_the_lighter_recurrent_weights_paused() {
     cells_051(3, &RECURRENT_HALVES[0]);
 }
 
 #[test]
 #[ignore]
-fn the_contexts_own_inhibition_under_the_tasks_stimulus_at_the_heavier_recurrent_weights_exhaustive()
- {
+fn the_contexts_own_inhibition_under_the_tasks_stimulus_at_the_heavier_recurrent_weights_paused() {
     cells_051(3, &RECURRENT_HALVES[1]);
 }
 
@@ -53094,13 +53090,13 @@ fn rules_052_at_their_edges() {
 
 #[test]
 #[ignore]
-fn the_slow_current_alone_the_backgrounds_and_the_controls_of_the_core_exhaustive() {
+fn the_slow_current_alone_the_backgrounds_and_the_controls_of_the_core_paused() {
     core_backgrounds_052(0);
 }
 
 #[test]
 #[ignore]
-fn the_slow_current_with_the_facilitating_class_the_backgrounds_and_the_controls_of_the_core_exhaustive()
+fn the_slow_current_with_the_facilitating_class_the_backgrounds_and_the_controls_of_the_core_paused()
  {
     core_backgrounds_052(1);
 }
@@ -57192,46 +57188,43 @@ fn the_gate_raised_the_quiet_soma_and_adr_0117s_cell_exhaustive() {
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_7_the_slow_current_alone_the_backgrounds_and_the_controls_exhaustive() {
+fn the_gate_raised_to_0_7_the_slow_current_alone_the_backgrounds_and_the_controls_paused() {
     pairs_053(0, 0);
 }
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_8_the_slow_current_alone_the_backgrounds_and_the_controls_exhaustive() {
+fn the_gate_raised_to_0_8_the_slow_current_alone_the_backgrounds_and_the_controls_paused() {
     pairs_053(0, 1);
 }
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_9_the_slow_current_alone_the_backgrounds_and_the_controls_exhaustive() {
+fn the_gate_raised_to_0_9_the_slow_current_alone_the_backgrounds_and_the_controls_paused() {
     pairs_053(0, 2);
 }
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_7_with_the_facilitating_class_the_backgrounds_and_the_controls_exhaustive()
-{
+fn the_gate_raised_to_0_7_with_the_facilitating_class_the_backgrounds_and_the_controls_paused() {
     pairs_053(1, 0);
 }
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_8_with_the_facilitating_class_the_backgrounds_and_the_controls_exhaustive()
-{
+fn the_gate_raised_to_0_8_with_the_facilitating_class_the_backgrounds_and_the_controls_paused() {
     pairs_053(1, 1);
 }
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_9_with_the_facilitating_class_the_backgrounds_and_the_controls_exhaustive()
-{
+fn the_gate_raised_to_0_9_with_the_facilitating_class_the_backgrounds_and_the_controls_paused() {
     pairs_053(1, 2);
 }
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_8_the_slow_current_alone_the_core_grid_at_shift_2_exhaustive() {
+fn the_gate_raised_to_0_8_the_slow_current_alone_the_core_grid_at_shift_2_paused() {
     cells_053((0, 1, 2));
 }
 
@@ -57243,7 +57236,7 @@ fn the_gate_raised_to_0_9_the_slow_current_alone_the_core_grid_at_shift_2_exhaus
 
 #[test]
 #[ignore]
-fn the_gate_raised_to_0_8_with_the_facilitating_class_the_core_grid_at_shift_2_exhaustive() {
+fn the_gate_raised_to_0_8_with_the_facilitating_class_the_core_grid_at_shift_2_paused() {
     cells_053((1, 1, 2));
 }
 
