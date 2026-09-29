@@ -71,6 +71,20 @@
 //! tables already decide of them, and runs a few trials over a schedule beside the same trials
 //! over one flip.
 //!
+//! Brief 054 runs H-21 here as ADR-0128 wrote it and ADR-0129 records it: H-20's configuration,
+//! critic, schedule and arms, from H-20's image with one change, the inhibitory rule's target
+//! period in the modulator section, set to the settled network's own rate by ADR-0128's rule —
+//! the settled image frozen under the reference drive for $2^{20}$ ticks, every unit counted,
+//! the period 100 000 ticks over the rate in hertz — read in each arm's test before its first
+//! rewarded trial, the image each arm decodes shown to be H-20's in every byte but the period's
+//! four and the section's seal. Two arms, each its own weekly `exhaustive` test, pinned whole:
+//! the period acts from the first trial, so nothing of H-20 is replicated. The clauses (the
+//! inhibitory sum at or above half of the settled image's at every block's end; H-20's two),
+//! the assertion and the readings — among them the spikes and the inhibition by class per
+//! block, and the fraction of units at the target before each flip — are integer rules written
+//! before the run, and the gate runs the target's rule over a table written by hand, the clauses
+//! at their edges and the image's patch.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -85,6 +99,11 @@
 #[path = "instrument/harness.rs"]
 mod harness;
 use harness::*;
+
+use cortex_core::{
+    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, istdp_alpha_q1_15,
+};
+use cortex_runtime::{ConfigError, ImageError};
 
 // ------------------------------------------- written before the run (ADR-0085, ADR-0086)
 
@@ -28841,3 +28860,1148 @@ const SCHEDULE_1024: Scheduled = Scheduled {
     over: [None; 2],
     yes: true,
 };
+
+// =================================================================================== H-21
+
+// -------------------------------------------- written before the run (ADR-0128, ADR-0129)
+
+/// The target's lead-in (ADR-0128): $2^{20}$ ticks, eight of the settling's windows and as
+/// long as a block of trials.
+const TARGET_LEAD_IN_TICKS: u64 = 1 << 20;
+/// The windows of the target's lead-in, each read on its own.
+const TARGET_LEAD_IN_WINDOWS: u64 = TARGET_LEAD_IN_TICKS / WINDOW_TICKS;
+/// The trials of one window of `WINDOW_TICKS`, the window ADR-0057's rule counts over.
+const WINDOW_TRIALS: usize = (WINDOW_TICKS / TRIAL_TICKS as u64) as usize;
+const _: () = assert!(
+    TARGET_LEAD_IN_WINDOWS == 8
+        && TARGET_LEAD_IN_TICKS == BLOCK as u64 * TRIAL_TICKS as u64
+        && WINDOW_TRIALS == 8
+        && WINDOW_TRIALS as u64 * TRIAL_TICKS as u64 == WINDOW_TICKS
+);
+
+/// The arms of H-21 (ADR-0128): H-20's two, in their order, each its own weekly test, from
+/// H-20's image with the target period written, H-20's critic at the start and H-20's flips.
+const TARGET_ARMS: [Reversal; 2] = SCHEDULE_ARMS;
+
+/// ADR-0128 writes no prediction for the verdict.
+const TARGET_PREDICTED: Option<bool> = None;
+
+/// Clause 1's floor (ADR-0128): the network's inhibitory sum at or above half of the settled
+/// image's at every block's end, read in integers as `sum × 100 ≥ image × 50`.
+const DRAIN_FLOOR_PER_CENT: i64 = 50;
+
+/// Where the modulator section holds the inhibitory rule's target period (ADR-0053): its
+/// bytes `[20..24)`, little-endian.
+const TARGET_PERIOD_AT: usize = 20;
+
+/// An inhibitory weight at the rail, one LSB above −1.0: the prior's, from which the rule can
+/// only weaken (ADR-0053, ADR-0120).
+const RAIL_Q1_15: i16 = -32_767;
+const _: () = assert!(RAIL_Q1_15 == i16::MIN + 1 && RAIL_Q1_15 as i32 == -(i16::MAX as i32));
+
+/// The classes a unit is read in (brief 054), in this order: inhibitory, whatever set holds
+/// it; an excitatory unit of a stimulus set; an excitatory unit of a readout set; any other
+/// unit. At 1 024 units the sets tile every period of twenty, so the last class is the four
+/// units past the last whole period.
+const CLASSES: usize = 4;
+
+/// The per cents of the units at which the rates' reading reads the ordered counts.
+const QUANTILES: [usize; 7] = [0, 10, 25, 50, 75, 90, 100];
+
+/// The trials that end the windows ADR-0057's rule is read over during a run (brief 054): the
+/// eight before each flip and the run's last eight.
+const WATCHED_ENDS: [usize; 4] = [
+    SCHEDULE_FLIPS[0],
+    SCHEDULE_FLIPS[1],
+    SCHEDULE_FLIPS[2],
+    SCHEDULE_TRIALS,
+];
+const _: () = assert!(
+    WATCHED_ENDS[0] >= WINDOW_TRIALS
+        && WATCHED_ENDS[1] >= WATCHED_ENDS[0] + WINDOW_TRIALS
+        && WATCHED_ENDS[2] >= WATCHED_ENDS[1] + WINDOW_TRIALS
+        && WATCHED_ENDS[3] >= WATCHED_ENDS[2] + WINDOW_TRIALS
+);
+
+/// The target's rule (ADR-0128), written before it is computed: the settled network's
+/// population rate — `spikes` of `units` units over `ticks` ticks, in hertz
+/// $10^5 \cdot \text{spikes} / (\text{units} \cdot \text{ticks})$ at the 10 µs tick — and the
+/// target period 100 000 ticks over that rate, which is $\text{units} \cdot \text{ticks} /
+/// \text{spikes}$: rounded to the nearest tick from the exact quotient, a half up, and clamped
+/// to ADR-0053's bounds, `[ISTDP_PERIOD_MIN_TICKS, ISTDP_PERIOD_MAX_TICKS]`; the longest for a
+/// network that did not fire.
+fn target_period(units: u64, ticks: u64, spikes: u64) -> u32 {
+    let exposure = units.saturating_mul(ticks);
+    let period = exposure
+        .saturating_add(spikes / 2)
+        .checked_div(spikes)
+        .unwrap_or(u64::MAX);
+    period.clamp(
+        u64::from(ISTDP_PERIOD_MIN_TICKS),
+        u64::from(ISTDP_PERIOD_MAX_TICKS),
+    ) as u32
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0128)
+
+/// Clause 1's rule for one block: the inhibitory sum below half of the image's,
+/// `sum × 100 < image × 50`.
+fn drained_below(sum: i64, image: i64) -> bool {
+    sum.saturating_mul(100) < image.saturating_mul(DRAIN_FLOOR_PER_CENT)
+}
+
+/// Clause 1's reading: the first block, by index, at whose end the inhibitory sum stood below
+/// half of the image's; none when no block's did.
+fn first_below(image: i64, blocks: &[Block]) -> Option<usize> {
+    blocks.iter().position(|b| drained_below(b.7, image))
+}
+
+/// The drain's lowest point: the lowest inhibitory sum at a block's end as a fraction of the
+/// image's, in parts per ten thousand, truncated, and its block, the first in order where two
+/// read the same; none for a run of no block.
+fn lowest(image: i64, blocks: &[Block]) -> Option<(i64, usize)> {
+    let mut low: Option<(i64, usize)> = None;
+    for (j, b) in blocks.iter().enumerate() {
+        let fraction = per_myriad(b.7, image);
+        if low.is_none_or(|(least, _)| fraction < least) {
+            low = Some((fraction, j));
+        }
+    }
+    low
+}
+
+/// H-21's criterion (ADR-0128), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) the drain stops — a run of 120 blocks with the inhibitory sum at or above half of the
+/// settled image's at every block's end, `below` naming the first block where it was not — and
+/// (2) the learning holds, H-20's two clauses as `scheduled` reads them. `yes` is both in both
+/// arms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Targeted {
+    held: [bool; 2],
+    below: [Option<usize>; 2],
+    learning: Scheduled,
+    yes: bool,
+}
+
+fn targeted(image: i64, arms: [&[Block]; 2]) -> Targeted {
+    let below = arms.map(|blocks| first_below(image, blocks));
+    let held = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && below[k].is_none());
+    let learning = scheduled(arms);
+    Targeted {
+        held,
+        below,
+        learning,
+        yes: held.iter().all(|&h| h) && learning.yes,
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 054)
+
+/// Each unit's class in `CLASSES`'s order, by its position in the arena, from its flags and
+/// the task's sets.
+fn classes_of(exec: &Engine, sets: &[Set; 4]) -> Vec<usize> {
+    exec.units()
+        .iter()
+        .enumerate()
+        .map(|(position, unit)| {
+            assert_eq!(unit.id, position as u64, "a unit's id is its position");
+            let id = position as u32;
+            if unit.flags & FLAG_INHIBITORY != 0 {
+                0
+            } else if sets[0].contains(id) || sets[1].contains(id) {
+                1
+            } else if sets[2].contains(id) || sets[3].contains(id) {
+                2
+            } else {
+                3
+            }
+        })
+        .collect()
+}
+
+/// The units of each class.
+fn class_sizes(classes: &[usize]) -> [u32; CLASSES] {
+    let mut out = [0u32; CLASSES];
+    for &c in classes {
+        if let Some(n) = out.get_mut(c) {
+            *n = n.saturating_add(1);
+        }
+    }
+    out
+}
+
+/// The inhibition by class (brief 054): the inhibitory magnitudes summed by the class of the
+/// unit they reach, and the inhibitory synapses at the rail.
+type ClassInhibition = ([i64; CLASSES], u32);
+
+fn inhibition_by_class(exec: &Engine, classes: &[usize]) -> ClassInhibition {
+    let mut out: ClassInhibition = ([0; CLASSES], 0);
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY == 0 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            if let Some(into) = classes
+                .get(s.target as usize)
+                .and_then(|&c| out.0.get_mut(c))
+            {
+                *into = into.saturating_add(i64::from(s.weight_q1_15).saturating_neg());
+            }
+            out.1 = out
+                .1
+                .saturating_add(u32::from(s.weight_q1_15 == RAIL_Q1_15));
+        }
+    }
+    out
+}
+
+/// Every spike of the train in `[start, end)`, its unit handed to `each`: the train is in tick
+/// order, so it is read from its end back to the first spike before `start`. The runs' ticks
+/// stay below the stamp's width, so the stamp is the tick.
+fn each_spike(train: &[(u32, u32)], start: u32, end: u32, each: &mut dyn FnMut(usize)) {
+    for &(tick, unit) in train.iter().rev() {
+        if tick < start {
+            break;
+        }
+        if tick < end {
+            each(unit as usize);
+        }
+    }
+}
+
+/// ADR-0057's rule over one window's counts at a period (the harness's `spikes_and_at_target`
+/// reads it from the train at the engine's period): a unit is at the target when its spikes
+/// in a window of `WINDOW_TICKS` are within a factor of two of `WINDOW_TICKS / period`,
+/// inclusive both ways; the fraction of the units, Q16.16.
+fn at_target(counts: &[u32], period: u32) -> u32 {
+    let target = WINDOW_TICKS.checked_div(u64::from(period)).unwrap_or(0) as u32;
+    let at = counts
+        .iter()
+        .filter(|&&count| count.saturating_mul(2) >= target && count <= target.saturating_mul(2))
+        .count() as u64;
+    // At most the unit count, which is below 2^16: the shift cannot wrap.
+    (at << 16).checked_div(counts.len() as u64).unwrap_or(0) as u32
+}
+
+/// The settled network's rates before the first trial (ADR-0128's reading), from each unit's
+/// spikes over the target's lead-in of `ticks` ticks: the counts at 0, 10, 25, 50, 75, 90 and
+/// 100 per cent of the units in order (the unit at `q (n − 1) / 100`, truncated); the units
+/// that did not fire; and per class, its units and those at or above the target — whose count
+/// is at least `ticks` over the period, `count × period ≥ ticks` — whose inhibition from the
+/// rail the rule does not weaken.
+type Rates = ([u32; 7], u32, [u32; CLASSES], [u32; CLASSES]);
+
+fn rates(counts: &[u32], classes: &[usize], period: u32, ticks: u64) -> Rates {
+    let mut sorted = counts.to_vec();
+    sorted.sort_unstable();
+    let last = sorted.len().saturating_sub(1);
+    let quantiles = QUANTILES.map(|q| {
+        sorted
+            .get(q.saturating_mul(last) / 100)
+            .copied()
+            .unwrap_or(0)
+    });
+    let silent = counts.iter().filter(|&&c| c == 0).count() as u32;
+    let mut above = [0u32; CLASSES];
+    for (&count, &c) in counts.iter().zip(classes) {
+        if u64::from(count).saturating_mul(u64::from(period)) >= ticks {
+            if let Some(n) = above.get_mut(c) {
+                *n = n.saturating_add(1);
+            }
+        }
+    }
+    (quantiles, silent, class_sizes(classes), above)
+}
+
+// ---------------------------------------------------------------- the image (brief 054)
+
+/// The modulator section's entry: where its entry sits in the section table, and its
+/// section's offset and length.
+fn modulator_entry(img: &[u8]) -> (usize, usize, usize) {
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_MODULATOR {
+            return (at, entry.offset as usize, entry.length as usize);
+        }
+    }
+    panic!("the image holds a modulator section");
+}
+
+/// The image with the inhibitory rule's target period written `period` in the modulator
+/// section's `[20..24)` and the section re-sealed; every other byte the image's. The image
+/// each arm of H-21 decodes is H-20's image so written.
+fn targeted_image(image: &[u8], period: u32) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let (at, offset, length) = modulator_entry(&img);
+    img[offset..][TARGET_PERIOD_AT..][..4].copy_from_slice(&period.to_le_bytes());
+    let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+    entry.crc64 = crc64(&img[offset..][..length]);
+    img[at..][..64].copy_from_slice(&entry.encode());
+    img
+}
+
+/// The positions at which two images of one length differ.
+fn differing(a: &[u8], b: &[u8]) -> Vec<usize> {
+    assert_eq!(a.len(), b.len(), "one image, twice");
+    a.iter()
+        .zip(b.iter())
+        .enumerate()
+        .filter(|(_, (x, y))| x != y)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The masked check (ADR-0128's one change): `targeted` differs from `image` only in the
+/// modulator section's four bytes of the target period and in the section's entry in the
+/// table, which holds its seal; and writing `image`'s own period back into it gives `image`
+/// bit for bit.
+fn only_the_target(image: &[u8], targeted: &[u8]) -> bool {
+    let (at, offset, _) = modulator_entry(image);
+    let period = offset.saturating_add(TARGET_PERIOD_AT);
+    let entry = at..at.saturating_add(64);
+    let mask = period..period.saturating_add(4);
+    let own = u32::from_le_bytes(image[mask.clone()].try_into().unwrap());
+    image.len() == targeted.len()
+        && differing(image, targeted)
+            .iter()
+            .all(|p| mask.contains(p) || entry.contains(p))
+        && targeted_image(targeted, own) == image
+}
+
+// ---------------------------------------------------------------- the run (brief 054)
+
+/// The target's lead-in (ADR-0128's rule): the settled image frozen — ADR-0077's zero image,
+/// the baseline zero and the inhibitory baseline unset, so nothing consolidates — under
+/// ADR-0044's drive for `TARGET_LEAD_IN_TICKS` from the tick it was written at, in windows of
+/// `WINDOW_TICKS`, the train asserted to hold each window whole as `settling` asserts it; each
+/// window's spikes per unit. Every weight is asserted unmoved after it.
+fn target_lead_in(zero: &[u8]) -> Vec<Vec<u32>> {
+    let mut exec = frozen_from(zero, 1024);
+    assert_eq!(
+        (
+            exec.inhibitory_baseline_q16(),
+            exec.istdp_target_period_ticks()
+        ),
+        (None, ISTDP_TARGET_PERIOD_TICKS),
+        "the settled image: the inhibitory baseline unset, the default period"
+    );
+    let before = weights_of(&exec);
+    let drive = drive(1024);
+    let units = exec.units().len();
+    let mut windows = Vec::new();
+    for _ in 0..TARGET_LEAD_IN_WINDOWS {
+        let from = exec.ticks();
+        let held = exec.train().len() as u64;
+        let overwritten = exec.train_overwritten();
+        lead_in(&mut exec, &drive, 1);
+        let to = exec.ticks();
+        assert!(
+            exec.train_overwritten().wrapping_sub(overwritten) <= held,
+            "the train held the window"
+        );
+        assert!(to <= u64::from(u32::MAX), "the stamp is the tick");
+        let mut counts = vec![0u32; units];
+        each_spike(exec.train(), from as u32, to as u32, &mut |unit| {
+            if let Some(c) = counts.get_mut(unit) {
+                *c = c.saturating_add(1);
+            }
+        });
+        windows.push(counts);
+    }
+    assert_eq!(weights_of(&exec), before, "every weight frozen");
+    windows
+}
+
+/// Each unit's spikes summed over windows.
+fn summed(windows: &[Vec<u32>]) -> Vec<u32> {
+    let mut out = vec![0u32; windows.first().map_or(0, Vec::len)];
+    for window in windows {
+        for (sum, &c) in out.iter_mut().zip(window) {
+            *sum = sum.saturating_add(c);
+        }
+    }
+    out
+}
+
+/// A table's spikes, all units.
+fn spikes_of(counts: &[u32]) -> u64 {
+    counts
+        .iter()
+        .fold(0u64, |sum, &c| sum.saturating_add(u64::from(c)))
+}
+
+/// What brief 054 reads of a run beside H-20's tables: the four couplings at the end of the
+/// first trial under each new mapping, as H-20 reads them; per block, the spikes by class over
+/// the block's trials and the inhibition by class at its end; and the fraction of units at the
+/// target by ADR-0057's rule, at the engine's period, over the window of eight trials before
+/// each flip and over the run's last.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Watched {
+    at_flips: [[[i64; 2]; 2]; 3],
+    spikes: Vec<[u64; CLASSES]>,
+    inhibition: Vec<ClassInhibition>,
+    at_target: [u32; 4],
+}
+
+/// An arm's run from the targeted engine (brief 054): H-20's run — `earned_run_observed` under
+/// the answer's feedback at the gate's zero with the signed gate set, the arm's first mapping,
+/// H-20's flips and critic, the oracle held to the record at every trial — with `after`
+/// reading at every trial's end the trial's spikes from the train, whole since the ring holds
+/// the most spikes a trial can produce, and the trials asserted to abut; at the end of the
+/// first trial under each new mapping the four couplings, as H-20 reads them; and at every
+/// block's end the inhibition by class.
+fn target_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    classes: &[usize],
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>, Watched) {
+    let period = exec.istdp_target_period_ticks();
+    let mut at_flips: [Option<[[i64; 2]; 2]>; 3] = [None; 3];
+    let mut spikes: Vec<[u64; CLASSES]> = Vec::new();
+    let mut inhibition: Vec<ClassInhibition> = Vec::new();
+    let mut fractions: [Option<u32>; 4] = [None; 4];
+    let mut block = [0u64; CLASSES];
+    let mut window = vec![0u32; classes.len()];
+    let mut last_end: Option<u64> = None;
+    let (run, moves, expected) = earned_run_observed(
+        exec,
+        Feedback::Answer,
+        first_mapping(arm),
+        1024,
+        SCHEDULE_TRIALS,
+        GATE_BASELINE_Q16,
+        &SCHEDULE_FLIPS,
+        true,
+        Some(CRITIC_AT_START),
+        &mut |exec, trial| {
+            let end = exec.ticks();
+            let start = end
+                .checked_sub(u64::from(TRIAL_TICKS))
+                .expect("a trial's ticks");
+            if let Some(previous) = last_end {
+                assert_eq!(start, previous, "trial {trial}: the trials abut");
+            }
+            last_end = Some(end);
+            assert!(end <= u64::from(u32::MAX), "the stamp is the tick");
+            let watched = WATCHED_ENDS
+                .iter()
+                .position(|&e| (e.saturating_sub(WINDOW_TRIALS)..e).contains(&trial));
+            each_spike(exec.train(), start as u32, end as u32, &mut |unit| {
+                if let Some(n) = classes.get(unit).and_then(|&c| block.get_mut(c)) {
+                    *n = n.saturating_add(1);
+                }
+                if watched.is_some() {
+                    if let Some(n) = window.get_mut(unit) {
+                        *n = n.saturating_add(1);
+                    }
+                }
+            });
+            if let Some(w) = watched {
+                if trial.wrapping_add(1) == WATCHED_ENDS[w] {
+                    fractions[w] = Some(at_target(&window, period));
+                    window.iter_mut().for_each(|n| *n = 0);
+                }
+            }
+            if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
+                at_flips[f] = Some(pair_couplings(exec, sets));
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                spikes.push(block);
+                block = [0; CLASSES];
+                inhibition.push(inhibition_by_class(exec, classes));
+            }
+        },
+    );
+    let at_flips = at_flips.map(|c| c.expect("the run reached the trial after every flip"));
+    let at_target = fractions.map(|f| f.expect("the run read every window"));
+    (
+        run,
+        moves,
+        expected,
+        Watched {
+            at_flips,
+            spikes,
+            inhibition,
+            at_target,
+        },
+    )
+}
+
+/// H-20's inhibitory course by block for an arm, as its pinned tables hold it: H-19's first 56
+/// blocks and the 64 after them, each block's sum as a fraction of the image's in parts per ten
+/// thousand. Read beside H-21's.
+fn h20_course(k: usize, image: i64) -> Vec<i64> {
+    course(
+        image,
+        &whole(
+            CRITIC_BLOCKS_1024[k],
+            REPLICATED_BLOCKS,
+            SCHEDULE_BLOCKS_1024[k],
+        ),
+    )
+}
+
+/// One arm of H-21 at 1 024 units (brief 054): the calibration before any rewarded run (H-21's
+/// stopping rule, step 2) — the settled engine held to ADR-0077 step by step and its images,
+/// H-20's image by its CRC, a frozen block from the zero image held to ADR-0077's frozen run —
+/// then the target's rule: the lead-in on the frozen image, the target it gives, and the
+/// readings of the network it read, dumped and held to their pins before the image is written;
+/// then the image each arm decodes, H-20's with the target written, shown to differ from H-20's
+/// in the period and the section's seal alone, and decoded; then the arm's 7 680 trials from it
+/// with H-20's critic and flips; everything dumped, the clauses and the readings computed before
+/// anything is held; then the assertion, and the pinned tables of the whole run.
+fn target_arm(arm: Reversal) {
+    let k = TARGET_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-21");
+    let name = format!("target1024 {arm:?}");
+    let (zero, signed) = signed_images(&name);
+    assert_eq!(
+        crc64(&signed),
+        PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-20's image, H-19's and H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    eprintln!("DUMP {name} calibration holds: ADR-0077's settled candidate and H-20's image");
+    // The target's rule, on the settled image frozen, before the image is written.
+    let windows = target_lead_in(&zero);
+    let counts = summed(&windows);
+    let window_spikes: Vec<u64> = windows.iter().map(|w| spikes_of(w)).collect();
+    let period = target_period(1024, TARGET_LEAD_IN_TICKS, spikes_of(&counts));
+    let sets = geometry(1024, ROTATION_1024);
+    let mut exec = signed_from(&signed, 1024);
+    let classes = classes_of(&exec, &sets);
+    let settled_rates = rates(&counts, &classes, period, TARGET_LEAD_IN_TICKS);
+    let at_start = [ISTDP_TARGET_PERIOD_TICKS, period].map(|p| {
+        let mut out = [0u32; TARGET_LEAD_IN_WINDOWS as usize];
+        for (into, w) in out.iter_mut().zip(&windows) {
+            *into = at_target(w, p);
+        }
+        out
+    });
+    let image_sums = QUIET_1024[SETTLED].1;
+    let image_inhibition = inhibition_by_class(&exec, &classes);
+    eprintln!(
+        "DUMP {name} PIN lead-in {window_spikes:?} period {period} alpha {} rates {settled_rates:?} at start {at_start:?} classes {:?} image inhibition {image_inhibition:?}",
+        istdp_alpha_q1_15(period),
+        class_sizes(&classes)
+    );
+    assert_eq!(
+        window_spikes.as_slice(),
+        TARGET_LEAD_IN_1024.as_slice(),
+        "{name}: the lead-in's spikes by window"
+    );
+    assert_eq!(
+        period, TARGET_PERIOD_1024,
+        "{name}: the target the rule gives"
+    );
+    assert_eq!(
+        settled_rates, TARGET_RATES_1024,
+        "{name}: the settled rates"
+    );
+    assert_eq!(
+        at_start, TARGET_AT_START_1024,
+        "{name}: the fractions at the target"
+    );
+    assert_eq!(
+        image_inhibition, TARGET_IMAGE_INHIBITION_1024,
+        "{name}: the image's inhibition by class"
+    );
+    assert_eq!(
+        image_inhibition.0.iter().sum::<i64>(),
+        image_sums.0,
+        "{name}: the classes hold the image's inhibition"
+    );
+    // The image each arm decodes: H-20's, the target written and nothing else.
+    let targeted = targeted_image(&signed, period);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: the image is H-20's in every byte but the target period's and the seal"
+    );
+    exec = signed_from(&targeted, 1024);
+    assert_eq!(
+        exec.istdp_target_period_ticks(),
+        period,
+        "{name}: the image carries the target"
+    );
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    eprintln!(
+        "DUMP {name} image crc {:#018x}, {} bytes differ from H-20's",
+        crc64(&targeted),
+        differing(&signed, &targeted).len()
+    );
+    let image = weights_of(&exec);
+    let first = first_mapping(arm);
+    let (run, moves, expected, watched) = target_run(&mut exec, arm, &sets, &classes);
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let expected_by_block = expected_blocks(&expected);
+    let strong = strong_scheduled(read, first);
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        (read.len(), expected.len()),
+        (SCHEDULE_TRIALS, SCHEDULE_TRIALS)
+    );
+    assert_eq!(
+        (
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            expected_by_block.len(),
+            strong.len(),
+            watched.spikes.len(),
+            watched.inhibition.len()
+        ),
+        (
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS - FLIP_BLOCK,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS
+        )
+    );
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {compositions:?}");
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {moved:?}");
+    eprintln!("DUMP {name} PIN expected {expected_by_block:?}");
+    eprintln!("DUMP {name} PIN strong {strong:?}");
+    eprintln!("DUMP {name} PIN at flips {:?}", watched.at_flips);
+    eprintln!("DUMP {name} PIN spikes {:?}", watched.spikes);
+    eprintln!("DUMP {name} PIN inhibition {:?}", watched.inhibition);
+    eprintln!("DUMP {name} PIN at target {:?}", watched.at_target);
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    let below = first_below(image_sums.0, blocks);
+    let low = lowest(image_sums.0, blocks);
+    let correct = mapping_correct(blocks);
+    let over = first_over(blocks);
+    let first_new_read = first_new_scheduled(read, first);
+    let crossings_read = crossings(blocks);
+    let crossed = crossed_scheduled(&earned, first);
+    let tally_read = tally(blocks);
+    let settle = settle_scheduled(blocks, first);
+    let highest_read = highest(blocks);
+    let strong_sum = strong_by_flip(&strong);
+    let punished_moves = moves_by_mapping(&moved, 1);
+    let rewarded_moves = moves_by_mapping(&moved, 0);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let sums_after = weights_by_polarity(&exec);
+    eprintln!(
+        "DUMP {name} PIN readings below {below:?} lowest {low:?} correct {correct:?} over {over:?} reach {reach:?} first new {first_new_read:?} crossings {crossings_read:?} crossed {crossed:?} tally {tally_read:?} settle {settle:?} highest {highest_read:?} strong total {strong_sum:?} punished moves {punished_moves:?} rewarded moves {rewarded_moves:?} once {once} falls {falls} sums after {sums_after:?}"
+    );
+    eprintln!(
+        "DUMP {name} verdict of this arm: drain held {} learned {:?} over {over:?} settle per myriad {:?}",
+        below.is_none(),
+        correct.map(|c| c >= REWARDED_MIN),
+        settle_per_myriad(settle, first)
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-20's {:?}",
+        course(image_sums.0, blocks),
+        h20_course(k, image_sums.0)
+    );
+    eprintln!(
+        "DUMP {name} crossings {crossings_read:?} beside H-20's {:?}",
+        CROSSINGS_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?}",
+        couplings_course(blocks)
+    );
+    eprintln!(
+        "DUMP {name} expectations {expected_by_block:?} signal {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    // The assertion, after the dump and beside the verdict: H-18's rule, as H-20 holds it.
+    assert!(
+        punished_held(&reach),
+        "{name}: no excitatory synapse outside the four stimulus–readout pairs moved: {reach:?}"
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        TARGET_BLOCKS_1024[k],
+        TARGET_TRACES_1024[k],
+    );
+    assert_eq!(
+        compositions.as_slice(),
+        TARGET_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        TARGET_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        TARGET_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        TARGET_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        moved.as_slice(),
+        TARGET_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        expected_by_block.as_slice(),
+        TARGET_EXPECTED_1024[k],
+        "{name}: the expectations per block"
+    );
+    assert_eq!(
+        strong.as_slice(),
+        TARGET_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(watched.at_flips, TARGET_AT_FLIPS_1024[k]);
+    assert_eq!(
+        watched.spikes.as_slice(),
+        TARGET_SPIKES_1024[k],
+        "{name}: the spikes by class per block"
+    );
+    assert_eq!(
+        watched.inhibition.as_slice(),
+        TARGET_INHIBITION_1024[k],
+        "{name}: the inhibition by class per block"
+    );
+    assert_eq!(watched.at_target, TARGET_AT_TARGET_1024[k]);
+    assert_eq!(below, BELOW_1024[k]);
+    assert_eq!(low, LOWEST_1024[k]);
+    assert_eq!(correct, CORRECT_TARGET_1024[k]);
+    assert_eq!(over, OVER_TARGET_1024[k]);
+    assert_eq!(reach, REACH_TARGET_1024[k]);
+    assert_eq!(first_new_read, FIRST_NEW_TARGET_1024[k]);
+    assert_eq!(crossings_read, CROSSINGS_TARGET_1024[k]);
+    assert_eq!(crossed, CROSSED_TARGET_1024[k]);
+    assert_eq!(tally_read, TALLY_TARGET_1024[k]);
+    assert_eq!(settle, SETTLE_TARGET_1024[k]);
+    assert_eq!(highest_read, HIGHEST_TARGET_1024[k]);
+    assert_eq!(strong_sum, STRONG_BY_FLIP_TARGET_1024[k]);
+    assert_eq!(punished_moves, PUNISHED_MOVES_TARGET_1024[k]);
+    assert_eq!(rewarded_moves, REWARDED_MOVES_TARGET_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_TARGET_1024[k]);
+    assert_eq!(falls, FALLS_TARGET_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (SUMS_AFTER_TARGET_1024[k], Some(SUMS_AFTER_TARGET_1024[k])),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-21's arm that starts from the assignment (brief 054): H-20's arm from the assignment
+/// with the inhibitory rule's target at the settled network's rate.
+#[test]
+#[ignore]
+fn a_target_the_network_fires_at_from_the_assignment_at_1024_units_exhaustive() {
+    target_arm(Reversal::AssignmentFirst);
+}
+
+/// H-21's arm that starts from the mirrored assignment (brief 054): H-20's arm from the
+/// mirrored assignment with the inhibitory rule's target at the settled network's rate.
+#[test]
+#[ignore]
+fn a_target_the_network_fires_at_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    target_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 054): the arms and the constants as ADR-0128 fixed
+/// them, H-20's restated; the target's rule over a table written by hand — the rounding, the
+/// bounds, a network that did not fire, and the default's own rate giving the default; H-21's
+/// clause 1 at its edges over blocks written by hand and the verdict naming the clause, the arm
+/// and the block; the readings' rules over counts, trains and tables written by hand; the
+/// classes and the inhibition by class on the instrument's network, its every inhibitory
+/// synapse at the rail; and the image's patch on that network's image, shown to touch the
+/// target period's four bytes and the section's seal alone, to be read by the loader, and to
+/// be undone by writing the old period back. No run, and nothing else added to the gate.
+#[test]
+fn the_target_s_rule_the_clauses_of_h_21_and_the_image_s_patch() {
+    // The arms and the constants, H-20's restated.
+    assert_eq!(TARGET_ARMS, SCHEDULE_ARMS);
+    assert_eq!(
+        SCHEDULE_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(TARGET_PREDICTED, None, "ADR-0128 predicts no verdict");
+    assert_eq!(DRAIN_FLOOR_PER_CENT, 50);
+    assert_eq!(
+        (
+            TARGET_LEAD_IN_TICKS,
+            TARGET_LEAD_IN_WINDOWS,
+            WINDOW_TICKS,
+            WINDOW_TRIALS
+        ),
+        (1 << 20, 8, 1 << 17, 8)
+    );
+    assert_eq!(WATCHED_ENDS, [1_536, 3_584, 5_632, 7_680]);
+    assert_eq!((TARGET_PERIOD_AT, RAIL_Q1_15, CLASSES), (20, -32_767, 4));
+    assert_eq!(QUANTILES, [0, 10, 25, 50, 75, 90, 100]);
+    assert_eq!(
+        (SCHEDULE_TRIALS, SCHEDULE_BLOCKS, SCHEDULE_FLIPS),
+        (7_680, 120, [1_536, 3_584, 5_632])
+    );
+    assert_eq!(MAPPINGS, [(0, 24), (24, 56), (56, 88), (88, 120)]);
+    assert_eq!((BOUND_PER_CENT, REWARDED_MIN, LAST_BLOCKS), (130, 80, 2));
+    assert_eq!(
+        CRITIC_AT_START,
+        Critic {
+            expected_q16: [0; 2],
+            shift: 5
+        }
+    );
+    assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
+    assert_eq!(
+        PUNISHED_IMAGE_CRC_1024, 0xb548_6d72_bb9c_5818,
+        "H-20's image"
+    );
+    assert_eq!(
+        (
+            ISTDP_TARGET_PERIOD_TICKS,
+            ISTDP_PERIOD_MIN_TICKS,
+            ISTDP_PERIOD_MAX_TICKS
+        ),
+        (20_000, 100, 1_000_000),
+        "ADR-0053's default and bounds"
+    );
+    // The target's rule over a table written by hand: `(units, ticks, spikes)` and the period.
+    let table: [((u64, u64, u64), u32); 16] = [
+        // The rounding from the exact quotient: 1 000.5, 1 001.5 and 999.5 go up; 428.57 up,
+        // 333.33 down, 375 exact.
+        ((1, 2_001, 2), 1_001),
+        ((1, 2_003, 2), 1_002),
+        ((1, 1_999, 2), 1_000),
+        ((3, 1_000, 7), 429),
+        ((1, 1_000, 3), 333),
+        ((3, 1_000, 8), 375),
+        // The bounds: 99 is clamped up to 100, 1 000 001 down to 1 000 000; at the bounds, as is.
+        ((1, 99, 1), 100),
+        ((1, 100, 1), 100),
+        ((1, 1_000_000, 1), 1_000_000),
+        ((1, 1_000_001, 1), 1_000_000),
+        // A network that did not fire: the longest period.
+        ((1_024, 1 << 20, 0), 1_000_000),
+        // At 1 024 units over the lead-in: the default's 5 Hz, 53 687 spikes, gives the default
+        // period; ADR-0117's 1.68 Hz, 18 039 spikes, gives 59 523; 18 000 gives 59 652.
+        ((1_024, 1 << 20, 53_687), 20_000),
+        ((1_024, 1 << 20, 18_039), 59_523),
+        ((1_024, 1 << 20, 18_000), 59_652),
+        // One spike more or fewer moves the period by about three ticks there.
+        ((1_024, 1 << 20, 18_001), 59_649),
+        ((1_024, 1 << 20, 17_999), 59_656),
+    ];
+    for ((units, ticks, spikes), period) in table {
+        assert_eq!(
+            target_period(units, ticks, spikes),
+            period,
+            "{units} units, {ticks} ticks, {spikes} spikes"
+        );
+    }
+    // The depression the rule's period gives, beside the default's: 22 against 67.
+    assert_eq!(
+        (
+            istdp_alpha_q1_15(59_652),
+            istdp_alpha_q1_15(ISTDP_TARGET_PERIOD_TICKS)
+        ),
+        (22, 67)
+    );
+    // Clause 1 at its edges over blocks written by hand, the image's sum 165 876 268 (even) and
+    // 3 (odd): half of it holds and one LSB below does not, at the first block, the 56th and the
+    // last; the first block below named; a run of any other length does not hold.
+    let image = QUIET_1024[SETTLED].1.0;
+    assert_eq!(image, 165_876_268, "the settled image's inhibitory sum");
+    let half = image / 2;
+    assert!(!drained_below(half, image) && drained_below(half.saturating_sub(1), image));
+    assert!(
+        !drained_below(2, 3) && drained_below(1, 3),
+        "half of an odd sum"
+    );
+    assert!(!drained_below(image, image) && !drained_below(image.saturating_mul(2), image));
+    let blocks_at = |sum: i64| -> Vec<Block> {
+        vec![
+            (
+                BLOCK as u32,
+                0,
+                [[0; 2]; 2],
+                [0; 2],
+                [0; 2],
+                [0; 2],
+                0,
+                sum,
+                0,
+                0,
+                IMAGE_COUPLINGS_1024,
+                0,
+            );
+            SCHEDULE_BLOCKS
+        ]
+    };
+    let full = blocks_at(image);
+    let learning_yes = Scheduled {
+        learned: [[true; 4]; 2],
+        bounded: [true; 2],
+        over: [None; 2],
+        yes: true,
+    };
+    assert_eq!(scheduled([&full, &full]), learning_yes);
+    assert_eq!(
+        targeted(image, [&full, &full]),
+        Targeted {
+            held: [true; 2],
+            below: [None; 2],
+            learning: learning_yes,
+            yes: true
+        },
+        "every block at the image's sum, every mapping learned: yes"
+    );
+    assert_eq!(lowest(image, &full), Some((10_000, 0)));
+    for j in [0, REPLICATED_BLOCKS - 1, SCHEDULE_BLOCKS - 1] {
+        let mut run = full.clone();
+        run[j].7 = half;
+        assert_eq!(first_below(image, &run), None, "block {j} at half");
+        assert!(targeted(image, [&run, &run]).yes);
+        assert_eq!(lowest(image, &run), Some((5_000, j)));
+        run[j].7 = half.saturating_sub(1);
+        assert_eq!(first_below(image, &run), Some(j), "block {j} one LSB below");
+        assert_eq!(
+            targeted(image, [&full, &run]),
+            Targeted {
+                held: [true, false],
+                below: [None, Some(j)],
+                learning: learning_yes,
+                yes: false
+            },
+            "block {j}: clause 1 fails in the second arm there"
+        );
+        assert_eq!(
+            targeted(image, [&run, &full]).held,
+            [false, true],
+            "and in the first"
+        );
+    }
+    let mut twice = full.clone();
+    twice[40].7 = 0;
+    twice[90].7 = 0;
+    assert_eq!(
+        first_below(image, &twice),
+        Some(40),
+        "the first block below"
+    );
+    assert_eq!(lowest(image, &twice), Some((0, 40)), "the first lowest");
+    assert_eq!(
+        targeted(image, [&full[..SCHEDULE_BLOCKS - 1], &full]),
+        Targeted {
+            held: [false, true],
+            below: [None; 2],
+            learning: Scheduled {
+                learned: [[false; 4], [true; 4]],
+                bounded: [false, true],
+                over: [None; 2],
+                yes: false
+            },
+            yes: false
+        },
+        "a run short of 7 680 holds no clause"
+    );
+    let mut unlearned = full.clone();
+    unlearned[MAPPINGS[2].1.saturating_sub(1)].0 = 0;
+    unlearned[MAPPINGS[2].1.saturating_sub(2)].0 = 0;
+    let verdict = targeted(image, [&full, &unlearned]);
+    assert_eq!(
+        (verdict.held, verdict.learning.learned[1], verdict.yes),
+        ([true; 2], [true, true, false, true], false),
+        "the drain held and the third mapping unlearned in the second arm: clause 2 fails"
+    );
+    assert_eq!(lowest(image, &[]), None);
+    // ADR-0057's rule over counts written by hand: at the rule's period of about 59 652 ticks
+    // the target is two spikes a window and the band 1 to 4; at the default's, six and 3 to 12.
+    let counts = [0u32, 1, 2, 3, 4, 5, 6, 12, 13];
+    assert_eq!(WINDOW_TICKS / 59_652, 2);
+    assert_eq!(at_target(&counts, 59_652), (4 << 16) / 9, "1, 2, 3 and 4");
+    assert_eq!(
+        at_target(&counts, ISTDP_TARGET_PERIOD_TICKS),
+        (5 << 16) / 9,
+        "3, 4, 5, 6 and 12"
+    );
+    assert_eq!(at_target(&[], 59_652), 0);
+    // The rates over counts written by hand, eleven units of four classes over 2^20 ticks at a
+    // period of 2^16, so that sixteen spikes is the target.
+    let counts = [0u32, 16, 15, 17, 3, 40, 16, 0, 9, 30, 15];
+    let classes = [0usize, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3];
+    assert_eq!(
+        rates(&counts, &classes, 1 << 16, 1 << 20),
+        ([0, 0, 3, 15, 16, 30, 40], 2, [2, 2, 4, 3], [1, 1, 2, 1])
+    );
+    // A trial's spikes from a train written by hand: those in [100, 200) and no other, the
+    // train read from its end back.
+    let train = [
+        (90u32, 0u32),
+        (99, 1),
+        (100, 2),
+        (150, 3),
+        (150, 2),
+        (199, 1),
+        (200, 0),
+    ];
+    let mut seen = Vec::new();
+    each_spike(&train, 100, 200, &mut |u| seen.push(u));
+    assert_eq!(seen, [1, 2, 3, 2]);
+    let mut none = Vec::new();
+    each_spike(&train, 300, 400, &mut |u| none.push(u));
+    assert!(none.is_empty());
+    assert_eq!(summed(&[vec![1, 2], vec![3, 0]]), [4, 2]);
+    assert_eq!(spikes_of(&[4, 2]), 6);
+    // The classes and the inhibition by class on the instrument's network at 1 024 units: 204
+    // inhibitory units, 102 of the stimulus sets, 714 of the readout sets and the four past the
+    // last period; every inhibitory synapse at the rail, the prior's sum held by the classes.
+    let p = prior(1024);
+    let exec = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    let sets = geometry(1024, ROTATION_1024);
+    let classes = classes_of(&exec, &sets);
+    assert_eq!(class_sizes(&classes), [204, 102, 714, 4]);
+    let inhibition = inhibition_by_class(&exec, &classes);
+    assert_eq!(inhibition.0.iter().sum::<i64>(), PRIOR_SUMS_1024.0);
+    assert_eq!(
+        i64::from(inhibition.1).saturating_mul(i64::from(i16::MAX)),
+        PRIOR_SUMS_1024.0,
+        "every inhibitory synapse of the prior at the rail"
+    );
+    // The image's patch on the network's image: the period written touches its four bytes and
+    // the section's entry alone; the loader reads it; the old period written back undoes it;
+    // a byte moved elsewhere fails the check; and a period outside the bounds is refused by
+    // the loader, so the bytes are the ones it reads.
+    let img = Image::encode(&exec).expect("quiescent");
+    let patched = targeted_image(&img, 59_652);
+    let moved = differing(&img, &patched);
+    let (at, offset, _) = modulator_entry(&img);
+    let period_bytes = offset.saturating_add(20)..offset.saturating_add(24);
+    let entry_bytes = at..at.saturating_add(64);
+    assert!(
+        !moved.is_empty()
+            && moved.len() <= 12
+            && moved
+                .iter()
+                .all(|p| period_bytes.contains(p) || entry_bytes.contains(p)),
+        "the period's bytes and the entry's seal: {moved:?}"
+    );
+    assert!(only_the_target(&img, &patched));
+    assert!(
+        only_the_target(&img, &img),
+        "nothing written, nothing moved"
+    );
+    assert_eq!(targeted_image(&patched, ISTDP_TARGET_PERIOD_TICKS), img);
+    let decoded = Image::decode::<2048>(&patched, config(1024, 2, 0)).expect("a well-formed image");
+    assert_eq!(decoded.istdp_target_period_ticks(), 59_652);
+    assert_eq!(weights_of(&decoded), weights_of(&exec));
+    let mut elsewhere = patched.clone();
+    elsewhere[offset.saturating_add(16)] ^= 1;
+    assert!(!only_the_target(&img, &elsewhere), "the baseline's byte");
+    for period in [ISTDP_PERIOD_MIN_TICKS - 1, ISTDP_PERIOD_MAX_TICKS + 1] {
+        assert!(
+            matches!(
+                Image::decode::<2048>(&targeted_image(&img, period), config(1024, 2, 0)),
+                Err(ImageError::Config(ConfigError::IstdpPeriodOutOfRange))
+            ),
+            "{period}: refused by the loader"
+        );
+    }
+}
+
+// ----------------------------------------------------------- the measurement (brief 054)
+
+/// The target's lead-in at 1 024 units, pinned from its first run before any rewarded run: the
+/// spikes of each of its eight windows.
+const TARGET_LEAD_IN_1024: [u64; 8] = [0; 8];
+/// The target the rule gives from them, pinned before any rewarded run.
+const TARGET_PERIOD_1024: u32 = 0;
+/// The settled network's rates over the lead-in at that target.
+const TARGET_RATES_1024: Rates = ([0; 7], 0, [0; CLASSES], [0; CLASSES]);
+/// The fraction of units at the target by ADR-0057's rule over each of the lead-in's windows,
+/// at the default period and at the rule's, Q16.16.
+const TARGET_AT_START_1024: [[u32; 8]; 2] = [[0; 8]; 2];
+/// The settled image's inhibition by class and its synapses at the rail.
+const TARGET_IMAGE_INHIBITION_1024: ClassInhibition = ([0; CLASSES], 0);
+
+/// The two arms at 1 024 units, in `TARGET_ARMS`'s order, each pinned whole from one run: the
+/// sight's blocks, the composition, the earned blocks, the moves, each stimulus's expectation,
+/// the strong punishments from the first flip, the spikes and the inhibition by class per
+/// block; the trace, the hash of the readings and the volley's census over the run. Empty until
+/// the run: the constants above are committed before the first rewarded run, and the tables
+/// after it.
+const TARGET_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const TARGET_TRACES_1024: [u64; 2] = [0; 2];
+const TARGET_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const TARGET_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const TARGET_READ_1024: [u64; 2] = [0; 2];
+const TARGET_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+const TARGET_MOVES_1024: [&[MovesBlock]; 2] = [&[], &[]];
+const TARGET_EXPECTED_1024: [&[[i32; 2]]; 2] = [&[], &[]];
+const TARGET_STRONG_1024: [&[[u32; 2]]; 2] = [&[], &[]];
+const TARGET_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [[[[0; 2]; 2]; 3]; 2];
+const TARGET_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [&[], &[]];
+const TARGET_INHIBITION_1024: [&[ClassInhibition]; 2] = [&[], &[]];
+const TARGET_AT_TARGET_1024: [[u32; 4]; 2] = [[0; 4]; 2];
+const BELOW_1024: [Option<usize>; 2] = [None; 2];
+const LOWEST_1024: [Option<(i64, usize)>; 2] = [None; 2];
+const CORRECT_TARGET_1024: [[u32; 4]; 2] = [[0; 4]; 2];
+const OVER_TARGET_1024: [Option<(usize, usize, usize)>; 2] = [None; 2];
+const REACH_TARGET_1024: [Reach; 2] = [
+    Reach {
+        excitatory: (0, 0),
+        inhibitory: (0, 0),
+    },
+    Reach {
+        excitatory: (0, 0),
+        inhibitory: (0, 0),
+    },
+];
+const FIRST_NEW_TARGET_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const CROSSINGS_TARGET_1024: [[Option<usize>; 4]; 2] = [[None; 4]; 2];
+const CROSSED_TARGET_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const TALLY_TARGET_1024: [[[u32; 3]; 4]; 2] = [[[0; 3]; 4]; 2];
+const SETTLE_TARGET_1024: [Option<[[i64; 2]; 4]>; 2] = [None; 2];
+const HIGHEST_TARGET_1024: [[Option<Peak>; 4]; 2] = [[None; 4]; 2];
+const STRONG_BY_FLIP_TARGET_1024: [[[u32; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+const PUNISHED_MOVES_TARGET_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const REWARDED_MOVES_TARGET_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const ONCE_BLOCKS_TARGET_1024: [u32; 2] = [0; 2];
+const FALLS_TARGET_1024: [bool; 2] = [false; 2];
+const SUMS_AFTER_TARGET_1024: [(i64, i64); 2] = [(0, 0); 2];

@@ -9096,7 +9096,9 @@ pub(crate) fn earned_run_predicted(
 /// the task's `mirrored` before the trial of each index in `flips`, and every trial's contract
 /// is asserted under the mapping in force at it, `mirrored` where `flipped_at` is false and
 /// the other where it is true; the critic's expectations are carried across every flip. With
-/// one flip or none it is `earned_run_predicted`, which calls it so.
+/// one flip or none it is `earned_run_predicted`, which calls it so. It is
+/// `earned_run_observed` with an `after` that is handed the executor shared, which it calls
+/// so.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_scheduled(
     exec: &mut Engine,
@@ -9109,6 +9111,37 @@ pub(crate) fn earned_run_scheduled(
     signed: bool,
     critic: Option<Critic>,
     after: &mut dyn FnMut(&Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
+    earned_run_observed(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flips,
+        signed,
+        critic,
+        &mut |exec, trial| after(exec, trial),
+    )
+}
+
+/// `earned_run_scheduled` with `after` handed the executor mutably (brief 054), so that it can
+/// read the train, which `Executor::train` makes contiguous; it reads and never writes, as the
+/// task and the composer read the train at every trial already, so a run whose `after` reads
+/// the train is the run whose `after` does not.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_observed(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flips: &[usize],
+    signed: bool,
+    critic: Option<Critic>,
+    after: &mut dyn FnMut(&mut Engine, usize),
 ) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>) {
     assert_eq!(exec.signed_gate(), signed, "the signed gate is the image's");
     assert_eq!(
