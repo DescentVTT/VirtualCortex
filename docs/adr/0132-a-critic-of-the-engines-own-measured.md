@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-29
 depends-on: ADR-0131
 decision-makers: VirtualCortex maintainers
@@ -116,10 +116,10 @@ A failure at any of them stops the round there as a finding.
 
 ### The order of the work, as the history holds it
 
-1. **The critic built** (`9e04f87`, 14:09Z on 2026-09-29): ADR-0131, its tests and the four whole-image pins restated. The workspace in the debug profile: 677 passed, 113 ignored.
-2. **The protocol** (`b589eb7`, 14:15Z, pushed to pull request #164, opened as a draft before any run): the rules, the constants, the arithmetic, the gate, the arms with empty pins, and this ADR's protocol.
-3. **The calibration**, before any rewarded run, with the critic unset, from the release build of `b589eb7`: **every one of the 73 whole-domain tests of the weekly job passed**, each in a process of its own — 63 eight at a time from 14:22Z to 15:31Z, H-21's two arms among them in 2 479 and 2 961 s under that load, and the ten timed tests of ADR-0097 and ADR-0102 one at a time to 15:33Z; the workspace's tests passed in the release profile (678 passed, 115 ignored) and on the MSRV (678 passed); the pull request's checks on `b589eb7` passed, the determinism pin on AArch64 among them, and the mutation gate on the changed lines: 66 mutants, 58 caught, 8 unviable, none missed.
-4. **The arms**, once, side by side from 15:34Z, the calibration held in each — H-21's first block reproduced table by table with the critic unset — and the masked check passing (eleven bytes differ from H-21's image, three of the critic's and eight of the seal; the image's CRC-64 `0xbf6797857fda0809`); both ran their 7 680 trials and stopped at the first empty table at 15:55Z, 1 284 and 1 274 s. The tables were written from those dumps, and a second run side by side from 15:58Z reproduced every table and passed, in 1 311 and 1 308 s (on the developer machine, a ratio and not admissible); the pins are `492e409`.
+1. **The critic built** (`8eed216` on `main`; `9e04f87` on the branch before the rebase that merged pull request #164, 14:09Z on 2026-09-29): ADR-0131, its tests and the four whole-image pins restated. The workspace in the debug profile: 677 passed, 113 ignored.
+2. **The protocol** (`26e9484`; `b589eb7`, 14:15Z, pushed to pull request #164, opened as a draft before any run): the rules, the constants, the arithmetic, the gate, the arms with empty pins, and this ADR's protocol.
+3. **The calibration**, before any rewarded run, with the critic unset, from the release build of `b589eb7` (`26e9484`): **every one of the 73 whole-domain tests of the weekly job passed**, each in a process of its own — 63 eight at a time from 14:22Z to 15:31Z, H-21's two arms among them in 2 479 and 2 961 s under that load, and the ten timed tests of ADR-0097 and ADR-0102 one at a time to 15:33Z; the workspace's tests passed in the release profile (678 passed, 115 ignored) and on the MSRV (678 passed); the pull request's checks on `b589eb7` (`26e9484`) passed, the determinism pin on AArch64 among them, and the mutation gate on the changed lines: 66 mutants, 58 caught, 8 unviable, none missed.
+4. **The arms**, once, side by side from 15:34Z, the calibration held in each — H-21's first block reproduced table by table with the critic unset — and the masked check passing (eleven bytes differ from H-21's image, three of the critic's and eight of the seal; the image's CRC-64 `0xbf6797857fda0809`); both ran their 7 680 trials and stopped at the first empty table at 15:55Z, 1 284 and 1 274 s. The tables were written from those dumps, and a second run side by side from 15:58Z reproduced every table and passed, in 1 311 and 1 308 s (on the developer machine, a ratio and not admissible); the pins are `9473933` (`492e409`).
 
 No constant, clause or rule moved after the first rewarded trial, and there was no second attempt: the second run is the pinned tables' reproduction.
 
@@ -189,7 +189,7 @@ The first and the third reversals — the flips after which the value fell deepe
 
 ### The evidence
 
-- **The dispatch's scope.** The diff changes files under `src/` — the record, the rule, the executor, the image and the task — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**, as brief 055 asks: run [36597280260](https://github.com/DescentVTT/VirtualCortex/actions/runs/36597280260) at `492e409`, the pinned tables, the last commit that changes a test or a source file. The round's commits on the branch: `9e04f87` the critic built; `b589eb7` the protocol, before any run; `492e409` the arms' tables and the gate's checks over them; `7ebc4bd` this ADR's readings and the documents; and the commit that carries this section, the cost table and the brief's archive.
+- **The dispatch's scope.** The diff changes files under `src/` — the record, the rule, the executor, the image and the task — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**, as brief 055 asks: run [36597280260](https://github.com/DescentVTT/VirtualCortex/actions/runs/36597280260) at `492e409` (`9473933` on `main`), the pinned tables, the last commit that changes a test or a source file. The round's commits as `main` holds them, beside the branch's: `8eed216` (`9e04f87`) the critic built; `26e9484` (`b589eb7`) the protocol, before any run; `9473933` (`492e409`) the arms' tables and the gate's checks over them; `9704403` (`7ebc4bd`) this ADR's readings and the documents; `0ba8368` (`ba73c90`) this section, the cost table and the brief's archive.
 - **Every exhaustive job is green.** All seventy-five `exhaustive` tests passed, each exit 0: the seventy-three before this round reproduced their pinned numbers on the hosted runners, the whole-image pins among them at format 19, and H-22's two arms reproduced their tables there as they did twice on the developer machine. The arms took **1 379 s from the assignment and 1 814 s from the mirrored**; H-21's took 1 800 and 1 804 s in the same run.
 - **The shards**, dealt by the table before this round, which did not know H-22's arms and costed each at 900 s:
 
@@ -205,7 +205,7 @@ The first and the third reversals — the flips after which the value fell deepe
   The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.90 to 2.00 of their summed seconds over the wall.
 - **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 36597280260`): 75 lines, 27 880 s, the seventy-three earlier tests at 1.044 of the table before. ADR-0092's deal plans each of the six shards at 4 646 to 4 648 s summed, about 2 350 s of wall time at the run's ratio, **about 33 per cent of the bound**, inside the brief's 60.
 - **The mutation sweep.** Seven jobs, green: 3 578 mutants caught over the tree and **none missed**, 2 398 in the state crates and 1 180 in the runtime, 150 unviable. Every mutant the sweep made in the critic's code was caught — `ValueCritic`'s sixteen, `Executor::{critic, features, prediction, reward}`, the count in `merge_spikes`, the pending unit's clause in `sweep` and every one of `critic_of`'s. Its 22 timeouts are the known protocol ones, in the iterators of `cortex-core`, the injector, the barrier and the workers' loop, none in the critic's code, read by [ADR-0062](0062-the-first-complete-sweeps-list.md)'s triage as detections. The runtime's six shards took 1 h 37 min to 2 h 58 min against their bound of 330 minutes.
-- **The pull request's gate** on `7ebc4bd` is green in every job, the mutation gate on the changed lines among them: 66 mutants in the lines the round changes, 58 caught, 8 unviable, none missed, as on `b589eb7`.
+- **The pull request's gate** on `7ebc4bd` (`9704403`) and on `ba73c90` (`0ba8368`) is green in every job, the mutation gate on the changed lines among them: 66 mutants in the lines the round changes, 58 caught, 8 unviable, none missed, as on `b589eb7`.
 
 ## Consequences
 
@@ -221,5 +221,5 @@ The first and the third reversals — the flips after which the value fell deepe
 
 - `runtime/cortex-runtime/tests/instrument/harness.rs`: `value_step`, `earned_run_valued`, which `earned_run_observed` calls.
 - `runtime/cortex-runtime/tests/inhibition.rs`: `VALUED_ARMS`, `VALUED_PREDICTED`, `VALUED_CRITIC`, `VOLLEY_UNITS`, `TASK_STEP_SHIFT`, `PREDICTS_DIVISOR`, `CRITIC_AT`, `GROUPS`, `correct_errors`, `mapping_errors`, `predicts`, `Valued`, `valued`, `groups_of`, `weights_by_group`, `value_blocks`, `values_hash`, `with_critic_bytes`, `valued_image`, `only_the_critic`, `h21_first_block`, `valued_run`, `valued_arm`, `TARGET_IMAGE_CRC_1024`; the two weekly tests and the gate's test named above.
-- `runtime/cortex-runtime/tests/inhibition.rs`: the pinned tables `VALUED_BLOCKS_1024` to `SUMS_AFTER_VALUED_1024` and the verdict `VALUED_1024` (`492e409`).
+- `runtime/cortex-runtime/tests/inhibition.rs`: the pinned tables `VALUED_BLOCKS_1024` to `SUMS_AFTER_VALUED_1024` and the verdict `VALUED_1024` (`9473933` on `main`; `492e409` on the branch).
 - Every pinned number of ADR-0065 to ADR-0129 unchanged, and the determinism pin; the image format 19; finding F-61 in whitepaper §11.
