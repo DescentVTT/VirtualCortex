@@ -5,7 +5,7 @@ depends-on: ADR-0131
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0132: A critic of the engine's own, measured — brief 055's protocol, committed before any rewarded run: the critic's step shift and scale placed by an arithmetic written first, a step of $2^{-9}$ and a scale of $2^{-2}$, so that one stimulus volley moves the value of the same volley by 51/2 048 of the error, the least sum of the two shifts at which that is no more than the task critic's thirty-second; the image each arm decodes, H-21's with the critic written and nothing else, shown by a masked check; H-21's first block reproduced with the critic unset before it; H-21's two arms run once from it with the task's critic replaced by the engine's; H-22's clauses as integer rules and the readings beside them
+# ADR-0132: A critic of the engine's own, measured — H-22 is no, on clause 3 alone: with ADR-0131's critic at a step of $2^{-9}$ and a scale of $2^{-2}$, placed by an arithmetic committed before any run, H-21's schedule learned every mapping in both arms, 89 to 125 of each mapping's last 128, with no coupling past 1.30 of its image's, the highest 1.186 and 1.185; over each mapping's last 128 trials the engine's value on the correct trials stood at 0.495 to 0.935 of the reward, and in one mapping, the assignment arm's second, at 0.495, below the half clause 3 asks; the value per stimulus is about $2p - 1$ of the reward, a stimulus's expected reward, so for such a critic the clause is an accuracy of three quarters (F-61); after the first and third flips the value fell to −0.92 to −1.03 of the reward, deeper than the task critic's −0.75 to −0.95, and those reversals took 22 to 30 blocks against H-21's 14 to 23; the inhibitory course H-21's; the assertion held; H-22's stopping rule at step 5, and the next decision named and not taken
 
 ## Context and Problem Statement
 
@@ -114,23 +114,92 @@ A failure at any of them stops the round there as a finding.
 - **Each is H-21's arm and a block more**: H-21's arms took 1 705 and 1 790 s on the hosted runners by the cost table, and H-21's first block adds a sixtieth of a run.
 - **The plan stays inside the budget.** The table after ADR-0129 is 73 tests and 23 654 s, about 28 per cent of the bound at six shards. The two arms add about 3 600 s, and the plan rises to about 32 per cent, under the directive's 60.
 
-### The order of the work
+### The order of the work, as the history holds it
 
-1. The critic built, ADR-0131, and its tests, with the four whole-image pins restated.
-2. This commit: the rules, the constants, the arithmetic, the gate, the arms with empty pins, and this ADR's protocol, before any run.
-3. The calibration above, before any rewarded run.
-4. The two arms, once, stopping at their first empty pin; the tables written from the dumps, and a second run to reproduce them.
-5. This ADR's readings and the documents; then the weekly dispatched on the branch at `scope=both` and the cost table regenerated from it.
+1. **The critic built** (`9e04f87`, 14:09Z on 2026-09-29): ADR-0131, its tests and the four whole-image pins restated. The workspace in the debug profile: 677 passed, 113 ignored.
+2. **The protocol** (`b589eb7`, 14:15Z, pushed to pull request #164, opened as a draft before any run): the rules, the constants, the arithmetic, the gate, the arms with empty pins, and this ADR's protocol.
+3. **The calibration**, before any rewarded run, with the critic unset, from the release build of `b589eb7`: **every one of the 73 whole-domain tests of the weekly job passed**, each in a process of its own — 63 eight at a time from 14:22Z to 15:31Z, H-21's two arms among them in 2 479 and 2 961 s under that load, and the ten timed tests of ADR-0097 and ADR-0102 one at a time to 15:33Z; the workspace's tests passed in the release profile (678 passed, 115 ignored) and on the MSRV (678 passed); the pull request's checks on `b589eb7` passed, the determinism pin on AArch64 among them, and the mutation gate on the changed lines: 66 mutants, 58 caught, 8 unviable, none missed.
+4. **The arms**, once, side by side from 15:34Z, the calibration held in each — H-21's first block reproduced table by table with the critic unset — and the masked check passing (eleven bytes differ from H-21's image, three of the critic's and eight of the seal; the image's CRC-64 `0xbf6797857fda0809`); both ran their 7 680 trials and stopped at the first empty table at 15:55Z, 1 284 and 1 274 s. The tables were written from those dumps, and a second run side by side from 15:58Z reproduced every table and passed, in 1 311 and 1 308 s (on the developer machine, a ratio and not admissible); the pins are `492e409`.
+
+No constant, clause or rule moved after the first rewarded trial, and there was no second attempt: the second run is the pinned tables' reproduction.
+
+### The readings
+
+**The verdict** (`VALUED_1024`), by the rule committed first, over the pinned tables:
+
+- **Clause 1 holds in both arms**: each mapping's last 128 trials, **121, 96, 120 and 100** correct from the assignment and **125, 89, 121 and 113** from the mirrored assignment, against the mark of 80 (H-21's: 121, 119, 115, 119 and 124, 113, 115, 119).
+- **Clause 2 holds in both arms**: no coupling above 1.30 of its image's at any block's end. The highest per mapping, as a fraction of the image coupling:
+
+  | Arm | First mapping | Second | Third | Fourth |
+  | :--- | :--- | :--- | :--- | :--- |
+  | Assignment first | 1.164, block 22, A→R0 | 1.151, block 24, A→R0 | **1.186**, block 86, A→R0 | 1.166, block 88, A→R0 |
+  | Mirrored first | 1.164, block 23, B→R0 | 1.156, block 24, A→R1 | **1.185**, block 87, B→R0 | 1.181, block 118, B→R1 |
+
+  H-21's highest were 1.190 and 1.193.
+- **Clause 3 holds in seven of the eight mappings and fails in one**: the mean error on the correct trials of each mapping's last 128, against the bound of half the reward, 32 768 (`ERRORS_VALUED_1024`):
+
+  | Arm | First mapping | Second | Third | Fourth |
+  | :--- | ---: | ---: | ---: | ---: |
+  | Assignment first | 7 695 (0.117) | **33 121 (0.505)** | 8 272 (0.126) | 29 737 (0.454) |
+  | Mirrored first | 4 239 (0.065) | 28 301 (0.432) | 7 344 (0.112) | 17 152 (0.262) |
+
+  So the engine's value on those correct trials stood at 0.495 to 0.935 of the reward, and at 0.495 in the assignment arm's second mapping, the one below the half.
+- `Valued { learning: Scheduled { learned: [[true; 4]; 2], bounded: [true; 2], over: [None; 2], yes: true }, predicted: [[true, false, true, true], [true; 4]], yes: false }`. **H-22 is no, on clause 3 alone**, in the assignment arm's second mapping, with its scope: this task, these two arms, this schedule of three flips over 7 680 trials, H-21's configuration at 1 024 units, and the critic at a step of $2^{-9}$ and a scale of $2^{-2}$. ADR-0130 wrote no prediction for it.
+
+**The engine's value beside the task critic's expectation.** Per stimulus and mapping, over its last 128 trials: the stimulus's accuracy $p$, the value $2p - 1$ of the reward a critic of the stimulus's expected reward would hold, the engine's mean value, and its value on the correct trials:
+
+| Arm, mapping | A: $p$ | $2p-1$ | mean value | value on correct | B: $p$ | $2p-1$ | mean value | value on correct |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Assignment, 1 | 0.951 | 0.902 | 0.906 | 0.901 | 0.940 | 0.881 | 0.867 | 0.866 |
+| Assignment, 2 | 0.703 | 0.406 | 0.310 | 0.306 | 0.797 | 0.594 | 0.657 | 0.661 |
+| Assignment, 3 | 0.968 | 0.935 | 0.913 | 0.924 | 0.909 | 0.818 | 0.844 | 0.824 |
+| Assignment, 4 | 0.870 | 0.741 | 0.588 | 0.596 | 0.716 | 0.432 | 0.522 | 0.503 |
+| Mirrored, 1 | 1.000 | 1.000 | 1.047 | 1.047 | 0.955 | 0.910 | 0.821 | 0.829 |
+| Mirrored, 2 | 0.438 | −0.125 | −0.099 | −0.126 | 0.953 | 0.906 | 0.883 | 0.887 |
+| Mirrored, 3 | 0.968 | 0.935 | 0.944 | 0.935 | 0.924 | 0.848 | 0.832 | 0.842 |
+| Mirrored, 4 | 0.796 | 0.593 | 0.501 | 0.497 | 0.946 | 0.892 | 0.890 | 0.886 |
+
+- **The engine learned a stimulus's expected reward**, the quantity the task's critic holds: its mean value follows $2p - 1$ within about 0.15 of the reward in every row, and its value on the correct trials is its mean value within 0.03. It does not tell a correct trial from a wrong one before the reward, though the readouts' spikes that decide the selection are among its features: with two stimuli and two readouts, a linear value over the units cannot hold the conjunction of a stimulus and its answer.
+- **So clause 3 is an accuracy bound for such a critic** (F-61): the mean error on the correct trials is about $2(1 - p)$ of the reward, at most a half exactly when $p ge 3/4$, 96 of 128, against clause 1's 80. The failing mapping had 96 correct, its stimuli at 0.703 and 0.797.
+- **At the first mapping's end** the two critics stand together: the engine at 0.927 and 0.922 of the reward (assignment) and 1.044 and 0.910 (mirrored) at the 24th block, the task critic at 0.899, 0.903, 0.975 and 0.887 in H-21.
+- **After a flip the engine's value falls deeper.** Over the eight blocks after the first and the third flips its mean value per stimulus fell to −0.92 to −1.03 of the reward, where H-21's task critic fell to −0.75 to −0.95 in the same blocks; after the second flip to −0.51 to −0.78, against −0.70 to −0.86. It came back above zero 17 to 30 blocks after the first and third flips — once not within 32 — and 4 to 13 after the second.
+
+**The reversal speeds** (`CROSSINGS_VALUED_1024`, blocks to 40 of 64, the crossing block counted), beside H-21's and H-20's:
+
+| Arm | First mapping | First reversal | Second | Third |
+| :--- | ---: | ---: | ---: | ---: |
+| H-22 from the assignment | 6 | **30** | 15 | **27** |
+| H-21 from the assignment | 6 | 19 | 20 | 16 |
+| H-20 from the assignment | 6 | 19 | 21 | 16 |
+| H-22 from the mirrored | 4 | **30** | 10 | **22** |
+| H-21 from the mirrored | 3 | 23 | 14 | 14 |
+| H-20 from the mirrored | 3 | 23 | 13 | 18 |
+
+The first and the third reversals — the flips after which the value fell deepest — took 7 to 11 blocks longer than H-21's, and the second 4 to 5 blocks fewer. Fewer of the old answer's selections met a strong punishment (the signal at or below −0.5 after the reward; `STRONG_BY_FLIP_VALUED_1024`): 383, 383 and 425 from the assignment and 328, 262 and 381 from the mirrored, against H-21's 527, 573 and 496 and 490, 426 and 432. **An account of these readings, a Hypothesis and not a measurement**: with the value near −1.0 a wrong selection delivers an error near zero, so the punishment that revises the old answer under the signed gate (ADR-0093) fades while the old answer still wins, and a correct selection delivers nearly twice the reward; the value falls that deep because about half of it is carried by units both stimuli share (below), which every error of either stimulus moves. The round reads the value and the punishments' counts, not the modulation each synapse met.
+
+**Which units carry the value** (`VALUED_WEIGHTS_1024`, the weights by group at each block's end). At the first flip, from the assignment, the sums were 160 407 on the 204 inhibitory units, 66 467 and 61 090 on the 51 units of each stimulus set, 131 023 and 152 695 on the 357 of each readout set and 3 683 on the four others; weighted by each group's spikes a trial, the presented stimulus's own units carry about a third of the value, the inhibitory units and the readouts, which both stimuli share, about a half, and the other stimulus's units about a tenth — an estimate from the sums and the classes' rates, not a reading unit by unit. A stimulus that is answered badly carries a value of its own below the rest: in the mirrored arm's second mapping, where A was right in 44 per cent of its trials, A's 51 units summed −121 655 and B's +162 737 at its end. No weight came near the rail: the extremes over the runs were −11 527 and 12 558, 0.38 of it.
+
+**The inhibitory sum's course**, each block's as a fraction of the settled image's, is H-21's within 0.0022 at every block: it rose to 1.0105 and 1.0099 at the 14th and the 11th block, stood at or above the image's until the 27th and the 25th, and ended at **0.849 and 0.846** against H-21's 0.848 and 0.848, still falling. The inhibitory rule's course does not depend on which critic delivers the error.
+
+**The assertion held** in both arms: no excitatory synapse outside the four stimulus–readout pairs moved (`REACH_VALUED_1024`: 3 188 and 3 187 synapses moved inside them, none outside). The oracle — the harness's second writing of the critic's rule among it — was held to the record's value, error, weights, counts, traces and signal at every one of the 15 360 trials.
+
+### The step of the stopping rule reached
+
+**Step 5, no on clause 3 alone**: *"the engine learns the task without learning to predict its reward. The next decision is an ADR on the critic's scale or window."* The configuration learned every mapping in both arms with its couplings bounded, and its critic, reading only the engine's own spikes and rewards, learned what the task's critic held — a stimulus's expected reward — but not enough of it to meet clause 3 in the one mapping learned at three quarters. **The next decision is an ADR on the critic's scale or window, with this round's readings as its need**: the value per stimulus at $2p - 1$, which no scale or window of a linear critic over these features exceeds on a correct trial; F-61, that clause 3 bounds a stimulus-level critic's accuracy rather than its prediction; and the deeper trough after a flip beside the slower reversals. It is named and not taken.
 
 ## Consequences
 
 - Good: the shift and the scale are read off an arithmetic committed before the first rewarded run, against the task critic's step the comparison is with, so a difference from H-21 is the critic's and not a tuning.
 - Good: every input the critic reads is the engine's own; the harness holds the engine's value, error and weights to a second writing of the rule at every trial.
+- Good: the engine's learning no longer needs a label only the host has: with its own critic it learned every mapping of H-21's schedule in both arms with its couplings bounded, and its value came to what the task's critic held, a stimulus's expected reward.
 - Neutral: the whole run is pinned, 120 blocks per arm, as H-21's.
+- Bad: H-22 is no. Clause 3 failed in one mapping of eight, by 353 of 65 536, and the reading beside it says why a critic of a stimulus's expected reward meets it only where a mapping is learned at three quarters (F-61), which the clause's text did not say; the verdict is read by the clause as written, and the reading does not change it.
+- Bad: two of the three reversals were slower than H-21's by 7 to 11 blocks, and the account of why is a Hypothesis the round did not measure.
 - Bad: one seed, one size, one schedule, one pair of constants, as H-21's.
 
 ## Confirmation
 
 - `runtime/cortex-runtime/tests/instrument/harness.rs`: `value_step`, `earned_run_valued`, which `earned_run_observed` calls.
 - `runtime/cortex-runtime/tests/inhibition.rs`: `VALUED_ARMS`, `VALUED_PREDICTED`, `VALUED_CRITIC`, `VOLLEY_UNITS`, `TASK_STEP_SHIFT`, `PREDICTS_DIVISOR`, `CRITIC_AT`, `GROUPS`, `correct_errors`, `mapping_errors`, `predicts`, `Valued`, `valued`, `groups_of`, `weights_by_group`, `value_blocks`, `values_hash`, `with_critic_bytes`, `valued_image`, `only_the_critic`, `h21_first_block`, `valued_run`, `valued_arm`, `TARGET_IMAGE_CRC_1024`; the two weekly tests and the gate's test named above.
-- Every pinned number of ADR-0065 to ADR-0129 unchanged, and the determinism pin; the image format 19.
+- `runtime/cortex-runtime/tests/inhibition.rs`: the pinned tables `VALUED_BLOCKS_1024` to `SUMS_AFTER_VALUED_1024` and the verdict `VALUED_1024` (`492e409`).
+- Every pinned number of ADR-0065 to ADR-0129 unchanged, and the determinism pin; the image format 19; finding F-61 in whitepaper §11.
