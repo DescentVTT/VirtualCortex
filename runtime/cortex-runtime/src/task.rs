@@ -38,6 +38,12 @@
 //! task's state, as the seed and the trial's index are: no record holds it and no image carries
 //! it. A task with no critic delivers the outcome's reward, and every run pinned before
 //! ADR-0107 reruns unchanged.
+//!
+//! The engine may carry a critic of its own instead (ADR-0130, ADR-0131): a value weight on
+//! every unit, read from the engine's own spikes since the previous reward. With it set the
+//! task delivers the outcome's reward, the engine takes its value from it, and the trial
+//! records the error the modulator received and the value; a task that carries a critic of its
+//! own on such an engine is refused, since two critics would take the expectation twice.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -515,6 +521,9 @@ pub enum TaskError {
     /// rule, which moves an expectation toward the reward and never past it, could not have
     /// taken it from zero (ADR-0107).
     ExpectationBeyondReward,
+    /// A task that carries a critic on an engine that carries its own (ADR-0131): the
+    /// expectation would be taken twice.
+    TwoCritics,
     /// The modulation baseline at 1.0 with a reward that would be delivered: a positive reward
     /// adds nothing at the ceiling (the clamp is there already), the configuration that
     /// silently does nothing.
@@ -560,6 +569,9 @@ pub struct Outcome {
     /// Under a critic, the presented stimulus's expected reward before the trial and after it,
     /// `[before, after]`, the same when the reward is withheld; none without a critic.
     pub expected_q16: Option<[i32; 2]>,
+    /// Under the engine's critic (ADR-0131), the engine's value of the trial's reward, before
+    /// its weights moved; none without it, or when the reward is withheld.
+    pub value_q16: Option<i32>,
 }
 
 /// A two-alternative task on an executor: two stimuli, two readouts, a background drive, a
@@ -620,7 +632,8 @@ impl Task {
     /// trial and negative, a readout window with a tick and inside the trial, a train that
     /// holds the most spikes a trial can produce, a readout count that cannot reach the
     /// drive's width, a reward that is delivered only where it can do something, and a
-    /// critic's expectations, where the task has one, within the reward's magnitude.
+    /// critic's expectations, where the task has one, within the reward's magnitude, and no
+    /// critic of the task's on an engine that carries its own.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
         let sets = [
@@ -701,6 +714,9 @@ impl Task {
         {
             return Err(TaskError::ExpectationBeyondReward);
         }
+        if self.critic.is_some() && exec.critic().is_some() {
+            return Err(TaskError::TwoCritics);
+        }
         if self.feedback != Feedback::Withheld {
             if self.reward_q16 == 0 {
                 return Err(TaskError::NoReward);
@@ -774,6 +790,7 @@ impl Task {
                     expected_q16: self
                         .critic
                         .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
+                    value_q16: None,
                 });
             }
         };
@@ -784,14 +801,20 @@ impl Task {
         };
         // The critic takes the stimulus's expectation from the outcome's reward and moves it
         // (ADR-0107); without one the outcome's reward is delivered itself.
-        let (reward_q16, expected_q16) = match self.critic.as_mut() {
+        let (delivered_q16, expected_q16) = match self.critic.as_mut() {
             Some(critic) => {
                 let (error, before, after) = critic.predict(stimulus, outcome_q16);
                 (error, Some([before, after]))
             }
             None => (outcome_q16, None),
         };
-        let signal_q16 = exec.reward(reward_q16);
+        let signal_q16 = exec.reward(delivered_q16);
+        // Under the engine's critic (ADR-0131) the modulator received the reward less the
+        // engine's value, which the executor read at this reward; unset, it reads none.
+        let (reward_q16, value_q16) = match exec.prediction() {
+            Some(prediction) => (prediction.error_q16, Some(prediction.value_q16)),
+            None => (delivered_q16, None),
+        };
         Ok(Outcome {
             trial,
             stimulus,
@@ -801,6 +824,7 @@ impl Task {
             reward_q16,
             signal_q16,
             expected_q16,
+            value_q16,
         })
     }
 }
@@ -808,9 +832,9 @@ impl Task {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::executor::Config;
+    use crate::executor::{Config, Prediction};
     use cortex_core::{STP_MAX, STP_U, THRESHOLD_BASE};
-    use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
+    use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState, ValueCritic};
 
     const ONE: i32 = MODULATION_ONE_Q16;
     /// The replay drive's message (ADR-0038): two of 1.25 fire an armed unit once.
@@ -2004,6 +2028,157 @@ mod tests {
         assert_eq!(
             (flipped.reward_q16, flipped.expected_q16, flipped.signal_q16),
             (error, Some([100, after]), error)
+        );
+    }
+
+    /// `network` with the engine's critic set (ADR-0131): a step of 2^-9 and a scale of 2^-2.
+    fn valued(baseline_q16: i32) -> Executor<8> {
+        let mut exec = Executor::<8>::new(Config {
+            units: 16,
+            injector_capacity: 64,
+            train_capacity: spikes_per_unit(TICKS).saturating_mul(16) as usize,
+            modulation_baseline_q16: baseline_q16,
+            critic: Some(ValueCritic { shift: 9, scale: 2 }),
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+        exec
+    }
+
+    /// The engine's critic under a task (ADR-0131): a task that carries a critic of its own is
+    /// refused on an engine that carries one, before anything is injected. A task without one
+    /// delivers the outcome's reward and the engine takes its value from it: the trial records
+    /// the error the modulator received and the value, the executor's reading. At weights of
+    /// zero the value is zero and the trial is the trial on an engine without the critic in every
+    /// field but the value; after it, every unit that fired carries a weight, so the next trial's
+    /// value is those weights times the spikes since the reward, over four, and the error the
+    /// reward less it. Withheld, there is no value and no error, and the spikes wait for the next
+    /// reward.
+    #[test]
+    fn a_task_under_the_engine_s_critic_delivers_the_reward_and_records_the_value_and_the_error() {
+        let mut exec = valued(ONE / 2);
+        let mut own = Task {
+            critic: Some(Critic::new(5)),
+            ..task(Feedback::Answer)
+        };
+        assert_eq!(own.check(&exec), Err(TaskError::TwoCritics));
+        assert_eq!(own.trial(&mut exec, 0), Err(TaskError::TwoCritics));
+        assert!(
+            exec.is_quiescent() && exec.ticks() == 0,
+            "a refusal injects nothing"
+        );
+        assert_eq!(
+            Task {
+                critic: Some(Critic::new(5)),
+                ..task(Feedback::Answer)
+            }
+            .check(&network(1, ONE / 2)),
+            Ok(()),
+            "the task's own critic on an engine without one"
+        );
+        let mut plain_exec = network(1, ONE / 2);
+        let mut t = task(Feedback::Answer);
+        let mut plain = task(Feedback::Answer);
+        let weights = |exec: &Executor<8>| -> Vec<i16> {
+            exec.units().iter().map(|u| u.value_weight).collect()
+        };
+        // The spikes of each unit in the train since `since`.
+        let since = |exec: &mut Executor<8>, since: u64| -> Vec<u32> {
+            let mut counts = vec![0u32; 16];
+            for &(tick, unit) in exec.train() {
+                if u64::from(tick) >= since {
+                    counts[unit as usize] = counts[unit as usize].saturating_add(1);
+                }
+            }
+            counts
+        };
+        // Trial 0, no readout cued: a tie, the reward −r, against a value of zero.
+        let tie = t.trial(&mut exec, 0).unwrap();
+        let bare = plain.trial(&mut plain_exec, 0).unwrap();
+        assert_eq!(tie.selection, None);
+        assert_eq!((tie.reward_q16, tie.value_q16), (-REWARD, Some(0)));
+        assert_eq!(
+            Outcome {
+                value_q16: None,
+                ..tie
+            },
+            bare,
+            "at weights of zero the engine's critic delivers the outcome's reward"
+        );
+        assert_eq!(bare.value_q16, None, "no critic, no value");
+        assert_eq!(
+            exec.prediction(),
+            Some(Prediction {
+                value_q16: 0,
+                error_q16: -REWARD
+            })
+        );
+        let fired = since(&mut exec, 0);
+        let stimulus = t.stimuli[usize::from(tie.stimulus)].set;
+        for unit in 0..16u32 {
+            assert_eq!(
+                fired[unit as usize] > 0,
+                stimulus.contains(unit),
+                "unit {unit}: the stimulus fired and nothing else"
+            );
+        }
+        let moved: Vec<i16> = fired
+            .iter()
+            .map(|&c| (-i64::from(REWARD) * i64::from(c)).div_euclid(512) as i16)
+            .collect();
+        assert_eq!(weights(&exec), moved, "−r over 512 per spike");
+        assert!(exec.features().iter().all(|&c| c == 0));
+        // The same stimulus with its answer cued: correct, against the value its units now
+        // carry.
+        let rewarded_at = exec.ticks();
+        exec.run(400 - TICKS as u64);
+        let s = tie.stimulus;
+        let same = (1..16u64).find(|&k| t.stimulus_at(k) == s).unwrap();
+        cue(&exec, t.readout.sets()[usize::from(t.answer(s))]);
+        let before = weights(&exec);
+        let right = t.trial(&mut exec, same).unwrap();
+        assert!(right.correct);
+        let counts = since(&mut exec, rewarded_at);
+        let value = before
+            .iter()
+            .zip(&counts)
+            .map(|(&w, &c)| i64::from(w) * i64::from(c))
+            .sum::<i64>()
+            .div_euclid(4) as i32;
+        assert!(
+            value < 0,
+            "{value}: the stimulus predicts the punishment it met"
+        );
+        assert_eq!(
+            (right.reward_q16, right.value_q16),
+            (REWARD - value, Some(value))
+        );
+        let moved: Vec<i16> = before
+            .iter()
+            .zip(&counts)
+            .map(|(&w, &c)| {
+                (i64::from(w) + (i64::from(REWARD - value) * i64::from(c)).div_euclid(512)) as i16
+            })
+            .collect();
+        assert_eq!(weights(&exec), moved);
+        // Withheld, past the refractory window: no value, no error, nothing moved, and the
+        // trial's spikes wait.
+        exec.run(400 - TICKS as u64);
+        let reading = exec.prediction();
+        let before = weights(&exec);
+        let mut w = task(Feedback::Withheld);
+        let none = w.trial(&mut exec, 0).unwrap();
+        assert_eq!((none.reward_q16, none.value_q16), (0, None));
+        assert_eq!(exec.prediction(), reading, "no reward, no reading");
+        assert_eq!(weights(&exec), before);
+        assert!(
+            exec.features().iter().any(|&c| c > 0),
+            "the stimulus's spikes wait for the next reward"
         );
     }
 

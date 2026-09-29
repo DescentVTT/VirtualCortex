@@ -108,12 +108,12 @@ pub struct DendriticSuperNeuron {
     pub refractory_ticks: u16,   // [42..44] Absolute refractory countdown
     pub last_soma_spike_tick: u32, // [44..48] Somatic action potential timestamp
     pub synapse_slab_idx: u32, // [48..52] First SynapseBlock of the fan-out, as index + 1; 0 = no fan-out (ADR-0022)
-    pub _reserved: u16, // [52..54] Reserved; MUST be zero (the 16-bit delta head lived here until ADR-0024)
+    pub value_weight: i16, // [52..54] Weight onto the engine's critic; 0 unless the critic is set (ADR-0131; reserved from ADR-0024 to format 18)
     pub spatial_voxel_morton: u16, // [54..56] 16-bit Morton spatial voxel code
     pub gate_state: AtomicU8, // [56] Turn gate: a GateState byte
-    pub flags: u8,      // [57] BURST_MODE / Inhibitory Flags
-    pub stp_r_ves: u8,  // [58] Tsodyks-Markram vesicle pool (STD), Q0.8
-    pub stp_u_rel: u8,  // [59] Tsodyks-Markram release fraction (STF), Q0.8
+    pub flags: u8,         // [57] BURST_MODE / Inhibitory Flags
+    pub stp_r_ves: u8,     // [58] Tsodyks-Markram vesicle pool (STD), Q0.8
+    pub stp_u_rel: u8,     // [59] Tsodyks-Markram release fraction (STF), Q0.8
     pub plastic_delta_head: u32, // [60..64] First PlasticDelta of the unit's list, as index + 1; 0 = none (ADR-0024, finding F-20)
 }
 
@@ -134,7 +134,7 @@ impl DendriticSuperNeuron {
             refractory_ticks: 0,
             last_soma_spike_tick: 0,
             synapse_slab_idx: 0,
-            _reserved: 0,
+            value_weight: 0,
             spatial_voxel_morton: 0,
             gate_state: AtomicU8::new(GateState::Idle as u8),
             flags: 0,

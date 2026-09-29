@@ -67,7 +67,7 @@ use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16, GAIN_ONE_Q16,
     HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_AWAKE, STAGE_REM, STAGE_SWS,
 };
-use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState};
+use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState, ValueCritic};
 use cortex_reasoning::{Compaction, InductionState, SEARCH_SHIFT_MAX, TermNode};
 use std::collections::VecDeque;
 use std::path::Path;
@@ -187,6 +187,16 @@ pub struct Config {
     /// so the tick reads no word for it. For an engine built from an image, the image's
     /// outranks this one: it changes what the run does, so it is part of the image (§8.3).
     pub slow_current: Option<SlowCurrent>,
+    /// The critic of the engine's own (ADR-0130, ADR-0131): while set, [`Executor::reward`]
+    /// takes the value of the reward — each unit's value weight times its spikes since the
+    /// previous reward, counted as the coordinator merges them into the train, summed and scaled
+    /// (`cortex-neuromod`'s `ValueCritic`) — from the reward, delivers the error to the
+    /// modulator in the reward's place and moves every weight by the delta rule, between ticks.
+    /// Unset (the default), `reward` is the reward into the modulator, as before, bit for bit.
+    /// Refused unless the rule resolves it (`ValueCritic::is_valid`) and without a train to count
+    /// the spikes from. For an engine built from an image, the image's outranks this one: it
+    /// changes what the run does, so it is part of the image (§8.3).
+    pub critic: Option<ValueCritic>,
 }
 
 impl Default for Config {
@@ -215,6 +225,7 @@ impl Default for Config {
             signed_gate: false,
             stp_class: None,
             slow_current: None,
+            critic: None,
         }
     }
 }
@@ -334,6 +345,23 @@ pub enum ConfigError {
     /// 16, an input shift above 16, or voltages outside `0 < V_lo < V_hi <= THRESHOLD_BASE`
     /// (ADR-0123).
     SlowCurrentOutOfRange,
+    /// `critic` is set to constants the rule does not resolve: a shift above
+    /// `CRITIC_SHIFT_MAX` or a scale above `CRITIC_SCALE_MAX` (ADR-0131).
+    CriticOutOfRange,
+    /// `critic` is set with no train (`train_capacity` zero): the critic's features are the
+    /// spikes the coordinator merges into the train (ADR-0131).
+    CriticWithoutTrain,
+}
+
+/// What the critic read at a reward (ADR-0131): the value, and the error the modulator
+/// received in the reward's place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Prediction {
+    /// The value, Q16.16: the weights times the units' spikes since the previous reward,
+    /// scaled.
+    pub value_q16: i32,
+    /// The reward less the value, saturating, Q16.16.
+    pub error_q16: i32,
 }
 
 /// Why an episode could not be tagged (ADR-0038).
@@ -822,6 +850,14 @@ pub struct Executor<const CAP: usize> {
     stp_class: Option<StpClass>,
     /// The slow current (ADR-0123): the configuration's, or the image's.
     slow_current: Option<SlowCurrent>,
+    /// The critic (ADR-0131): the configuration's, or the image's.
+    critic: Option<ValueCritic>,
+    /// Each unit's spikes since the previous reward (ADR-0131), counted as the coordinator
+    /// merges a tick's spikes into the train; one per unit while the critic is set, none while
+    /// it is unset.
+    features: Vec<u32>,
+    /// What the critic read at the last reward; none before one, or while the critic is unset.
+    prediction: Option<Prediction>,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -923,6 +959,12 @@ impl<const CAP: usize> Executor<CAP> {
         }
         if config.slow_current.is_some_and(|c| !c.is_valid()) {
             return Err(ConfigError::SlowCurrentOutOfRange);
+        }
+        if config.critic.is_some_and(|c| !c.is_valid()) {
+            return Err(ConfigError::CriticOutOfRange);
+        }
+        if config.critic.is_some() && config.train_capacity == 0 {
+            return Err(ConfigError::CriticWithoutTrain);
         }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
@@ -1031,6 +1073,13 @@ impl<const CAP: usize> Executor<CAP> {
             signed_gate: config.signed_gate,
             stp_class: config.stp_class,
             slow_current: config.slow_current,
+            critic: config.critic,
+            features: if config.critic.is_some() {
+                vec![0; config.units]
+            } else {
+                Vec::new()
+            },
+            prediction: None,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1124,12 +1173,60 @@ impl<const CAP: usize> Executor<CAP> {
         self.slow_current
     }
 
-    /// A reward-prediction error into the dopamine signal, between ticks (ADR-0032): an input,
-    /// like an injection, so a run that replays its rewards at the same ticks is the same run.
-    /// The next tick's fan-out consolidates under the raised modulation; the signal then decays
-    /// by `DOPAMINE_TAU_SHIFT` per tick. Returns the signal.
-    pub fn reward(&mut self, reward_prediction_error_q16: i32) -> i32 {
-        self.modulator.reward(reward_prediction_error_q16)
+    /// The critic (ADR-0131), from the configuration or the image: while set, `reward` takes
+    /// its value from the reward; none while unset, where `reward` is as before ADR-0131.
+    pub fn critic(&self) -> Option<ValueCritic> {
+        self.critic
+    }
+
+    /// Each unit's spikes since the previous reward (ADR-0131), the critic's features, in unit
+    /// order; empty while the critic is unset.
+    pub fn features(&self) -> &[u32] {
+        &self.features
+    }
+
+    /// What the critic read at the last reward (ADR-0131): the value and the error the
+    /// modulator received; none before the first reward, or while the critic is unset.
+    pub fn prediction(&self) -> Option<Prediction> {
+        self.prediction
+    }
+
+    /// A reward into the dopamine signal, between ticks (ADR-0032): an input, like an
+    /// injection, so a run that replays its rewards at the same ticks is the same run. The next
+    /// tick's fan-out consolidates under the raised modulation; the signal then decays by
+    /// `DOPAMINE_TAU_SHIFT` per tick. Returns the signal.
+    ///
+    /// With the critic unset the argument is the reward-prediction error and goes to the
+    /// modulator itself, as before ADR-0131. With the critic set it is the reward (ADR-0130,
+    /// ADR-0131): the value is the units' value weights times their spikes since the previous
+    /// reward, the error the reward less the value is what the modulator receives, every
+    /// unit's weight then moves by the error times its spikes, shifted, and every count starts
+    /// again from zero. The weights are written here, between ticks, where `&mut self` excludes
+    /// the tick and every worker waits at the barrier holding no reference into the arena
+    /// (axiom A3).
+    pub fn reward(&mut self, reward_q16: i32) -> i32 {
+        let Some(critic) = self.critic else {
+            return self.modulator.reward(reward_q16);
+        };
+        let mut features = std::mem::take(&mut self.features);
+        let units = self.units_mut();
+        let value_q16 = critic.value_q16(
+            units
+                .iter()
+                .zip(&features)
+                .map(|(unit, &count)| (unit.value_weight, count)),
+        );
+        let error_q16 = ValueCritic::error_q16(reward_q16, value_q16);
+        for (unit, count) in units.iter_mut().zip(features.iter_mut()) {
+            unit.value_weight = critic.step(unit.value_weight, error_q16, *count);
+            *count = 0;
+        }
+        self.features = features;
+        self.prediction = Some(Prediction {
+            value_q16,
+            error_q16,
+        });
+        self.modulator.reward(error_q16)
     }
 
     /// Between ticks: the addressed set becomes the synapses from a unit of `sources` onto a
@@ -1494,7 +1591,9 @@ impl<const CAP: usize> Executor<CAP> {
                 tagged: None,
             });
         }
-        let signal_q16 = self.reward(report.reward_total_q16);
+        // The committed rewards are the engine's own (ADR-0043), not a reward it receives: they
+        // go to the modulator itself, whether or not the critic is set (ADR-0131).
+        let signal_q16 = self.modulator.reward(report.reward_total_q16);
         let at = self.tick as u32;
         let tag = self.induction.record.tag;
         let predicate = self
@@ -1586,6 +1685,14 @@ impl<const CAP: usize> Executor<CAP> {
             self.merge.push(slot.load(Ordering::Relaxed));
         }
         self.merge.sort_unstable();
+        // The critic's features (ADR-0131): each merged spike counted against its unit, as the
+        // train receives it, so the count is the unit's spikes since the previous reward however
+        // many the ring has let go since. Unset, there is no count.
+        for &unit in &self.merge {
+            if let Some(count) = self.features.get_mut(unit as usize) {
+                *count = count.saturating_add(1);
+            }
+        }
         for &unit in &self.merge {
             if self.train.len() >= self.train_capacity {
                 self.train.pop_front();
@@ -1898,6 +2005,11 @@ impl<const CAP: usize> Executor<CAP> {
             let unit = &mut units[i];
             if !unit.is_image_ready() || !at_rest(unit) || unit.ticks_since_spike(now) < quiet_ticks
             {
+                continue;
+            }
+            // A unit that fired since the previous reward is the critic's to read and move at
+            // the next one, in its slot: it stays (ADR-0131). Unset, there is no count.
+            if self.features.get(i).is_some_and(|&count| count != 0) {
                 continue;
             }
             log.append(i as u32, &unit.encode())?;
@@ -3432,6 +3544,227 @@ mod tests {
             assert_eq!(exec.units()[1].gate(), Some(GateState::Idle));
         }
         assert_eq!(expected, 0, "the slow potential leaked away");
+    }
+
+    /// The critic (ADR-0131): unset by default, with no count and no reading; `new` refuses
+    /// constants the rule does not resolve and a critic with no train to count from, and takes
+    /// every edge it resolves.
+    #[test]
+    fn the_critic_is_unset_by_default_and_refused_outside_what_its_rule_resolves_or_without_a_train()
+     {
+        assert_eq!(Config::default().critic, None, "unset by default");
+        let exec = Executor::<8>::new(Config {
+            units: 3,
+            train_capacity: 8,
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(
+            (exec.critic(), exec.features(), exec.prediction()),
+            (None, &[][..], None)
+        );
+        let with = |shift, scale, train_capacity| {
+            Executor::<8>::new(Config {
+                units: 3,
+                train_capacity,
+                critic: Some(ValueCritic { shift, scale }),
+                ..Config::default()
+            })
+        };
+        for (shift, scale) in [(0, 0), (30, 14), (9, 2)] {
+            let exec = with(shift, scale, 8).unwrap();
+            assert_eq!(exec.critic(), Some(ValueCritic { shift, scale }));
+            assert_eq!(exec.features(), &[0, 0, 0], "one count a unit, zero");
+            assert_eq!(exec.prediction(), None);
+        }
+        for (shift, scale) in [(31, 0), (0, 15), (u8::MAX, u8::MAX)] {
+            assert!(
+                matches!(with(shift, scale, 8), Err(ConfigError::CriticOutOfRange)),
+                "{shift} {scale}"
+            );
+        }
+        assert!(matches!(
+            with(9, 2, 0),
+            Err(ConfigError::CriticWithoutTrain)
+        ));
+        assert!(with(9, 2, 1).is_ok(), "a train of one spike is a train");
+    }
+
+    /// Unset, a reward is the modulator's own (ADR-0131): over the lattice of rewards, between
+    /// ticks of a network that fires, the signal is the oracle's modulator's after the same
+    /// rewards and decays, bit for bit; no reading, no count, and a value weight written in a
+    /// record by hand is read and moved by nothing.
+    #[test]
+    fn with_the_critic_unset_a_reward_is_the_modulator_s_bit_for_bit() {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        let mut exec = Executor::<8>::new(Config {
+            units: 2,
+            nodes_per_worker: 64,
+            train_capacity: 64,
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+            unit.value_weight = 0x1234;
+        }
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        let mut oracle = NeuromodulatorState::new();
+        let rewards = [i32::MIN, -0x1_0000, -1, 0, 1, 0x4000, 0x1_0000, i32::MAX];
+        for &reward in &rewards {
+            let inject = exec.injector();
+            for _ in 0..14 {
+                inject.inject(0, strong).unwrap();
+            }
+            for _ in 0..300 {
+                exec.tick();
+                oracle.decay_dopamine(DOPAMINE_TAU_SHIFT);
+            }
+            assert_eq!(exec.reward(reward), oracle.reward(reward), "{reward}");
+            assert_eq!(exec.modulator(), &oracle);
+            assert_eq!((exec.features(), exec.prediction()), (&[][..], None));
+        }
+        assert!(exec.train().len() >= rewards.len(), "the unit fired");
+        assert!(
+            exec.units().iter().all(|u| u.value_weight == 0x1234),
+            "no weight read or moved"
+        );
+    }
+
+    /// The critic's composition (ADR-0131), each number from an oracle written from the rule's
+    /// text: four armed units kicked in patterns, twice in each window between two rewards, so
+    /// that a unit fires more than once or not at all in a window and a window holds no spike. At
+    /// every tick no weight moves; at every reward the features are exactly the train's spikes
+    /// since the previous reward, the reading is the value — the weights times the counts, over
+    /// four, floored — and the error, the signal moves by the error, every weight moves by the
+    /// error times its count over 512, floored, and every count starts again from zero. With a
+    /// ring that holds two spikes the features are still every spike since the previous reward,
+    /// the worker's trace's, however many the ring let go.
+    #[test]
+    fn the_critic_s_features_are_the_spikes_since_the_previous_reward_and_its_weights_move_only_at_a_reward()
+     {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        let critic = ValueCritic { shift: 9, scale: 2 };
+        let make = |train_capacity| {
+            let mut exec = Executor::<8>::new(Config {
+                units: 4,
+                nodes_per_worker: 128,
+                trace_capacity: 256,
+                train_capacity,
+                critic: Some(critic),
+                ..Config::default()
+            })
+            .unwrap();
+            for (unit, weight) in exec.units_mut().iter_mut().zip([100i16, -40, 7, 0]) {
+                unit.v_thresh = THRESHOLD_BASE;
+                unit.stp_u_rel = STP_U;
+                unit.stp_r_ves = STP_MAX;
+                unit.value_weight = weight;
+            }
+            exec
+        };
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        let weights = |exec: &Executor<8>| -> Vec<i16> {
+            exec.units().iter().map(|u| u.value_weight).collect()
+        };
+        let patterns: [&[u32]; 5] = [&[0, 1], &[2], &[], &[0, 3, 1], &[3]];
+        let rewards = [0x1_0000, -0x1_0000, 0x4000, 0x1_0000, i32::MIN];
+        let mut finals = Vec::new();
+        for train_capacity in [64, 2] {
+            let mut exec = make(train_capacity);
+            let mut since = 0u64;
+            let mut traced_before = 0usize;
+            let mut most = 0u32;
+            for (window, (pattern, &reward)) in patterns.iter().zip(&rewards).enumerate() {
+                for _ in 0..2 {
+                    let inject = exec.injector();
+                    for &unit in *pattern {
+                        for _ in 0..14 {
+                            inject.inject(unit, strong).unwrap();
+                        }
+                    }
+                    let before = weights(&exec);
+                    for _ in 0..400 {
+                        exec.tick();
+                        assert_eq!(weights(&exec), before, "window {window}: a tick moves none");
+                    }
+                }
+                // The spikes since the previous reward, from the worker's own trace, which holds
+                // every one; and, where the ring holds them, from the train.
+                let traced = &exec.worker0.spike_trace[traced_before..];
+                traced_before = exec.worker0.spike_trace.len();
+                let mut counts = [0u32; 4];
+                for &(unit, tick) in traced {
+                    assert!(u64::from(tick) >= since);
+                    counts[unit as usize] = counts[unit as usize].saturating_add(1);
+                }
+                for (unit, &count) in counts.iter().enumerate() {
+                    assert_eq!(
+                        count > 0,
+                        pattern.contains(&(unit as u32)),
+                        "window {window}: unit {unit} fired as injected"
+                    );
+                }
+                most = most.max(counts.iter().copied().max().unwrap_or(0));
+                assert_eq!(exec.features(), &counts, "window {window}: the features");
+                if train_capacity == 64 {
+                    let mut from_train = [0u32; 4];
+                    for &(tick, unit) in exec.train() {
+                        if u64::from(tick) >= since {
+                            from_train[unit as usize] = from_train[unit as usize].saturating_add(1);
+                        }
+                    }
+                    assert_eq!(from_train, counts, "window {window}: the train's");
+                }
+                let before = weights(&exec);
+                let exact: i64 = before
+                    .iter()
+                    .zip(&counts)
+                    .map(|(&w, &c)| i64::from(w).saturating_mul(i64::from(c)))
+                    .sum();
+                let value = exact.div_euclid(4) as i32;
+                let error = (i64::from(reward) - i64::from(value))
+                    .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+                    as i32;
+                let signal = exec.modulator().dopamine_rpe;
+                assert_eq!(
+                    exec.reward(reward),
+                    signal.saturating_add(error),
+                    "window {window}: the modulator receives the error"
+                );
+                assert_eq!(
+                    exec.prediction(),
+                    Some(Prediction {
+                        value_q16: value,
+                        error_q16: error
+                    }),
+                    "window {window}"
+                );
+                let moved: Vec<i16> = before
+                    .iter()
+                    .zip(&counts)
+                    .map(|(&w, &c)| {
+                        (i64::from(w) + (i64::from(error) * i64::from(c)).div_euclid(512))
+                            .clamp(i64::from(i16::MIN), i64::from(i16::MAX))
+                            as i16
+                    })
+                    .collect();
+                assert_eq!(weights(&exec), moved, "window {window}: the delta rule");
+                assert_eq!(exec.features(), &[0; 4], "window {window}: counted afresh");
+                since = exec.ticks();
+            }
+            assert!(most >= 2, "a unit fired more than once in a window");
+            if train_capacity == 2 {
+                assert!(exec.train_overwritten() > 0, "the ring let spikes go");
+            }
+            finals.push((weights(&exec), exec.modulator().dopamine_rpe));
+        }
+        assert_eq!(
+            finals[0], finals[1],
+            "the ring's size changes nothing the critic reads"
+        );
     }
 }
 

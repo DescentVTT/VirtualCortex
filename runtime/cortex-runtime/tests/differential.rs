@@ -361,6 +361,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             signed_gate: false,
             stp_class: None,
             slow_current: None,
+            critic: None,
         },
         wire_random,
         20_000,

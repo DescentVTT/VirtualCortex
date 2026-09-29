@@ -64,7 +64,7 @@ pub use episode::{
 };
 pub use executor::{
     ACTIVATE, AddressError, AmendError, Config, ConfigError, Executor, Inject, InjectError,
-    Modulations, Policy, TagError, WorkerReport,
+    Modulations, Policy, Prediction, TagError, WorkerReport,
 };
 pub use image::{Image, ImageError, WriteAheadLog};
 pub use language::{
