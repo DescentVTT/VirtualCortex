@@ -163,6 +163,25 @@ The largest single move from the image's weight reached 30 775 and 28 856 of the
 
 **The oracles held** at every one of the 15 360 trials: the composer's to the record's traces, weights and signal over the pairs, the network's to the record's traces, weights and stamps over all 26 240 excitatory synapses, and the engine's value, error, weights and window to the harness's critic. The gate holds the tables to one another block by block: each coupling the one before plus what the composer consolidated, the pairs' moves by the network's oracle the composer's, the outside's moves the change in the cells' sum, the cells' sum the outside sum.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes no file under `src/` — the shared harness and `tests/inhibition.rs`, the documents and the cost table — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 057 asks: run [36700851135](https://github.com/DescentVTT/VirtualCortex/actions/runs/36700851135) at `7e806a4`, the readings' commit, whose tests are those of `5b316f8`, the pinned tables. The mutation sweep did not run: with no source changed it could make no mutant the tree's last sweep did not.
+- **Every exhaustive job is green.** All seventy-nine `exhaustive` tests passed, each exit 0 with one test reported: the seventy-seven before this round reproduced their pinned numbers on the hosted runners, H-23's arms among them in 1 317 and 1 790 s, and H-24's two arms reproduced their tables there, in **1 809 s from the assignment and 1 907 s from the mirrored**.
+- **The shards**, dealt by the table before this round, which did not know H-24's arms and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 49.1 min | H-22 from the mirrored 1 803; H-20 from the assignment 1 550 | 13 | 5 393 | 2 889 s, 40 % |
+  | 1 | 48.1 min | H-23 from the mirrored 1 790; H-19 from the assignment 1 280 | 14 | 5 575 | 2 820 s, 39 % |
+  | 2 | 59.3 min | H-24 from the mirrored 1 907; H-21 from the mirrored 1 858 | 14 | 6 740 | 3 499 s, 49 % |
+  | 3 | 50.5 min | H-21 from the assignment 1 810; H-18 from the assignment 1 148 | 12 | 5 859 | 2 968 s, 41 % |
+  | 4 | 54.3 min | H-20 from the mirrored 1 940; H-24 from the assignment 1 809 | 13 | 6 306 | 3 193 s, 44 % |
+  | 5 | 42.1 min | H-23 from the assignment 1 317; H-22 from the assignment 1 257 | 13 | 4 827 | 2 474 s, 34 % |
+
+  The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.87 to 1.98 of their summed seconds over the wall.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 36700851135`): 79 lines, 34 700 s, the seventy-seven earlier tests at 1.066 of the table before, so these runners were slower than ADR-0135's. ADR-0092's deal plans each of the six shards at 5 782 to 5 785 s summed, about 2 975 s of wall time at the run's ratio, **about 41 per cent of the bound**, inside the brief's 60; the 38 per cent planned above did not know the slower runners.
+- **The pull request's gate** on `3fcee54` and on `7e806a4` is green in every job, the determinism pin on AArch64 among them; the mutation gate on the changed lines found no mutant, the diff changing no source.
+
 ### The step of the stopping rule reached
 
 **Step 5**: clause 3 held, so step 4 does not arise, and clause 1 failed — *"the address carried a credit assignment the eligibility does not. The next decision is an ADR on the eligibility's specificity under a global reward, with the readings of where the consolidation went as its need."* The readings that need names: the reward's net reached the answer's pairs at 0.8 to 2.9 per cent of the weight it moved there, the other pairs moved as much, and from the second mapping the selection leaned to the readout onto which both stimuli's couplings were the larger. **The next decision is an ADR on the eligibility's specificity under a global reward.** It is named and not taken. Step 6 is kept.
