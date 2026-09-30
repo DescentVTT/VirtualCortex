@@ -66035,7 +66035,9 @@ impl Network {
 /// first trial under each new mapping the run reaches; at every block's end the value weights by
 /// group, the network's cells against the image, where the consolidation went over the block and
 /// the block's spikes by class; and at every trial's reward the spikes the window admitted by
-/// group.
+/// group. Brief 058 adds, at every trial's end, the addressed sources the delivery wrote by
+/// group: the presented stimulus's set under the addressed delivery, every unit under the global
+/// one, and under the drawn one the units the window counted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Watch {
     at_flips: [Option<[[i64; 2]; 2]>; 3],
@@ -66044,6 +66046,7 @@ struct Watch {
     spikes: Vec<[u64; CLASSES]>,
     cells: Vec<Cells>,
     went: Vec<Went>,
+    sourced: Vec<[u32; GROUPS]>,
 }
 
 /// An arm's run from H-23's image under `delivery` for `trials` trials (brief 057): H-23's run
@@ -66074,6 +66077,7 @@ fn delivered_run(
     let mut spikes: Vec<[u64; CLASSES]> = Vec::new();
     let mut cells: Vec<Cells> = Vec::new();
     let mut went: Vec<Went> = Vec::new();
+    let mut sourced: Vec<[u32; GROUPS]> = Vec::with_capacity(trials);
     let mut spikes_block = [0u64; CLASSES];
     let mut went_block: Went = [[0; 2]; 3];
     let mut opened = exec.ticks();
@@ -66104,6 +66108,16 @@ fn delivered_run(
             }
             admitted.push(in_window);
             opened = exec.ticks();
+            // The addressed sources the delivery wrote at this trial's end, by group.
+            let mut sources = [0u32; GROUPS];
+            for (unit, &g) in groups.iter().enumerate() {
+                if exec.is_source(unit as u32) {
+                    if let Some(n) = sources.get_mut(g) {
+                        *n = n.saturating_add(1);
+                    }
+                }
+            }
+            sourced.push(sources);
             // The network's oracle, the answers under the mapping in force at this trial.
             let in_force = first != flipped_at(&SCHEDULE_FLIPS, trial);
             let answers = [answer_of(0, in_force), answer_of(1, in_force)];
@@ -66143,6 +66157,7 @@ fn delivered_run(
             spikes,
             cells,
             went,
+            sourced,
         },
     )
 }
@@ -83604,3 +83619,834 @@ const UNADDRESSED_1024: Unaddressed = Unaddressed {
     held: [true, true],
     yes: false,
 };
+
+// =================================================================================== H-25
+
+// -------------------------------------------- written before the run (ADR-0138, ADR-0140)
+
+/// The arms of H-25 (ADR-0138): H-23's two, in their order, each its own weekly test, from
+/// H-23's image, the task carrying no critic of its own, and H-20's flips.
+const DRAWN_ARMS: [Reversal; 2] = UNADDRESSED_ARMS;
+
+/// The one change from H-23 (ADR-0138, ADR-0139): the task's delivery, the address's sources
+/// drawn by the executor from its critic's window counts at every trial's end, its targets the
+/// selected readout's units as under the addressed delivery (`Executor::address_drawn`).
+const DRAWN_DELIVERY: Delivery = Delivery::Drawn;
+
+/// ADR-0138's prediction, written first: yes — the drawn sources are the presented stimulus's
+/// set but for about 1.6 background units a trial, so the reward reaches what the host's address
+/// reached, and a little more. A reading beside the verdict and never asserted; the verdict is
+/// read by the clauses whatever it says.
+const DRAWN_PREDICTED: bool = true;
+
+// ------------------------------------------------------------ the criterion (ADR-0138)
+
+/// H-25's criterion (ADR-0138), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) each mapping learned and (2) the couplings bounded, H-20's two as `scheduled` reads them;
+/// (3) each reversal within 23 blocks of its flip, H-23's `reversals_within` of `crossings`; and
+/// (4) the network held, H-24's band at every block's end of a run of 120 blocks, `left_band`.
+/// `yes` is all in both arms; a no names the clause and the arm — under clause 1 the mapping,
+/// under clause 2 the block and the pair, under clause 3 the reversal, under clause 4 the first
+/// block that left the band with its sum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Drawn {
+    learning: Scheduled,
+    revised: [[bool; 3]; 2],
+    left: [Option<(usize, i64)>; 2],
+    held: [bool; 2],
+    yes: bool,
+}
+
+fn drawn(image: i64, arms: [&[Block]; 2]) -> Drawn {
+    let learning = scheduled(arms);
+    let revised = arms.map(|blocks| reversals_within(crossings(blocks)));
+    let left = arms.map(|blocks| left_band(image, blocks));
+    let held = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && left[k].is_none());
+    Drawn {
+        learning,
+        revised,
+        left,
+        held,
+        yes: learning.yes && revised.iter().flatten().all(|&r| r) && held.iter().all(|&h| h),
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 058)
+
+/// The addressed sources by block (brief 058), per presented stimulus `[A, B]` and group in
+/// `GROUPS`'s order: at every trial's end, the units the delivery wrote as the address's
+/// sources, summed over the block's trials of that stimulus — `admitted_blocks`'s sum over the
+/// sources instead of the spikes. The host's sources are the presented stimulus's set, in the
+/// stimulus's own group: `[s][s + 1]` of them drawn, and every other group's the window's
+/// background.
+type Sourced = Admitted;
+
+/// The drawn sources per block beside the host's (brief 058), per stimulus `[A, B]`: the
+/// presented stimulus's units drawn, the presented stimulus's units left out — its set's size
+/// times its presentations less those drawn — and the units of every other group drawn,
+/// summed. `sizes` is the units of each group.
+fn beside_host(block: &Block, sourced: &Sourced, sizes: &[u32; GROUPS]) -> [[u32; 3]; 2] {
+    let presented = [block.1, (BLOCK as u32).saturating_sub(block.1)];
+    [0usize, 1].map(|s| {
+        let own = s.saturating_add(1);
+        let drawn_in = sourced[s][own];
+        let host = sizes[own].saturating_mul(presented[s]);
+        let others = sourced[s]
+            .iter()
+            .enumerate()
+            .filter(|&(g, _)| g != own)
+            .fold(0u32, |sum, (_, &n)| sum.saturating_add(n));
+        [drawn_in, host.saturating_sub(drawn_in), others]
+    })
+}
+
+/// Every trial's sources by group, hashed: `fnv1a_64` over the counts as `i32` words.
+fn sources_hash(sourced: &[[u32; GROUPS]]) -> u64 {
+    let words: Vec<i32> = sourced
+        .iter()
+        .flatten()
+        .map(|&n| i32::try_from(n).unwrap_or(i32::MAX))
+        .collect();
+    fnv1a_64(&words)
+}
+
+// ---------------------------------------------------------------- the run (brief 058)
+
+/// One arm of H-25 at 1 024 units (brief 058): the calibration before any rewarded run (H-25's
+/// stopping rule, step 2) — the settled engine held to ADR-0077 step by step and its images,
+/// H-20's image by its CRC, a frozen block from the zero image held to ADR-0077's frozen run,
+/// H-21's, H-22's and H-23's images by their CRCs, and H-23's first block from H-23's image under
+/// the host's address reproduced table by table — then the arm's 7 680 trials from H-23's image
+/// under the drawn delivery with no task critic and H-20's flips, the drawn sources held to the
+/// critic's oracle's counts and both oracles held to the record at every trial; everything
+/// dumped, the clauses and the readings computed before anything is held; then the pinned tables
+/// of the whole run.
+fn drawn_arm(arm: Reversal) {
+    let k = DRAWN_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25");
+    let name = format!("drawn1024 {arm:?}");
+    let (zero, signed) = signed_images(&name);
+    assert_eq!(
+        crc64(&signed),
+        PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-20's image, H-19's and H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    let targeted = targeted_image(&signed, TARGET_PERIOD_1024);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: H-21's image is H-20's in every byte but the target period's and the seal"
+    );
+    assert_eq!(
+        (crc64(&targeted), crc64(&with_version(&targeted, 18))),
+        (TARGET_IMAGE_CRC_1024, TARGET_IMAGE_CRC_FORMAT_18_1024),
+        "{name}: H-21's image, and as H-21 read it"
+    );
+    let valued = valued_image(&targeted, VALUED_CRITIC);
+    assert!(
+        only_the_critic(&targeted, &valued),
+        "{name}: H-22's image is H-21's in every byte but the critic's and the seal"
+    );
+    assert_eq!(
+        (crc64(&valued), crc64(&with_version(&valued, 19))),
+        (VALUED_IMAGE_CRC_1024, VALUED_IMAGE_CRC_FORMAT_19_1024),
+        "{name}: H-22's image, and as H-22 read it"
+    );
+    let windowed = with_window_bytes(&valued, WINDOW_TICKS_1024);
+    assert!(
+        only_the_window(&valued, &windowed),
+        "{name}: H-23's image is H-22's in every byte but the window's and the seal"
+    );
+    assert_eq!(
+        crc64(&windowed),
+        WINDOWED_IMAGE_CRC_1024,
+        "{name}: H-23's image, the image this arm decodes"
+    );
+    h23_first_block(&windowed, arm, k, &name);
+    eprintln!(
+        "DUMP {name} calibration holds: ADR-0077's settled candidate, H-20's to H-23's images and H-23's first block under the host's address"
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let mut exec = signed_from(&windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            TARGET_PERIOD_1024,
+            exec.ticks(),
+            Ok(())
+        ),
+        "{name}: H-23's configuration, the window open at the load, and the engine draws"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let groups = groups_of(&exec, &sets);
+    let sizes = group_sizes(&groups);
+    let classes = classes_of(&exec, &sets);
+    let image = weights_of(&exec);
+    let image_cells = cells_of(&exec, &image, &sets, &classes);
+    let outside = image_outside();
+    assert_eq!(
+        (image_cells, cell_sizes(&exec, &sets, &classes)),
+        (IMAGE_CELLS_1024, CELL_SIZES_1024),
+        "{name}: H-24's image cells"
+    );
+    assert_eq!(
+        cells_sum(&image_cells),
+        outside,
+        "{name}: the cells sum to the image's outside sum"
+    );
+    let first = first_mapping(arm);
+    let (run, moves, values, watched) = delivered_run(
+        &mut exec,
+        arm,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        DRAWN_DELIVERY,
+        SCHEDULE_TRIALS,
+    );
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let strong = strong_scheduled(read, first);
+    let valued_by_block = value_blocks(read, &values);
+    let admitted = admitted_blocks(read, &watched.admitted);
+    let sourced: Vec<Sourced> = admitted_blocks(read, &watched.sourced);
+    let at_flips = watched
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        (
+            read.len(),
+            values.len(),
+            watched.admitted.len(),
+            watched.sourced.len()
+        ),
+        (
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS
+        )
+    );
+    assert_eq!(
+        [
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            valued_by_block.len(),
+            watched.weights.len(),
+            admitted.len(),
+            watched.spikes.len(),
+            watched.cells.len(),
+            watched.went.len(),
+            sourced.len()
+        ],
+        [SCHEDULE_BLOCKS; 10]
+    );
+    assert_eq!(strong.len(), SCHEDULE_BLOCKS - FLIP_BLOCK);
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {compositions:?}");
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {moved:?}");
+    eprintln!("DUMP {name} PIN strong {strong:?}");
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} PIN values {valued_by_block:?}");
+    eprintln!("DUMP {name} PIN value hash {:#018x}", values_hash(&values));
+    eprintln!("DUMP {name} PIN weights {:?}", watched.weights);
+    eprintln!("DUMP {name} PIN admitted {admitted:?}");
+    eprintln!("DUMP {name} PIN spikes {:?}", watched.spikes);
+    eprintln!("DUMP {name} PIN cells {:?}", watched.cells);
+    eprintln!("DUMP {name} PIN went {:?}", watched.went);
+    eprintln!("DUMP {name} PIN sourced {sourced:?}");
+    eprintln!(
+        "DUMP {name} PIN sources hash {:#018x}",
+        sources_hash(&watched.sourced)
+    );
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    let correct = mapping_correct(blocks);
+    let over = first_over(blocks);
+    let crossings_read = crossings(blocks);
+    let revised = reversals_within(crossings_read);
+    let left = left_band(outside, blocks);
+    let stimulus_read = stimulus_values(read, &values);
+    let first_new_read = first_new_scheduled(read, first);
+    let crossed = crossed_scheduled(&earned, first);
+    let tally_read = tally(blocks);
+    let settle = settle_scheduled(blocks, first);
+    let highest_read = highest(blocks);
+    let strong_sum = strong_by_flip(&strong);
+    let punished_moves = moves_by_mapping(&moved, 1);
+    let rewarded_moves = moves_by_mapping(&moved, 0);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let sums_after = weights_by_polarity(&exec);
+    let troughs_read = troughs(&value_means(&valued_by_block));
+    let host: Vec<[[u32; 3]; 2]> = blocks
+        .iter()
+        .zip(&sourced)
+        .map(|(b, s)| beside_host(b, s, &sizes))
+        .collect();
+    eprintln!(
+        "DUMP {name} PIN readings correct {correct:?} over {over:?} crossings {crossings_read:?} revised {revised:?} left {left:?} stimulus values {stimulus_read:?} reach {reach:?} first new {first_new_read:?} crossed {crossed:?} tally {tally_read:?} settle {settle:?} highest {highest_read:?} strong total {strong_sum:?} punished moves {punished_moves:?} rewarded moves {rewarded_moves:?} once {once} falls {falls} sums after {sums_after:?} troughs {troughs_read:?}"
+    );
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {over:?} revised {revised:?} held {} left {left:?}; readings: value within a quarter of 2p − 1 {:?}; the prediction, yes: {DRAWN_PREDICTED}",
+        correct.map(|c| c >= REWARDED_MIN),
+        left.is_none(),
+        stimulus_read.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} the drawn sources beside the host's per block, [A, B] of [drawn, left out, others]: {host:?}; group sizes {sizes:?}"
+    );
+    eprintln!(
+        "DUMP {name} outside course, per myriad of the image's {:?}",
+        blocks
+            .iter()
+            .map(|b| per_myriad(outside_of(b), outside))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?} beside H-23's {:?}",
+        couplings_course(blocks),
+        couplings_course(WINDOWED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} crossings {crossings_read:?} beside H-23's {:?} and H-24's {:?}",
+        CROSSINGS_WINDOWED_1024[k], CROSSINGS_UNADDRESSED_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} value by block beside H-23's {:?}",
+        value_means(&valued_by_block)
+            .iter()
+            .zip(value_means(WINDOWED_VALUES_1024[k]))
+            .map(|(u, w)| (*u, w))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "DUMP {name} troughs {troughs_read:?} beside H-23's {:?}",
+        TROUGHS_WINDOWED_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} strong by flip {strong_sum:?} beside H-23's {:?}",
+        STRONG_BY_FLIP_WINDOWED_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-23's {:?}",
+        course(image_sums.0, blocks),
+        course(image_sums.0, WINDOWED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} signal {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        DRAWN_BLOCKS_1024[k],
+        DRAWN_TRACES_1024[k],
+    );
+    assert_eq!(
+        compositions.as_slice(),
+        DRAWN_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        DRAWN_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        DRAWN_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        DRAWN_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        moved.as_slice(),
+        DRAWN_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        strong.as_slice(),
+        DRAWN_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(at_flips, DRAWN_AT_FLIPS_1024[k]);
+    assert_eq!(
+        valued_by_block.as_slice(),
+        DRAWN_VALUES_1024[k],
+        "{name}: the engine's value per block"
+    );
+    assert_eq!(
+        values_hash(&values),
+        DRAWN_VALUE_HASH_1024[k],
+        "{name}: every trial's value"
+    );
+    assert_eq!(
+        watched.weights.as_slice(),
+        DRAWN_WEIGHTS_1024[k],
+        "{name}: the weights by group per block"
+    );
+    assert_eq!(
+        admitted.as_slice(),
+        DRAWN_ADMITTED_1024[k],
+        "{name}: the spikes the window admitted per block"
+    );
+    assert_eq!(
+        watched.spikes.as_slice(),
+        DRAWN_SPIKES_1024[k],
+        "{name}: the spikes by class per block"
+    );
+    assert_eq!(
+        watched.cells.as_slice(),
+        DRAWN_CELLS_1024[k],
+        "{name}: the network's cells per block"
+    );
+    assert_eq!(
+        watched.went.as_slice(),
+        DRAWN_WENT_1024[k],
+        "{name}: where the consolidation went per block"
+    );
+    assert_eq!(
+        sourced.as_slice(),
+        DRAWN_SOURCED_1024[k],
+        "{name}: the drawn sources per block"
+    );
+    assert_eq!(
+        sources_hash(&watched.sourced),
+        DRAWN_SOURCES_HASH_1024[k],
+        "{name}: every trial's drawn sources"
+    );
+    assert_eq!(correct, CORRECT_DRAWN_1024[k]);
+    assert_eq!(over, OVER_DRAWN_1024[k]);
+    assert_eq!(crossings_read, CROSSINGS_DRAWN_1024[k]);
+    assert_eq!(left, LEFT_DRAWN_1024[k]);
+    assert_eq!(stimulus_read, STIMULUS_VALUES_DRAWN_1024[k]);
+    assert_eq!(reach, REACH_DRAWN_1024[k]);
+    assert_eq!(first_new_read, FIRST_NEW_DRAWN_1024[k]);
+    assert_eq!(crossed, CROSSED_DRAWN_1024[k]);
+    assert_eq!(tally_read, TALLY_DRAWN_1024[k]);
+    assert_eq!(settle, SETTLE_DRAWN_1024[k]);
+    assert_eq!(highest_read, HIGHEST_DRAWN_1024[k]);
+    assert_eq!(strong_sum, STRONG_BY_FLIP_DRAWN_1024[k]);
+    assert_eq!(punished_moves, PUNISHED_MOVES_DRAWN_1024[k]);
+    assert_eq!(rewarded_moves, REWARDED_MOVES_DRAWN_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_DRAWN_1024[k]);
+    assert_eq!(falls, FALLS_DRAWN_1024[k]);
+    assert_eq!(troughs_read, TROUGHS_DRAWN_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (SUMS_AFTER_DRAWN_1024[k], Some(SUMS_AFTER_DRAWN_1024[k])),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-25's arm that starts from the assignment (brief 058): H-23's arm from the assignment with
+/// the address's sources drawn by the engine.
+#[test]
+#[ignore]
+fn the_address_drawn_from_the_assignment_at_1024_units_exhaustive() {
+    drawn_arm(Reversal::AssignmentFirst);
+}
+
+/// H-25's arm that starts from the mirrored assignment (brief 058): H-23's arm from the mirrored
+/// assignment with the address's sources drawn by the engine.
+#[test]
+#[ignore]
+fn the_address_drawn_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    drawn_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 058): the arms and the constants as ADR-0138 and
+/// ADR-0140 fixed them; H-25's four clauses at their edges and the verdict naming the clause and
+/// the arm over tables written by hand; the readings' rules over tables written by hand; and
+/// eight trials on the instrument's network under the drawn delivery, its image flagged as the
+/// arms' images are and carrying the critic with its window, the drawn sources held at every
+/// trial to the units the critic's oracle counted, both oracles held to the record, and every
+/// trial's sources read against the spikes the window admitted. Nothing else added to the gate.
+#[test]
+fn the_clauses_of_h_25_the_drawn_sources_and_the_readings_rules() {
+    // The arms and the constants.
+    assert_eq!(DRAWN_ARMS, UNADDRESSED_ARMS);
+    assert_eq!(
+        DRAWN_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(DRAWN_DELIVERY, Delivery::Drawn);
+    const _: () = assert!(DRAWN_PREDICTED, "ADR-0138 predicts yes");
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            BOUND_PER_CENT,
+            REVERSAL_BLOCKS_MAX,
+            CROSSING_MARK,
+            SCHEDULE_BLOCKS
+        ),
+        (80, 130, 23, 40, 120),
+        "clauses 1 to 3 are H-23's"
+    );
+    assert_eq!(
+        (BAND_QUARTERS, BAND_DIVISOR),
+        ((3, 5), 4),
+        "clause 4 is H-24's clause 3"
+    );
+    assert_eq!(
+        (WINDOWED_IMAGE_CRC_1024, WINDOW_TICKS_1024),
+        (0x5044_ed79_36a7_b5f3, 100),
+        "H-23's image, the one each arm decodes, and its window"
+    );
+    let outside = image_outside();
+    // The verdict: every clause over tables written by hand, and each failing on its own, named.
+    let block = |correct: u32, excitatory: i64, couplings: [[i64; 2]; 2]| -> Block {
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            excitatory,
+            0,
+            couplings,
+            0,
+        )
+    };
+    let couplings = IMAGE_COUPLINGS_1024
+        .iter()
+        .flatten()
+        .fold(0i64, |sum, &c| sum.saturating_add(c));
+    let full =
+        vec![block(BLOCK as u32, QUIET_1024[SETTLED].1.1, IMAGE_COUPLINGS_1024); SCHEDULE_BLOCKS];
+    let learning_yes = Scheduled {
+        learned: [[true; 4]; 2],
+        bounded: [true; 2],
+        over: [None; 2],
+        yes: true,
+    };
+    assert_eq!(
+        drawn(outside, [&full, &full]),
+        Drawn {
+            learning: learning_yes,
+            revised: [[true; 3]; 2],
+            left: [None; 2],
+            held: [true; 2],
+            yes: true
+        }
+    );
+    // Clause 3 at its edge: a mapping whose first `below` blocks are one short of the mark.
+    let slow = |mapping: usize, below: usize| -> Vec<Block> {
+        let mut blocks = full.clone();
+        let from = MAPPINGS[mapping].0;
+        for b in blocks.iter_mut().skip(from).take(below) {
+            b.0 = CROSSING_MARK.saturating_sub(1);
+        }
+        blocks
+    };
+    let at_edge = slow(2, REVERSAL_BLOCKS_MAX.saturating_sub(1));
+    assert_eq!(crossings(&at_edge)[2], Some(REVERSAL_BLOCKS_MAX));
+    assert!(
+        drawn(outside, [&full, &at_edge]).yes,
+        "the second reversal passes the mark in its 23rd block: it holds"
+    );
+    let past = slow(2, REVERSAL_BLOCKS_MAX);
+    assert_eq!(
+        crossings(&past)[2],
+        Some(REVERSAL_BLOCKS_MAX.saturating_add(1))
+    );
+    let verdict = drawn(outside, [&full, &past]);
+    assert_eq!(
+        (verdict.learning, verdict.revised, verdict.held, verdict.yes),
+        (
+            learning_yes,
+            [[true; 3], [true, false, true]],
+            [true; 2],
+            false
+        ),
+        "clause 3 fails in the second arm's second reversal alone, in its 24th block"
+    );
+    let first_late = slow(0, 20);
+    assert_eq!(crossings(&first_late)[0], Some(21));
+    assert!(
+        drawn(outside, [&first_late, &full]).yes,
+        "the first mapping is no reversal: clause 3 reads nothing of it"
+    );
+    let mut unlearned = full.clone();
+    unlearned[MAPPINGS[2].1 - 1].0 = 0;
+    unlearned[MAPPINGS[2].1 - 2].0 = 0;
+    let verdict = drawn(outside, [&unlearned, &full]);
+    assert_eq!(
+        (
+            verdict.learning.learned[0],
+            verdict.revised,
+            verdict.held,
+            verdict.yes
+        ),
+        ([true, true, false, true], [[true; 3]; 2], [true; 2], false),
+        "clause 1 fails in the first arm's third mapping alone"
+    );
+    let mut over = full.clone();
+    over[40].10[1][0] = IMAGE_COUPLINGS_1024[1][0]
+        .saturating_mul(131)
+        .checked_div(100)
+        .expect("a hundred");
+    over[40].8 = over[40]
+        .8
+        .saturating_add(over[40].10[1][0].saturating_sub(IMAGE_COUPLINGS_1024[1][0]));
+    let verdict = drawn(outside, [&full, &over]);
+    assert_eq!(
+        (
+            verdict.learning.over,
+            verdict.revised,
+            verdict.held,
+            verdict.yes
+        ),
+        ([None, Some((40, 1, 0))], [[true; 3]; 2], [true; 2], false),
+        "clause 2 fails in the second arm at block 40, B→R0, alone"
+    );
+    let low = outside
+        .saturating_mul(3)
+        .saturating_add(3)
+        .checked_div(4)
+        .expect("four");
+    let high = outside.saturating_mul(5).checked_div(4).expect("four");
+    let with_outside = |sum: i64| {
+        block(
+            BLOCK as u32,
+            sum.saturating_add(couplings),
+            IMAGE_COUPLINGS_1024,
+        )
+    };
+    let mut edge = full.clone();
+    edge[0] = with_outside(low);
+    edge[SCHEDULE_BLOCKS - 1] = with_outside(high);
+    assert!(
+        drawn(outside, [&edge, &edge]).yes,
+        "the band's two ends hold"
+    );
+    let mut drained = full.clone();
+    drained[70] = with_outside(high.saturating_add(1));
+    let verdict = drawn(outside, [&drained, &full]);
+    assert_eq!(
+        (
+            verdict.learning,
+            verdict.revised,
+            verdict.left,
+            verdict.held,
+            verdict.yes
+        ),
+        (
+            learning_yes,
+            [[true; 3]; 2],
+            [Some((70, high.saturating_add(1))), None],
+            [false, true],
+            false
+        ),
+        "clause 4 fails in the first arm at block 70 alone, with its sum"
+    );
+    let verdict = drawn(outside, [&full, &full[1..]]);
+    assert_eq!(
+        (verdict.held, verdict.yes),
+        ([true, false], false),
+        "a run that is not whole holds no clause"
+    );
+    // The readings' rules over values written by hand: the drawn sources beside the host's, and
+    // every trial's sources hashed.
+    let mut sizes = [0u32; GROUPS];
+    sizes[1] = 51;
+    sizes[2] = 51;
+    let mut hand = block(0, 0, [[0; 2]; 2]);
+    hand.1 = 30;
+    let sourced: Sourced = [[1, 1_500, 3, 0, 2, 5], [0, 2, 1_700, 1, 0, 4]];
+    assert_eq!(
+        beside_host(&hand, &sourced, &sizes),
+        [[1_500, 30, 11], [1_700, 34, 7]],
+        "A presented 30 times and B 34: drawn, left out, others"
+    );
+    let every: Sourced = [[0, 1_530, 0, 0, 0, 0], [0, 0, 1_734, 0, 0, 0]];
+    assert_eq!(
+        beside_host(&hand, &every, &sizes),
+        [[1_530, 0, 0], [1_734, 0, 0]],
+        "the host's address: every unit of the presented set and nothing else"
+    );
+    let trials = [[1u32, 51, 0, 0, 2, 0], [0, 0, 50, 1, 0, 0]];
+    let mut moved = trials;
+    moved[1][3] = 2;
+    assert_eq!(sources_hash(&trials), sources_hash(&trials));
+    assert_ne!(sources_hash(&trials), sources_hash(&moved));
+    assert_ne!(sources_hash(&trials), sources_hash(&trials[..1]));
+    // Eight trials on the instrument's network under the drawn delivery, its image carrying the
+    // inhibitory baseline and the signed gate as the arms' images do, and the critic with its
+    // window as H-23's does, the window's length read by its rule: the drawn sources held at every
+    // trial to the units the critic's oracle counted, the targets to the selected readout, both
+    // oracles held to the record; and every trial's sources by group within the spikes the window
+    // admitted, a group drawn from exactly when the window admitted a spike of it.
+    let sets = geometry(1024, ROTATION_1024);
+    let p = prior(1024);
+    let fresh = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    let flagged = signed_image(&inhibited_image(&Image::encode(&fresh).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    assert_eq!(
+        window, WINDOW_TICKS_1024,
+        "the instrument's network carries the reference prior's delays"
+    );
+    let bytes = with_window_bytes(&valued_image(&flagged, VALUED_CRITIC), window);
+    let mut exec = signed_from(&bytes, 1024);
+    assert_eq!(
+        (exec.critic(), exec.critic_window_ticks(), exec.draws()),
+        (Some(VALUED_CRITIC), window, Ok(()))
+    );
+    let image = weights_of(&exec);
+    let groups = groups_of(&exec, &sets);
+    let classes = classes_of(&exec, &sets);
+    let (run, moves, values, watched) = delivered_run(
+        &mut exec,
+        Reversal::AssignmentFirst,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        Delivery::Drawn,
+        GATE_TRIALS,
+    );
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    eprintln!(
+        "DUMP drawn: {GATE_TRIALS} trials {:?} moves {moves:?} reach {reach:?} sources {:?} admitted {:?}",
+        run.3, watched.sourced, watched.admitted
+    );
+    assert_eq!(
+        (
+            run.3.len(),
+            moves.len(),
+            values.len(),
+            watched.admitted.len(),
+            watched.sourced.len()
+        ),
+        (
+            GATE_TRIALS,
+            GATE_TRIALS,
+            GATE_TRIALS,
+            GATE_TRIALS,
+            GATE_TRIALS
+        ),
+        "a reading, a value and a drawing a trial"
+    );
+    assert!(
+        run.3.iter().any(|t| t.4 != 0),
+        "a trial was rewarded or punished"
+    );
+    for (t, (sources, admitted)) in watched.sourced.iter().zip(&watched.admitted).enumerate() {
+        for (g, (&drawn_units, &spikes)) in sources.iter().zip(admitted).enumerate() {
+            assert!(
+                drawn_units <= spikes && (drawn_units == 0) == (spikes == 0),
+                "trial {t} group {g}: {drawn_units} units drawn of {spikes} spikes admitted"
+            );
+        }
+    }
+}
+
+// ----------------------------------------------------------- the measurement (brief 058)
+
+/// H-25's arms (brief 058, ADR-0140), `[assignment first, mirrored first]`, each pinned whole:
+/// the sight's 120 blocks and the accuracy sequence's hash, the composition, the earned blocks,
+/// every trial's reading by its hash, the volley's ticks, the moves over the pair each trial
+/// presented onto the pair it selected, the strong punishments, the couplings at the flips, the
+/// engine's value per block and every trial's by its hash, the value weights by group, the
+/// spikes the window admitted, the spikes by class, the network's cells, where the
+/// consolidation went, and the drawn sources per block and every trial's by its hash. Empty
+/// until the one run.
+const DRAWN_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const DRAWN_TRACES_1024: [u64; 2] = [0; 2];
+const DRAWN_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const DRAWN_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const DRAWN_READ_1024: [u64; 2] = [0; 2];
+const DRAWN_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+const DRAWN_MOVES_1024: [&[MovesBlock]; 2] = [&[], &[]];
+const DRAWN_STRONG_1024: [&[[u32; 2]]; 2] = [&[], &[]];
+const DRAWN_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [[[[0; 2]; 2]; 3]; 2];
+const DRAWN_VALUES_1024: [&[ValueBlock]; 2] = [&[], &[]];
+const DRAWN_VALUE_HASH_1024: [u64; 2] = [0; 2];
+const DRAWN_WEIGHTS_1024: [&[Weights]; 2] = [&[], &[]];
+const DRAWN_ADMITTED_1024: [&[Admitted]; 2] = [&[], &[]];
+const DRAWN_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [&[], &[]];
+const DRAWN_CELLS_1024: [&[Cells]; 2] = [&[], &[]];
+const DRAWN_WENT_1024: [&[Went]; 2] = [&[], &[]];
+const DRAWN_SOURCED_1024: [&[Sourced]; 2] = [&[], &[]];
+const DRAWN_SOURCES_HASH_1024: [u64; 2] = [0; 2];
+const CORRECT_DRAWN_1024: [[u32; 4]; 2] = [[0; 4]; 2];
+const OVER_DRAWN_1024: [Option<(usize, usize, usize)>; 2] = [None; 2];
+const CROSSINGS_DRAWN_1024: [[Option<usize>; 4]; 2] = [[None; 4]; 2];
+const LEFT_DRAWN_1024: [Option<(usize, i64)>; 2] = [None; 2];
+const STIMULUS_VALUES_DRAWN_1024: [[[StimulusValue; 2]; 4]; 2] = [[[(0, 0, 0); 2]; 4]; 2];
+const REACH_DRAWN_1024: [Reach; 2] = [
+    Reach {
+        excitatory: (0, 0),
+        inhibitory: (0, 0),
+    },
+    Reach {
+        excitatory: (0, 0),
+        inhibitory: (0, 0),
+    },
+];
+const FIRST_NEW_DRAWN_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const CROSSED_DRAWN_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const TALLY_DRAWN_1024: [[[u32; 3]; 4]; 2] = [[[0; 3]; 4]; 2];
+const SETTLE_DRAWN_1024: [Option<[[i64; 2]; 4]>; 2] = [None; 2];
+const HIGHEST_DRAWN_1024: [[Option<Peak>; 4]; 2] = [[None; 4]; 2];
+const STRONG_BY_FLIP_DRAWN_1024: [[[u32; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+const PUNISHED_MOVES_DRAWN_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const REWARDED_MOVES_DRAWN_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const ONCE_BLOCKS_DRAWN_1024: [u32; 2] = [0; 2];
+const FALLS_DRAWN_1024: [bool; 2] = [false; 2];
+const TROUGHS_DRAWN_1024: [[[i64; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+const SUMS_AFTER_DRAWN_1024: [(i64, i64); 2] = [(0, 0); 2];
