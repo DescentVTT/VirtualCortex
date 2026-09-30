@@ -1,7 +1,36 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-30
 ---
+
+> **Executed 2026-09-30 in pull request #174.** Writes ADR-0139 (the address drawn, built) and ADR-0140 (the address
+> drawn, measured); opens and closes no finding. The drawing — `Executor::address_drawn`, the sources every unit whose
+> critic count is not zero and the targets as given, refused without the critic (`AddressError::NoCritic`) or its window
+> (`AddressError::NoWindow`), and `Delivery::Drawn`, refused by `Task::check` before any tick — was built with its tests,
+> the global and the addressed deliveries the runs they were; H-25's clauses and constants, the gate and the two arms were
+> committed and pushed before any run, with the pull request opened as a draft. Before the rewarded run every one of the
+> weekly job's 79 whole-domain tests passed from the release build, H-23's and H-24's arms among them, and in each arm
+> H-23's first block reproduced under the host's address, table by table.
+>
+> **H-25 is yes, and its stopping rule reached step 3.** Each mapping's last 128 trials read 122, 124, 119 and 116
+> correct from the assignment and 124, 118, 123 and 117 from the mirrored; the highest coupling 1.181 and 1.191 of its
+> image's; the reversals passed 40 of 64 in 19, 21 and 16 blocks and in 20, 15 and 14, H-23's own speeds; the excitatory
+> sum outside the four couplings stayed within 0.9999 and 1.0002 of the image's. As predicted. The drawing named 99.66
+> per cent of the presented stimulus's units — none at the first trial, whose window closed in the harness's lead-in —
+> and about 1.6 other units a trial; the reward's net in the answer's pairs was 13 to 16 per cent of the weight it moved
+> there, against H-24's 0.8 to 2.9, and outside the pairs 1.1 to 1.8 per cent of the answer's pairs' weight moved, onto
+> the selected readout's units only. **The next decision** — an ADR choosing among the operating regime, another size,
+> the rule held by the network reopened, a critic carried by a population, the planned neural form of the target side,
+> measured against this run, and a task the engine has not been asked — is named and not taken.
+>
+> The weekly dispatched at `scope=both` (run 36740546240) ran every job green: all 81 whole-domain tests passed, the 79
+> before this round reproducing their pinned numbers and H-25's two arms their tables, in 1 670 and 1 814 s, the shards'
+> tests at 41 to 53 per cent of the bound; the mutation sweep caught 3 601 mutants over the tree and missed none, every
+> mutant in the drawing's code caught or unviable. The cost table is regenerated from the run (81 lines, 39 294 s) and
+> plans each of the six shards at about 46 per cent, inside the brief's 60. The pull request's gate is green in every job.
+>
+> The body below describes the tree before execution and is not maintained. Its relative links gained one `../` when it
+> moved to `archive/`; no word, claim or figure changed.
 
 # Brief 058: The address drawn — ADR-0138's drawing built, the reward's sources the units the critic's window counted and its targets the channel the engine's selection chose; then H-25 run once on H-23's configuration with the engine's own address
 
@@ -9,10 +38,10 @@ date: 2026-09-30
 
 **This brief builds one call and runs one hypothesis once.** Since H-14 the task has addressed the reward: the synapses
 from the stimulus it presented onto the readout the engine selected. H-24
-([ADR-0137](../docs/adr/0137-the-reward-unaddressed-measured.md)) read that without the address the learning does not
+([ADR-0137](../../docs/adr/0137-the-reward-unaddressed-measured.md)) read that without the address the learning does not
 follow: a global reward reached the other pairs and the rest of the network as much as the answer's.
 
-[ADR-0138](../docs/adr/0138-the-address-drawn.md) has the engine draw the address itself:
+[ADR-0138](../../docs/adr/0138-the-address-drawn.md) has the engine draw the address itself:
 - the sources are the units whose critic window count is not zero, the state the engine was given;
 - the targets are the output channel its own selection chose, an efference copy;
 - so the host no longer says which stimulus it drew.
@@ -46,11 +75,11 @@ When the round is done, the tree holds:
   second attempt.
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0138's included.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. For the measurement, the runtime's gate grows by
-  at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
-  it. The mutation gate on the changed lines must pass ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
+  it. The mutation gate on the changed lines must pass ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal.
 - No pinned number of an earlier round moves.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
@@ -69,24 +98,24 @@ quoted sentences are what to re-derive.
    explains why the presynaptic side is narrowed: *"the reward is consolidated at the next presynaptic spike, which is
    the next presentation of a stimulus: without the narrowing the reward of one trial would reach the other stimulus's
    synapses at half the trials (ADR-0068)."*
-3. **The counts** ([ADR-0131](../docs/adr/0131-the-critic-built.md), [ADR-0134](../docs/adr/0134-the-critics-window-built.md)):
+3. **The counts** ([ADR-0131](../../docs/adr/0131-the-critic-built.md), [ADR-0134](../../docs/adr/0134-the-critics-window-built.md)):
    `Executor::features`, each unit's spikes within the critic's window since the previous reward, zeroed at every
    reward the critic takes. At a trial's end, before its reward, they are that trial's window.
-4. **H-23** ([ADR-0135](../docs/adr/0135-the-critics-window-measured.md)): the window admitted about 52.4 spikes a trial,
+4. **H-23** ([ADR-0135](../../docs/adr/0135-the-critics-window-measured.md)): the window admitted about 52.4 spikes a trial,
    50.8 of them the presented stimulus's volley (`WINDOWED_ADMITTED_1024`); its arms, image and tables in
    `tests/inhibition.rs`.
-5. **H-24** ([ADR-0137](../docs/adr/0137-the-reward-unaddressed-measured.md)):
+5. **H-24** ([ADR-0137](../../docs/adr/0137-the-reward-unaddressed-measured.md)):
    - `earned_run_delivered`, the harness's run under a delivery;
    - the network's oracle over all 26 240 excitatory synapses;
    - the cells, `Went`, and clause 3's band, `within_band`;
    - its readings of where the global reward's consolidation went.
 6. **The weekly job**: six shards. A round that changes `src/` dispatches `scope=both`
-   ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The cost table is regenerated from its own
+   ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The cost table is regenerated from its own
    dispatch; after ADR-0137 it plans about 41 per cent of the bound.
 
 ## Deliverables
 
-- [ ] **The drawing built, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The drawing built, in a new ADR at the next free number (`ls docs/adr`).**
   - *The call*: between ticks, the executor sets the sources to the units whose critic count is not zero, and the
     targets to the units given. It is refused while the critic or its window is unset.
   - *The task*: a delivery beside the two that calls it with the selected readout's units, and with no targets at a
@@ -96,7 +125,7 @@ quoted sentences are what to re-derive.
     - it is refused without the critic and without the window;
     - the targets are as given, and none at a tie;
     - under `Delivery::Global` and `Delivery::Addressed` every run is the run it was, bit for bit.
-- [ ] **H-25's protocol, in an ADR, before the first rewarded run.**
+- [x] **H-25's protocol, in an ADR, before the first rewarded run.**
   - The arms: H-23's, from H-23's image, with the new delivery. The image is asserted H-23's by its CRC.
   - H-25's clauses and constants, restated from ADR-0138 and pinned in the tests:
     - at least 80 of each mapping's last 128;
@@ -109,25 +138,25 @@ quoted sentences are what to re-derive.
     - the synapses outside the pairs that moved, by H-24's cells, and where the consolidation went, by H-24's measure;
     - the couplings' separation, the reversal speeds, the value beside $2p - 1$ and the troughs, beside H-23's;
     - the inhibitory sum's course.
-- [ ] **The calibration**, before any rewarded run: every pinned number holds; in each arm, H-23's first block from
+- [x] **The calibration**, before any rewarded run: every pinned number holds; in each arm, H-23's first block from
   H-23's image under the host's address reproduces H-23's tables.
-- [ ] **The runs**: H-25's two arms, each a weekly `exhaustive` test, their tables pinned per block.
-- [ ] **The ADR's reading.**
+- [x] **The runs**: H-25's two arms, each a weekly `exhaustive` test, their tables pinned per block.
+- [x] **The ADR's reading.**
   - H-25's verdict per clause and arm.
   - The account's prediction (yes) against the reading.
   - The readings, with this run named as the reference the second step is measured against.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** The build's tests, and at most one runtime test for the measurement: H-25's clauses at their edges
+- [x] **The gate.** The build's tests, and at most one runtime test for the measurement: H-25's clauses at their edges
   and the readings' rules over tables written by hand.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at `scope=both`. It must be green in every job, with
+- [x] **The evidence.** A weekly dispatched on this round's branch at `scope=both`. It must be green in every job, with
   no survivor of the sweep on the drawing and every pinned number reproduced. The cost table is regenerated from that
   run's artifacts.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-25 with its verdict and step, and §9.
   - The ADR index, `CHANGELOG.md`, `CLAUDE.md`, and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 
