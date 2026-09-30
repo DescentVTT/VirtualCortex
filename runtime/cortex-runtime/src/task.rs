@@ -44,6 +44,13 @@
 //! task delivers the outcome's reward, the engine takes its value from it, and the trial
 //! records the error the modulator received and the value; a task that carries a critic of its
 //! own on such an engine is refused, since two critics would take the expectation twice.
+//!
+//! Where a trial's dopamine term reaches is the task's [`Delivery`] (ADR-0068): every synapse,
+//! or the synapses from the stimulus it presented onto the readout the engine selected. Since
+//! ADR-0139 the engine may draw the sources itself: the units its critic counted within its
+//! window, onto the readout the engine selected, so that the task gives the channel the
+//! engine's own selection chose and not the stimulus it drew. The two deliveries before it
+//! write what they wrote, and every run pinned under them reruns unchanged.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -436,6 +443,13 @@ pub enum Delivery {
     /// stimulus: without the narrowing the reward of one trial would reach the other
     /// stimulus's synapses at half the trials (ADR-0068).
     Addressed,
+    /// The synapses from the units the engine's critic counted within its window since the
+    /// previous reward onto the units of the readout the engine selected; none at a tie, as
+    /// under the addressed delivery (ADR-0138, ADR-0139). The executor draws the sources from
+    /// its own counts (`Executor::address_drawn`), not from the stimulus the task presented:
+    /// the task gives only the channel the engine's own selection chose. [`Task::check`]
+    /// refuses it on an engine without the critic or without its window.
+    Drawn,
 }
 
 /// The critic of the reward-prediction error (ADR-0106, ADR-0107): the expected reward of each
@@ -530,9 +544,11 @@ pub enum TaskError {
     RewardAtCeiling,
     /// The injector refused a message of the stimulus or of the drive; the trial stopped there.
     Inject(InjectError),
-    /// The executor refused the addressed set (ADR-0068): a unit outside the arena. `check`
-    /// holds every readout inside the arena, so a trial's addressing is never refused; the
-    /// refusal is the executor's, surfaced here as the injector's is.
+    /// The executor refused the addressed set (ADR-0068): a unit outside the arena, or, under
+    /// the drawn delivery, an engine without the critic or without its window (ADR-0139).
+    /// `check` holds every readout inside the arena and refuses the drawn delivery on such an
+    /// engine before any tick, so a trial's addressing is never refused; the refusal is the
+    /// executor's, surfaced here as the injector's is.
     Address(AddressError),
 }
 
@@ -717,6 +733,10 @@ impl Task {
         if self.critic.is_some() && exec.critic().is_some() {
             return Err(TaskError::TwoCritics);
         }
+        // The drawn delivery needs the counts it draws from (ADR-0139), refused before any tick.
+        if self.delivery == Delivery::Drawn {
+            exec.draws()?;
+        }
         if self.feedback != Feedback::Withheld {
             if self.reward_q16 == 0 {
                 return Err(TaskError::NoReward);
@@ -761,7 +781,9 @@ impl Task {
         let correct = selection == Some(self.answer(stimulus));
         // Where the dopamine term reaches from the next tick (ADR-0068): under the addressed
         // delivery the synapses from the stimulus presented onto the readout the engine
-        // selected, none at a tie; under the global one every synapse alike. Written whatever
+        // selected, none at a tie; under the drawn one (ADR-0139) from the units the engine's
+        // critic counted in its window onto the same readout, the counts this trial's since
+        // the reward comes after; under the global one every synapse alike. Written whatever
         // the feedback, so that the set is the outcome's and not the reward's.
         match self.delivery {
             Delivery::Global => exec.address_all(),
@@ -774,6 +796,12 @@ impl Task {
                     None => exec.address(sources, core::iter::empty())?,
                 }
             }
+            Delivery::Drawn => match selection {
+                Some(readout) => {
+                    exec.address_drawn(self.readout.sets[usize::from(readout)].units())?
+                }
+                None => exec.address_drawn(core::iter::empty())?,
+            },
         }
         let positive = match self.feedback {
             Feedback::Answer => correct,
@@ -2334,6 +2362,144 @@ mod tests {
         outside.delivery = Delivery::Addressed;
         outside.readout = Readout::new([set(4, 4), set(13, 4)]);
         assert_eq!(outside.trial(&mut exec, 6), Err(TaskError::SetOutsideArena));
+    }
+
+    /// Sixteen armed units without synapses, as [`network`], with the engine's critic and its
+    /// window of `window` ticks (ADR-0131, ADR-0134).
+    fn windowed_network(window: u16) -> Executor<8> {
+        let mut exec = Executor::<8>::new(Config {
+            workers: 2,
+            units: 16,
+            injector_capacity: 64,
+            train_capacity: spikes_per_unit(TICKS).saturating_mul(16) as usize,
+            modulation_baseline_q16: ONE / 2,
+            critic: Some(ValueCritic { shift: 9, scale: 2 }),
+            critic_window_ticks: window,
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+        exec
+    }
+
+    /// The drawn delivery (ADR-0139): a trial leaves as the sources exactly the units that fired
+    /// fewer ticks than the window after it opened — read here from the train, whatever the
+    /// stimulus presented — and as the targets the selected readout's units, none at a tie,
+    /// whatever the feedback; with the feedback withheld the counts stand, and the sources are
+    /// the units whose count is not zero. A window that closed before the trial draws no source;
+    /// one that spans the ticks between two trials draws a cued readout's units beside the
+    /// stimulus's. The task refuses the delivery before any tick on an engine without the
+    /// critic or without its window.
+    #[test]
+    fn the_drawn_delivery_addresses_the_units_the_critic_counted_onto_the_selected_readout() {
+        let sources =
+            |exec: &Executor<8>| -> Vec<u32> { (0..16).filter(|&u| exec.is_source(u)).collect() };
+        let targets =
+            |exec: &Executor<8>| -> Vec<u32> { (0..16).filter(|&u| exec.is_target(u)).collect() };
+        // The units that fired fewer than `window` ticks after `opened`, from the train.
+        let counted = |exec: &mut Executor<8>, opened: u64, window: u16| -> Vec<u32> {
+            let mut units: Vec<u32> = exec
+                .train()
+                .iter()
+                .filter(|&&(tick, _)| {
+                    u64::from(tick)
+                        .checked_sub(opened)
+                        .is_some_and(|d| d < u64::from(window))
+                })
+                .map(|&(_, unit)| unit)
+                .collect();
+            units.sort_unstable();
+            units.dedup();
+            units
+        };
+        let stimulus_units = |t: &Task, trial: u64| -> Vec<u32> {
+            t.stimuli[usize::from(t.stimulus_at(trial))]
+                .set
+                .units()
+                .collect()
+        };
+        let mut t = task(Feedback::Answer);
+        t.delivery = Delivery::Drawn;
+        // A window of thirty ticks: the stimulus's volley, some twelve ticks on, and nothing
+        // after it.
+        let mut exec = windowed_network(30);
+        let opened = exec.window_opened();
+        let tie = t.trial(&mut exec, 0).unwrap();
+        assert_eq!(tie.selection, None);
+        let drawn = counted(&mut exec, opened, 30);
+        assert_eq!(
+            drawn,
+            stimulus_units(&t, 0),
+            "the window counted the volley"
+        );
+        assert_eq!((sources(&exec), targets(&exec)), (drawn, vec![]));
+        // The ticks between two trials close the window: a cued readout selected, no source.
+        exec.run(400);
+        cue(&exec, t.readout.sets()[0]);
+        let opened = exec.window_opened();
+        let closed = t.trial(&mut exec, 1).unwrap();
+        assert_eq!(closed.selection, Some(0));
+        assert_eq!(counted(&mut exec, opened, 30), Vec::<u32>::new());
+        assert_eq!(
+            (sources(&exec), targets(&exec)),
+            (vec![], vec![4, 5, 6, 7]),
+            "the window closed before the trial: no source, whatever was presented"
+        );
+        // A window that spans the ticks between two trials: the cued readout's units are drawn
+        // beside the stimulus's, and the feedback withheld leaves the counts standing.
+        let mut exec = windowed_network(1_000);
+        t.trial(&mut exec, 0).unwrap();
+        exec.run(400);
+        cue(&exec, t.readout.sets()[1]);
+        t.feedback = Feedback::Withheld;
+        let opened = exec.window_opened();
+        let withheld = t.trial(&mut exec, 2).unwrap();
+        assert_eq!((withheld.selection, withheld.reward_q16), (Some(1), 0));
+        let drawn = counted(&mut exec, opened, 1_000);
+        let mut expected: Vec<u32> = stimulus_units(&t, 2);
+        expected.extend([12, 13, 14, 15]);
+        expected.sort_unstable();
+        assert_eq!(
+            drawn, expected,
+            "the stimulus's volley and the cued readout"
+        );
+        assert_eq!(
+            (sources(&exec), targets(&exec)),
+            (drawn.clone(), vec![12, 13, 14, 15])
+        );
+        let nonzero: Vec<u32> = (0..16)
+            .filter(|&u| exec.features()[u as usize] != 0)
+            .collect();
+        assert_eq!(
+            nonzero, drawn,
+            "withheld, the counts stand: the sources are theirs"
+        );
+        // Refused before any tick without the critic, and without its window.
+        let mut none = network(2, ONE / 2);
+        assert_eq!(
+            t.trial(&mut none, 3),
+            Err(TaskError::Address(AddressError::NoCritic))
+        );
+        assert_eq!(none.ticks(), 0, "no tick ran");
+        let mut unwindowed = windowed_network(0);
+        assert_eq!(
+            t.check(&unwindowed),
+            Err(TaskError::Address(AddressError::NoWindow))
+        );
+        assert_eq!(
+            t.trial(&mut unwindowed, 3),
+            Err(TaskError::Address(AddressError::NoWindow))
+        );
+        assert_eq!(unwindowed.ticks(), 0, "no tick ran");
+        assert_eq!(
+            unwindowed.addressed_counts(),
+            (16, 16),
+            "the set as at birth"
+        );
     }
 
     /// The cancel's rule at its edges (ADR-0076): due from its offset for its ticks, widened

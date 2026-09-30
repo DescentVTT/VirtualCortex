@@ -2920,6 +2920,14 @@ pub(crate) struct Composer {
     /// pair is then the one the last trial selected, and `moves` reads it as it read the
     /// addressed pair.
     pub(crate) global: bool,
+    /// The drawn delivery (brief 058, ADR-0139): none in every run before it, where the pair
+    /// `taught` names is addressed as the task wrote it; under H-25 the sources the executor
+    /// drew at the last trial's end, one flag a unit, so that a replayed synapse is addressed
+    /// when its readout is the one the last trial selected and its source among them — a unit
+    /// of the presented stimulus the window did not count is not, and a unit of the other
+    /// stimulus it did count is. `taught`'s pair is still the presented stimulus onto the
+    /// selected readout, and `moves` reads it as it read the addressed pair.
+    pub(crate) drawn: Option<Vec<bool>>,
 }
 
 /// What one trial's consolidation did to the synapses of the pair the last trial's delivery
@@ -2948,6 +2956,7 @@ impl Composer {
             signed: false,
             moves: Vec::new(),
             global: false,
+            drawn: None,
         }
     }
 
@@ -3094,8 +3103,10 @@ impl Composer {
             synapses,
             spikes,
             volleys,
+            drawn,
             ..
         } = self;
+        let drawn = drawn.as_deref();
         for syn in synapses.iter_mut() {
             let (Some(pre), Some(post), Some(volleys)) = (
                 spikes.get(syn.source as usize),
@@ -3144,8 +3155,17 @@ impl Composer {
                     // An addressed synapse's spike is inside the trial: the addressed pair is
                     // written at a trial's end, so the lead-in's spikes before the first
                     // trial, the only ones before `start` the oracle replays, are never
-                    // addressed.
-                    let signal = if addressed == Some((syn.stimulus, syn.readout)) {
+                    // addressed. Under the drawn delivery (brief 058) the pair's readout is the
+                    // one selected and its source among the units the executor drew.
+                    let pair = match (addressed, drawn) {
+                        (Some((_, readout)), Some(sources)) => {
+                            readout == syn.readout
+                                && sources.get(syn.source as usize).copied().unwrap_or(false)
+                        }
+                        (Some(_), None) => addressed == Some((syn.stimulus, syn.readout)),
+                        (None, _) => false,
+                    };
+                    let signal = if pair {
                         course
                             .get(t.wrapping_sub(start) as usize)
                             .copied()
@@ -9275,7 +9295,13 @@ pub(crate) fn earned_run_valued(
 /// so. Under `Delivery::Global` the task writes every unit a source and a target at every
 /// trial's end, which the harness holds at every trial, and the oracle consolidates every
 /// stimulus–readout synapse under the signal (`Composer::global`); its moves are read over the
-/// pair the last trial selected, the pair the addressed delivery would have addressed.
+/// pair the last trial selected, the pair the addressed delivery would have addressed. Under
+/// `Delivery::Drawn` (brief 058, ADR-0139), which needs the engine's critic and its window, the
+/// harness holds the executor's sources at every trial's end to exactly the units whose count
+/// the critic's oracle holds not zero, before the reward zeroes them, and its targets to the
+/// selected readout's units, none at a tie; the composer consolidates a stimulus–readout
+/// synapse under the signal where its readout was selected and its source drawn
+/// (`Composer::drawn`), and reads its moves over the pair presented onto the pair selected.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_delivered(
     exec: &mut Engine,
@@ -9312,6 +9338,7 @@ pub(crate) fn earned_run_delivered(
     composer.baseline = baseline_q16;
     composer.signed = signed;
     composer.global = delivery == Delivery::Global;
+    composer.drawn = (delivery == Delivery::Drawn).then(|| vec![false; units as usize]);
     composer.taught = Some(Taught {
         addressed: None,
         signal: 0,
@@ -9393,6 +9420,9 @@ pub(crate) fn earned_run_delivered(
                 Feedback::Withheld => 0,
             };
             let stimulus = usize::from(outcome.stimulus);
+            // The units whose count the engine's critic's oracle holds not zero at the trial's
+            // end, before the reward zeroes them: the sources the drawn delivery reads.
+            let mut counted: Option<Vec<bool>> = None;
             // Under a critic the reward delivered is the outcome's less the stimulus's
             // expectation, which then moves by the oracle's rule (ADR-0107); withheld, nothing
             // is delivered and nothing moves.
@@ -9445,6 +9475,7 @@ pub(crate) fn earned_run_delivered(
                                 "trial {trial}: the train holds every spike since the last reading"
                             );
                             read_from = end;
+                            counted = Some(pending.iter().map(|&c| c != 0).collect());
                             if feedback == Feedback::Withheld {
                                 assert_eq!(
                                     outcome.value_q16, None,
@@ -9512,6 +9543,27 @@ pub(crate) fn earned_run_delivered(
                     (units as usize, units as usize),
                     "trial {trial}: under the global delivery every unit is a source and a target"
                 ),
+                Delivery::Drawn => {
+                    let counted = counted
+                        .take()
+                        .expect("the drawn delivery reads the engine's critic");
+                    assert_eq!(
+                        (0..units).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                        counted,
+                        "trial {trial}: the drawn sources are exactly the units the window counted"
+                    );
+                    let selected = outcome
+                        .selection
+                        .map(|r| readout_set(&sets, usize::from(r)));
+                    assert_eq!(
+                        (0..units).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+                        (0..units)
+                            .map(|u| selected.is_some_and(|set| set.contains(u)))
+                            .collect::<Vec<bool>>(),
+                        "trial {trial}: the targets are the selected readout's units, none at a tie"
+                    );
+                    composer.drawn = Some(counted);
+                }
             }
             let signal = exec.modulator().dopamine_rpe;
             assert_eq!(

@@ -404,11 +404,18 @@ pub enum InjectError {
     Full,
 }
 
-/// Why an addressing is refused (ADR-0068).
+/// Why an addressing is refused (ADR-0068, ADR-0139).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AddressError {
     /// A unit of the addressed set is outside the arena.
     NoSuchUnit,
+    /// The address drawn while the critic is unset (ADR-0139): the engine keeps no count to
+    /// draw its sources from.
+    NoCritic,
+    /// The address drawn while the critic's window is unset (ADR-0139): the counts are every
+    /// spike since the previous reward, the whole network's, which is the global delivery's
+    /// reach and not an address.
+    NoWindow,
 }
 
 /// The modulations of a tick (ADR-0068, ADR-0086): the one an addressed synapse consolidates
@@ -1309,6 +1316,50 @@ impl<const CAP: usize> Executor<CAP> {
                 flag.store(true, Ordering::Relaxed);
             }
         }
+    }
+
+    /// Whether the address can be drawn (ADR-0139): the critic set and its window set. Refused
+    /// otherwise, the critic named first, since the configuration and the loader never set a
+    /// window without it.
+    pub fn draws(&self) -> Result<(), AddressError> {
+        if self.critic.is_none() {
+            Err(AddressError::NoCritic)
+        } else if self.critic_window_ticks == 0 {
+            Err(AddressError::NoWindow)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Between ticks: the address drawn by the engine (ADR-0139). The sources are the units
+    /// whose critic count is not zero — the spikes the critic's window admitted since the
+    /// previous reward the critic took, or since the engine's start before the first — and the
+    /// targets exactly the units of `targets`. From the next tick it is the addressed set, read
+    /// as the set `address` writes; the counts, the weights and the signal are not touched.
+    /// Refused while the critic or its window is unset (`draws`), and whole for a target outside
+    /// the arena, the set standing as it was either way. Called between a trial's last tick and
+    /// its reward, the counts are that trial's window.
+    pub fn address_drawn<T>(&mut self, targets: T) -> Result<(), AddressError>
+    where
+        T: IntoIterator<Item = u32>,
+        T::IntoIter: Clone,
+    {
+        self.draws()?;
+        let targets = targets.into_iter();
+        if targets
+            .clone()
+            .any(|unit| unit as usize >= self.shared.targets.len())
+        {
+            return Err(AddressError::NoSuchUnit);
+        }
+        for (unit, flag) in self.shared.sources.iter().enumerate() {
+            flag.store(
+                self.features.get(unit).is_some_and(|&count| count != 0),
+                Ordering::Relaxed,
+            );
+        }
+        Self::write_side(&self.shared.targets, targets);
+        Ok(())
     }
 
     /// Between ticks: every unit a source and a target, the rule before ADR-0068 and the
@@ -4021,6 +4072,147 @@ mod tests {
             excluded_some |= windowed.iter().zip(&unset).any(|(w, u)| w.0 != u.0);
         }
         assert!(excluded_some, "some length leaves a spike out");
+    }
+
+    /// The address drawn (ADR-0139): refused while the critic is unset and while its window is
+    /// unset, the set standing as it was; with both set, the sources are exactly the units whose
+    /// count is not zero — held to the train's spikes fewer ticks after the window's opening than
+    /// its length, a unit that fired after the window closed not among them — and the targets
+    /// exactly the units given, the arena's last unit taken and one past it refused whole, none
+    /// at a tie; the drawing moves no count, no weight and no signal; after a reward every count
+    /// is zero and the next drawing names no source; and `address_all` writes over it as over
+    /// any set.
+    #[test]
+    fn the_address_drawn_is_the_units_the_window_counted_onto_the_units_given() {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        let critic = Some(ValueCritic { shift: 9, scale: 2 });
+        let make = |critic, window| {
+            let mut exec = Executor::<8>::new(Config {
+                units: 4,
+                nodes_per_worker: 128,
+                train_capacity: 64,
+                critic,
+                critic_window_ticks: window,
+                ..Config::default()
+            })
+            .unwrap();
+            for (unit, weight) in exec.units_mut().iter_mut().zip([100i16, -40, 7, 0]) {
+                unit.v_thresh = THRESHOLD_BASE;
+                unit.stp_u_rel = STP_U;
+                unit.stp_r_ves = STP_MAX;
+                unit.value_weight = weight;
+            }
+            exec
+        };
+        let sides = |exec: &Executor<8>| {
+            (
+                (0..5).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                (0..5).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+            )
+        };
+        let every = (
+            vec![true, true, true, true, false],
+            vec![true, true, true, true, false],
+        );
+        // Refused without the critic, and with the critic and no window: the set as it was.
+        for (critic, refusal) in [
+            (None, AddressError::NoCritic),
+            (critic, AddressError::NoWindow),
+        ] {
+            let mut exec = make(critic, 0);
+            assert_eq!(exec.draws(), Err(refusal));
+            assert_eq!(exec.address_drawn([1u32]), Err(refusal));
+            assert_eq!(sides(&exec), every, "{refusal:?}: every unit, as at birth");
+            exec.address([0u32], [1u32]).unwrap();
+            assert_eq!(exec.address_drawn([2u32]), Err(refusal));
+            assert_eq!(exec.addressed_counts(), (1, 1), "{refusal:?}: as it was");
+        }
+        // Both set: units 0 and 2 kicked at the window's opening, unit 1 after it closed.
+        let window = 20u16;
+        let mut exec = make(critic, window);
+        assert_eq!(exec.draws(), Ok(()));
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        let kick = |exec: &Executor<8>, unit: u32| {
+            let inject = exec.injector();
+            for _ in 0..14 {
+                inject.inject(unit, strong).unwrap();
+            }
+        };
+        kick(&exec, 0);
+        kick(&exec, 2);
+        for t in 0..60 {
+            if t == 30 {
+                kick(&exec, 1);
+            }
+            exec.tick();
+        }
+        let opened = exec.window_opened();
+        assert_eq!(opened, 0, "open at the engine's start");
+        let counted: Vec<bool> = (0..5)
+            .map(|u| {
+                exec.train()
+                    .iter()
+                    .any(|&(tick, unit)| unit == u && u64::from(tick) - opened < u64::from(window))
+            })
+            .collect();
+        assert_eq!(
+            counted,
+            [true, false, true, false, false],
+            "the window counted 0 and 2"
+        );
+        assert!(
+            exec.train().iter().any(|&(_, unit)| unit == 1),
+            "unit 1 fired, after the window closed"
+        );
+        let features = exec.features().to_vec();
+        assert_eq!(
+            features.iter().map(|&c| c != 0).collect::<Vec<bool>>(),
+            counted[..4],
+            "the counts are the window's"
+        );
+        let (signal, weights) = (
+            exec.modulator().dopamine_rpe,
+            exec.units()
+                .iter()
+                .map(|u| u.value_weight)
+                .collect::<Vec<i16>>(),
+        );
+        assert_eq!(exec.address_drawn([3u32, 1]), Ok(()));
+        assert_eq!(
+            sides(&exec),
+            (counted.clone(), vec![false, true, false, true, false])
+        );
+        assert_eq!(exec.addressed_counts(), (2, 2));
+        assert_eq!(
+            (
+                exec.features(),
+                exec.modulator().dopamine_rpe,
+                exec.units()
+                    .iter()
+                    .map(|u| u.value_weight)
+                    .collect::<Vec<i16>>()
+            ),
+            (features.as_slice(), signal, weights),
+            "the drawing moves no count, no signal and no weight"
+        );
+        // The arena's last unit taken as a target; one past it refused whole.
+        assert_eq!(exec.address_drawn([3u32]), Ok(()));
+        let last = (counted.clone(), vec![false, false, false, true, false]);
+        assert_eq!(sides(&exec), last);
+        assert_eq!(exec.address_drawn([0u32, 4]), Err(AddressError::NoSuchUnit));
+        assert_eq!(sides(&exec), last, "refused whole, as it was");
+        assert_eq!(exec.address_drawn(core::iter::empty()), Ok(()));
+        assert_eq!(exec.addressed_counts(), (2, 0), "a tie: no target");
+        // After a reward every count is zero, and the next drawing names no source.
+        exec.reward(0x1_0000);
+        assert_eq!(exec.features(), &[0; 4]);
+        assert_eq!(exec.address_drawn([0u32, 1, 2, 3]), Ok(()));
+        assert_eq!(
+            sides(&exec),
+            (vec![false; 5], vec![true, true, true, true, false])
+        );
+        exec.address_all();
+        assert_eq!(sides(&exec), every);
     }
 }
 
