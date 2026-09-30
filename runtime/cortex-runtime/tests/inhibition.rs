@@ -113,6 +113,21 @@
 //! run, and the gate runs the window's rule, the arithmetic, the clauses at their edges and the
 //! image's patch.
 //!
+//! Brief 057 runs H-24 here as ADR-0136 wrote it and ADR-0137 records it: H-23's configuration,
+//! schedule and arms from H-23's image, bit for bit, with the one change the task's delivery —
+//! `Delivery::Global`, every unit a source and a target at every trial's end, so that the
+//! dopamine term reaches every excitatory synapse — after H-23's first block reproduced under the
+//! addressed delivery. Two arms, each its own weekly `exhaustive` test, pinned whole with the
+//! network outside the four couplings cell by cell per block and where the consolidation went.
+//! Beside the composer, which replays the stimulus–readout synapses, a network's oracle replays
+//! every excitatory synapse of the arena from the train and is held to the record's traces,
+//! weights and stamps at every trial. The clauses (H-20's two, and the excitatory sum outside the
+//! four couplings within 0.75 and 1.25 of the image's at every block's end) and the readings are
+//! integer rules written before the run, and the gate runs the clauses at their edges, the
+//! network's places and cells over the instrument's network, eight trials on that network under
+//! each delivery with both oracles held, and the oracle's replay of a block against the engine's
+//! rule over blocks written by hand.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -129,7 +144,8 @@ mod harness;
 use harness::*;
 
 use cortex_core::{
-    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, istdp_alpha_q1_15,
+    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, Polarity,
+    SYNAPSES_PER_BLOCK, SynapseBlock, istdp_alpha_q1_15,
 };
 use cortex_runtime::{ConfigError, ImageError, shortest_delay};
 
@@ -65526,3 +65542,1535 @@ const WINDOWED_1024: Windowed = Windowed {
     held: [[[true; 2]; 4]; 2],
     yes: true,
 };
+
+// -------------------------------------------- written before the run (ADR-0136, ADR-0137)
+
+/// The arms of H-24 (ADR-0136): H-23's two, in their order, each its own weekly test, from
+/// H-23's image, the task carrying no critic of its own, H-20's flips, and the reward delivered
+/// to every synapse.
+const UNADDRESSED_ARMS: [Reversal; 2] = WINDOWED_ARMS;
+
+/// The one change from H-23 (ADR-0136): the task's delivery, every unit a source and a target
+/// at every trial's end, `Executor::address_all`.
+const UNADDRESSED_DELIVERY: Delivery = Delivery::Global;
+
+/// ADR-0136 made no prediction for the verdict: the literature's account predicts yes, and
+/// ADR-0066's global reading was a no under a configuration that no longer exists.
+const UNADDRESSED_PREDICTED: Option<bool> = None;
+
+/// Clause 3's band (ADR-0136): at every block's end the excitatory sum outside the four
+/// stimulus–readout couplings within 0.75 and 1.25 of the image's, both bounds held, read in
+/// integers as `3 × image ≤ 4 × outside ≤ 5 × image`. It does not move after a rewarded run.
+const BAND_QUARTERS: (i64, i64) = (3, 5);
+const BAND_DIVISOR: i64 = 4;
+const _: () = assert!(BAND_QUARTERS.0 < BAND_DIVISOR && BAND_DIVISOR < BAND_QUARTERS.1);
+
+/// The rows the network's readings are read in (brief 057): the excitatory classes of
+/// `CLASSES` a synapse's source can be in — a stimulus unit, a readout unit, any other — class
+/// `c` at row `c − 1`; the columns are the target's class in `CLASSES`'s order.
+const SOURCES: usize = CLASSES - 1;
+const _: () = assert!(SOURCES == 3);
+
+// ------------------------------------------------------------ the criterion (ADR-0136)
+
+/// The excitatory sum outside the four stimulus–readout couplings at a block's end: the
+/// arena's excitatory sum less the four couplings, each the weights from an excitatory unit of
+/// a stimulus set onto a unit of a readout set, of either polarity.
+fn outside_of(block: &Block) -> i64 {
+    block
+        .10
+        .iter()
+        .flatten()
+        .fold(block.8, |sum, &c| sum.saturating_sub(c))
+}
+
+/// The image's outside sum: the settled image's excitatory sum, which H-20's to H-23's images
+/// carry, less its four couplings.
+fn image_outside() -> i64 {
+    IMAGE_COUPLINGS_1024
+        .iter()
+        .flatten()
+        .fold(QUIET_1024[SETTLED].1.1, |sum, &c| sum.saturating_sub(c))
+}
+
+/// Clause 3's rule at one block's end (ADR-0136): `outside` within 0.75 and 1.25 of `image`,
+/// both bounds held, an image above zero.
+fn within_band(outside: i64, image: i64) -> bool {
+    let scaled = outside.saturating_mul(BAND_DIVISOR);
+    image > 0
+        && scaled >= image.saturating_mul(BAND_QUARTERS.0)
+        && scaled <= image.saturating_mul(BAND_QUARTERS.1)
+}
+
+/// Clause 3's reading over an arm's blocks: the first block, by index, whose end left the band,
+/// with its outside sum; none when every block's end lies within it.
+fn left_band(image: i64, blocks: &[Block]) -> Option<(usize, i64)> {
+    blocks
+        .iter()
+        .map(outside_of)
+        .enumerate()
+        .find(|&(_, outside)| !within_band(outside, image))
+}
+
+/// H-24's criterion (ADR-0136), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) each mapping learned and (2) the couplings bounded, H-20's two as `scheduled` reads
+/// them; (3) the network held — a run of 120 blocks every one of whose ends lies within the
+/// band. `yes` is all in both arms; a no names the clause and the arm, under clause 3 the first
+/// block that left the band with its sum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Unaddressed {
+    learning: Scheduled,
+    left: [Option<(usize, i64)>; 2],
+    held: [bool; 2],
+    yes: bool,
+}
+
+fn unaddressed(image: i64, arms: [&[Block]; 2]) -> Unaddressed {
+    let learning = scheduled(arms);
+    let left = arms.map(|blocks| left_band(image, blocks));
+    let held = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && left[k].is_none());
+    Unaddressed {
+        learning,
+        left,
+        held,
+        yes: learning.yes && held.iter().all(|&h| h),
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 057)
+
+/// Where a synapse of an excitatory unit lies (brief 057): in a stimulus–readout pair
+/// `(stimulus, readout)` — its source a unit of the stimulus set, its target a unit of the
+/// readout set, of either polarity, the synapses the four couplings sum — or, outside the
+/// pairs, in the cell of its source's row in `SOURCES` and its target's class in `CLASSES`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Place {
+    Pair(usize, usize),
+    Outside(usize, usize),
+}
+
+/// The place of the synapse from `source`, an excitatory unit, onto `target`.
+fn place_of(sets: &[Set; 4], classes: &[usize], source: u32, target: u32) -> Place {
+    let stimulus = [0usize, 1].into_iter().find(|&s| sets[s].contains(source));
+    let readout = [0usize, 1]
+        .into_iter()
+        .find(|&r| readout_set(sets, r).contains(target));
+    match (stimulus, readout) {
+        (Some(s), Some(r)) => Place::Pair(s, r),
+        _ => Place::Outside(
+            classes
+                .get(source as usize)
+                .map_or(0, |c| c.saturating_sub(1)),
+            classes.get(target as usize).copied().unwrap_or(0),
+        ),
+    }
+}
+
+/// One cell of the network outside the couplings at a block's end (brief 057): its excitatory
+/// weights summed; its synapses whose weight differs from the image's; the largest move from
+/// the image's weight by magnitude, with its sign, the first in the arena's walk at a tie; and
+/// its synapses at zero and at `i16::MAX`, the two rails of an excitatory weight.
+type Cell = (i64, u32, i32, u32, u32);
+
+/// The cells by source row and target class.
+type Cells = [[Cell; CLASSES]; SOURCES];
+
+/// The network outside the four couplings on `exec`, cell by cell, against `image`, the weights
+/// by block and slot as `weights_of` holds them. Every excitatory unit's occupied slots are
+/// walked once, through its chain.
+fn cells_of(exec: &Engine, image: &[Vec<i16>], sets: &[Set; 4], classes: &[usize]) -> Cells {
+    let mut out: Cells = [[(0, 0, 0, 0, 0); CLASSES]; SOURCES];
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            let Place::Outside(row, column) = place_of(sets, classes, unit.id as u32, s.target)
+            else {
+                continue;
+            };
+            let Some(cell) = out.get_mut(row).and_then(|r| r.get_mut(column)) else {
+                continue;
+            };
+            let was = image
+                .get(s.block_idx as usize)
+                .and_then(|b| b.get(usize::from(s.slot)))
+                .copied()
+                .expect("the image holds the synapse");
+            let delta = i32::from(s.weight_q1_15).saturating_sub(i32::from(was));
+            cell.0 = cell.0.saturating_add(i64::from(s.weight_q1_15));
+            cell.1 = cell.1.saturating_add(u32::from(delta != 0));
+            if delta.unsigned_abs() > cell.2.unsigned_abs() {
+                cell.2 = delta;
+            }
+            cell.3 = cell.3.saturating_add(u32::from(s.weight_q1_15 == 0));
+            cell.4 = cell.4.saturating_add(u32::from(s.weight_q1_15 == i16::MAX));
+        }
+    }
+    out
+}
+
+/// The synapses of each cell, which no rule changes: a cell's moved synapses are read as a
+/// fraction of these.
+fn cell_sizes(exec: &Engine, sets: &[Set; 4], classes: &[usize]) -> [[u32; CLASSES]; SOURCES] {
+    let mut out = [[0u32; CLASSES]; SOURCES];
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            if let Place::Outside(row, column) = place_of(sets, classes, unit.id as u32, s.target) {
+                if let Some(n) = out.get_mut(row).and_then(|r| r.get_mut(column)) {
+                    *n = n.saturating_add(1);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The cells' sums, the outside sum over the arena.
+fn cells_sum(cells: &Cells) -> i64 {
+    cells
+        .iter()
+        .flatten()
+        .fold(0i64, |sum, c| sum.saturating_add(c.0))
+}
+
+/// Where the consolidation went (brief 057), by the network's oracle over a trial or a block:
+/// the weight raised and the weight lowered, each summed with its sign, `[raised, lowered]`,
+/// in the answer's pairs — each stimulus onto its answer under the mapping in force at the
+/// trial the consolidation fell in — in the other two pairs, and outside the pairs.
+type Went = [[i64; 2]; 3];
+
+/// A `Went` plus another, amount by amount.
+fn add_went(into: &mut Went, went: &Went) {
+    for (a, b) in into.iter_mut().flatten().zip(went.iter().flatten()) {
+        *a = a.saturating_add(*b);
+    }
+}
+
+// ------------------------------------------------------------- the oracle (brief 057)
+
+/// An occupied slot of an excitatory unit's block as the network's oracle replays it: the
+/// slot, its target, its trace and its weight's magnitude, and where it lies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Wired {
+    slot: usize,
+    target: u32,
+    trace: i16,
+    magnitude: i32,
+    place: Place,
+}
+
+/// A block of an excitatory unit's chain as the network's oracle replays it: its index in the
+/// arena, its presynaptic stamp and its occupied slots, in slot order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Wiring {
+    block: usize,
+    stamp: u32,
+    slots: Vec<Wired>,
+}
+
+/// A block of the arena as the oracle starts from it: its stamp, and each occupied slot's
+/// target, trace and weight as the record holds them, the weight read as a magnitude of an
+/// excitatory block, never below zero.
+fn wiring_of(block: &SynapseBlock, index: usize, place: &dyn Fn(u32) -> Place) -> Wiring {
+    Wiring {
+        block: index,
+        stamp: block.last_spike_tick,
+        slots: (0..SYNAPSES_PER_BLOCK)
+            .filter_map(|slot| {
+                block.target(slot).map(|target| Wired {
+                    slot,
+                    target,
+                    trace: block.eligibility_q1_15[slot],
+                    magnitude: i32::from(block.weights_q1_15[slot]).max(0),
+                    place: place(target),
+                })
+            })
+            .collect(),
+    }
+}
+
+/// One presynaptic spike at `t` through an excitatory block, as the oracle replays it — the
+/// harness's second writing of `step_stdp_all` and `consolidate_signed` (`consolidate` with the
+/// signed gate unset): every slot's trace decayed by the ticks since the block's stamp, when
+/// there are any; the pair rule against the target's last spike in `last` — the potentiation
+/// when the target fired after the stamp and not after `t`, the depression at the magnitude
+/// when it fired before `t`, neither without a spike on record; the consolidation under the
+/// slot's modulation, `modulation` of the slot; then the stamp. `moved` is handed each slot and
+/// what its magnitude moved.
+fn replay_block(
+    wiring: &mut Wiring,
+    t: u32,
+    last: &[u32],
+    signed: bool,
+    modulation: &dyn Fn(&Wired) -> i32,
+    moved: &mut dyn FnMut(&Wired, i32),
+) {
+    let elapsed = t.wrapping_sub(wiring.stamp);
+    let factor =
+        (elapsed != 0).then(|| i64::from(stp_decay_factor_q16(elapsed, ELIGIBILITY_TAU_SHIFT)));
+    for syn in wiring.slots.iter_mut() {
+        if let Some(f) = factor {
+            syn.trace = decayed(syn.trace, f);
+        }
+        let post = last
+            .get(syn.target as usize)
+            .copied()
+            .unwrap_or(NO_SPIKE_ON_RECORD);
+        if post != NO_SPIKE_ON_RECORD {
+            let since_post = t.wrapping_sub(post) as i32;
+            if wiring.stamp != NO_SPIKE_ON_RECORD {
+                let post_after_prev = post.wrapping_sub(wiring.stamp) as i32;
+                if post_after_prev > 0 && since_post >= 0 {
+                    syn.trace = syn
+                        .trace
+                        .saturating_add(pair_window(STDP_A_PLUS_Q1_15, post_after_prev as u32));
+                }
+            }
+            if since_post > 0 {
+                syn.trace = syn.trace.saturating_sub(depression_at(
+                    pair_window(STDP_A_MINUS_Q1_15, since_post as u32),
+                    syn.magnitude,
+                ));
+            }
+        }
+        let m = modulation(syn);
+        let (trace, magnitude, amount) = if signed {
+            consolidated_signed(syn.trace, syn.magnitude, m)
+        } else {
+            consolidated(syn.trace, syn.magnitude, m)
+        };
+        syn.trace = trace;
+        syn.magnitude = magnitude;
+        moved(syn, amount);
+    }
+    wiring.stamp = t;
+}
+
+/// The network's oracle (brief 057, ADR-0137): every excitatory synapse of the arena — the
+/// stimulus–readout pairs the composer replays among them — replayed from the train by
+/// `replay_block`, a synapse taking the baseline plus the signal where the executor's addressed
+/// set holds its source and its target and the baseline alone elsewhere, as the delivery wrote
+/// the set at the last trial's end, and held to the record's traces, weights and stamps at every
+/// trial. Under the global delivery every synapse takes the signal; under the addressed one only
+/// the pair the last trial addressed does.
+struct Network {
+    /// Each unit's chain in the arena's order, as the oracle replays it; empty for an
+    /// inhibitory unit, whose blocks the inhibitory rule moves.
+    chains: Vec<Vec<Wiring>>,
+    /// Each unit's last somatic spike: the record's at the start, the train's since.
+    last: Vec<u32>,
+    /// The addressed set the next trial's spikes are consolidated under, as the executor holds
+    /// it: at the start every unit a source and a target, the state a new executor starts in.
+    sources: Vec<bool>,
+    targets: Vec<bool>,
+    /// The first tick the next reading replays, and the signal at the next trial's first tick.
+    cursor: u32,
+    signal: i32,
+    baseline: i32,
+    signed: bool,
+    /// Whether no trial has been read: only the first reading holds spikes before its trial,
+    /// the lead-in's, under the signal at rest.
+    first: bool,
+}
+
+impl Network {
+    fn new(exec: &Engine, sets: &[Set; 4], classes: &[usize]) -> Self {
+        let blocks = exec.blocks();
+        let units = exec.units();
+        let chains = units
+            .iter()
+            .map(|unit| {
+                if unit.flags & FLAG_INHIBITORY != 0 {
+                    return Vec::new();
+                }
+                let source = unit.id as u32;
+                unit.chain(blocks)
+                    .map(|idx| {
+                        let block = blocks.get(idx as usize).expect("a block of the arena");
+                        wiring_of(block, idx as usize, &|target| {
+                            place_of(sets, classes, source, target)
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+        let n = units.len() as u32;
+        Self {
+            chains,
+            last: units.iter().map(|u| u.last_soma_spike_tick).collect(),
+            sources: (0..n).map(|u| exec.is_source(u)).collect(),
+            targets: (0..n).map(|u| exec.is_target(u)).collect(),
+            cursor: exec.ticks() as u32,
+            signal: exec.modulator().dopamine_rpe,
+            baseline: exec.modulation_baseline_q16(),
+            signed: exec.signed_gate(),
+            first: true,
+        }
+    }
+
+    /// The excitatory synapses replayed.
+    fn synapses(&self) -> usize {
+        self.chains
+            .iter()
+            .flatten()
+            .map(|w| w.slots.len())
+            .fold(0usize, usize::saturating_add)
+    }
+
+    /// One trial's reading at its end, after its reward: the train's spikes since the last
+    /// reading replayed tick by tick — every spiking unit's last spike written first, as the
+    /// executor's integration precedes its fan-out, then each spiking excitatory unit's blocks
+    /// — under the signal's course from the one the last reward left, at rest before the first
+    /// trial's start; then the record held to the oracle, and the addressed set and the signal
+    /// read for the next trial. `answers` names each stimulus's answer under the mapping in
+    /// force. Returns where the trial's consolidation went.
+    fn replay(&mut self, exec: &mut Engine, trial: usize, answers: [usize; 2]) -> Went {
+        let end = exec.ticks();
+        assert!(end <= u64::from(u32::MAX), "the stamp is the tick");
+        let end = end as u32;
+        let start = end.checked_sub(TRIAL_TICKS).expect("a trial's ticks");
+        let course = signal_course(self.signal);
+        let at_rest = self.first && self.signal == 0;
+        let cursor = self.cursor;
+        let overwritten = exec.train_overwritten();
+        let train = exec.train();
+        assert!(
+            overwritten == 0 || train.first().is_some_and(|&(t, _)| t <= cursor),
+            "trial {trial}: the train held every spike since the last reading"
+        );
+        let from = train.partition_point(|&(t, _)| t < cursor);
+        let to = train.partition_point(|&(t, _)| t < end);
+        let mut went: Went = [[0; 2]; 3];
+        let (baseline, signed) = (self.baseline, self.signed);
+        for tick in train[from..to].chunk_by(|a, b| a.0 == b.0) {
+            let Some(&(t, _)) = tick.first() else {
+                continue;
+            };
+            for &(_, unit) in tick {
+                if let Some(l) = self.last.get_mut(unit as usize) {
+                    *l = t;
+                }
+            }
+            let signal = match course.get(t.wrapping_sub(start) as usize) {
+                Some(&s) => s,
+                None => {
+                    assert!(
+                        t < start && at_rest,
+                        "trial {trial}: a spike before its trial is the lead-in's, at rest"
+                    );
+                    0
+                }
+            };
+            for &(_, unit) in tick {
+                let from_source = self.sources.get(unit as usize).copied().unwrap_or(false);
+                let targets = &self.targets;
+                let Some(chain) = self.chains.get_mut(unit as usize) else {
+                    panic!("trial {trial}: a spiking unit outside the arena");
+                };
+                for wiring in chain.iter_mut() {
+                    replay_block(
+                        wiring,
+                        t,
+                        &self.last,
+                        signed,
+                        &|syn| {
+                            if from_source
+                                && targets.get(syn.target as usize).copied().unwrap_or(false)
+                            {
+                                baseline.saturating_add(signal)
+                            } else {
+                                baseline
+                            }
+                        },
+                        &mut |syn, amount| {
+                            let row = match syn.place {
+                                Place::Pair(s, r) => usize::from(answers[s] != r),
+                                Place::Outside(..) => 2,
+                            };
+                            let side = usize::from(amount < 0);
+                            went[row][side] = went[row][side].saturating_add(i64::from(amount));
+                        },
+                    );
+                }
+            }
+        }
+        self.first = false;
+        self.cursor = end;
+        let blocks = exec.blocks();
+        for wiring in self.chains.iter().flatten() {
+            let block = blocks.get(wiring.block).expect("a block of the arena");
+            assert_eq!(
+                block.last_spike_tick, wiring.stamp,
+                "trial {trial}: block {}'s stamp is the oracle's",
+                wiring.block
+            );
+            for syn in &wiring.slots {
+                assert_eq!(
+                    (
+                        block.eligibility_q1_15[syn.slot],
+                        i32::from(block.weights_q1_15[syn.slot])
+                    ),
+                    (syn.trace, syn.magnitude),
+                    "trial {trial}: block {} slot {}: the record's trace and weight are the oracle's",
+                    wiring.block,
+                    syn.slot
+                );
+            }
+        }
+        let n = self.last.len() as u32;
+        self.sources = (0..n).map(|u| exec.is_source(u)).collect();
+        self.targets = (0..n).map(|u| exec.is_target(u)).collect();
+        self.signal = exec.modulator().dopamine_rpe;
+        went
+    }
+}
+
+// ---------------------------------------------------------------- the run (brief 057)
+
+/// What brief 057 reads of a run beside H-23's tables: the four couplings at the end of the
+/// first trial under each new mapping the run reaches; at every block's end the value weights by
+/// group, the network's cells against the image, where the consolidation went over the block and
+/// the block's spikes by class; and at every trial's reward the spikes the window admitted by
+/// group.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Watch {
+    at_flips: [Option<[[i64; 2]; 2]>; 3],
+    weights: Vec<Weights>,
+    admitted: Vec<[u32; GROUPS]>,
+    spikes: Vec<[u64; CLASSES]>,
+    cells: Vec<Cells>,
+    went: Vec<Went>,
+}
+
+/// An arm's run from H-23's image under `delivery` for `trials` trials (brief 057): H-23's run
+/// — `earned_run_delivered` under the answer's feedback at the gate's zero with the signed gate
+/// set, the arm's first mapping and H-20's flips, the task carrying no critic, the engine's
+/// value, error, weights and window held to the harness's at every trial — with the network's
+/// oracle replayed and held at every trial; the spikes the window admitted read at every
+/// trial's reward as H-23's run reads them, and the trial's spikes by class from the train,
+/// whole since the ring holds the most spikes a trial can produce. `image` is the weights the
+/// cells are read against.
+#[allow(clippy::too_many_arguments)]
+fn delivered_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    groups: &[usize],
+    classes: &[usize],
+    image: &[Vec<i16>],
+    delivery: Delivery,
+    trials: usize,
+) -> (EarnedRun, Vec<Moves>, Vec<i32>, Watch) {
+    let first = first_mapping(arm);
+    let window = exec.critic_window_ticks();
+    let mut network = Network::new(exec, sets, classes);
+    let mut at_flips: [Option<[[i64; 2]; 2]>; 3] = [None; 3];
+    let mut weights: Vec<Weights> = Vec::new();
+    let mut admitted: Vec<[u32; GROUPS]> = Vec::with_capacity(trials);
+    let mut spikes: Vec<[u64; CLASSES]> = Vec::new();
+    let mut cells: Vec<Cells> = Vec::new();
+    let mut went: Vec<Went> = Vec::new();
+    let mut spikes_block = [0u64; CLASSES];
+    let mut went_block: Went = [[0; 2]; 3];
+    let mut opened = exec.ticks();
+    let (run, moves, expected, values) = earned_run_delivered(
+        exec,
+        Feedback::Answer,
+        first,
+        1024,
+        trials,
+        GATE_BASELINE_Q16,
+        &SCHEDULE_FLIPS,
+        true,
+        None,
+        delivery,
+        &mut |exec, trial| {
+            // The spikes the window admitted, as H-23's run reads them.
+            let mut in_window = [0u32; GROUPS];
+            for &(tick, unit) in exec.train() {
+                let since = u64::from(tick).checked_sub(opened);
+                if since.is_some_and(|d| d < u64::from(window)) {
+                    if let Some(n) = groups
+                        .get(unit as usize)
+                        .and_then(|&g| in_window.get_mut(g))
+                    {
+                        *n = n.saturating_add(1);
+                    }
+                }
+            }
+            admitted.push(in_window);
+            opened = exec.ticks();
+            // The network's oracle, the answers under the mapping in force at this trial.
+            let in_force = first != flipped_at(&SCHEDULE_FLIPS, trial);
+            let answers = [answer_of(0, in_force), answer_of(1, in_force)];
+            add_went(&mut went_block, &network.replay(exec, trial, answers));
+            // The trial's spikes by class.
+            let end = exec.ticks();
+            let start = end
+                .checked_sub(u64::from(TRIAL_TICKS))
+                .expect("a trial's ticks");
+            each_spike(exec.train(), start as u32, end as u32, &mut |unit| {
+                if let Some(n) = classes.get(unit).and_then(|&c| spikes_block.get_mut(c)) {
+                    *n = n.saturating_add(1);
+                }
+            });
+            if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
+                at_flips[f] = Some(pair_couplings(exec, sets));
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                weights.push(weights_by_group(exec, groups));
+                cells.push(cells_of(exec, image, sets, classes));
+                went.push(went_block);
+                went_block = [[0; 2]; 3];
+                spikes.push(spikes_block);
+                spikes_block = [0; CLASSES];
+            }
+        },
+    );
+    assert!(expected.is_empty(), "the task carries no critic");
+    (
+        run,
+        moves,
+        values,
+        Watch {
+            at_flips,
+            weights,
+            admitted,
+            spikes,
+            cells,
+            went,
+        },
+    )
+}
+
+/// H-23's first block from H-23's image under the addressed delivery (H-24's calibration,
+/// ADR-0136's stopping rule step 2): H-23's run for one block — the engine's critic with its
+/// window, no task critic, the arm's first mapping, `Delivery::Addressed` — held to H-23's
+/// pinned first block table by table, with the network's oracle replayed beside it and held to
+/// the record at every trial, where it reads nothing moved outside the pairs and the pairs moved
+/// by what the composer consolidated.
+fn h23_first_block(windowed: &[u8], arm: Reversal, k: usize, name: &str) {
+    let mut exec = signed_from(windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks()
+        ),
+        (Some(VALUED_CRITIC), WINDOW_TICKS_1024, TARGET_PERIOD_1024),
+        "{name}: H-23's image carries the critic, its window and the target"
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let groups = groups_of(&exec, &sets);
+    let classes = classes_of(&exec, &sets);
+    let image = weights_of(&exec);
+    let (run, moves, values, watched) = delivered_run(
+        &mut exec,
+        arm,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        Delivery::Addressed,
+        BLOCK,
+    );
+    let (blocks, _, trials, read, _) = &run;
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let earned = earned_blocks(read);
+    let by_block = value_blocks(read, &values);
+    let admitted = admitted_blocks(read, &watched.admitted);
+    eprintln!(
+        "DUMP {name} H-23's first block {:?} earned {:?} values {:?} weights {:?} admitted {:?} went {:?} cells {:?}",
+        blocks, earned, by_block, watched.weights, admitted, watched.went, watched.cells
+    );
+    assert_eq!(blocks.as_slice(), &WINDOWED_BLOCKS_1024[k][..1], "{name}");
+    assert_eq!(
+        compositions.as_slice(),
+        &WINDOWED_COMPOSITIONS_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(earned.as_slice(), &WINDOWED_EARNED_1024[k][..1], "{name}");
+    assert_eq!(
+        moves_blocks(read, &moves).as_slice(),
+        &WINDOWED_MOVES_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(by_block.as_slice(), &WINDOWED_VALUES_1024[k][..1], "{name}");
+    assert_eq!(
+        watched.weights.as_slice(),
+        &WINDOWED_WEIGHTS_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(
+        admitted.as_slice(),
+        &WINDOWED_ADMITTED_1024[k][..1],
+        "{name}"
+    );
+    // The network's oracle under the addressed delivery: nothing outside the pairs moved, and
+    // the pairs by what the composer consolidated into them.
+    let consolidated = earned[0]
+        .2
+        .iter()
+        .flatten()
+        .fold(0i64, |sum, &c| sum.saturating_add(c));
+    let went = watched.went[0];
+    assert_eq!(
+        (
+            went[2],
+            went[0]
+                .iter()
+                .chain(&went[1])
+                .fold(0i64, |sum, &a| sum.saturating_add(a))
+        ),
+        ([0, 0], consolidated),
+        "{name}: the network's oracle reads H-23's addressed consolidation"
+    );
+    assert_eq!(
+        cells_sum(&watched.cells[0]),
+        image_outside(),
+        "{name}: the network outside the pairs unmoved"
+    );
+}
+
+/// One arm of H-24 at 1 024 units (brief 057): the calibration before any rewarded run (H-24's
+/// stopping rule, step 2) — the settled engine held to ADR-0077 step by step and its images,
+/// H-20's image by its CRC, a frozen block from the zero image held to ADR-0077's frozen run,
+/// H-21's, H-22's and H-23's images by their CRCs, and H-23's first block from H-23's image
+/// under the addressed delivery reproduced table by table — then the arm's 7 680 trials from
+/// H-23's image under the global delivery with no task critic and H-20's flips, the network's
+/// oracle held at every trial; everything dumped, the clauses and the readings computed before
+/// anything is held; then the pinned tables of the whole run.
+fn unaddressed_arm(arm: Reversal) {
+    let k = UNADDRESSED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-24");
+    let name = format!("unaddressed1024 {arm:?}");
+    let (zero, signed) = signed_images(&name);
+    assert_eq!(
+        crc64(&signed),
+        PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-20's image, H-19's and H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    let targeted = targeted_image(&signed, TARGET_PERIOD_1024);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: H-21's image is H-20's in every byte but the target period's and the seal"
+    );
+    assert_eq!(
+        (crc64(&targeted), crc64(&with_version(&targeted, 18))),
+        (TARGET_IMAGE_CRC_1024, TARGET_IMAGE_CRC_FORMAT_18_1024),
+        "{name}: H-21's image, and as H-21 read it"
+    );
+    let valued = valued_image(&targeted, VALUED_CRITIC);
+    assert!(
+        only_the_critic(&targeted, &valued),
+        "{name}: H-22's image is H-21's in every byte but the critic's and the seal"
+    );
+    assert_eq!(
+        (crc64(&valued), crc64(&with_version(&valued, 19))),
+        (VALUED_IMAGE_CRC_1024, VALUED_IMAGE_CRC_FORMAT_19_1024),
+        "{name}: H-22's image, and as H-22 read it"
+    );
+    let windowed = with_window_bytes(&valued, WINDOW_TICKS_1024);
+    assert!(
+        only_the_window(&valued, &windowed),
+        "{name}: H-23's image is H-22's in every byte but the window's and the seal"
+    );
+    assert_eq!(
+        crc64(&windowed),
+        WINDOWED_IMAGE_CRC_1024,
+        "{name}: H-23's image, the image this arm decodes"
+    );
+    h23_first_block(&windowed, arm, k, &name);
+    eprintln!(
+        "DUMP {name} calibration holds: ADR-0077's settled candidate, H-20's to H-23's images and H-23's first block under the addressed delivery"
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let mut exec = signed_from(&windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            TARGET_PERIOD_1024,
+            exec.ticks()
+        ),
+        "{name}: H-23's configuration, the window open at the load"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let groups = groups_of(&exec, &sets);
+    let classes = classes_of(&exec, &sets);
+    let image = weights_of(&exec);
+    let image_cells = cells_of(&exec, &image, &sets, &classes);
+    let sizes = cell_sizes(&exec, &sets, &classes);
+    let outside = image_outside();
+    eprintln!(
+        "DUMP {name} PIN image cells {image_cells:?} sizes {sizes:?} outside {outside} classes {:?}",
+        class_sizes(&classes)
+    );
+    assert_eq!(
+        cells_sum(&image_cells),
+        outside,
+        "{name}: the cells sum to the image's outside sum"
+    );
+    let first = first_mapping(arm);
+    let (run, moves, values, watched) = delivered_run(
+        &mut exec,
+        arm,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        UNADDRESSED_DELIVERY,
+        SCHEDULE_TRIALS,
+    );
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let strong = strong_scheduled(read, first);
+    let valued_by_block = value_blocks(read, &values);
+    let admitted = admitted_blocks(read, &watched.admitted);
+    let at_flips = watched
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        (read.len(), values.len(), watched.admitted.len()),
+        (SCHEDULE_TRIALS, SCHEDULE_TRIALS, SCHEDULE_TRIALS)
+    );
+    assert_eq!(
+        [
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            valued_by_block.len(),
+            watched.weights.len(),
+            admitted.len(),
+            watched.spikes.len(),
+            watched.cells.len(),
+            watched.went.len()
+        ],
+        [SCHEDULE_BLOCKS; 9]
+    );
+    assert_eq!(strong.len(), SCHEDULE_BLOCKS - FLIP_BLOCK);
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {compositions:?}");
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {moved:?}");
+    eprintln!("DUMP {name} PIN strong {strong:?}");
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} PIN values {valued_by_block:?}");
+    eprintln!("DUMP {name} PIN value hash {:#018x}", values_hash(&values));
+    eprintln!("DUMP {name} PIN weights {:?}", watched.weights);
+    eprintln!("DUMP {name} PIN admitted {admitted:?}");
+    eprintln!("DUMP {name} PIN spikes {:?}", watched.spikes);
+    eprintln!("DUMP {name} PIN cells {:?}", watched.cells);
+    eprintln!("DUMP {name} PIN went {:?}", watched.went);
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    let correct = mapping_correct(blocks);
+    let over = first_over(blocks);
+    let left = left_band(outside, blocks);
+    let stimulus_read = stimulus_values(read, &values);
+    let first_new_read = first_new_scheduled(read, first);
+    let crossings_read = crossings(blocks);
+    let crossed = crossed_scheduled(&earned, first);
+    let tally_read = tally(blocks);
+    let settle = settle_scheduled(blocks, first);
+    let highest_read = highest(blocks);
+    let strong_sum = strong_by_flip(&strong);
+    let punished_moves = moves_by_mapping(&moved, 1);
+    let rewarded_moves = moves_by_mapping(&moved, 0);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let sums_after = weights_by_polarity(&exec);
+    let troughs_read = troughs(&value_means(&valued_by_block));
+    eprintln!(
+        "DUMP {name} PIN readings correct {correct:?} over {over:?} left {left:?} stimulus values {stimulus_read:?} reach {reach:?} first new {first_new_read:?} crossings {crossings_read:?} crossed {crossed:?} tally {tally_read:?} settle {settle:?} highest {highest_read:?} strong total {strong_sum:?} punished moves {punished_moves:?} rewarded moves {rewarded_moves:?} once {once} falls {falls} sums after {sums_after:?} troughs {troughs_read:?}"
+    );
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {over:?} held {} left {left:?}; readings: revised within 23 {:?} value within a quarter of 2p − 1 {:?}; the prediction {UNADDRESSED_PREDICTED:?}",
+        correct.map(|c| c >= REWARDED_MIN),
+        left.is_none(),
+        reversals_within(crossings_read),
+        stimulus_read.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} outside course, per myriad of the image's {:?}",
+        blocks
+            .iter()
+            .map(|b| per_myriad(outside_of(b), outside))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?} beside H-23's {:?}",
+        couplings_course(blocks),
+        couplings_course(WINDOWED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} crossings {crossings_read:?} beside H-23's {:?}, H-22's {:?} and H-21's {:?}",
+        CROSSINGS_WINDOWED_1024[k], CROSSINGS_VALUED_1024[k], CROSSINGS_TARGET_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} value by block beside H-23's {:?}",
+        value_means(&valued_by_block)
+            .iter()
+            .zip(value_means(WINDOWED_VALUES_1024[k]))
+            .map(|(u, w)| (*u, w))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "DUMP {name} troughs {troughs_read:?} beside H-23's {:?}",
+        TROUGHS_WINDOWED_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} strong by flip {strong_sum:?} beside H-23's {:?}",
+        STRONG_BY_FLIP_WINDOWED_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-23's {:?}",
+        course(image_sums.0, blocks),
+        course(image_sums.0, WINDOWED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} signal {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        UNADDRESSED_BLOCKS_1024[k],
+        UNADDRESSED_TRACES_1024[k],
+    );
+    assert_eq!(
+        compositions.as_slice(),
+        UNADDRESSED_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        UNADDRESSED_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        UNADDRESSED_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        UNADDRESSED_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        moved.as_slice(),
+        UNADDRESSED_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        strong.as_slice(),
+        UNADDRESSED_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(at_flips, UNADDRESSED_AT_FLIPS_1024[k]);
+    assert_eq!(
+        valued_by_block.as_slice(),
+        UNADDRESSED_VALUES_1024[k],
+        "{name}: the engine's value per block"
+    );
+    assert_eq!(
+        values_hash(&values),
+        UNADDRESSED_VALUE_HASH_1024[k],
+        "{name}: every trial's value"
+    );
+    assert_eq!(
+        watched.weights.as_slice(),
+        UNADDRESSED_WEIGHTS_1024[k],
+        "{name}: the weights by group per block"
+    );
+    assert_eq!(
+        admitted.as_slice(),
+        UNADDRESSED_ADMITTED_1024[k],
+        "{name}: the spikes the window admitted per block"
+    );
+    assert_eq!(
+        watched.spikes.as_slice(),
+        UNADDRESSED_SPIKES_1024[k],
+        "{name}: the spikes by class per block"
+    );
+    assert_eq!(
+        watched.cells.as_slice(),
+        UNADDRESSED_CELLS_1024[k],
+        "{name}: the network's cells per block"
+    );
+    assert_eq!(
+        watched.went.as_slice(),
+        UNADDRESSED_WENT_1024[k],
+        "{name}: where the consolidation went per block"
+    );
+    assert_eq!((image_cells, sizes), (IMAGE_CELLS_1024, CELL_SIZES_1024));
+    assert_eq!(correct, CORRECT_UNADDRESSED_1024[k]);
+    assert_eq!(over, OVER_UNADDRESSED_1024[k]);
+    assert_eq!(left, LEFT_UNADDRESSED_1024[k]);
+    assert_eq!(stimulus_read, STIMULUS_VALUES_UNADDRESSED_1024[k]);
+    assert_eq!(reach, REACH_UNADDRESSED_1024[k]);
+    assert_eq!(first_new_read, FIRST_NEW_UNADDRESSED_1024[k]);
+    assert_eq!(crossings_read, CROSSINGS_UNADDRESSED_1024[k]);
+    assert_eq!(crossed, CROSSED_UNADDRESSED_1024[k]);
+    assert_eq!(tally_read, TALLY_UNADDRESSED_1024[k]);
+    assert_eq!(settle, SETTLE_UNADDRESSED_1024[k]);
+    assert_eq!(highest_read, HIGHEST_UNADDRESSED_1024[k]);
+    assert_eq!(strong_sum, STRONG_BY_FLIP_UNADDRESSED_1024[k]);
+    assert_eq!(punished_moves, PUNISHED_MOVES_UNADDRESSED_1024[k]);
+    assert_eq!(rewarded_moves, REWARDED_MOVES_UNADDRESSED_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_UNADDRESSED_1024[k]);
+    assert_eq!(falls, FALLS_UNADDRESSED_1024[k]);
+    assert_eq!(troughs_read, TROUGHS_UNADDRESSED_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (
+            SUMS_AFTER_UNADDRESSED_1024[k],
+            Some(SUMS_AFTER_UNADDRESSED_1024[k])
+        ),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-24's arm that starts from the assignment (brief 057): H-23's arm from the assignment with
+/// the reward delivered to every synapse.
+#[test]
+#[ignore]
+fn the_reward_unaddressed_from_the_assignment_at_1024_units_exhaustive() {
+    unaddressed_arm(Reversal::AssignmentFirst);
+}
+
+/// H-24's arm that starts from the mirrored assignment (brief 057): H-23's arm from the
+/// mirrored assignment with the reward delivered to every synapse.
+#[test]
+#[ignore]
+fn the_reward_unaddressed_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    unaddressed_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 057): the arms and the constants as ADR-0136 and
+/// ADR-0137 fixed them; clause 3 at its edges and the verdict naming the clause and the arm
+/// over tables written by hand; the network's places and cells over the instrument's network;
+/// eight trials on the instrument's network under each delivery, its image flagged as the
+/// arms' are and no critic, both oracles held to the record at every trial, the network outside
+/// the pairs still under the addressed delivery and moved under the global one; the oracle's
+/// replay of a block against the engine's own rule, `step_stdp_all` and `consolidate_signed`,
+/// over blocks written by hand; and the readings' rules over tables written by hand. Nothing
+/// else added to the gate.
+#[test]
+fn the_clauses_of_h_24_the_network_s_oracle_and_the_readings_rules() {
+    // The arms and the constants.
+    assert_eq!(UNADDRESSED_ARMS, WINDOWED_ARMS);
+    assert_eq!(
+        UNADDRESSED_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(UNADDRESSED_DELIVERY, Delivery::Global);
+    assert_eq!(
+        UNADDRESSED_PREDICTED, None,
+        "ADR-0136 makes no prediction for the verdict"
+    );
+    assert_eq!((BAND_QUARTERS, BAND_DIVISOR, SOURCES), ((3, 5), 4, 3));
+    assert_eq!(
+        (REWARDED_MIN, BOUND_PER_CENT, SCHEDULE_BLOCKS),
+        (80, 130, 120),
+        "clauses 1 and 2 are H-20's"
+    );
+    assert_eq!(
+        WINDOWED_IMAGE_CRC_1024, 0x5044_ed79_36a7_b5f3,
+        "H-23's image, the one each arm decodes"
+    );
+    // The image's outside sum: the settled image's excitatory sum less its four couplings.
+    let outside = image_outside();
+    let couplings = IMAGE_COUPLINGS_1024
+        .iter()
+        .flatten()
+        .fold(0i64, |sum, &c| sum.saturating_add(c));
+    assert_eq!(
+        outside.saturating_add(couplings),
+        QUIET_1024[SETTLED].1.1,
+        "the outside sum and the couplings make the excitatory sum"
+    );
+    assert!(outside > 0 && couplings > 0);
+    eprintln!("DUMP the image's outside sum {outside}, its couplings {couplings}");
+    // Clause 3 at its edges: 0.75 and 1.25 of the image hold, one LSB beyond either does not; an
+    // image that is not a multiple of four rounds the band inward; no image holds nothing.
+    assert!(within_band(3_000, 4_000) && within_band(5_000, 4_000));
+    assert!(!within_band(2_999, 4_000) && !within_band(5_001, 4_000));
+    assert!(within_band(3_001, 4_001) && !within_band(3_000, 4_001));
+    assert!(within_band(5_001, 4_001) && !within_band(5_002, 4_001));
+    assert!(!within_band(0, 0) && !within_band(1, 0) && !within_band(-3, -4));
+    // Over blocks written by hand: the outside sum is the excitatory sum less the couplings.
+    let block = |excitatory: i64, couplings: [[i64; 2]; 2]| -> Block {
+        (
+            BLOCK as u32,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            excitatory,
+            0,
+            couplings,
+            0,
+        )
+    };
+    assert_eq!(outside_of(&block(1_000, [[10, 20], [30, 40]])), 900);
+    let image_excitatory = QUIET_1024[SETTLED].1.1;
+    let full = vec![block(image_excitatory, IMAGE_COUPLINGS_1024); SCHEDULE_BLOCKS];
+    assert_eq!(left_band(outside, &full), None);
+    // The lowest and the highest sums the band holds, three quarters and five quarters of the
+    // image's outside sum, rounded inward.
+    let low = outside
+        .saturating_mul(3)
+        .saturating_add(3)
+        .checked_div(4)
+        .expect("four");
+    let high = outside.saturating_mul(5).checked_div(4).expect("four");
+    assert!(within_band(low, outside) && !within_band(low.saturating_sub(1), outside));
+    assert!(within_band(high, outside) && !within_band(high.saturating_add(1), outside));
+    let with_outside = |sum: i64| block(sum.saturating_add(couplings), IMAGE_COUPLINGS_1024);
+    let mut edge = full.clone();
+    edge[0] = with_outside(low);
+    edge[SCHEDULE_BLOCKS - 1] = with_outside(high);
+    assert_eq!(left_band(outside, &edge), None, "the band's two ends hold");
+    let mut drained = full.clone();
+    drained[70] = with_outside(low.saturating_sub(1));
+    drained[90] = with_outside(high.saturating_add(1));
+    assert_eq!(
+        left_band(outside, &drained),
+        Some((70, low.saturating_sub(1))),
+        "the first block that left the band, with its sum"
+    );
+    // The verdict: every clause over tables written by hand, and each failing on its own, named.
+    let learning_yes = Scheduled {
+        learned: [[true; 4]; 2],
+        bounded: [true; 2],
+        over: [None; 2],
+        yes: true,
+    };
+    assert_eq!(
+        unaddressed(outside, [&full, &full]),
+        Unaddressed {
+            learning: learning_yes,
+            left: [None; 2],
+            held: [true; 2],
+            yes: true
+        }
+    );
+    let verdict = unaddressed(outside, [&full, &drained]);
+    assert_eq!(
+        (verdict.learning, verdict.left, verdict.held, verdict.yes),
+        (
+            learning_yes,
+            [None, Some((70, low.saturating_sub(1)))],
+            [true, false],
+            false
+        ),
+        "clause 3 fails in the second arm at block 70"
+    );
+    let verdict = unaddressed(outside, [&full, &full[1..]]);
+    assert_eq!(
+        (verdict.left, verdict.held, verdict.yes),
+        ([None; 2], [true, false], false),
+        "a run that is not whole holds no clause"
+    );
+    let mut unlearned = full.clone();
+    unlearned[MAPPINGS[2].1 - 1].0 = 0;
+    unlearned[MAPPINGS[2].1 - 2].0 = 0;
+    let verdict = unaddressed(outside, [&unlearned, &full]);
+    assert_eq!(
+        (verdict.learning.learned[0], verdict.held, verdict.yes),
+        ([true, true, false, true], [true; 2], false),
+        "clause 1 fails in the first arm's third mapping, clause 3 holds"
+    );
+    let mut over = full.clone();
+    over[40].10[1][0] = IMAGE_COUPLINGS_1024[1][0]
+        .saturating_mul(131)
+        .checked_div(100)
+        .expect("a hundred");
+    over[40].8 = over[40]
+        .8
+        .saturating_add(over[40].10[1][0].saturating_sub(IMAGE_COUPLINGS_1024[1][0]));
+    let verdict = unaddressed(outside, [&full, &over]);
+    assert_eq!(
+        (verdict.learning.over, verdict.held, verdict.yes),
+        ([None, Some((40, 1, 0))], [true; 2], false),
+        "clause 2 fails in the second arm at block 40, B→R0, the outside sum unmoved"
+    );
+    // The network's places over the instrument's network at 1 024 units, whose wiring every
+    // image of it carries: the pairs are the synapses the composer replays, and every other
+    // excitatory synapse falls in a cell of its source's row and its target's class.
+    let sets = geometry(1024, ROTATION_1024);
+    let p = prior(1024);
+    let mut exec = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    let classes = classes_of(&exec, &sets);
+    let mut pairs = [[0u32; 2]; 2];
+    let mut excitatory = 0u32;
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            excitatory = excitatory.saturating_add(1);
+            match place_of(&sets, &classes, unit.id as u32, s.target) {
+                Place::Pair(st, r) => pairs[st][r] = pairs[st][r].saturating_add(1),
+                Place::Outside(row, column) => {
+                    assert!(row < SOURCES && column < CLASSES);
+                    assert_eq!(classes[unit.id as usize], row.saturating_add(1));
+                }
+            }
+        }
+    }
+    assert_eq!(
+        pairs, SYNAPSES_1024,
+        "the pairs are the composer's synapses"
+    );
+    let network = Network::new(&exec, &sets, &classes);
+    assert_eq!(
+        network.synapses(),
+        excitatory as usize,
+        "the network's oracle replays every excitatory synapse"
+    );
+    assert!(
+        network.sources.iter().chain(&network.targets).all(|&a| a),
+        "a new executor starts with every unit a source and a target"
+    );
+    let sizes = cell_sizes(&exec, &sets, &classes);
+    let in_cells = sizes
+        .iter()
+        .flatten()
+        .fold(0u32, |sum, &n| sum.saturating_add(n));
+    let in_pairs = SYNAPSES_1024
+        .iter()
+        .flatten()
+        .fold(0u32, |sum, &n| sum.saturating_add(n));
+    assert_eq!(in_cells.saturating_add(in_pairs), excitatory);
+    assert_eq!(
+        sizes[0][2], 0,
+        "a stimulus unit's synapse onto an excitatory readout unit is a pair's"
+    );
+    eprintln!("DUMP the instrument's network: {excitatory} excitatory synapses, cells {sizes:?}");
+    // The cells over the instrument's network against its own weights: nothing moved; then three
+    // weights written by hand, one to each rail and one down by a thousand, each in its cell.
+    let image = weights_of(&exec);
+    let before = cells_of(&exec, &image, &sets, &classes);
+    for (row, cells) in before.iter().enumerate() {
+        for (column, cell) in cells.iter().enumerate() {
+            assert_eq!(
+                (cell.1, cell.2, cell.3, cell.4),
+                (0, 0, 0, 0),
+                "{row} {column}"
+            );
+        }
+    }
+    let (_, excitatory_sum) = weights_by_polarity(&exec);
+    let four = harness::couplings(&exec, &sets)
+        .iter()
+        .fold(0i64, |sum, &c| sum.saturating_add(c));
+    assert_eq!(cells_sum(&before), excitatory_sum.saturating_sub(four));
+    let mut outside_slots: Vec<(usize, usize, (usize, usize), i16)> = Vec::new();
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY != 0 || outside_slots.len() >= 3 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            if let Place::Outside(row, column) = place_of(&sets, &classes, unit.id as u32, s.target)
+            {
+                if outside_slots.len() < 3 && outside_slots.iter().all(|o| o.2 != (row, column)) {
+                    outside_slots.push((
+                        s.block_idx as usize,
+                        usize::from(s.slot),
+                        (row, column),
+                        s.weight_q1_15,
+                    ));
+                }
+            }
+        }
+    }
+    assert_eq!(outside_slots.len(), 3, "three synapses in three cells");
+    let written = [0i16, i16::MAX, 0];
+    for (k, &(b, slot, _, w)) in outside_slots.iter().enumerate() {
+        exec.blocks_mut()[b].weights_q1_15[slot] = if k == 2 {
+            w.saturating_sub(1_000)
+        } else {
+            written[k]
+        };
+    }
+    let after = cells_of(&exec, &image, &sets, &classes);
+    for (k, &(_, _, (row, column), w)) in outside_slots.iter().enumerate() {
+        let now = if k == 2 {
+            w.saturating_sub(1_000)
+        } else {
+            written[k]
+        };
+        let cell = after[row][column];
+        let was = before[row][column];
+        assert_eq!(
+            (cell.0, cell.1, cell.2, cell.3, cell.4),
+            (
+                was.0
+                    .saturating_add(i64::from(now))
+                    .saturating_sub(i64::from(w)),
+                1,
+                i32::from(now).saturating_sub(i32::from(w)),
+                u32::from(now == 0),
+                u32::from(now == i16::MAX)
+            ),
+            "cell {row} {column}"
+        );
+    }
+    // A few trials on the instrument's network under each delivery, its image carrying the
+    // inhibitory baseline and the signed gate as the arms' images do, with no critic: both
+    // oracles held to the record at every trial inside the run, the lead-in's spikes among the
+    // global delivery's; under the addressed delivery no excitatory synapse outside the pairs
+    // moves, under the global one the network outside them does.
+    let fresh = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    let flagged = signed_image(&inhibited_image(&Image::encode(&fresh).expect("quiescent")));
+    for (delivery, outside_moved) in [(Delivery::Addressed, false), (Delivery::Global, true)] {
+        let mut run_exec = signed_from(&flagged, 1024);
+        let image = weights_of(&run_exec);
+        let groups = groups_of(&run_exec, &sets);
+        let (run, moves, values, watched) = delivered_run(
+            &mut run_exec,
+            Reversal::AssignmentFirst,
+            &sets,
+            &groups,
+            &classes,
+            &image,
+            delivery,
+            GATE_TRIALS,
+        );
+        let reach = reach_by_polarity(&run_exec, &image, 1024, &ALL_PAIRS);
+        eprintln!(
+            "DUMP {delivery:?}: {GATE_TRIALS} trials {:?} moves {moves:?} reach {reach:?}",
+            run.3
+        );
+        assert_eq!(
+            (
+                run.3.len(),
+                moves.len(),
+                values.len(),
+                watched.admitted.len()
+            ),
+            (GATE_TRIALS, GATE_TRIALS, 0, GATE_TRIALS),
+            "{delivery:?}: a reading a trial, no value without a critic"
+        );
+        assert!(
+            run.3.iter().any(|t| t.4 != 0),
+            "{delivery:?}: a trial was rewarded or punished"
+        );
+        assert_eq!(
+            reach.excitatory.1 > 0,
+            outside_moved,
+            "{delivery:?}: the network outside the pairs"
+        );
+    }
+    // The oracle's replay of a block against the engine's own rule: a block written by hand —
+    // four slots, their traces of both signs, a weight at each rail — through presynaptic spikes
+    // whose targets fired before, after and at the spike or never, under modulations above and
+    // below zero and at zero, with the signed gate set and unset; the oracle's traces, weights
+    // and stamp the engine's after every spike, and what it moved the weights' difference.
+    let targets = [5u32, 6, 7, 8];
+    let mut engine_block = SynapseBlock::new();
+    for (slot, &target) in targets.iter().enumerate() {
+        assert!(engine_block.set_synapse(slot, target, 6_000, 100, false));
+    }
+    engine_block.weights_q1_15 = [9_000, 0, i16::MAX, 12_000];
+    engine_block.eligibility_q1_15 = [1_200, -800, 3_000, 0];
+    engine_block.last_spike_tick = 10_000;
+    let mut wiring = wiring_of(&engine_block, 3, &|target| {
+        Place::Outside(0, target as usize)
+    });
+    assert_eq!(wiring.slots.len(), 4);
+    let mut last = vec![NO_SPIKE_ON_RECORD; 9];
+    let cases: [(u32, [u32; 4], [i32; 4], bool); 6] = [
+        (
+            10_500,
+            [10_200, 10_600, 0, 10_500],
+            [ONE, ONE, ONE, ONE],
+            true,
+        ),
+        (
+            11_000,
+            [10_700, 10_900, 10_950, 0],
+            [-ONE / 2, -ONE, 0, ONE / 3],
+            true,
+        ),
+        (11_000, [10_990, 11_000, 0, 10_999], [ONE / 4; 4], true),
+        (20_000, [15_000, 19_000, 19_999, 12_000], [-ONE; 4], true),
+        (
+            20_400,
+            [20_100, 20_300, 20_399, 0],
+            [ONE / 2, -ONE / 2, ONE, 0],
+            false,
+        ),
+        (
+            90_000,
+            [89_000, 0, 89_999, 60_000],
+            [ONE, ONE, -ONE, -ONE],
+            true,
+        ),
+    ];
+    for (c, &(t, posts, modulations, signed)) in cases.iter().enumerate() {
+        for (slot, &target) in targets.iter().enumerate() {
+            if posts[slot] != NO_SPIKE_ON_RECORD {
+                last[target as usize] = posts[slot];
+            }
+        }
+        let posts_now = targets.map(|target| last[target as usize]);
+        let weights_before = engine_block.weights_q1_15;
+        engine_block.step_stdp_all(t, posts_now, Polarity::Excitatory, 0);
+        for (slot, &m) in modulations.iter().enumerate() {
+            // Unset, a modulation below zero is the engine's `modulation`, clamped at zero.
+            let m = if signed { m } else { m.max(0) };
+            engine_block.consolidate_signed(slot, m, Polarity::Excitatory);
+        }
+        let mut moved = [0i32; 4];
+        replay_block(
+            &mut wiring,
+            t,
+            &last,
+            signed,
+            &|syn| {
+                let m = modulations[syn.slot];
+                if signed { m } else { m.max(0) }
+            },
+            &mut |syn, amount| moved[syn.slot] = amount,
+        );
+        assert_eq!(
+            wiring.stamp, engine_block.last_spike_tick,
+            "case {c}: the stamp"
+        );
+        for syn in &wiring.slots {
+            assert_eq!(
+                (syn.trace, syn.magnitude),
+                (
+                    engine_block.eligibility_q1_15[syn.slot],
+                    i32::from(engine_block.weights_q1_15[syn.slot])
+                ),
+                "case {c} slot {}: the oracle's trace and weight are the engine's",
+                syn.slot
+            );
+            assert_eq!(
+                moved[syn.slot],
+                i32::from(engine_block.weights_q1_15[syn.slot])
+                    .saturating_sub(i32::from(weights_before[syn.slot])),
+                "case {c} slot {}: what it moved",
+                syn.slot
+            );
+        }
+        eprintln!(
+            "DUMP case {c}: traces {:?} weights {:?} moved {moved:?}",
+            engine_block.eligibility_q1_15, engine_block.weights_q1_15
+        );
+    }
+    // The readings' rules over values written by hand.
+    let mut went: Went = [[1, -2], [0, 0], [5, -7]];
+    add_went(&mut went, &[[2, -1], [3, 0], [0, -1]]);
+    assert_eq!(went, [[3, -3], [3, 0], [5, -8]]);
+    let mut cells: Cells = [[(0, 0, 0, 0, 0); CLASSES]; SOURCES];
+    cells[0][1].0 = 7;
+    cells[2][3].0 = -2;
+    assert_eq!(cells_sum(&cells), 5);
+}
+
+// ----------------------------------------------------------- the measurement (brief 057)
+
+/// The image's network outside the couplings, cell by cell by source row and target class, and
+/// each cell's synapses (brief 057): read from H-23's image in each arm before its run.
+const IMAGE_CELLS_1024: Cells = [[(0, 0, 0, 0, 0); CLASSES]; SOURCES];
+const CELL_SIZES_1024: [[u32; CLASSES]; SOURCES] = [[0; CLASSES]; SOURCES];
+
+/// H-24's arms (brief 057, ADR-0137), `[assignment first, mirrored first]`, each pinned whole:
+/// the sight's 120 blocks and the accuracy sequence's hash, the composition, the earned blocks,
+/// every trial's reading by its hash, the volley's ticks, the moves over the pair each trial
+/// selected, the strong punishments, the couplings at the flips, the engine's value per block
+/// and every trial's by its hash, the value weights by group, the spikes the window admitted,
+/// the spikes by class, the network's cells and where the consolidation went.
+const UNADDRESSED_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const UNADDRESSED_TRACES_1024: [u64; 2] = [0; 2];
+const UNADDRESSED_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const UNADDRESSED_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const UNADDRESSED_READ_1024: [u64; 2] = [0; 2];
+const UNADDRESSED_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+const UNADDRESSED_MOVES_1024: [&[MovesBlock]; 2] = [&[], &[]];
+const UNADDRESSED_STRONG_1024: [&[[u32; 2]]; 2] = [&[], &[]];
+const UNADDRESSED_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [[[[0; 2]; 2]; 3]; 2];
+const UNADDRESSED_VALUES_1024: [&[ValueBlock]; 2] = [&[], &[]];
+const UNADDRESSED_VALUE_HASH_1024: [u64; 2] = [0; 2];
+const UNADDRESSED_WEIGHTS_1024: [&[Weights]; 2] = [&[], &[]];
+const UNADDRESSED_ADMITTED_1024: [&[Admitted]; 2] = [&[], &[]];
+const UNADDRESSED_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [&[], &[]];
+const UNADDRESSED_CELLS_1024: [&[Cells]; 2] = [&[], &[]];
+const UNADDRESSED_WENT_1024: [&[Went]; 2] = [&[], &[]];
+const CORRECT_UNADDRESSED_1024: [[u32; 4]; 2] = [[0; 4]; 2];
+const OVER_UNADDRESSED_1024: [Option<(usize, usize, usize)>; 2] = [None; 2];
+const LEFT_UNADDRESSED_1024: [Option<(usize, i64)>; 2] = [None; 2];
+const STIMULUS_VALUES_UNADDRESSED_1024: [[[StimulusValue; 2]; 4]; 2] = [[[(0, 0, 0); 2]; 4]; 2];
+const REACH_UNADDRESSED_1024: [Reach; 2] = [Reach {
+    excitatory: (0, 0),
+    inhibitory: (0, 0),
+}; 2];
+const FIRST_NEW_UNADDRESSED_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const CROSSINGS_UNADDRESSED_1024: [[Option<usize>; 4]; 2] = [[None; 4]; 2];
+const CROSSED_UNADDRESSED_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const TALLY_UNADDRESSED_1024: [[[u32; 3]; 4]; 2] = [[[0; 3]; 4]; 2];
+const SETTLE_UNADDRESSED_1024: [Option<[[i64; 2]; 4]>; 2] = [None; 2];
+const HIGHEST_UNADDRESSED_1024: [[Option<Peak>; 4]; 2] = [[None; 4]; 2];
+const STRONG_BY_FLIP_UNADDRESSED_1024: [[[u32; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+const PUNISHED_MOVES_UNADDRESSED_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const REWARDED_MOVES_UNADDRESSED_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const ONCE_BLOCKS_UNADDRESSED_1024: [u32; 2] = [0; 2];
+const FALLS_UNADDRESSED_1024: [bool; 2] = [false; 2];
+const TROUGHS_UNADDRESSED_1024: [[[i64; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+const SUMS_AFTER_UNADDRESSED_1024: [(i64, i64); 2] = [(0, 0); 2];

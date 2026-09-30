@@ -2912,6 +2912,14 @@ pub(crate) struct Composer {
     /// stayed, and the amounts raised and lowered; zero where nothing was addressed and in a
     /// frozen run.
     pub(crate) moves: Vec<Moves>,
+    /// The global delivery (brief 057, ADR-0136): false in every run before it, where the oracle
+    /// consolidates under the signal the pair `taught` names alone; true under H-24, where the
+    /// task writes every unit a source and a target at every trial's end and every replayed
+    /// synapse consolidates under the signal — the lead-in's, before the first reward, under the
+    /// signal at rest, as the executor starts with every unit a source and a target. `taught`'s
+    /// pair is then the one the last trial selected, and `moves` reads it as it read the
+    /// addressed pair.
+    pub(crate) global: bool,
 }
 
 /// What one trial's consolidation did to the synapses of the pair the last trial's delivery
@@ -2939,6 +2947,7 @@ impl Composer {
             baseline: 0,
             signed: false,
             moves: Vec::new(),
+            global: false,
         }
     }
 
@@ -3073,6 +3082,13 @@ impl Composer {
         let addressed = self.taught.as_ref().and_then(|t| t.addressed);
         let baseline = self.baseline;
         let signed = self.signed;
+        let global = self.global;
+        // Before the first reward the signal is at rest and nothing was selected: the only
+        // reading whose spikes can precede its trial's start (brief 057).
+        let at_rest = self
+            .taught
+            .as_ref()
+            .is_some_and(|t| t.signal == 0 && t.addressed.is_none());
         let mut moves: Moves = ([0; 3], [0; 2]);
         let Self {
             synapses,
@@ -3134,6 +3150,20 @@ impl Composer {
                             .get(t.wrapping_sub(start) as usize)
                             .copied()
                             .expect("an addressed synapse's spike is inside the trial")
+                    } else if global {
+                        // Under the global delivery every synapse is addressed (brief 057): a
+                        // spike inside the trial takes the course's signal, and one before its
+                        // start is the lead-in's, before the first reward, at rest.
+                        match course.get(t.wrapping_sub(start) as usize) {
+                            Some(&s) => s,
+                            None => {
+                                assert!(
+                                    t < start && at_rest,
+                                    "a spike outside its trial is the lead-in's, at rest"
+                                );
+                                0
+                            }
+                        }
                     } else {
                         0
                     };
@@ -9210,7 +9240,8 @@ pub(crate) fn value_step(
 /// counts go on. The composer is fed the
 /// error the modulator received, as under the task's critic. Returns the run, the moves, the task
 /// critic's expectations, and the engine's value at each rewarded trial, empty without its
-/// critic. Without it this is `earned_run_observed`, which calls it so.
+/// critic. Without it this is `earned_run_observed`, which calls it so. It is
+/// `earned_run_delivered` under the addressed delivery, which it calls so.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_valued(
     exec: &mut Engine,
@@ -9222,6 +9253,41 @@ pub(crate) fn earned_run_valued(
     flips: &[usize],
     signed: bool,
     critic: Option<Critic>,
+    after: &mut dyn FnMut(&mut Engine, usize),
+) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>, Vec<i32>) {
+    earned_run_delivered(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flips,
+        signed,
+        critic,
+        Delivery::Addressed,
+        after,
+    )
+}
+
+/// `earned_run_valued` under a delivery of the dopamine term (brief 057, ADR-0136): the task's
+/// delivery is `delivery`. Under `Delivery::Addressed` it is `earned_run_valued`, which calls it
+/// so. Under `Delivery::Global` the task writes every unit a source and a target at every
+/// trial's end, which the harness holds at every trial, and the oracle consolidates every
+/// stimulus–readout synapse under the signal (`Composer::global`); its moves are read over the
+/// pair the last trial selected, the pair the addressed delivery would have addressed.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_delivered(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flips: &[usize],
+    signed: bool,
+    critic: Option<Critic>,
+    delivery: Delivery,
     after: &mut dyn FnMut(&mut Engine, usize),
 ) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>, Vec<i32>) {
     assert_eq!(exec.signed_gate(), signed, "the signed gate is the image's");
@@ -9245,6 +9311,7 @@ pub(crate) fn earned_run_valued(
     composer.cursor = exec.ticks() as u32;
     composer.baseline = baseline_q16;
     composer.signed = signed;
+    composer.global = delivery == Delivery::Global;
     composer.taught = Some(Taught {
         addressed: None,
         signal: 0,
@@ -9256,7 +9323,7 @@ pub(crate) fn earned_run_valued(
         units,
         feedback,
         mirrored,
-        Delivery::Addressed,
+        delivery,
     );
     let task = Task { critic, ..task };
     // The task is `Copy`: a copy reads the coin the run's own task drew.
@@ -9429,14 +9496,23 @@ pub(crate) fn earned_run_valued(
                 outcome.reward_q16, expected,
                 "trial {trial}: the reward's sign is the outcome's, less the expectation under a critic, and none is withheld"
             );
-            let targets = outcome
-                .selection
-                .map_or(0, |r| readout_set(&sets, usize::from(r)).len() as usize);
-            assert_eq!(
-                exec.addressed_counts(),
-                (sets[stimulus].len() as usize, targets),
-                "trial {trial}: the addressed set is the presented stimulus onto the selected readout, onto none at a tie"
-            );
+            match delivery {
+                Delivery::Addressed => {
+                    let targets = outcome
+                        .selection
+                        .map_or(0, |r| readout_set(&sets, usize::from(r)).len() as usize);
+                    assert_eq!(
+                        exec.addressed_counts(),
+                        (sets[stimulus].len() as usize, targets),
+                        "trial {trial}: the addressed set is the presented stimulus onto the selected readout, onto none at a tie"
+                    );
+                }
+                Delivery::Global => assert_eq!(
+                    exec.addressed_counts(),
+                    (units as usize, units as usize),
+                    "trial {trial}: under the global delivery every unit is a source and a target"
+                ),
+            }
             let signal = exec.modulator().dopamine_rpe;
             assert_eq!(
                 outcome.signal_q16, signal,
