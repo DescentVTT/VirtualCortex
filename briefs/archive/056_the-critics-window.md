@@ -1,18 +1,47 @@
 ---
-status: proposed
+status: archived
 date: 2026-09-30
 ---
+
+> **Executed 2026-09-30 in pull request #168.** Writes ADR-0134 (the critic's window built) and ADR-0135 (the critic's
+> window, measured), and opens and resolves F-62 (§8.7's layout of the modulator section stopped at the slow current's bytes
+> after ADR-0131 placed the critic's). The window — a length in ticks at the modulator section's `[52..54)`, a spike
+> counted only when its tick is fewer than the length after the previous reward the critic took, or after the engine's
+> start before the first, the length read from the image by `shortest_delay` and held to it by the loader, format 20 — is
+> unset bit for bit: with it unset every one of the weekly job's 75 whole-domain tests passed before any rewarded run, and
+> the five whole-image pins moved with the format and nothing else. Its length, 100 ticks, ADR-0132's arithmetic restated
+> for the window's features with H-22's shift 9 and scale 2 kept, H-23's constants and clauses, the gate and the two arms
+> were committed and pushed before any run, with the pull request opened as a draft.
+>
+> **H-23 is yes, and its stopping rule reached step 3.** Every mapping was learned in both arms, 115 to 124 of each
+> mapping's last 128, no coupling past 1.30; each reversal passed 40 of 64 in 14 to 20 blocks, within the task critic's 23
+> and against H-22's 10 to 30, as ADR-0133 predicted; each stimulus's mean value stood within 0.115 of the reward of
+> $2p - 1$. The window admitted the presented stimulus's volley and about 1.6 background spikes a trial, the value came to
+> rest on each stimulus's own units, and after each flip it came back as the task critic's did. **The next decision** — an
+> ADR choosing among the operating regime, another size, the rule held by the network reopened on this configuration and a
+> critic carried by a population — is named and not taken.
+>
+> The weekly dispatched at `scope=both` (run 36664142217) ran every exhaustive shard green: all 77 whole-domain tests
+> passed, the 75 before this round reproducing their pinned numbers and H-23's two arms their tables, in 1 362 and 1 845 s;
+> the shards' tests ran at 20 to 44 per cent of the bound. The mutation sweep was green in its seven jobs: 3 595 mutants
+> caught, none missed, every one in the window's code caught, 23 of its 24 timeouts the known protocol ones and the other
+> in a loader check the round did not change. The cost table is regenerated from the run (77 lines, 29 058 s) and plans each
+> of the six shards at about 34 per cent, inside the brief's 60. The pull request's gate is green in every job, the mutation
+> gate on the changed lines catching every mutant it could make (31: 27 caught, 4 unviable).
+>
+> The body below describes the tree before execution and is not maintained. Relative links gained one `../` when the brief
+> was archived; no word, claim or figure changed.
 
 # Brief 056: The critic's window — ADR-0133's window built, the engine's critic counting a unit's spikes only within the shortest synaptic delay after each reward, unset bit for bit; then H-23 run once on H-22's configuration with the window set
 
 ## Mission
 
-**This brief builds one parameter and runs one hypothesis once.** H-22 ([ADR-0132](../docs/adr/0132-a-critic-of-the-engines-own-measured.md))
+**This brief builds one parameter and runs one hypothesis once.** H-22 ([ADR-0132](../../docs/adr/0132-a-critic-of-the-engines-own-measured.md))
 learned every mapping with the engine's own critic. Two of its three reversals, though, were 7 to 11 blocks slower than
 H-21's with the task's critic, and the value fell deeper after those flips, with about half of it on units both
 stimuli share.
 
-[ADR-0133](../docs/adr/0133-the-critics-window.md) gives the critic a window:
+[ADR-0133](../../docs/adr/0133-the-critics-window.md) gives the critic a window:
 - a unit's spike counts only within $W$ ticks after the previous reward;
 - $W$ is the shortest delay of any synapse the image carries, read by a rule written first;
 - unset, the window is ADR-0131's critic bit for bit.
@@ -42,18 +71,18 @@ When the round is done, the tree holds:
   - With the critic unset nothing of the engine changes. Every pinned number of the tree holds, and the determinism pin
     does not move.
   - A pin of a whole image moves with the format number and nothing else, restated under a masked check
-    ([ADR-0095](../docs/adr/0095-an-image-pin-moves-with-its-format.md)).
+    ([ADR-0095](../../docs/adr/0095-an-image-pin-moves-with-its-format.md)).
 - **H-22's shift 9 and scale 2 are kept.** ADR-0132's arithmetic is restated for the window's features before any run
   and held by the gate. If it shows the constants no longer resolve the rule, the round stops before any rewarded run.
 - **H-23's clauses, constants and the window's rule and length are written before the first rewarded run** and do not
   move after it.
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0133's included.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. For the measurement, the runtime's gate grows by
-  at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
-  it. The mutation gate on the changed lines must pass ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
+  it. The mutation gate on the changed lines must pass ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal.
 - No pinned number of an earlier round moves, but for the whole-image pins restated above.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
@@ -63,7 +92,7 @@ When the round is done, the tree holds:
 Re-derived on 2026-09-30 against `main` after ADR-0132 and ADR-0133 merged. Line numbers move; the symbols and the
 quoted sentences are what to re-derive.
 
-1. **The critic** ([ADR-0131](../docs/adr/0131-the-critic-built.md)):
+1. **The critic** ([ADR-0131](../../docs/adr/0131-the-critic-built.md)):
    - `runtime/cortex-runtime/src/executor.rs`: `Config::critic`, `merge_spikes`, which counts each merged spike against
      its unit before it pushes it into the ring, `Executor::{reward, features, prediction}` and the sweep's rule for a
      unit with a count pending;
@@ -76,7 +105,7 @@ quoted sentences are what to re-derive.
 3. **The reference prior** (`runtime/cortex-runtime/tests/instrument/harness.rs`): the local delay band is 100 to 300
    ticks and the far band starts at 1 400. `WINDOW` opens 100 ticks after the injection, *"before which no local synapse
    of the volley can have landed"*.
-4. **H-22** ([ADR-0132](../docs/adr/0132-a-critic-of-the-engines-own-measured.md), `tests/inhibition.rs`):
+4. **H-22** ([ADR-0132](../../docs/adr/0132-a-critic-of-the-engines-own-measured.md), `tests/inhibition.rs`):
    - `VALUED_CRITIC`, `valued_image`, `valued_arm` and `earned_run_valued` on the shared harness;
    - its pinned tables, among them `CROSSINGS_VALUED_1024`, `STRONG_BY_FLIP_VALUED_1024` and `VALUED_WEIGHTS_1024`;
    - its readings: the value per stimulus at about $2p - 1$, the troughs after flips 1 and 3 at −0.92 to −1.03, the
@@ -86,12 +115,12 @@ quoted sentences are what to re-derive.
 6. **F-61** (whitepaper §11): for a critic of a stimulus's expected reward, H-22's clause 3 is an accuracy bound of
    three quarters.
 7. **The weekly job**: six shards. A round that changes `src/` dispatches `scope=both`
-   ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The cost table is regenerated from its own
+   ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). The cost table is regenerated from its own
    dispatch; after ADR-0132 it plans about 33 per cent of the bound.
 
 ## Deliverables
 
-- [ ] **The window built, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The window built, in a new ADR at the next free number (`ls docs/adr`).**
   - *The parameter*: $W$ in the modulator section's reserved bytes, zero meaning unset; format 20; whitepaper §5.2's
     table and the version row.
   - *The rule*: with the window set, a spike counts only when its tick is within $W$ ticks after the previous reward
@@ -104,7 +133,7 @@ quoted sentences are what to re-derive.
     - the image: the window written and read set and unset, each refusal, and a version-19 header refused;
     - `crates/cortex-connectome`: the version's assertions at 20;
     - the whole-image pins restated under a masked check.
-- [ ] **H-23's protocol, in an ADR, before the first rewarded run.**
+- [x] **H-23's protocol, in an ADR, before the first rewarded run.**
   - The window's rule, *"the shortest delay of any synapse the image carries"*, as a function over the image, pinned
     with the length it reads from H-21's image.
   - ADR-0132's arithmetic restated for the window's features: the volley's step, the background spikes the window
@@ -119,26 +148,26 @@ quoted sentences are what to re-derive.
     - the weights by group at every block's end;
     - the reversal speeds beside H-20's, H-21's and H-22's;
     - the inhibitory sum's course.
-- [ ] **The calibration**, before any rewarded run: every pinned number holds and H-22's arms reproduce, with the
+- [x] **The calibration**, before any rewarded run: every pinned number holds and H-22's arms reproduce, with the
   window unset.
-- [ ] **The runs**: H-23's two arms, each a weekly `exhaustive` test, their tables pinned per block as H-22's.
-- [ ] **The ADR's reading.**
+- [x] **The runs**: H-23's two arms, each a weekly `exhaustive` test, their tables pinned per block as H-22's.
+- [x] **The ADR's reading.**
   - H-23's verdict per clause and arm.
   - The account's prediction (clause 3 holds) against the reading.
   - The readings.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** The build's tests, and at most one runtime test for the measurement: the window's rule over images
+- [x] **The gate.** The build's tests, and at most one runtime test for the measurement: the window's rule over images
   written by hand, the arithmetic, and H-23's clauses at their edges.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at `scope=both`. It must be green in every job, with
+- [x] **The evidence.** A weekly dispatched on this round's branch at `scope=both`. It must be green in every job, with
   no survivor of the sweep on the window and every pinned number reproduced. The cost table is regenerated from that
   run's artifacts.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §5.2's image bytes and the format's version row, §8.7's format number, §8.8's modulator row, §11.1's
     H-23 with its verdict and step, and §9.
   - The ADR index, `CHANGELOG.md`, `CLAUDE.md`, and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 
