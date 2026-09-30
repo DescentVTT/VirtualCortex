@@ -99,6 +99,20 @@
 //! integer rules written before the run, and the gate runs the arithmetic, the clauses at their
 //! edges and the image's patch.
 //!
+//! Brief 056 runs H-23 here as ADR-0133 wrote it and ADR-0135 records it: H-22's configuration,
+//! schedule and arms with the engine's critic counting a unit's spikes only within its window
+//! (ADR-0134) — the ticks after each reward, and after the engine's load before the first, fewer
+//! than the shortest delay of any synapse the image carries, read by `shortest_delay` and pinned
+//! before any run — from H-22's image with the window's two bytes written, shown to be H-22's in
+//! every other byte but the section's seal, after H-22's first block reproduced with the window
+//! unset. Two arms, each its own weekly `exhaustive` test, pinned whole with the engine's value per
+//! block, the weights by group and the spikes the window admitted. The harness holds the engine's
+//! value, error, weights and window to a second writing of the rule at every trial; the clauses
+//! (H-20's two, each reversal within 23 blocks, and each stimulus's mean value within a quarter of
+//! the reward of $2p - 1$), the assertion and the readings are integer rules written before the
+//! run, and the gate runs the window's rule, the arithmetic, the clauses at their edges and the
+//! image's patch.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -117,7 +131,7 @@ use harness::*;
 use cortex_core::{
     ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, istdp_alpha_q1_15,
 };
-use cortex_runtime::{ConfigError, ImageError};
+use cortex_runtime::{ConfigError, ImageError, shortest_delay};
 
 // ------------------------------------------- written before the run (ADR-0085, ADR-0086)
 
@@ -53217,3 +53231,1150 @@ const VALUED_1024: Valued = Valued {
     predicted: [[true, false, true, true], [true; 4]],
     yes: false,
 };
+
+// =================================================================================== H-23
+
+// -------------------------------------------- written before the run (ADR-0133, ADR-0135)
+
+/// The arms of H-23 (ADR-0133): H-22's two, in their order, each its own weekly test, from
+/// H-22's image with the critic's window written by its rule, the task carrying no critic of
+/// its own, and H-20's flips.
+const WINDOWED_ARMS: [Reversal; 2] = VALUED_ARMS;
+
+/// ADR-0133's prediction, written first: clause 3 holds, in both arms. A reading beside the
+/// verdict and never asserted; the verdict is read by the clauses whatever it says.
+const REVERSALS_PREDICTED: bool = true;
+
+/// The critic's window as its rule reads it from H-21's image (ADR-0133, ADR-0135): the
+/// shortest delay of any synapse the image carries, `shortest_delay` over the arena the loader
+/// fills, 100 ticks, the reference prior's local band's floor. Within it after a reward the
+/// presented stimulus's volley has fired, some twelve ticks on, and no response to it can have
+/// come back through a synapse. It does not move after a rewarded run.
+const WINDOW_TICKS_1024: u16 = 100;
+
+/// Clause 3's bound (ADR-0133): each of the three reversals passes `CROSSING_MARK` of 64 within
+/// 23 blocks of its flip, the crossing block counted — the slowest reversal H-20 and H-21 read
+/// with the task's critic, H-21's first from the mirrored assignment.
+const REVERSAL_BLOCKS_MAX: usize = 23;
+
+/// Clause 4's bound (ADR-0133, F-61's form): over a mapping's last 128 trials, a stimulus's mean
+/// value within a quarter of the reward of $(2p - 1)$ of it, $p$ its accuracy over its trials
+/// there, read in integers as `|V − (2c − n) r| × 4 ≤ r n` over its $n$ trials, $c$ of them
+/// correct, their values summing to $V$, with at least one trial.
+const HOLDS_DIVISOR: i64 = 4;
+
+/// Where the modulator section holds the critic's window (ADR-0134): `[52..54)`.
+const WINDOW_AT: usize = 52;
+
+/// The settled network's spikes a unit a tick at H-21's target (ADR-0129): the period of
+/// 58 201 ticks is 100 000 over its rate in hertz, so a unit fires once a period.
+const TARGET_TICKS_PER_SPIKE: u64 = TARGET_PERIOD_1024 as u64;
+
+// ADR-0132's arithmetic restated for the window's features (ADR-0135). The volley's 51 spikes,
+// each once in the window, move the value of the same volley by 51/2 048 of the error, as in
+// H-22: the sum of the shift and the scale is kept, so the two inequalities stand.
+const _: () = assert!(
+    (VOLLEY_UNITS as u64) << TASK_STEP_SHIFT <= 1 << (VALUED_CRITIC.shift + VALUED_CRITIC.scale)
+);
+// The background the window admits: 1 024 units over 100 ticks at a spike every 58 201 ticks a
+// unit, 102 400 / 58 201, one and three quarters — under the 51 of the volley by a factor of 29,
+// where H-22's features held some 300 background spikes beside the volley's 51.
+const _: () = assert!(
+    1024 * WINDOW_TICKS_1024 as u64 / TARGET_TICKS_PER_SPIKE == 1
+        && 1024 * WINDOW_TICKS_1024 as u64 * 4 / TARGET_TICKS_PER_SPIKE == 7
+);
+
+// ------------------------------------------------------------ the criterion (ADR-0133)
+
+/// Clause 3's rule (ADR-0133), per arm: each of the three reversals — the second, third and
+/// fourth mappings — crossed `CROSSING_MARK` within `REVERSAL_BLOCKS_MAX` blocks of its flip,
+/// the crossing block counted (`crossings`); a reversal that never crossed does not hold.
+fn reversals_within(crossed: [Option<usize>; 4]) -> [bool; 3] {
+    [1usize, 2, 3].map(|m| crossed[m].is_some_and(|n| n <= REVERSAL_BLOCKS_MAX))
+}
+
+/// A stimulus's trials over a span: their count, the correct ones, and the engine's values at
+/// their rewards summed.
+type StimulusValue = (u32, u32, i64);
+
+/// Clause 4's counts per mapping and stimulus `[A, B]`, over each mapping's last `LAST_BLOCKS`
+/// blocks' trials — 1 409 to 1 536, 3 457 to 3 584, 5 505 to 5 632 and 7 553 to 7 680; zeros
+/// for a run of any other length, or without a value a trial.
+fn stimulus_values(read: &[EarnedTrial], values: &[i32]) -> [[StimulusValue; 2]; 4] {
+    if read.len() != SCHEDULE_TRIALS || values.len() != SCHEDULE_TRIALS {
+        return [[(0, 0, 0); 2]; 4];
+    }
+    SPANS.map(|(_, end)| {
+        let from = end.saturating_sub(LAST_BLOCKS.saturating_mul(BLOCK));
+        let mut out = [(0u32, 0u32, 0i64); 2];
+        for (t, &v) in read[from..end].iter().zip(&values[from..end]) {
+            if let Some(s) = out.get_mut(usize::from(t.0)) {
+                s.0 = s.0.saturating_add(1);
+                s.1 = s.1.saturating_add(u32::from(t.3));
+                s.2 = s.2.saturating_add(i64::from(v));
+            }
+        }
+        out
+    })
+}
+
+/// Clause 4's rule (ADR-0133, F-61's form): at least one trial, and the values' sum within a
+/// quarter of the reward a trial of $(2c - n) r$, `|V − (2c − n) r| × 4 ≤ r n`.
+fn holds_expected((n, c, v): StimulusValue) -> bool {
+    let r = i64::from(REWARD_Q16);
+    let expected = i64::from(c)
+        .saturating_mul(2)
+        .saturating_sub(i64::from(n))
+        .saturating_mul(r);
+    n > 0
+        && v.saturating_sub(expected)
+            .saturating_abs()
+            .saturating_mul(HOLDS_DIVISOR)
+            <= r.saturating_mul(i64::from(n))
+}
+
+/// H-23's criterion (ADR-0133), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) each mapping learned and (2) the couplings bounded, H-20's two as `scheduled` reads them;
+/// (3) each reversal within 23 blocks, `reversals_within` of `crossings`; and (4) each stimulus's
+/// mean value within a quarter of the reward of $2p - 1$, per mapping, `holds_expected`. `yes` is
+/// all in both arms; a no names the clause, the arm, the mapping and the stimulus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Windowed {
+    learning: Scheduled,
+    revised: [[bool; 3]; 2],
+    held: [[[bool; 2]; 4]; 2],
+    yes: bool,
+}
+
+fn windowed(arms: [&[Block]; 2], values: [[[StimulusValue; 2]; 4]; 2]) -> Windowed {
+    let learning = scheduled(arms);
+    let revised = arms.map(|blocks| reversals_within(crossings(blocks)));
+    let held = values.map(|mapping| mapping.map(|stimuli| stimuli.map(holds_expected)));
+    Windowed {
+        learning,
+        revised,
+        held,
+        yes: learning.yes
+            && revised.iter().flatten().all(|&r| r)
+            && held.iter().flatten().flatten().all(|&h| h),
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 056)
+
+/// The spikes the window admitted by block, per presented stimulus `[A, B]` and group in
+/// `GROUPS`'s order: at every trial's reward, the train's spikes fewer ticks than the window
+/// after it opened, summed over the block's trials of that stimulus.
+type Admitted = [[u32; GROUPS]; 2];
+
+fn admitted_blocks(read: &[EarnedTrial], admitted: &[[u32; GROUPS]]) -> Vec<Admitted> {
+    assert_eq!(read.len(), admitted.len(), "an admission a trial");
+    read.chunks(BLOCK)
+        .zip(admitted.chunks(BLOCK))
+        .map(|(trials, admitted)| {
+            let mut out: Admitted = [[0; GROUPS]; 2];
+            for (t, a) in trials.iter().zip(admitted) {
+                if let Some(row) = out.get_mut(usize::from(t.0)) {
+                    for (sum, &n) in row.iter_mut().zip(a) {
+                        *sum = sum.saturating_add(n);
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// The value's trough after each flip (ADR-0132's reading), per flip and stimulus: the lowest
+/// of a block's per-stimulus means over the blocks of the mapping the flip put in force; zeros
+/// for a mapping the table does not hold whole.
+fn troughs(means: &[[i64; 2]]) -> [[i64; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        means.get(from..to).map_or([0; 2], |mine| {
+            [0usize, 1].map(|s| mine.iter().map(|b| b[s]).min().unwrap_or(0))
+        })
+    })
+}
+
+/// The engine's mean value per block and stimulus, `mean_values` of each block.
+fn value_means(values: &[ValueBlock]) -> Vec<[i64; 2]> {
+    values.iter().map(mean_values).collect()
+}
+
+/// The task critic's expectation per block's end and stimulus, H-21's reading, widened.
+fn expected_means(expected: &[[i32; 2]]) -> Vec<[i64; 2]> {
+    expected.iter().map(|e| e.map(i64::from)).collect()
+}
+
+// ---------------------------------------------------------------- the image (brief 056)
+
+/// The image with the modulator section's `[52..54)` written `window` and the section re-sealed;
+/// every other byte the image's.
+fn with_window_bytes(image: &[u8], window: u16) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let (at, offset, length) = modulator_entry(&img);
+    img[offset..][WINDOW_AT..][..2].copy_from_slice(&window.to_le_bytes());
+    let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+    entry.crc64 = crc64(&img[offset..][..length]);
+    img[at..][..64].copy_from_slice(&entry.encode());
+    img
+}
+
+/// The masked check (ADR-0135's one change): `windowed` differs from `image` only in the
+/// modulator section's two bytes of the window and in the section's entry in the table, which
+/// holds its seal; and writing zeros back gives `image` bit for bit.
+fn only_the_window(image: &[u8], windowed: &[u8]) -> bool {
+    let (at, offset, _) = modulator_entry(image);
+    let window = offset.saturating_add(WINDOW_AT);
+    let entry = at..at.saturating_add(64);
+    let mask = window..window.saturating_add(2);
+    image.len() == windowed.len()
+        && image[mask.clone()] == [0; 2]
+        && differing(image, windowed)
+            .iter()
+            .all(|p| mask.contains(p) || entry.contains(p))
+        && with_window_bytes(windowed, 0) == image
+}
+
+// ---------------------------------------------------------------- the run (brief 056)
+
+/// H-22's first block from H-22's image with the window unset (H-23's calibration, ADR-0133's
+/// stopping rule step 2): H-22's run for one block — the engine's critic, no task critic, the
+/// arm's first mapping — held to H-22's pinned first block table by table.
+fn h22_first_block(valued: &[u8], arm: Reversal, k: usize, name: &str) {
+    let mut exec = signed_from(valued, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks()
+        ),
+        (Some(VALUED_CRITIC), 0, TARGET_PERIOD_1024),
+        "{name}: H-22's image carries the critic and the target, and no window"
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let groups = groups_of(&exec, &sets);
+    let mut weights: Vec<Weights> = Vec::new();
+    let (run, moves, expected, values) = earned_run_valued(
+        &mut exec,
+        Feedback::Answer,
+        first_mapping(arm),
+        1024,
+        BLOCK,
+        GATE_BASELINE_Q16,
+        &SCHEDULE_FLIPS,
+        true,
+        None,
+        &mut |exec, trial| {
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                weights.push(weights_by_group(exec, &groups));
+            }
+        },
+    );
+    assert!(expected.is_empty(), "{name}: the task carries no critic");
+    let (blocks, _, trials, read, _) = &run;
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let by_block = value_blocks(read, &values);
+    eprintln!(
+        "DUMP {name} H-22's first block {:?} earned {:?} values {:?} weights {:?}",
+        blocks,
+        earned_blocks(read),
+        by_block,
+        weights
+    );
+    assert_eq!(blocks.as_slice(), &VALUED_BLOCKS_1024[k][..1], "{name}");
+    assert_eq!(
+        compositions.as_slice(),
+        &VALUED_COMPOSITIONS_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(
+        earned_blocks(read).as_slice(),
+        &VALUED_EARNED_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(
+        moves_blocks(read, &moves).as_slice(),
+        &VALUED_MOVES_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(by_block.as_slice(), &VALUED_VALUES_1024[k][..1], "{name}");
+    assert_eq!(weights.as_slice(), &VALUED_WEIGHTS_1024[k][..1], "{name}");
+}
+
+/// What brief 056 reads of a run beside H-22's tables: the four couplings at the end of the
+/// first trial under each new mapping, the value weights by group at every block's end, and at
+/// every trial's reward the spikes the window admitted by group.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WindowedWatch {
+    at_flips: [[[i64; 2]; 2]; 3],
+    weights: Vec<Weights>,
+    admitted: Vec<[u32; GROUPS]>,
+}
+
+/// An arm's run from the windowed engine (brief 056): H-22's run — `earned_run_valued` under the
+/// answer's feedback at the gate's zero with the signed gate set, the arm's first mapping and
+/// H-20's flips, the task carrying no critic — with the engine's window set, the engine's value,
+/// error, weights and opening held to the harness's at every trial; at the end of the first trial
+/// under each new mapping the four couplings, at every block's end the weights by group, and at
+/// every trial's reward the train's spikes by group within `window` ticks after the opening the
+/// reward closed — the engine's start at the first, each reward's tick after it.
+fn windowed_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    groups: &[usize],
+    window: u16,
+) -> (EarnedRun, Vec<Moves>, Vec<i32>, WindowedWatch) {
+    let mut at_flips: [Option<[[i64; 2]; 2]>; 3] = [None; 3];
+    let mut weights: Vec<Weights> = Vec::new();
+    let mut admitted: Vec<[u32; GROUPS]> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut opened = exec.ticks();
+    let (run, moves, expected, values) = earned_run_valued(
+        exec,
+        Feedback::Answer,
+        first_mapping(arm),
+        1024,
+        SCHEDULE_TRIALS,
+        GATE_BASELINE_Q16,
+        &SCHEDULE_FLIPS,
+        true,
+        None,
+        &mut |exec, trial| {
+            let mut in_window = [0u32; GROUPS];
+            for &(tick, unit) in exec.train() {
+                let since = u64::from(tick).checked_sub(opened);
+                if since.is_some_and(|d| d < u64::from(window)) {
+                    if let Some(n) = groups
+                        .get(unit as usize)
+                        .and_then(|&g| in_window.get_mut(g))
+                    {
+                        *n = n.saturating_add(1);
+                    }
+                }
+            }
+            admitted.push(in_window);
+            opened = exec.ticks();
+            if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
+                at_flips[f] = Some(pair_couplings(exec, sets));
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                weights.push(weights_by_group(exec, groups));
+            }
+        },
+    );
+    assert!(expected.is_empty(), "the task carries no critic");
+    let at_flips = at_flips.map(|c| c.expect("the run reached the trial after every flip"));
+    (
+        run,
+        moves,
+        values,
+        WindowedWatch {
+            at_flips,
+            weights,
+            admitted,
+        },
+    )
+}
+
+/// One arm of H-23 at 1 024 units (brief 056): the calibration before any rewarded run (H-23's
+/// stopping rule, step 2) — the settled engine held to ADR-0077 step by step and its images,
+/// H-20's image by its CRC, a frozen block from the zero image held to ADR-0077's frozen run,
+/// H-21's image by its CRC at format 20 and at 18, H-22's image by its CRC at 20 and at 19 and
+/// its first block reproduced with the window unset — then the window's length read by its rule
+/// from H-22's image and held to the length committed first, the image the arm decodes, H-22's
+/// with the window written, shown to differ from H-22's in the window's two bytes and the
+/// section's seal alone, and decoded; then the arm's 7 680 trials from it with no task critic
+/// and H-20's flips; everything dumped, the clauses and the readings computed before anything is
+/// held; then the assertion, and the pinned tables of the whole run.
+fn windowed_arm(arm: Reversal) {
+    let k = WINDOWED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-23");
+    let name = format!("windowed1024 {arm:?}");
+    let (zero, signed) = signed_images(&name);
+    assert_eq!(
+        crc64(&signed),
+        PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-20's image, H-19's and H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    let targeted = targeted_image(&signed, TARGET_PERIOD_1024);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: H-21's image is H-20's in every byte but the target period's and the seal"
+    );
+    assert_eq!(
+        (crc64(&targeted), crc64(&with_version(&targeted, 18))),
+        (TARGET_IMAGE_CRC_1024, TARGET_IMAGE_CRC_FORMAT_18_1024),
+        "{name}: H-21's image, and as H-21 read it"
+    );
+    let valued = valued_image(&targeted, VALUED_CRITIC);
+    assert!(
+        only_the_critic(&targeted, &valued),
+        "{name}: H-22's image is H-21's in every byte but the critic's and the seal"
+    );
+    assert_eq!(
+        (crc64(&valued), crc64(&with_version(&valued, 19))),
+        (VALUED_IMAGE_CRC_1024, VALUED_IMAGE_CRC_FORMAT_19_1024),
+        "{name}: H-22's image, and as H-22 read it"
+    );
+    h22_first_block(&valued, arm, k, &name);
+    eprintln!(
+        "DUMP {name} calibration holds: ADR-0077's settled candidate, H-20's, H-21's and H-22's images and H-22's first block"
+    );
+    // The window's length by its rule, over the arena the loader fills from H-22's image.
+    let window =
+        shortest_delay(signed_from(&valued, 1024).blocks()).expect("the image carries a synapse");
+    eprintln!("DUMP {name} the window's rule reads {window} ticks");
+    assert_eq!(
+        window, WINDOW_TICKS_1024,
+        "{name}: the length committed before the run"
+    );
+    // The image the arm decodes: H-22's, the window written and nothing else.
+    let image_bytes = with_window_bytes(&valued, window);
+    assert!(
+        only_the_window(&valued, &image_bytes),
+        "{name}: the image is H-22's in every byte but the window's and the seal"
+    );
+    assert_eq!(
+        crc64(&image_bytes),
+        WINDOWED_IMAGE_CRC_1024,
+        "{name}: the image each arm decodes"
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let mut exec = signed_from(&image_bytes, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            TARGET_PERIOD_1024,
+            exec.ticks()
+        ),
+        "{name}: the image carries the critic, its window and the target, the window open at the load"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let groups = groups_of(&exec, &sets);
+    eprintln!(
+        "DUMP {name} image crc {:#018x}, {} bytes differ from H-22's, groups {:?}",
+        crc64(&image_bytes),
+        differing(&valued, &image_bytes).len(),
+        group_sizes(&groups)
+    );
+    let image = weights_of(&exec);
+    let first = first_mapping(arm);
+    let (run, moves, values, watched) = windowed_run(&mut exec, arm, &sets, &groups, window);
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let strong = strong_scheduled(read, first);
+    let valued_by_block = value_blocks(read, &values);
+    let admitted = admitted_blocks(read, &watched.admitted);
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        (read.len(), values.len(), watched.admitted.len()),
+        (SCHEDULE_TRIALS, SCHEDULE_TRIALS, SCHEDULE_TRIALS)
+    );
+    assert_eq!(
+        (
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            valued_by_block.len(),
+            strong.len(),
+            watched.weights.len(),
+            admitted.len()
+        ),
+        (
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS - FLIP_BLOCK,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS
+        )
+    );
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {compositions:?}");
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {moved:?}");
+    eprintln!("DUMP {name} PIN strong {strong:?}");
+    eprintln!("DUMP {name} PIN at flips {:?}", watched.at_flips);
+    eprintln!("DUMP {name} PIN values {valued_by_block:?}");
+    eprintln!("DUMP {name} PIN value hash {:#018x}", values_hash(&values));
+    eprintln!("DUMP {name} PIN weights {:?}", watched.weights);
+    eprintln!("DUMP {name} PIN admitted {admitted:?}");
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let reach = reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS);
+    let correct = mapping_correct(blocks);
+    let over = first_over(blocks);
+    let stimulus_read = stimulus_values(read, &values);
+    let first_new_read = first_new_scheduled(read, first);
+    let crossings_read = crossings(blocks);
+    let crossed = crossed_scheduled(&earned, first);
+    let tally_read = tally(blocks);
+    let settle = settle_scheduled(blocks, first);
+    let highest_read = highest(blocks);
+    let strong_sum = strong_by_flip(&strong);
+    let punished_moves = moves_by_mapping(&moved, 1);
+    let rewarded_moves = moves_by_mapping(&moved, 0);
+    let once = once_blocks(blocks, &compositions);
+    let falls = falls_every_block(image_sums.0, blocks);
+    let sums_after = weights_by_polarity(&exec);
+    let troughs_read = troughs(&value_means(&valued_by_block));
+    eprintln!(
+        "DUMP {name} PIN readings correct {correct:?} over {over:?} stimulus values {stimulus_read:?} reach {reach:?} first new {first_new_read:?} crossings {crossings_read:?} crossed {crossed:?} tally {tally_read:?} settle {settle:?} highest {highest_read:?} strong total {strong_sum:?} punished moves {punished_moves:?} rewarded moves {rewarded_moves:?} once {once} falls {falls} sums after {sums_after:?} troughs {troughs_read:?}"
+    );
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {over:?} revised {:?} held {:?} settle per myriad {:?}",
+        correct.map(|c| c >= REWARDED_MIN),
+        reversals_within(crossings_read),
+        stimulus_read.map(|m| m.map(holds_expected)),
+        settle_per_myriad(settle, first)
+    );
+    eprintln!(
+        "DUMP {name} the prediction, clause 3 holds: {REVERSALS_PREDICTED}; read {:?}",
+        reversals_within(crossings_read)
+    );
+    eprintln!(
+        "DUMP {name} value by block beside H-22's and H-21's expectation {:?}",
+        value_means(&valued_by_block)
+            .iter()
+            .zip(value_means(VALUED_VALUES_1024[k]))
+            .zip(TARGET_EXPECTED_1024[k])
+            .map(|((w, v), e)| (*w, v, *e))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "DUMP {name} troughs {troughs_read:?} beside H-22's {:?} and H-21's {:?}",
+        troughs(&value_means(VALUED_VALUES_1024[k])),
+        troughs(&expected_means(TARGET_EXPECTED_1024[k]))
+    );
+    eprintln!(
+        "DUMP {name} strong by flip {strong_sum:?} beside H-22's {:?} and H-21's {:?}",
+        STRONG_BY_FLIP_VALUED_1024[k], STRONG_BY_FLIP_TARGET_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-22's {:?}",
+        course(image_sums.0, blocks),
+        course(image_sums.0, VALUED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} crossings {crossings_read:?} beside H-22's {:?}, H-21's {:?} and H-20's {:?}",
+        CROSSINGS_VALUED_1024[k], CROSSINGS_TARGET_1024[k], CROSSINGS_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?}",
+        couplings_course(blocks)
+    );
+    eprintln!(
+        "DUMP {name} signal {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    // The assertion, after the dump and beside the verdict: H-18's rule, as H-20 to H-22 hold it.
+    assert!(
+        punished_held(&reach),
+        "{name}: no excitatory synapse outside the four stimulus–readout pairs moved: {reach:?}"
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        WINDOWED_BLOCKS_1024[k],
+        WINDOWED_TRACES_1024[k],
+    );
+    assert_eq!(
+        compositions.as_slice(),
+        WINDOWED_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        WINDOWED_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        WINDOWED_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        WINDOWED_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        moved.as_slice(),
+        WINDOWED_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        strong.as_slice(),
+        WINDOWED_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(watched.at_flips, WINDOWED_AT_FLIPS_1024[k]);
+    assert_eq!(
+        valued_by_block.as_slice(),
+        WINDOWED_VALUES_1024[k],
+        "{name}: the engine's value per block"
+    );
+    assert_eq!(
+        values_hash(&values),
+        WINDOWED_VALUE_HASH_1024[k],
+        "{name}: every trial's value"
+    );
+    assert_eq!(
+        watched.weights.as_slice(),
+        WINDOWED_WEIGHTS_1024[k],
+        "{name}: the weights by group per block"
+    );
+    assert_eq!(
+        admitted.as_slice(),
+        WINDOWED_ADMITTED_1024[k],
+        "{name}: the spikes the window admitted per block"
+    );
+    assert_eq!(correct, CORRECT_WINDOWED_1024[k]);
+    assert_eq!(over, OVER_WINDOWED_1024[k]);
+    assert_eq!(stimulus_read, STIMULUS_VALUES_WINDOWED_1024[k]);
+    assert_eq!(reach, REACH_WINDOWED_1024[k]);
+    assert_eq!(first_new_read, FIRST_NEW_WINDOWED_1024[k]);
+    assert_eq!(crossings_read, CROSSINGS_WINDOWED_1024[k]);
+    assert_eq!(crossed, CROSSED_WINDOWED_1024[k]);
+    assert_eq!(tally_read, TALLY_WINDOWED_1024[k]);
+    assert_eq!(settle, SETTLE_WINDOWED_1024[k]);
+    assert_eq!(highest_read, HIGHEST_WINDOWED_1024[k]);
+    assert_eq!(strong_sum, STRONG_BY_FLIP_WINDOWED_1024[k]);
+    assert_eq!(punished_moves, PUNISHED_MOVES_WINDOWED_1024[k]);
+    assert_eq!(rewarded_moves, REWARDED_MOVES_WINDOWED_1024[k]);
+    assert_eq!(once, ONCE_BLOCKS_WINDOWED_1024[k]);
+    assert_eq!(falls, FALLS_WINDOWED_1024[k]);
+    assert_eq!(troughs_read, TROUGHS_WINDOWED_1024[k]);
+    assert_eq!(
+        (sums_after, blocks.last().map(|b| (b.7, b.8))),
+        (
+            SUMS_AFTER_WINDOWED_1024[k],
+            Some(SUMS_AFTER_WINDOWED_1024[k])
+        ),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-23's arm that starts from the assignment (brief 056): H-22's arm from the assignment with
+/// the engine's critic counting only within its window.
+#[test]
+#[ignore]
+fn a_critic_with_a_window_from_the_assignment_at_1024_units_exhaustive() {
+    windowed_arm(Reversal::AssignmentFirst);
+}
+
+/// H-23's arm that starts from the mirrored assignment (brief 056): H-22's arm from the mirrored
+/// assignment with the engine's critic counting only within its window.
+#[test]
+#[ignore]
+fn a_critic_with_a_window_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    windowed_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 056): the arms and the constants as ADR-0133 and
+/// ADR-0135 fixed them, H-22's restated; the window's rule over images written by hand and over
+/// the instrument's network, whose delays the settled image carries; ADR-0135's arithmetic over
+/// numbers written by hand — the volley's step, the background the window admits, the step's
+/// floor and dead band; H-23's clauses 3 and 4 at their edges and the verdict naming the clause,
+/// the arm, the mapping and the stimulus; the readings' rules over tables written by hand; and
+/// the image's patch on the instrument's network's image, shown to touch the window's two bytes
+/// and the section's seal alone, to be read by the loader and refused at another length, and to
+/// be undone by writing zeros back. No run, and nothing else added to the gate.
+#[test]
+fn the_window_s_rule_its_arithmetic_the_clauses_of_h_23_and_the_image_s_patch() {
+    // The arms and the constants, H-22's restated.
+    assert_eq!(WINDOWED_ARMS, VALUED_ARMS);
+    assert_eq!(
+        WINDOWED_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (REVERSALS_PREDICTED, VALUED_PREDICTED),
+        (true, None),
+        "ADR-0133 predicts clause 3 holds, and ADR-0130 no verdict of H-22"
+    );
+    assert_eq!(VALUED_CRITIC, ValueCritic { shift: 9, scale: 2 });
+    assert_eq!(
+        (
+            WINDOW_TICKS_1024,
+            REVERSAL_BLOCKS_MAX,
+            HOLDS_DIVISOR,
+            WINDOW_AT
+        ),
+        (100, 23, 4, 52)
+    );
+    assert_eq!((VOLLEY_UNITS, TASK_STEP_SHIFT, REWARD_Q16), (51, 5, ONE));
+    assert_eq!(
+        (TARGET_PERIOD_1024, TARGET_TICKS_PER_SPIKE),
+        (58_201, 58_201)
+    );
+    assert_eq!(
+        (
+            VALUED_IMAGE_CRC_1024,
+            VALUED_IMAGE_CRC_FORMAT_19_1024,
+            WINDOWED_IMAGE_CRC_1024
+        ),
+        (
+            0xeae8_ad81_9564_a88a,
+            0xbf67_9785_7fda_0809,
+            0x5044_ed79_36a7_b5f3
+        ),
+        "H-22's image at format 20 and as H-22 read it at 19, and the image each arm decodes"
+    );
+    // Clause 3's bound is the slowest reversal H-20 and H-21 read with the task's critic, both
+    // arms: 23 blocks, H-21's first from the mirrored assignment.
+    let slowest = CROSSINGS_1024
+        .iter()
+        .chain(&CROSSINGS_TARGET_1024)
+        .flat_map(|arm| arm[1..].iter().map(|c| c.expect("every reversal crossed")))
+        .max();
+    assert_eq!(slowest, Some(REVERSAL_BLOCKS_MAX));
+    assert_eq!(CROSSINGS_TARGET_1024[1][1], Some(REVERSAL_BLOCKS_MAX));
+    // The window's rule over networks written by hand: the least delay of any synapse, whichever
+    // block holds it; an empty slot's delay no synapse's.
+    {
+        let mut exec = Executor::<8>::new(Config {
+            units: 3,
+            blocks: 3,
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(shortest_delay(exec.blocks()), None, "no synapse");
+        let blocks = exec.blocks_mut();
+        assert!(blocks[0].set_synapse(0, 1, 100, 300, false));
+        assert!(blocks[2].set_synapse(3, 2, 100, 101, false));
+        blocks[1].delays_ticks[2] = 5;
+        assert_eq!(shortest_delay(exec.blocks()), Some(101));
+        assert!(exec.blocks_mut()[1].set_synapse(1, 0, 100, 100, true));
+        assert_eq!(shortest_delay(exec.blocks()), Some(100));
+    }
+    // Over the instrument's network at 1 024 units, whose delays every image of it carries: no
+    // rule moves a delay, so H-21's image reads what the network was synthesised with — the local
+    // band's floor, 100 ticks, every delay in the local band, 100 to 300, or the far one, from
+    // 1 400.
+    let p = prior(1024);
+    let exec = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    assert_eq!(shortest_delay(exec.blocks()), Some(WINDOW_TICKS_1024));
+    let delays: Vec<u16> = exec
+        .blocks()
+        .iter()
+        .flat_map(|b| {
+            (0..4)
+                .filter(|&s| b.target(s).is_some())
+                .map(|s| b.delays_ticks[s])
+        })
+        .collect();
+    assert!(
+        delays
+            .iter()
+            .all(|&d| (100..=300).contains(&d) || d >= 1_400)
+    );
+    let at_floor = delays.iter().filter(|&&d| d == WINDOW_TICKS_1024).count();
+    assert!(at_floor > 0, "a synapse at the floor");
+    eprintln!(
+        "DUMP the instrument's network: {} synapses, {at_floor} at the window's length",
+        delays.len()
+    );
+    // ADR-0135's arithmetic. One volley under the error of a whole reward against a value of
+    // zero moves its own value by 51 / 2 048 of the reward, as in H-22, 1 632 of 65 536.
+    let volley = [1u32; VOLLEY_UNITS as usize];
+    let (_, _, moved) = value_step(&[0; VOLLEY_UNITS as usize], &volley, VALUED_CRITIC, ONE);
+    assert_eq!(
+        VALUED_CRITIC.value_q16(moved.iter().copied().zip(volley)),
+        1_632
+    );
+    assert_eq!(
+        ONE >> TASK_STEP_SHIFT,
+        2_048,
+        "the task critic's step, above the volley's"
+    );
+    // The window admits the volley and about two background spikes: 1 024 units over 100 ticks
+    // at a spike every 58 201 ticks a unit, 1.76. With them the same step moves its own trial's
+    // value by 53 / 2 048, where H-22's 351 spikes moved it by 431 / 2 048 (ADR-0132).
+    assert_eq!(
+        (1_024u64 * u64::from(WINDOW_TICKS_1024) * 100) / TARGET_TICKS_PER_SPIKE,
+        175,
+        "1.75 spikes, in hundredths, floored"
+    );
+    let window_spikes = [1u32; 53];
+    let (_, _, moved) = value_step(&[0; 53], &window_spikes, VALUED_CRITIC, ONE);
+    assert_eq!(
+        VALUED_CRITIC.value_q16(moved.iter().copied().zip(window_spikes)),
+        1_696
+    );
+    // The floor: a negative error moves each unit that fired one LSB down, 53 of them lowering
+    // the value by 53 / 4, floored to 14 of the 65 536 a trial, against H-22's 88; a positive
+    // error below 512 moves nothing, 0.78 per cent of the reward, as in H-22.
+    let (_, _, floored) = value_step(&[0; 53], &window_spikes, VALUED_CRITIC, -1);
+    assert_eq!(
+        VALUED_CRITIC.value_q16(floored.iter().copied().zip(window_spikes)),
+        -14
+    );
+    assert_eq!(
+        (VALUED_CRITIC.step(0, 511, 1), VALUED_CRITIC.step(0, 512, 1)),
+        (0, 1)
+    );
+    // The rail: the volley carries the whole reward at 5 141 a unit, 0.157 of the rail, as in
+    // H-22, so the rule still resolves the value the clauses read.
+    let at = |w: i16| VALUED_CRITIC.value_q16(core::iter::repeat_n((w, 1), 51));
+    assert_eq!((at(5_140), at(5_141)), (65_535, 65_547));
+    // Clause 3 at its edges: 23 blocks hold, 24 and none do not, each reversal on its own; the
+    // first mapping's crossing is not read.
+    assert_eq!(
+        reversals_within([None, Some(23), Some(1), Some(REVERSAL_BLOCKS_MAX)]),
+        [true; 3]
+    );
+    assert_eq!(
+        reversals_within([Some(1), Some(24), None, Some(23)]),
+        [false, false, true]
+    );
+    assert_eq!(
+        reversals_within(CROSSINGS_VALUED_1024[0]),
+        [false, true, false],
+        "H-22 from the assignment: 30, 15 and 27"
+    );
+    assert_eq!(
+        reversals_within(CROSSINGS_VALUED_1024[1]),
+        [false, true, true],
+        "H-22 from the mirrored assignment: 30, 10 and 22"
+    );
+    assert_eq!(reversals_within(CROSSINGS_TARGET_1024[0]), [true; 3]);
+    assert_eq!(reversals_within(CROSSINGS_TARGET_1024[1]), [true; 3]);
+    // Clause 4 at its edges: 64 trials, 48 correct, 2p − 1 a half; the values' sum 32 rewards,
+    // within a quarter of the reward a trial, 16 rewards, either side; one LSB past on either
+    // side does not hold; no trial does not.
+    let r = i64::from(ONE);
+    let expected = r.saturating_mul(32);
+    let quarter = r.saturating_mul(16);
+    for v in [
+        expected,
+        expected.saturating_add(quarter),
+        expected.saturating_sub(quarter),
+    ] {
+        assert!(holds_expected((64, 48, v)), "{v}");
+    }
+    assert!(!holds_expected((
+        64,
+        48,
+        expected.saturating_add(quarter).saturating_add(1)
+    )));
+    assert!(!holds_expected((
+        64,
+        48,
+        expected.saturating_sub(quarter).saturating_sub(1)
+    )));
+    assert!(!holds_expected((0, 0, 0)), "no trial holds nothing");
+    assert!(
+        holds_expected((64, 16, r.saturating_mul(-32))),
+        "2p − 1 below zero"
+    );
+    assert!(
+        holds_expected((1, 0, -r)) && holds_expected((1, 1, r)),
+        "one trial each way"
+    );
+    assert!(!holds_expected((1, 1, r.saturating_mul(3) / 4 - 1)));
+    // Over trials written by hand: a run of 7 680 whose trials alternate stimuli; the last 128 of
+    // each mapping read, the earlier ones not; values a quarter under and over what the clause
+    // takes.
+    let trial =
+        |s: u8, correct: bool| -> EarnedTrial { (s, [0; 2], None, correct, 0, [[0; 2]; 2], 0, 0) };
+    let mut read: Vec<EarnedTrial> = (0..SCHEDULE_TRIALS)
+        .map(|t| trial((t % 2) as u8, true))
+        .collect();
+    let mut values: Vec<i32> = vec![i32::MAX; SCHEDULE_TRIALS];
+    for &(_, end) in &SPANS {
+        for t in end.saturating_sub(128)..end {
+            read[t] = trial((t % 2) as u8, t % 4 < 2);
+            values[t] = if t % 2 == 0 { 0 } else { ONE / 2 };
+        }
+    }
+    let by_mapping = stimulus_values(&read, &values);
+    assert_eq!(
+        by_mapping,
+        [[(64, 32, 0), (64, 32, 32 * r)]; 4],
+        "each stimulus half right in the last 128, A valued 0 and B a half"
+    );
+    assert_eq!(
+        by_mapping.map(|m| m.map(holds_expected)),
+        [[true, false]; 4],
+        "A at 2p − 1, B half a reward over"
+    );
+    assert_eq!(
+        stimulus_values(&read[1..], &values[1..]),
+        [[(0, 0, 0); 2]; 4]
+    );
+    assert_eq!(
+        stimulus_values(&read, &values[1..]),
+        [[(0, 0, 0); 2]; 4],
+        "a value a trial"
+    );
+    // The verdict: every clause over tables written by hand, and each clause failing on its own,
+    // named.
+    let full = vec![
+        (
+            BLOCK as u32,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            0,
+            0,
+            IMAGE_COUPLINGS_1024,
+            0,
+        );
+        SCHEDULE_BLOCKS
+    ];
+    let learning_yes = Scheduled {
+        learned: [[true; 4]; 2],
+        bounded: [true; 2],
+        over: [None; 2],
+        yes: true,
+    };
+    let held = [[(64, 64, r.saturating_mul(64)); 2]; 4];
+    assert_eq!(
+        windowed([&full, &full], [held, held]),
+        Windowed {
+            learning: learning_yes,
+            revised: [[true; 3]; 2],
+            held: [[[true; 2]; 4]; 2],
+            yes: true
+        }
+    );
+    let mut slow = full.clone();
+    for b in &mut slow[MAPPINGS[2].0..MAPPINGS[2].0 + REVERSAL_BLOCKS_MAX] {
+        b.0 = CROSSING_MARK - 1;
+    }
+    assert_eq!(crossings(&slow)[2], Some(REVERSAL_BLOCKS_MAX + 1));
+    let verdict = windowed([&full, &slow], [held, held]);
+    assert_eq!(
+        (verdict.learning, verdict.revised, verdict.yes),
+        (learning_yes, [[true; 3], [true, false, true]], false),
+        "clause 3 fails in the second arm's second reversal"
+    );
+    let mut unheld = held;
+    unheld[3][1] = (64, 64, r.saturating_mul(48).saturating_sub(1));
+    let verdict = windowed([&full, &full], [unheld, held]);
+    assert_eq!(
+        (verdict.held[0][3], verdict.held[1], verdict.yes),
+        ([true, false], [[true; 2]; 4], false),
+        "clause 4 fails for B in the first arm's fourth mapping"
+    );
+    let mut unlearned = full.clone();
+    unlearned[MAPPINGS[1].1 - 1].0 = 0;
+    unlearned[MAPPINGS[1].1 - 2].0 = 0;
+    let verdict = windowed([&unlearned, &full], [held, held]);
+    assert_eq!(
+        (verdict.learning.learned[0], verdict.revised, verdict.yes),
+        ([true, false, true, true], [[true; 3]; 2], false),
+        "clause 1 fails in the first arm's second mapping, clause 3 holds"
+    );
+    // The readings' rules over tables written by hand.
+    let read: Vec<EarnedTrial> = [0u8, 1, 0, 1].iter().map(|&s| trial(s, true)).collect();
+    let per_trial = [
+        [1, 51, 0, 0, 0, 1],
+        [0, 0, 51, 0, 0, 0],
+        [2, 50, 0, 1, 0, 0],
+        [0, 1, 51, 0, 2, 0],
+    ];
+    assert_eq!(
+        admitted_blocks(&read, &per_trial),
+        [[[3, 101, 0, 1, 0, 1], [0, 1, 102, 0, 2, 0]]]
+    );
+    let mut means = vec![[0i64; 2]; SCHEDULE_BLOCKS];
+    means[30] = [-5, 7];
+    means[40] = [3, -9];
+    means[60] = [-1, -1];
+    means[100] = [2, 4];
+    assert_eq!(troughs(&means), [[-5, -9], [-1, -1], [0, 0]]);
+    assert_eq!(troughs(&means[..100]), [[-5, -9], [-1, -1], [0; 2]]);
+    assert_eq!(
+        value_means(&[[[2, 400, 1, 10], [2, 20, 2, 100]]]),
+        [[200, 10]]
+    );
+    assert_eq!(
+        expected_means(&[[-3, i32::MAX]]),
+        [[-3, i64::from(i32::MAX)]]
+    );
+    // H-22's troughs and H-21's by the same rule: the depth ADR-0132 read after the first and
+    // third flips, deeper than the task critic's.
+    for k in 0..2 {
+        let valued = troughs(&value_means(VALUED_VALUES_1024[k]));
+        let target = troughs(&expected_means(TARGET_EXPECTED_1024[k]));
+        eprintln!("DUMP troughs H-22 {valued:?} H-21 {target:?}");
+        for f in [0usize, 2] {
+            assert!(
+                valued[f].iter().min() < target[f].iter().min(),
+                "arm {k} flip {f}: H-22's value fell below H-21's expectation"
+            );
+        }
+    }
+    // The image's patch on the instrument's network's image, with the critic written as H-22's
+    // is: the window written touches its two bytes and the entry's seal alone; the loader reads
+    // it; zeros written back undo it; a byte moved elsewhere fails the check; a length the rule
+    // does not give is refused by the loader.
+    let img = valued_image(&Image::encode(&exec).expect("quiescent"), VALUED_CRITIC);
+    let patched = with_window_bytes(&img, WINDOW_TICKS_1024);
+    let moved = differing(&img, &patched);
+    let (at, offset, _) = modulator_entry(&img);
+    let window_bytes = offset.saturating_add(WINDOW_AT)..offset.saturating_add(WINDOW_AT + 2);
+    let entry_bytes = at..at.saturating_add(64);
+    assert!(
+        !moved.is_empty()
+            && moved.len() <= 10
+            && moved
+                .iter()
+                .all(|p| window_bytes.contains(p) || entry_bytes.contains(p)),
+        "the window's bytes and the entry's seal: {moved:?}"
+    );
+    assert!(only_the_window(&img, &patched));
+    assert!(
+        only_the_window(&img, &img),
+        "nothing written, nothing moved"
+    );
+    assert!(
+        !only_the_window(&patched, &patched),
+        "an image that carries a window already"
+    );
+    assert_eq!(with_window_bytes(&patched, 0), img);
+    let decoded = Image::decode::<2048>(&patched, config(1024, 2, 0)).expect("a well-formed image");
+    assert_eq!(
+        (
+            decoded.critic(),
+            decoded.critic_window_ticks(),
+            decoded.window_opened()
+        ),
+        (Some(VALUED_CRITIC), WINDOW_TICKS_1024, decoded.ticks())
+    );
+    assert_eq!(weights_of(&decoded), weights_of(&exec));
+    let mut elsewhere = patched.clone();
+    elsewhere[offset.saturating_add(16)] ^= 1;
+    assert!(!only_the_window(&img, &elsewhere), "the baseline's byte");
+    for bad in [99u16, 101, 300] {
+        assert!(
+            matches!(
+                Image::decode::<2048>(&with_window_bytes(&img, bad), config(1024, 2, 0)),
+                Err(ImageError::WindowNotShortestDelay {
+                    window,
+                    shortest: Some(100)
+                }) if window == bad
+            ),
+            "{bad}: refused by the loader"
+        );
+    }
+    assert!(
+        matches!(
+            Image::decode::<2048>(
+                &with_window_bytes(&Image::encode(&exec).expect("quiescent"), WINDOW_TICKS_1024),
+                config(1024, 2, 0)
+            ),
+            Err(ImageError::Config(ConfigError::WindowWithoutCritic))
+        ),
+        "no window without the critic"
+    );
+}
+
+// ----------------------------------------------------------- the measurement (brief 056)
+
+/// H-22's image by its CRC-64: H-21's with the critic written (ADR-0132), at format 20.
+const VALUED_IMAGE_CRC_1024: u64 = 0xeae8ad819564a88a;
+/// The same image with its header's version written back to 19 and the header resealed: the
+/// CRC-64 H-22 read (ADR-0132), so that every byte of the image but the version and the seal is
+/// the image H-22 ran from (ADR-0134, as ADR-0095).
+const VALUED_IMAGE_CRC_FORMAT_19_1024: u64 = 0xbf6797857fda0809;
+/// The image each arm of H-23 decodes: H-22's with the window written at the length its rule
+/// reads, 100 ticks, committed before any rewarded run.
+const WINDOWED_IMAGE_CRC_1024: u64 = 0x5044ed7936a7b5f3;
+
+/// The two arms at 1 024 units, in `WINDOWED_ARMS`'s order, each pinned whole from one run: the
+/// sight's blocks, the composition, the earned blocks, the moves, the strong punishments from the
+/// first flip, the engine's value per block, the weights by group and the spikes the window
+/// admitted at each block's end; the trace, the hash of the readings, the hash of the values and
+/// the volley's census over the run. The constants above were committed before the first
+/// rewarded run and these tables after it, from that run's dumps.
+const WINDOWED_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const WINDOWED_TRACES_1024: [u64; 2] = [0; 2];
+const WINDOWED_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const WINDOWED_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const WINDOWED_READ_1024: [u64; 2] = [0; 2];
+const WINDOWED_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+const WINDOWED_MOVES_1024: [&[MovesBlock]; 2] = [&[], &[]];
+const WINDOWED_STRONG_1024: [&[[u32; 2]]; 2] = [&[], &[]];
+const WINDOWED_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [[[[0; 2]; 2]; 3]; 2];
+const WINDOWED_VALUES_1024: [&[ValueBlock]; 2] = [&[], &[]];
+const WINDOWED_VALUE_HASH_1024: [u64; 2] = [0; 2];
+const WINDOWED_WEIGHTS_1024: [&[Weights]; 2] = [&[], &[]];
+const WINDOWED_ADMITTED_1024: [&[Admitted]; 2] = [&[], &[]];
+const CORRECT_WINDOWED_1024: [[u32; 4]; 2] = [[0; 4]; 2];
+const OVER_WINDOWED_1024: [Option<(usize, usize, usize)>; 2] = [None; 2];
+const STIMULUS_VALUES_WINDOWED_1024: [[[StimulusValue; 2]; 4]; 2] = [[[(0, 0, 0); 2]; 4]; 2];
+const REACH_WINDOWED_1024: [Reach; 2] = [
+    Reach {
+        excitatory: (0, 0),
+        inhibitory: (0, 0),
+    },
+    Reach {
+        excitatory: (0, 0),
+        inhibitory: (0, 0),
+    },
+];
+const FIRST_NEW_WINDOWED_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const CROSSINGS_WINDOWED_1024: [[Option<usize>; 4]; 2] = [[None; 4]; 2];
+const CROSSED_WINDOWED_1024: [[[Option<usize>; 2]; 3]; 2] = [[[None; 2]; 3]; 2];
+const TALLY_WINDOWED_1024: [[[u32; 3]; 4]; 2] = [[[0; 3]; 4]; 2];
+const SETTLE_WINDOWED_1024: [Option<[[i64; 2]; 4]>; 2] = [None; 2];
+const HIGHEST_WINDOWED_1024: [[Option<Peak>; 4]; 2] = [[None; 4]; 2];
+const STRONG_BY_FLIP_WINDOWED_1024: [[[u32; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+const PUNISHED_MOVES_WINDOWED_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const REWARDED_MOVES_WINDOWED_1024: [[Moves; 4]; 2] = [[([0; 3], [0; 2]); 4]; 2];
+const ONCE_BLOCKS_WINDOWED_1024: [u32; 2] = [0; 2];
+const FALLS_WINDOWED_1024: [bool; 2] = [false; 2];
+const TROUGHS_WINDOWED_1024: [[[i64; 2]; 3]; 2] = [[[0; 2]; 3]; 2];
+const SUMS_AFTER_WINDOWED_1024: [(i64, i64); 2] = [(0, 0); 2];
