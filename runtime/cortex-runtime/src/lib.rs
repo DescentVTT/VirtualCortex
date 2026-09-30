@@ -66,7 +66,7 @@ pub use executor::{
     ACTIVATE, AddressError, AmendError, Config, ConfigError, Executor, Inject, InjectError,
     Modulations, Policy, Prediction, TagError, WorkerReport,
 };
-pub use image::{Image, ImageError, WriteAheadLog};
+pub use image::{Image, ImageError, WriteAheadLog, shortest_delay};
 pub use language::{
     DECODE_FLOOR_Q16, LanguageError, ROLE_CONCEPT_BASE, ROLES, comprehend, concept_in,
     decode_frame, encode_frame, read_role, role_concept, role_of_concept, role_slot,

@@ -1207,7 +1207,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(18)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(19)))
         ),
         "the previous format's header fails closed, as every foreign version does"
     );
@@ -1312,7 +1312,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "byte {at} is reserved"
         );
     }
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 15;
@@ -1512,7 +1512,7 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
         Err(ImageError::MarkWithoutClass(0))
     ));
     // A header stamped with format 16, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 16;
@@ -1778,7 +1778,7 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
         "a slow potential without the mark"
     );
     // A header stamped with format 17, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 17;
@@ -1965,7 +1965,7 @@ fn the_critic_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads
         None
     );
     // A header stamped with format 18, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 19);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 18;
@@ -1977,6 +1977,228 @@ fn the_critic_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads
             Err(ImageError::Header(HeaderError::ForeignVersion(18)))
         ),
         "a format-18 header fails closed, as every foreign version does (L-6)"
+    );
+}
+
+/// The rule the critic's window is read by (ADR-0134), over arenas written by hand: the least
+/// delay of any slot that holds a synapse, whichever block holds it; an empty slot's delay is no
+/// synapse's; none for an arena with no synapse; a synapse through the mailbox reads zero.
+#[test]
+fn the_shortest_delay_is_the_least_of_any_synapse_the_arena_carries() {
+    use cortex_core::SynapseBlock;
+    use cortex_runtime::shortest_delay;
+    let block = |synapses: &[(usize, u16)], empty_delays: &[(usize, u16)]| {
+        let mut b = SynapseBlock::new();
+        for &(slot, delay) in synapses {
+            assert!(b.set_synapse(slot, 1, 100, delay, false));
+        }
+        for &(slot, delay) in empty_delays {
+            assert_eq!(b.target(slot), None);
+            b.delays_ticks[slot] = delay;
+        }
+        b
+    };
+    assert_eq!(shortest_delay(&[]), None, "no block");
+    assert_eq!(shortest_delay(&[SynapseBlock::new()]), None, "no synapse");
+    assert_eq!(
+        shortest_delay(&[block(&[], &[(0, 1), (3, 9)])]),
+        None,
+        "an empty slot's delay is no synapse's"
+    );
+    assert_eq!(
+        shortest_delay(&[block(&[(2, 300)], &[(0, 1), (3, 100)])]),
+        Some(300)
+    );
+    assert_eq!(
+        shortest_delay(&[
+            block(&[(0, 7), (1, 250)], &[]),
+            SynapseBlock::new(),
+            block(&[(3, 3)], &[(0, 1)]),
+            block(&[(0, 4), (1, 3)], &[]),
+        ]),
+        Some(3),
+        "the least over every block, equal ones once"
+    );
+    assert_eq!(
+        shortest_delay(&[block(&[(0, 2559), (3, 2558)], &[])]),
+        Some(2558)
+    );
+    assert_eq!(
+        shortest_delay(&[block(&[(1, 5), (2, 0)], &[])]),
+        Some(0),
+        "through the mailbox"
+    );
+}
+
+/// The critic's window in the modulator section (ADR-0134; format 20): its length at `[52..54)`,
+/// a `u16`. Unset, it is zero — the bytes a format-19 writer left there — and reads as unset
+/// whatever the configuration says; set, it is written and read back whatever the configuration
+/// says, and the window opens at the load. Refused: a window that is not the shortest delay of
+/// any synapse the image carries — one tick off on either side, an image with no synapse, one
+/// with a synapse through the mailbox — and a window without the critic, as the configuration's
+/// is; the reserved bytes beside it, which the writer never produces; and a header stamped with
+/// the previous version, as every foreign version is.
+#[test]
+fn the_critic_s_window_is_written_to_and_read_from_the_image_and_is_the_shortest_delay_or_refused()
+{
+    let critic = ValueCritic { shift: 9, scale: 2 };
+    let with = |critic: Option<ValueCritic>, window: u16| Config {
+        train_capacity: 8,
+        critic,
+        critic_window_ticks: window,
+        ..Config::default()
+    };
+    // Three units, two blocks: synapses of delays 7, 3 and 250, and an empty slot.
+    let network = |config: Config| {
+        let mut exec = Executor::<8>::new(Config {
+            units: 3,
+            blocks: 2,
+            ..config
+        })
+        .unwrap();
+        {
+            let blocks = exec.blocks_mut();
+            assert!(blocks[0].set_synapse(0, 1, 100, 7, false));
+            assert!(blocks[0].set_synapse(2, 2, 100, 250, false));
+            assert!(blocks[1].set_synapse(1, 0, 100, 3, false));
+        }
+        assert!(exec.units_mut()[0].set_first_block(0));
+        assert!(exec.units_mut()[1].set_first_block(1));
+        exec
+    };
+    // Unset: zeros, and the image's unset outranks the configuration's set.
+    let unset = Image::encode(&network(with(Some(critic), 0))).unwrap();
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(&section[48..51], &[1, 9, 2], "the critic");
+    assert_eq!(&section[51..64], &[0u8; 13], "unset writes zeros");
+    let loaded = Image::decode::<8>(&unset, with(Some(critic), 3)).unwrap();
+    assert_eq!(
+        (loaded.critic(), loaded.critic_window_ticks()),
+        (Some(critic), 0),
+        "the image's unset window outranks the configuration's"
+    );
+    // Set at the shortest delay, 3, with the clock off zero: written at `[52..54)`, read back
+    // whatever the configuration says, and opened at the load.
+    let mut exec = network(with(Some(critic), 3));
+    exec.run(37);
+    let set = Image::encode(&exec).unwrap();
+    let section = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(&section[48..51], &[1, 9, 2], "the critic");
+    assert_eq!(section[51], 0);
+    assert_eq!(&section[52..54], &3u16.to_le_bytes(), "the window");
+    assert_eq!(&section[54..64], &[0u8; 10]);
+    let loaded = Image::decode::<8>(&set, with(Some(critic), 0)).unwrap();
+    assert_eq!(
+        (
+            loaded.critic_window_ticks(),
+            loaded.window_opened(),
+            loaded.ticks()
+        ),
+        (3, 37, 37),
+        "the image's set window outranks the configuration's, open at the load"
+    );
+    assert_eq!(Image::encode(&loaded).unwrap(), set, "one image, twice");
+    let with_window = |window: u16| {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[52..54].copy_from_slice(&window.to_le_bytes())
+        });
+        img
+    };
+    for window in [2, 4, 7, 250, u16::MAX] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_window(window), with(None, 0)),
+                Err(ImageError::WindowNotShortestDelay {
+                    window: w,
+                    shortest: Some(3)
+                }) if w == window
+            ),
+            "{window}: not the shortest delay"
+        );
+    }
+    assert_eq!(
+        Image::decode::<8>(&with_window(0), with(None, 0))
+            .unwrap()
+            .critic_window_ticks(),
+        0,
+        "zero is unset"
+    );
+    // The window without the critic, refused as the configuration's is.
+    let mut alone = set.clone();
+    patch_section(&mut alone, SECTION_MODULATOR, |s| {
+        s[48..51].copy_from_slice(&[0, 0, 0])
+    });
+    assert!(
+        matches!(
+            Image::decode::<8>(&alone, with(Some(critic), 0)),
+            Err(ImageError::Config(ConfigError::WindowWithoutCritic))
+        ),
+        "a window without the critic"
+    );
+    // An image with no synapse, and one whose shortest synapse goes through the mailbox, resolve
+    // no window.
+    let bare = {
+        let mut exec = Executor::<8>::new(Config {
+            units: 2,
+            blocks: 1,
+            ..with(Some(critic), 0)
+        })
+        .unwrap();
+        exec.run(5);
+        Image::encode(&exec).unwrap()
+    };
+    let mut bare_set = bare.clone();
+    patch_section(&mut bare_set, SECTION_MODULATOR, |s| {
+        s[52..54].copy_from_slice(&1u16.to_le_bytes())
+    });
+    assert!(matches!(
+        Image::decode::<8>(&bare_set, with(None, 0)),
+        Err(ImageError::WindowNotShortestDelay {
+            window: 1,
+            shortest: None
+        })
+    ));
+    let mailbox = {
+        let mut exec = network(with(Some(critic), 3));
+        assert!(exec.blocks_mut()[1].set_synapse(3, 2, 100, 0, false));
+        Image::encode(&exec).unwrap()
+    };
+    assert!(matches!(
+        Image::decode::<8>(&mailbox, with(None, 0)),
+        Err(ImageError::WindowNotShortestDelay {
+            window: 3,
+            shortest: Some(0)
+        })
+    ));
+    // The bytes beside the window are reserved.
+    for at in [51, 54, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, with(None, 0)),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    // A header stamped with format 19, as every foreign version is (L-6).
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
+    let mut older = set.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 19;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, with(None, 0)),
+            Err(ImageError::Header(HeaderError::ForeignVersion(19)))
+        ),
+        "a format-19 header fails closed, as every foreign version does (L-6)"
     );
 }
 
