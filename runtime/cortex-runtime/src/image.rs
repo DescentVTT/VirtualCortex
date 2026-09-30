@@ -21,7 +21,9 @@
 //! constants sit in the modulation state beside the class, set or unset, and a unit's mark for
 //! it is another bit of `flags`, its slow potential a field of its record; since ADR-0131 the
 //! critic's constants sit there too, set or unset, and a unit's weight onto it is a field of its
-//! record, zero in every unit while the critic is unset.
+//! record, zero in every unit while the critic is unset; since ADR-0134 the critic's window sits
+//! beside them, zero while unset and, when set, the shortest delay of any synapse the image
+//! carries.
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_affect::InteroceptiveState;
@@ -133,6 +135,10 @@ pub enum ImageError {
     /// A unit carries a value weight while the image carries no critic to read it (ADR-0131):
     /// nothing but the critic writes one.
     ValueWithoutCritic(u32),
+    /// The critic's window (ADR-0134) is set to a length that is not the shortest delay of any
+    /// synapse the image carries (`shortest`, none when it carries no synapse): the rule that
+    /// reads the window from the image's anatomy does not resolve it.
+    WindowNotShortestDelay { window: u16, shortest: Option<u16> },
 }
 
 /// Blocks a synapse token can name: $2^{26}$ (finding F-23, ADR-0024). A literal, so that no
@@ -198,9 +204,37 @@ const CRITIC_SHIFT: usize = 49;
 const CRITIC_SCALE: usize = 50;
 const CRITIC_SET: u8 = 1;
 
+/// The modulator section's critic's window (ADR-0134; format 20): its length in ticks at
+/// `[52..54)`, a `u16`, zero while unset. `[51]` and `[54..64)` stay reserved and must be zero. A
+/// record a format-19 writer left zero there reads as unset, which is the critic of ADR-0131 bit
+/// for bit.
+const CRITIC_WINDOW: core::ops::Range<usize> = 52..54;
+
 /// The modulator record's reserved bytes: between the signed gate and the target period, the
-/// slow current's one, and its tail after the critic.
-const MODULATOR_RESERVED: [core::ops::Range<usize>; 3] = [26..28, 39..40, 51..64];
+/// slow current's one, the one between the critic and its window, and the tail after the window.
+const MODULATOR_RESERVED: [core::ops::Range<usize>; 4] = [26..28, 39..40, 51..52, 54..64];
+
+/// The critic's window a modulator record carries (ADR-0134), in ticks: zero while unset.
+fn critic_window_of(record: &[u8]) -> u16 {
+    u16::from_le_bytes(record[CRITIC_WINDOW].try_into().unwrap_or([0; 2]))
+}
+
+/// The shortest delay of any synapse `blocks` carry (ADR-0133, ADR-0134): the least
+/// `delays_ticks` over every slot that holds a synapse, whichever unit's chain names its block;
+/// none when no slot does. The rule the critic's window is read by: within that many ticks after
+/// a reward no spike can have caused another through a synapse, since a delay $d$ scheduled at
+/// tick $t$ is integrated at $t + d$ and a delay of zero at $t + 1$. The loader refuses a window
+/// that is not this length, so a zero here, a synapse through the mailbox, resolves none.
+pub fn shortest_delay(blocks: &[SynapseBlock]) -> Option<u16> {
+    blocks
+        .iter()
+        .flat_map(|block| {
+            (0..SYNAPSES_PER_BLOCK)
+                .filter(move |&slot| block.target(slot).is_some())
+                .map(move |slot| block.delays_ticks[slot])
+        })
+        .min()
+}
 
 /// The critic a modulator record carries (ADR-0131): none while its flag and its two bytes are
 /// zero; the constants while its flag is `CRITIC_SET`, which `Executor::new` refuses as it
@@ -512,9 +546,10 @@ impl Image {
         // plasticity's flag at `[32]` and its three bytes at `[33..36)` (ADR-0114; format 17),
         // the slow current's flag at `[36]`, its shifts at `[37]` and `[38]` and its voltages
         // at `[40..48)` (ADR-0123; format 18), the critic's flag at `[48]` and its shift and
-        // scale at `[49]` and `[50]` (ADR-0131; format 19) and 16 reserved bytes. The
-        // baselines, the period, the gate, the class, the slow current and the critic change what
-        // a run does, so they are in the image, not in a configuration (§8.3).
+        // scale at `[49]` and `[50]` (ADR-0131; format 19), the critic's window at `[52..54)`
+        // (ADR-0134; format 20) and 14 reserved bytes. The baselines, the period, the gate, the
+        // class, the slow current, the critic and its window change what a run does, so they are
+        // in the image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -544,6 +579,7 @@ impl Image {
             modulator_bytes[CRITIC_SHIFT] = critic.shift;
             modulator_bytes[CRITIC_SCALE] = critic.scale;
         }
+        modulator_bytes[CRITIC_WINDOW].copy_from_slice(&exec.critic_window_ticks().to_le_bytes());
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
         // what a run does, so they are in the image (ADR-0036).
@@ -720,17 +756,18 @@ impl Image {
         let terms = term.map_or(0, |t| t.record_count() as usize);
         let clauses = clause.map_or(0, |c| c.record_count() as usize);
         // The modulator's one record (ADR-0032), read here for the class of short-term
-        // plasticity (ADR-0114), the slow current (ADR-0123) and the critic (ADR-0131): each
-        // worker holds the first two from `Executor::new`, which sizes the critic's counts, and
-        // a unit marked for either of the first two, or carrying a weight for the third, is
-        // refused below while there is none. The image's, set or unset, outrank the
-        // configuration's (§8.3).
+        // plasticity (ADR-0114), the slow current (ADR-0123), the critic (ADR-0131) and its
+        // window (ADR-0134): each worker holds the first two from `Executor::new`, which sizes
+        // the critic's counts and refuses a window without a critic, and a unit marked for
+        // either of the first two, or carrying a weight for the third, is refused below while
+        // there is none. The image's, set or unset, outrank the configuration's (§8.3).
         if modulator.record_count() != 1 {
             return Err(ImageError::Directory(SECTION_MODULATOR));
         }
         let stp_class = stp_class_of(section_of(bytes, &modulator)?)?;
         let slow_current = slow_current_of(section_of(bytes, &modulator)?)?;
         let critic = critic_of(section_of(bytes, &modulator)?)?;
+        let critic_window_ticks = critic_window_of(section_of(bytes, &modulator)?);
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
@@ -742,6 +779,7 @@ impl Image {
             stp_class,
             slow_current,
             critic,
+            critic_window_ticks,
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -782,6 +820,18 @@ impl Image {
                     });
                 }
                 arena[i] = block;
+            }
+        }
+        // The critic's window (ADR-0134), when set, is the shortest delay of any synapse the
+        // image carries, read from the arena just loaded: a window of another length, or one on
+        // an image with no synapse, is refused.
+        if critic_window_ticks != 0 {
+            let shortest = shortest_delay(exec.blocks());
+            if shortest != Some(critic_window_ticks) {
+                return Err(ImageError::WindowNotShortestDelay {
+                    window: critic_window_ticks,
+                    shortest,
+                });
             }
         }
         if let Some(delta) = delta {
@@ -854,8 +904,9 @@ impl Image {
             // `Executor::new` would have demanded), the inhibitory baseline's flag at `[24]`
             // and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
             // (ADR-0094), the class of short-term plasticity at `[32..36)`, the slow current at
-            // `[36..48)` and the critic at `[48..51)`, read above (ADR-0114, ADR-0123,
-            // ADR-0131), 16 reserved bytes; its count was held to one above.
+            // `[36..48)`, the critic at `[48..51)` and its window at `[52..54)`, read above
+            // (ADR-0114, ADR-0123, ADR-0131, ADR-0134), 14 reserved bytes; its count was held to
+            // one above.
             let record = section_of(bytes, &modulator)?;
             let reserved_not_zero = || ImageError::ReservedNotZero {
                 section: SECTION_MODULATOR,

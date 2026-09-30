@@ -9201,10 +9201,13 @@ pub(crate) fn value_step(
 /// `earned_run_observed` under the engine's critic or none (brief 055, ADR-0131): with the
 /// engine's critic set the task carries none and delivers the outcome's reward, the engine takes
 /// its value from it, and the harness keeps its own weights, from the record's at the start, and
-/// its own counts, from the executor's at the start and every spike of the train since: at every
-/// rewarded trial it forms the value, the error and the step by `value_step`, holds the outcome's
-/// value, the reward it records as the modulator's and every unit's weight to them, and counts
-/// afresh; withheld, the outcome carries no value and the counts go on. The composer is fed the
+/// its own counts, from the executor's at the start and every spike of the train since — with the
+/// critic's window set (brief 056, ADR-0134), only the spikes fewer ticks than its length after
+/// the window opened, at the engine's start, which must be the run's, and at every reward: at
+/// every rewarded trial it forms the value, the error and the step by `value_step`, holds the
+/// outcome's value, the reward it records as the modulator's, every unit's weight and the
+/// window's opening to them, and counts afresh; withheld, the outcome carries no value and the
+/// counts go on. The composer is fed the
 /// error the modulator received, as under the task's critic. Returns the run, the moves, the task
 /// critic's expectations, and the engine's value at each rewarded trial, empty without its
 /// critic. Without it this is `earned_run_observed`, which calls it so.
@@ -9270,6 +9273,21 @@ pub(crate) fn earned_run_valued(
     let mut pending: Vec<u32> = exec.features().to_vec();
     let mut read_from = exec.ticks();
     let mut values: Vec<i32> = Vec::new();
+    // The critic's window (ADR-0134): its length, and the tick it opened at — with the window
+    // set, the run starts where the engine did, its load, with no count pending — moved to each
+    // reward's tick. Unset, every spike since the last reading counts, as before.
+    let window = u64::from(exec.critic_window_ticks());
+    let mut opened = exec.ticks();
+    if window != 0 {
+        assert_eq!(
+            (
+                exec.window_opened(),
+                exec.features().iter().all(|&c| c == 0)
+            ),
+            (opened, true),
+            "the window opened at the engine's start, where the run starts, and nothing is pending"
+        );
+    }
     let (blocks, trace) = run_on_scheduled(
         exec,
         task,
@@ -9346,6 +9364,11 @@ pub(crate) fn earned_run_valued(
                                     reached = true;
                                     break;
                                 }
+                                // Within the window, when it is set: fewer ticks after its
+                                // opening than its length.
+                                if window != 0 && u64::from(tick).saturating_sub(opened) >= window {
+                                    continue;
+                                }
                                 if let Some(count) = pending.get_mut(unit as usize) {
                                     *count = count.saturating_add(1);
                                 }
@@ -9381,6 +9404,12 @@ pub(crate) fn earned_run_valued(
                                 assert!(
                                     exec.features().iter().all(|&c| c == 0),
                                     "trial {trial}: the counts start again"
+                                );
+                                opened = end;
+                                assert_eq!(
+                                    exec.window_opened(),
+                                    opened,
+                                    "trial {trial}: the window opens again at the reward"
                                 );
                                 values.push(value);
                                 error

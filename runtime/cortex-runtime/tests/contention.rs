@@ -45,6 +45,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         stp_class: None,
         slow_current: None,
         critic: None,
+        critic_window_ticks: 0,
     })
     .expect("a valid configuration");
     assert_eq!(

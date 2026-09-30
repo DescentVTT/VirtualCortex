@@ -197,6 +197,15 @@ pub struct Config {
     /// the spikes from. For an engine built from an image, the image's outranks this one: it
     /// changes what the run does, so it is part of the image (§8.3).
     pub critic: Option<ValueCritic>,
+    /// The critic's window (ADR-0133, ADR-0134), in ticks: while it is not zero, a unit's spike
+    /// counts toward its feature only when its tick is fewer than this many ticks after the
+    /// previous reward the critic took — after the engine's start, its build or its load,
+    /// before the first — so that the value is read from what the network was given after its
+    /// last outcome. Zero (the default) counts every spike since the previous reward, the critic
+    /// of ADR-0131 bit for bit. Refused while the critic is unset. For an engine built from an
+    /// image, the image's outranks this one, and the loader refuses a window that is not the
+    /// shortest delay of any synapse the image carries ([`crate::shortest_delay`]).
+    pub critic_window_ticks: u16,
 }
 
 impl Default for Config {
@@ -226,6 +235,7 @@ impl Default for Config {
             stp_class: None,
             slow_current: None,
             critic: None,
+            critic_window_ticks: 0,
         }
     }
 }
@@ -351,6 +361,9 @@ pub enum ConfigError {
     /// `critic` is set with no train (`train_capacity` zero): the critic's features are the
     /// spikes the coordinator merges into the train (ADR-0131).
     CriticWithoutTrain,
+    /// `critic_window_ticks` is set while `critic` is not: the window gates the critic's
+    /// features and nothing else (ADR-0134).
+    WindowWithoutCritic,
 }
 
 /// What the critic read at a reward (ADR-0131): the value, and the error the modulator
@@ -858,6 +871,11 @@ pub struct Executor<const CAP: usize> {
     features: Vec<u32>,
     /// What the critic read at the last reward; none before one, or while the critic is unset.
     prediction: Option<Prediction>,
+    /// The critic's window (ADR-0134): the configuration's, or the image's; zero while unset.
+    critic_window_ticks: u16,
+    /// The tick the critic's window opened at: the previous reward's the critic took, or the
+    /// engine's start, its build or its load, before the first.
+    window_opened: u64,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -965,6 +983,9 @@ impl<const CAP: usize> Executor<CAP> {
         }
         if config.critic.is_some() && config.train_capacity == 0 {
             return Err(ConfigError::CriticWithoutTrain);
+        }
+        if config.critic.is_none() && config.critic_window_ticks != 0 {
+            return Err(ConfigError::WindowWithoutCritic);
         }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
@@ -1080,6 +1101,8 @@ impl<const CAP: usize> Executor<CAP> {
                 Vec::new()
             },
             prediction: None,
+            critic_window_ticks: config.critic_window_ticks,
+            window_opened: 0,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1191,6 +1214,21 @@ impl<const CAP: usize> Executor<CAP> {
         self.prediction
     }
 
+    /// The critic's window (ADR-0134), in ticks, from the configuration or the image: while it
+    /// is not zero, a spike counts toward the critic's features only within this many ticks
+    /// after the window opened; zero while unset, where every spike since the previous reward
+    /// counts, as before ADR-0134.
+    pub fn critic_window_ticks(&self) -> u16 {
+        self.critic_window_ticks
+    }
+
+    /// The tick the critic's window opened at (ADR-0134): the previous reward's the critic took,
+    /// or the engine's start before the first — zero for an engine built from a configuration,
+    /// the image's tick for one loaded from an image.
+    pub fn window_opened(&self) -> u64 {
+        self.window_opened
+    }
+
     /// A reward into the dopamine signal, between ticks (ADR-0032): an input, like an
     /// injection, so a run that replays its rewards at the same ticks is the same run. The next
     /// tick's fan-out consolidates under the raised modulation; the signal then decays by
@@ -1203,7 +1241,8 @@ impl<const CAP: usize> Executor<CAP> {
     /// unit's weight then moves by the error times its spikes, shifted, and every count starts
     /// again from zero. The weights are written here, between ticks, where `&mut self` excludes
     /// the tick and every worker waits at the barrier holding no reference into the arena
-    /// (axiom A3).
+    /// (axiom A3). The critic's window opens again at this tick (ADR-0134): the spikes of the
+    /// next tick are the first after the reward.
     pub fn reward(&mut self, reward_q16: i32) -> i32 {
         let Some(critic) = self.critic else {
             return self.modulator.reward(reward_q16);
@@ -1226,6 +1265,7 @@ impl<const CAP: usize> Executor<CAP> {
             value_q16,
             error_q16,
         });
+        self.window_opened = self.tick;
         self.modulator.reward(error_q16)
     }
 
@@ -1332,9 +1372,11 @@ impl<const CAP: usize> Executor<CAP> {
     }
 
     /// The loader's: the clock resumes at the tick the image was written (ADR-0033), between
-    /// ticks, before anything reads a stamp against it.
+    /// ticks, before anything reads a stamp against it. The critic counts from the load, so its
+    /// window opens there (ADR-0134).
     pub(crate) fn resume_clock(&mut self, tick: u64) {
         self.tick = tick;
+        self.window_opened = tick;
         self.shared.now.store(tick as u32, Ordering::Relaxed);
     }
 
@@ -1672,6 +1714,15 @@ impl<const CAP: usize> Executor<CAP> {
         self.induction.capacity()
     }
 
+    /// Whether the tick being merged counts toward the critic's features (ADR-0134): always
+    /// while the window is unset; while it is set, when the tick is fewer than the window's
+    /// length after the tick the window opened at. The clock only moves forward from the
+    /// opening, so the difference is the ticks since.
+    fn in_window(&self) -> bool {
+        self.critic_window_ticks == 0
+            || self.tick.wrapping_sub(self.window_opened) < u64::from(self.critic_window_ticks)
+    }
+
     /// After a tick, between ticks (ADR-0050): the units the workers fired this tick, sorted,
     /// into the ring at `now`, the oldest let go when the ring is full. Nothing for an
     /// executor that keeps no train.
@@ -1687,10 +1738,14 @@ impl<const CAP: usize> Executor<CAP> {
         self.merge.sort_unstable();
         // The critic's features (ADR-0131): each merged spike counted against its unit, as the
         // train receives it, so the count is the unit's spikes since the previous reward however
-        // many the ring has let go since. Unset, there is no count.
-        for &unit in &self.merge {
-            if let Some(count) = self.features.get_mut(unit as usize) {
-                *count = count.saturating_add(1);
+        // many the ring has let go since. Unset, there is no count. With the window set
+        // (ADR-0134), only a tick fewer than its length after the window opened counts; `now` is
+        // `self.tick`'s low word, and the comparison takes the clock itself.
+        if self.in_window() {
+            for &unit in &self.merge {
+                if let Some(count) = self.features.get_mut(unit as usize) {
+                    *count = count.saturating_add(1);
+                }
             }
         }
         for &unit in &self.merge {
@@ -3765,6 +3820,207 @@ mod tests {
             finals[0], finals[1],
             "the ring's size changes nothing the critic reads"
         );
+    }
+
+    /// The critic's window (ADR-0134): unset by default, where it reads zero and opens at the
+    /// engine's start; refused while the critic is unset; taken at every length the field holds
+    /// while the critic is set.
+    #[test]
+    fn the_window_is_unset_by_default_and_refused_without_the_critic() {
+        assert_eq!(Config::default().critic_window_ticks, 0, "unset by default");
+        let with = |critic, window| {
+            Executor::<8>::new(Config {
+                units: 3,
+                train_capacity: 8,
+                critic,
+                critic_window_ticks: window,
+                ..Config::default()
+            })
+        };
+        let unset = with(None, 0).unwrap();
+        assert_eq!((unset.critic_window_ticks(), unset.window_opened()), (0, 0));
+        let critic = Some(ValueCritic { shift: 9, scale: 2 });
+        assert_eq!(with(critic, 0).unwrap().critic_window_ticks(), 0);
+        for window in [1, 100, u16::MAX] {
+            let exec = with(critic, window).unwrap();
+            assert_eq!(
+                (exec.critic_window_ticks(), exec.window_opened()),
+                (window, 0),
+                "{window}: taken, open at the start"
+            );
+            assert!(
+                matches!(with(None, window), Err(ConfigError::WindowWithoutCritic)),
+                "{window}: refused without the critic"
+            );
+        }
+    }
+
+    /// The window's rule (ADR-0134), each number from an oracle written from the rule's text:
+    /// four armed units kicked at different ticks after each reward, and before the first, so
+    /// that their spikes fall at several distances from the window's opening. A first run with the
+    /// window unset reads those distances and is ADR-0131's critic; then, at every length on both
+    /// sides of every distance, a run of the same inputs, where the spikes are the first run's
+    /// tick for tick, and at every reward the features are exactly the train's spikes fewer ticks
+    /// after the opening than the length, the reading is the value and the error of those counts,
+    /// every weight moves by them, and the window opens again at the reward's tick; before the
+    /// first reward it opens at the engine's start.
+    #[test]
+    fn the_window_counts_only_the_spikes_within_its_length_after_the_previous_reward() {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        let critic = ValueCritic { shift: 9, scale: 2 };
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        // After each reward, and before the first: (ticks after the opening, units kicked).
+        let kicks: [&[(u64, &[u32])]; 4] = [
+            &[(0, &[0]), (3, &[1, 2]), (40, &[3])],
+            &[(0, &[1, 3]), (7, &[0]), (200, &[2])],
+            &[(5, &[2]), (6, &[0, 1])],
+            &[(0, &[0, 1, 2, 3]), (300, &[0, 1])],
+        ];
+        let rewards = [0x1_0000, -0x1_0000, 0x8000, 0x1_0000];
+        let window_ticks = 400u64;
+        // One run: every spike's (tick, unit), the opening before each reward, and at each reward
+        // the features, the reading and the weights after.
+        type Read = (
+            Vec<(u32, u32)>,
+            Vec<u64>,
+            Vec<(Vec<u32>, Prediction, Vec<i16>)>,
+        );
+        let run = |window: u16| -> Read {
+            let mut exec = Executor::<8>::new(Config {
+                units: 4,
+                nodes_per_worker: 128,
+                train_capacity: 256,
+                critic: Some(critic),
+                critic_window_ticks: window,
+                ..Config::default()
+            })
+            .unwrap();
+            for (unit, weight) in exec.units_mut().iter_mut().zip([100i16, -40, 7, 0]) {
+                unit.v_thresh = THRESHOLD_BASE;
+                unit.stp_u_rel = STP_U;
+                unit.stp_r_ves = STP_MAX;
+                unit.value_weight = weight;
+            }
+            let mut openings = Vec::new();
+            let mut readings = Vec::new();
+            for (pattern, &reward) in kicks.iter().zip(&rewards) {
+                let opened = exec.window_opened();
+                assert_eq!(
+                    opened,
+                    exec.ticks(),
+                    "the window opens where the last one closed"
+                );
+                openings.push(opened);
+                for since in 0..window_ticks {
+                    for &(at, units) in *pattern {
+                        if at == since {
+                            let inject = exec.injector();
+                            for &unit in units {
+                                for _ in 0..14 {
+                                    inject.inject(unit, strong).unwrap();
+                                }
+                            }
+                        }
+                    }
+                    exec.tick();
+                }
+                let features = exec.features().to_vec();
+                exec.reward(reward);
+                let weights = exec.units().iter().map(|u| u.value_weight).collect();
+                readings.push((features, exec.prediction().unwrap(), weights));
+                assert_eq!(
+                    exec.window_opened(),
+                    exec.ticks(),
+                    "open again at the reward"
+                );
+            }
+            assert_eq!(exec.train_overwritten(), 0, "the ring holds every spike");
+            (exec.train().to_vec(), openings, readings)
+        };
+        let (train, openings, unset) = run(0);
+        assert_eq!(
+            openings,
+            [0, 400, 800, 1200],
+            "the start, then each reward's tick"
+        );
+        // The distances of the spikes from their window's opening, as the unset run reads them.
+        let distance = |tick: u32| {
+            let opened = openings
+                .iter()
+                .rev()
+                .find(|&&o| o <= u64::from(tick))
+                .unwrap();
+            u64::from(tick) - opened
+        };
+        let mut distances: Vec<u64> = train.iter().map(|&(tick, _)| distance(tick)).collect();
+        distances.sort_unstable();
+        distances.dedup();
+        assert!(
+            distances.len() >= 4,
+            "spikes at several distances: {distances:?}"
+        );
+        let oracle = |window: u64| -> Vec<(Vec<u32>, Prediction, Vec<i16>)> {
+            let mut weights = [100i64, -40, 7, 0];
+            (0..openings.len())
+                .map(|k| {
+                    let mut counts = vec![0u32; 4];
+                    for &(tick, unit) in &train {
+                        let opened = openings[k];
+                        let t = u64::from(tick);
+                        if t >= opened
+                            && t < opened + window_ticks
+                            && (window == 0 || t - opened < window)
+                        {
+                            counts[unit as usize] += 1;
+                        }
+                    }
+                    let exact: i64 = weights
+                        .iter()
+                        .zip(&counts)
+                        .map(|(&w, &c)| w * i64::from(c))
+                        .sum();
+                    let value = exact.div_euclid(4) as i32;
+                    let error = (i64::from(rewards[k]) - i64::from(value))
+                        .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+                        as i32;
+                    for (w, &c) in weights.iter_mut().zip(&counts) {
+                        *w = (*w + (i64::from(error) * i64::from(c)).div_euclid(512))
+                            .clamp(i64::from(i16::MIN), i64::from(i16::MAX));
+                    }
+                    (
+                        counts,
+                        Prediction {
+                            value_q16: value,
+                            error_q16: error,
+                        },
+                        weights.iter().map(|&w| w as i16).collect(),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(
+            unset,
+            oracle(0),
+            "unset, every spike since the reward: ADR-0131's"
+        );
+        let mut lengths: Vec<u64> = distances
+            .iter()
+            .flat_map(|&d| [d, d + 1])
+            .filter(|&w| w >= 1)
+            .collect();
+        lengths.dedup();
+        let mut excluded_some = false;
+        for &window in &lengths {
+            let (again, opened_again, windowed) = run(window as u16);
+            assert_eq!(
+                (again, opened_again),
+                (train.clone(), openings.clone()),
+                "{window}: the window changes no spike"
+            );
+            assert_eq!(windowed, oracle(window), "window {window}");
+            excluded_some |= windowed.iter().zip(&unset).any(|(w, u)| w.0 != u.0);
+        }
+        assert!(excluded_some, "some length leaves a spike out");
     }
 }
 
