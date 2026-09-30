@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-30
 depends-on: ADR-0136
 decision-makers: VirtualCortex maintainers
@@ -95,9 +95,9 @@ A failure at any of them stops the round there as a finding.
 
 ### The order of the work, as the history holds it
 
-1. **The protocol** (`3fcee54`, pushed at 08:11:18Z on 2026-09-30 and pull request #171 opened as a draft at 08:11:35Z, before any run): the harness's delivery, the network's oracle, the rules, the constants, the gate, the arms with empty pins, and this ADR's protocol.
-2. **The calibration**, before any rewarded run, from the release build of `3fcee54`: the workspace's tests passed in the debug profile and in the release profile (684 passed, 119 ignored) and on the MSRV (684 passed), and the check, Clippy, the documentation, the benchmarks' single pass and the format exited 0; **every one of the 77 whole-domain tests of the weekly job passed**, each in a process of its own and each exit 0 with one test reported — 67 eight at a time from 08:13:43Z to 09:20:23Z, H-23's two arms among them in 1 853 and 1 782 s under that load, and the ten of ADR-0097 and ADR-0102 one at a time to 09:22:09Z; the pull request's checks on `3fcee54` passed, the determinism pin on AArch64 among them, and the mutation gate found no mutant in a diff that changes no source.
-3. **The arms**, once, side by side from 09:22:38Z. In each the calibration held: ADR-0077's settled engine and H-20's to H-23's images by their CRCs, and H-23's first block from H-23's image under the addressed delivery reproduced table by table, the network's oracle beside it reading nothing moved outside the pairs. Both ran their 7 680 trials with both oracles held to the record at every trial and stopped at the first empty table at 09:44:21Z, 1 303 s. The tables were written from those dumps (`5b316f8`), and a second run side by side from 09:47:44Z reproduced every table and passed, in 1 291 and 1 288 s (on the developer machine, a ratio and not admissible).
+1. **The protocol** (`dfea8dc` on `main`; `3fcee54` on the branch before the rebase that merged pull request #171, pushed at 08:11:18Z on 2026-09-30 and pull request #171 opened as a draft at 08:11:35Z, before any run): the harness's delivery, the network's oracle, the rules, the constants, the gate, the arms with empty pins, and this ADR's protocol.
+2. **The calibration**, before any rewarded run, from the release build of `3fcee54` (`dfea8dc`): the workspace's tests passed in the debug profile and in the release profile (684 passed, 119 ignored) and on the MSRV (684 passed), and the check, Clippy, the documentation, the benchmarks' single pass and the format exited 0; **every one of the 77 whole-domain tests of the weekly job passed**, each in a process of its own and each exit 0 with one test reported — 67 eight at a time from 08:13:43Z to 09:20:23Z, H-23's two arms among them in 1 853 and 1 782 s under that load, and the ten of ADR-0097 and ADR-0102 one at a time to 09:22:09Z; the pull request's checks on `3fcee54` (`dfea8dc`) passed, the determinism pin on AArch64 among them, and the mutation gate found no mutant in a diff that changes no source.
+3. **The arms**, once, side by side from 09:22:38Z. In each the calibration held: ADR-0077's settled engine and H-20's to H-23's images by their CRCs, and H-23's first block from H-23's image under the addressed delivery reproduced table by table, the network's oracle beside it reading nothing moved outside the pairs. Both ran their 7 680 trials with both oracles held to the record at every trial and stopped at the first empty table at 09:44:21Z, 1 303 s. The tables were written from those dumps (`5d9489e`; `5b316f8`), and a second run side by side from 09:47:44Z reproduced every table and passed, in 1 291 and 1 288 s (on the developer machine, a ratio and not admissible).
 
 No constant, clause or rule moved after the first rewarded trial, and there was no second attempt: the second run is the pinned tables' reproduction.
 
@@ -165,7 +165,7 @@ The largest single move from the image's weight reached 30 775 and 28 856 of the
 
 ### The evidence
 
-- **The dispatch's scope.** The diff changes no file under `src/` — the shared harness and `tests/inhibition.rs`, the documents and the cost table — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 057 asks: run [36700851135](https://github.com/DescentVTT/VirtualCortex/actions/runs/36700851135) at `7e806a4`, the readings' commit, whose tests are those of `5b316f8`, the pinned tables. The mutation sweep did not run: with no source changed it could make no mutant the tree's last sweep did not.
+- **The dispatch's scope.** The diff changes no file under `src/` — the shared harness and `tests/inhibition.rs`, the documents and the cost table — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 057 asks: run [36700851135](https://github.com/DescentVTT/VirtualCortex/actions/runs/36700851135) at `7e806a4` (`9bc8562` on `main`), the readings' commit, whose tests are those of `5b316f8` (`5d9489e`), the pinned tables. The round's commits as `main` holds them, beside the branch's: `dfea8dc` (`3fcee54`) the protocol, before any run; `5d9489e` (`5b316f8`) the arms' tables and the gate's checks over them; `9bc8562` (`7e806a4`) this ADR's readings and the documents; `16c7ff7` (`1899745`) this section, the cost table and the brief's archive. The mutation sweep did not run: with no source changed it could make no mutant the tree's last sweep did not.
 - **Every exhaustive job is green.** All seventy-nine `exhaustive` tests passed, each exit 0 with one test reported: the seventy-seven before this round reproduced their pinned numbers on the hosted runners, H-23's arms among them in 1 317 and 1 790 s, and H-24's two arms reproduced their tables there, in **1 809 s from the assignment and 1 907 s from the mirrored**.
 - **The shards**, dealt by the table before this round, which did not know H-24's arms and costed each at 900 s:
 
@@ -180,7 +180,7 @@ The largest single move from the image's weight reached 30 775 and 28 856 of the
 
   The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.87 to 1.98 of their summed seconds over the wall.
 - **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 36700851135`): 79 lines, 34 700 s, the seventy-seven earlier tests at 1.066 of the table before, so these runners were slower than ADR-0135's. ADR-0092's deal plans each of the six shards at 5 782 to 5 785 s summed, about 2 975 s of wall time at the run's ratio, **about 41 per cent of the bound**, inside the brief's 60; the 38 per cent planned above did not know the slower runners.
-- **The pull request's gate** on `3fcee54` and on `7e806a4` is green in every job, the determinism pin on AArch64 among them; the mutation gate on the changed lines found no mutant, the diff changing no source.
+- **The pull request's gate** on `3fcee54` (`dfea8dc`), on `7e806a4` (`9bc8562`) and on `1899745` (`16c7ff7`) is green in every job, the determinism pin on AArch64 among them; the mutation gate on the changed lines found no mutant, the diff changing no source.
 
 ### The step of the stopping rule reached
 
