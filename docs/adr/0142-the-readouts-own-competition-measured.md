@@ -5,7 +5,7 @@ depends-on: ADR-0141
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0142: The readouts' own competition, measured — brief 059's protocol, committed before the run: two shadows of the composer's stimulus–readout synapses beside H-25's two arms, each with traces and weights of its own from the image's, replayed by the composer's own rule from the run's train, signal, selection and drawn sources and never written back, one under the drawn address as the run wrote it and held to the composer at every trial, one with the address's targets released to every unit; H-25's tables held first, then H-26's rule as integers — the released shadow's consolidation on the pairs of the readout not selected, signed against the answer, at most half the learning signal H-25's pinned table already holds, in every mapping of both arms — and the readings beside it
+# ADR-0142: The readouts' own competition, measured — H-26 is no, as predicted, and at the bar: on H-25's two arms, reproduced bit for bit with two shadows of the composer's stimulus–readout synapses beside them, one under the drawn address held to the composer at every trial and one with the address's targets released to every unit, the released shadow's consolidation on the pairs of the readout not selected, signed against the answer, came to 0.486 to 0.602 of the learning signal the run delivered, past half in six of the eight mappings and under it in two; the readout not selected carried the selected one's eligibility by magnitude and a quarter to a half of it on net, moved as much weight, and fired 0.57 to 0.62 of its spikes in the readout window and 0.95 to 0.97 over the trial; net of what the shadow's selected side gained the release kept 0.51 to 0.63 of the signal; H-26's stopping rule at step 4, and the next decision, an ADR on the lateral competition §5.2.5 specifies with this round's cost per block as its need and the attention-gated feedback as its fallback, named and not taken
 
 ## Context and Problem Statement
 
@@ -48,7 +48,7 @@ What was read before anything was written (principle 2, and brief 059's directiv
 
 ## Decision Outcome
 
-**Options 1(a), 2(a), 3(a), 4(a) and 5(a).** Everything below is committed before the run.
+**Options 1(a), 2(a), 3(a), 4(a) and 5(a).** Everything from here to the weekly tests and their cost was committed before the run; the order of the work, the readings and the step of the stopping rule follow it.
 
 ### The shadow (option 1(a))
 
@@ -113,20 +113,114 @@ Per block, pinned; per mapping, computed from them:
 - **No weekly test is added.** H-25's two arms carry the shadows; the cost table's lines stand and its times are regenerated from this round's dispatch.
 - **The dispatch's scope**: no file under `src/` changes, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly is dispatched at `scope=exhaustive`.
 
-### The order of the work
+### The order of the work, as the history holds it
 
-1. **This protocol**: the harness's `advance`, `Shadow` and `earned_run_shadowed`, H-26's rule and readings, the gate and the arms' empty tables, committed and pushed with the pull request opened as a draft, before the run.
-2. **The calibration**, from the release build of that commit.
-3. **The arms, once.** The tables are written from that run's dumps, and a second run reproduces them.
-4. **The readings**, by the rule committed first.
+1. **The protocol** (`e1c300b` on the branch, pushed at 19:00Z on 2026-10-06 with pull request #177 opened as a draft on it, before the run): the harness's `advance`, `Shadow` and `earned_run_shadowed`, H-26's rule and readings, the gate, the arms' empty tables and this ADR's protocol. The pull request's checks passed on it, the determinism pin on AArch64 and the MSRV among them.
+2. **The calibration**, from the release build of `e1c300b`: the workspace's tests passed in the debug profile (688 passed, 121 ignored), in the release profile (688 passed, 121 ignored) and on the MSRV (688 passed), and the check, Clippy, the documentation and the format exited 0. **Every one of the 79 other whole-domain tests of the weekly job passed**, each in a process of its own and each exit 0 with one test reported: 69 eight at a time from 19:07:10Z to 21:01:17Z, H-23's and H-24's four arms and every earlier run through `Composer::observe` among them, and the ten of ADR-0097 and ADR-0102 one at a time from 21:01:51Z to 21:05:00Z.
+3. **The arms**, once, side by side from 21:05:20Z to 21:34:28Z. In each, H-25's calibration held; H-25's 7 680 trials ran with the two shadows beside the composer, the one under the drawn address held to the composer at every trial; **every one of H-25's pinned tables and readings was reproduced**, and only then were the shadow's tables dumped. Each test stopped at the first empty table, in 1 747 s. The tables were written from those dumps (`e8f92ee`), and a second run side by side from 21:37:58Z reproduced every table of H-25 and of H-26 and passed, in 1 663 and 1 658 s (on the developer machine, a ratio and not admissible).
+
+No constant, clause or rule moved after the run, and there was no second attempt: the second run is the pinned tables' reproduction.
+
+### The readings
+
+**The verdict** (`RELEASED_1024`), by the rule committed first, over the pinned tables (`RELEASED_COSTED_1024`, `DRAWN_WENT_1024`):
+
+| Arm, mapping | Cost | Signal | Half the signal | Cost over signal | Cost at most half |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| Assignment, 1 | 1 500 853 | 2 678 216 | 1 339 108 | 0.560 | no |
+| Assignment, 2 | 2 583 722 | 5 024 810 | 2 512 405 | 0.514 | no |
+| Assignment, 3 | 3 069 735 | 5 166 932 | 2 583 466 | 0.594 | no |
+| Assignment, 4 | 3 073 513 | 5 506 390 | 2 753 195 | 0.558 | no |
+| Mirrored, 1 | 1 423 361 | 2 738 289 | 1 369 144 | 0.520 | no |
+| Mirrored, 2 | 2 420 291 | 4 977 285 | 2 488 642 | **0.486** | **yes** |
+| Mirrored, 3 | 2 387 992 | 4 811 435 | 2 405 717 | **0.496** | **yes** |
+| Mirrored, 4 | 3 090 173 | 5 135 182 | 2 567 591 | 0.602 | no |
+
+- `Released { held: [[false; 4], [false, true, true, false]], yes: false }`. **H-26 is no**: the cost is past half the signal in six of the eight mappings, the assignment's four and the mirrored's first and fourth.
+- **It is a no at the bar.** The cost is 0.486 to 0.602 of the signal: from 0.7 per cent under its bar to 20.4 per cent over it, and within 5 per cent of it in four of the eight.
+- Its scope: this task, these two arms and this schedule at 1 024 units, on H-25's trajectory, open-loop.
+
+**The prediction, against the reading.** ADR-0141 predicted no, because without a competition the readout that lost would carry much of the eligibility. The premise held more fully than the verdict. By magnitude the readout not selected carried as much eligibility as the one selected, and the release moved as much weight on it. But the net of what it moved was about half the signal and not all of it, because the net of that eligibility, the part above zero less the part below, was a quarter to a half of the selected readout's.
+
+**Where the cost came from** (the shade's side not selected, per mapping; the weight raised and the weight lowered with their signs):
+
+| Arm, mapping | Answer's pairs: raised | lowered | net | Other pairs: raised | lowered | net |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Assignment, 1 | 2 642 225 | −3 832 632 | −1 190 407 | 6 222 339 | −5 911 893 | +310 446 |
+| Assignment, 2 | 6 958 360 | −8 556 573 | −1 598 213 | 8 741 717 | −7 756 208 | +985 509 |
+| Assignment, 3 | 6 520 500 | −8 361 263 | −1 840 763 | 9 147 223 | −7 918 251 | +1 228 972 |
+| Assignment, 4 | 5 930 843 | −7 669 617 | −1 738 774 | 8 816 841 | −7 482 102 | +1 334 739 |
+| Mirrored, 1 | 2 496 262 | −3 580 370 | −1 084 108 | 6 543 713 | −6 204 460 | +339 253 |
+| Mirrored, 2 | 6 316 264 | −7 645 110 | −1 328 846 | 8 496 920 | −7 405 475 | +1 091 445 |
+| Mirrored, 3 | 5 552 431 | −6 984 007 | −1 431 576 | 8 052 946 | −7 096 530 | +956 416 |
+| Mirrored, 4 | 6 108 856 | −8 116 002 | −2 007 146 | 9 333 075 | −8 250 048 | +1 083 027 |
+
+- **Both moves ADR-0141 named are there, and both count.** The answer's pairs fell on net in every mapping and the other pairs rose in every mapping; the cost is the second net less the first. The answer's fall is the larger part, 55 to 79 per cent of the cost.
+- **As much weight moved on the readout not selected as on the one selected**: 18.6 to 32.0 million a mapping against the shadow's 17.6 to 31.4 million on its selected side, 0.97 to 1.06 of it.
+- **By the kind of the trial the address was written at** (`KINDS_RELEASED_1024`): after a correct selection, where the release raises the other readout's coupling, 32 to 54 per cent of the cost; after a wrong one, where it lowers the answer's, 42 to 52 per cent; after a tie, where it reaches both, from nothing to 16 per cent. Per trial of its kind a wrong selection costs more than a correct one in seven of the eight mappings, and nine and eleven times as much in each arm's first (3 546 and 3 923 a trial against 397 and 362), where wrong selections are fewest, 213 and 189 of 1 536.
+- **Every block's cost is above zero**, from 10 282 to 186 982 a block; it is past half that block's own signal in 83 and 72 of the 120 blocks, and past the whole of it in 14 and 23.
+
+**The reversal's blocks apart from the learned ones** (`APART_RELEASED_1024`, the cost over the signal):
+
+| Arm | Mapping 1: up to the crossing, past it | Mapping 2 | Mapping 3 | Mapping 4 |
+| :--- | :--- | :--- | :--- | :--- |
+| Assignment first | 0.490, 0.603 | 0.445, 0.633 | 0.542, 0.715 | 0.558, 0.559 |
+| Mirrored first | 0.428, 0.549 | 0.414, 0.638 | 0.428, 0.627 | 0.422, 0.859 |
+
+Up to the crossing the cost is 0.41 to 0.56 of the signal, and past it 0.55 to 0.86. Past the crossing the signal per block is lower in every mapping, by 15 to 54 per cent, while the cost per block is lower in four and higher in four: once a mapping is learned the release takes the larger share of a smaller signal.
+
+**What the verdict rests on.** Two of the protocol's choices decide how the rule reads, and each was fixed before the run:
+- **The tie** (option 4(a)). With the ties' part left out, the assignment's first mapping and the mirrored's first would hold beside the mirrored's second and third, at 0.468, 0.439, 0.469 and 0.482; the assignment's second would fail by 335 in 2.5 million, and the assignment's third and fourth and the mirrored's fourth at 0.549, 0.558 and 0.546. The verdict would be no.
+- **The shadow's selected side** (option 5(a)). In the shadow the selected side's own signal, its answer pairs' net less its other pairs', was **1.007 to 1.147 of the run's**: under the release the selected side delivered more than the run's did. So the shadow's whole signal, its selected side's less the cost, was **0.511 to 0.626 of the run's**, and the difference of the two signals 0.374 to 0.489 of the run's, under half in every mapping. By the measure option 5(b) would have been, every mapping holds, the mirrored's third narrowly; by the rule ADR-0141 committed, six do not. The rule does not move, and H-26 is no. Why the selected side gains is not derived here: the run leaves the traces onto the readout it did not select to decay until that readout is next selected, and the shadow consolidates them at once, so the two consolidate different traces on the same synapses.
+
+| Arm | The shadow's selected side over the run's signal, per mapping | The shadow's whole signal over the run's |
+| :--- | :--- | :--- |
+| Assignment first | 1.146, 1.138, 1.138, 1.109 | 0.586, 0.623, 0.544, 0.551 |
+| Mirrored first | 1.146, 1.051, 1.007, 1.147 | 0.626, 0.565, 0.511, 0.545 |
+
+**The readouts' spikes** (`RELEASED_HEARD_1024`, per trial that selected a readout):
+
+| Arm | In the readout window: selected, other | other over selected | Over the whole trial: selected, other | other over selected |
+| :--- | :--- | :--- | :--- | :--- |
+| Assignment first | 13.9 to 15.6, 8.5 to 9.1 | 0.58 to 0.62 | 140.3 to 143.8, 135.2 to 137.7 | 0.958 to 0.965 |
+| Mirrored first | 15.0 to 16.4, 8.9 to 10.2 | 0.57 to 0.62 | 141.9 to 146.0, 135.2 to 139.6 | 0.952 to 0.963 |
+
+The selected readout is by the rule the one that counted more in the readout window, 500 ticks of the trial's 16 384, and there it leads by five to seven spikes a trial. Over the whole trial it leads by the same five to seven: outside the window the two fire alike. Nothing makes the readout that lost fire less, as ADR-0141 read from the task.
+
+**The eligibility at each reward** (`RELEASED_ELIGIBLE_1024`, the record's traces from the sources drawn at that trial's end, summed per mapping, the readout not selected over the selected one):
+
+| Arm | Above zero | Below zero | Magnitude | Net |
+| :--- | :--- | :--- | :--- | :--- |
+| Assignment first | 0.82 to 0.98 | 1.10 to 1.20 | 0.93 to 1.05 | 0.33 to 0.49 |
+| Mirrored first | 0.80 to 0.97 | 1.13 to 1.20 | 0.93 to 1.06 | 0.25 to 0.52 |
+
+The readout not selected carries a little less trace above zero and a little more below it than the selected one, the same amount in all, and so a net that is a quarter to a half of the selected readout's: 2 654 to 4 447 a trial against 5 658 to 10 772. That net is above zero in every mapping, and after a correct selection the release raises the other readout's coupling.
+
+**The count margin the gating decided by** (`RELEASED_MARGINS_1024`): 4.4 to 7.0 per cent of a mapping's trials tied; the margin was one or two spikes in a further 18 to 25 per cent, so at most two in 23 to 31 per cent; nine or more in 18 to 30 per cent; the mean 5.0 to 6.4 spikes.
+
+**The shadow's couplings** (`RELEASED_COUPLINGS_1024`): at each mapping's end each stimulus's coupling onto its answer stood above its coupling onto the other readout by 0.079 to 0.163 of its image coupling in the shadow, against the run's 0.152 to 0.231, 0.44 to 0.65 of the run's separation in fourteen of the sixteen and 0.78 and 0.95 in the other two. The shadow's highest coupling was 1.154 and 1.144 of its image's, under the run's 1.181 and 1.191. These are where H-25's spikes would have taken a released rule; a released run would have other spikes.
+
+**The oracles held** at every one of the 15 360 trials: the shadow under the drawn address to the composer, number by number and synapse by synapse, and so to the record; the released shadow's stamps to the composer's; the composer and the network's oracle to the record, the drawn sources to the critic's oracle, as in H-25. At every block the run's own consolidation by the shadow's fold was nothing on the pairs of the readout not selected and, on the selected side, the network's oracle's answer pairs and other pairs, direction by direction. At each run's end the released shadow's tables summed to its own weights. The gate holds the pinned tables to one another and to H-25's block by block: the kinds to the block's cost, the shadow's couplings to what its shade holds, the readouts' spikes in the window and the ties to H-25's blocks, and the margins to the selected readout's count less the other's.
+
+### The step of the stopping rule reached
+
+**Step 4**: *"No: the release costs more than half the learning signal."* **The next decision is an ADR on the lateral competition whitepaper §5.2.5 specifies, with this round's cost per block as its need and the attention-gated feedback named as its fallback.** It is named and not taken. What this round hands it:
+
+- **The need by the rule**: the cost is 0.486 to 0.602 of the signal, so in the worst mapping a sixth of the cost stands between the release and the bar. Per block the cost and the signal are `RELEASED_COSTED_1024` and `DRAWN_WENT_1024`.
+- **What a competition would act on**: the readout that lost already fires 0.57 to 0.62 of the winner's spikes in the readout window and 0.95 to 0.97 over the trial, and carries the winner's eligibility by magnitude and a quarter to a half of it on net.
+- **What the rule did not read**: net of what the shadow's selected side gains, the release's first-order loss is 0.37 to 0.49 of the signal, under half in every mapping. The next ADR weighs that reading with the verdict; this one does not.
+
+Step 3 did not arise; step 5 is kept.
 
 ## Consequences
 
 - Good: the cost is computed by the function the record is held to, with one flag changed, and the shadow that does not set the flag is the composer at every trial of the run it is read on.
 - Good: H-26 is read on H-25's run by construction, at no weekly cost, and H-25's tables are held before it.
 - Good: the signal's side of the rule was in the tree before the shadow was written.
+- Good: the second step's build is handed a measured gap: the cost per block, the readouts' spikes in and out of the window, and the eligibility the readout that lost carries, by magnitude and on net.
 - Bad: `Composer::observe` is edited, the oracle of every learning round since brief 032. The edit moves its loop into a function and adds a table by direction; every pinned number of the tree is the evidence that it changed nothing.
 - Bad: the shadow is open-loop, as ADR-0141 says: it reads the release on H-25's trajectory.
+- Bad: the verdict is at the bar, and two readings beside it lean the other way — two mappings hold, and net of what the shadow's selected side gains the first-order loss is under half the signal in every mapping. The rule committed first reads no and is kept; the next ADR has both.
 - Neutral: H-25's two tests now assert H-26's tables after their own; a failure of the second kind fails a test named for the first.
 
 ## Alternatives considered and why rejected
@@ -139,5 +233,5 @@ Per block, pinned; per mapping, computed from them:
 ## Confirmation
 
 - `runtime/cortex-runtime/tests/instrument/harness.rs`: `advance`, `Replay`, `Shifted`, `Shadow`, `Composer::{shadow, eligible, shifted, shadows}`, `Shadowed`, `earned_run_shadowed`.
-- `runtime/cortex-runtime/tests/inhibition.rs`: `RELEASED_ARMS`, `RELEASED_PREDICTED`, `COST_TIMES`, `Shade`, `shade_of`, `cost_of`, `signal_of`, `Costed`, `costed_blocks`, `affordable`, `Released`, `released`, `Heard`, `Eligible`, `Margins`, `apart`, `Beside`, `shadowed_run`, `released_reading`, `SIGNAL_RELEASED_1024`; the gate's test named above.
+- `runtime/cortex-runtime/tests/inhibition.rs`: `RELEASED_ARMS`, `RELEASED_PREDICTED`, `COST_TIMES`, `Shade`, `shade_of`, `cost_of`, `signal_of`, `Costed`, `costed_blocks`, `affordable`, `Released`, `released`, `Heard`, `Eligible`, `Margins`, `apart`, `Beside`, `shadowed_run`, `released_reading`, `SIGNAL_RELEASED_1024`, `RELEASED_1024` and the pinned tables `RELEASED_{COSTED, HEARD, ELIGIBLE, MARGINS, COUPLINGS, HASH}_1024`, `COST_RELEASED_1024`, `KINDS_RELEASED_1024` and `APART_RELEASED_1024`; the gate's test named above.
 - Every pinned number of ADR-0065 to ADR-0140 unchanged, and the determinism pin; no file under `src/` changed.
