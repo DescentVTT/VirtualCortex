@@ -2833,6 +2833,7 @@ pub(crate) fn volleyed(volleys: &[u32], delay: u32, q: u32) -> bool {
 /// One synapse from a stimulus unit onto a readout unit as the oracle replays it: where it
 /// is in the arena, its ends and the sets they are in, its delay, its magnitude (frozen),
 /// and the block's presynaptic stamp and the slot's trace as the rule would hold them.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Replayed {
     pub(crate) block_idx: usize,
     pub(crate) slot: usize,
@@ -2928,12 +2929,209 @@ pub(crate) struct Composer {
     /// stimulus it did count is. `taught`'s pair is still the presented stimulus onto the
     /// selected readout, and `moves` reads it as it read the addressed pair.
     pub(crate) drawn: Option<Vec<bool>>,
+    /// What each trial consolidated into the weights, by stimulus, readout and direction
+    /// (brief 059): `transferred` with the weight raised apart from the weight lowered, each
+    /// consolidation counted on the side of its own sign; zero in a frozen run.
+    pub(crate) shifted: Vec<Shifted>,
+    /// The shadows (brief 059, ADR-0141): none in every run before it. Each replays the
+    /// composer's synapses beside it by the composer's own rule (`advance`), from the train,
+    /// the signal, the selection and the drawn sources the composer replays from, keeping
+    /// traces and weights of its own from the composer's at the run's start; it is never
+    /// written back, and the record is held to the composer alone.
+    pub(crate) shadows: Vec<Shadow>,
 }
 
 /// What one trial's consolidation did to the synapses of the pair the last trial's delivery
 /// addressed (brief 041): `[rose, fell, stayed]` and `[raised, lowered]`, the second summed
 /// with its sign, so at most zero.
 pub(crate) type Moves = ([u32; 3], [i64; 2]);
+
+/// What one trial consolidated into the weights (brief 059), `[stimulus][readout][raised,
+/// lowered]`: each consolidation at a presynaptic spike summed on the side of its sign, the
+/// lowered side at most zero, so that the two sides of a pair sum to `transferred`'s.
+pub(crate) type Shifted = [[[i64; 2]; 2]; 2];
+
+/// A shadow of the composer (brief 059, ADR-0141): the composer's synapses with traces and
+/// weights of its own, replayed by the composer's rule with the targets of the drawn address
+/// as the run wrote them (`released` false) or released to every unit (`released` true), and
+/// what each trial consolidated into its weights. The first is held to the composer at every
+/// trial, synapse by synapse; the second is the release's reading and is held to nothing but
+/// the stamps, which no weight enters.
+pub(crate) struct Shadow {
+    pub(crate) released: bool,
+    pub(crate) synapses: Vec<Replayed>,
+    pub(crate) shifted: Vec<Shifted>,
+}
+
+/// What a reading of the oracle replays from and consolidates under (brief 059; the
+/// composer's own since brief 032, gathered here so that a shadow is handed the same): each
+/// unit's spikes and each stimulus unit's volleys since the run's first tick, the first tick
+/// this reading replays and the trial's first, the signal's course under a taught delivery
+/// and none in a frozen run, the pair the last trial's delivery addressed, the sources the
+/// executor drew under the drawn delivery, whether the drawn address's targets are released
+/// to every unit, the baseline, the signed gate, the global delivery, and whether nothing has
+/// been rewarded or selected yet.
+#[derive(Clone, Copy)]
+pub(crate) struct Replay<'a> {
+    pub(crate) spikes: &'a [Vec<u32>],
+    pub(crate) volleys: &'a [Vec<u32>],
+    pub(crate) cursor: u32,
+    pub(crate) start: u32,
+    pub(crate) course: Option<&'a [i32]>,
+    pub(crate) addressed: Option<(usize, usize)>,
+    pub(crate) drawn: Option<&'a [bool]>,
+    pub(crate) released: bool,
+    pub(crate) baseline: i32,
+    pub(crate) signed: bool,
+    pub(crate) global: bool,
+    pub(crate) at_rest: bool,
+}
+
+/// What a reading of the oracle did: the terms that entered the traces, by stimulus, readout
+/// and class; what was consolidated into the weights, `[stimulus][readout]`, and the same by
+/// direction; and the moves of the pair the last trial's delivery addressed.
+pub(crate) type Advanced = ([[[i64; 4]; 2]; 2], [[i64; 2]; 2], Shifted, Moves);
+
+/// The oracle over `synapses` for one reading (the body of `Composer::observe` since brief
+/// 032, a function of its own since brief 059 so that a shadow is replayed by the same rule):
+/// every stimulus unit's spikes since `cursor`, synapse by synapse — the block's decay since
+/// its stamp, then the rule's two terms for the target's last spike, each classed by that
+/// spike, then the stamp; then, under a taught delivery (brief 036), the consolidation at that
+/// spike under the signal the executor published at its tick where the synapse is addressed,
+/// and under the baseline alone otherwise (brief 038). A synapse is addressed:
+/// - under the host's address, when it lies in the pair the last trial addressed;
+/// - under the drawn one (brief 058), when its source is among the units the executor drew and
+///   its readout the one the last trial selected, none at a tie;
+/// - under the drawn one with the targets released (brief 059), when its source is among the
+///   units the executor drew, whatever its readout and whatever was selected, a tie included —
+///   the address `Executor::address_drawn` would write if it were handed every unit;
+/// - under the global delivery (brief 057), always.
+pub(crate) fn advance(synapses: &mut [Replayed], r: &Replay<'_>) -> Advanced {
+    assert!(
+        !r.released || r.drawn.is_some(),
+        "the targets released are the drawn address's"
+    );
+    let mut terms = [[[0i64; 4]; 2]; 2];
+    let mut transferred = [[0i64; 2]; 2];
+    let mut shifted: Shifted = [[[0; 2]; 2]; 2];
+    let mut moves: Moves = ([0; 3], [0; 2]);
+    for syn in synapses.iter_mut() {
+        let (Some(pre), Some(post), Some(volleys)) = (
+            r.spikes.get(syn.source as usize),
+            r.spikes.get(syn.target as usize),
+            r.volleys.get(syn.source as usize),
+        ) else {
+            panic!("a synapse's end is outside the arena");
+        };
+        let from = pre.partition_point(|&t| t < r.cursor);
+        let mut net = 0i64;
+        for &t in pre.iter().skip(from) {
+            let elapsed = t.wrapping_sub(syn.stamp);
+            if elapsed != 0 {
+                let factor = i64::from(stp_decay_factor_q16(elapsed, ELIGIBILITY_TAU_SHIFT));
+                syn.trace = decayed(syn.trace, factor);
+            }
+            let at = post.partition_point(|&q| q <= t);
+            if let Some(&q) = at.checked_sub(1).and_then(|k| post.get(k)) {
+                let since_post = t.wrapping_sub(q) as i32;
+                let class = if volleyed(volleys, syn.delay, q) {
+                    0
+                } else {
+                    2
+                };
+                let into = &mut terms[syn.stimulus][syn.readout];
+                if syn.stamp != NO_SPIKE_ON_RECORD {
+                    let post_after_prev = q.wrapping_sub(syn.stamp) as i32;
+                    if post_after_prev > 0 && since_post >= 0 {
+                        let pot = pair_window(STDP_A_PLUS_Q1_15, post_after_prev as u32);
+                        syn.trace = syn.trace.saturating_add(pot);
+                        into[class] = into[class].saturating_add(i64::from(pot));
+                    }
+                }
+                if since_post > 0 {
+                    let dep = depression_at(
+                        pair_window(STDP_A_MINUS_Q1_15, since_post as u32),
+                        syn.magnitude,
+                    );
+                    syn.trace = syn.trace.saturating_sub(dep);
+                    let k = class.wrapping_add(1);
+                    into[k] = into[k].saturating_sub(i64::from(dep));
+                }
+            }
+            syn.stamp = t;
+            if let Some(course) = r.course {
+                // An addressed synapse's spike is inside the trial: the addressed pair is
+                // written at a trial's end, so the lead-in's spikes before the first
+                // trial, the only ones before `start` the oracle replays, are never
+                // addressed. Under the drawn delivery (brief 058) the pair's readout is the
+                // one selected and its source among the units the executor drew; with the
+                // targets released (brief 059) the source alone decides.
+                let pair = match (r.addressed, r.drawn) {
+                    (selected, Some(sources)) => {
+                        (r.released || selected.is_some_and(|(_, readout)| readout == syn.readout))
+                            && sources.get(syn.source as usize).copied().unwrap_or(false)
+                    }
+                    (Some(_), None) => r.addressed == Some((syn.stimulus, syn.readout)),
+                    (None, None) => false,
+                };
+                let signal = if pair {
+                    course
+                        .get(t.wrapping_sub(r.start) as usize)
+                        .copied()
+                        .expect("an addressed synapse's spike is inside the trial")
+                } else if r.global {
+                    // Under the global delivery every synapse is addressed (brief 057): a
+                    // spike inside the trial takes the course's signal, and one before its
+                    // start is the lead-in's, before the first reward, at rest.
+                    match course.get(t.wrapping_sub(r.start) as usize) {
+                        Some(&s) => s,
+                        None => {
+                            assert!(
+                                t < r.start && r.at_rest,
+                                "a spike outside its trial is the lead-in's, at rest"
+                            );
+                            0
+                        }
+                    }
+                } else {
+                    0
+                };
+                // The engine's rule (`Modulations::of`, `NeuromodulatorState::modulation`):
+                // the baseline plus the signal where the synapse is addressed, the
+                // baseline alone elsewhere, saturating; `consolidated` clamps it to
+                // [0, 1] as the engine does, and under the signed gate
+                // `consolidated_signed` to [−1, 1] (brief 041; every replayed synapse is
+                // excitatory, and one not addressed consolidates under the baseline,
+                // which is not below zero, so the two rules are one there).
+                let modulation = r.baseline.saturating_add(signal);
+                let (trace, magnitude, absorbed) = if r.signed {
+                    consolidated_signed(syn.trace, syn.magnitude, modulation)
+                } else {
+                    consolidated(syn.trace, syn.magnitude, modulation)
+                };
+                syn.trace = trace;
+                syn.magnitude = magnitude;
+                let into = &mut transferred[syn.stimulus][syn.readout];
+                *into = into.saturating_add(i64::from(absorbed));
+                let side = &mut shifted[syn.stimulus][syn.readout][usize::from(absorbed < 0)];
+                *side = side.saturating_add(i64::from(absorbed));
+                net = net.saturating_add(i64::from(absorbed));
+            }
+        }
+        // What the trial did to the addressed pair's synapse (brief 041).
+        if r.course.is_some() && r.addressed == Some((syn.stimulus, syn.readout)) {
+            let k = match net {
+                1.. => 0,
+                0 => 2,
+                _ => 1,
+            };
+            moves.0[k] = moves.0[k].saturating_add(1);
+            let side = usize::from(net < 0);
+            moves.1[side] = moves.1[side].saturating_add(net);
+        }
+    }
+    (terms, transferred, shifted, moves)
+}
 
 impl Composer {
     pub(crate) fn new(units: u32) -> Self {
@@ -2957,7 +3155,40 @@ impl Composer {
             moves: Vec::new(),
             global: false,
             drawn: None,
+            shifted: Vec::new(),
+            shadows: Vec::new(),
         }
+    }
+
+    /// A shadow beside the composer (brief 059): the composer's synapses as they stand, with
+    /// their stamps, traces and weights, to be replayed from here on by `advance` with the
+    /// drawn address's targets as the run writes them or released. Taken after `enumerate`
+    /// and before the first reading, so that a shadow starts where the composer does.
+    pub(crate) fn shadow(&mut self, released: bool) {
+        assert!(
+            !self.synapses.is_empty() && self.out.is_empty(),
+            "a shadow starts from the enumerated synapses, before any reading"
+        );
+        self.shadows.push(Shadow {
+            released,
+            synapses: self.synapses.clone(),
+            shifted: Vec::new(),
+        });
+    }
+
+    /// The oracle's eligibility over the synapses whose source is among `sources`, by readout
+    /// (brief 059): `[readout][above zero, below zero]`, the traces above zero summed and the
+    /// traces below it, each as the oracle holds it at its block's stamp — the record's, after
+    /// a reading held it.
+    pub(crate) fn eligible(&self, sources: &[bool]) -> [[i64; 2]; 2] {
+        let mut out = [[0i64; 2]; 2];
+        for syn in &self.synapses {
+            if sources.get(syn.source as usize).copied().unwrap_or(false) {
+                let into = &mut out[syn.readout][usize::from(syn.trace < 0)];
+                *into = into.saturating_add(i64::from(syn.trace));
+            }
+        }
+        out
     }
 
     /// The synapses from a stimulus unit onto a readout unit, from the arena, in the walk's
@@ -3077,149 +3308,76 @@ impl Composer {
                 }
             }
         }
-        // The oracle over the stimulus units' spikes since the last reading, synapse by
-        // synapse: the block's decay since its stamp, then the rule's two terms for the
-        // target's last spike, each classed by that spike, then the stamp; then, under the
-        // taught delivery (brief 036), the consolidation at that spike under the signal the
-        // executor published at its tick where the synapse is addressed — its source in the
-        // stimulus the last trial presented and its target in that stimulus's assigned
-        // readout — and under the baseline alone otherwise (brief 038): zero in every run
-        // before it, 0.5 under H-15.
-        let mut terms = [[[0i64; 4]; 2]; 2];
-        let mut transferred = [[0i64; 2]; 2];
+        // The oracle over the stimulus units' spikes since the last reading (`advance`): under
+        // the taught delivery (brief 036) it consolidates under the signal the executor
+        // published where the synapse is addressed — its source in the stimulus the last trial
+        // presented and its target in that stimulus's assigned readout — and under the
+        // baseline alone otherwise (brief 038): zero in every run before it, 0.5 under H-15.
         let course = self.taught.as_ref().map(|t| signal_course(t.signal));
-        let addressed = self.taught.as_ref().and_then(|t| t.addressed);
-        let baseline = self.baseline;
-        let signed = self.signed;
-        let global = self.global;
-        // Before the first reward the signal is at rest and nothing was selected: the only
-        // reading whose spikes can precede its trial's start (brief 057).
-        let at_rest = self
-            .taught
-            .as_ref()
-            .is_some_and(|t| t.signal == 0 && t.addressed.is_none());
-        let mut moves: Moves = ([0; 3], [0; 2]);
         let Self {
             synapses,
             spikes,
             volleys,
             drawn,
+            taught,
+            shadows,
             ..
         } = self;
-        let drawn = drawn.as_deref();
-        for syn in synapses.iter_mut() {
-            let (Some(pre), Some(post), Some(volleys)) = (
-                spikes.get(syn.source as usize),
-                spikes.get(syn.target as usize),
-                volleys.get(syn.source as usize),
-            ) else {
-                panic!("a synapse's end is outside the arena");
-            };
-            let from = pre.partition_point(|&t| t < cursor);
-            let mut net = 0i64;
-            for &t in pre.iter().skip(from) {
-                let elapsed = t.wrapping_sub(syn.stamp);
-                if elapsed != 0 {
-                    let factor = i64::from(stp_decay_factor_q16(elapsed, ELIGIBILITY_TAU_SHIFT));
-                    syn.trace = decayed(syn.trace, factor);
-                }
-                let at = post.partition_point(|&q| q <= t);
-                if let Some(&q) = at.checked_sub(1).and_then(|k| post.get(k)) {
-                    let since_post = t.wrapping_sub(q) as i32;
-                    let class = if volleyed(volleys, syn.delay, q) {
-                        0
-                    } else {
-                        2
-                    };
-                    let into = &mut terms[syn.stimulus][syn.readout];
-                    if syn.stamp != NO_SPIKE_ON_RECORD {
-                        let post_after_prev = q.wrapping_sub(syn.stamp) as i32;
-                        if post_after_prev > 0 && since_post >= 0 {
-                            let pot = pair_window(STDP_A_PLUS_Q1_15, post_after_prev as u32);
-                            syn.trace = syn.trace.saturating_add(pot);
-                            into[class] = into[class].saturating_add(i64::from(pot));
-                        }
-                    }
-                    if since_post > 0 {
-                        let dep = depression_at(
-                            pair_window(STDP_A_MINUS_Q1_15, since_post as u32),
-                            syn.magnitude,
-                        );
-                        syn.trace = syn.trace.saturating_sub(dep);
-                        let k = class.wrapping_add(1);
-                        into[k] = into[k].saturating_sub(i64::from(dep));
-                    }
-                }
-                syn.stamp = t;
-                if let Some(course) = &course {
-                    // An addressed synapse's spike is inside the trial: the addressed pair is
-                    // written at a trial's end, so the lead-in's spikes before the first
-                    // trial, the only ones before `start` the oracle replays, are never
-                    // addressed. Under the drawn delivery (brief 058) the pair's readout is the
-                    // one selected and its source among the units the executor drew.
-                    let pair = match (addressed, drawn) {
-                        (Some((_, readout)), Some(sources)) => {
-                            readout == syn.readout
-                                && sources.get(syn.source as usize).copied().unwrap_or(false)
-                        }
-                        (Some(_), None) => addressed == Some((syn.stimulus, syn.readout)),
-                        (None, _) => false,
-                    };
-                    let signal = if pair {
-                        course
-                            .get(t.wrapping_sub(start) as usize)
-                            .copied()
-                            .expect("an addressed synapse's spike is inside the trial")
-                    } else if global {
-                        // Under the global delivery every synapse is addressed (brief 057): a
-                        // spike inside the trial takes the course's signal, and one before its
-                        // start is the lead-in's, before the first reward, at rest.
-                        match course.get(t.wrapping_sub(start) as usize) {
-                            Some(&s) => s,
-                            None => {
-                                assert!(
-                                    t < start && at_rest,
-                                    "a spike outside its trial is the lead-in's, at rest"
-                                );
-                                0
-                            }
-                        }
-                    } else {
-                        0
-                    };
-                    // The engine's rule (`Modulations::of`, `NeuromodulatorState::modulation`):
-                    // the baseline plus the signal where the synapse is addressed, the
-                    // baseline alone elsewhere, saturating; `consolidated` clamps it to
-                    // [0, 1] as the engine does, and under the signed gate
-                    // `consolidated_signed` to [−1, 1] (brief 041; every replayed synapse is
-                    // excitatory, and one not addressed consolidates under the baseline,
-                    // which is not below zero, so the two rules are one there).
-                    let modulation = baseline.saturating_add(signal);
-                    let (trace, magnitude, absorbed) = if signed {
-                        consolidated_signed(syn.trace, syn.magnitude, modulation)
-                    } else {
-                        consolidated(syn.trace, syn.magnitude, modulation)
-                    };
-                    syn.trace = trace;
-                    syn.magnitude = magnitude;
-                    let into = &mut transferred[syn.stimulus][syn.readout];
-                    *into = into.saturating_add(i64::from(absorbed));
-                    net = net.saturating_add(i64::from(absorbed));
-                }
+        let replay = Replay {
+            spikes: spikes.as_slice(),
+            volleys: volleys.as_slice(),
+            cursor,
+            start,
+            course: course.as_deref(),
+            addressed: taught.as_ref().and_then(|t| t.addressed),
+            drawn: drawn.as_deref(),
+            released: false,
+            baseline: self.baseline,
+            signed: self.signed,
+            global: self.global,
+            // Before the first reward the signal is at rest and nothing was selected: the only
+            // reading whose spikes can precede its trial's start (brief 057).
+            at_rest: taught
+                .as_ref()
+                .is_some_and(|t| t.signal == 0 && t.addressed.is_none()),
+        };
+        let advanced = advance(synapses, &replay);
+        // The shadows beside it (brief 059), each by the same rule from the same reading: the
+        // one under the drawn address as the run wrote it is the composer, number by number
+        // and synapse by synapse; the released one shares the stamps, which no weight enters,
+        // and its consolidation is the reading.
+        for shadow in shadows.iter_mut() {
+            let shade = advance(
+                &mut shadow.synapses,
+                &Replay {
+                    released: shadow.released,
+                    ..replay
+                },
+            );
+            if shadow.released {
+                assert!(
+                    shadow
+                        .synapses
+                        .iter()
+                        .zip(synapses.iter())
+                        .all(|(mine, theirs)| mine.stamp == theirs.stamp),
+                    "trial {trial}: the released shadow replayed the composer's spikes"
+                );
+            } else {
+                assert_eq!(
+                    shade, advanced,
+                    "trial {trial}: the shadow under the drawn address moved as the composer did"
+                );
+                assert!(
+                    shadow.synapses == *synapses,
+                    "trial {trial}: the shadow under the drawn address holds the composer's traces and weights"
+                );
             }
-            // What the trial did to the addressed pair's synapse (brief 041).
-            if course.is_some() && addressed == Some((syn.stimulus, syn.readout)) {
-                let k = match net {
-                    1.. => 0,
-                    0 => 2,
-                    _ => 1,
-                };
-                moves.0[k] = moves.0[k].saturating_add(1);
-                let side = usize::from(net < 0);
-                moves.1[side] = moves.1[side].saturating_add(net);
-            }
+            shadow.shifted.push(shade.2);
         }
+        let (terms, transferred, shifted, moves) = advanced;
         self.moves.push(moves);
+        self.shifted.push(shifted);
         // The record: (a), each slot's trace held to the oracle and each weight to the
         // oracle's magnitude — the prior's in a frozen run, the consolidated one under the
         // taught delivery.
@@ -9301,7 +9459,8 @@ pub(crate) fn earned_run_valued(
 /// the critic's oracle holds not zero, before the reward zeroes them, and its targets to the
 /// selected readout's units, none at a tie; the composer consolidates a stimulus–readout
 /// synapse under the signal where its readout was selected and its source drawn
-/// (`Composer::drawn`), and reads its moves over the pair presented onto the pair selected.
+/// (`Composer::drawn`), and reads its moves over the pair presented onto the pair selected. It
+/// is `earned_run_shadowed` with no shadow, which it calls so.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_delivered(
     exec: &mut Engine,
@@ -9316,6 +9475,87 @@ pub(crate) fn earned_run_delivered(
     delivery: Delivery,
     after: &mut dyn FnMut(&mut Engine, usize),
 ) -> (EarnedRun, Vec<Moves>, Vec<[i32; 2]>, Vec<i32>) {
+    let (run, moves, expected, values, shadowed) = earned_run_shadowed(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flips,
+        signed,
+        critic,
+        delivery,
+        false,
+        after,
+    );
+    assert!(shadowed.is_none(), "no shadow, no reading of one");
+    (run, moves, expected, values)
+}
+
+/// What the shadows read of a run under the drawn delivery (brief 059, ADR-0141), every table
+/// one row a trial:
+/// - `run`: what the composer consolidated into the weights, by stimulus, readout and
+///   direction — the run's own, the record held to it;
+/// - `released`: what the shadow with the targets released consolidated into its own weights,
+///   the same shape;
+/// - `eligible`: at the trial's reward, the record's eligibility over the stimulus–readout
+///   synapses whose source the executor drew at that trial's end, `[readout][above zero, below
+///   zero]`;
+///
+/// and `couplings`, the released shadow's own weights summed by stimulus and readout after
+/// the last trial, which the tables' sums are held to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Shadowed {
+    pub(crate) run: Vec<Shifted>,
+    pub(crate) released: Vec<Shifted>,
+    pub(crate) eligible: Vec<[[i64; 2]; 2]>,
+    pub(crate) couplings: [[i64; 2]; 2],
+}
+
+/// A run with its shadows' reading (brief 059): `earned_run_delivered`'s four values — the run,
+/// the moves, the task critic's expectations and the engine's values — and what the shadows
+/// read, none without them.
+pub(crate) type ShadowedRun = (
+    EarnedRun,
+    Vec<Moves>,
+    Vec<[i32; 2]>,
+    Vec<i32>,
+    Option<Shadowed>,
+);
+
+/// `earned_run_delivered` with the shadows beside the composer or without them (brief 059,
+/// ADR-0141). With `shadowed` set, which needs the drawn delivery, two shadows are taken from
+/// the composer's synapses before the first tick and replayed by the composer's own rule at
+/// every trial, from the train, the signal, the selection and the drawn sources the composer
+/// replays from:
+/// - one under the drawn address as the run wrote it, held to the composer at every trial,
+///   number by number and synapse by synapse (`Composer::observe`), which is the shadow's
+///   calibration;
+/// - one with the targets released to every unit, whose consolidation is the reading.
+///
+/// Neither is written back: the record is held to the composer alone, as without them, and the
+/// executor is handed to no shadow. Without `shadowed` no shadow is taken and the fifth value
+/// is none; this is then `earned_run_delivered`, which calls it so.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_shadowed(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flips: &[usize],
+    signed: bool,
+    critic: Option<Critic>,
+    delivery: Delivery,
+    shadowed: bool,
+    after: &mut dyn FnMut(&mut Engine, usize),
+) -> ShadowedRun {
+    assert!(
+        !shadowed || delivery == Delivery::Drawn,
+        "the shadows are of the drawn address"
+    );
     assert_eq!(exec.signed_gate(), signed, "the signed gate is the image's");
     assert_eq!(
         units, 1024,
@@ -9343,6 +9583,13 @@ pub(crate) fn earned_run_delivered(
         addressed: None,
         signal: 0,
     });
+    // The shadows (brief 059): the drawn address as the run writes it, then the targets
+    // released, each from the composer's synapses as the record holds them here.
+    if shadowed {
+        composer.shadow(false);
+        composer.shadow(true);
+    }
+    let mut eligible: Vec<[[i64; 2]; 2]> = Vec::new();
     let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
     let task = task(
         SHAPE_F46,
@@ -9562,6 +9809,11 @@ pub(crate) fn earned_run_delivered(
                             .collect::<Vec<bool>>(),
                         "trial {trial}: the targets are the selected readout's units, none at a tie"
                     );
+                    // The record's eligibility from the sources just drawn (brief 059), read
+                    // from the composer, which this trial's reading held to the record.
+                    if shadowed {
+                        eligible.push(composer.eligible(&counted));
+                    }
                     composer.drawn = Some(counted);
                 }
             }
@@ -9610,11 +9862,51 @@ pub(crate) fn earned_run_delivered(
             0
         }
     );
+    assert_eq!(composer.shifted.len(), trials);
+    assert!(
+        composer
+            .shifted
+            .iter()
+            .zip(&composer.transferred)
+            .all(|(by_side, net)| {
+                ALL_PAIRS
+                    .iter()
+                    .all(|&(s, r)| by_side[s][r][0].saturating_add(by_side[s][r][1]) == net[s][r])
+            }),
+        "the two sides of every pair sum to what the trial consolidated into it"
+    );
+    let shadowed = shadowed.then(|| {
+        let [drawn, released] = composer.shadows.as_slice() else {
+            panic!("two shadows, the drawn address's and the released one's");
+        };
+        assert!(
+            (drawn.released, released.released) == (false, true)
+                && drawn.shifted == composer.shifted,
+            "the shadow under the drawn address consolidated what the composer did"
+        );
+        assert_eq!(
+            (released.shifted.len(), eligible.len()),
+            (trials, trials),
+            "a reading of the released shadow and of the eligibility a trial"
+        );
+        let mut couplings = [[0i64; 2]; 2];
+        for syn in &released.synapses {
+            let into = &mut couplings[syn.stimulus][syn.readout];
+            *into = into.saturating_add(i64::from(syn.magnitude));
+        }
+        Shadowed {
+            run: composer.shifted.clone(),
+            released: released.shifted.clone(),
+            eligible,
+            couplings,
+        }
+    });
     (
         (blocks, trace, composer.out, read, composer.volley_ticks),
         composer.moves,
         expected_after,
         values,
+        shadowed,
     )
 }
 

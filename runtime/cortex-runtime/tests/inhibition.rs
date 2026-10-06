@@ -128,6 +128,22 @@
 //! each delivery with both oracles held, and the oracle's replay of a block against the engine's
 //! rule over blocks written by hand.
 //!
+//! Brief 058 runs H-25 here as ADR-0138 wrote it and ADR-0140 records it: H-23's configuration
+//! with the address's sources drawn by the engine (`Delivery::Drawn`, ADR-0139), two arms, each
+//! its own weekly `exhaustive` test, pinned whole with the drawn sources per block.
+//!
+//! Brief 059 reads H-26 here as ADR-0141 wrote it and ADR-0142 records it, beside H-25's two
+//! arms and changing nothing of them: two shadows of the composer's stimulus–readout synapses,
+//! each with traces and weights of its own from the image's, replayed by the composer's own rule
+//! from the run's train, signal, selection and drawn sources and never written back — one under
+//! the drawn address as the run wrote it, held to the composer at every trial, and one with the
+//! address's targets released to every unit. H-25's tables are held first; then the released
+//! shadow's consolidation on the pairs of the readout not selected, signed against the answer,
+//! is read against the learning signal the run delivered, by a rule written before the run, with
+//! the readouts' spikes, the eligibility at each reward and the count margins beside it. The gate
+//! runs the rule at its edges, the shadow's rule on a run written by hand, and eight trials with
+//! the shadows beside the same eight without them.
+//!
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
@@ -66056,7 +66072,7 @@ struct Watch {
 /// oracle replayed and held at every trial; the spikes the window admitted read at every
 /// trial's reward as H-23's run reads them, and the trial's spikes by class from the train,
 /// whole since the ring holds the most spikes a trial can produce. `image` is the weights the
-/// cells are read against.
+/// cells are read against. It is `shadowed_run` with no shadow, which it calls so.
 #[allow(clippy::too_many_arguments)]
 fn delivered_run(
     exec: &mut Engine,
@@ -66068,6 +66084,46 @@ fn delivered_run(
     delivery: Delivery,
     trials: usize,
 ) -> (EarnedRun, Vec<Moves>, Vec<i32>, Watch) {
+    let (run, moves, values, watched, beside) = shadowed_run(
+        exec, arm, sets, groups, classes, image, delivery, trials, false,
+    );
+    assert!(beside.is_none(), "no shadow, no reading beside the run");
+    (run, moves, values, watched)
+}
+
+/// What brief 059 reads beside a run under the drawn delivery (ADR-0141): the harness's
+/// shadows' tables (`Shadowed`), and each trial's spikes of the two readout sets over the whole
+/// trial, `[readout 0, readout 1]`, from the train as the task's readout counts them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Beside {
+    shadowed: Shadowed,
+    heard: Vec<[u32; 2]>,
+}
+
+/// A run with what brief 059 reads beside it: `delivered_run`'s four values and the reading,
+/// none without the shadows.
+type BesideRun = (EarnedRun, Vec<Moves>, Vec<i32>, Watch, Option<Beside>);
+
+/// `delivered_run` with the shadows beside the composer or without them (brief 059):
+/// `earned_run_shadowed` in `earned_run_delivered`'s place, and each trial's spikes of the two
+/// readout sets over the whole trial read from the train. The shadows read the run and are
+/// never written back, and nothing the run does reads them, so the run with them is the run
+/// without; without them the fifth value is none and this is `delivered_run`, which calls it
+/// so.
+#[allow(clippy::too_many_arguments)]
+fn shadowed_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    groups: &[usize],
+    classes: &[usize],
+    image: &[Vec<i16>],
+    delivery: Delivery,
+    trials: usize,
+    shadowed: bool,
+) -> BesideRun {
+    let readouts = Readout::new([sets[2], sets[3]]);
+    let mut heard: Vec<[u32; 2]> = Vec::with_capacity(trials);
     let first = first_mapping(arm);
     let window = exec.critic_window_ticks();
     let mut network = Network::new(exec, sets, classes);
@@ -66081,7 +66137,7 @@ fn delivered_run(
     let mut spikes_block = [0u64; CLASSES];
     let mut went_block: Went = [[0; 2]; 3];
     let mut opened = exec.ticks();
-    let (run, moves, expected, values) = earned_run_delivered(
+    let (run, moves, expected, values, shadows) = earned_run_shadowed(
         exec,
         Feedback::Answer,
         first,
@@ -66092,6 +66148,7 @@ fn delivered_run(
         true,
         None,
         delivery,
+        shadowed,
         &mut |exec, trial| {
             // The spikes the window admitted, as H-23's run reads them.
             let mut in_window = [0u32; GROUPS];
@@ -66132,6 +66189,8 @@ fn delivered_run(
                     *n = n.saturating_add(1);
                 }
             });
+            // The trial's spikes of each readout set over the whole trial (brief 059).
+            heard.push(readouts.count_window(exec.train(), start as u32, TRIAL_TICKS));
             if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
                 at_flips[f] = Some(pair_couplings(exec, sets));
             }
@@ -66146,6 +66205,7 @@ fn delivered_run(
         },
     );
     assert!(expected.is_empty(), "the task carries no critic");
+    assert_eq!(heard.len(), trials, "a count over the trial a trial");
     (
         run,
         moves,
@@ -66159,6 +66219,7 @@ fn delivered_run(
             went,
             sourced,
         },
+        shadows.map(|shadowed| Beside { shadowed, heard }),
     )
 }
 
@@ -83828,7 +83889,9 @@ fn drawn_arm(arm: Reversal) {
         "{name}: the cells sum to the image's outside sum"
     );
     let first = first_mapping(arm);
-    let (run, moves, values, watched) = delivered_run(
+    // The shadows beside the composer (brief 059, ADR-0141): they read the run and are never
+    // written back, so the run is H-25's, and every table below is held as it was.
+    let (run, moves, values, watched, beside) = shadowed_run(
         &mut exec,
         arm,
         &sets,
@@ -83837,7 +83900,9 @@ fn drawn_arm(arm: Reversal) {
         &image,
         DRAWN_DELIVERY,
         SCHEDULE_TRIALS,
+        true,
     );
+    let beside = beside.expect("the shadows' reading beside the run");
     let (blocks, trace, trials, read, volley_ticks) = &run;
     let earned = earned_blocks(read);
     let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
@@ -84088,10 +84153,15 @@ fn drawn_arm(arm: Reversal) {
         (SUMS_AFTER_DRAWN_1024[k], Some(SUMS_AFTER_DRAWN_1024[k])),
         "{name}: the sums after the run are the last block's"
     );
+    // H-26 (brief 059): the run is H-25's, table by table and reading by reading; only now is
+    // the shadow beside it read.
+    eprintln!("DUMP {name} H-25's arm reproduced bit for bit with the shadows beside it");
+    released_reading(&name, k, arm, blocks, read, &watched.went, &beside);
 }
 
 /// H-25's arm that starts from the assignment (brief 058): H-23's arm from the assignment with
-/// the address's sources drawn by the engine.
+/// the address's sources drawn by the engine. Since brief 059 the shadows of H-26 ride beside
+/// it, read after H-25's own tables are held.
 #[test]
 #[ignore]
 fn the_address_drawn_from_the_assignment_at_1024_units_exhaustive() {
@@ -84099,7 +84169,8 @@ fn the_address_drawn_from_the_assignment_at_1024_units_exhaustive() {
 }
 
 /// H-25's arm that starts from the mirrored assignment (brief 058): H-23's arm from the mirrored
-/// assignment with the address's sources drawn by the engine.
+/// assignment with the address's sources drawn by the engine. Since brief 059 the shadows of
+/// H-26 ride beside it, read after H-25's own tables are held.
 #[test]
 #[ignore]
 fn the_address_drawn_from_the_mirrored_assignment_at_1024_units_exhaustive() {
@@ -101178,3 +101249,1349 @@ const DRAWN_1024: Drawn = Drawn {
     held: [true, true],
     yes: true,
 };
+
+// =================================================================================== H-26
+
+// -------------------------------------------- written before the run (ADR-0141, ADR-0142)
+
+/// The arms of H-26 (ADR-0141): H-25's two, in their order, each H-25's own weekly test with the
+/// shadows beside its composer — H-25's run reproduced bit for bit and held to H-25's tables
+/// before anything of the shadow is read.
+const RELEASED_ARMS: [Reversal; 2] = DRAWN_ARMS;
+
+/// ADR-0141's prediction, written first: no — without a competition the readout that lost
+/// carries much of the eligibility, H-24 read the other pairs moving as much as the answer's,
+/// and the geometry makes the two readouts' couplings equal. A reading beside the verdict and
+/// never asserted; the verdict is read by the rule whatever it says.
+const RELEASED_PREDICTED: bool = false;
+
+/// H-26's rule (ADR-0141): the cost at most half the signal, read in integers as
+/// `COST_TIMES × cost ≤ signal`. It does not move after the run.
+const COST_TIMES: i64 = 2;
+
+// ------------------------------------------------------------ the criterion (ADR-0141)
+
+/// The shadow's consolidation folded by the address in force and the mapping in force (brief
+/// 059), `[side][pairs][raised, lowered]`:
+/// - the side: `[0]` the pairs of the readout the last trial selected, the targets the run's
+///   address wrote; `[1]` the pairs of the readout it did not select, which only the release
+///   reaches — both readouts' after a tie, and before the first trial;
+/// - the pairs: `[0]` each stimulus onto its answer under the mapping in force at the trial
+///   the consolidation fell in, `[1]` each stimulus onto the other readout, as `Went` reads
+///   them;
+/// - the weight raised and the weight lowered, each summed with its sign.
+type Shade = [[[i64; 2]; 2]; 2];
+
+/// The side of the address in force a readout's pairs lie on: 0 where the last trial selected
+/// the readout, 1 where it did not — both readouts after a tie and before the first trial.
+fn side_of(selected: Option<u8>, readout: usize) -> usize {
+    usize::from(selected.map(usize::from) != Some(readout))
+}
+
+/// One trial's consolidation folded into a `Shade`: `shifted` by stimulus, readout and
+/// direction, `selected` the selection the address in force was written under — the trial
+/// before's — and `mirrored` the mapping in force at the trial the consolidation fell in.
+fn shade_of(shifted: &Shifted, selected: Option<u8>, mirrored: bool) -> Shade {
+    let mut out: Shade = [[[0; 2]; 2]; 2];
+    for &(s, r) in &ALL_PAIRS {
+        let pairs = usize::from(answer_of(s as u8, mirrored) != r);
+        let into = &mut out[side_of(selected, r)][pairs];
+        for (sum, &amount) in into.iter_mut().zip(&shifted[s][r]) {
+            *sum = sum.saturating_add(amount);
+        }
+    }
+    out
+}
+
+/// A `Shade` plus another, amount by amount.
+fn add_shade(into: &mut Shade, shade: &Shade) {
+    for (a, b) in into
+        .iter_mut()
+        .flatten()
+        .flatten()
+        .zip(shade.iter().flatten().flatten())
+    {
+        *a = a.saturating_add(*b);
+    }
+}
+
+/// The net of a `[raised, lowered]`.
+fn net_of(sides: &[i64; 2]) -> i64 {
+    sides[0].saturating_add(sides[1])
+}
+
+/// The cost of a shade (ADR-0141): its consolidation on the pairs of the readout not selected,
+/// signed against the answer — the other pairs' net, where a rise is cost, less the answer
+/// pairs' net, where a fall is. The selected side is the run's own address and enters nothing.
+fn cost_of(shade: &Shade) -> i64 {
+    net_of(&shade[1][1]).saturating_sub(net_of(&shade[1][0]))
+}
+
+/// The learning signal of a `Went` (ADR-0141): the answer pairs' net consolidation less the
+/// other pairs', as H-24's and H-25's readings of where the consolidation went define them.
+fn signal_of(went: &Went) -> i64 {
+    net_of(&went[0]).saturating_sub(net_of(&went[1]))
+}
+
+/// The kind of the trial an address was written at: 0 a correct selection, 1 a wrong one, 2 a
+/// tie — and no trial at all, before the first, where nothing was selected.
+fn kind_of(before: Option<&EarnedTrial>) -> usize {
+    match before {
+        Some(t) if t.2.is_some() => usize::from(!t.3),
+        _ => 2,
+    }
+}
+
+/// One block of a shadow (brief 059): its shade summed over the block's trials, and the block's
+/// cost by the kind of the trial each address was written at, `[after a correct selection,
+/// after a wrong one, after a tie]`, which sum to the shade's cost.
+type Costed = (Shade, [i64; 3]);
+
+/// A shadow's blocks from what each trial consolidated, `BLOCK` trials each: every trial's
+/// `Shifted` folded under the selection of the trial before it — none before the first — and
+/// the mapping in force at the trial itself, in an arm whose first mapping is `first`; the
+/// trial's cost entered under the kind of the trial before it.
+fn costed_blocks(read: &[EarnedTrial], shifted: &[Shifted], first: bool) -> Vec<Costed> {
+    assert_eq!(read.len(), shifted.len(), "a reading of the shadow a trial");
+    shifted
+        .chunks(BLOCK)
+        .enumerate()
+        .map(|(j, trials)| {
+            let mut block: Costed = ([[[0; 2]; 2]; 2], [0; 3]);
+            for (i, moved) in trials.iter().enumerate() {
+                let t = j.saturating_mul(BLOCK).saturating_add(i);
+                let before = t.checked_sub(1).and_then(|p| read.get(p));
+                let mirrored = first != flipped_at(&SCHEDULE_FLIPS, t);
+                let shade = shade_of(moved, before.and_then(|b| b.2), mirrored);
+                add_shade(&mut block.0, &shade);
+                let kind = &mut block.1[kind_of(before)];
+                *kind = kind.saturating_add(cost_of(&shade));
+            }
+            block
+        })
+        .collect()
+}
+
+/// A table of 120 blocks summed over each mapping's blocks; none for a run of any other length.
+fn by_mapping(per_block: &[i64]) -> Option<[i64; 4]> {
+    (per_block.len() == SCHEDULE_BLOCKS).then(|| {
+        MAPPINGS.map(|(from, to)| {
+            per_block.get(from..to).map_or(0, |mine| {
+                mine.iter().fold(0i64, |sum, &c| sum.saturating_add(c))
+            })
+        })
+    })
+}
+
+/// H-26's rule for one mapping (ADR-0141): the cost at most half the signal.
+fn affordable(cost: i64, signal: i64) -> bool {
+    cost.saturating_mul(COST_TIMES) <= signal
+}
+
+/// H-26's criterion (ADR-0141), per arm `[assignment first, mirrored first]` and mapping: the
+/// cost — the released shadow's consolidation on the pairs of the readout not selected, signed
+/// against the answer, summed over the mapping's blocks — the signal — the run's answer pairs'
+/// net consolidation less its other pairs', by the network's oracle, summed over the mapping's
+/// blocks — and whether the cost is at most half the signal, in a run of 120 blocks of each; a
+/// run of any other length holds nothing and reads zeros. `yes` is every mapping of both arms;
+/// a no names the mappings whose `held` is false.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Released {
+    cost: [[i64; 4]; 2],
+    signal: [[i64; 4]; 2],
+    held: [[bool; 4]; 2],
+    yes: bool,
+}
+
+fn released(arms: [(&[Costed], &[Went]); 2]) -> Released {
+    let costs = arms
+        .map(|(costed, _)| by_mapping(&costed.iter().map(|c| cost_of(&c.0)).collect::<Vec<i64>>()));
+    let signals =
+        arms.map(|(_, went)| by_mapping(&went.iter().map(signal_of).collect::<Vec<i64>>()));
+    let held = [0usize, 1].map(|k| match (costs[k], signals[k]) {
+        (Some(cost), Some(signal)) => [0usize, 1, 2, 3].map(|m| affordable(cost[m], signal[m])),
+        _ => [false; 4],
+    });
+    Released {
+        cost: costs.map(|c| c.unwrap_or([0; 4])),
+        signal: signals.map(|s| s.unwrap_or([0; 4])),
+        held,
+        yes: held.iter().flatten().all(|&h| h),
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 059)
+
+/// The readouts' spikes over a block (brief 059), `[in the readout window, over the whole
+/// trial][the selected readout's, the other's, both readouts' at a tie]`: each trial's two
+/// counts summed on the side its own selection put them, a tie's two counts together.
+type Heard = [[u64; 3]; 2];
+
+fn heard_blocks(read: &[EarnedTrial], over_trial: &[[u32; 2]]) -> Vec<Heard> {
+    assert_eq!(
+        read.len(),
+        over_trial.len(),
+        "a count over the trial a trial"
+    );
+    read.chunks(BLOCK)
+        .zip(over_trial.chunks(BLOCK))
+        .map(|(trials, whole)| {
+            let mut out: Heard = [[0; 3]; 2];
+            for (t, over) in trials.iter().zip(whole) {
+                for (row, counts) in out.iter_mut().zip([&t.1, over]) {
+                    match t.2 {
+                        Some(r) => {
+                            let r = usize::from(r);
+                            row[0] = row[0].saturating_add(u64::from(counts[r]));
+                            row[1] = row[1].saturating_add(u64::from(counts[r ^ 1]));
+                        }
+                        None => {
+                            row[2] = row[2]
+                                .saturating_add(u64::from(counts[0]))
+                                .saturating_add(u64::from(counts[1]));
+                        }
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// The eligibility at a block's rewards (brief 059), from the sources drawn at each trial's
+/// end: `[onto the selected readout, onto the other, onto both at a tie][above zero, below
+/// zero]`, each trial's by its own selection — the address written there, under which the next
+/// trial's spikes are consolidated.
+type Eligible = [[i64; 2]; 3];
+
+fn eligible_blocks(read: &[EarnedTrial], eligible: &[[[i64; 2]; 2]]) -> Vec<Eligible> {
+    assert_eq!(read.len(), eligible.len(), "an eligibility a trial");
+    read.chunks(BLOCK)
+        .zip(eligible.chunks(BLOCK))
+        .map(|(trials, traces)| {
+            let mut out: Eligible = [[0; 2]; 3];
+            for (t, onto) in trials.iter().zip(traces) {
+                for (readout, sides) in onto.iter().enumerate() {
+                    let row = match t.2 {
+                        Some(r) => usize::from(usize::from(r) != readout),
+                        None => 2,
+                    };
+                    for (sum, &trace) in out[row].iter_mut().zip(sides) {
+                        *sum = sum.saturating_add(trace);
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// The bins the count margins are read in: 0, a tie; 1; 2; 3 to 4; 5 to 8; 9 or more.
+const MARGIN_BINS: usize = 6;
+
+fn margin_bin(margin: u32) -> usize {
+    match margin {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        3..=4 => 3,
+        5..=8 => 4,
+        _ => 5,
+    }
+}
+
+/// The count margins of a block (brief 059): its trials by the margin the gating decided by —
+/// the larger count in the readout window less the smaller — in `MARGIN_BINS`'s bins, and the
+/// margins summed.
+type Margins = ([u32; MARGIN_BINS], u64);
+
+fn margins_blocks(read: &[EarnedTrial]) -> Vec<Margins> {
+    read.chunks(BLOCK)
+        .map(|trials| {
+            let mut out: Margins = ([0; MARGIN_BINS], 0);
+            for t in trials {
+                let margin = t.1[0].abs_diff(t.1[1]);
+                let bin = &mut out.0[margin_bin(margin)];
+                *bin = bin.saturating_add(1);
+                out.1 = out.1.saturating_add(u64::from(margin));
+            }
+            out
+        })
+        .collect()
+}
+
+/// A shadow's couplings at every block's end (brief 059): `image`, the couplings it started
+/// from, plus what it consolidated into each pair up to there, `[stimulus][readout]`.
+fn shadow_couplings(image: [[i64; 2]; 2], shifted: &[Shifted]) -> Vec<[[i64; 2]; 2]> {
+    let mut now = image;
+    shifted
+        .chunks(BLOCK)
+        .map(|trials| {
+            for moved in trials {
+                for &(s, r) in &ALL_PAIRS {
+                    now[s][r] = now[s][r].saturating_add(net_of(&moved[s][r]));
+                }
+            }
+            now
+        })
+        .collect()
+}
+
+/// The cost and the signal of each mapping, the reversal's blocks apart from the learned ones
+/// (ADR-0141's reading): `[up to the crossing, past it]` of `(cost, signal)` — the mapping's
+/// blocks up to and including the first with at least `CROSSING_MARK` correct, as `crossings`
+/// counts them, and the blocks after it. A mapping that never crossed is all the first; for the
+/// first mapping the blocks up to the crossing are those it took from the image.
+fn apart(costs: &[i64], signals: &[i64], crossed: [Option<usize>; 4]) -> [[(i64, i64); 2]; 4] {
+    let sum = |table: &[i64], from: usize, to: usize| {
+        table.get(from..to).map_or(0, |mine| {
+            mine.iter().fold(0i64, |sum, &c| sum.saturating_add(c))
+        })
+    };
+    let mut out = [[(0, 0); 2]; 4];
+    for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+        let at = crossed[m].map_or(to, |blocks| from.saturating_add(blocks).min(to));
+        out[m] = [
+            (sum(costs, from, at), sum(signals, from, at)),
+            (sum(costs, at, to), sum(signals, at, to)),
+        ];
+    }
+    out
+}
+
+/// A table's rows summed over each mapping's blocks by `add`, from `zero`; `zero` for a mapping
+/// the table does not hold.
+fn over_mappings<R, T: Copy>(table: &[R], zero: T, add: &dyn Fn(&mut T, &R)) -> [T; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut sum = zero;
+        for row in table.get(from..to).unwrap_or(&[]) {
+            add(&mut sum, row);
+        }
+        sum
+    })
+}
+
+/// Every trial's reading beside the run, hashed: `fnv1a_64` over each trial's released
+/// consolidation, its eligibility from the drawn sources and its readouts' spikes over the
+/// trial, each number as its `i32` words.
+fn beside_hash(beside: &Beside) -> u64 {
+    let mut words: Vec<i32> = Vec::new();
+    let mut wide = |x: i64| {
+        words.push(x as i32);
+        words.push((x >> 32) as i32);
+    };
+    let Shadowed {
+        released, eligible, ..
+    } = &beside.shadowed;
+    for ((moved, traces), counts) in released.iter().zip(eligible).zip(&beside.heard) {
+        for &amount in moved.iter().flatten().flatten() {
+            wide(amount);
+        }
+        for &trace in traces.iter().flatten() {
+            wide(trace);
+        }
+        for &count in counts {
+            wide(i64::from(count));
+        }
+    }
+    fnv1a_64(&words)
+}
+
+// ---------------------------------------------------------------- the run (brief 059)
+
+/// H-26's reading of one arm (brief 059), called by H-25's arm after every one of H-25's tables
+/// is held, so that nothing of the shadow is read on a run that is not H-25's bit for bit:
+/// - the run's own consolidation by the shadow's fold, held to the network's oracle block by
+///   block — nothing on the pairs of the readout not selected, and the selected side the
+///   oracle's answer pairs and other pairs, direction by direction;
+/// - the released shadow's blocks, the readouts' spikes, the eligibility at the rewards, the
+///   count margins and the shadow's couplings, dumped whole as they are pinned;
+/// - this arm's part of the verdict by the rule committed first, and the readings by mapping;
+/// - then the pinned tables.
+fn released_reading(
+    name: &str,
+    k: usize,
+    arm: Reversal,
+    blocks: &[Block],
+    read: &[EarnedTrial],
+    went: &[Went],
+    beside: &Beside,
+) {
+    let first = first_mapping(arm);
+    let Shadowed {
+        run,
+        released: shadow,
+        eligible,
+        couplings,
+    } = &beside.shadowed;
+    assert_eq!(
+        (
+            run.len(),
+            shadow.len(),
+            eligible.len(),
+            beside.heard.len(),
+            went.len()
+        ),
+        (
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_BLOCKS
+        ),
+        "{name}: a reading beside every trial"
+    );
+    let own = costed_blocks(read, run, first);
+    for (j, (mine, oracle)) in own.iter().zip(went).enumerate() {
+        assert_eq!(
+            (mine.0[1], mine.1),
+            ([[0; 2]; 2], [0; 3]),
+            "{name} block {j}: the run consolidated nothing onto the readout not selected"
+        );
+        assert_eq!(
+            mine.0[0],
+            [oracle[0], oracle[1]],
+            "{name} block {j}: the composer's fold is the network's oracle's"
+        );
+    }
+    let costed = costed_blocks(read, shadow, first);
+    let heard = heard_blocks(read, &beside.heard);
+    let traces = eligible_blocks(read, eligible);
+    let margins = margins_blocks(read);
+    let course = shadow_couplings(IMAGE_COUPLINGS_1024, shadow);
+    let hash = beside_hash(beside);
+    assert_eq!(
+        [
+            costed.len(),
+            heard.len(),
+            traces.len(),
+            margins.len(),
+            course.len()
+        ],
+        [SCHEDULE_BLOCKS; 5],
+        "{name}: 120 blocks of each"
+    );
+    assert_eq!(
+        course.last(),
+        Some(couplings),
+        "{name}: the shadow's tables sum to the shadow's own weights"
+    );
+    // The tables dumped whole, as they are pinned, before anything of them is held or read.
+    eprintln!("DUMP {name} PIN h26-costed {costed:?}");
+    eprintln!("DUMP {name} PIN h26-heard {heard:?}");
+    eprintln!("DUMP {name} PIN h26-eligible {traces:?}");
+    eprintln!("DUMP {name} PIN h26-margins {margins:?}");
+    eprintln!("DUMP {name} PIN h26-couplings {course:?}");
+    eprintln!("DUMP {name} PIN h26-hash {hash:#018x}");
+    // This arm's part of the verdict, by the rule committed first, and the readings.
+    let costs: Vec<i64> = costed.iter().map(|c| cost_of(&c.0)).collect();
+    let signals: Vec<i64> = went.iter().map(signal_of).collect();
+    let cost = by_mapping(&costs).expect("a run of 120 blocks");
+    let signal = by_mapping(&signals).expect("a run of 120 blocks");
+    let held = [0usize, 1, 2, 3].map(|m| affordable(cost[m], signal[m]));
+    let kinds = over_mappings(&costed, [0i64; 3], &|sum: &mut [i64; 3], row: &Costed| {
+        for (a, b) in sum.iter_mut().zip(&row.1) {
+            *a = a.saturating_add(*b);
+        }
+    });
+    let split = apart(&costs, &signals, crossings(blocks));
+    eprintln!("DUMP {name} PIN h26-cost {cost:?}");
+    eprintln!("DUMP {name} PIN h26-signal {signal:?}");
+    eprintln!("DUMP {name} PIN h26-kinds {kinds:?}");
+    eprintln!("DUMP {name} PIN h26-apart {split:?}");
+    eprintln!(
+        "DUMP {name} H-26, this arm: cost {cost:?} signal {signal:?} cost at most half the signal {held:?}; the prediction, yes: {RELEASED_PREDICTED}"
+    );
+    eprintln!(
+        "DUMP {name} H-26 cost per block {costs:?} signal per block {signals:?} crossings {:?}",
+        crossings(blocks)
+    );
+    eprintln!(
+        "DUMP {name} H-26 shade by mapping, [selected, not selected][answer's pairs, other pairs][raised, lowered]: {:?}; the run's own selected side {:?}",
+        over_mappings(
+            &costed,
+            [[[0i64; 2]; 2]; 2],
+            &|sum: &mut Shade, row: &Costed| add_shade(sum, &row.0)
+        ),
+        over_mappings(
+            &own,
+            [[[0i64; 2]; 2]; 2],
+            &|sum: &mut Shade, row: &Costed| add_shade(sum, &row.0)
+        )
+        .map(|shade| shade[0])
+    );
+    eprintln!(
+        "DUMP {name} H-26 readouts' spikes by mapping, [window, trial][selected, other, at ties]: {:?}",
+        over_mappings(&heard, [[0u64; 3]; 2], &|sum: &mut Heard, row: &Heard| {
+            for (a, b) in sum.iter_mut().flatten().zip(row.iter().flatten()) {
+                *a = a.saturating_add(*b);
+            }
+        })
+    );
+    eprintln!(
+        "DUMP {name} H-26 eligibility at the rewards by mapping, [selected, other, at ties][above zero, below zero]: {:?}",
+        over_mappings(
+            &traces,
+            [[0i64; 2]; 3],
+            &|sum: &mut Eligible, row: &Eligible| {
+                for (a, b) in sum.iter_mut().flatten().zip(row.iter().flatten()) {
+                    *a = a.saturating_add(*b);
+                }
+            }
+        )
+    );
+    eprintln!(
+        "DUMP {name} H-26 margins by mapping, trials at 0, 1, 2, 3–4, 5–8, 9+ and the margins summed: {:?}; trials by outcome {:?}",
+        over_mappings(
+            &margins,
+            ([0u32; MARGIN_BINS], 0u64),
+            &|sum: &mut Margins, row: &Margins| {
+                for (a, b) in sum.0.iter_mut().zip(&row.0) {
+                    *a = a.saturating_add(*b);
+                }
+                sum.1 = sum.1.saturating_add(row.1);
+            }
+        ),
+        tally(blocks)
+    );
+    eprintln!(
+        "DUMP {name} H-26 the shadow's couplings at each mapping's end, per myriad of the image's {:?} beside the run's {:?}; its highest {:?}",
+        MAPPINGS.map(|(_, to)| {
+            course
+                .get(to.saturating_sub(1))
+                .map(|c| ALL_PAIRS.map(|(s, r)| per_myriad(c[s][r], IMAGE_COUPLINGS_1024[s][r])))
+        }),
+        MAPPINGS.map(|(_, to)| {
+            blocks
+                .get(to.saturating_sub(1))
+                .map(|b| ALL_PAIRS.map(|(s, r)| per_myriad(b.10[s][r], IMAGE_COUPLINGS_1024[s][r])))
+        }),
+        course
+            .iter()
+            .enumerate()
+            .flat_map(|(j, c)| ALL_PAIRS.map(|(s, r)| (
+                per_myriad(c[s][r], IMAGE_COUPLINGS_1024[s][r]),
+                j,
+                s,
+                r
+            )))
+            .max()
+    );
+    // The pinned tables of the shadow's reading, and the readings as the constants state.
+    assert_eq!(
+        costed.as_slice(),
+        RELEASED_COSTED_1024[k],
+        "{name}: the released shadow per block"
+    );
+    assert_eq!(
+        heard.as_slice(),
+        RELEASED_HEARD_1024[k],
+        "{name}: the readouts' spikes per block"
+    );
+    assert_eq!(
+        traces.as_slice(),
+        RELEASED_ELIGIBLE_1024[k],
+        "{name}: the eligibility at the rewards per block"
+    );
+    assert_eq!(
+        margins.as_slice(),
+        RELEASED_MARGINS_1024[k],
+        "{name}: the count margins per block"
+    );
+    assert_eq!(
+        course.as_slice(),
+        RELEASED_COUPLINGS_1024[k],
+        "{name}: the shadow's couplings per block"
+    );
+    assert_eq!(
+        hash, RELEASED_HASH_1024[k],
+        "{name}: every trial's reading beside the run"
+    );
+    assert_eq!(cost, COST_RELEASED_1024[k]);
+    assert_eq!(signal, SIGNAL_RELEASED_1024[k]);
+    assert_eq!(kinds, KINDS_RELEASED_1024[k]);
+    assert_eq!(split, APART_RELEASED_1024[k]);
+}
+
+/// The gate's test (ADR-0061's class; brief 059): the arms, the prediction and the rule's
+/// constant as ADR-0141 fixed them, and the signal as H-25's pinned tables already hold it;
+/// H-26's rule at its edges and the verdict naming the mapping and the arm over tables written
+/// by hand; the shadow's folds and the readings' rules over values written by hand; the shadow's
+/// rule against the composer's on a run written by hand, spike by spike; and eight trials on the
+/// instrument's network under the drawn delivery with the shadows beside the composer — the one
+/// under the drawn address held to the composer at every trial, the same eight trials without
+/// the shadows the same run, and the released one read against the run's own. Nothing else
+/// added to the gate.
+#[test]
+fn the_rule_of_h_26_the_shadow_s_rule_and_the_readings_rules() {
+    // The arms, the prediction and the rule's constant.
+    assert_eq!(RELEASED_ARMS, DRAWN_ARMS);
+    assert_eq!(
+        RELEASED_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    const _: () = assert!(!RELEASED_PREDICTED, "ADR-0141 predicts no");
+    const _: () = assert!(COST_TIMES == 2, "at most half the signal");
+    // The signal is the run's, and H-25's pinned tables hold it already: the answer pairs' net
+    // less the other pairs' per mapping, ADR-0140's table of where the consolidation went.
+    for (k, &arm) in RELEASED_ARMS.iter().enumerate() {
+        let signals: Vec<i64> = DRAWN_WENT_1024[k].iter().map(signal_of).collect();
+        assert_eq!(
+            by_mapping(&signals),
+            Some(SIGNAL_RELEASED_1024[k]),
+            "{arm:?}: the signal per mapping, from H-25's table"
+        );
+    }
+    assert_eq!(
+        SIGNAL_RELEASED_1024,
+        [
+            [
+                1_963_991 + 714_225,
+                2_442_666 + 2_582_144,
+                2_500_849 + 2_666_083,
+                3_040_807 + 2_465_583
+            ],
+            [
+                2_272_937 + 465_352,
+                2_516_134 + 2_461_151,
+                2_490_753 + 2_320_682,
+                2_707_446 + 2_427_736
+            ]
+        ],
+        "ADR-0140's nets, the answer's less the other pairs'"
+    );
+    // H-26's rule at its edges, over tables written by hand: a run whose every mapping holds its
+    // cost and its signal in its first and its last block.
+    let costed_of = |cost: i64| -> Costed {
+        (
+            [[[0; 2]; 2], [[0; 2], [cost.max(0), cost.min(0)]]],
+            [cost, 0, 0],
+        )
+    };
+    let went_of = |signal: i64| -> Went { [[signal.max(0), signal.min(0)], [0; 2], [0; 2]] };
+    let tables = |costs: [i64; 4], signals: [i64; 4]| -> (Vec<Costed>, Vec<Went>) {
+        let mut costed = vec![costed_of(0); SCHEDULE_BLOCKS];
+        let mut went = vec![went_of(0); SCHEDULE_BLOCKS];
+        for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+            // One LSB in the mapping's first block and the rest in its last, so that a sum
+            // that left either block out, or took a neighbour's, reads another number.
+            let last = to.saturating_sub(1);
+            costed[from] = costed_of(1);
+            costed[last] = costed_of(costs[m].saturating_sub(1));
+            went[from] = went_of(1);
+            went[last] = went_of(signals[m].saturating_sub(1));
+        }
+        (costed, went)
+    };
+    let verdict_of = |a: &(Vec<Costed>, Vec<Went>), b: &(Vec<Costed>, Vec<Went>)| {
+        released([(&a.0, &a.1), (&b.0, &b.1)])
+    };
+    let at_half = tables([50, 60, 70, 80], [100, 120, 140, 160]);
+    assert_eq!(
+        verdict_of(&at_half, &at_half),
+        Released {
+            cost: [[50, 60, 70, 80]; 2],
+            signal: [[100, 120, 140, 160]; 2],
+            held: [[true; 4]; 2],
+            yes: true
+        },
+        "a cost of exactly half the signal holds, in every mapping of both arms"
+    );
+    let past = tables([50, 60, 71, 80], [100, 120, 140, 160]);
+    assert_eq!(
+        verdict_of(&at_half, &past),
+        Released {
+            cost: [[50, 60, 70, 80], [50, 60, 71, 80]],
+            signal: [[100, 120, 140, 160]; 2],
+            held: [[true; 4], [true, true, false, true]],
+            yes: false
+        },
+        "one LSB past half fails, in the second arm's third mapping alone"
+    );
+    let first_fails = tables([51, 60, 70, 80], [100, 120, 140, 160]);
+    assert_eq!(
+        verdict_of(&first_fails, &at_half).held,
+        [[false, true, true, true], [true; 4]],
+        "and in the first arm's first mapping alone"
+    );
+    assert!(
+        affordable(3, 7) && !affordable(4, 7),
+        "an odd signal: twice the cost at most the signal"
+    );
+    assert!(
+        affordable(-1, 0) && affordable(0, 0) && !affordable(1, 0),
+        "no signal affords no cost"
+    );
+    assert!(
+        affordable(-5, 1) && affordable(-2, -4) && !affordable(-1, -4),
+        "a cost below zero is a release that helps; below a signal below zero it is still read by the rule"
+    );
+    assert!(
+        affordable(i64::MAX, i64::MAX) && !affordable(i64::MAX, i64::MAX - 1),
+        "the product saturates and does not wrap"
+    );
+    let short = (at_half.0[1..].to_vec(), at_half.1.clone());
+    assert_eq!(
+        verdict_of(&at_half, &short),
+        Released {
+            cost: [[50, 60, 70, 80], [0; 4]],
+            signal: [[100, 120, 140, 160]; 2],
+            held: [[true; 4], [false; 4]],
+            yes: false
+        },
+        "a shadow that is not whole holds nothing"
+    );
+    let unread = (at_half.0.clone(), at_half.1[..SCHEDULE_BLOCKS - 1].to_vec());
+    assert_eq!(
+        verdict_of(&unread, &at_half).held,
+        [[false; 4], [true; 4]],
+        "nor does a run that is not whole"
+    );
+    assert_eq!(by_mapping(&[1; SCHEDULE_BLOCKS]), Some([24, 32, 32, 32]));
+    assert_eq!(by_mapping(&[1; SCHEDULE_BLOCKS - 1]), None);
+    // The folds over values written by hand. A trial's consolidation, every amount another
+    // number: `[stimulus][readout][raised, lowered]`.
+    let moved: Shifted = [[[1, -2], [4, -8]], [[16, -32], [64, -128]]];
+    assert_eq!(
+        [
+            side_of(Some(0), 0),
+            side_of(Some(0), 1),
+            side_of(Some(1), 0),
+            side_of(Some(1), 1),
+            side_of(None, 0),
+            side_of(None, 1)
+        ],
+        [0, 1, 1, 0, 1, 1],
+        "the selected readout's pairs on the run's side, the other's on the release's, both at a tie"
+    );
+    // Readout 1 selected under the assignment: A's answer, readout 0, was not selected, B's was.
+    assert_eq!(
+        shade_of(&moved, Some(1), false),
+        [[[64, -128], [4, -8]], [[1, -2], [16, -32]]],
+        "selected: B onto its answer and A onto the other; not selected: A onto its answer and B onto the other"
+    );
+    assert_eq!(
+        cost_of(&shade_of(&moved, Some(1), false)),
+        (16 - 32) - (1 - 2),
+        "B's rise onto the other readout and A's fall from its answer are cost; the selected side enters nothing"
+    );
+    // The same under the mirrored mapping: the pairs change places, the sides do not.
+    assert_eq!(
+        shade_of(&moved, Some(1), true),
+        [[[4, -8], [64, -128]], [[16, -32], [1, -2]]]
+    );
+    assert_eq!(
+        cost_of(&shade_of(&moved, Some(1), true)),
+        (1 - 2) - (16 - 32)
+    );
+    assert_eq!(
+        shade_of(&moved, Some(0), false),
+        [[[1, -2], [16, -32]], [[64, -128], [4, -8]]]
+    );
+    // At a tie the run addressed nothing, and the release reaches both readouts.
+    assert_eq!(
+        shade_of(&moved, None, false),
+        [[[0; 2]; 2], [[1 + 64, -2 - 128], [4 + 16, -8 - 32]]]
+    );
+    assert_eq!(
+        cost_of(&shade_of(&moved, None, false)),
+        (4 + 16 - 8 - 32) - (1 + 64 - 2 - 128)
+    );
+    // The four signs of the cost, one amount each: a rise onto the other readout and a fall from
+    // the answer are cost; a rise onto the answer and a fall from the other readout are not.
+    let one = |pairs: usize, amount: i64| -> Shade {
+        let mut shade: Shade = [[[7, -7]; 2], [[0; 2]; 2]];
+        shade[1][pairs][usize::from(amount < 0)] = amount;
+        shade
+    };
+    assert_eq!(
+        [
+            cost_of(&one(1, 9)),
+            cost_of(&one(0, -9)),
+            cost_of(&one(0, 9)),
+            cost_of(&one(1, -9))
+        ],
+        [9, 9, -9, -9]
+    );
+    assert_eq!(signal_of(&[[10, -3], [5, -6], [1_000, -2_000]]), 7 + 1);
+    let mut both = shade_of(&moved, Some(1), false);
+    add_shade(&mut both, &shade_of(&moved, Some(0), false));
+    assert_eq!(both, [[[65, -130], [20, -40]], [[65, -130], [20, -40]]]);
+    // The blocks' fold: a trial's consolidation under the selection of the trial before it and
+    // the mapping in force at the trial itself, entered in the trial's own block under the kind
+    // of the trial before.
+    let trial = |selection: Option<u8>, correct: bool, counts: [u32; 2]| -> EarnedTrial {
+        (0, counts, selection, correct, 0, [[0; 2]; 2], 0, 0)
+    };
+    assert_eq!(
+        [
+            kind_of(Some(&trial(Some(0), true, [0; 2]))),
+            kind_of(Some(&trial(Some(1), false, [0; 2]))),
+            kind_of(Some(&trial(None, false, [0; 2]))),
+            kind_of(None)
+        ],
+        [0, 1, 2, 2]
+    );
+    let trials = FLIP + BLOCK;
+    let mut read = vec![trial(Some(0), true, [0; 2]); trials];
+    let mut shifted: Vec<Shifted> = vec![[[[0; 2]; 2]; 2]; trials];
+    // Trial 0: nothing was selected before it, so everything is on the release's side.
+    shifted[0] = moved;
+    // Trial 64, the second block's first: its address is trial 63's, a wrong selection of 1.
+    read[BLOCK - 1] = trial(Some(1), false, [0; 2]);
+    shifted[BLOCK] = moved;
+    // Trial 65: its address is trial 64's, a tie.
+    read[BLOCK] = trial(None, false, [0; 2]);
+    shifted[BLOCK + 1] = moved;
+    // The last trial before the flip and the first after it, each after a correct selection of
+    // 0: the same consolidation folded under the mapping in force at each.
+    shifted[FLIP - 1] = moved;
+    shifted[FLIP] = moved;
+    let folded = costed_blocks(&read, &shifted, false);
+    assert_eq!(folded.len(), FLIP_BLOCK + 1);
+    assert_eq!(
+        folded[0],
+        (
+            shade_of(&moved, None, false),
+            [0, 0, cost_of(&shade_of(&moved, None, false))]
+        ),
+        "before the first trial nothing was selected: a tie's kind"
+    );
+    let after_wrong = shade_of(&moved, Some(1), false);
+    let after_tie = shade_of(&moved, None, false);
+    let mut second = after_wrong;
+    add_shade(&mut second, &after_tie);
+    assert_eq!(
+        folded[1],
+        (second, [0, cost_of(&after_wrong), cost_of(&after_tie)]),
+        "the second block: one trial after a wrong selection and one after a tie"
+    );
+    assert_eq!(
+        (folded[FLIP_BLOCK - 1], folded[FLIP_BLOCK]),
+        (
+            (
+                shade_of(&moved, Some(0), false),
+                [cost_of(&shade_of(&moved, Some(0), false)), 0, 0]
+            ),
+            (
+                shade_of(&moved, Some(0), true),
+                [cost_of(&shade_of(&moved, Some(0), true)), 0, 0]
+            )
+        ),
+        "the first trial after the flip is folded under the new mapping, its address the old one's last"
+    );
+    assert_ne!(
+        costed_blocks(&read, &shifted, true)[0],
+        folded[0],
+        "the arm's first mapping decides which pairs are the answer's"
+    );
+    for block in &folded {
+        assert_eq!(
+            block.1.iter().sum::<i64>(),
+            cost_of(&block.0),
+            "the kinds sum to the block's cost"
+        );
+    }
+    // The readouts' spikes, the eligibility and the margins, over trials written by hand.
+    let mut heard_read = vec![trial(Some(0), true, [9, 4]); BLOCK];
+    heard_read[1] = trial(Some(1), true, [2, 7]);
+    heard_read[2] = trial(None, false, [5, 5]);
+    let mut over_trial = vec![[20u32, 10]; BLOCK];
+    over_trial[1] = [6, 30];
+    over_trial[2] = [11, 12];
+    // The trials that select readout 0 with the counts written first: all but those two.
+    const ZEROS: u64 = (BLOCK - 2) as u64;
+    assert_eq!(
+        heard_blocks(&heard_read, &over_trial),
+        vec![[
+            [9 * ZEROS + 7, 4 * ZEROS + 2, 10],
+            [20 * ZEROS + 30, 10 * ZEROS + 6, 23]
+        ]],
+        "each trial's counts on the side its own selection put them, a tie's together"
+    );
+    let mut traces = vec![[[100i64, -10], [30, -3]]; BLOCK];
+    traces[1] = [[1, -2], [4, -8]];
+    traces[2] = [[16, -32], [64, -128]];
+    const ZEROS_I: i64 = ZEROS as i64;
+    assert_eq!(
+        eligible_blocks(&heard_read, &traces),
+        vec![[
+            [100 * ZEROS_I + 4, -10 * ZEROS_I - 8],
+            [30 * ZEROS_I + 1, -3 * ZEROS_I - 2],
+            [16 + 64, -32 - 128]
+        ]],
+        "the eligibility onto the readout each trial selected, onto the other, and at a tie onto both"
+    );
+    assert_eq!(
+        [0u32, 1, 2, 3, 4, 5, 8, 9, u32::MAX].map(margin_bin),
+        [0, 1, 2, 3, 3, 4, 4, 5, 5],
+        "the bins' edges"
+    );
+    let mut margin_read = vec![trial(Some(0), true, [9, 4]); BLOCK];
+    margin_read[0] = trial(None, false, [5, 5]);
+    margin_read[1] = trial(Some(1), true, [2, 3]);
+    margin_read[2] = trial(Some(1), true, [0, 2]);
+    margin_read[3] = trial(Some(0), true, [7, 3]);
+    margin_read[4] = trial(Some(0), true, [20, 3]);
+    const FIVES: u32 = (BLOCK - 5) as u32;
+    assert_eq!(
+        margins_blocks(&margin_read),
+        vec![([1, 1, 1, 1, FIVES, 1], (5 * FIVES + 1 + 2 + 4 + 17) as u64)],
+        "a trial a bin, by the larger count less the smaller"
+    );
+    // The shadow's couplings: an image's plus what each block's trials consolidated.
+    let mut by_trial: Vec<Shifted> = vec![[[[0; 2]; 2]; 2]; 2 * BLOCK];
+    by_trial[3] = moved;
+    by_trial[BLOCK + 1] = moved;
+    by_trial[2 * BLOCK - 1] = moved;
+    let image = [[1_000, 2_000], [3_000, 4_000]];
+    assert_eq!(
+        shadow_couplings(image, &by_trial),
+        vec![
+            [[1_000 - 1, 2_000 - 4], [3_000 - 16, 4_000 - 64]],
+            [[1_000 - 3, 2_000 - 12], [3_000 - 48, 4_000 - 192]]
+        ]
+    );
+    // The cost and the signal apart: a mapping's blocks up to its crossing, that block counted,
+    // and the blocks after it; a mapping that never crossed is all the first.
+    let costs: Vec<i64> = (0..SCHEDULE_BLOCKS as i64).collect();
+    let signals: Vec<i64> = (1_000..1_000 + SCHEDULE_BLOCKS as i64).collect();
+    let range = |from: i64, to: i64| -> (i64, i64) {
+        (
+            (from..to).sum::<i64>(),
+            signals[from as usize..to as usize].iter().sum::<i64>(),
+        )
+    };
+    assert_eq!(
+        apart(&costs, &signals, [Some(6), Some(32), None, Some(1)]),
+        [
+            [range(0, 6), range(6, 24)],
+            [range(24, 56), range(56, 56)],
+            [range(56, 88), range(88, 88)],
+            [range(88, 89), range(89, 120)]
+        ]
+    );
+    assert_eq!(
+        over_mappings(&costs, 0i64, &|sum: &mut i64, row: &i64| *sum =
+            sum.saturating_add(*row)),
+        [
+            range(0, 24).0,
+            range(24, 56).0,
+            range(56, 88).0,
+            range(88, 120).0
+        ]
+    );
+    // The shadow's rule against the composer's on a run written by hand. Four units: 0, a source
+    // the executor drew, and 1, one it did not, both of stimulus A's; 2, a unit of readout 0, and
+    // 3, a unit of readout 1; a synapse from each source onto each, at the depression's reference
+    // magnitude, never yet spiked through.
+    let reference = 1i32 << DEPRESSION_REFERENCE_SHIFT;
+    let wire = |source: u32, target: u32, readout: usize| Replayed {
+        block_idx: 0,
+        slot: 0,
+        source,
+        target,
+        stimulus: 0,
+        readout,
+        delay: 100,
+        magnitude: reference,
+        stamp: NO_SPIKE_ON_RECORD,
+        trace: 0,
+    };
+    let wired = vec![wire(0, 2, 0), wire(0, 3, 1), wire(1, 2, 0), wire(1, 3, 1)];
+    let no_volleys = vec![Vec::new(); 4];
+    // The first trial, from tick 1 000, nothing rewarded or drawn yet: each source fires, and
+    // then each readout unit, ten and twenty ticks after the drawn source.
+    const FIRST_START: u32 = 1_000;
+    const SECOND_START: u32 = FIRST_START + TRIAL_TICKS;
+    let first_spikes = vec![vec![FIRST_START], vec![1_005], vec![1_010], vec![1_020]];
+    let at_rest = signal_course(0);
+    let none_drawn = [false; 4];
+    let first_reading = Replay {
+        spikes: &first_spikes,
+        volleys: &no_volleys,
+        cursor: 0,
+        start: FIRST_START,
+        course: Some(&at_rest),
+        addressed: None,
+        drawn: Some(&none_drawn),
+        released: false,
+        baseline: 0,
+        signed: true,
+        global: false,
+        at_rest: true,
+    };
+    let mut composer = wired.clone();
+    let mut shadow = wired.clone();
+    let quiet = advance(&mut composer, &first_reading);
+    assert_eq!(
+        quiet,
+        advance(
+            &mut shadow,
+            &Replay {
+                released: true,
+                ..first_reading
+            }
+        ),
+        "nothing drawn, nothing released"
+    );
+    assert_eq!(
+        (quiet.1, quiet.2),
+        ([[0; 2]; 2], [[[0; 2]; 2]; 2]),
+        "a first spike pairs with nothing and consolidates nothing"
+    );
+    assert!(
+        composer == shadow
+            && composer
+                .iter()
+                .all(|s| s.trace == 0 && s.magnitude == reference)
+            && [composer[0].stamp, composer[2].stamp] == [1_000, 1_005],
+        "the stamps and nothing else"
+    );
+    // The second trial, under the signal a reward of 1.0 left and the address of the first:
+    // readout 0 selected, source 0 drawn. Readout 1's unit fires one tick in, then source 0 at
+    // the third tick and source 1 at the fourth.
+    let second_spikes = vec![
+        vec![FIRST_START, SECOND_START + 3],
+        vec![1_005, SECOND_START + 4],
+        vec![1_010],
+        vec![1_020, SECOND_START + 1],
+    ];
+    let rewarded = signal_course(REWARD_Q16);
+    let punished = signal_course(REWARD_Q16.saturating_neg());
+    let drawn = [true, false, false, false];
+    let reading =
+        |course: &[i32], selected: Option<usize>, released: bool| -> (Advanced, Vec<Replayed>) {
+            let mut synapses = composer.clone();
+            let advanced = advance(
+                &mut synapses,
+                &Replay {
+                    spikes: &second_spikes,
+                    volleys: &no_volleys,
+                    cursor: SECOND_START,
+                    start: SECOND_START,
+                    course: Some(course),
+                    addressed: selected.map(|r| (0, r)),
+                    drawn: Some(&drawn),
+                    released,
+                    baseline: 0,
+                    signed: true,
+                    global: false,
+                    at_rest: false,
+                },
+            );
+            (advanced, synapses)
+        };
+    // The traces the pair rule leaves at the drawn source's spike, by the rule's two terms: onto
+    // readout 0's unit, which fired ten ticks after the source's last spike and not since, the
+    // potentiation of ten ticks less the depression of the 16 377 since; onto readout 1's unit,
+    // which fired two ticks before this spike, the potentiation of its 16 385 ticks after the
+    // source's last less the depression of two.
+    const SINCE: u32 = SECOND_START + 3 - 1_010;
+    const AFTER: u32 = SECOND_START + 1 - FIRST_START;
+    const _: () = assert!(SINCE == 16_377 && AFTER == 16_385);
+    let onto_0 = pair_window(STDP_A_PLUS_Q1_15, 10).saturating_sub(depression_at(
+        pair_window(STDP_A_MINUS_Q1_15, SINCE),
+        reference,
+    ));
+    let onto_1 = pair_window(STDP_A_PLUS_Q1_15, AFTER)
+        .saturating_sub(depression_at(pair_window(STDP_A_MINUS_Q1_15, 2), reference));
+    assert!(
+        onto_0 > 0 && onto_1 < 0,
+        "one trace above zero and one below: {onto_0} and {onto_1}"
+    );
+    // Rewarded, readout 0 selected. The composer consolidates the drawn source's synapse onto
+    // readout 0 and nothing else; the shadow under the drawn address is the composer; the
+    // released shadow consolidates the same and, beside it, the drawn source's synapse onto
+    // readout 1, the readout not selected — a trace below zero under a signal above it, so the
+    // weight falls. The source not drawn consolidates under neither.
+    let (run, run_synapses) = reading(&rewarded, Some(0), false);
+    let (again, again_synapses) = reading(&rewarded, Some(0), false);
+    let (free, free_synapses) = reading(&rewarded, Some(0), true);
+    assert!(
+        run == again && run_synapses == again_synapses,
+        "the shadow under the drawn address is the composer's rule, number by number"
+    );
+    let taken_0 = consolidated_signed(onto_0, reference, rewarded[3]);
+    let taken_1 = consolidated_signed(onto_1, reference, rewarded[3]);
+    assert!(
+        taken_0.2 > 0 && taken_1.2 < 0,
+        "the rewarded consolidation raises one weight and lowers the other: {} and {}",
+        taken_0.2,
+        taken_1.2
+    );
+    assert_eq!(
+        run.2,
+        [[[i64::from(taken_0.2), 0], [0, 0]], [[0; 2]; 2]],
+        "the run's address: the drawn source onto the selected readout"
+    );
+    assert_eq!(
+        free.2,
+        [
+            [[i64::from(taken_0.2), 0], [0, i64::from(taken_1.2)]],
+            [[0; 2]; 2]
+        ],
+        "the released targets: the same, and the drawn source onto the readout not selected"
+    );
+    assert_eq!(
+        [
+            (run_synapses[0].trace, run_synapses[0].magnitude),
+            (run_synapses[1].trace, run_synapses[1].magnitude),
+            (free_synapses[0].trace, free_synapses[0].magnitude),
+            (free_synapses[1].trace, free_synapses[1].magnitude)
+        ],
+        [
+            (taken_0.0, taken_0.1),
+            (onto_1, reference),
+            (taken_0.0, taken_0.1),
+            (taken_1.0, taken_1.1)
+        ],
+        "each consolidation takes from its own trace into its own weight"
+    );
+    assert!(
+        run_synapses[2..] == free_synapses[2..]
+            && free_synapses[2..]
+                .iter()
+                .all(|s| s.magnitude == reference && s.trace != 0),
+        "the source not drawn pairs and consolidates under neither address"
+    );
+    assert!(
+        run_synapses
+            .iter()
+            .zip(&free_synapses)
+            .all(|(a, b)| a.stamp == b.stamp),
+        "the release moves no stamp"
+    );
+    // The cost of that trial by the rule: under the assignment readout 0 is A's answer, so the
+    // fall onto readout 1 is a fall from the other readout and a cost below zero; under the
+    // mirrored mapping readout 1 is A's answer and the same fall is cost.
+    assert_eq!(
+        [
+            cost_of(&shade_of(&free.2, Some(0), false)),
+            cost_of(&shade_of(&free.2, Some(0), true)),
+            cost_of(&shade_of(&run.2, Some(0), false)),
+            cost_of(&shade_of(&run.2, Some(0), true))
+        ],
+        [
+            i64::from(taken_1.2),
+            i64::from(taken_1.2).saturating_neg(),
+            0,
+            0
+        ],
+        "the run's own address costs nothing by the rule"
+    );
+    // Punished, readout 0 selected: the signed gate moves each weight against its trace, so the
+    // released shadow raises the weight onto the readout not selected.
+    let (run, _) = reading(&punished, Some(0), false);
+    let (free, _) = reading(&punished, Some(0), true);
+    let struck_0 = consolidated_signed(onto_0, reference, punished[3]);
+    let struck_1 = consolidated_signed(onto_1, reference, punished[3]);
+    assert!(struck_0.2 < 0 && struck_1.2 > 0);
+    assert_eq!(
+        (run.2, free.2),
+        (
+            [[[0, i64::from(struck_0.2)], [0, 0]], [[0; 2]; 2]],
+            [
+                [[0, i64::from(struck_0.2)], [i64::from(struck_1.2), 0]],
+                [[0; 2]; 2]
+            ]
+        ),
+        "a punishment under the signed gate, with and without the release"
+    );
+    // A tie: the run's address has no target and consolidates nothing; the released one reaches
+    // both readouts from the drawn source.
+    let (run, run_synapses) = reading(&punished, None, false);
+    let (free, _) = reading(&punished, None, true);
+    assert!(
+        run.2 == [[[0; 2]; 2]; 2] && run_synapses.iter().all(|s| s.magnitude == reference),
+        "a tie addresses nothing"
+    );
+    assert_eq!(
+        free.2,
+        [
+            [[0, i64::from(struck_0.2)], [i64::from(struck_1.2), 0]],
+            [[0; 2]; 2]
+        ],
+        "a tie, released: the drawn source onto both readouts"
+    );
+    assert_eq!(
+        shade_of(&free.2, None, false)[0],
+        [[0; 2]; 2],
+        "and all of it on the release's side"
+    );
+    // Eight trials on the instrument's network under the drawn delivery, its image flagged and
+    // carrying the critic with its window as the arms' images do, with the shadows beside the
+    // composer and again without them.
+    let sets = geometry(1024, ROTATION_1024);
+    let p = prior(1024);
+    let fresh = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    let flagged = signed_image(&inhibited_image(&Image::encode(&fresh).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    let bytes = with_window_bytes(&valued_image(&flagged, VALUED_CRITIC), window);
+    let run_of = |shadowed: bool| {
+        let mut exec = signed_from(&bytes, 1024);
+        let image = weights_of(&exec);
+        let couplings = pair_couplings(&exec, &sets);
+        let groups = groups_of(&exec, &sets);
+        let classes = classes_of(&exec, &sets);
+        let out = shadowed_run(
+            &mut exec,
+            Reversal::AssignmentFirst,
+            &sets,
+            &groups,
+            &classes,
+            &image,
+            Delivery::Drawn,
+            GATE_TRIALS,
+            shadowed,
+        );
+        (
+            out,
+            couplings,
+            pair_couplings(&exec, &sets),
+            weights_of(&exec),
+        )
+    };
+    let ((run, moves, values, watched, beside), couplings, couplings_after, after) = run_of(true);
+    let ((bare_run, bare_moves, bare_values, bare_watched, bare_beside), _, _, bare_after) =
+        run_of(false);
+    assert!(bare_beside.is_none(), "no shadow, nothing beside");
+    assert!(
+        run == bare_run
+            && moves == bare_moves
+            && values == bare_values
+            && watched == bare_watched
+            && after == bare_after,
+        "the shadows read the run and never write: the run with them is the run without"
+    );
+    let beside = beside.expect("the shadows' reading");
+    let read = &run.3;
+    eprintln!(
+        "DUMP shadowed: {GATE_TRIALS} trials {read:?} run {:?} released {:?} eligible {:?} heard {:?}",
+        beside.shadowed.run, beside.shadowed.released, beside.shadowed.eligible, beside.heard
+    );
+    assert_eq!(
+        (
+            beside.shadowed.run.len(),
+            beside.shadowed.released.len(),
+            beside.shadowed.eligible.len(),
+            beside.heard.len()
+        ),
+        (GATE_TRIALS, GATE_TRIALS, GATE_TRIALS, GATE_TRIALS),
+        "a reading beside every trial"
+    );
+    // The run's own consolidation is the composer's, and by the fold lies on the selected side
+    // alone; a trial whose address drew no unit of a stimulus set — and the first, which has no
+    // address — consolidates nothing, under the run's address or the released one.
+    let none_drawn = |t: usize| watched.sourced[t][1] == 0 && watched.sourced[t][2] == 0;
+    let mut diverged = false;
+    for (t, (own, free)) in beside
+        .shadowed
+        .run
+        .iter()
+        .zip(&beside.shadowed.released)
+        .enumerate()
+    {
+        let selected = t.checked_sub(1).and_then(|p| read[p].2);
+        let (mine, theirs) = (
+            shade_of(own, selected, false),
+            shade_of(free, selected, false),
+        );
+        for &(s, r) in &ALL_PAIRS {
+            assert_eq!(
+                net_of(&own[s][r]),
+                read[t].5[s][r],
+                "trial {t}: the run's two sides sum to what the composer consolidated"
+            );
+        }
+        assert_eq!(
+            mine[1], [[0; 2]; 2],
+            "trial {t}: the run consolidated nothing onto the readout not selected"
+        );
+        if t.checked_sub(1).is_none_or(none_drawn) {
+            assert_eq!(
+                (*own, *free),
+                ([[[0; 2]; 2]; 2], [[[0; 2]; 2]; 2]),
+                "trial {t}: no stimulus unit drawn, nothing consolidated"
+            );
+        }
+        if none_drawn(t) {
+            assert_eq!(
+                beside.shadowed.eligible[t], [[0; 2]; 2],
+                "trial {t}: no stimulus unit drawn, no eligibility from the drawn sources"
+            );
+        }
+        // Until the release has consolidated something of its own the shadow's weights and
+        // traces are the run's, so its selected side is the run's, the trial it first does so
+        // included: a synapse lies on one side.
+        if !diverged {
+            assert_eq!(
+                theirs[0], mine[0],
+                "trial {t}: the release's selected side is the run's until the release diverges"
+            );
+        }
+        diverged |= theirs[1] != [[0; 2]; 2];
+        assert!(
+            beside.heard[t][0] >= read[t].1[0] && beside.heard[t][1] >= read[t].1[1],
+            "trial {t}: the readout window lies within the trial"
+        );
+    }
+    assert!(
+        diverged,
+        "the release consolidated something onto a readout not selected in these trials"
+    );
+    assert!(
+        beside.shadowed.eligible.iter().any(|e| *e != [[0; 2]; 2]),
+        "a drawing's sources carry eligibility"
+    );
+    assert_eq!(
+        shadow_couplings(couplings, &beside.shadowed.released),
+        vec![beside.shadowed.couplings],
+        "the released shadow's table sums to its own weights"
+    );
+    assert_eq!(
+        shadow_couplings(couplings, &beside.shadowed.run),
+        vec![couplings_after],
+        "and the run's to the record's"
+    );
+    let mut other = beside.clone();
+    other.heard[GATE_TRIALS - 1][1] = other.heard[GATE_TRIALS - 1][1].wrapping_add(1);
+    assert_ne!(beside_hash(&beside), beside_hash(&other));
+    other = beside.clone();
+    other.shadowed.eligible[GATE_TRIALS - 1][0][1] =
+        other.shadowed.eligible[GATE_TRIALS - 1][0][1].wrapping_sub(1);
+    assert_ne!(beside_hash(&beside), beside_hash(&other));
+    other = beside.clone();
+    other.shadowed.released[0][1][1][0] = other.shadowed.released[0][1][1][0].wrapping_add(1);
+    assert_ne!(beside_hash(&beside), beside_hash(&other));
+}
+
+// ----------------------------------------------------------- the measurement (brief 059)
+
+/// H-26's tables beside H-25's arms (brief 059, ADR-0142), `[assignment first, mirrored first]`,
+/// 120 blocks each: the released shadow's shade and its cost by kind, the readouts' spikes, the
+/// eligibility at the rewards from the drawn sources, the count margins, the shadow's couplings
+/// at every block's end, and every trial's reading beside the run by its hash. Empty until the
+/// one run.
+const RELEASED_COSTED_1024: [&[Costed]; 2] = [&[], &[]];
+const RELEASED_HEARD_1024: [&[Heard]; 2] = [&[], &[]];
+const RELEASED_ELIGIBLE_1024: [&[Eligible]; 2] = [&[], &[]];
+const RELEASED_MARGINS_1024: [&[Margins]; 2] = [&[], &[]];
+const RELEASED_COUPLINGS_1024: [&[[[i64; 2]; 2]]; 2] = [&[], &[]];
+const RELEASED_HASH_1024: [u64; 2] = [0; 2];
+/// The cost per mapping, the rule's left side. Empty until the one run.
+const COST_RELEASED_1024: [[i64; 4]; 2] = [[0; 4]; 2];
+/// The signal per mapping, the rule's right side: the run's, which H-25's pinned table of where
+/// the consolidation went holds already (`DRAWN_WENT_1024`, ADR-0140) — the answer pairs' net
+/// less the other pairs'. Written before the run, and half of each is the bar the cost is read
+/// against.
+const SIGNAL_RELEASED_1024: [[i64; 4]; 2] = [
+    [2_678_216, 5_024_810, 5_166_932, 5_506_390],
+    [2_738_289, 4_977_285, 4_811_435, 5_135_182],
+];
+/// The cost per mapping by the kind of the trial each address was written at, `[after a correct
+/// selection, after a wrong one, after a tie]`. Empty until the one run.
+const KINDS_RELEASED_1024: [[[i64; 3]; 4]; 2] = [[[0; 3]; 4]; 2];
+/// The cost and the signal per mapping, `[up to the crossing, past it]`. Empty until the one
+/// run.
+const APART_RELEASED_1024: [[[(i64, i64); 2]; 4]; 2] = [[[(0, 0); 2]; 4]; 2];
