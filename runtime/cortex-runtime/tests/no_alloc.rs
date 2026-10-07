@@ -3,8 +3,22 @@
 //! many searches the discovery loop runs on its cadence over the engine's own store, with
 //! their commits, rewards and tags (ADR-0052), and through a night whose slow-wave onset
 //! compacts the arena (ADR-0056). A counting global allocator (the `unsafe` the
-//! `GlobalAlloc` trait requires) counts every allocation while a flag is set; the flag is set
-//! only around `run`.
+//! `GlobalAlloc` trait requires) counts the allocations of the engine's own threads while a
+//! flag is set; the flag is set only around `run`.
+//!
+//! Whose allocation it is (F-64). The counter is the process's, and the process holds a
+//! thread that is not the engine's: the test harness's own, which prints a finished test's
+//! line and, past a minute, a notice for a slow one. Counting it reads the harness's
+//! allocation as the tick loop's. So every thread is classed at its first allocation, in a
+//! thread-local the allocator reads without allocating:
+//! - a thread first seen before the test builds an engine is not the engine's, and is never
+//!   counted;
+//! - the test's own thread, which runs the executor's coordinator, is marked the engine's by
+//!   the test;
+//! - a thread first seen after that is one the executor spawned, and is the engine's.
+//!
+//! The file holds one test function, so that no second test's thread exists to be classed by
+//! when it happened to start.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -16,19 +30,56 @@ use cortex_homeostasis::{
 use cortex_reasoning::TermNode;
 use cortex_runtime::{Config, Executor, Image};
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::Mutex;
+use std::cell::Cell;
+use std::hint::black_box;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Barrier};
 
 struct Counting;
 
 static COUNTING: AtomicBool = AtomicBool::new(false);
 static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 
-// SAFETY: every call is forwarded to the system allocator unchanged; the counter is the only
-// addition and it is an atomic.
+/// Set by the test before it builds an engine: a thread first seen from here on is one the
+/// executor spawned.
+static ENGINES: AtomicBool = AtomicBool::new(false);
+
+/// A thread that has not allocated yet.
+const UNSEEN: u8 = 0;
+/// The engine's: the test's own thread, or one first seen after [`ENGINES`] was set.
+const ENGINE: u8 = 1;
+/// Not the engine's: first seen before [`ENGINES`] was set, as the harness's thread is.
+const OTHER: u8 = 2;
+
+thread_local! {
+    /// Whose thread this is. A constant initialiser and no destructor, so reading it inside
+    /// the allocator allocates nothing and registers nothing.
+    static WHOSE: Cell<u8> = const { Cell::new(UNSEEN) };
+}
+
+/// Classes the calling thread at its first allocation and says whether it is the engine's.
+/// A thread whose thread-local cannot be read is taken as the engine's, so that no
+/// allocation of the engine's is ever left out.
+fn engine_thread() -> bool {
+    WHOSE
+        .try_with(|whose| {
+            if whose.get() == UNSEEN {
+                whose.set(if ENGINES.load(Ordering::Relaxed) {
+                    ENGINE
+                } else {
+                    OTHER
+                });
+            }
+            whose.get() == ENGINE
+        })
+        .unwrap_or(true)
+}
+
+// SAFETY: every call is forwarded to the system allocator unchanged; the class and the
+// counter are the only additions, a thread-local without a destructor and an atomic.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNTING.load(Ordering::Relaxed) {
+        if engine_thread() && COUNTING.load(Ordering::Relaxed) {
             ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
         }
         // SAFETY: the same layout the caller passed.
@@ -43,12 +94,6 @@ unsafe impl GlobalAlloc for Counting {
 
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
-
-/// The counter is the process's: the two tests run one at a time, each holding this for
-/// its whole body, so that neither's set-up is counted in the other's window (the
-/// harness's own line for a finished test is printed long before the next test's window
-/// opens, behind its set-up), and each resets the counter as its window opens.
-static SERIAL: Mutex<()> = Mutex::new(());
 
 fn config() -> Config {
     Config {
@@ -123,9 +168,9 @@ fn network() -> Executor<64> {
     exec
 }
 
-#[test]
+/// The tick loop after `Executor::new`: 20 000 ticks of spikes, fan-out, deliveries, wheel
+/// cascades, injections and the discovery loop on its cadence.
 fn the_tick_loop_allocates_nothing_after_new() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut exec = network();
     let inject = exec.injector();
     let one = synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX);
@@ -165,9 +210,8 @@ fn the_tick_loop_allocates_nothing_after_new() {
     assert_eq!(allocations, 0, "no allocation in 20 000 ticks");
 }
 
-#[test]
+/// A night inside the tick: the slow-wave onset's compaction and two windows of replay.
 fn a_night_inside_the_tick_allocates_nothing() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // The same network, quiescent, searched once between ticks so the arena holds garbage
     // (no spike is on the train, so the rewarded search tags nothing and says so), an
     // episode of the three units tagged by hand, then put at the edge of sleep through its
@@ -201,7 +245,9 @@ fn a_night_inside_the_tick_allocates_nothing() {
     }
     exec.run(500);
     let window = 1u64 << (ACTIVITY_BIN_SHIFT + ACTIVITY_WINDOW_SHIFT);
-    let to_boundary = window.wrapping_sub(exec.ticks().wrapping_rem(window));
+    // The window is a power of two, so the ticks into it are a mask on the tick (§8.1: no
+    // division by a value the lint cannot see is not zero).
+    let to_boundary = window.wrapping_sub(exec.ticks() & window.wrapping_sub(1));
 
     ALLOCATIONS.store(0, Ordering::SeqCst);
     COUNTING.store(true, Ordering::SeqCst);
@@ -221,4 +267,86 @@ fn a_night_inside_the_tick_allocates_nothing() {
         allocations, 0,
         "no allocation through the onset and two windows of sleep"
     );
+}
+
+/// The counter's own controls, before it is trusted with the engine: an allocation of the
+/// test's thread inside a window is counted, one of a thread first seen before the engines
+/// is not, and a thread first seen after them is classed the engine's.
+///
+/// `harness` stands in for the test harness's thread: it was spawned, and made its first
+/// allocation, before [`ENGINES`] was set. It waits at `go`, allocates, and waits at `done`,
+/// so that its allocation falls inside the window this function opens.
+fn the_counter_counts_the_engine_s_threads_and_no_other(
+    harness: std::thread::JoinHandle<u8>,
+    go: &Barrier,
+    done: &Barrier,
+) {
+    // The test's own thread, inside a window: counted, once.
+    ALLOCATIONS.store(0, Ordering::SeqCst);
+    COUNTING.store(true, Ordering::SeqCst);
+    let boxed = black_box(Box::new(1u8));
+    COUNTING.store(false, Ordering::SeqCst);
+    assert_eq!(
+        ALLOCATIONS.load(Ordering::SeqCst),
+        1,
+        "an allocation of the test's thread inside a window is counted"
+    );
+    drop(boxed);
+
+    // The harness's stand-in, inside a window: not counted.
+    ALLOCATIONS.store(0, Ordering::SeqCst);
+    COUNTING.store(true, Ordering::SeqCst);
+    go.wait();
+    done.wait();
+    COUNTING.store(false, Ordering::SeqCst);
+    assert_eq!(
+        ALLOCATIONS.load(Ordering::SeqCst),
+        0,
+        "an allocation of a thread first seen before the engines is not counted"
+    );
+    assert_eq!(
+        harness.join().unwrap(),
+        OTHER,
+        "a thread first seen before the engines is not the engine's"
+    );
+
+    // A thread first seen after the engines, as the executor's workers are: the engine's.
+    let spawned = std::thread::spawn(|| {
+        drop(black_box(Box::new(3u8)));
+        WHOSE.with(Cell::get)
+    });
+    assert_eq!(
+        spawned.join().unwrap(),
+        ENGINE,
+        "a thread first seen after the engines is the engine's"
+    );
+}
+
+#[test]
+fn the_tick_loop_and_a_night_inside_it_allocate_nothing() {
+    // The harness's stand-in is spawned first, while no thread is yet the engine's.
+    let ready = Arc::new(Barrier::new(2));
+    let go = Arc::new(Barrier::new(2));
+    let done = Arc::new(Barrier::new(2));
+    let harness = {
+        let (ready, go, done) = (ready.clone(), go.clone(), done.clone());
+        std::thread::spawn(move || {
+            drop(black_box(Box::new(2u8)));
+            ready.wait();
+            go.wait();
+            drop(black_box(Box::new(2u8)));
+            done.wait();
+            WHOSE.with(Cell::get)
+        })
+    };
+    ready.wait();
+
+    // From here every thread first seen is one an executor spawned, and this thread runs
+    // their coordinator.
+    WHOSE.with(|whose| whose.set(ENGINE));
+    ENGINES.store(true, Ordering::SeqCst);
+
+    the_counter_counts_the_engine_s_threads_and_no_other(harness, &go, &done);
+    the_tick_loop_allocates_nothing_after_new();
+    a_night_inside_the_tick_allocates_nothing();
 }
