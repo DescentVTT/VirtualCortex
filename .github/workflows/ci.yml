@@ -212,8 +212,10 @@ jobs:
     # round's new tests are costed at the table's default until their own dispatch measures
     # them, and ADR-0117's put one shard at 59 per cent of the bound where the table replayed
     # afterwards planned 45. Six shards since ADR-0121: ADR-0120's regenerated table, read on
-    # runners about a fifth slower, planned 57 per cent at five.
-    name: Weekly (exhaustive tests ${{ matrix.shard }}/6, ADR-0073)
+    # runners about a fifth slower, planned 57 per cent at five. Twelve since ADR-0150: a round's
+    # merge waits for these shards, six read 41 to 68 minutes, and the floor is the longest
+    # test, 1 997 s in ADR-0145's table; with the sweep's seven jobs a dispatch is nineteen.
+    name: Weekly (exhaustive tests ${{ matrix.shard }}/12, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
     if: github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'exhaustive'
@@ -223,7 +225,7 @@ jobs:
       # One shard that fails must not hide what the others found.
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -242,7 +244,7 @@ jobs:
           node-version: "22"
 
       - name: This shard of the whole-domain tests, in the release profile (ADR-0073)
-        run: bash scripts/exhaustive-shard.sh ${{ matrix.shard }} 6
+        run: bash scripts/exhaustive-shard.sh ${{ matrix.shard }} 12
 
       # Each test's seconds, longest first, and each binary's sum (ADR-0071, ADR-0092): the
       # table the next cost table is made from.
@@ -252,7 +254,7 @@ jobs:
           f="exhaustive-tests-${{ matrix.shard }}.tsv"
           [ -s "$f" ] || { echo "this shard recorded no test"; exit 0; }
           {
-            echo "### The whole-domain tests, shard ${{ matrix.shard }} of 6"
+            echo "### The whole-domain tests, shard ${{ matrix.shard }} of 12"
             echo
             echo "Wall clock over the tests: $(cat exhaustive-wall-${{ matrix.shard }}.txt 2>/dev/null || echo '?') s"
             echo
