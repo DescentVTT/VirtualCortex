@@ -147,6 +147,16 @@
 //! The harness is `tests/instrument.rs`'s, shared as one module and not copied (ADR-0083);
 //! since ADR-0084 the weekly shards take tests, not binaries, so this binary's name steers
 //! nothing.
+//!
+//! Brief 060 runs H-27 here as ADR-0143 wrote it and ADR-0145 records it, with its control:
+//! H-25's two arms under the released delivery (`Delivery::Released`, ADR-0144) — the address's
+//! sources drawn by the engine, its targets every unit — with the gate's output delivered, a
+//! hold on the channel not selected from the readout window's close to tick 4 096 of the trial,
+//! and the same two with the release alone. The hold is the least an oracle of the membrane's
+//! rule derives over the frozen block (`least_hold`), held to the engine's own probe and
+//! checked on a frozen block before any rewarded run; the four clauses are H-25's (`drawn`).
+//! Four arms, each its own weekly `exhaustive` test, pinned whole; the gate runs the rules at
+//! their edges and eight trials with the hold beside eight without it.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -66109,7 +66119,7 @@ type BesideRun = (EarnedRun, Vec<Moves>, Vec<i32>, Watch, Option<Beside>);
 /// readout sets over the whole trial read from the train. The shadows read the run and are
 /// never written back, and nothing the run does reads them, so the run with them is the run
 /// without; without them the fifth value is none and this is `delivered_run`, which calls it
-/// so.
+/// so. It is `held_run` with no hold, which it calls so.
 #[allow(clippy::too_many_arguments)]
 fn shadowed_run(
     exec: &mut Engine,
@@ -66122,8 +66132,53 @@ fn shadowed_run(
     trials: usize,
     shadowed: bool,
 ) -> BesideRun {
+    assert!(
+        delivery != Delivery::Released,
+        "the released delivery is `held_run`'s"
+    );
+    let (run, along) = held_run(
+        exec, arm, sets, groups, classes, image, delivery, trials, shadowed, None,
+    );
+    assert!(
+        along.held.held.iter().all(|&messages| messages == 0),
+        "no hold, no message of one"
+    );
+    run
+}
+
+/// What brief 060 reads beside a run (ADR-0145): the harness's reading (`HeldRead`) — the run's own
+/// consolidation by stimulus, readout and direction, the eligibility at each reward from the
+/// sources drawn there, and the hold's messages — and each trial's spikes of the two readout
+/// sets within the span and over the whole trial, `[readout 0, readout 1]`, from the train as
+/// the task's readout counts them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Along {
+    held: HeldRead,
+    spanned: Vec<[u32; 2]>,
+    heard: Vec<[u32; 2]>,
+}
+
+/// `shadowed_run` under a hold or none, and under the released delivery beside the three (brief
+/// 060): `earned_run_held` in `earned_run_shadowed`'s place, and each trial's spikes of the two
+/// readout sets within the span read from the train beside those over the whole trial. The
+/// readings read the train and write nothing, so a run with no hold under one of the three
+/// deliveries before the released one is `shadowed_run`'s, which calls it so.
+#[allow(clippy::too_many_arguments)]
+fn held_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    groups: &[usize],
+    classes: &[usize],
+    image: &[Vec<i16>],
+    delivery: Delivery,
+    trials: usize,
+    shadowed: bool,
+    hold: Option<Hold>,
+) -> (BesideRun, Along) {
     let readouts = Readout::new([sets[2], sets[3]]);
     let mut heard: Vec<[u32; 2]> = Vec::with_capacity(trials);
+    let mut spanned: Vec<[u32; 2]> = Vec::with_capacity(trials);
     let first = first_mapping(arm);
     let window = exec.critic_window_ticks();
     let mut network = Network::new(exec, sets, classes);
@@ -66137,7 +66192,7 @@ fn shadowed_run(
     let mut spikes_block = [0u64; CLASSES];
     let mut went_block: Went = [[0; 2]; 3];
     let mut opened = exec.ticks();
-    let (run, moves, expected, values, shadows) = earned_run_shadowed(
+    let (run, moves, expected, values, shadows, held) = earned_run_held(
         exec,
         Feedback::Answer,
         first,
@@ -66149,6 +66204,7 @@ fn shadowed_run(
         None,
         delivery,
         shadowed,
+        hold,
         &mut |exec, trial| {
             // The spikes the window admitted, as H-23's run reads them.
             let mut in_window = [0u32; GROUPS];
@@ -66189,8 +66245,14 @@ fn shadowed_run(
                     *n = n.saturating_add(1);
                 }
             });
-            // The trial's spikes of each readout set over the whole trial (brief 059).
+            // The trial's spikes of each readout set over the whole trial (brief 059), and
+            // within the span (brief 060).
             heard.push(readouts.count_window(exec.train(), start as u32, TRIAL_TICKS));
+            spanned.push(readouts.count_window(
+                exec.train(),
+                (start as u32).wrapping_add(HOLD_SPAN.from),
+                HOLD_SPAN.ticks,
+            ));
             if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
                 at_flips[f] = Some(pair_couplings(exec, sets));
             }
@@ -66205,21 +66267,35 @@ fn shadowed_run(
         },
     );
     assert!(expected.is_empty(), "the task carries no critic");
-    assert_eq!(heard.len(), trials, "a count over the trial a trial");
+    assert_eq!(
+        (heard.len(), spanned.len()),
+        (trials, trials),
+        "a count over the trial and one within the span a trial"
+    );
     (
-        run,
-        moves,
-        values,
-        Watch {
-            at_flips,
-            weights,
-            admitted,
-            spikes,
-            cells,
-            went,
-            sourced,
+        (
+            run,
+            moves,
+            values,
+            Watch {
+                at_flips,
+                weights,
+                admitted,
+                spikes,
+                cells,
+                went,
+                sourced,
+            },
+            shadows.map(|shadowed| Beside {
+                shadowed,
+                heard: heard.clone(),
+            }),
+        ),
+        Along {
+            held,
+            spanned,
+            heard,
         },
-        shadows.map(|shadowed| Beside { shadowed, heard }),
     )
 }
 
@@ -105434,3 +105510,1789 @@ const RELEASED_1024: Released = Released {
     held: [[false, false, false, false], [false, true, true, false]],
     yes: false,
 };
+
+// =================================================================================== H-27
+
+// -------------------------------------------- written before the run (ADR-0143, ADR-0145)
+
+/// The arms of brief 060 (ADR-0143, ADR-0145), in the order they are pinned, each its own
+/// weekly test: H-27's two — the released delivery with the hold, from the assignment and from
+/// the mirrored assignment — and the control's two, the released delivery alone. Each is H-25's
+/// arm of the same first mapping with the delivery changed and, in H-27's, the hold set: H-23's
+/// image, H-20's flips, the engine's critic with its window, the task carrying no critic.
+const GATED_ARMS: [(Reversal, bool); 4] = [
+    (Reversal::AssignmentFirst, true),
+    (Reversal::MirroredFirst, true),
+    (Reversal::AssignmentFirst, false),
+    (Reversal::MirroredFirst, false),
+];
+
+/// The delivery of all four (ADR-0143, ADR-0144): the address's sources drawn by the engine as
+/// under H-25, its targets every unit, at a tie as at any trial.
+const GATED_DELIVERY: Delivery = Delivery::Released;
+
+/// ADR-0143 writes no prediction for H-27's verdict: the account predicts yes, and the pair
+/// rule's last spike and the response already made in the window pull the other way.
+const GATED_PREDICTED: Option<bool> = None;
+
+/// ADR-0143's prediction for the control, written first: no, on clause 1 or 3 — ADR-0142's
+/// first-order reading leaves the release alone about half the signal, and a reversal has 32
+/// blocks. A reading beside the verdict and never asserted.
+const ALONE_PREDICTED: bool = false;
+
+/// The hold's last tick (ADR-0143): tick $2^{12}$ of the trial, two time constants of the pair
+/// rule after the trial's first tick. A message is due before a tick below it, so the last
+/// lands on it at the latest.
+const HOLD_UNTIL: u32 = 1 << (STDP_TAU_SHIFT + 1);
+
+/// The tick the readout window closes at, from the trial's first: the first the hold is due at.
+const HOLD_CLOSE: u32 = WINDOW.from + WINDOW.ticks;
+
+const _: () = assert!(HOLD_CLOSE == 600 && HOLD_UNTIL == 4096 && HOLD_UNTIL < TRIAL_TICKS);
+
+/// The span (ADR-0143): the trial's ticks from the readout window's close through tick
+/// $2^{12}$, both ends counted — the tick the selection is made before, which no message of the
+/// hold can reach, and the last tick one can land on. The frozen check and the readings count
+/// the readouts' spikes over it.
+const HOLD_SPAN: Window = Window {
+    from: HOLD_CLOSE,
+    ticks: HOLD_UNTIL - HOLD_CLOSE + 1,
+};
+
+const _: () = assert!(HOLD_SPAN.ticks == 3497);
+
+/// One message of the hold: the most negative efficacy one message carries, −2.0, the cancel's
+/// (ADR-0076), −3.5 after the gain of 1.75, so that the hold is counted in messages.
+const HOLD_MESSAGE_Q16: i32 = CANCEL_MESSAGE_Q16;
+
+/// The cadences the hold is derived over: the powers of two from every tick to $2^{12}$ ticks,
+/// a mask on the ticks since the close as the engine's own cadences are masks on the tick
+/// (ADR-0035). The longest is longer than the span: one delivery, at the close.
+const HOLD_SHIFT_MAX: u32 = 12;
+
+/// The hold's messages a time, derived by `least_hold` and not chosen: one at every tick keeps
+/// the oracle's every unit silent, and none does not.
+const HOLD_MESSAGES: u32 = 1;
+
+/// The hold's cadence, derived by `least_hold` and not chosen: the longest of the lattice at
+/// which one message a time keeps the oracle's every unit silent through the span of each of
+/// the frozen block's sixty-four trials. At twice it a unit fires in the seventh trial.
+const HOLD_EVERY: u32 = 512;
+
+/// The hold (ADR-0143, ADR-0145): one message at the bound into every unit of the channel the
+/// gate holds, before the tick the readout window closes at and before every 512th tick after
+/// it below tick $2^{12}$ — seven times a trial, landing on ticks 601, 1 113, 1 625, 2 137,
+/// 2 649, 3 161 and 3 673. Committed before the frozen check; it does not move after it.
+const HOLD: Hold = hold_of(HOLD_MESSAGES, HOLD_EVERY);
+
+/// The frozen check's rule (ADR-0143): over a frozen block, the spikes of the readout not
+/// selected within the span at most a tenth of the selected readout's in the same span, read
+/// in integers as `HOLD_CHECK_TIMES × other ≤ selected`.
+const HOLD_CHECK_TIMES: u64 = 10;
+
+// ------------------------------------------------------ the hold's oracle (ADR-0145)
+
+/// The tick ADR-0077's settled image was written at: its lead-in's windows and the quiet run
+/// after them. Every image an arm decodes carries it, and the drive is a function of the tick.
+const SETTLED_TICK: u64 =
+    (BACKGROUND_LEAD_IN_1024[SETTLED].len() as u64 * WINDOW_TICKS) + QUIET_1024[SETTLED].0;
+
+const _: () = assert!(SETTLED_TICK == 12_585_412);
+
+/// The first tick of the trial of index `trial` in a run from the settled image: the image's
+/// tick, the instrument's lead-in of one readout window, and the trials before it.
+fn trial_start(trial: usize) -> u64 {
+    SETTLED_TICK
+        .saturating_add(u64::from(LEAD_IN))
+        .saturating_add((trial as u64).saturating_mul(u64::from(TRIAL_TICKS)))
+}
+
+/// The trial ticks on which a message of the drive lands on each unit, in a trial whose first
+/// tick is `start`, over the ticks `from..=to`, ascending: the drive's messages due at the
+/// clock's tick `start + k` are injected before trial tick `k`, reach the units
+/// `Drive::unit_at` names and land on tick `k + 1` (ADR-0023), a unit named twice landing
+/// twice.
+fn drive_landings(units: u32, start: u64, from: u32, to: u32) -> Vec<Vec<u32>> {
+    let drive = drive(units);
+    let mut out = vec![Vec::new(); units as usize];
+    for tick in from..=to {
+        let Some(k) = tick.checked_sub(1) else {
+            continue;
+        };
+        let at = start.saturating_add(u64::from(k));
+        if !drive.is_due(at) {
+            continue;
+        }
+        for index in 0..drive.messages {
+            if let Some(list) = out.get_mut(drive.unit_at(at, index) as usize) {
+                list.push(tick);
+            }
+        }
+    }
+    out
+}
+
+/// The hold's oracle (ADR-0145): `cortex-core`'s `integrate` stepped alone on one unit at the
+/// base threshold, from `standing` basal and somatic potentials as the tick after the readout
+/// window's close finds them, through tick `HOLD_UNTIL`. On each tick the unit takes, in one
+/// batch scaled by `gain` as the executor scales a turn's sum (`scaled_q16`, `batch_q16`): the
+/// drive's messages that land on it, `landings` the trial ticks they land on, ascending; and
+/// `hold`'s messages when the hold was due before the tick before, so that they land on this
+/// one. Returns the first tick the unit fires on; none when it is silent through the span.
+/// It models no synapse, and no unit inside its refractory window at the close, whose inputs
+/// the membrane rule drops: the frozen check reads the network for both.
+fn held_alone(
+    standing: (i32, i32),
+    hold: Option<Hold>,
+    landings: &[u32],
+    gain: u32,
+) -> Option<u32> {
+    let mut unit = DendriticSuperNeuron::new(0);
+    unit.v_thresh = THRESHOLD_BASE;
+    unit.v_basal = standing.0;
+    unit.v_soma = standing.1;
+    let drive = drive(1024);
+    // The landings up to the tick before the first, which the standing potentials hold.
+    let mut taken = landings.partition_point(|&at| at <= HOLD_CLOSE);
+    for tick in HOLD_CLOSE.saturating_add(1)..=HOLD_UNTIL {
+        let through = landings.partition_point(|&at| at <= tick);
+        let messages = through.saturating_sub(taken) as u32;
+        taken = through;
+        let mut sum = batch_q16(messages, drive.efficacy_q16);
+        if let Some(h) = hold {
+            if h.is_due(HOLD_CLOSE, tick.saturating_sub(1)) {
+                sum = sum.saturating_add(batch_q16(h.messages, h.efficacy_q16));
+            }
+        }
+        if unit.integrate(scaled_q16(sum, gain), 0, tick) {
+            return Some(tick);
+        }
+    }
+    None
+}
+
+/// The first unit of the readouts the oracle reads firing under `hold` over the trials
+/// `trials` of a run from the settled image, as `(trial, unit, tick)`: every unit of readout 0
+/// then of readout 1, each from `EXTREME_STANDING` — the most standing potential a unit carries
+/// without firing (ADR-0076) — under the drive as it lands on that unit in that trial. None
+/// when `hold` keeps every one of them silent through the span of every trial.
+fn first_fired(hold: Option<Hold>, trials: core::ops::Range<usize>) -> Option<(usize, u32, u32)> {
+    let sets = geometry(1024, ROTATION_1024);
+    for trial in trials {
+        let landings = drive_landings(
+            1024,
+            trial_start(trial),
+            HOLD_CLOSE.saturating_add(1),
+            HOLD_UNTIL,
+        );
+        for unit in sets[2].units().chain(sets[3].units()) {
+            let on_unit = landings.get(unit as usize).map_or(&[][..], Vec::as_slice);
+            if let Some(tick) = held_alone(EXTREME_STANDING, hold, on_unit, GAIN_1024) {
+                return Some((trial, unit, tick));
+            }
+        }
+    }
+    None
+}
+
+/// The hold of `messages` messages at the bound on the cadence `every`, to the span's end.
+const fn hold_of(messages: u32, every: u32) -> Hold {
+    Hold {
+        until: HOLD_UNTIL,
+        every,
+        messages,
+        efficacy_q16: HOLD_MESSAGE_Q16,
+    }
+}
+
+/// The least hold over `trials` (ADR-0143, ADR-0145), by the oracle: the least messages a
+/// time, at the bound, with which the densest cadence — every tick — keeps every unit silent
+/// through every span; then, at that count, the longest cadence of `HOLD_SHIFT_MAX`'s lattice
+/// that still does, the fewest ticks. None when no count up to `LEAST_SCAN` silences at every
+/// tick. The cadences nest — a cadence's ticks are among those of every shorter one — and the
+/// membrane's rule is monotone in its input while the unit does not fire, so a cadence that
+/// silences is silenced by every shorter one.
+fn least_hold(trials: core::ops::Range<usize>) -> Option<Hold> {
+    let messages =
+        (1..=LEAST_SCAN).find(|&m| first_fired(Some(hold_of(m, 1)), trials.clone()).is_none())?;
+    (0..=HOLD_SHIFT_MAX)
+        .rev()
+        .map(|shift| hold_of(messages, 1u32 << shift))
+        .find(|&hold| first_fired(Some(hold), trials.clone()).is_none())
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0143)
+
+/// Brief 060's two verdicts (ADR-0143), each H-25's four clauses as `drawn` reads them over two
+/// arms `[assignment first, mirrored first]`: H-27's, over the arms with the hold, and the
+/// control's, over the arms with the release alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Gated {
+    held: Drawn,
+    alone: Drawn,
+}
+
+fn gated(image: i64, arms: [&[Block]; 4]) -> Gated {
+    Gated {
+        held: drawn(image, [arms[0], arms[1]]),
+        alone: drawn(image, [arms[2], arms[3]]),
+    }
+}
+
+/// The step of H-27's stopping rule a verdict reaches (ADR-0143): 3 at a yes; 4 at a no on
+/// clause 4, the network not held in an arm, whatever else failed; otherwise 5, a no on clause
+/// 1, 2 or 3.
+fn step_of(verdict: &Drawn) -> u8 {
+    match (verdict.yes, verdict.held) {
+        (true, _) => 3,
+        (false, [true, true]) => 5,
+        (false, _) => 4,
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 060)
+
+/// One trial's spikes of the two readout sets by where they fell (brief 060), `[in the readout
+/// window, within the span, over the whole trial][readout 0, readout 1]`.
+type Fired = [[u32; 2]; 3];
+
+/// The readouts' spikes over a block (brief 060), `[in the readout window, within the span,
+/// over the whole trial][the selected readout's, the other's, both readouts' at a tie]`: each
+/// trial's counts summed on the side its own selection put them, a tie's two counts together —
+/// `Heard` with the span between its two rows.
+type Quieted = [[u64; 3]; 3];
+
+fn quieted_blocks(selections: &[Option<u8>], fired: &[Fired]) -> Vec<Quieted> {
+    assert_eq!(selections.len(), fired.len(), "a count a trial");
+    selections
+        .chunks(BLOCK)
+        .zip(fired.chunks(BLOCK))
+        .map(|(selected, trials)| {
+            let mut out: Quieted = [[0; 3]; 3];
+            for (selection, counts) in selected.iter().zip(trials) {
+                for (row, pair) in out.iter_mut().zip(counts) {
+                    match selection {
+                        Some(r) => {
+                            let r = usize::from(*r);
+                            row[0] = row[0].saturating_add(u64::from(pair[r]));
+                            row[1] = row[1].saturating_add(u64::from(pair[r ^ 1]));
+                        }
+                        None => {
+                            row[2] = row[2]
+                                .saturating_add(u64::from(pair[0]))
+                                .saturating_add(u64::from(pair[1]));
+                        }
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// A `Quieted` plus another, count by count.
+fn add_quieted(into: &mut Quieted, quieted: &Quieted) {
+    for (a, b) in into.iter_mut().flatten().zip(quieted.iter().flatten()) {
+        *a = a.saturating_add(*b);
+    }
+}
+
+/// The frozen check's rule over a block (ADR-0143): the readout not selected fired, within the
+/// span, at most a tenth of what the selected readout fired there.
+fn hold_checked(quieted: &Quieted) -> bool {
+    quieted[1][1].saturating_mul(HOLD_CHECK_TIMES) <= quieted[1][0]
+}
+
+/// The side of the address in force the run's own consolidation fell on, per mapping (brief
+/// 060): the selected side's signal — its answer pairs' net less its other pairs' — and the
+/// cost on the side not selected, `cost_of`; the first less the second is the run's whole
+/// signal, `signal_of` of the network's oracle's `Went`.
+fn selected_signal(shade: &Shade) -> i64 {
+    net_of(&shade[0][0]).saturating_sub(net_of(&shade[0][1]))
+}
+
+/// What an arm of brief 060 pins beside its tables: H-25's readings by their rules, and brief
+/// 060's per mapping — the cost on the side not selected, the selected side's signal, the
+/// run's whole signal by the network's oracle, the cost by the kind of the trial the address
+/// was written at, and the hold's messages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GatedRead {
+    correct: [u32; 4],
+    over: Option<(usize, usize, usize)>,
+    crossings: [Option<usize>; 4],
+    left: Option<(usize, i64)>,
+    stimulus_values: [[StimulusValue; 2]; 4],
+    reach: Reach,
+    first_new: [[Option<usize>; 2]; 3],
+    crossed: [[Option<usize>; 2]; 3],
+    tally: [[u32; 3]; 4],
+    settle: Option<[[i64; 2]; 4]>,
+    highest: [Option<Peak>; 4],
+    strong: [[u32; 2]; 3],
+    punished: [Moves; 4],
+    rewarded: [Moves; 4],
+    once: u32,
+    falls: bool,
+    troughs: [[i64; 2]; 3],
+    sums_after: (i64, i64),
+    cost: [i64; 4],
+    selected: [i64; 4],
+    signal: [i64; 4],
+    kinds: [[i64; 3]; 4],
+    held: [u64; 4],
+}
+
+/// Every trial's reading beside the run, hashed (brief 060): `fnv1a_64` over each trial's
+/// consolidation by stimulus, readout and direction, its eligibility from the drawn sources,
+/// its readouts' spikes within the span and over the trial, and the hold's messages, each
+/// number as its `i32` words.
+fn along_hash(along: &Along) -> u64 {
+    let mut words: Vec<i32> = Vec::new();
+    let mut wide = |x: i64| {
+        words.push(x as i32);
+        words.push((x >> 32) as i32);
+    };
+    for (t, moved) in along.held.shifted.iter().enumerate() {
+        for &amount in moved.iter().flatten().flatten() {
+            wide(amount);
+        }
+        for &trace in along.held.eligible.get(t).into_iter().flatten().flatten() {
+            wide(trace);
+        }
+        for &count in along
+            .spanned
+            .get(t)
+            .into_iter()
+            .chain(along.heard.get(t))
+            .flatten()
+        {
+            wide(i64::from(count));
+        }
+        wide(i64::from(along.held.held.get(t).copied().unwrap_or(0)));
+    }
+    fnv1a_64(&words)
+}
+
+// ----------------------------------------------------- the calibration (brief 060)
+
+/// One trial's reading of a frozen block: the selection and where the readouts' spikes fell.
+type FrozenTrial = (Option<u8>, Fired);
+
+/// A frozen block's reading (brief 060): the sight's block and its accuracy sequence's hash,
+/// the readouts' spikes by where they fell, the hold's messages, and every trial's reading by
+/// one hash.
+type FrozenHeld = (Block, u64, Quieted, u64, u64);
+
+/// Every trial's reading of a frozen block, hashed.
+fn frozen_hash(read: &[FrozenTrial]) -> u64 {
+    let words: Vec<i32> = read
+        .iter()
+        .flat_map(|(selection, fired)| {
+            core::iter::once(i32::from(selection.map_or(3, |r| r))).chain(
+                fired
+                    .iter()
+                    .flatten()
+                    .map(|&n| i32::try_from(n).unwrap_or(i32::MAX)),
+            )
+        })
+        .collect();
+    fnv1a_64(&words)
+}
+
+/// A frozen block from the zero image under `hold` or none (ADR-0143's calibration): ADR-0077's
+/// frozen run — the settled network with the baseline at zero, the reward withheld, ADR-0076's
+/// stimulus, sixty-four trials — with the task carrying the hold, the readouts' spikes read
+/// from the train within the span and over the trial at every trial's end, the hold's messages
+/// held to its times, and no weight of either polarity moved. With no hold the block and its
+/// sequence are ADR-0077's, which the caller holds.
+fn frozen_held(zero: &[u8], hold: Option<Hold>) -> (FrozenHeld, Vec<FrozenTrial>) {
+    let mut exec = frozen_from(zero, 1024);
+    assert_eq!(exec.ticks(), SETTLED_TICK, "the image's tick, the oracle's");
+    let sums = weights_by_polarity(&exec);
+    let sets = geometry(1024, ROTATION_1024);
+    let readouts = Readout::new([sets[2], sets[3]]);
+    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
+    let task = Task {
+        hold,
+        ..task(
+            SHAPE_F46,
+            Some(cancel_of(picked)),
+            1024,
+            Feedback::Withheld,
+            false,
+            Delivery::Addressed,
+        )
+    };
+    let mut read: Vec<FrozenTrial> = Vec::with_capacity(BLOCK);
+    let mut messages = 0u64;
+    let (blocks, trace) = run_on(
+        &mut exec,
+        task,
+        1024,
+        BLOCK,
+        &mut |exec, trial, start, outcome| {
+            assert_eq!(
+                u64::from(start),
+                trial_start(trial),
+                "trial {trial}: the first tick the oracle read the drive at"
+            );
+            let due = match (hold, outcome.selection) {
+                (Some(h), Some(r)) => u64::from(hold_times(&h, HOLD_CLOSE))
+                    .saturating_mul(u64::from(h.messages))
+                    .saturating_mul(readout_set(&sets, usize::from(r ^ 1)).len()),
+                _ => 0,
+            };
+            assert_eq!(
+                u64::from(outcome.held),
+                due,
+                "trial {trial}: the hold's messages"
+            );
+            messages = messages.saturating_add(due);
+            let within = readouts.count_window(
+                exec.train(),
+                start.wrapping_add(HOLD_SPAN.from),
+                HOLD_SPAN.ticks,
+            );
+            let over = readouts.count_window(exec.train(), start, TRIAL_TICKS);
+            read.push((outcome.selection, [outcome.counts, within, over]));
+        },
+    );
+    let [block] = blocks.as_slice() else {
+        panic!("a block of sixty-four trials");
+    };
+    assert_eq!(
+        (block.7, block.8),
+        sums,
+        "no weight moves at a modulation of zero"
+    );
+    let selections: Vec<Option<u8>> = read.iter().map(|t| t.0).collect();
+    let fired: Vec<Fired> = read.iter().map(|t| t.1).collect();
+    let [quieted] = quieted_blocks(&selections, &fired)[..] else {
+        panic!("one block of readings");
+    };
+    ((*block, trace, quieted, messages, frozen_hash(&read)), read)
+}
+
+/// The hold's calibration (H-27's stopping rule, step 2; brief 060), before any rewarded run:
+/// the hold held to the rule that derived it over the whole frozen block; the frozen block
+/// with no hold, ADR-0077's bit for bit; then the same block with the hold, read by the frozen
+/// check's rule. Everything is dumped before the rule is asserted, so that a schedule that
+/// fails still shows its reading: the round stops there, as a finding.
+fn hold_calibration(name: &str, zero: &[u8]) {
+    let least = least_hold(0..BLOCK);
+    eprintln!("DUMP {name} the least hold by the oracle over the frozen block: {least:?}");
+    assert_eq!(
+        least,
+        Some(HOLD),
+        "{name}: the hold is the least the oracle derives"
+    );
+    let (bare, bare_read) = frozen_held(zero, None);
+    let (held, held_read) = frozen_held(zero, Some(HOLD));
+    eprintln!("DUMP {name} PIN frozen-bare {:?}", (bare.2, bare.4));
+    eprintln!("DUMP {name} PIN frozen-held {held:?}");
+    eprintln!("DUMP {name} frozen block with no hold {bare:?} trials {bare_read:?}");
+    eprintln!("DUMP {name} frozen block with the hold, trials {held_read:?}");
+    eprintln!(
+        "DUMP {name} the frozen check: within the span the readout not selected fired {} and the selected {} with the hold, {} and {} without it; at most a tenth: {}",
+        held.2[1][1],
+        held.2[1][0],
+        bare.2[1][1],
+        bare.2[1][0],
+        hold_checked(&held.2)
+    );
+    assert_eq!(
+        (bare.0, bare.1, bare.3),
+        (BACKGROUND_1024[SETTLED].0, BACKGROUND_1024[SETTLED].1, 0),
+        "{name}: with no hold the frozen block is ADR-0077's"
+    );
+    assert!(
+        hold_checked(&held.2),
+        "{name}: the schedule fails its frozen check, and the round stops here as a finding"
+    );
+    assert_eq!(
+        Some((bare.2, bare.4)),
+        BARE_FROZEN_1024,
+        "{name}: the frozen block's spans with no hold"
+    );
+    assert_eq!(
+        Some(held),
+        HELD_FROZEN_1024,
+        "{name}: the frozen block with the hold"
+    );
+}
+
+/// H-25's first block from H-23's image under the drawn delivery (H-27's stopping rule, step
+/// 2): H-25's run for one block held to H-25's pinned first block table by table, with the
+/// network's oracle replayed beside it and held to the record at every trial.
+fn drawn_first_block(windowed: &[u8], arm: Reversal, name: &str) {
+    let k = DRAWN_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25");
+    let mut exec = signed_from(windowed, 1024);
+    let sets = geometry(1024, ROTATION_1024);
+    let groups = groups_of(&exec, &sets);
+    let classes = classes_of(&exec, &sets);
+    let image = weights_of(&exec);
+    let (run, moves, values, watched) = delivered_run(
+        &mut exec,
+        arm,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        Delivery::Drawn,
+        BLOCK,
+    );
+    let (blocks, _, trials, read, _) = &run;
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let earned = earned_blocks(read);
+    let by_block = value_blocks(read, &values);
+    let admitted = admitted_blocks(read, &watched.admitted);
+    let sourced: Vec<Sourced> = admitted_blocks(read, &watched.sourced);
+    eprintln!(
+        "DUMP {name} H-25's first block {blocks:?} earned {earned:?} values {by_block:?} sourced {sourced:?} went {:?}",
+        watched.went
+    );
+    assert_eq!(blocks.as_slice(), &DRAWN_BLOCKS_1024[k][..1], "{name}");
+    assert_eq!(
+        compositions.as_slice(),
+        &DRAWN_COMPOSITIONS_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(earned.as_slice(), &DRAWN_EARNED_1024[k][..1], "{name}");
+    assert_eq!(
+        moves_blocks(read, &moves).as_slice(),
+        &DRAWN_MOVES_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(by_block.as_slice(), &DRAWN_VALUES_1024[k][..1], "{name}");
+    assert_eq!(
+        watched.weights.as_slice(),
+        &DRAWN_WEIGHTS_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(admitted.as_slice(), &DRAWN_ADMITTED_1024[k][..1], "{name}");
+    assert_eq!(
+        watched.spikes.as_slice(),
+        &DRAWN_SPIKES_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(
+        watched.cells.as_slice(),
+        &DRAWN_CELLS_1024[k][..1],
+        "{name}"
+    );
+    assert_eq!(watched.went.as_slice(), &DRAWN_WENT_1024[k][..1], "{name}");
+    assert_eq!(sourced.as_slice(), &DRAWN_SOURCED_1024[k][..1], "{name}");
+}
+
+// ---------------------------------------------------------------- the run (brief 060)
+
+/// One arm of brief 060 at 1 024 units: the calibration before any rewarded run (H-27's
+/// stopping rule, step 2) — the settled engine held to ADR-0077 step by step and its images,
+/// H-20's to H-23's images by their CRCs, a frozen block from the zero image held to ADR-0077's
+/// frozen run, H-25's first block from H-23's image under the drawn delivery reproduced table
+/// by table, and, in an arm with the hold, the hold's own calibration and its frozen check —
+/// then the arm's 7 680 trials from H-23's image under the released delivery, with the hold or
+/// without it, the drawn sources held to the critic's oracle's counts, every unit a target,
+/// the hold's messages held to its times, and both oracles held to the record at every trial;
+/// everything dumped, the clauses and the readings computed before anything is held; then the
+/// pinned tables of the whole run.
+fn gated_arm(arm: Reversal, hold: bool) {
+    let k = GATED_ARMS
+        .iter()
+        .position(|&a| a == (arm, hold))
+        .expect("an arm of brief 060");
+    let name = format!("gated1024 {arm:?} {}", if hold { "held" } else { "alone" });
+    let (zero, signed) = signed_images(&name);
+    assert_eq!(
+        crc64(&signed),
+        PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-20's image, H-19's and H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    let targeted = targeted_image(&signed, TARGET_PERIOD_1024);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: H-21's image is H-20's in every byte but the target period's and the seal"
+    );
+    assert_eq!(
+        crc64(&targeted),
+        TARGET_IMAGE_CRC_1024,
+        "{name}: H-21's image"
+    );
+    let valued = valued_image(&targeted, VALUED_CRITIC);
+    assert!(
+        only_the_critic(&targeted, &valued),
+        "{name}: H-22's image is H-21's in every byte but the critic's and the seal"
+    );
+    assert_eq!(
+        crc64(&valued),
+        VALUED_IMAGE_CRC_1024,
+        "{name}: H-22's image"
+    );
+    let windowed = with_window_bytes(&valued, WINDOW_TICKS_1024);
+    assert!(
+        only_the_window(&valued, &windowed),
+        "{name}: H-23's image is H-22's in every byte but the window's and the seal"
+    );
+    assert_eq!(
+        crc64(&windowed),
+        WINDOWED_IMAGE_CRC_1024,
+        "{name}: H-23's image, the image this arm decodes"
+    );
+    drawn_first_block(&windowed, arm, &name);
+    if hold {
+        hold_calibration(&name, &zero);
+    }
+    eprintln!(
+        "DUMP {name} calibration holds: ADR-0077's settled candidate, H-20's to H-23's images, H-25's first block under the drawn address{}",
+        if hold {
+            ", and the hold's frozen check"
+        } else {
+            ""
+        }
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let mut exec = signed_from(&windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.ticks()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            TARGET_PERIOD_1024,
+            exec.ticks(),
+            Ok(()),
+            SETTLED_TICK
+        ),
+        "{name}: H-23's configuration, the window open at the load, and the engine draws"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let groups = groups_of(&exec, &sets);
+    let sizes = group_sizes(&groups);
+    let classes = classes_of(&exec, &sets);
+    let image = weights_of(&exec);
+    let image_cells = cells_of(&exec, &image, &sets, &classes);
+    let outside = image_outside();
+    assert_eq!(
+        (image_cells, cell_sizes(&exec, &sets, &classes)),
+        (IMAGE_CELLS_1024, CELL_SIZES_1024),
+        "{name}: H-24's image cells"
+    );
+    let first = first_mapping(arm);
+    let ((run, moves, values, watched, beside), along) = held_run(
+        &mut exec,
+        arm,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        GATED_DELIVERY,
+        SCHEDULE_TRIALS,
+        false,
+        hold.then_some(HOLD),
+    );
+    assert!(beside.is_none(), "{name}: no shadow beside the run");
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let strong = strong_scheduled(read, first);
+    let valued_by_block = value_blocks(read, &values);
+    let admitted = admitted_blocks(read, &watched.admitted);
+    let sourced: Vec<Sourced> = admitted_blocks(read, &watched.sourced);
+    let at_flips = watched
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        [
+            read.len(),
+            values.len(),
+            watched.admitted.len(),
+            watched.sourced.len(),
+            along.held.shifted.len(),
+            along.held.eligible.len(),
+            along.held.held.len(),
+            along.spanned.len(),
+            along.heard.len()
+        ],
+        [SCHEDULE_TRIALS; 9],
+        "{name}: a reading a trial"
+    );
+    // Brief 060's tables: the run's own consolidation folded by the address in force, the
+    // readouts' spikes by where they fell, the eligibility at the rewards, the count margins
+    // and the hold's messages, per block.
+    let costed = costed_blocks(read, &along.held.shifted, first);
+    let selections: Vec<Option<u8>> = read.iter().map(|t| t.2).collect();
+    let fired: Vec<Fired> = read
+        .iter()
+        .zip(along.spanned.iter().zip(&along.heard))
+        .map(|(t, (within, over))| [t.1, *within, *over])
+        .collect();
+    let quieted = quieted_blocks(&selections, &fired);
+    let traces = eligible_blocks(read, &along.held.eligible);
+    let margins = margins_blocks(read);
+    let messages: Vec<u64> = along
+        .held
+        .held
+        .chunks(BLOCK)
+        .map(|block| {
+            block
+                .iter()
+                .fold(0u64, |sum, &n| sum.saturating_add(u64::from(n)))
+        })
+        .collect();
+    let hash = along_hash(&along);
+    assert_eq!(
+        [
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            valued_by_block.len(),
+            watched.weights.len(),
+            admitted.len(),
+            watched.spikes.len(),
+            watched.cells.len(),
+            watched.went.len(),
+            sourced.len(),
+            costed.len(),
+            quieted.len(),
+            traces.len(),
+            margins.len(),
+            messages.len()
+        ],
+        [SCHEDULE_BLOCKS; 15]
+    );
+    assert_eq!(strong.len(), SCHEDULE_BLOCKS - FLIP_BLOCK);
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {compositions:?}");
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {moved:?}");
+    eprintln!("DUMP {name} PIN strong {strong:?}");
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} PIN values {valued_by_block:?}");
+    eprintln!("DUMP {name} PIN value hash {:#018x}", values_hash(&values));
+    eprintln!("DUMP {name} PIN weights {:?}", watched.weights);
+    eprintln!("DUMP {name} PIN admitted {admitted:?}");
+    eprintln!("DUMP {name} PIN spikes {:?}", watched.spikes);
+    eprintln!("DUMP {name} PIN cells {:?}", watched.cells);
+    eprintln!("DUMP {name} PIN went {:?}", watched.went);
+    eprintln!("DUMP {name} PIN sourced {sourced:?}");
+    eprintln!(
+        "DUMP {name} PIN sources hash {:#018x}",
+        sources_hash(&watched.sourced)
+    );
+    eprintln!("DUMP {name} PIN costed {costed:?}");
+    eprintln!("DUMP {name} PIN quieted {quieted:?}");
+    eprintln!("DUMP {name} PIN eligible {traces:?}");
+    eprintln!("DUMP {name} PIN margins {margins:?}");
+    eprintln!("DUMP {name} PIN messages {messages:?}");
+    eprintln!("DUMP {name} PIN along hash {hash:#018x}");
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let costs: Vec<i64> = costed.iter().map(|c| cost_of(&c.0)).collect();
+    let selected_side: Vec<i64> = costed.iter().map(|c| selected_signal(&c.0)).collect();
+    let signals: Vec<i64> = watched.went.iter().map(signal_of).collect();
+    let stimulus_read = stimulus_values(read, &values);
+    let crossings_read = crossings(blocks);
+    let read_of_arm = GatedRead {
+        correct: mapping_correct(blocks),
+        over: first_over(blocks),
+        crossings: crossings_read,
+        left: left_band(outside, blocks),
+        stimulus_values: stimulus_read,
+        reach: reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS),
+        first_new: first_new_scheduled(read, first),
+        crossed: crossed_scheduled(&earned, first),
+        tally: tally(blocks),
+        settle: settle_scheduled(blocks, first),
+        highest: highest(blocks),
+        strong: strong_by_flip(&strong),
+        punished: moves_by_mapping(&moved, 1),
+        rewarded: moves_by_mapping(&moved, 0),
+        once: once_blocks(blocks, &compositions),
+        falls: falls_every_block(image_sums.0, blocks),
+        troughs: troughs(&value_means(&valued_by_block)),
+        sums_after: weights_by_polarity(&exec),
+        cost: by_mapping(&costs).expect("a run of 120 blocks"),
+        selected: by_mapping(&selected_side).expect("a run of 120 blocks"),
+        signal: by_mapping(&signals).expect("a run of 120 blocks"),
+        kinds: over_mappings(&costed, [0i64; 3], &|sum: &mut [i64; 3], row: &Costed| {
+            for (a, b) in sum.iter_mut().zip(&row.1) {
+                *a = a.saturating_add(*b);
+            }
+        }),
+        held: over_mappings(&messages, 0u64, &|sum: &mut u64, row: &u64| {
+            *sum = sum.saturating_add(*row);
+        }),
+    };
+    eprintln!("DUMP {name} PIN readings {read_of_arm:?}");
+    let revised = reversals_within(crossings_read);
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {:?} revised {revised:?} held {} left {:?}; readings: value within a quarter of 2p − 1 {:?}; the prediction for H-27 {GATED_PREDICTED:?} and for the control {ALONE_PREDICTED}",
+        read_of_arm.correct.map(|c| c >= REWARDED_MIN),
+        read_of_arm.over,
+        read_of_arm.left.is_none(),
+        read_of_arm.left,
+        stimulus_read.map(|m| m.map(holds_expected))
+    );
+    let host: Vec<[[u32; 3]; 2]> = blocks
+        .iter()
+        .zip(&sourced)
+        .map(|(b, s)| beside_host(b, s, &sizes))
+        .collect();
+    eprintln!(
+        "DUMP {name} the drawn sources beside the host's per block, [A, B] of [drawn, left out, others]: {host:?}; group sizes {sizes:?}"
+    );
+    eprintln!(
+        "DUMP {name} outside course, per myriad of the image's {:?}",
+        blocks
+            .iter()
+            .map(|b| per_myriad(outside_of(b), outside))
+            .collect::<Vec<i64>>()
+    );
+    let h25 = DRAWN_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25");
+    eprintln!(
+        "DUMP {name} couplings course {:?} beside H-25's {:?}",
+        couplings_course(blocks),
+        couplings_course(DRAWN_BLOCKS_1024[h25])
+    );
+    eprintln!(
+        "DUMP {name} crossings {crossings_read:?} beside H-25's {:?}",
+        CROSSINGS_DRAWN_1024[h25]
+    );
+    eprintln!(
+        "DUMP {name} value by block beside H-25's {:?}",
+        value_means(&valued_by_block)
+            .iter()
+            .zip(value_means(DRAWN_VALUES_1024[h25]))
+            .map(|(u, w)| (*u, w))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-25's {:?}",
+        course(image_sums.0, blocks),
+        course(image_sums.0, DRAWN_BLOCKS_1024[h25])
+    );
+    eprintln!(
+        "DUMP {name} cost per block {costs:?} selected side's signal per block {selected_side:?} whole signal per block {signals:?}"
+    );
+    eprintln!(
+        "DUMP {name} shade by mapping, [selected, not selected][answer's pairs, other pairs][raised, lowered]: {:?}",
+        over_mappings(
+            &costed,
+            [[[0i64; 2]; 2]; 2],
+            &|sum: &mut Shade, row: &Costed| add_shade(sum, &row.0)
+        )
+    );
+    eprintln!(
+        "DUMP {name} readouts' spikes by mapping, [window, span, trial][selected, other, at ties]: {:?} beside H-25's [window, trial] {:?}",
+        over_mappings(
+            &quieted,
+            [[0u64; 3]; 3],
+            &|sum: &mut Quieted, row: &Quieted| { add_quieted(sum, row) }
+        ),
+        over_mappings(
+            RELEASED_HEARD_1024[h25],
+            [[0u64; 3]; 2],
+            &|sum: &mut Heard, row: &Heard| {
+                for (a, b) in sum.iter_mut().flatten().zip(row.iter().flatten()) {
+                    *a = a.saturating_add(*b);
+                }
+            }
+        )
+    );
+    let eligible_sum = |sum: &mut Eligible, row: &Eligible| {
+        for (a, b) in sum.iter_mut().flatten().zip(row.iter().flatten()) {
+            *a = a.saturating_add(*b);
+        }
+    };
+    eprintln!(
+        "DUMP {name} eligibility at the rewards by mapping, [selected, other, at ties][above zero, below zero]: {:?} beside H-25's {:?}",
+        over_mappings(&traces, [[0i64; 2]; 3], &eligible_sum),
+        over_mappings(RELEASED_ELIGIBLE_1024[h25], [[0i64; 2]; 3], &eligible_sum)
+    );
+    eprintln!(
+        "DUMP {name} spikes by class by mapping {:?} beside H-25's {:?}",
+        over_mappings(
+            &watched.spikes,
+            [0u64; CLASSES],
+            &|sum: &mut [u64; CLASSES], row: &[u64; CLASSES]| {
+                for (a, b) in sum.iter_mut().zip(row) {
+                    *a = a.saturating_add(*b);
+                }
+            }
+        ),
+        over_mappings(
+            DRAWN_SPIKES_1024[h25],
+            [0u64; CLASSES],
+            &|sum: &mut [u64; CLASSES], row: &[u64; CLASSES]| {
+                for (a, b) in sum.iter_mut().zip(row) {
+                    *a = a.saturating_add(*b);
+                }
+            }
+        )
+    );
+    eprintln!(
+        "DUMP {name} signal {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    // The composer's fold is the network's oracle's, block by block: both sides of the address
+    // in force together are what the oracle read in the answer's pairs and in the other pairs,
+    // direction by direction.
+    for (j, (mine, oracle)) in costed.iter().zip(&watched.went).enumerate() {
+        let both = [0usize, 1].map(|pairs| {
+            [0usize, 1].map(|d| mine.0[0][pairs][d].saturating_add(mine.0[1][pairs][d]))
+        });
+        assert_eq!(
+            both,
+            [oracle[0], oracle[1]],
+            "{name} block {j}: the composer's fold is the network's oracle's"
+        );
+    }
+    // The pinned tables of the whole run, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        GATED_BLOCKS_1024[k],
+        GATED_TRACES_1024[k],
+    );
+    assert_eq!(
+        compositions.as_slice(),
+        GATED_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        GATED_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        GATED_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        GATED_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        moved.as_slice(),
+        GATED_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        strong.as_slice(),
+        GATED_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(Some(at_flips), GATED_AT_FLIPS_1024[k]);
+    assert_eq!(
+        valued_by_block.as_slice(),
+        GATED_VALUES_1024[k],
+        "{name}: the engine's value per block"
+    );
+    assert_eq!(
+        values_hash(&values),
+        GATED_VALUE_HASH_1024[k],
+        "{name}: every trial's value"
+    );
+    assert_eq!(
+        watched.weights.as_slice(),
+        GATED_WEIGHTS_1024[k],
+        "{name}: the weights by group per block"
+    );
+    assert_eq!(
+        admitted.as_slice(),
+        GATED_ADMITTED_1024[k],
+        "{name}: the spikes the window admitted per block"
+    );
+    assert_eq!(
+        watched.spikes.as_slice(),
+        GATED_SPIKES_1024[k],
+        "{name}: the spikes by class per block"
+    );
+    assert_eq!(
+        watched.cells.as_slice(),
+        GATED_CELLS_1024[k],
+        "{name}: the network's cells per block"
+    );
+    assert_eq!(
+        watched.went.as_slice(),
+        GATED_WENT_1024[k],
+        "{name}: where the consolidation went per block"
+    );
+    assert_eq!(
+        sourced.as_slice(),
+        GATED_SOURCED_1024[k],
+        "{name}: the drawn sources per block"
+    );
+    assert_eq!(
+        sources_hash(&watched.sourced),
+        GATED_SOURCES_HASH_1024[k],
+        "{name}: every trial's drawn sources"
+    );
+    assert_eq!(
+        costed.as_slice(),
+        GATED_COSTED_1024[k],
+        "{name}: the consolidation by the address in force per block"
+    );
+    assert_eq!(
+        quieted.as_slice(),
+        GATED_QUIETED_1024[k],
+        "{name}: the readouts' spikes by where they fell per block"
+    );
+    assert_eq!(
+        traces.as_slice(),
+        GATED_ELIGIBLE_1024[k],
+        "{name}: the eligibility at the rewards per block"
+    );
+    assert_eq!(
+        margins.as_slice(),
+        GATED_MARGINS_1024[k],
+        "{name}: the count margins per block"
+    );
+    assert_eq!(
+        messages.as_slice(),
+        GATED_MESSAGES_1024[k],
+        "{name}: the hold's messages per block"
+    );
+    assert_eq!(
+        hash, GATED_ALONG_HASH_1024[k],
+        "{name}: every trial's reading beside the run"
+    );
+    assert_eq!(
+        Some(read_of_arm),
+        GATED_READINGS_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        blocks.last().map(|b| (b.7, b.8)),
+        Some(read_of_arm.sums_after),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-27's arm that starts from the assignment (brief 060): H-25's arm from the assignment with
+/// the address's targets released to every unit and the gate's output delivered.
+#[test]
+#[ignore]
+fn the_gate_s_output_delivered_from_the_assignment_at_1024_units_exhaustive() {
+    gated_arm(Reversal::AssignmentFirst, true);
+}
+
+/// H-27's arm that starts from the mirrored assignment (brief 060).
+#[test]
+#[ignore]
+fn the_gate_s_output_delivered_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    gated_arm(Reversal::MirroredFirst, true);
+}
+
+/// The control's arm that starts from the assignment (brief 060): H-25's arm from the
+/// assignment with the address's targets released to every unit and nothing else.
+#[test]
+#[ignore]
+fn the_release_alone_from_the_assignment_at_1024_units_exhaustive() {
+    gated_arm(Reversal::AssignmentFirst, false);
+}
+
+/// The control's arm that starts from the mirrored assignment (brief 060).
+#[test]
+#[ignore]
+fn the_release_alone_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    gated_arm(Reversal::MirroredFirst, false);
+}
+
+/// The hold's probe on the engine (brief 060): the instrument's network at 1 024 units at rest
+/// at the gain 1.75 with no drive, a task whose readouts are unit `selected` alone and unit
+/// `other` alone under the instrument's window with `hold`, `selected` cued before one trial of
+/// `ticks` ticks so that it fires in the window and the gate holds `other`; returns the
+/// selection, the hold's messages and `other`'s basal and somatic potentials after the trial.
+/// The caller holds the potentials to the membrane rule stepped alone.
+fn hold_probe(hold: Hold, ticks: u32) -> (Option<u8>, u32, (i32, i32)) {
+    const SELECTED: u32 = 2;
+    const OTHER: u32 = 500;
+    let p = prior(1024);
+    let mut exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    assert!(exec.is_quiescent());
+    let stimulus = |first| Stimulus {
+        set: Set::contiguous(first, 1),
+        messages: SHAPE_F46.0,
+        efficacy_q16: SHAPE_F46.1,
+        cancel: None,
+    };
+    let mut t = Task {
+        stimuli: [stimulus(0), stimulus(1)],
+        readout: Readout::new([Set::contiguous(SELECTED, 1), Set::contiguous(OTHER, 1)]),
+        drive: Drive {
+            every: 0,
+            messages: 0,
+            efficacy_q16: 0,
+            units: 1024,
+            seed: 0,
+        },
+        ticks,
+        window: WINDOW,
+        seed: SEED,
+        reward_q16: 0,
+        mirrored: false,
+        feedback: Feedback::Withheld,
+        delivery: Delivery::Global,
+        critic: None,
+        hold: Some(hold),
+    };
+    // No unit the trial fires reaches the held unit: its potentials are the hold's alone.
+    for source in [0u32, 1, SELECTED] {
+        let unit = exec.units().get(source as usize).expect("a unit");
+        assert!(
+            unit.fan_out(exec.blocks()).all(|s| s.target != OTHER),
+            "unit {source} has no synapse onto the held unit"
+        );
+    }
+    let inject = exec.injector();
+    for _ in 0..SHAPE_F46.0 {
+        inject
+            .inject(SELECTED, spike_message(SHAPE_F46.1, false))
+            .expect("the ring takes the cue");
+    }
+    let outcome = t.trial(&mut exec, 0).expect("the probe runs");
+    let held = exec.units().get(OTHER as usize).expect("the held unit");
+    assert_eq!(
+        held.last_soma_spike_tick, NO_SPIKE_ON_RECORD,
+        "the held unit never fired"
+    );
+    (outcome.selection, outcome.held, (held.v_basal, held.v_soma))
+}
+
+/// The membrane rule stepped alone for the probe: a unit at rest at the base threshold over
+/// `ticks` ticks, taking `hold`'s messages, scaled by `gain` as the executor scales a turn's
+/// sum, on the tick after each tick the hold is due at; its basal and somatic potentials after.
+fn hold_alone(hold: Hold, ticks: u32, gain: u32) -> (i32, i32) {
+    let mut unit = DendriticSuperNeuron::new(0);
+    unit.v_thresh = THRESHOLD_BASE;
+    for tick in 0..ticks {
+        let landing = tick
+            .checked_sub(1)
+            .is_some_and(|k| hold.is_due(HOLD_CLOSE, k));
+        let sum = if landing {
+            batch_q16(hold.messages, hold.efficacy_q16)
+        } else {
+            0
+        };
+        assert!(
+            !unit.integrate(scaled_q16(sum, gain), 0, tick.saturating_add(1)),
+            "a held unit at rest never fires"
+        );
+    }
+    (unit.v_basal, unit.v_soma)
+}
+
+/// The gate's test (ADR-0061's class; brief 060): the arms, the delivery, the predictions and
+/// the constants as ADR-0143 and ADR-0145 fixed them; the two verdicts over tables written by
+/// hand and the step of the stopping rule each reaches; the hold held to the rule that derived
+/// it — the oracle over values written by hand, the constants at the lattice's edge with the
+/// unit that fires at each longer cadence, and the engine's own probe held to the membrane rule
+/// stepped alone; the frozen check's rule and the readings' rules over values written by hand;
+/// and eight trials on the instrument's network under the released delivery with the hold and
+/// eight without it, the drawn sources held to the critic's oracle's counts, every unit a
+/// target, the hold's messages to its times, and both oracles to the record. Nothing else added
+/// to the gate.
+#[test]
+fn the_clauses_of_h_27_the_hold_s_rule_and_the_readings_rules() {
+    // The arms, the delivery, the predictions and the constants.
+    assert_eq!(
+        GATED_ARMS.map(|(arm, _)| arm),
+        [DRAWN_ARMS[0], DRAWN_ARMS[1], DRAWN_ARMS[0], DRAWN_ARMS[1]],
+        "H-25's two arms, with the hold and then without it"
+    );
+    assert_eq!(GATED_ARMS.map(|(_, hold)| hold), [true, true, false, false]);
+    assert_eq!(GATED_DELIVERY, Delivery::Released);
+    assert_eq!((GATED_PREDICTED, ALONE_PREDICTED), (None, false));
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            BOUND_PER_CENT,
+            REVERSAL_BLOCKS_MAX,
+            CROSSING_MARK,
+            SCHEDULE_BLOCKS,
+            BAND_QUARTERS,
+            BAND_DIVISOR
+        ),
+        (80, 130, 23, 40, 120, (3, 5), 4),
+        "the four clauses are H-25's"
+    );
+    assert_eq!(
+        HOLD,
+        Hold {
+            until: 4096,
+            every: 512,
+            messages: 1,
+            efficacy_q16: -0x0002_0000
+        }
+    );
+    assert_eq!(
+        (
+            HOLD_CLOSE,
+            WINDOW.end(),
+            HOLD_SPAN,
+            1u32 << (STDP_TAU_SHIFT + 1)
+        ),
+        (
+            600,
+            600,
+            Window {
+                from: 600,
+                ticks: 3497
+            },
+            HOLD_UNTIL
+        ),
+        "the span: from the window's close through two time constants of the pair rule"
+    );
+    assert_eq!(
+        (0..TRIAL_TICKS)
+            .filter(|&k| HOLD.is_due(HOLD_CLOSE, k))
+            .collect::<Vec<u32>>(),
+        vec![600, 1112, 1624, 2136, 2648, 3160, 3672],
+        "the ticks the hold is due before"
+    );
+    assert_eq!(hold_times(&HOLD, HOLD_CLOSE), 7);
+    assert_eq!(
+        hold_times(&hold_of(1, 1 << HOLD_SHIFT_MAX), HOLD_CLOSE),
+        1,
+        "the lattice's longest cadence is one delivery, at the close"
+    );
+    assert_eq!(hold_times(&hold_of(1, 1), HOLD_CLOSE), 3496);
+    assert_eq!(hold_times(&hold_of(1, 0), HOLD_CLOSE), 0);
+    assert_eq!(
+        message_efficacy_q16(spike_message(HOLD_MESSAGE_Q16, false)),
+        HOLD_MESSAGE_Q16,
+        "one message carries the hold's efficacy whole"
+    );
+    assert_eq!(
+        message_efficacy_q16(spike_message(HOLD_MESSAGE_Q16.saturating_sub(1), false)),
+        HOLD_MESSAGE_Q16,
+        "and no more: it is the clamp"
+    );
+    assert_eq!(
+        (SETTLED_TICK, trial_start(0), trial_start(1)),
+        (12_585_412, 12_585_912, 12_602_296),
+        "the settled image's tick: ninety-six windows and the quiet run's 2 500 ticks"
+    );
+    assert_eq!(
+        Task {
+            hold: Some(HOLD),
+            ..task(
+                SHAPE_F46,
+                None,
+                1024,
+                Feedback::Withheld,
+                false,
+                Delivery::Global
+            )
+        }
+        .check(&at_gain(&prior(1024), config(1024, 1, 0), GAIN_1024)),
+        Ok(())
+    );
+    // The two verdicts over tables written by hand, and the step each reaches.
+    let outside = image_outside();
+    let block = |correct: u32, excitatory: i64| -> Block {
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            excitatory,
+            0,
+            IMAGE_COUPLINGS_1024,
+            0,
+        )
+    };
+    let full = vec![block(BLOCK as u32, QUIET_1024[SETTLED].1.1); SCHEDULE_BLOCKS];
+    let yes = drawn(outside, [&full, &full]);
+    assert!(yes.yes);
+    assert_eq!(
+        gated(outside, [&full, &full, &full, &full]),
+        Gated {
+            held: yes,
+            alone: yes
+        }
+    );
+    assert_eq!(step_of(&yes), 3, "a yes: step 3");
+    // A mapping unlearned in the control's second arm alone: H-27 stands, the control is no.
+    let mut unlearned = full.clone();
+    unlearned[MAPPINGS[1].1 - 1].0 = 0;
+    unlearned[MAPPINGS[1].1 - 2].0 = 0;
+    let verdict = gated(outside, [&full, &full, &full, &unlearned]);
+    assert_eq!(
+        (
+            verdict.held,
+            verdict.alone.yes,
+            verdict.alone.learning.learned
+        ),
+        (yes, false, [[true; 4], [true, false, true, true]]),
+        "the control reads the arms without the hold, and H-27 the arms with it"
+    );
+    assert_eq!(step_of(&verdict.alone), 5, "a no on clause 1: step 5");
+    let verdict = gated(outside, [&unlearned, &full, &full, &full]);
+    assert_eq!(
+        (
+            verdict.held.yes,
+            verdict.held.learning.learned[0],
+            verdict.alone
+        ),
+        (false, [true, false, true, true], yes)
+    );
+    // A reversal that never passes the mark: clause 3, step 5.
+    let mut slow = full.clone();
+    for b in slow.iter_mut().take(MAPPINGS[2].1).skip(MAPPINGS[2].0) {
+        b.0 = CROSSING_MARK.saturating_sub(1);
+    }
+    let verdict = drawn(outside, [&slow, &full]);
+    assert_eq!(
+        (
+            verdict.yes,
+            verdict.revised,
+            verdict.held,
+            step_of(&verdict)
+        ),
+        (false, [[true, false, true], [true; 3]], [true; 2], 5)
+    );
+    // The network leaving the band: clause 4, step 4, whatever else failed beside it.
+    let couplings = IMAGE_COUPLINGS_1024
+        .iter()
+        .flatten()
+        .fold(0i64, |sum, &c| sum.saturating_add(c));
+    let high = outside.saturating_mul(5).checked_div(4).expect("four");
+    let mut drained = full.clone();
+    drained[70] = block(
+        BLOCK as u32,
+        high.saturating_add(1).saturating_add(couplings),
+    );
+    let verdict = drawn(outside, [&full, &drained]);
+    assert_eq!(
+        (verdict.yes, verdict.held, step_of(&verdict)),
+        (false, [true, false], 4)
+    );
+    let mut both = drained.clone();
+    both[MAPPINGS[1].1 - 1].0 = 0;
+    both[MAPPINGS[1].1 - 2].0 = 0;
+    let verdict = drawn(outside, [&both, &full]);
+    assert_eq!(
+        (verdict.learning.learned[0], verdict.held, step_of(&verdict)),
+        ([true, false, true, true], [false, true], 4),
+        "clause 4 beside clause 1: step 4"
+    );
+    assert_eq!(
+        step_of(&drawn(outside, [&full, &full[1..]])),
+        4,
+        "a run that is not whole holds no clause"
+    );
+    // The oracle over values written by hand. A unit at rest with no input never fires; one at
+    // the extreme with no input does not either, the extreme being what it carries without
+    // firing; a message of the drive landing on the tick after the close fires it on that tick,
+    // and the hold's message beside it keeps it silent through the span.
+    assert_eq!(held_alone((0, 0), None, &[], GAIN_1024), None);
+    assert_eq!(held_alone(EXTREME_STANDING, None, &[], GAIN_1024), None);
+    assert_eq!(
+        held_alone(EXTREME_STANDING, None, &[601], GAIN_1024),
+        Some(601)
+    );
+    assert_eq!(
+        held_alone(EXTREME_STANDING, Some(HOLD), &[601], GAIN_1024),
+        None
+    );
+    assert_eq!(
+        held_alone(EXTREME_STANDING, None, &[2000], GAIN_1024),
+        None,
+        "the extreme has leaked away by then"
+    );
+    // Twenty of the drive's messages on one tick are F-46's drive, 4.375 after the gain, and
+    // fire a unit at rest four ticks on, as ADR-0076's probe reads it (landing on tick one,
+    // firing on tick five). Under the hold the same twenty do not fire it, the basal
+    // compartment standing some 2.5 below rest there; forty do, later than from rest, the soma
+    // starting below it (both ticks pinned from the oracle): the oracle answers for the drive
+    // as it lands, not for any input.
+    let burst = [2000u32; 40];
+    assert_eq!(
+        held_alone((0, 0), None, &burst[..20], GAIN_1024),
+        Some(2004)
+    );
+    assert_eq!(
+        held_alone((0, 0), Some(HOLD), &burst[..20], GAIN_1024),
+        None
+    );
+    let (bare, held) = (
+        held_alone((0, 0), None, &burst, GAIN_1024),
+        held_alone((0, 0), Some(HOLD), &burst, GAIN_1024),
+    );
+    eprintln!("DUMP the hold's oracle under a burst of forty: {bare:?} and held {held:?}");
+    assert_eq!((bare, held), (Some(2001), Some(2005)));
+    // The drive's landings: one tick after the tick it is due at, on the unit the drive names.
+    let landings = drive_landings(1024, trial_start(0), 601, 603);
+    let named: Vec<(u32, u32)> = (600u32..603)
+        .flat_map(|k| {
+            let at = trial_start(0).saturating_add(u64::from(k));
+            (0..drive(1024).messages).map(move |index| (drive(1024).unit_at(at, index), k))
+        })
+        .collect();
+    assert_eq!(named.len(), 24, "eight messages a tick over three ticks");
+    for &(unit, k) in &named {
+        assert!(
+            landings[unit as usize].contains(&k.saturating_add(1)),
+            "the message due at {k} lands on unit {unit} a tick later"
+        );
+    }
+    assert_eq!(
+        landings.iter().map(Vec::len).sum::<usize>(),
+        24,
+        "and nothing else lands"
+    );
+    // The constants held to the rule at the lattice's edge: with the hold no unit fires in the
+    // gate's first trials, and at each longer cadence the unit that does, as the weekly arms
+    // hold over the whole block.
+    assert_eq!(first_fired(None, 0..1), Some((0, 1, 634)));
+    assert_eq!(first_fired(Some(HOLD), 0..GATE_TRIALS), None);
+    assert_eq!(
+        first_fired(Some(hold_of(HOLD_MESSAGES, 2 * HOLD_EVERY)), 6..7),
+        Some((6, 239, 1312)),
+        "at twice the cadence a unit fires in the seventh trial"
+    );
+    assert_eq!(
+        first_fired(Some(hold_of(HOLD_MESSAGES, 2 * HOLD_EVERY)), 0..6),
+        None,
+        "and none before it"
+    );
+    assert_eq!(
+        first_fired(Some(hold_of(HOLD_MESSAGES, 4 * HOLD_EVERY)), 0..1),
+        Some((0, 337, 1672))
+    );
+    assert_eq!(
+        first_fired(Some(hold_of(HOLD_MESSAGES, 8 * HOLD_EVERY)), 0..1),
+        Some((0, 45, 3951))
+    );
+    assert_eq!(
+        least_hold(0..1),
+        Some(hold_of(1, 1024)),
+        "the rule over one trial: one message, and the longest cadence that silences it"
+    );
+    // The engine's own probe, held to the membrane rule stepped alone: the hold's messages
+    // land where the oracle lands them, scaled as the oracle scales them.
+    let probe_ticks = HOLD_UNTIL.saturating_add(2);
+    assert_eq!(
+        hold_probe(HOLD, probe_ticks),
+        (Some(0), 7, hold_alone(HOLD, probe_ticks, GAIN_1024)),
+        "the selected unit's readout selected, seven messages into the other, and its potentials the rule's"
+    );
+    let dense = hold_of(2, 64);
+    assert_eq!(
+        hold_probe(dense, probe_ticks),
+        (
+            Some(0),
+            hold_times(&dense, HOLD_CLOSE).saturating_mul(2),
+            hold_alone(dense, probe_ticks, GAIN_1024)
+        )
+    );
+    assert!(hold_alone(HOLD, probe_ticks, GAIN_1024).0 < 0);
+    // The frozen check's rule and the readings' rules over values written by hand.
+    let selections = [Some(0u8), Some(1), None];
+    let fired: [Fired; 3] = [
+        [[9, 4], [20, 1], [140, 70]],
+        [[3, 8], [1, 10], [60, 130]],
+        [[5, 5], [7, 6], [100, 101]],
+    ];
+    let mut padded_selections = vec![None; BLOCK];
+    let mut padded_fired = vec![[[0u32; 2]; 3]; BLOCK];
+    padded_selections[..3].copy_from_slice(&selections);
+    padded_fired[..3].copy_from_slice(&fired);
+    let quieted = quieted_blocks(&padded_selections, &padded_fired);
+    assert_eq!(
+        quieted,
+        vec![[[17, 7, 10], [30, 2, 13], [270, 130, 201]]],
+        "each trial's counts on the side its selection put them, a tie's together"
+    );
+    assert!(hold_checked(&quieted[0]), "2 × 10 at most 30");
+    assert!(
+        hold_checked(&[[0; 3], [30, 3, 99], [0; 3]]),
+        "exactly a tenth"
+    );
+    assert!(
+        !hold_checked(&[[0; 3], [29, 3, 0], [0; 3]]),
+        "one short of ten times"
+    );
+    assert!(
+        hold_checked(&[[0; 3], [0, 0, 5], [0; 3]]),
+        "nothing fired on either side"
+    );
+    assert!(!hold_checked(&[[0; 3], [0, 1, 0], [0; 3]]));
+    let mut sum: Quieted = [[1; 3]; 3];
+    add_quieted(&mut sum, &quieted[0]);
+    assert_eq!(sum, [[18, 8, 11], [31, 3, 14], [271, 131, 202]]);
+    let shade: Shade = [[[50, -10], [8, -30]], [[4, -9], [6, -1]]];
+    assert_eq!(
+        selected_signal(&shade),
+        62,
+        "40 less −22 on the selected side"
+    );
+    assert_eq!(cost_of(&shade), 10, "5 less −5 on the side not selected");
+    assert_ne!(
+        frozen_hash(&[(Some(0), fired[0])]),
+        frozen_hash(&[(Some(1), fired[0])])
+    );
+    assert_ne!(
+        frozen_hash(&[(None, fired[0])]),
+        frozen_hash(&[(None, fired[1])])
+    );
+    // Eight trials on the instrument's network under the released delivery, its image carrying
+    // the inhibitory baseline and the signed gate as the arms' images do and the critic with its
+    // window as H-23's does: with the hold and without it, the drawn sources held at every trial
+    // to the units the critic's oracle counted, every unit a target, the hold's messages to its
+    // times, and both oracles to the record.
+    let sets = geometry(1024, ROTATION_1024);
+    let p = prior(1024);
+    let fresh = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    // The geometry the hold acts on: each readout is nine places of twenty over fifty-one
+    // periods, 459 units, 102 of them inhibitory, and every inhibitory unit of the network lies
+    // in one of the two — so a hold silences half the network's inhibitory units with the
+    // channel.
+    let inhibitory = |set: Option<&Set>| {
+        fresh
+            .units()
+            .iter()
+            .filter(|u| {
+                u.flags & FLAG_INHIBITORY != 0 && set.is_none_or(|s| s.contains(u.id as u32))
+            })
+            .count()
+    };
+    assert_eq!(
+        (
+            sets[2].len(),
+            sets[3].len(),
+            inhibitory(Some(&sets[2])),
+            inhibitory(Some(&sets[3])),
+            inhibitory(None)
+        ),
+        (459, 459, 102, 102, 204)
+    );
+    let flagged = signed_image(&inhibited_image(&Image::encode(&fresh).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    let bytes = with_window_bytes(&valued_image(&flagged, VALUED_CRITIC), window);
+    let other_units = readout_set(&sets, 1).len();
+    assert_eq!(other_units, readout_set(&sets, 0).len());
+    let mut runs = Vec::new();
+    for hold in [Some(HOLD), None] {
+        let mut exec = signed_from(&bytes, 1024);
+        let image = weights_of(&exec);
+        let groups = groups_of(&exec, &sets);
+        let classes = classes_of(&exec, &sets);
+        let ((run, moves, values, watched, beside), along) = held_run(
+            &mut exec,
+            Reversal::AssignmentFirst,
+            &sets,
+            &groups,
+            &classes,
+            &image,
+            GATED_DELIVERY,
+            GATE_TRIALS,
+            false,
+            hold,
+        );
+        assert!(beside.is_none());
+        let read = &run.3;
+        eprintln!(
+            "DUMP gated, hold {}: {GATE_TRIALS} trials {read:?} moves {moves:?} sources {:?} held {:?} spanned {:?} heard {:?}",
+            hold.is_some(),
+            watched.sourced,
+            along.held.held,
+            along.spanned,
+            along.heard
+        );
+        assert_eq!(
+            (
+                read.len(),
+                values.len(),
+                watched.sourced.len(),
+                along.held.shifted.len(),
+                along.held.eligible.len(),
+                along.spanned.len(),
+                along.heard.len()
+            ),
+            (
+                GATE_TRIALS,
+                GATE_TRIALS,
+                GATE_TRIALS,
+                GATE_TRIALS,
+                GATE_TRIALS,
+                GATE_TRIALS,
+                GATE_TRIALS
+            ),
+            "a reading a trial"
+        );
+        for (t, trial) in read.iter().enumerate() {
+            let due = match (hold, trial.2) {
+                (Some(_), Some(_)) => 7u64.saturating_mul(other_units),
+                _ => 0,
+            };
+            assert_eq!(u64::from(along.held.held[t]), due, "trial {t}");
+            for r in 0..2 {
+                assert!(
+                    trial.1[r] <= along.heard[t][r] && along.spanned[t][r] <= along.heard[t][r],
+                    "trial {t} readout {r}: the window's and the span's spikes are the trial's"
+                );
+            }
+        }
+        // The release reaches the pairs of the readout not selected, which under the drawn
+        // address nothing does (brief 059's gate): the composer's fold holds some of what it
+        // consolidated on that side.
+        let own = costed_blocks(read, &along.held.shifted, false);
+        let [(shade, _)] = own.as_slice() else {
+            panic!("eight trials are one block's first");
+        };
+        assert_ne!(
+            shade[1], [[0; 2]; 2],
+            "the released address consolidates onto the readout not selected"
+        );
+        runs.push((run, along));
+    }
+    let [(held_run_read, held_along), (bare_run_read, bare_along)] = &runs[..] else {
+        panic!("two runs");
+    };
+    // The two runs share their first trial up to its window's close, where the hold begins:
+    // the same stimulus, the same counts and the same selection there.
+    assert_eq!(
+        (
+            held_run_read.3[0].0,
+            held_run_read.3[0].1,
+            held_run_read.3[0].2
+        ),
+        (
+            bare_run_read.3[0].0,
+            bare_run_read.3[0].1,
+            bare_run_read.3[0].2
+        ),
+        "the first trial's window is the same with the hold as without it"
+    );
+    assert!(
+        held_along.held.held.iter().any(|&n| n > 0),
+        "a trial of the eight selected a readout and held the other"
+    );
+    assert!(bare_along.held.held.iter().all(|&n| n == 0));
+    assert_ne!(along_hash(held_along), along_hash(bare_along));
+}
+
+// ----------------------------------------------------------- the measurement (brief 060)
+
+/// The frozen block's readouts' spikes by where they fell with no hold, and every trial's
+/// reading by its hash (brief 060's calibration); its sight is ADR-0077's. Within the span the
+/// two readouts fire alike, 1 737 and 1 793 over the 56 trials that selected one.
+const BARE_FROZEN_1024: Option<(Quieted, u64)> = Some((
+    [[689, 463, 130], [1737, 1793, 474], [7962, 7583, 2099]],
+    0xc9e7_9352_f7b3_2027,
+));
+
+/// The frozen block with the hold (brief 060's calibration): the sight's block and sequence,
+/// the readouts' spikes by where they fell, the hold's messages and every trial's reading by
+/// its hash. Within the span the readout not selected fired 5 spikes over the 54 trials that
+/// selected one against the selected readout's 1 494, so the frozen check holds; over the
+/// whole trial 4 936 against 7 389, where without the hold it fired 7 583 against 7 962; the
+/// hold delivered 173 502 messages, seven times 459 units in each of those 54 trials.
+const HELD_FROZEN_1024: Option<FrozenHeld> = Some((
+    (
+        29,
+        34,
+        [[339, 330], [316, 316]],
+        [1727, 1525],
+        [2465, 2229],
+        [262, 258],
+        62,
+        165876268,
+        218243354,
+        0,
+        [[6249552, 6698611], [6584205, 6815470]],
+        10,
+    ),
+    0x5f33_89e8_fafe_946d,
+    [[673, 448, 180], [1494, 5, 637], [7389, 4936, 2796]],
+    173502,
+    0xc89d_62d6_572c_269f,
+));
+
+/// Brief 060's arms (ADR-0145), in `GATED_ARMS`'s order, each pinned whole: H-25's tables —
+/// the sight's 120 blocks and the accuracy sequence's hash, the composition, the earned blocks,
+/// every trial's reading by its hash, the volley's ticks, the moves, the strong punishments,
+/// the couplings at the flips, the engine's value per block and every trial's by its hash, the
+/// value weights by group, the spikes the window admitted, the spikes by class, the network's
+/// cells, where the consolidation went, and the drawn sources — and brief 060's: the
+/// consolidation by the address in force, the readouts' spikes by where they fell, the
+/// eligibility at the rewards, the count margins, the hold's messages, every trial's reading
+/// beside the run by its hash, and the readings. Empty until the one run.
+const GATED_BLOCKS_1024: [&[Block]; 4] = [&[], &[], &[], &[]];
+const GATED_TRACES_1024: [u64; 4] = [0; 4];
+const GATED_COMPOSITIONS_1024: [&[Composition]; 4] = [&[], &[], &[], &[]];
+const GATED_EARNED_1024: [&[EarnedBlock]; 4] = [&[], &[], &[], &[]];
+const GATED_READ_1024: [u64; 4] = [0; 4];
+const GATED_CENSUS_1024: [&[(u32, u64)]; 4] = [&[], &[], &[], &[]];
+const GATED_MOVES_1024: [&[MovesBlock]; 4] = [&[], &[], &[], &[]];
+const GATED_STRONG_1024: [&[[u32; 2]]; 4] = [&[], &[], &[], &[]];
+const GATED_AT_FLIPS_1024: [Option<[[[i64; 2]; 2]; 3]>; 4] = [None; 4];
+const GATED_VALUES_1024: [&[ValueBlock]; 4] = [&[], &[], &[], &[]];
+const GATED_VALUE_HASH_1024: [u64; 4] = [0; 4];
+const GATED_WEIGHTS_1024: [&[Weights]; 4] = [&[], &[], &[], &[]];
+const GATED_ADMITTED_1024: [&[Admitted]; 4] = [&[], &[], &[], &[]];
+const GATED_SPIKES_1024: [&[[u64; CLASSES]]; 4] = [&[], &[], &[], &[]];
+const GATED_CELLS_1024: [&[Cells]; 4] = [&[], &[], &[], &[]];
+const GATED_WENT_1024: [&[Went]; 4] = [&[], &[], &[], &[]];
+const GATED_SOURCED_1024: [&[Sourced]; 4] = [&[], &[], &[], &[]];
+const GATED_SOURCES_HASH_1024: [u64; 4] = [0; 4];
+const GATED_COSTED_1024: [&[Costed]; 4] = [&[], &[], &[], &[]];
+const GATED_QUIETED_1024: [&[Quieted]; 4] = [&[], &[], &[], &[]];
+const GATED_ELIGIBLE_1024: [&[Eligible]; 4] = [&[], &[], &[], &[]];
+const GATED_MARGINS_1024: [&[Margins]; 4] = [&[], &[], &[], &[]];
+const GATED_MESSAGES_1024: [&[u64]; 4] = [&[], &[], &[], &[]];
+const GATED_ALONG_HASH_1024: [u64; 4] = [0; 4];
+const GATED_READINGS_1024: [Option<GatedRead>; 4] = [None; 4];
