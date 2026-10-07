@@ -17,7 +17,8 @@ pub(crate) use cortex_neuromod::{DOPAMINE_TAU_SHIFT, ValueCritic};
 
 pub(crate) use cortex_runtime::{
     Cancel, Config, Critic, Delivery, Drive, Executor, Feedback, Hold, Image, Outcome, Readout,
-    Set, Stimulus, Task, TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
+    Set, Stimulus, Task, TaskError, Window, blocks_for, mix64, run_driven, spikes_per_unit,
+    synthesize,
 };
 
 include!(concat!(
@@ -9622,6 +9623,17 @@ pub(crate) fn hold_times(hold: &Hold, close: u32) -> u32 {
     }
 }
 
+/// The misleading coin written a second time as the oracle's (brief 061, ADR-0148): the draw of
+/// the seed and the trial's index, `mix64` of the two, with bits 48, 49 and 50 all zero — read
+/// here as the draw shifted down forty-eight places leaving no remainder over eight, a shift and
+/// a remainder and not the task's mask.
+pub(crate) fn misleads(seed: u64, trial: u64) -> bool {
+    mix64(seed ^ trial)
+        .checked_shr(48)
+        .and_then(|high| high.checked_rem(8))
+        == Some(0)
+}
+
 /// `earned_run_shadowed` under a hold or none, and under the released delivery beside the three
 /// (brief 060, ADR-0143, ADR-0144). With `hold` set the task carries it: the selection is made
 /// at the readout window's close and the channel not selected takes the hold's messages; the
@@ -9633,6 +9645,11 @@ pub(crate) fn hold_times(hold: &Hold, close: u32) -> u32 {
 /// its readout (`Composer::released`). The composer and the network's oracle replay the train,
 /// so a hold reaches them only through the spikes it leaves. With no hold and one of the three
 /// deliveries before it this is `earned_run_shadowed`, which calls it so.
+///
+/// Under `Feedback::SevenInEight` (brief 061, ADR-0148) the reward the harness holds the task to
+/// is the outcome's sign where the oracle's coin (`misleads`) is not misleading and the opposite
+/// where it is, whatever the outcome; `correct` stays the selection's, held as under every
+/// feedback, and both oracles replay from the signal the reward left, whatever its truth.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_held(
     exec: &mut Engine,
@@ -9768,6 +9785,9 @@ pub(crate) fn earned_run_held(
             let expected = match feedback {
                 Feedback::Answer => signed(outcome.correct),
                 Feedback::Shuffled => signed(probe.coin_at(trial as u64)),
+                Feedback::SevenInEight => {
+                    signed(outcome.correct != misleads(probe.seed, trial as u64))
+                }
                 Feedback::Withheld => 0,
             };
             let stimulus = usize::from(outcome.stimulus);
@@ -9876,7 +9896,7 @@ pub(crate) fn earned_run_held(
             };
             assert_eq!(
                 outcome.reward_q16, expected,
-                "trial {trial}: the reward's sign is the outcome's, less the expectation under a critic, and none is withheld"
+                "trial {trial}: the reward's sign is the feedback's, less the expectation under a critic, and none is withheld"
             );
             match delivery {
                 Delivery::Addressed => {

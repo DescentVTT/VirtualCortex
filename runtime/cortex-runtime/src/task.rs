@@ -61,6 +61,13 @@
 //! ([`Delivery::Released`]): the address's sources drawn by the engine as the drawn delivery
 //! draws them and every unit a target, at a tie as at any trial. A task with no hold runs the
 //! trial it ran, and the three deliveries before the released one write what they wrote.
+//!
+//! A task's reward may be right seven times in eight ([`Feedback::SevenInEight`], ADR-0147,
+//! ADR-0148): its sign the outcome's unless the trial's coin is misleading, and then the
+//! opposite, whatever the outcome was. The coin is three bits of the trial's own draw that
+//! neither the stimulus nor the shuffled control reads ([`MISLEADING_BITS`]), so a run stays a
+//! function of its seed. What a trial records as correct is the selection, whatever reward it
+//! then received. Under the three feedbacks before it a trial is the trial it was.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -499,7 +506,22 @@ pub enum Feedback {
     /// No reward call at all: the pair rule under the baseline alone (the fixed-modulation
     /// control).
     Withheld,
+    /// The answer in seven trials of eight and its opposite in one (ADR-0147, ADR-0148): the
+    /// reward's sign is the outcome's unless the trial's coin is misleading
+    /// ([`Task::misleading_at`]), and then the other, whatever the outcome was — a correct
+    /// selection punished, a wrong one or a tie rewarded.
+    SevenInEight,
 }
+
+/// The bits of a trial's draw the misleading coin reads (ADR-0148): 48, 49 and 50 of
+/// [`mix64`] of the seed and the trial's index. The stimulus is bit 0 of that draw and the
+/// shuffled control's coin bit 32; that the three are neither, and are three, is asserted at
+/// compile time, so the coin's share is one in eight and it reads no bit another draw reads.
+pub const MISLEADING_BITS: u64 = 0x0007_0000_0000_0000;
+const _: () = assert!(
+    MISLEADING_BITS.count_ones() == 3 && MISLEADING_BITS & 0x0000_0001_0000_0001 == 0,
+    "three bits, neither the stimulus's nor the shuffled coin's"
+);
 
 /// Where a trial's dopamine term reaches (ADR-0068): which synapses consolidate the next
 /// trial's traces under `clamp(baseline + dopamine, 0, 1)`, every other synapse consolidating
@@ -664,7 +686,8 @@ pub struct Outcome {
     pub counts: [u32; 2],
     /// The readout selected, or none at a tie.
     pub selection: Option<u8>,
-    /// Whether the selection was the stimulus's rewarded readout.
+    /// Whether the selection was the stimulus's rewarded readout, whatever reward the trial
+    /// then received (ADR-0148).
     pub correct: bool,
     /// The reward delivered, signed; zero when withheld. Under a critic, the prediction error
     /// the modulator received (ADR-0107).
@@ -699,7 +722,7 @@ pub struct Task {
     /// The sub-window of the trial the readout counts, inside the trial and at least one tick
     /// long; [`Window::whole`] of `ticks` counts the whole trial.
     pub window: Window,
-    /// The seed the trial's stimulus and the shuffled coin are drawn from.
+    /// The seed the trial's stimulus, the shuffled coin and the misleading coin are drawn from.
     pub seed: u64,
     /// The reward's magnitude, Q16.16, at least zero; the sign is the outcome's.
     pub reward_q16: i32,
@@ -736,6 +759,13 @@ impl Task {
     /// stimulus's bit does not read.
     pub const fn coin_at(&self, trial: u64) -> bool {
         (mix64(self.seed ^ trial) >> 32) & 1 == 1
+    }
+
+    /// Whether the reward of trial `trial` is misleading under [`Feedback::SevenInEight`]
+    /// (ADR-0148): the three [`MISLEADING_BITS`] of the same draw all zero, one trial in
+    /// eight, a coin neither the stimulus's bit nor the shuffled control's reads.
+    pub const fn misleading_at(&self, trial: u64) -> bool {
+        mix64(self.seed ^ trial) & MISLEADING_BITS == 0
     }
 
     /// What a run needs: every set well-formed, non-empty and inside `exec`'s arena, no two
@@ -951,6 +981,9 @@ impl Task {
         let positive = match self.feedback {
             Feedback::Answer => correct,
             Feedback::Shuffled => self.coin_at(trial),
+            // The outcome's sign unless the coin is misleading, whatever the outcome
+            // (ADR-0148); `correct` above stays the selection's.
+            Feedback::SevenInEight => correct != self.misleading_at(trial),
             Feedback::Withheld => {
                 return Ok(Outcome {
                     trial,
@@ -3499,6 +3532,368 @@ mod tests {
         assert_eq!(stimuli, 0x4c04, "bit 0 of mix64(27 ^ k)");
         assert_eq!(coins, 0x6050, "bit 32 of mix64(27 ^ k)");
     }
+
+    /// The misleading coin against the same oracle written apart from the tree (ADR-0148): bits
+    /// 48, 49 and 50 of SplitMix64's finaliser of the seed and the trial's index all zero, over
+    /// the first sixty-four trials at the unit tests' seed and at the learning harness's. Bit
+    /// `k` of each mask is trial `k`; eight of sixty-four at both.
+    #[test]
+    fn the_misleading_coin_of_the_first_sixty_four_trials_at_seeds_0_and_27() {
+        assert_eq!(MISLEADING_BITS, 7 << 48, "bits 48, 49 and 50");
+        for (seed, mask) in [
+            (0u64, 0x0104_0000_030c_0005u64),
+            (27, 0x0000_0208_0a00_030c),
+        ] {
+            let t = Task {
+                seed,
+                ..task(Feedback::SevenInEight)
+            };
+            let mut read = 0u64;
+            for k in 0..64u32 {
+                read |= u64::from(t.misleading_at(u64::from(k))).wrapping_shl(k);
+            }
+            assert_eq!(read, mask, "seed {seed}: bits 48 to 50 of mix64(seed ^ k)");
+            assert_eq!(read.count_ones(), 8, "seed {seed}");
+        }
+    }
+
+    /// The coin's share and what it does not read (ADR-0148), at the learning harness's seed
+    /// over 4 096 trials, every count the apart oracle's: 513 misleading, one in eight, and
+    /// among the trials of each stimulus and each side of the shuffled control's coin between a
+    /// tenth and a sixth, so the coin tells neither draw.
+    #[test]
+    fn the_misleading_coin_is_one_trial_in_eight_whatever_the_other_two_draws() {
+        let t = Task {
+            seed: 27,
+            ..task(Feedback::SevenInEight)
+        };
+        let mut all = [[0u32; 2]; 2];
+        let mut misleading = [[0u32; 2]; 2];
+        for trial in 0..4096u64 {
+            let s = usize::from(t.stimulus_at(trial));
+            let c = usize::from(t.coin_at(trial));
+            all[s][c] += 1;
+            misleading[s][c] += u32::from(t.misleading_at(trial));
+            assert_eq!(
+                t.misleading_at(trial),
+                t.misleading_at(trial),
+                "the same draw twice"
+            );
+        }
+        assert_eq!(all, [[1039, 991], [1051, 1015]], "[stimulus][coin]");
+        assert_eq!(misleading, [[150, 122], [118, 123]], "[stimulus][coin]");
+        assert_eq!(misleading.iter().flatten().sum::<u32>(), 513);
+        for (m, n) in misleading.iter().flatten().zip(all.iter().flatten()) {
+            assert!(m * 10 >= *n && m * 6 <= *n, "{m} of {n}");
+        }
+        let other = Task { seed: 1, ..t };
+        let differ = (0..4096u64)
+            .filter(|&k| other.misleading_at(k) != t.misleading_at(k))
+            .count();
+        assert!(differ > 512, "another seed, another coin: {differ}");
+    }
+
+    /// A reward right seven times in eight (ADR-0147, ADR-0148): over the first eight trials at
+    /// the unit tests' seed — the coin misleading at trials 0 and 2, one of each stimulus — and
+    /// for each outcome, the answer's readout cued (correct), the other's (wrong) and none (a
+    /// tie), the trial is the trial under the answer's feedback on a twin engine in every field
+    /// where the coin is not misleading, and where it is, in every field but the reward and the
+    /// signal, which are the opposite: a correct selection punished, a wrong one and a tie
+    /// rewarded. What the trial records as correct is the selection, and the addressed set, the
+    /// units and the train are the outcome's, whatever the reward. Under the engine's critic
+    /// the misleading reward is what the engine takes its value from.
+    #[test]
+    fn the_reward_s_sign_is_the_outcome_s_exactly_where_the_coin_is_not_misleading() {
+        let probe = task(Feedback::SevenInEight);
+        let mut seen = [[false; 3]; 2];
+        let mut stimuli = [[false; 2]; 2];
+        for trial in 0..8u64 {
+            let misleading = probe.misleading_at(trial);
+            assert_eq!(misleading, trial == 0 || trial == 2, "trial {trial}");
+            let stimulus = probe.stimulus_at(trial);
+            stimuli[usize::from(misleading)][usize::from(stimulus)] = true;
+            let answer = probe.answer(stimulus);
+            for (kind, cued) in [Some(answer), Some(answer ^ 1), None]
+                .into_iter()
+                .enumerate()
+            {
+                let mut exec = network(1, ONE / 2);
+                let mut twin = network(1, ONE / 2);
+                let mut t = task(Feedback::SevenInEight);
+                let mut plain = task(Feedback::Answer);
+                t.delivery = Delivery::Addressed;
+                plain.delivery = Delivery::Addressed;
+                if let Some(r) = cued {
+                    cue(&exec, t.readout.sets()[usize::from(r)]);
+                    cue(&twin, t.readout.sets()[usize::from(r)]);
+                }
+                let got = t.trial(&mut exec, trial).unwrap();
+                let truth = plain.trial(&mut twin, trial).unwrap();
+                let case = format!("trial {trial} cued {cued:?}");
+                assert_eq!(got.selection, cued, "{case}");
+                assert_eq!(got.correct, kind == 0, "{case}: correct is the selection");
+                let sign = if got.correct != misleading {
+                    REWARD
+                } else {
+                    -REWARD
+                };
+                assert_eq!((got.reward_q16, got.signal_q16), (sign, sign), "{case}");
+                assert_eq!(
+                    truth.reward_q16,
+                    if truth.correct { REWARD } else { -REWARD },
+                    "{case}"
+                );
+                let expected = if misleading {
+                    Outcome {
+                        reward_q16: -truth.reward_q16,
+                        signal_q16: -truth.signal_q16,
+                        ..truth
+                    }
+                } else {
+                    truth
+                };
+                assert_eq!(got, expected, "{case}");
+                assert_eq!(
+                    (exec.addressed_counts(), fields(&exec), exec.delivered()),
+                    (twin.addressed_counts(), fields(&twin), twin.delivered()),
+                    "{case}: the address and the units are the outcome's"
+                );
+                assert_eq!(exec.train().to_vec(), twin.train().to_vec(), "{case}");
+                assert_eq!(
+                    exec.modulator().dopamine_rpe,
+                    if misleading {
+                        -twin.modulator().dopamine_rpe
+                    } else {
+                        twin.modulator().dopamine_rpe
+                    },
+                    "{case}"
+                );
+                seen[usize::from(misleading)][kind] = true;
+            }
+        }
+        assert_eq!(seen, [[true; 3]; 2], "each outcome, misleading and not");
+        assert_eq!(stimuli, [[true; 2]; 2], "each stimulus, misleading and not");
+        // Under the engine's critic (ADR-0131), at weights of zero: the value zero, and the
+        // error the misleading reward itself.
+        for (trial, cued) in [(0u64, true), (0, false), (1, true), (1, false)] {
+            let mut exec = valued(ONE / 2);
+            let mut t = task(Feedback::SevenInEight);
+            let answer = t.answer(t.stimulus_at(trial));
+            if cued {
+                cue(&exec, t.readout.sets()[usize::from(answer)]);
+            }
+            let got = t.trial(&mut exec, trial).unwrap();
+            assert_eq!(got.correct, cued, "trial {trial}");
+            let sign = if cued != t.misleading_at(trial) {
+                REWARD
+            } else {
+                -REWARD
+            };
+            assert_eq!(
+                (got.reward_q16, got.value_q16, exec.prediction()),
+                (
+                    sign,
+                    Some(0),
+                    Some(Prediction {
+                        value_q16: 0,
+                        error_q16: sign
+                    })
+                ),
+                "trial {trial} cued {cued}"
+            );
+        }
+        // A reward of no magnitude and a reward at the ceiling are refused as under the
+        // answer's feedback.
+        let mut none = task(Feedback::SevenInEight);
+        none.reward_q16 = 0;
+        assert_eq!(none.check(&network(1, ONE / 2)), Err(TaskError::NoReward));
+        assert_eq!(
+            task(Feedback::SevenInEight).check(&network(1, ONE)),
+            Err(TaskError::RewardAtCeiling)
+        );
+    }
+
+    /// Under the three feedbacks before it a trial is the trial it was (ADR-0148): `trial`
+    /// against the trial as ADR-0144 left it, written out here as the oracle with the three
+    /// feedbacks it had — the answer, the coin read as bit 32 of the draw, and the reward
+    /// withheld — on twin engines over eight trials under a drive, a cancel and a sub-window,
+    /// a readout cued before some of them: once under the task's critic with the addressed
+    /// delivery, once under the engine's critic and its window with the drawn one. The same
+    /// outcome, the same units' fields, the same train, the same messages drained, the same
+    /// addressed set, the same signal, the same counts and the same expectations after every
+    /// trial.
+    #[test]
+    fn a_trial_under_the_three_feedbacks_before_is_the_trial_it_was() {
+        fn before(t: &mut Task, exec: &mut Executor<8>, trial: u64) -> Outcome {
+            t.check(exec).unwrap();
+            assert_eq!(t.hold, None, "the oracle is of a trial with no hold");
+            let start = exec.ticks();
+            let stimulus = (mix64(t.seed ^ trial) & 1) as u8;
+            let inject = exec.injector();
+            let presented = t.stimuli[usize::from(stimulus)];
+            presented.inject(&inject).unwrap();
+            for k in 0..t.ticks {
+                presented.cancel_at(&inject, k).unwrap();
+                t.drive.step(&inject, exec.ticks()).unwrap();
+                exec.tick();
+            }
+            let counts = t.readout.count_window(
+                exec.train(),
+                (start as u32).wrapping_add(t.window.from),
+                t.window.ticks,
+            );
+            let selection = t.readout.select(counts);
+            let correct = selection == Some(t.answer(stimulus));
+            let selected = selection.map(|r| t.readout.sets()[usize::from(r)]);
+            match t.delivery {
+                Delivery::Global => exec.address_all(),
+                Delivery::Addressed => exec
+                    .address(
+                        presented.set.units(),
+                        selected.iter().flat_map(|set| set.units()),
+                    )
+                    .unwrap(),
+                Delivery::Drawn => exec
+                    .address_drawn(selected.iter().flat_map(|set| set.units()))
+                    .unwrap(),
+                Delivery::Released => unreachable!("the test runs the two deliveries above"),
+            }
+            let positive = match t.feedback {
+                Feedback::Answer => correct,
+                Feedback::Shuffled => (mix64(t.seed ^ trial) >> 32) & 1 == 1,
+                Feedback::Withheld => {
+                    return Outcome {
+                        trial,
+                        stimulus,
+                        counts,
+                        selection,
+                        correct,
+                        reward_q16: 0,
+                        signal_q16: exec.modulator().dopamine_rpe,
+                        expected_q16: t.critic.map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
+                        value_q16: None,
+                        held: 0,
+                    };
+                }
+                Feedback::SevenInEight => unreachable!("the oracle is of the trial before it"),
+            };
+            let outcome_q16 = if positive {
+                t.reward_q16
+            } else {
+                t.reward_q16.saturating_neg()
+            };
+            let (delivered_q16, expected_q16) = match t.critic.as_mut() {
+                Some(critic) => {
+                    let (error, before, after) = critic.predict(stimulus, outcome_q16);
+                    (error, Some([before, after]))
+                }
+                None => (outcome_q16, None),
+            };
+            let signal_q16 = exec.reward(delivered_q16);
+            let (reward_q16, value_q16) = match exec.prediction() {
+                Some(prediction) => (prediction.error_q16, Some(prediction.value_q16)),
+                None => (delivered_q16, None),
+            };
+            Outcome {
+                trial,
+                stimulus,
+                counts,
+                selection,
+                correct,
+                reward_q16,
+                signal_q16,
+                expected_q16,
+                value_q16,
+                held: 0,
+            }
+        }
+        for feedback in [Feedback::Answer, Feedback::Shuffled, Feedback::Withheld] {
+            for engine_s in [false, true] {
+                let mut t = task(feedback);
+                t.window = Window { from: 4, ticks: 20 };
+                t.drive = Drive {
+                    every: 1,
+                    messages: 2,
+                    efficacy_q16: 0x2000,
+                    units: 16,
+                    seed: 5,
+                };
+                for stimulus in t.stimuli.iter_mut() {
+                    stimulus.cancel = Some(Cancel {
+                        offset: 30,
+                        ticks: 3,
+                        messages: 1,
+                        efficacy_q16: -ONE,
+                    });
+                }
+                let (mut now, mut then) = if engine_s {
+                    t.delivery = Delivery::Drawn;
+                    (windowed_network(40), windowed_network(40))
+                } else {
+                    t.delivery = Delivery::Addressed;
+                    t.critic = Some(Critic::new(5));
+                    (network(2, ONE / 2), network(2, ONE / 2))
+                };
+                let mut oracle = t;
+                let case = format!("{feedback:?}, the engine's critic {engine_s}");
+                let mut rewards = Vec::new();
+                for trial in 0..8u64 {
+                    let cued = [None, Some(0), None, Some(1), Some(1), None, Some(0), None];
+                    if let Some(r) = cued[trial as usize] {
+                        cue(&now, t.readout.sets()[r]);
+                        cue(&then, t.readout.sets()[r]);
+                    }
+                    let outcome = t.trial(&mut now, trial).unwrap();
+                    assert_eq!(
+                        outcome,
+                        before(&mut oracle, &mut then, trial),
+                        "{case} trial {trial}"
+                    );
+                    assert_eq!(fields(&now), fields(&then), "{case} trial {trial}");
+                    assert_eq!(now.train().to_vec(), then.train().to_vec(), "{case}");
+                    assert_eq!(
+                        (
+                            now.delivered(),
+                            now.addressed_counts(),
+                            now.modulator().dopamine_rpe,
+                            now.features().to_vec(),
+                            now.prediction(),
+                            now.units()
+                                .iter()
+                                .map(|u| u.value_weight)
+                                .collect::<Vec<i16>>(),
+                        ),
+                        (
+                            then.delivered(),
+                            then.addressed_counts(),
+                            then.modulator().dopamine_rpe,
+                            then.features().to_vec(),
+                            then.prediction(),
+                            then.units()
+                                .iter()
+                                .map(|u| u.value_weight)
+                                .collect::<Vec<i16>>(),
+                        ),
+                        "{case} trial {trial}"
+                    );
+                    assert_eq!(
+                        (0..16).map(|u| now.is_source(u)).collect::<Vec<bool>>(),
+                        (0..16).map(|u| then.is_source(u)).collect::<Vec<bool>>(),
+                        "{case} trial {trial}"
+                    );
+                    assert_eq!((t.critic, t.readout), (oracle.critic, oracle.readout));
+                    rewards.push(outcome.reward_q16.signum());
+                }
+                match feedback {
+                    Feedback::Withheld => assert!(rewards.iter().all(|&r| r == 0), "{case}"),
+                    _ => assert!(
+                        rewards.contains(&1) && rewards.contains(&-1),
+                        "{case}: a reward of each sign among {rewards:?}"
+                    ),
+                }
+            }
+        }
+    }
 }
 
 /// The lattice property (ADR-0030): over seeded trains and seeded set pairs the selection is
@@ -3556,6 +3951,84 @@ mod prop {
             let shared = o.units().any(|u| units.contains(&u));
             assert_eq!(s.overlaps(&o), shared, "{s:?} {o:?}");
             assert_eq!(o.overlaps(&s), shared);
+        }
+    }
+
+    /// The misleading coin over the lattice (ADR-0148): for every seed and every trial built
+    /// from the `u32` lattice's words, and over seeded pairs, the coin is the hand rule — the
+    /// draw's second byte from the top, which holds bits 48 to 55, with its low three bits all
+    /// zero — and it is the rule of a draw with the stimulus's bit and the shuffled coin's
+    /// flipped, so it reads neither. Both sides of the coin occur among the seeded pairs, the
+    /// misleading one 502 times in 4 096, about one in eight.
+    #[test]
+    fn the_misleading_coin_is_the_hand_rule_over_the_lattice() {
+        let hand = |draw: u64| draw.to_be_bytes()[1] % 8 == 0;
+        let stimulus = |first: u32| Stimulus {
+            set: Set::contiguous(first, 4),
+            messages: 2,
+            efficacy_q16: 0x0001_4000,
+            cancel: None,
+        };
+        // A task whose draws are read and whose trial is never run.
+        let drawing = Task {
+            stimuli: [stimulus(0), stimulus(8)],
+            readout: Readout::new([Set::contiguous(4, 4), Set::contiguous(12, 4)]),
+            drive: Drive {
+                every: 0,
+                messages: 0,
+                efficacy_q16: 0,
+                units: 16,
+                seed: 0,
+            },
+            ticks: 64,
+            window: Window::whole(64),
+            seed: 0,
+            reward_q16: 0x4000,
+            mirrored: false,
+            feedback: Feedback::SevenInEight,
+            delivery: Delivery::Global,
+            critic: None,
+            hold: None,
+        };
+        let one = |seed: u64, trial: u64| {
+            let t = Task { seed, ..drawing };
+            let draw = mix64(seed ^ trial);
+            assert_eq!(t.misleading_at(trial), hand(draw), "{seed:#x} {trial:#x}");
+            assert_eq!(
+                hand(draw),
+                hand(draw ^ 0x0000_0001_0000_0001),
+                "{seed:#x} {trial:#x}: neither the stimulus's bit nor the shuffled coin's"
+            );
+            // The two draws beside it are the ones they were.
+            assert_eq!(t.stimulus_at(trial), (draw % 2) as u8);
+            assert_eq!(t.coin_at(trial), (draw >> 32) % 2 == 1);
+            hand(draw)
+        };
+        let words = |high: u32, low: u32| u64::from(high) << 32 | u64::from(low);
+        for &a in U32_LATTICE.iter() {
+            for &b in U32_LATTICE.iter() {
+                for &c in U32_LATTICE.iter() {
+                    one(words(a, b), words(b, c));
+                    one(words(c, a), u64::from(b));
+                    one(u64::from(a), words(c, b));
+                }
+            }
+        }
+        let mut lcg = Lcg::new(41);
+        let mut misleading = 0u32;
+        for _ in 0..4096 {
+            misleading += u32::from(one(lcg.next_u64(), lcg.next_u64()));
+        }
+        assert_eq!(misleading, 502, "about one in eight of 4 096");
+        // Each of the three bits alone, and every other bit set, by the mask itself.
+        for bit in 0..64u32 {
+            let draw = 1u64 << bit;
+            assert_eq!(
+                draw & MISLEADING_BITS == 0,
+                !(48..=50).contains(&bit),
+                "bit {bit}"
+            );
+            assert_eq!(hand(draw), !(48..=50).contains(&bit), "bit {bit}");
         }
     }
 
