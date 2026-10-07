@@ -157,6 +157,21 @@
 //! checked on a frozen block before any rewarded run; the four clauses are H-25's (`drawn`).
 //! Four arms, each its own weekly `exhaustive` test, pinned whole; the gate runs the rules at
 //! their edges and eight trials with the hold beside eight without it.
+//!
+//! Brief 061 runs H-28 here as ADR-0147 wrote it and ADR-0149 records it: H-25's two arms, from
+//! H-25's image under H-25's delivery and schedule, with the one change the task's feedback —
+//! `Feedback::SevenInEight` (ADR-0148), the reward's sign the outcome's in seven trials of eight
+//! and its opposite in one, by a coin of the task's own draw. The coin's count over the schedule
+//! is held to a pin from an oracle written apart from the tree and to its bounds before any
+//! rewarded run, after H-25's first block reproduced under the true feedback. The harness holds
+//! every trial's reward to its own writing of the coin (`misleads`), and both oracles replay
+//! from the signal the reward left, whatever its truth. Two arms, each its own weekly
+//! `exhaustive` test, pinned whole with the trials by outcome and by the reward received and the
+//! addressed pair's moves by the kind of the trial before. The four clauses (H-20's two, H-24's
+//! band, and each stimulus's mean value within a quarter of the reward of three quarters of
+//! $2p - 1$) and the readings are integer rules written before the run; the gate runs the coin's
+//! count, the clauses at their edges and eight trials with the feedback beside eight under the
+//! answer's.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -66162,7 +66177,8 @@ struct Along {
 /// 060): `earned_run_held` in `earned_run_shadowed`'s place, and each trial's spikes of the two
 /// readout sets within the span read from the train beside those over the whole trial. The
 /// readings read the train and write nothing, so a run with no hold under one of the three
-/// deliveries before the released one is `shadowed_run`'s, which calls it so.
+/// deliveries before the released one is `shadowed_run`'s, which calls it so. It is `fed_run`
+/// under the answer's feedback, which it calls so.
 #[allow(clippy::too_many_arguments)]
 fn held_run(
     exec: &mut Engine,
@@ -66175,6 +66191,40 @@ fn held_run(
     trials: usize,
     shadowed: bool,
     hold: Option<Hold>,
+) -> (BesideRun, Along) {
+    fed_run(
+        exec,
+        arm,
+        sets,
+        groups,
+        classes,
+        image,
+        delivery,
+        trials,
+        shadowed,
+        hold,
+        Feedback::Answer,
+    )
+}
+
+/// `held_run` under a feedback (brief 061, ADR-0148): the task's feedback is `feedback`, and
+/// nothing else of the run is touched. Under `Feedback::Answer` it is `held_run`, which calls it
+/// so; under `Feedback::SevenInEight` the harness holds every trial's reward to its own coin
+/// (`misleads`), and the network's oracle, which reads the signal each reward left and the
+/// answers under the mapping in force, replays as it does under the answer's feedback.
+#[allow(clippy::too_many_arguments)]
+fn fed_run(
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    groups: &[usize],
+    classes: &[usize],
+    image: &[Vec<i16>],
+    delivery: Delivery,
+    trials: usize,
+    shadowed: bool,
+    hold: Option<Hold>,
+    feedback: Feedback,
 ) -> (BesideRun, Along) {
     let readouts = Readout::new([sets[2], sets[3]]);
     let mut heard: Vec<[u32; 2]> = Vec::with_capacity(trials);
@@ -66194,7 +66244,7 @@ fn held_run(
     let mut opened = exec.ticks();
     let (run, moves, expected, values, shadows, held) = earned_run_held(
         exec,
-        Feedback::Answer,
+        feedback,
         first,
         1024,
         trials,
@@ -145517,3 +145567,1599 @@ const GATED_1024: Gated = Gated {
 
 /// The step of H-27's stopping rule each verdict reaches, `(H-27's, the control's)`.
 const GATED_STEPS_1024: (u8, u8) = (5, 5);
+
+// =================================================================================== H-28
+
+// -------------------------------------------- written before the run (ADR-0147, ADR-0149)
+
+/// The arms of H-28 (ADR-0147): H-25's two, in their order, each its own weekly test, from
+/// H-25's image — H-23's, held by its CRC — under H-25's delivery and H-20's flips, the engine's
+/// critic with its window and the task carrying no critic of its own.
+const MISLED_ARMS: [Reversal; 2] = DRAWN_ARMS;
+
+/// The one change from H-25 (ADR-0147, ADR-0148): the task's feedback, the reward's sign the
+/// outcome's in seven trials of eight and its opposite in one, by a coin of the task's own draw.
+const MISLED_FEEDBACK: Feedback = Feedback::SevenInEight;
+
+/// The delivery is H-25's (ADR-0139): the address's sources drawn by the engine, its targets the
+/// selected readout's units, none at a tie.
+const MISLED_DELIVERY: Delivery = DRAWN_DELIVERY;
+
+/// ADR-0147's prediction, written first: yes — the account predicts it, and the reliability was
+/// chosen so that the naive slowdown fits the schedule. A reading beside the verdict and never
+/// asserted; the verdict is read by the clauses whatever it says.
+const MISLED_PREDICTED: bool = true;
+
+/// The reliability's part in an expected reward (ADR-0147): $2q - 1$ at $q = 7/8$, three
+/// quarters, as a fraction `(numerator, divisor)`.
+const RELIABILITY: (i64, i64) = (3, 4);
+const _: () = assert!(RELIABILITY.0 * 8 == (2 * 7 - 8) * RELIABILITY.1);
+
+/// The coin's bounds (ADR-0147's stopping rule, step 2): over the run's 7 680 trials the coin by
+/// itself misleading in at least 880 of them and at most 1 040, a share of one in eight within a
+/// twelfth either way. A count outside them stops the round before any rewarded run.
+const MISLEADING_BOUNDS: (u32, u32) = (880, 1_040);
+const _: () = assert!(
+    SCHEDULE_TRIALS / 8 == 960
+        && 960 - 960 / 12 == MISLEADING_BOUNDS.0 as usize
+        && 960 + 960 / 12 == MISLEADING_BOUNDS.1 as usize
+);
+
+/// The coin's count per mapping at the harness's seed (ADR-0149), from an oracle written apart
+/// from the tree — SplitMix64's finaliser in another language, bits 48 to 50 of the draw of the
+/// seed and the trial's index read by a shift and a mask: 181 of the first mapping's 1 536
+/// trials and 262, 250 and 256 of each later one's 2 048, 949 in all. Both arms draw from the
+/// one seed, so the count is both arms'.
+const MISLEADING_BY_MAPPING_1024: [u32; 4] = [181, 262, 250, 256];
+
+// ------------------------------------------------------------ the criterion (ADR-0147)
+
+/// Clause 4's rule (ADR-0147): over a mapping's last 128 trials a stimulus's mean value within a
+/// quarter of the reward of $(2p - 1) \cdot 3/4$ of it, $p$ its accuracy over its trials there —
+/// at least one trial, and, over its $n$ trials, $c$ of them correct, their values summing to
+/// $V$, `|4V − 3 (2c − n) r| ≤ r n`, read with both sides times the band's divisor so that the
+/// reliability's four and the band's are each named.
+fn holds_expected_reward((n, c, v): StimulusValue) -> bool {
+    let r = i64::from(REWARD_Q16);
+    let signed = i64::from(c).saturating_mul(2).saturating_sub(i64::from(n));
+    let value = v
+        .saturating_mul(RELIABILITY.1)
+        .saturating_mul(HOLDS_DIVISOR);
+    let expected = signed
+        .saturating_mul(r)
+        .saturating_mul(RELIABILITY.0)
+        .saturating_mul(HOLDS_DIVISOR);
+    n > 0
+        && value.saturating_sub(expected).saturating_abs()
+            <= r.saturating_mul(i64::from(n)).saturating_mul(RELIABILITY.1)
+}
+
+/// H-28's criterion (ADR-0147), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) each mapping learned and (2) the couplings bounded, H-20's two as `scheduled` reads them;
+/// (3) the network held, H-24's band at every block's end of a run of 120 blocks, `left_band`;
+/// and (4) the critic holding the expected reward, per mapping and stimulus,
+/// `holds_expected_reward`. `yes` is all in both arms; a no names the clause and the arm — under
+/// clause 1 the mapping, under clause 2 the block and the pair, under clause 3 the first block
+/// that left the band with its sum, under clause 4 the mapping and the stimulus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Misled {
+    learning: Scheduled,
+    left: [Option<(usize, i64)>; 2],
+    held: [bool; 2],
+    expected: [[[bool; 2]; 4]; 2],
+    yes: bool,
+}
+
+fn misled(image: i64, arms: [&[Block]; 2], values: [[[StimulusValue; 2]; 4]; 2]) -> Misled {
+    let learning = scheduled(arms);
+    let left = arms.map(|blocks| left_band(image, blocks));
+    let held = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && left[k].is_none());
+    let expected = values.map(|mapping| mapping.map(|stimuli| stimuli.map(holds_expected_reward)));
+    Misled {
+        learning,
+        left,
+        held,
+        expected,
+        yes: learning.yes
+            && held.iter().all(|&h| h)
+            && expected.iter().flatten().flatten().all(|&e| e),
+    }
+}
+
+/// The step of H-28's stopping rule a verdict reaches (ADR-0147): 3 at a yes; 4 at a no on
+/// clause 3, the network not held in an arm, whatever else failed; otherwise 5, a no on clause
+/// 1 or 2, whatever clause 4 read; otherwise 6, a no on clause 4 alone.
+fn misled_step(verdict: &Misled) -> u8 {
+    match (verdict.yes, verdict.held, verdict.learning.yes) {
+        (true, _, _) => 3,
+        (false, [true, true], false) => 5,
+        (false, [true, true], true) => 6,
+        (false, _, _) => 4,
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 061)
+
+/// The kinds of a trial by its outcome and the reward it received (ADR-0147's reading), in this
+/// order: a true reward — a correct selection, the coin not misleading; a true punishment — a
+/// wrong selection or a tie; a misleading reward — a wrong selection or a tie, rewarded; and a
+/// misleading punishment — a correct selection, punished.
+const KINDS: usize = 4;
+
+fn reward_kind(correct: bool, misleading: bool) -> usize {
+    match (misleading, correct) {
+        (false, true) => 0,
+        (false, false) => 1,
+        (true, false) => 2,
+        (true, true) => 3,
+    }
+}
+
+/// Whether the coin misleads at each trial of a run of `trials` trials at the harness's seed, by
+/// the oracle's rule (`misleads`), which the harness holds every trial's reward to.
+fn coin_of(trials: usize) -> Vec<bool> {
+    (0..trials).map(|t| misleads(SEED, t as u64)).collect()
+}
+
+/// The coin's count per mapping over H-20's schedule; zero for a mapping the coin does not hold
+/// whole.
+fn misleading_by_mapping(coin: &[bool]) -> [u32; 4] {
+    SPANS.map(|(from, to)| {
+        coin.get(from..to)
+            .map_or(0, |mine| mine.iter().filter(|&&m| m).count() as u32)
+    })
+}
+
+/// The step-2 rule for the coin (ADR-0147): its count over the run within the bounds, both
+/// counted.
+fn coin_within(count: u32) -> bool {
+    count >= MISLEADING_BOUNDS.0 && count <= MISLEADING_BOUNDS.1
+}
+
+/// A block's trials by outcome and by the reward received (brief 061): `[the coin not
+/// misleading, misleading][correct, wrong, tied]` — the true rewards `[0][0]`, the true
+/// punishments `[0][1]` and `[0][2]`, the misleading rewards `[1][1]` and `[1][2]`, and the
+/// misleading punishments `[1][0]`.
+type Outcomes = [[u32; 3]; 2];
+
+fn outcome_blocks(read: &[EarnedTrial], coin: &[bool]) -> Vec<Outcomes> {
+    assert_eq!(read.len(), coin.len(), "a coin a trial");
+    read.chunks(BLOCK)
+        .zip(coin.chunks(BLOCK))
+        .map(|(trials, coins)| {
+            let mut out: Outcomes = [[0; 3]; 2];
+            for (t, &misleading) in trials.iter().zip(coins) {
+                let outcome = match (t.2, t.3) {
+                    (None, _) => 2,
+                    (Some(_), true) => 0,
+                    (Some(_), false) => 1,
+                };
+                let into = &mut out[usize::from(misleading)][outcome];
+                *into = into.saturating_add(1);
+            }
+            out
+        })
+        .collect()
+}
+
+/// An `Outcomes` plus another, count by count.
+fn add_outcomes(into: &mut Outcomes, outcomes: &Outcomes) {
+    for (a, b) in into.iter_mut().flatten().zip(outcomes.iter().flatten()) {
+        *a = a.saturating_add(*b);
+    }
+}
+
+/// An `Outcomes` as ADR-0147 names its four: the true rewards, the true punishments, the
+/// misleading rewards and the misleading punishments, in `KINDS`'s order.
+fn four_of(outcomes: &Outcomes) -> [u32; KINDS] {
+    [
+        outcomes[0][0],
+        outcomes[0][1].saturating_add(outcomes[0][2]),
+        outcomes[1][1].saturating_add(outcomes[1][2]),
+        outcomes[1][0],
+    ]
+}
+
+/// What the consolidation did to the pair the trial before addressed, by that trial's kind
+/// (brief 061), in `KINDS`'s order, each `([rose, fell, stayed], [raised, lowered])` summed over
+/// a block's trials. The pair is the presented stimulus onto the selected readout: the answer's
+/// pair after a true reward and after a misleading punishment, the stimulus onto the readout
+/// that is not its answer after a true punishment and after a misleading reward, and none after
+/// a tie, whose moves are zero.
+type KindMoves = [Moves; KINDS];
+
+/// An arm's moves per block by the kind of the trial before: a trial consolidates the previous
+/// trial's delivery (ADR-0090), so trial `t`'s moves count under trial `t − 1`'s kind, in trial
+/// `t`'s block; the first trial's, which consolidates nothing addressed, under none.
+fn kind_moves_blocks(read: &[EarnedTrial], moves: &[Moves], coin: &[bool]) -> Vec<KindMoves> {
+    assert!(
+        read.len() == moves.len() && read.len() == coin.len(),
+        "a reading, a move and a coin a trial"
+    );
+    let mut out = vec![[([0u32; 3], [0i64; 2]); KINDS]; read.len().div_ceil(BLOCK)];
+    for (t, m) in moves.iter().enumerate().skip(1) {
+        let Some(p) = t.checked_sub(1) else {
+            continue;
+        };
+        let (Some(previous), Some(&misleading)) = (read.get(p), coin.get(p)) else {
+            continue;
+        };
+        let Some(block) = t.checked_div(BLOCK).and_then(|j| out.get_mut(j)) else {
+            continue;
+        };
+        add_moves(&mut block[reward_kind(previous.3, misleading)], m);
+    }
+    out
+}
+
+/// `kind_moves_blocks` summed over each mapping's blocks.
+fn kind_moves_by_mapping(blocks: &[KindMoves]) -> [KindMoves; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut out: KindMoves = [([0; 3], [0; 2]); KINDS];
+        for block in blocks.iter().take(to).skip(from) {
+            for (sum, moves) in out.iter_mut().zip(block) {
+                add_moves(sum, moves);
+            }
+        }
+        out
+    })
+}
+
+/// Per mapping and stimulus `[A, B]`, over the mapping's last `LAST_BLOCKS` blocks' trials, the
+/// trials the feedback rewarded — the true rewards and the misleading ones: what a critic that
+/// held the reward it received, and not the outcome's, would hold; zeros for a run of any other
+/// length.
+fn rewards_received(read: &[EarnedTrial], coin: &[bool]) -> [[u32; 2]; 4] {
+    if read.len() != SCHEDULE_TRIALS || coin.len() != SCHEDULE_TRIALS {
+        return [[0; 2]; 4];
+    }
+    SPANS.map(|(_, end)| {
+        let from = end.saturating_sub(LAST_BLOCKS.saturating_mul(BLOCK));
+        let mut out = [0u32; 2];
+        for (t, &misleading) in read[from..end].iter().zip(&coin[from..end]) {
+            if let Some(n) = out.get_mut(usize::from(t.0)) {
+                *n = n.saturating_add(u32::from(t.3 != misleading));
+            }
+        }
+        out
+    })
+}
+
+/// A stimulus's value beside what it could hold (ADR-0147's reading), each a sum over its $n$
+/// trials times four so that nothing is rounded: `[4V, 3 (2c − n) r, 4 (2c − n) r]` — its values,
+/// three quarters of $(2p - 1)$ of the reward, and $(2p - 1)$ of it.
+fn beside_expected((n, c, v): StimulusValue) -> [i64; 3] {
+    let signed = i64::from(c)
+        .saturating_mul(2)
+        .saturating_sub(i64::from(n))
+        .saturating_mul(i64::from(REWARD_Q16));
+    [
+        v.saturating_mul(RELIABILITY.1),
+        signed.saturating_mul(RELIABILITY.0),
+        signed.saturating_mul(RELIABILITY.1),
+    ]
+}
+
+/// Which of the two the value is nearer (ADR-0147's reading of what clause 4 does not tell
+/// apart): the distance from $(2p - 1)$ of the reward less the distance from three quarters of
+/// it, in `beside_expected`'s unit — above zero where the value is nearer the expected reward,
+/// below it where it is nearer the outcome's, zero where it is as near either.
+fn nearer_expected(value: StimulusValue) -> i64 {
+    let [v, expected, outcome] = beside_expected(value);
+    v.saturating_sub(outcome)
+        .saturating_abs()
+        .saturating_sub(v.saturating_sub(expected).saturating_abs())
+}
+
+/// Each reversal's speed beside H-25's (ADR-0147's reading), per reversal: the blocks to its
+/// crossing, H-25's, and three times the first less four times the second — above zero where
+/// the reversal took longer than four thirds of H-25's, the naive scaling at seven in eight;
+/// none where either never crossed.
+fn speeds(mine: [Option<usize>; 4], h25: [Option<usize>; 4]) -> [Option<(usize, usize, i64)>; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (a, b) = (mine[m]?, h25[m]?);
+        Some((
+            a,
+            b,
+            (a as i64)
+                .saturating_mul(3)
+                .saturating_sub((b as i64).saturating_mul(4)),
+        ))
+    })
+}
+
+/// The couplings' separation at each mapping's end (ADR-0147's reading), per mapping and
+/// stimulus `[A, B]`: the stimulus's coupling onto its answer under the mapping less its
+/// coupling onto the other readout, at the end of the mapping's last block; none for a run of
+/// any other length.
+fn separation(blocks: &[Block], first: bool) -> Option<[[i64; 2]; 4]> {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return None;
+    }
+    Some(MAPPINGS.map(|(from, to)| {
+        let mirrored = mirrored_at(first, from);
+        let end = to.saturating_sub(1);
+        [0usize, 1].map(|s| {
+            let answer = answer_of(s as u8, mirrored);
+            blocks
+                .get(end)
+                .map_or(0, |b| b.10[s][answer].saturating_sub(b.10[s][answer ^ 1]))
+        })
+    }))
+}
+
+/// The inhibitory sum's lowest and its last over a run's blocks' ends, each in parts per ten
+/// thousand of the image's; zeros for a run of no block.
+fn inhibitory_low_and_last(image: i64, blocks: &[Block]) -> (i64, i64) {
+    let read = course(image, blocks);
+    (
+        read.iter().copied().min().unwrap_or(0),
+        read.last().copied().unwrap_or(0),
+    )
+}
+
+/// The errors the modulator received over a block, summed by the trial's kind (brief 061), in
+/// `KINDS`'s order. Under the engine's critic a trial's delivery is its reward less the engine's
+/// value, so a true reward's is $r - V$ and a misleading punishment's $-r - V$, below the
+/// gate's floor wherever the value is above zero (ADR-0147's arithmetic).
+type KindErrors = [i64; KINDS];
+
+fn kind_errors_blocks(read: &[EarnedTrial], coin: &[bool]) -> Vec<KindErrors> {
+    assert_eq!(read.len(), coin.len(), "a coin a trial");
+    read.chunks(BLOCK)
+        .zip(coin.chunks(BLOCK))
+        .map(|(trials, coins)| {
+            let mut out: KindErrors = [0; KINDS];
+            for (t, &misleading) in trials.iter().zip(coins) {
+                let into = &mut out[reward_kind(t.3, misleading)];
+                *into = into.saturating_add(i64::from(t.4));
+            }
+            out
+        })
+        .collect()
+}
+
+/// The clamp's part over a block (ADR-0147's reading), by the trial's kind and by side, `[above
+/// the ceiling, below the floor]`: the trials whose reward left the dopamine signal beyond the
+/// signed gate's bounds, above 1.0 or below −1.0, and by how much in all, `(trials, excess)`.
+/// The excess is what the gate's clamp does not pass on to the synapses the next trial
+/// consolidates, a magnitude; a signal on a bound is within it.
+type Beyond = [[(u32, i64); 2]; KINDS];
+
+fn beyond_blocks(read: &[EarnedTrial], coin: &[bool]) -> Vec<Beyond> {
+    assert_eq!(read.len(), coin.len(), "a coin a trial");
+    let one = i64::from(ONE);
+    read.chunks(BLOCK)
+        .zip(coin.chunks(BLOCK))
+        .map(|(trials, coins)| {
+            let mut out: Beyond = [[(0, 0); 2]; KINDS];
+            for (t, &misleading) in trials.iter().zip(coins) {
+                let signal = i64::from(t.7);
+                let sides = [
+                    signal.saturating_sub(one),
+                    one.saturating_neg().saturating_sub(signal),
+                ];
+                for (into, excess) in out[reward_kind(t.3, misleading)].iter_mut().zip(sides) {
+                    if excess > 0 {
+                        into.0 = into.0.saturating_add(1);
+                        into.1 = into.1.saturating_add(excess);
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// A `KindErrors` plus another, number by number.
+fn add_kind_errors(into: &mut KindErrors, errors: &KindErrors) {
+    for (a, b) in into.iter_mut().zip(errors) {
+        *a = a.saturating_add(*b);
+    }
+}
+
+/// A `Beyond` plus another, count by count and excess by excess.
+fn add_beyond(into: &mut Beyond, beyond: &Beyond) {
+    for (a, b) in into.iter_mut().flatten().zip(beyond.iter().flatten()) {
+        a.0 = a.0.saturating_add(b.0);
+        a.1 = a.1.saturating_add(b.1);
+    }
+}
+
+/// What an arm of H-28 pins beside its tables: H-25's readings by their rules, and brief 061's —
+/// per mapping the trials by outcome and by the reward received, over the whole mapping and
+/// over its last 128 trials; what the consolidation did to the addressed pair by the kind of
+/// the trial before; the rewards each stimulus received over each mapping's last 128 trials;
+/// each reversal's speed beside H-25's; the learning signal by the network's oracle; the
+/// couplings' separation at each mapping's end; the inhibitory sum's lowest and last; the errors
+/// delivered by kind; and the clamp's part by kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MisledRead {
+    correct: [u32; 4],
+    over: Option<(usize, usize, usize)>,
+    crossings: [Option<usize>; 4],
+    left: Option<(usize, i64)>,
+    stimulus_values: [[StimulusValue; 2]; 4],
+    reach: Reach,
+    first_new: [[Option<usize>; 2]; 3],
+    crossed: [[Option<usize>; 2]; 3],
+    tally: [[u32; 3]; 4],
+    settle: Option<[[i64; 2]; 4]>,
+    highest: [Option<Peak>; 4],
+    strong: [[u32; 2]; 3],
+    punished: [Moves; 4],
+    rewarded: [Moves; 4],
+    once: u32,
+    falls: bool,
+    troughs: [[i64; 2]; 3],
+    sums_after: (i64, i64),
+    outcomes: [Outcomes; 4],
+    last_outcomes: [Outcomes; 4],
+    kind_moves: [KindMoves; 4],
+    received: [[u32; 2]; 4],
+    speeds: [Option<(usize, usize, i64)>; 3],
+    signal: [i64; 4],
+    separation: [[i64; 2]; 4],
+    inhibitory: (i64, i64),
+    errors: [KindErrors; 4],
+    beyond: [Beyond; 4],
+}
+
+/// The outcomes over each mapping's last `LAST_BLOCKS` blocks, per mapping.
+fn last_outcomes(blocks: &[Outcomes]) -> [Outcomes; 4] {
+    MAPPINGS.map(|(_, to)| {
+        let mut out: Outcomes = [[0; 3]; 2];
+        for block in blocks.iter().take(to).skip(to.saturating_sub(LAST_BLOCKS)) {
+            add_outcomes(&mut out, block);
+        }
+        out
+    })
+}
+
+// ---------------------------------------------------------------- the run (brief 061)
+
+/// One arm of H-28 at 1 024 units (brief 061): the calibration before any rewarded run (H-28's
+/// stopping rule, step 2) — the coin's count over the schedule held to its pin and its bounds
+/// and the oracle's coin to the task's; the settled engine held to ADR-0077 step by step and
+/// its images, H-20's to H-23's images by their CRCs, a frozen block from the zero image held to
+/// ADR-0077's frozen run, and H-25's first block from H-23's image under the true feedback
+/// reproduced table by table — then the arm's 7 680 trials from H-23's image under H-25's
+/// delivery with the reward right seven times in eight, the drawn sources held to the critic's
+/// oracle's counts, every trial's reward to the oracle's coin, and both oracles to the record
+/// at every trial; everything dumped, the clauses and the readings computed before anything is
+/// held; then the pinned tables of the whole run.
+fn misled_arm(arm: Reversal) {
+    let k = MISLED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-28");
+    let name = format!("misled1024 {arm:?}");
+    // The coin, which needs no engine.
+    let coin = coin_of(SCHEDULE_TRIALS);
+    let by_mapping_coin = misleading_by_mapping(&coin);
+    let in_all = by_mapping_coin
+        .iter()
+        .fold(0u32, |sum, &n| sum.saturating_add(n));
+    eprintln!(
+        "DUMP {name} the coin misleads in {by_mapping_coin:?} trials per mapping, {in_all} of {SCHEDULE_TRIALS}; bounds {MISLEADING_BOUNDS:?}"
+    );
+    assert_eq!(
+        by_mapping_coin, MISLEADING_BY_MAPPING_1024,
+        "{name}: the coin's count per mapping"
+    );
+    assert!(coin_within(in_all), "{name}: the coin's count in all");
+    let probe = task(
+        SHAPE_F46,
+        None,
+        1024,
+        MISLED_FEEDBACK,
+        first_mapping(arm),
+        MISLED_DELIVERY,
+    );
+    assert!(
+        coin.iter()
+            .enumerate()
+            .all(|(t, &m)| probe.misleading_at(t as u64) == m),
+        "{name}: the oracle's coin is the task's at every trial"
+    );
+    let (zero, signed) = signed_images(&name);
+    assert_eq!(
+        crc64(&signed),
+        PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-20's image, H-19's and H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    let targeted = targeted_image(&signed, TARGET_PERIOD_1024);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: H-21's image is H-20's in every byte but the target period's and the seal"
+    );
+    assert_eq!(
+        crc64(&targeted),
+        TARGET_IMAGE_CRC_1024,
+        "{name}: H-21's image"
+    );
+    let valued = valued_image(&targeted, VALUED_CRITIC);
+    assert!(
+        only_the_critic(&targeted, &valued),
+        "{name}: H-22's image is H-21's in every byte but the critic's and the seal"
+    );
+    assert_eq!(
+        crc64(&valued),
+        VALUED_IMAGE_CRC_1024,
+        "{name}: H-22's image"
+    );
+    let windowed = with_window_bytes(&valued, WINDOW_TICKS_1024);
+    assert!(
+        only_the_window(&valued, &windowed),
+        "{name}: H-23's image is H-22's in every byte but the window's and the seal"
+    );
+    assert_eq!(
+        crc64(&windowed),
+        WINDOWED_IMAGE_CRC_1024,
+        "{name}: H-23's image, H-25's, the image this arm decodes"
+    );
+    drawn_first_block(&windowed, arm, &name);
+    eprintln!(
+        "DUMP {name} calibration holds: the coin's count, ADR-0077's settled candidate, H-20's to H-23's images, and H-25's first block under the true feedback"
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let mut exec = signed_from(&windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.ticks()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            TARGET_PERIOD_1024,
+            exec.ticks(),
+            Ok(()),
+            SETTLED_TICK
+        ),
+        "{name}: H-25's configuration, the window open at the load, and the engine draws"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        pair_couplings(&exec, &sets),
+        IMAGE_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let groups = groups_of(&exec, &sets);
+    let sizes = group_sizes(&groups);
+    let classes = classes_of(&exec, &sets);
+    let image = weights_of(&exec);
+    let image_cells = cells_of(&exec, &image, &sets, &classes);
+    let outside = image_outside();
+    assert_eq!(
+        (image_cells, cell_sizes(&exec, &sets, &classes)),
+        (IMAGE_CELLS_1024, CELL_SIZES_1024),
+        "{name}: H-24's image cells"
+    );
+    let first = first_mapping(arm);
+    let ((run, moves, values, watched, beside), along) = fed_run(
+        &mut exec,
+        arm,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        MISLED_DELIVERY,
+        SCHEDULE_TRIALS,
+        false,
+        None,
+        MISLED_FEEDBACK,
+    );
+    assert!(beside.is_none(), "{name}: no shadow beside the run");
+    assert!(
+        along.held.held.iter().all(|&messages| messages == 0),
+        "{name}: no hold, no message of one"
+    );
+    let (blocks, trace, trials, read, volley_ticks) = &run;
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let moved = moves_blocks(read, &moves);
+    let strong = strong_scheduled(read, first);
+    let valued_by_block = value_blocks(read, &values);
+    let admitted = admitted_blocks(read, &watched.admitted);
+    let sourced: Vec<Sourced> = admitted_blocks(read, &watched.sourced);
+    let at_flips = watched
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    assert_eq!(
+        [
+            read.len(),
+            moves.len(),
+            values.len(),
+            watched.admitted.len(),
+            watched.sourced.len()
+        ],
+        [SCHEDULE_TRIALS; 5],
+        "{name}: a reading a trial"
+    );
+    // The reward the task gave at every trial, read back from the tables: the error the
+    // modulator received plus the engine's value is the reward, whole, and its sign is the
+    // outcome's exactly where the oracle's coin is not misleading.
+    for (t, (trial, &value)) in read.iter().zip(&values).enumerate() {
+        let given = i64::from(trial.4).saturating_add(i64::from(value));
+        let expected = if trial.3 != coin[t] {
+            i64::from(REWARD_Q16)
+        } else {
+            i64::from(REWARD_Q16.saturating_neg())
+        };
+        assert_eq!(
+            given, expected,
+            "{name} trial {t}: the reward's sign is the outcome's unless the coin misleads"
+        );
+    }
+    // Brief 061's tables: the trials by outcome and reward, and the moves by the kind of the
+    // trial before, per block.
+    let outcomes = outcome_blocks(read, &coin);
+    let kind_moves = kind_moves_blocks(read, &moves, &coin);
+    let kind_errors = kind_errors_blocks(read, &coin);
+    let beyond = beyond_blocks(read, &coin);
+    assert_eq!(
+        [
+            compositions.len(),
+            earned.len(),
+            moved.len(),
+            valued_by_block.len(),
+            watched.weights.len(),
+            admitted.len(),
+            watched.spikes.len(),
+            watched.cells.len(),
+            watched.went.len(),
+            sourced.len(),
+            outcomes.len(),
+            kind_moves.len(),
+            kind_errors.len(),
+            beyond.len()
+        ],
+        [SCHEDULE_BLOCKS; 14]
+    );
+    assert_eq!(strong.len(), SCHEDULE_BLOCKS - FLIP_BLOCK);
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN compositions {compositions:?}");
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN census {:?}", census_of(volley_ticks));
+    eprintln!("DUMP {name} PIN moves {moved:?}");
+    eprintln!("DUMP {name} PIN strong {strong:?}");
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} PIN values {valued_by_block:?}");
+    eprintln!("DUMP {name} PIN value hash {:#018x}", values_hash(&values));
+    eprintln!("DUMP {name} PIN weights {:?}", watched.weights);
+    eprintln!("DUMP {name} PIN admitted {admitted:?}");
+    eprintln!("DUMP {name} PIN spikes {:?}", watched.spikes);
+    eprintln!("DUMP {name} PIN cells {:?}", watched.cells);
+    eprintln!("DUMP {name} PIN went {:?}", watched.went);
+    eprintln!("DUMP {name} PIN sourced {sourced:?}");
+    eprintln!(
+        "DUMP {name} PIN sources hash {:#018x}",
+        sources_hash(&watched.sourced)
+    );
+    eprintln!("DUMP {name} PIN outcomes {outcomes:?}");
+    eprintln!("DUMP {name} PIN kind moves {kind_moves:?}");
+    eprintln!("DUMP {name} PIN kind errors {kind_errors:?}");
+    eprintln!("DUMP {name} PIN beyond {beyond:?}");
+    // Everything read and dumped, and the clauses and the readings computed, before anything
+    // else is held.
+    dump_earned(&name, &run, &earned);
+    let signals: Vec<i64> = watched.went.iter().map(signal_of).collect();
+    let stimulus_read = stimulus_values(read, &values);
+    let crossings_read = crossings(blocks);
+    let h25_crossings = CROSSINGS_DRAWN_1024[k];
+    let read_of_arm = MisledRead {
+        correct: mapping_correct(blocks),
+        over: first_over(blocks),
+        crossings: crossings_read,
+        left: left_band(outside, blocks),
+        stimulus_values: stimulus_read,
+        reach: reach_by_polarity(&exec, &image, 1024, &ALL_PAIRS),
+        first_new: first_new_scheduled(read, first),
+        crossed: crossed_scheduled(&earned, first),
+        tally: tally(blocks),
+        settle: settle_scheduled(blocks, first),
+        highest: highest(blocks),
+        strong: strong_by_flip(&strong),
+        punished: moves_by_mapping(&moved, 1),
+        rewarded: moves_by_mapping(&moved, 0),
+        once: once_blocks(blocks, &compositions),
+        falls: falls_every_block(image_sums.0, blocks),
+        troughs: troughs(&value_means(&valued_by_block)),
+        sums_after: weights_by_polarity(&exec),
+        outcomes: over_mappings(
+            &outcomes,
+            [[0u32; 3]; 2],
+            &|sum: &mut Outcomes, row: &Outcomes| add_outcomes(sum, row),
+        ),
+        last_outcomes: last_outcomes(&outcomes),
+        kind_moves: kind_moves_by_mapping(&kind_moves),
+        received: rewards_received(read, &coin),
+        speeds: speeds(crossings_read, h25_crossings),
+        signal: by_mapping(&signals).expect("a run of 120 blocks"),
+        separation: separation(blocks, first).expect("a run of 120 blocks"),
+        inhibitory: inhibitory_low_and_last(image_sums.0, blocks),
+        errors: over_mappings(
+            &kind_errors,
+            [0i64; KINDS],
+            &|sum: &mut KindErrors, row: &KindErrors| add_kind_errors(sum, row),
+        ),
+        beyond: over_mappings(
+            &beyond,
+            [[(0u32, 0i64); 2]; KINDS],
+            &|sum: &mut Beyond, row: &Beyond| add_beyond(sum, row),
+        ),
+    };
+    eprintln!("DUMP {name} PIN readings {read_of_arm:?}");
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {:?} held {} left {:?} the expected reward held {:?}; the prediction, yes: {MISLED_PREDICTED}",
+        read_of_arm.correct.map(|c| c >= REWARDED_MIN),
+        read_of_arm.over,
+        read_of_arm.left.is_none(),
+        read_of_arm.left,
+        stimulus_read.map(|m| m.map(holds_expected_reward))
+    );
+    eprintln!(
+        "DUMP {name} the value beside, per mapping and stimulus, [4V, 3(2c − n)r, 4(2c − n)r] and nearer the expected reward above zero: {:?}; H-25's rule, within a quarter of 2p − 1: {:?}",
+        stimulus_read.map(|m| m.map(|s| (beside_expected(s), nearer_expected(s)))),
+        stimulus_read.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} the four kinds per mapping, [true rewards, true punishments, misleading rewards, misleading punishments]: {:?}; over each mapping's last 128: {:?}",
+        read_of_arm.outcomes.map(|o| four_of(&o)),
+        read_of_arm.last_outcomes.map(|o| four_of(&o))
+    );
+    eprintln!(
+        "DUMP {name} crossings {crossings_read:?} beside H-25's {h25_crossings:?}; speeds [mine, H-25's, 3 mine − 4 H-25's] {:?}",
+        read_of_arm.speeds
+    );
+    eprintln!(
+        "DUMP {name} the drawn sources beside the host's per block, [A, B] of [drawn, left out, others]: {:?}; group sizes {sizes:?}",
+        blocks
+            .iter()
+            .zip(&sourced)
+            .map(|(b, s)| beside_host(b, s, &sizes))
+            .collect::<Vec<[[u32; 3]; 2]>>()
+    );
+    eprintln!(
+        "DUMP {name} outside course, per myriad of the image's {:?}",
+        blocks
+            .iter()
+            .map(|b| per_myriad(outside_of(b), outside))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?} beside H-25's {:?}",
+        couplings_course(blocks),
+        couplings_course(DRAWN_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} separation {:?} beside H-25's {:?}",
+        read_of_arm.separation,
+        separation(DRAWN_BLOCKS_1024[k], first)
+    );
+    eprintln!(
+        "DUMP {name} value by block beside H-25's {:?}",
+        value_means(&valued_by_block)
+            .iter()
+            .zip(value_means(DRAWN_VALUES_1024[k]))
+            .map(|(u, w)| (*u, w))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "DUMP {name} troughs {:?} beside H-25's {:?}",
+        read_of_arm.troughs, TROUGHS_DRAWN_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} strong by flip {:?} beside H-25's {:?}",
+        read_of_arm.strong, STRONG_BY_FLIP_DRAWN_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-25's {:?}",
+        course(image_sums.0, blocks),
+        course(image_sums.0, DRAWN_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} signal per block {signals:?} by mapping {:?} beside H-25's {:?}",
+        read_of_arm.signal,
+        by_mapping(
+            &DRAWN_WENT_1024[k]
+                .iter()
+                .map(signal_of)
+                .collect::<Vec<i64>>()
+        )
+    );
+    eprintln!(
+        "DUMP {name} went by mapping, [answer's pairs, other pairs, outside][raised, lowered]: {:?} beside H-25's {:?}",
+        over_mappings(
+            &watched.went,
+            [[0i64; 2]; 3],
+            &|sum: &mut Went, row: &Went| add_went(sum, row)
+        ),
+        over_mappings(
+            DRAWN_WENT_1024[k],
+            [[0i64; 2]; 3],
+            &|sum: &mut Went, row: &Went| add_went(sum, row)
+        )
+    );
+    eprintln!(
+        "DUMP {name} signal after each block {:?}",
+        blocks.iter().map(|b| b.9).collect::<Vec<i32>>()
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        MISLED_BLOCKS_1024[k],
+        MISLED_TRACES_1024[k],
+    );
+    assert_eq!(
+        compositions.as_slice(),
+        MISLED_COMPOSITIONS_1024[k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        MISLED_EARNED_1024[k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(
+        earned_hash(read),
+        MISLED_READ_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        census_of(volley_ticks),
+        MISLED_CENSUS_1024[k].to_vec(),
+        "{name}: the volley's ticks"
+    );
+    assert_eq!(
+        moved.as_slice(),
+        MISLED_MOVES_1024[k],
+        "{name}: the moves per block"
+    );
+    assert_eq!(
+        strong.as_slice(),
+        MISLED_STRONG_1024[k],
+        "{name}: the strong punishments per block"
+    );
+    assert_eq!(Some(at_flips), MISLED_AT_FLIPS_1024[k]);
+    assert_eq!(
+        valued_by_block.as_slice(),
+        MISLED_VALUES_1024[k],
+        "{name}: the engine's value per block"
+    );
+    assert_eq!(
+        values_hash(&values),
+        MISLED_VALUE_HASH_1024[k],
+        "{name}: every trial's value"
+    );
+    assert_eq!(
+        watched.weights.as_slice(),
+        MISLED_WEIGHTS_1024[k],
+        "{name}: the weights by group per block"
+    );
+    assert_eq!(
+        admitted.as_slice(),
+        MISLED_ADMITTED_1024[k],
+        "{name}: the spikes the window admitted per block"
+    );
+    assert_eq!(
+        watched.spikes.as_slice(),
+        MISLED_SPIKES_1024[k],
+        "{name}: the spikes by class per block"
+    );
+    assert_eq!(
+        watched.cells.as_slice(),
+        MISLED_CELLS_1024[k],
+        "{name}: the network's cells per block"
+    );
+    assert_eq!(
+        watched.went.as_slice(),
+        MISLED_WENT_1024[k],
+        "{name}: where the consolidation went per block"
+    );
+    assert_eq!(
+        sourced.as_slice(),
+        MISLED_SOURCED_1024[k],
+        "{name}: the drawn sources per block"
+    );
+    assert_eq!(
+        sources_hash(&watched.sourced),
+        MISLED_SOURCES_HASH_1024[k],
+        "{name}: every trial's drawn sources"
+    );
+    assert_eq!(
+        outcomes.as_slice(),
+        MISLED_OUTCOMES_1024[k],
+        "{name}: the trials by outcome and reward per block"
+    );
+    assert_eq!(
+        kind_moves.as_slice(),
+        MISLED_KIND_MOVES_1024[k],
+        "{name}: the moves by the kind of the trial before per block"
+    );
+    assert_eq!(
+        kind_errors.as_slice(),
+        MISLED_KIND_ERRORS_1024[k],
+        "{name}: the errors delivered by kind per block"
+    );
+    assert_eq!(
+        beyond.as_slice(),
+        MISLED_BEYOND_1024[k],
+        "{name}: the clamp's part by kind per block"
+    );
+    assert_eq!(
+        Some(read_of_arm),
+        MISLED_READINGS_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        blocks.last().map(|b| (b.7, b.8)),
+        Some(read_of_arm.sums_after),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-28's arm that starts from the assignment (brief 061): H-25's arm from the assignment with
+/// the reward right seven times in eight.
+#[test]
+#[ignore]
+fn a_reward_right_seven_times_in_eight_from_the_assignment_at_1024_units_exhaustive() {
+    misled_arm(Reversal::AssignmentFirst);
+}
+
+/// H-28's arm that starts from the mirrored assignment (brief 061).
+#[test]
+#[ignore]
+fn a_reward_right_seven_times_in_eight_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    misled_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 061): the arms and the constants as ADR-0147 and
+/// ADR-0149 fixed them; the coin's count over the schedule held to its pin and its bounds, the
+/// oracle's coin to the task's and both to the apart oracle's first trials; H-28's four clauses
+/// at their edges and the verdict with the step it reaches over tables written by hand; the
+/// readings' rules over tables written by hand; and eight trials on the instrument's network
+/// under H-25's delivery with the reward right seven times in eight beside the same eight under
+/// the answer's feedback, every reward held to the oracle's coin and both oracles to the record.
+/// Nothing else added to the gate.
+#[test]
+fn the_clauses_of_h_28_the_coin_s_count_and_the_readings_rules() {
+    // The arms, the feedback, the delivery, the prediction and the constants.
+    assert_eq!(MISLED_ARMS, DRAWN_ARMS, "H-25's two arms");
+    assert_eq!(
+        (MISLED_FEEDBACK, MISLED_DELIVERY, MISLED_PREDICTED),
+        (Feedback::SevenInEight, Delivery::Drawn, true)
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            BOUND_PER_CENT,
+            SCHEDULE_BLOCKS,
+            BAND_QUARTERS,
+            BAND_DIVISOR,
+            HOLDS_DIVISOR,
+            RELIABILITY,
+            LAST_BLOCKS * BLOCK
+        ),
+        (80, 130, 120, (3, 5), 4, 4, (3, 4), 128),
+        "the clauses' constants, as ADR-0147 wrote them"
+    );
+    // The coin: its count per mapping and in all, within its bounds; the oracle's rule the
+    // task's at every trial of the schedule; and both the apart oracle's first sixty-four.
+    let coin = coin_of(SCHEDULE_TRIALS);
+    let counted = misleading_by_mapping(&coin);
+    let in_all = counted.iter().fold(0u32, |sum, &n| sum.saturating_add(n));
+    assert_eq!(
+        (counted, in_all),
+        (MISLEADING_BY_MAPPING_1024, 949),
+        "181, 262, 250 and 256: 949 of 7 680"
+    );
+    assert_eq!(MISLEADING_BOUNDS, (880, 1_040));
+    assert!(coin_within(in_all));
+    assert!(coin_within(880) && coin_within(1_040));
+    assert!(!coin_within(879) && !coin_within(1_041));
+    assert_eq!(
+        misleading_by_mapping(&coin[..SCHEDULE_TRIALS - 1]),
+        [181, 262, 250, 0],
+        "a mapping the coin does not hold whole counts nothing"
+    );
+    let probe = task(
+        SHAPE_F46,
+        None,
+        1024,
+        MISLED_FEEDBACK,
+        false,
+        MISLED_DELIVERY,
+    );
+    assert_eq!(probe.seed, SEED);
+    assert!(
+        coin.iter()
+            .enumerate()
+            .all(|(t, &m)| probe.misleading_at(t as u64) == m),
+        "the oracle's coin is the task's"
+    );
+    let mut first_trials = 0u64;
+    for (t, &m) in coin.iter().take(64).enumerate() {
+        first_trials |= u64::from(m).wrapping_shl(t as u32);
+    }
+    assert_eq!(
+        first_trials, 0x0000_0208_0a00_030c,
+        "the apart oracle's first sixty-four trials at seed 27"
+    );
+    assert!(
+        misleads(0, 0) && !misleads(0, 1) && misleads(0, 2) && !misleads(0, 3),
+        "and its first four at seed zero"
+    );
+    // Clause 4's rule at its edges. Sixty-four trials all correct: three quarters of the
+    // reward a trial expected, 48 r in all, and the band a quarter either side, 32 r to 64 r.
+    const R: i64 = REWARD_Q16 as i64;
+    assert!(holds_expected_reward((64, 64, 48 * R)));
+    assert!(
+        holds_expected_reward((64, 64, 32 * R)) && !holds_expected_reward((64, 64, 32 * R - 1))
+    );
+    assert!(
+        holds_expected_reward((64, 64, 64 * R)) && !holds_expected_reward((64, 64, 64 * R + 1))
+    );
+    // None correct: the same about −48 r.
+    assert!(
+        holds_expected_reward((64, 0, -32 * R)) && !holds_expected_reward((64, 0, -32 * R + 1))
+    );
+    assert!(
+        holds_expected_reward((64, 0, -64 * R)) && !holds_expected_reward((64, 0, -64 * R - 1))
+    );
+    // Half correct: nothing expected, and the band a quarter either side of zero.
+    assert!(
+        holds_expected_reward((64, 32, 16 * R)) && !holds_expected_reward((64, 32, 16 * R + 1))
+    );
+    assert!(
+        holds_expected_reward((64, 32, -16 * R)) && !holds_expected_reward((64, 32, -16 * R - 1))
+    );
+    // Fifty-six of sixty-four: 3 (112 − 64) r / 4 = 36 r, the band 20 r to 52 r.
+    assert!(
+        holds_expected_reward((64, 56, 20 * R)) && !holds_expected_reward((64, 56, 20 * R - 1))
+    );
+    assert!(
+        holds_expected_reward((64, 56, 52 * R)) && !holds_expected_reward((64, 56, 52 * R + 1))
+    );
+    assert!(!holds_expected_reward((0, 0, 0)), "no trial, no clause");
+    // What the clause does not tell apart: at a full accuracy the outcome's reward lies on the
+    // band's edge, and H-25's rule holds the expected reward as it holds the outcome's.
+    assert!(holds_expected((64, 64, 48 * R)) && holds_expected_reward((64, 64, 64 * R)));
+    assert_eq!(
+        beside_expected((64, 64, 48 * R)),
+        [192 * R, 192 * R, 256 * R]
+    );
+    assert_eq!(beside_expected((64, 56, 0)), [0, 144 * R, 192 * R]);
+    assert_eq!(beside_expected((64, 0, -R)), [-4 * R, -192 * R, -256 * R]);
+    assert_eq!(
+        nearer_expected((64, 64, 48 * R)),
+        64 * R,
+        "on the expected reward"
+    );
+    assert_eq!(
+        nearer_expected((64, 64, 64 * R)),
+        -64 * R,
+        "on the outcome's"
+    );
+    assert_eq!(nearer_expected((64, 64, 56 * R)), 0, "midway");
+    assert_eq!(
+        nearer_expected((64, 32, 5 * R)),
+        0,
+        "nothing expected either way"
+    );
+    // The verdict over tables written by hand, and the step it reaches.
+    let outside = image_outside();
+    let block = |correct: u32, excitatory: i64| -> Block {
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            excitatory,
+            0,
+            IMAGE_COUPLINGS_1024,
+            0,
+        )
+    };
+    let full = vec![block(BLOCK as u32, QUIET_1024[SETTLED].1.1); SCHEDULE_BLOCKS];
+    let holding: [[StimulusValue; 2]; 4] = [[(64, 64, 48 * R); 2]; 4];
+    let yes = misled(outside, [&full, &full], [holding; 2]);
+    assert_eq!(
+        yes,
+        Misled {
+            learning: scheduled([&full, &full]),
+            left: [None; 2],
+            held: [true; 2],
+            expected: [[[true; 2]; 4]; 2],
+            yes: true,
+        }
+    );
+    assert_eq!(misled_step(&yes), 3, "a yes: step 3");
+    // A mapping unlearned in the second arm: clause 1, step 5, whatever clause 4 reads.
+    let mut unlearned = full.clone();
+    unlearned[MAPPINGS[1].1 - 1].0 = REWARDED_MIN - 1 - BLOCK as u32;
+    assert_eq!(mapping_correct(&unlearned)[1], REWARDED_MIN - 1);
+    let verdict = misled(outside, [&full, &unlearned], [holding; 2]);
+    assert_eq!(
+        (verdict.yes, verdict.learning.learned, misled_step(&verdict)),
+        (false, [[true; 4], [true, false, true, true]], 5)
+    );
+    unlearned[MAPPINGS[1].1 - 1].0 = REWARDED_MIN - BLOCK as u32;
+    assert!(
+        misled(outside, [&full, &unlearned], [holding; 2]).yes,
+        "80 of 128"
+    );
+    let mut straying = holding;
+    straying[2][1] = (64, 64, 32 * R - 1);
+    unlearned[MAPPINGS[1].1 - 1].0 = 0;
+    let verdict = misled(outside, [&full, &unlearned], [holding, straying]);
+    assert_eq!(
+        (verdict.expected[1][2], misled_step(&verdict)),
+        ([true, false], 5),
+        "clause 1 beside clause 4: step 5"
+    );
+    // A coupling past the bound: clause 2, step 5.
+    let mut over = full.clone();
+    over[30].10[1][0] = IMAGE_COUPLINGS_1024[1][0]
+        .saturating_mul(BOUND_PER_CENT)
+        .checked_div(100)
+        .expect("a hundred")
+        .saturating_add(1);
+    let verdict = misled(outside, [&over, &full], [holding; 2]);
+    assert_eq!(
+        (
+            verdict.learning.bounded,
+            verdict.learning.over[0],
+            misled_step(&verdict)
+        ),
+        ([false, true], Some((30, 1, 0)), 5)
+    );
+    // Clause 4 alone: step 6.
+    let verdict = misled(outside, [&full, &full], [straying, holding]);
+    assert_eq!(
+        (
+            verdict.yes,
+            verdict.learning.yes,
+            verdict.held,
+            verdict.expected[0][2],
+            misled_step(&verdict)
+        ),
+        (false, true, [true; 2], [true, false], 6)
+    );
+    // The network leaving the band: clause 3, step 4, whatever else failed beside it.
+    let couplings = IMAGE_COUPLINGS_1024
+        .iter()
+        .flatten()
+        .fold(0i64, |sum, &c| sum.saturating_add(c));
+    let high = outside.saturating_mul(5).checked_div(4).expect("four");
+    let mut drained = full.clone();
+    drained[70] = block(
+        BLOCK as u32,
+        high.saturating_add(1).saturating_add(couplings),
+    );
+    let verdict = misled(outside, [&full, &drained], [holding; 2]);
+    assert_eq!(
+        (
+            verdict.yes,
+            verdict.held,
+            verdict.left[1].map(|l| l.0),
+            misled_step(&verdict)
+        ),
+        (false, [true, false], Some(70), 4)
+    );
+    drained[70] = block(BLOCK as u32, high.saturating_add(couplings));
+    assert!(
+        misled(outside, [&full, &drained], [holding; 2]).yes,
+        "at the band's edge"
+    );
+    drained[70] = block(
+        BLOCK as u32,
+        high.saturating_add(1).saturating_add(couplings),
+    );
+    drained[MAPPINGS[1].1 - 1].0 = 0;
+    drained[MAPPINGS[1].1 - 2].0 = 0;
+    let verdict = misled(outside, [&drained, &full], [straying, holding]);
+    assert_eq!(
+        (
+            verdict.learning.learned[0],
+            verdict.held,
+            misled_step(&verdict)
+        ),
+        ([true, false, true, true], [false, true], 4),
+        "clause 3 beside clauses 1 and 4: step 4"
+    );
+    assert_eq!(
+        misled_step(&misled(outside, [&full, &full[1..]], [holding; 2])),
+        4,
+        "a run that is not whole holds no clause"
+    );
+    // The readings' rules over values written by hand.
+    assert_eq!(
+        [
+            reward_kind(true, false),
+            reward_kind(false, false),
+            reward_kind(false, true),
+            reward_kind(true, true)
+        ],
+        [0, 1, 2, 3],
+        "a true reward, a true punishment, a misleading reward, a misleading punishment"
+    );
+    let trial = |stimulus: u8, selection: Option<u8>, correct: bool| -> EarnedTrial {
+        (stimulus, [0; 2], selection, correct, 0, [[0; 2]; 2], 0, 0)
+    };
+    let mut hand = vec![trial(0, None, false); 2 * BLOCK];
+    let mut hand_coin = vec![false; 2 * BLOCK];
+    // The first block: a correct trial and a wrong one, each with the coin either way, and a
+    // tie with it misleading; the rest ties under a true coin. The second block: one of each
+    // of the first four at its end.
+    hand[0] = trial(0, Some(0), true);
+    hand[1] = trial(0, Some(1), false);
+    hand[2] = trial(1, Some(1), true);
+    hand[3] = trial(1, Some(0), false);
+    hand_coin[2] = true;
+    hand_coin[3] = true;
+    hand_coin[4] = true;
+    hand[BLOCK] = trial(1, Some(1), true);
+    hand[2 * BLOCK - 1] = trial(0, Some(0), true);
+    hand_coin[2 * BLOCK - 1] = true;
+    let by_block = outcome_blocks(&hand, &hand_coin);
+    assert_eq!(
+        by_block,
+        vec![
+            [[1, 1, BLOCK as u32 - 5], [1, 1, 1]],
+            [[1, 0, BLOCK as u32 - 2], [1, 0, 0]]
+        ]
+    );
+    assert_eq!(four_of(&by_block[0]), [1, BLOCK as u32 - 4, 2, 1]);
+    assert_eq!(
+        by_block
+            .iter()
+            .map(|b| b.iter().flatten().sum::<u32>())
+            .collect::<Vec<u32>>(),
+        vec![BLOCK as u32; 2],
+        "every trial in one cell"
+    );
+    let mut sum: Outcomes = [[1; 3]; 2];
+    add_outcomes(&mut sum, &by_block[1]);
+    assert_eq!(sum, [[2, 1, BLOCK as u32 - 1], [2, 1, 1]]);
+    // The moves by the kind of the trial before: trial `t`'s under trial `t − 1`'s kind, in
+    // trial `t`'s block, the first trial's under none.
+    let moves: Vec<Moves> = (0..2 * BLOCK as u32)
+        .map(|t| ([t, 1, 0], [i64::from(t).saturating_mul(10), -1]))
+        .collect();
+    let by_kind = kind_moves_blocks(&hand, &moves, &hand_coin);
+    let rest = |from: u32, to: u32| (from..to).fold(0u32, |sum, t| sum.saturating_add(t));
+    assert_eq!(by_kind.len(), 2);
+    assert_eq!(
+        by_kind[0][0],
+        ([1, 1, 0], [10, -1]),
+        "after trial 0, a true reward: trial 1's moves"
+    );
+    assert_eq!(
+        by_kind[0][3],
+        ([3, 1, 0], [30, -1]),
+        "after trial 2, a misleading punishment: trial 3's moves"
+    );
+    assert_eq!(
+        by_kind[0][2],
+        ([4 + 5, 2, 0], [90, -2]),
+        "after trials 3 and 4, a misleading reward of a wrong selection and of a tie"
+    );
+    assert_eq!(
+        by_kind[0][1],
+        (
+            [rest(6, BLOCK as u32).saturating_add(2), BLOCK as u32 - 5, 0],
+            [
+                i64::from(rest(6, BLOCK as u32).saturating_add(2)).saturating_mul(10),
+                5 - BLOCK as i64
+            ]
+        ),
+        "after trial 1 and after every true tie of the first block but its last"
+    );
+    assert_eq!(
+        by_kind[1][1].0[1],
+        BLOCK as u32 - 1,
+        "every trial of the second block but its second, its first under the first block's last"
+    );
+    assert_eq!(
+        by_kind[1][0],
+        ([BLOCK as u32 + 1, 1, 0], [(BLOCK as i64 + 1) * 10, -1]),
+        "after the second block's first trial, a true reward"
+    );
+    assert_eq!(
+        (by_kind[1][2].0, by_kind[1][3].0),
+        ([0; 3], [0; 3]),
+        "the last trial, a misleading punishment, is no trial's before"
+    );
+    assert_eq!(
+        by_kind.iter().flatten().map(|m| m.0[1]).sum::<u32>(),
+        2 * BLOCK as u32 - 1,
+        "every trial but the first under one kind"
+    );
+    let mut padded = vec![[([0u32; 3], [0i64; 2]); KINDS]; SCHEDULE_BLOCKS];
+    padded[0] = by_kind[0];
+    padded[MAPPINGS[1].0] = by_kind[1];
+    padded[MAPPINGS[3].1 - 1][3] = ([7, 0, 0], [70, 0]);
+    let mapped = kind_moves_by_mapping(&padded);
+    assert_eq!(
+        (mapped[0], mapped[1], mapped[2][0], mapped[3][3]),
+        (
+            by_kind[0],
+            by_kind[1],
+            ([0; 3], [0; 2]),
+            ([7, 0, 0], [70, 0])
+        )
+    );
+    // The rewards received and the outcomes over a mapping's last 128 trials.
+    let mut whole = vec![trial(0, Some(0), true); SCHEDULE_TRIALS];
+    let mut whole_coin = vec![false; SCHEDULE_TRIALS];
+    whole[SPANS[0].1 - 1] = trial(1, Some(0), false);
+    whole[SPANS[0].1 - 2] = trial(1, Some(0), false);
+    whole_coin[SPANS[0].1 - 2] = true;
+    whole_coin[SPANS[0].1 - 3] = true;
+    whole_coin[SPANS[0].1 - 129] = true;
+    assert_eq!(
+        rewards_received(&whole, &whole_coin),
+        [[125, 1], [128, 0], [128, 0], [128, 0]],
+        "A's 126 trials less one misleading punishment, B's misleading reward"
+    );
+    assert_eq!(rewards_received(&whole[1..], &whole_coin[1..]), [[0; 2]; 4]);
+    let outcomes = outcome_blocks(&whole, &whole_coin);
+    assert_eq!(
+        last_outcomes(&outcomes)[0],
+        [[125, 1, 0], [1, 1, 0]],
+        "the last 128 trials of the first mapping, the coin at the 129th from its end outside them"
+    );
+    assert_eq!(
+        over_mappings(
+            &outcomes,
+            [[0u32; 3]; 2],
+            &|sum: &mut Outcomes, row: &Outcomes| add_outcomes(sum, row)
+        )[0],
+        [[SPANS[0].1 as u32 - 4, 1, 0], [2, 1, 0]]
+    );
+    // The speeds beside H-25's: 28 blocks against 21 is four thirds, to the block.
+    assert_eq!(
+        speeds(
+            [Some(5), Some(28), Some(29), None],
+            [Some(4), Some(21), Some(21), Some(20)]
+        ),
+        [Some((28, 21, 0)), Some((29, 21, 3)), None]
+    );
+    assert_eq!(
+        speeds(
+            [Some(5), Some(19), Some(21), Some(16)],
+            [Some(4), Some(19), None, Some(20)]
+        ),
+        [Some((19, 19, -19)), None, Some((16, 20, -32))]
+    );
+    // The separation at each mapping's end, by the mapping in force there.
+    let mut apart = full.clone();
+    apart[MAPPINGS[0].1 - 1].10 = [[10, 3], [4, 9]];
+    apart[MAPPINGS[1].1 - 1].10 = [[10, 3], [4, 9]];
+    assert_eq!(
+        separation(&apart, false).map(|s| (s[0], s[1])),
+        Some(([7, 5], [-7, -5])),
+        "the assignment first, then the mirrored"
+    );
+    assert_eq!(
+        separation(&apart, true).map(|s| (s[0], s[1])),
+        Some(([-7, -5], [7, 5]))
+    );
+    assert_eq!(separation(&apart[1..], false), None);
+    let mut falling = vec![block(0, 0); 3];
+    falling[0].7 = 9_000;
+    falling[1].7 = 7_000;
+    falling[2].7 = 8_000;
+    assert_eq!(inhibitory_low_and_last(10_000, &falling), (7_000, 8_000));
+    assert_eq!(inhibitory_low_and_last(10_000, &[]), (0, 0));
+    // The errors by kind and the clamp's part, over the first hand block's five trials that are
+    // not true ties: an error and a signal after the reward written into each.
+    let mut delivered = hand.clone();
+    let numbers: [(i32, i32); 5] = [
+        (40_000, ONE),
+        (-70_000, -ONE),
+        (-90_000, -ONE - 1),
+        (50_000, ONE + 7),
+        (60_000, ONE + 1),
+    ];
+    for (t, &(error, signal)) in delivered.iter_mut().zip(&numbers) {
+        t.4 = error;
+        t.7 = signal;
+    }
+    delivered[2 * BLOCK - 1].4 = -3;
+    delivered[2 * BLOCK - 1].7 = i32::MIN;
+    let errors = kind_errors_blocks(&delivered, &hand_coin);
+    assert_eq!(
+        errors,
+        vec![[40_000, -70_000, 110_000, -90_000], [0, 0, 0, -3]],
+        "a true reward, a true punishment, two misleading rewards and a misleading punishment"
+    );
+    let past = beyond_blocks(&delivered, &hand_coin);
+    assert_eq!(
+        past[0],
+        [
+            [(0, 0), (0, 0)],
+            [(0, 0), (0, 0)],
+            [(2, 8), (0, 0)],
+            [(0, 0), (1, 1)]
+        ],
+        "a signal on a bound is within it; one past it by its excess, on its side"
+    );
+    assert_eq!(
+        past[1][3],
+        [(0, 0), (1, (1i64 << 31) - (1i64 << 16))],
+        "the width's floor is 2^31 less 2^16 below the gate's"
+    );
+    let mut both = errors[0];
+    add_kind_errors(&mut both, &errors[1]);
+    assert_eq!(both, [40_000, -70_000, 110_000, -90_003]);
+    let mut all = past[0];
+    add_beyond(&mut all, &past[1]);
+    assert_eq!(
+        (all[2], all[3]),
+        (
+            [(2, 8), (0, 0)],
+            [(0, 0), (2, (1i64 << 31) - (1i64 << 16) + 1)]
+        )
+    );
+    // Eight trials on the instrument's network under H-25's delivery, its image carrying the
+    // inhibitory baseline and the signed gate as the arms' images do and the critic with its
+    // window as H-23's does: with the reward right seven times in eight and with the answer's
+    // feedback, the drawn sources held at every trial to the units the critic's oracle counted,
+    // every reward to the oracle's coin, and both oracles to the record.
+    assert_eq!(
+        coin[..GATE_TRIALS],
+        [false, false, true, true, false, false, false, false],
+        "the coin misleads at the third and the fourth of the gate's trials"
+    );
+    let sets = geometry(1024, ROTATION_1024);
+    let p = prior(1024);
+    let fresh = at_gain(&p, config(1024, 2, 0), GAIN_1024);
+    let flagged = signed_image(&inhibited_image(&Image::encode(&fresh).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    let bytes = with_window_bytes(&valued_image(&flagged, VALUED_CRITIC), window);
+    let mut runs = Vec::new();
+    for feedback in [MISLED_FEEDBACK, Feedback::Answer] {
+        let mut exec = signed_from(&bytes, 1024);
+        let image = weights_of(&exec);
+        let groups = groups_of(&exec, &sets);
+        let classes = classes_of(&exec, &sets);
+        let ((run, moves, values, watched, beside), _) = fed_run(
+            &mut exec,
+            Reversal::AssignmentFirst,
+            &sets,
+            &groups,
+            &classes,
+            &image,
+            MISLED_DELIVERY,
+            GATE_TRIALS,
+            false,
+            None,
+            feedback,
+        );
+        assert!(beside.is_none());
+        let read = run.3;
+        eprintln!(
+            "DUMP misled, {feedback:?}: {GATE_TRIALS} trials {read:?} values {values:?} moves {moves:?} sources {:?}",
+            watched.sourced
+        );
+        assert_eq!(
+            (read.len(), values.len(), moves.len()),
+            (GATE_TRIALS, GATE_TRIALS, GATE_TRIALS)
+        );
+        // The reward the task gave, read back: the error plus the value.
+        let given: Vec<i64> = read
+            .iter()
+            .zip(&values)
+            .map(|(t, &v)| i64::from(t.4).saturating_add(i64::from(v)))
+            .collect();
+        for (t, trial) in read.iter().enumerate() {
+            let misleading = feedback == MISLED_FEEDBACK && coin[t];
+            assert_eq!(
+                given[t],
+                if trial.3 != misleading { R } else { -R },
+                "{feedback:?} trial {t}: the outcome's sign unless the coin misleads"
+            );
+        }
+        runs.push((read, given));
+    }
+    let [(misled_read, misled_given), (true_read, true_given)] = &runs[..] else {
+        panic!("two runs");
+    };
+    // Up to the first misleading trial the two runs are one: its two trials before in every
+    // number, and the misleading trial itself in everything the reward does not enter — the
+    // stimulus, the counts, the selection and what was consolidated before it — with the
+    // reward the opposite.
+    assert_eq!(misled_read[..2], true_read[..2]);
+    assert_eq!(
+        (
+            misled_read[2].0,
+            misled_read[2].1,
+            misled_read[2].2,
+            misled_read[2].3,
+            misled_read[2].5,
+            misled_read[2].6
+        ),
+        (
+            true_read[2].0,
+            true_read[2].1,
+            true_read[2].2,
+            true_read[2].3,
+            true_read[2].5,
+            true_read[2].6
+        ),
+        "the third trial until its reward"
+    );
+    assert_eq!(
+        (misled_given[..2].to_vec(), misled_given[2]),
+        (true_given[..2].to_vec(), true_given[2].saturating_neg()),
+        "the third trial's reward is the opposite"
+    );
+    assert_ne!(
+        earned_hash(misled_read),
+        earned_hash(true_read),
+        "and the runs part there"
+    );
+}
+
+// ----------------------------------------------------------- the measurement (brief 061)
+
+/// H-28's arms' tables, pinned from the one run of each (ADR-0149); empty until it is made.
+const MISLED_BLOCKS_1024: [&[Block]; 2] = [&[], &[]];
+const MISLED_TRACES_1024: [u64; 2] = [0; 2];
+const MISLED_COMPOSITIONS_1024: [&[Composition]; 2] = [&[], &[]];
+const MISLED_EARNED_1024: [&[EarnedBlock]; 2] = [&[], &[]];
+const MISLED_READ_1024: [u64; 2] = [0; 2];
+const MISLED_CENSUS_1024: [&[(u32, u64)]; 2] = [&[], &[]];
+const MISLED_MOVES_1024: [&[MovesBlock]; 2] = [&[], &[]];
+const MISLED_STRONG_1024: [&[[u32; 2]]; 2] = [&[], &[]];
+const MISLED_AT_FLIPS_1024: [Option<[[[i64; 2]; 2]; 3]>; 2] = [None; 2];
+const MISLED_VALUES_1024: [&[ValueBlock]; 2] = [&[], &[]];
+const MISLED_VALUE_HASH_1024: [u64; 2] = [0; 2];
+const MISLED_WEIGHTS_1024: [&[Weights]; 2] = [&[], &[]];
+const MISLED_ADMITTED_1024: [&[Admitted]; 2] = [&[], &[]];
+const MISLED_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [&[], &[]];
+const MISLED_CELLS_1024: [&[Cells]; 2] = [&[], &[]];
+const MISLED_WENT_1024: [&[Went]; 2] = [&[], &[]];
+const MISLED_SOURCED_1024: [&[Sourced]; 2] = [&[], &[]];
+const MISLED_SOURCES_HASH_1024: [u64; 2] = [0; 2];
+const MISLED_OUTCOMES_1024: [&[Outcomes]; 2] = [&[], &[]];
+const MISLED_KIND_MOVES_1024: [&[KindMoves]; 2] = [&[], &[]];
+const MISLED_KIND_ERRORS_1024: [&[KindErrors]; 2] = [&[], &[]];
+const MISLED_BEYOND_1024: [&[Beyond]; 2] = [&[], &[]];
+const MISLED_READINGS_1024: [Option<MisledRead>; 2] = [None; 2];
