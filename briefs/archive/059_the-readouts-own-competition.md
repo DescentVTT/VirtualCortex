@@ -1,19 +1,48 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-01
 ---
+
+> **Executed 2026-10-07 in pull request #177.** Writes ADR-0142 (the readouts' own competition, measured); opens and
+> closes no finding. Nothing of the engine changed and no file under `src/`. The shadow was built as the composer's own
+> rule taken out of `Composer::observe` as a function (`advance`) and called again for a copy of the composer's
+> synapses with one flag, the drawn address's targets released to every unit; a second copy under the drawn address was
+> held to the composer at every trial. H-26's rule, the gate and the arms' empty tables were committed and pushed before
+> the run, with the pull request opened as a draft, and what ADR-0141's rule had not fixed was fixed there: a tie's two
+> readouts both not selected, a consolidation entered at the trial it fell in, the cost a net, the shadow's selected side
+> outside it. Before the arms every one of the weekly job's 79 other whole-domain tests passed from the release build;
+> in each arm H-25's run reproduced every pinned table with the shadows beside it before the shadow was read. The shadows
+> ride on H-25's two weekly tests, and no weekly test was added.
+>
+> **H-26 is no, as predicted, and its stopping rule reached step 4.** The cost was 0.486 to 0.602 of the signal: past
+> half in the assignment's four mappings (0.560, 0.514, 0.594, 0.558) and the mirrored's first and fourth (0.520, 0.602),
+> under it in the mirrored's second and third (0.486, 0.496). The release moved as much weight on the readout not
+> selected as on the one selected; that readout fired 0.57 to 0.62 of the selected one's spikes in the readout window
+> and 0.95 to 0.97 over the trial, and carried its eligibility by magnitude and a quarter to a half of it on net. Beside
+> the verdict: with the ties' part left out it is still no, and net of what the shadow's selected side gained the
+> release kept 0.51 to 0.63 of the signal, which the rule as committed does not read. **The next decision** — an ADR on
+> the lateral competition whitepaper §5.2.5 specifies, with this round's cost per block as its need and the
+> attention-gated feedback as its fallback — is named and not taken.
+>
+> **The evidence.** The weekly dispatched on the round's branch at `scope=exhaustive`, no file under `src/` having
+> changed (run 37546642489), was green in every job: all eighty-one whole-domain tests passed, H-25's two arms
+> reproducing H-25's tables and H-26's on the hosted runners in 1 025 and 1 319 s. The cost table regenerated from it
+> plans about 39 per cent of the bound a shard.
+>
+> *The body below describes the tree before execution and is not maintained.* Its relative links gained one `../` so
+> that they resolve from `archive/`; no word, claim or figure changed. Every deliverable is dispositioned in place.
 
 # Brief 059: The readouts' own competition — H-26 run once on H-25's runs, reproduced bit for bit, with an open-loop shadow of the released target side beside them; nothing of the engine changed
 
 ## Mission
 
 **This brief measures one gap, changes nothing of the engine, and runs no new configuration.**
-H-25 ([ADR-0140](../docs/adr/0140-the-address-drawn-measured.md)) learned with the reward's address drawn by the
+H-25 ([ADR-0140](../../docs/adr/0140-the-address-drawn-measured.md)) learned with the reward's address drawn by the
 engine: its sources come from the critic's window, and its targets are the readout the selection chose, an efference
-copy. The second step [ADR-0138](../docs/adr/0138-the-address-drawn.md) planned is to replace that target side with
+copy. The second step [ADR-0138](../../docs/adr/0138-the-address-drawn.md) planned is to replace that target side with
 a neural form, so that the targets could be released to every unit.
 
-[ADR-0141](../docs/adr/0141-the-readouts-own-competition.md) begins that step by measuring. On H-25's own runs,
+[ADR-0141](../../docs/adr/0141-the-readouts-own-competition.md) begins that step by measuring. On H-25's own runs,
 reproduced bit for bit, an open-loop shadow replays the stimulus–readout synapses as if the targets were every unit.
 That reads what the release would cost against the learning signal the run delivered. **H-26** was written before
 any run:
@@ -41,10 +70,10 @@ When the round is done, the tree holds:
 - **H-26's rule is written before the run** and does not move after it. There is no second attempt.
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0141's included.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal.
 - **No pinned number of an earlier round moves.**
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
@@ -58,27 +87,27 @@ quoted sentences are what to re-derive.
    count in the readout window and its indirect drive the other's; `compute_gating`
    (`crates/cortex-basal-ganglia/src/lib.rs`) selects where the net output falls below zero. Whitepaper §5.2.5:
    *"Lateral competition and dopamine modulation: Specified (§8.8)"*.
-2. **The drawn address** ([ADR-0139](../docs/adr/0139-the-address-drawn-built.md)): `Executor::address_drawn` and
+2. **The drawn address** ([ADR-0139](../../docs/adr/0139-the-address-drawn-built.md)): `Executor::address_drawn` and
    `Delivery::Drawn`. Its sources are the units with a nonzero critic count, and its targets the selected readout's
    units, none at a tie.
 3. **The composer** (`runtime/cortex-runtime/tests/instrument/harness.rs`): it has replayed the 3 188 stimulus–readout
    synapses from the train since brief 036, held to the record at every trial. Under the drawn delivery
    (`Composer::drawn`) it consolidates a pair synapse under the signal where its source was drawn and its readout
    selected.
-4. **H-25** ([ADR-0140](../docs/adr/0140-the-address-drawn-measured.md), `tests/inhibition.rs`):
+4. **H-25** ([ADR-0140](../../docs/adr/0140-the-address-drawn-measured.md), `tests/inhibition.rs`):
    - `drawn_arm`, its pinned tables, and its verdict `DRAWN_1024`;
    - `DRAWN_WENT_1024`, where the consolidation went: the answer's pairs, the other pairs and outside, per mapping;
    - the two weekly tests `the_address_drawn_from_the_assignment_at_1024_units_exhaustive` and
      `the_address_drawn_from_the_mirrored_assignment_at_1024_units_exhaustive`.
-5. **H-24** ([ADR-0137](../docs/adr/0137-the-reward-unaddressed-measured.md)): under a global delivery the other pairs
+5. **H-24** ([ADR-0137](../../docs/adr/0137-the-reward-unaddressed-measured.md)): under a global delivery the other pairs
    moved as much weight as the answer's. Its sources were global too, so it does not separate the target side's cost.
 6. **The weekly job**: six shards. This round changes no file under `src/`, so it dispatches `scope=exhaustive`
-   ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). After ADR-0140 the cost table plans about 46
+   ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)). After ADR-0140 the cost table plans about 46
    per cent of the bound.
 
 ## Deliverables
 
-- [ ] **H-26's protocol, in a new ADR at the next free number (`ls docs/adr`), before the run.**
+- [x] **H-26's protocol, in a new ADR at the next free number (`ls docs/adr`), before the run.**
   - The shadow: the composer's rule with the targets every unit, its own traces and weights from the image's, replayed
     from the run's train and signal, never written back.
   - H-26's rule, restated from ADR-0141 and pinned in the tests:
@@ -91,27 +120,27 @@ quoted sentences are what to re-derive.
     - the eligibility at each reward onto each readout, from the drawn sources;
     - the cost and the signal per block, the reversal blocks apart from the learned ones;
     - the count margin the gating decided by.
-- [ ] **The calibration**:
+- [x] **The calibration**:
   - every pinned number holds;
   - H-25's arms reproduce their pinned tables bit for bit with the shadow beside them;
   - the shadow, run under the drawn address in place of the released one, reproduces the composer's moves.
-- [ ] **The runs**: H-25's two arms with the shadow, as weekly `exhaustive` tests — riding on H-25's two, their pins
+- [x] **The runs**: H-25's two arms with the shadow, as weekly `exhaustive` tests — riding on H-25's two, their pins
   untouched, or as two of their own — the new readings pinned per block.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - H-26's verdict per mapping and arm.
   - The prediction (no) against it.
   - The readings.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** At most one runtime test: H-26's rule at its edges over tables written by hand, and the shadow's
+- [x] **The gate.** At most one runtime test: H-26's rule at its edges over tables written by hand, and the shadow's
   rule against the composer's on a run written by hand.
-- [ ] **The evidence.** A weekly dispatched on this round's branch at `scope=exhaustive`, green in every job and
+- [x] **The evidence.** A weekly dispatched on this round's branch at `scope=exhaustive`, green in every job and
   reproducing every pinned number. The cost table is regenerated from that run's artifacts.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-26 with its verdict and step, and §9.
   - The ADR index, `CHANGELOG.md`, `CLAUDE.md`, and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned.
 
 ## Not empowered
 

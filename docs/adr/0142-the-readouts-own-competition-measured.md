@@ -202,6 +202,27 @@ The readout not selected carries a little less trace above zero and a little mor
 
 **The oracles held** at every one of the 15 360 trials: the shadow under the drawn address to the composer, number by number and synapse by synapse, and so to the record; the released shadow's stamps to the composer's; the composer and the network's oracle to the record, the drawn sources to the critic's oracle, as in H-25. At every block the run's own consolidation by the shadow's fold was nothing on the pairs of the readout not selected and, on the selected side, the network's oracle's answer pairs and other pairs, direction by direction. At each run's end the released shadow's tables summed to its own weights. The gate holds the pinned tables to one another and to H-25's block by block: the kinds to the block's cost, the shadow's couplings to what its shade holds, the readouts' spikes in the window and the ties to H-25's blocks, and the margins to the selected readout's count less the other's.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes no file under `src/` — two files under `tests/`, the documents and the brief — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 059 asks: run [37546642489](https://github.com/DescentVTT/VirtualCortex/actions/runs/37546642489) at `20367ed`, the readings' commit, whose tests are those of `e8f92ee`, the pinned tables. The round's commits on the branch: `e1c300b` the protocol, before the run; `e8f92ee` the arms' tables and the gate's checks over them; `20367ed` this ADR's readings and the documents; and the commit that carries this section, the cost table and the brief's archive.
+- **Every exhaustive job is green.** All eighty-one `exhaustive` tests passed, each exit 0 with one test reported: the seventy-nine others reproduced their pinned numbers on the hosted runners, and **H-25's two arms reproduced H-25's tables and H-26's there, in 1 025 s from the assignment and 1 319 s from the mirrored**.
+- **What the shadows cost is inside the runners' variance.** In the same run H-24's arms, the same run's structure without the shadows, took 1 771 and 1 778 s on two other runners, and H-23's mirrored arm took 1 297 s beside H-25's mirrored at 1 319 on the same one.
+- **The shards**, dealt by the table before this round:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 55.4 min | H-24 from the assignment 1 771; H-20 from the mirrored 1 759 | 14 | 6 505 | 3 266 s, 45 % |
+  | 1 | 34.4 min | H-25 from the assignment 1 025; H-21 from the mirrored 1 003 | 14 | 3 990 | 2 021 s, 28 % |
+  | 2 | 51.9 min | H-24 from the mirrored 1 778; H-22 from the assignment 1 612 | 14 | 5 530 | 3 056 s, 42 % |
+  | 3 | 43.4 min | H-23 from the assignment 1 438; H-22 from the mirrored 1 303 | 13 | 5 002 | 2 557 s, 36 % |
+  | 4 | 59.0 min | H-21 from the assignment 1 760; H-20 from the assignment 1 722 | 13 | 6 594 | 3 482 s, 48 % |
+  | 5 | 42.6 min | H-25 from the mirrored 1 319; H-23 from the mirrored 1 297 | 13 | 4 954 | 2 504 s, 35 % |
+
+  The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.81 to 1.99 of their summed seconds over the wall. No shard passed 60 per cent of its bound.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 37546642489`): 81 lines, 32 575 s, the same eighty-one tests at 0.829 of the table before. These runners were faster than ADR-0140's: the seventy-nine others read 0.844 of their earlier seconds, and H-25's two arms, now with the shadows, 0.614 and 0.727 of theirs. ADR-0092's deal plans each of the six shards at 5 428 to 5 430 s summed, about 2 810 s of wall time at the run's ratio, **about 39 per cent of the bound**, inside the brief's 60. The table is one run's seconds on shared runners; ADR-0140's read 46 per cent for the same tests.
+- **The mutation gate.** No file under `src/` changed, so the diff holds no mutant: `cargo mutants --in-diff` against `origin/main` reads "No mutants to filter", on the developer machine and in the pull request's job.
+- **The pull request's gate** on `e1c300b` and on `20367ed` is green in every job, the determinism pin on AArch64 and the MSRV among them.
+
 ### The step of the stopping rule reached
 
 **Step 4**: *"No: the release costs more than half the learning signal."* **The next decision is an ADR on the lateral competition whitepaper §5.2.5 specifies, with this round's cost per block as its need and the attention-gated feedback named as its fallback.** It is named and not taken. What this round hands it:
