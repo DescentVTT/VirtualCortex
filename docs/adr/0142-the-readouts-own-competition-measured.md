@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-07
 depends-on: ADR-0141
 decision-makers: VirtualCortex maintainers
@@ -115,9 +115,9 @@ Per block, pinned; per mapping, computed from them:
 
 ### The order of the work, as the history holds it
 
-1. **The protocol** (`e1c300b` on the branch, pushed at 19:00Z on 2026-10-06 with pull request #177 opened as a draft on it, before the run): the harness's `advance`, `Shadow` and `earned_run_shadowed`, H-26's rule and readings, the gate, the arms' empty tables and this ADR's protocol. The pull request's checks passed on it, the determinism pin on AArch64 and the MSRV among them.
-2. **The calibration**, from the release build of `e1c300b`: the workspace's tests passed in the debug profile (688 passed, 121 ignored), in the release profile (688 passed, 121 ignored) and on the MSRV (688 passed), and the check, Clippy, the documentation and the format exited 0. **Every one of the 79 other whole-domain tests of the weekly job passed**, each in a process of its own and each exit 0 with one test reported: 69 eight at a time from 19:07:10Z to 21:01:17Z, H-23's and H-24's four arms and every earlier run through `Composer::observe` among them, and the ten of ADR-0097 and ADR-0102 one at a time from 21:01:51Z to 21:05:00Z.
-3. **The arms**, once, side by side from 21:05:20Z to 21:34:28Z. In each, H-25's calibration held; H-25's 7 680 trials ran with the two shadows beside the composer, the one under the drawn address held to the composer at every trial; **every one of H-25's pinned tables and readings was reproduced**, and only then were the shadow's tables dumped. Each test stopped at the first empty table, in 1 747 s. The tables were written from those dumps (`e8f92ee`), and a second run side by side from 21:37:58Z reproduced every table of H-25 and of H-26 and passed, in 1 663 and 1 658 s (on the developer machine, a ratio and not admissible).
+1. **The protocol** (`cf47208` on `main`; `e1c300b` on the branch before the rebase that merged pull request #177, pushed at 19:00Z on 2026-10-06 with the pull request opened as a draft on it, before the run): the harness's `advance`, `Shadow` and `earned_run_shadowed`, H-26's rule and readings, the gate, the arms' empty tables and this ADR's protocol. The pull request's checks passed on it, the determinism pin on AArch64 and the MSRV among them.
+2. **The calibration**, from the release build of `e1c300b` (`cf47208`): the workspace's tests passed in the debug profile (688 passed, 121 ignored), in the release profile (688 passed, 121 ignored) and on the MSRV (688 passed), and the check, Clippy, the documentation and the format exited 0. **Every one of the 79 other whole-domain tests of the weekly job passed**, each in a process of its own and each exit 0 with one test reported: 69 eight at a time from 19:07:10Z to 21:01:17Z, H-23's and H-24's four arms and every earlier run through `Composer::observe` among them, and the ten of ADR-0097 and ADR-0102 one at a time from 21:01:51Z to 21:05:00Z.
+3. **The arms**, once, side by side from 21:05:20Z to 21:34:28Z. In each, H-25's calibration held; H-25's 7 680 trials ran with the two shadows beside the composer, the one under the drawn address held to the composer at every trial; **every one of H-25's pinned tables and readings was reproduced**, and only then were the shadow's tables dumped. Each test stopped at the first empty table, in 1 747 s. The tables were written from those dumps (`8ec18e6`; `e8f92ee`), and a second run side by side from 21:37:58Z reproduced every table of H-25 and of H-26 and passed, in 1 663 and 1 658 s (on the developer machine, a ratio and not admissible).
 
 No constant, clause or rule moved after the run, and there was no second attempt: the second run is the pinned tables' reproduction.
 
@@ -140,7 +140,7 @@ No constant, clause or rule moved after the run, and there was no second attempt
 - **It is a no at the bar.** The cost is 0.486 to 0.602 of the signal: from 0.7 per cent under its bar to 20.4 per cent over it, and within 5 per cent of it in four of the eight.
 - Its scope: this task, these two arms and this schedule at 1 024 units, on H-25's trajectory, open-loop.
 
-**The prediction, against the reading.** ADR-0141 predicted no, because without a competition the readout that lost would carry much of the eligibility. The premise held more fully than the verdict. By magnitude the readout not selected carried as much eligibility as the one selected, and the release moved as much weight on it. But the net of what it moved was about half the signal and not all of it, because the net of that eligibility, the part above zero less the part below, was a quarter to a half of the selected readout's.
+**The prediction, against the reading.** ADR-0141 predicted no, because without a competition the readout that lost would carry much of the eligibility. The premise held more fully than the verdict. By magnitude the readout not selected carried as much eligibility as the one selected, and the release moved as much weight on it. But the net of what it moved was about half the signal and not all of it; the net of that eligibility, the part above zero less the part below, was a quarter to a half of the selected readout's.
 
 **Where the cost came from** (the shade's side not selected, per mapping; the weight raised and the weight lowered with their signs):
 
@@ -204,7 +204,7 @@ The readout not selected carries a little less trace above zero and a little mor
 
 ### The evidence
 
-- **The dispatch's scope.** The diff changes no file under `src/` — two files under `tests/`, the documents and the brief — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 059 asks: run [37546642489](https://github.com/DescentVTT/VirtualCortex/actions/runs/37546642489) at `20367ed`, the readings' commit, whose tests are those of `e8f92ee`, the pinned tables. The round's commits on the branch: `e1c300b` the protocol, before the run; `e8f92ee` the arms' tables and the gate's checks over them; `20367ed` this ADR's readings and the documents; and the commit that carries this section, the cost table and the brief's archive.
+- **The dispatch's scope.** The diff changes no file under `src/` — two files under `tests/`, the documents and the brief — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 059 asks: run [37546642489](https://github.com/DescentVTT/VirtualCortex/actions/runs/37546642489) at `20367ed` (`464c382` on `main`), the readings' commit, whose tests are those of `e8f92ee` (`8ec18e6`), the pinned tables. The round's commits as `main` holds them, beside the branch's: `cf47208` (`e1c300b`) the protocol, before the run; `8ec18e6` (`e8f92ee`) the arms' tables and the gate's checks over them; `464c382` (`20367ed`) this ADR's readings and the documents; `35cc993` (`f5619bb`) this section, the cost table and the brief's archive.
 - **Every exhaustive job is green.** All eighty-one `exhaustive` tests passed, each exit 0 with one test reported: the seventy-nine others reproduced their pinned numbers on the hosted runners, and **H-25's two arms reproduced H-25's tables and H-26's there, in 1 025 s from the assignment and 1 319 s from the mirrored**.
 - **What the shadows cost is inside the runners' variance.** In the same run H-24's arms, the same run's structure without the shadows, took 1 771 and 1 778 s on two other runners, and H-23's mirrored arm took 1 297 s beside H-25's mirrored at 1 319 on the same one.
 - **The shards**, dealt by the table before this round:
@@ -221,7 +221,7 @@ The readout not selected carries a little less trace above zero and a little mor
   The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.81 to 1.99 of their summed seconds over the wall. No shard passed 60 per cent of its bound.
 - **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 37546642489`): 81 lines, 32 575 s, the same eighty-one tests at 0.829 of the table before. These runners were faster than ADR-0140's: the seventy-nine others read 0.844 of their earlier seconds, and H-25's two arms, now with the shadows, 0.614 and 0.727 of theirs. ADR-0092's deal plans each of the six shards at 5 428 to 5 430 s summed, about 2 810 s of wall time at the run's ratio, **about 39 per cent of the bound**, inside the brief's 60. The table is one run's seconds on shared runners; ADR-0140's read 46 per cent for the same tests.
 - **The mutation gate.** No file under `src/` changed, so the diff holds no mutant: `cargo mutants --in-diff` against `origin/main` reads "No mutants to filter", on the developer machine and in the pull request's job.
-- **The pull request's gate** on `e1c300b` and on `20367ed` is green in every job, the determinism pin on AArch64 and the MSRV among them.
+- **The pull request's gate** on `e1c300b` (`cf47208`), on `20367ed` (`464c382`) and on `f5619bb` (`35cc993`) is green in every job, the determinism pin on AArch64 and the MSRV among them.
 
 ### The step of the stopping rule reached
 
