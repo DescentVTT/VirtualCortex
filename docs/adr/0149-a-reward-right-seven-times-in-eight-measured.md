@@ -5,11 +5,11 @@ depends-on: ADR-0148
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0149: A reward right seven times in eight, measured — H-28's protocol, committed before any rewarded run: H-25's two arms from H-25's image with the one change the task's feedback, the coin misleading in 949 of the run's 7 680 trials, within its bounds; the four clauses as integer rules, the readings by the kind of each trial, and the calibration; the readings and the step of the stopping rule follow the run
+# ADR-0149: A reward right seven times in eight, measured — H-28 is yes: on H-25's configuration and schedule with the reward's sign the outcome's in seven trials of eight and its opposite in one, the coin misleading in 949 of the run's 7 680 trials, every mapping was learned in both arms, 113 to 123 of each mapping's last 128 from the assignment and 107 to 124 from the mirrored assignment, no coupling passed 1.30, the highest 1.181 and 1.187, the network outside the couplings stayed within two parts in ten thousand of the image's, and each stimulus's mean value stood within 0.13 of the reward of three quarters of 2p − 1 and nearer it than 2p − 1 in all sixteen; the reversals passed 40 of 64 in 14 to 24 blocks, 0.90 to 1.50 of H-25's and five of six under the naive four thirds, and the learning signal was 0.87 to 1.03 of H-25's and not three quarters of it, because a true reward delivered an error of 0.30 to 0.52 of the reward where H-25's delivered 0.08 to 0.18, while a misleading punishment, its signal below the gate's floor in two of three, took from the answer's pair 1.9 times what a true reward gave, 27 per cent of it in all; H-28's stopping rule at step 3, and the next decision named and not taken
 
 ## Context and Problem Statement
 
-[ADR-0147](0147-a-reward-right-seven-times-in-eight.md) asked the named learning configuration the first task it had not been asked, a reward that is right seven times in eight, and wrote **H-28** before any run. [ADR-0148](0148-a-reward-right-seven-times-in-eight-built.md) built the feedback: `Feedback::SevenInEight`, its coin three bits of the trial's own draw. Brief 061 runs H-28 once. This ADR is the round's protocol, committed before any rewarded run, and then its readings.
+[ADR-0147](0147-a-reward-right-seven-times-in-eight.md) asked the named learning configuration the first task it had not been asked, a reward that is right seven times in eight, and wrote **H-28** before any run. [ADR-0148](0148-a-reward-right-seven-times-in-eight-built.md) built the feedback: `Feedback::SevenInEight`, its coin three bits of the trial's own draw. Brief 061 runs H-28 once. This ADR is the round's protocol, committed before any rewarded run, and then its readings: **H-28 is yes**, at step 3 of its stopping rule.
 
 What was read before anything was written (principle 2, and brief 061's directive that the engine is read before a description of it is trusted, the brief's and ADR-0147's included):
 
@@ -105,11 +105,131 @@ The build's tests are ADR-0148's, in `task.rs`.
 - **Each is H-25's arm** with the calibration's first block and without the shadows. H-25's arms took 1 796 and 1 081 s in ADR-0145's dispatch. The table after ADR-0145 is 85 tests and 39 759 s, about 47 per cent of the bound at six shards; two more arms at that cost plan about 50 per cent, under the directive's 60.
 - **The dispatch's scope**: ADR-0148 changed files under `src/`, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly is dispatched at `scope=both`.
 
+### The order of the work, as the history holds it
+
+1. **The bits before the count.** The coin's three bits were fixed and written into the task (ADR-0148). Then the oracle apart from the tree was run, once: it reproduced the tree's two pins at seed 27 and returned the count, 949. Had the count been outside its bounds the round would have stopped there as a finding.
+2. **The rules before their result.** The clauses, the step, the readings' rules, the arms and the gate's test were written with every pinned table of an arm empty. The gate's test passed in 18 s in the debug profile on the developer machine (a ratio, not admissible); its eight rewarded trials under the feedback on the instrument's unsettled network are the harness's check and read nothing of H-28.
+3. **The build and the protocol committed and pushed** (`cc09710` and `a9a08c2` on this round's branch, pushed at 10:38:28Z on 2026-10-07 with pull request #184 opened as a draft on them at 10:39:22Z), before any rewarded trial of an arm. The pull request's checks passed on `a9a08c2`: the check, the tests in the debug and the release profile, the format, Clippy, the documentation and the benchmarks; the MSRV; the determinism pin on AArch64; and the mutation gate on the changed lines, 9 mutants in ADR-0148's lines, 8 caught and 1 unviable, none missed.
+4. **The calibration.** **Every one of the 85 whole-domain tests of the weekly job before this round passed**, each in a process of its own and each exit 0 with one test reported: 75 eight at a time from 10:22:47Z to 12:06:23Z, H-25's two arms and every earlier run through `Task::trial` among them, and the ten of ADR-0097 and ADR-0102 one at a time to 12:09:44Z. They ran from a release build of the working tree made at 10:17Z, twenty-one minutes before that tree was committed as `a9a08c2`; the test file was last written at 10:15:45Z and the tree was clean at the commit.
+5. **The arms**, once, side by side from 12:11:00Z to 12:27:05Z, from that same release build. In each the calibration held: the coin's count, ADR-0077's settled engine and H-20's to H-23's images by their CRCs, ADR-0077's frozen block, and **H-25's first block from H-23's image under the true feedback reproduced table by table**. Each ran its 7 680 trials with the drawn sources held to the critic's oracle, every reward held to the coin and both oracles held to the record at every trial, and stopped at the first empty table, in 961 and 956 s. The tables were written from those dumps (`f1b1f76`), and a second run side by side from 12:40:34Z reproduced every table and passed, in 1 274 and 1 268 s (on the developer machine, a ratio and not admissible).
+
+No constant, clause or rule moved after the first rewarded trial of an arm, and there was no second attempt: the second run is the pinned tables' reproduction. Between the two runs the gate's test gained its checks over the pinned tables and the verdict's two constants, written from the rule's own output over those tables. A reproduction begun at 12:32:33Z was stopped six minutes in, unread, so that the last of those checks could be written first; the run counted is from the build of the test file as committed.
+
+### The readings
+
+**The verdict** (`MISLED_1024`), by the rule committed first, over the pinned tables:
+
+| Clause | From the assignment | From the mirrored assignment |
+| :--- | :--- | :--- |
+| 1, each mapping's last 128 correct, at least 80 | 123, 113, 122, 119 | 124, 107, 122, 114 |
+| 2, the highest coupling over its image's, at most 1.30 | 1.181, A onto readout 0 at the 88th block | 1.187, A onto readout 1 at the 87th block |
+| 3, the excitatory sum outside the couplings, 0.75 to 1.25 of the image's | 0.99998 to 1.00012 | 0.99998 to 1.00015 |
+| 4, each stimulus's mean value within 0.25 of three quarters of $2p - 1$ | all eight; the farthest 0.104 | all eight; the farthest 0.131 |
+
+**H-28 is yes: all four clauses hold in both arms.** H-25 read 122, 124, 119, 116 and 124, 118, 123, 117 under clause 1, and 1.181 and 1.191 under clause 2.
+
+**The prediction, against the reading.** ADR-0147 predicted yes, and said the clamp's part was not predicted. The verdict is as predicted. The second mapping is the weakest in both arms, 113 and 107, where H-25's was 124 and 118.
+
+**The trials by outcome and by the reward received** (`MISLED_OUTCOMES_1024`; true rewards, true punishments, misleading rewards, misleading punishments):
+
+| Mapping | From the assignment | Its last 128 | From the mirrored | Its last 128 |
+| ---: | :--- | :--- | :--- | :--- |
+| 1 | 1 073, 282, 38, 143 | 110, 5, 0, 13 | 1 057, 298, 37, 144 | 112, 3, 1, 12 |
+| 2 | 805, 981, 157, 105 | 100, 11, 4, 13 | 695, 1 091, 159, 103 | 93, 18, 3, 14 |
+| 3 | 937, 861, 123, 127 | 109, 6, 0, 13 | 1 126, 672, 98, 152 | 109, 6, 0, 13 |
+| 4 | 900, 892, 119, 137 | 101, 7, 2, 18 | 828, 964, 136, 120 | 94, 14, 0, 20 |
+
+- Over a run, **512 and 519 correct selections were punished and 437 and 430 wrong ones or ties rewarded**, 949 in each.
+- A correct selection was punished in 12.1 and 12.3 per cent of the correct trials, the coin's share.
+- A trial tied in 5.0 to 6.7 per cent of a mapping's trials, as under H-25 (4.4 to 7.0).
+
+**The value** (`stimulus_values`, `rewards_received`; per mapping and stimulus over the mapping's last 128 trials, as fractions of the reward):
+
+| | Mean value | Three quarters of $2p - 1$ | $2p - 1$ | Mean reward received |
+| :--- | :--- | :--- | :--- | :--- |
+| Assignment, A | 0.656, 0.593, 0.751, 0.619 | 0.676, 0.609, 0.726, 0.722 | 0.902, 0.812, 0.968, 0.963 | 0.672, 0.625, 0.839, 0.519 |
+| Assignment, B | 0.740, 0.451, 0.559, 0.605 | 0.705, 0.539, 0.636, 0.588 | 0.940, 0.719, 0.848, 0.784 | 0.761, 0.625, 0.576, 0.676 |
+| Mirrored, A | 0.714, 0.362, 0.811, 0.525 | 0.725, 0.375, 0.726, 0.611 | 0.967, 0.500, 0.968, 0.815 | 0.738, 0.312, 0.839, 0.370 |
+| Mirrored, B | 0.608, 0.622, 0.506, 0.453 | 0.683, 0.633, 0.636, 0.568 | 0.910, 0.844, 0.848, 0.757 | 0.791, 0.688, 0.576, 0.541 |
+
+- **The critic holds the expected reward, not the outcome's.** In all sixteen the value is nearer three quarters of $2p - 1$ than $2p - 1$ (`nearer_expected` above zero in each). Under H-25 the same sixteen stood at $2p - 1$: 0.69 to 0.98 against 0.68 to 1.00.
+- **What clause 4 could not tell apart, the reading does.** H-25's own rule, a quarter of the reward either side of $2p - 1$, holds eight of these sixteen and fails eight.
+- The value follows the reward the stimulus received, which the coin moves about its expectation: over those trials the mean reward a stimulus received was 0.31 to 0.84 of the reward, and its mean value 0.36 to 0.81.
+- **The troughs after each flip are shallower**: −0.37 to −0.75 of the reward, against H-25's −0.63 to −0.84, in eleven of the twelve.
+
+**The reversal speeds** (`speeds`; the blocks to the first of a mapping's blocks with 40 of 64 correct):
+
+| | First reversal | Second | Third |
+| :--- | :--- | :--- | :--- |
+| From the assignment | 19, H-25's 19 | 19, H-25's 21 | 20, H-25's 16 |
+| From the mirrored | 24, H-25's 20 | 14, H-25's 15 | 21, H-25's 14 |
+
+- **Five of the six are under four thirds of H-25's**, the naive scaling; the sixth, 21 blocks against 14, is over it, four thirds of 14 being 18.7. As ratios: 1.00, 0.90, 1.25 and 1.20, 0.93, 1.50; their mean is 1.13.
+- Every reversal passed within its 32 blocks, the slowest in 24. H-25's bound of 23 blocks is not a clause here; one reversal is a block past it.
+- The first mapping was learned as fast as under H-25, in 6 and 4 blocks.
+- Per stimulus, the selection first went to the new answer more often than to the old 9 to 23 blocks after a flip, against H-25's 9 to 23.
+
+**The learning signal** (`signal_of` over `MISLED_WENT_1024`, the network's oracle; the answer pairs' net consolidation less the other pairs', per mapping, over H-25's):
+
+- From the assignment: **1.03, 0.93, 0.87, 0.93**. From the mirrored: **0.98, 0.87, 0.92, 0.96**.
+- **The naive scaling says 0.75.** The signal was not scaled by the reliability.
+- In the answer's pairs the weight raised was 1.0 to 1.6 of H-25's and the weight lowered 1.1 to 1.7, and their net 0.72 to 1.12 of it: more was moved each way for about the same net.
+
+**What the clamp's part was.** Two effects pull against the naive scaling, and both are read (option 4(a)).
+
+*A true reward is worth more.* The critic holds about three quarters of what H-25's held, so a correct trial that is truly rewarded still delivers an error:
+- over a learned mapping's last 128 trials a true reward's error was **0.30 to 0.52 of the reward** (`MISLED_KIND_ERRORS_1024`), where under H-25 the error on a correct trial was 0.08 to 0.18;
+- in the trial after a true reward the answer's pair gained 3 030 to 4 150 a trial (`MISLED_KIND_MOVES_1024`), against H-25's 1 570 to 2 620 after a reward: **1.3 to 2.0 times**.
+
+That is the effect ADR-0147 named and did not size: *"true rewards and true punishments keep delivering errors that the certain task's critic had spent."*
+
+*A misleading punishment is capped, and still costs twice a reward.*
+- Its error was −1.09 to −1.48 of the reward by mapping, and −1.48 to −1.70 over a learned mapping's last 128 trials, as the arithmetic said: below −1 for any value above zero.
+- **It left the signal below the gate's floor in 68 per cent of them**, by 0.50 to 0.54 of the reward on average (`MISLED_BEYOND_1024`). There the clamp passed on −1 and no more.
+- In the trial after it the answer's pair lost 6 690 and 6 740 a trial over the run, **1.9 and 2.0 times what a true reward gave**.
+- One correct trial in eight was punished, so misleading punishments took back **27 and 28 per cent** of what true rewards gave the answer's pairs: 3.43 of 12.85 million from the assignment, 3.50 of 12.68 million from the mirrored.
+
+*The same on the wrong side.* A misleading reward's error was above the reward, 1.1 to 1.3 of it after the first mapping, because a wrong selection comes mostly after a flip, where the value is below zero. It left the signal above the ceiling in 62 and 64 per cent of them. In the trial after it the pair the wrong selection reached gained 4 510 and 4 530 a trial, against the 3 630 and 3 350 a true punishment took from it; misleading rewards put back 18 and 19 per cent of what true punishments took.
+
+*Over the whole run* the signal a reward left lay beyond the gate's bounds after **37.8 and 37.0 per cent of the trials**: above the ceiling after 1 429 and 1 380, below the floor after 1 471 and 1 462, by 0.40 to 0.47 of the reward on average.
+
+**What this does not say.** These are readings of the run as it was. The run has one gate; what the learning would have been with a wider clamp, or with none, was not run and is not derived (option 4(b)).
+
+**Where else the run stands beside H-25.**
+- **The couplings' separation** at each mapping's end, the answer's coupling less the other's, was 0.64 to 1.11 of H-25's per stimulus, lowest at the end of the second mapping, 0.64 to 0.86.
+- **The inhibitory sum** ended at 0.850 and 0.845 of the image's, its lowest, as H-25's ended at 0.848 and 0.850.
+- **The drawn sources** were 99.66 and 99.67 per cent of the presented stimulus's units and 1.63 and 1.64 others a trial, H-25's.
+- **The first new selection** after a flip came within 3 to 190 trials; H-25's within 3 to 127.
+- Over whole mappings fewer trials were correct than under H-25 in seven of the eight, by 2 to 25 per cent; the eighth had 2 per cent more.
+
+**What H-25's tables say here, and what they do not.** Three of them read a delivery's sign, which under the engine's critic is the error's (item 3 of the context):
+- `MISLED_EARNED_1024`'s positive deliveries are the trials whose error was above zero;
+- `MISLED_MOVES_1024` splits the addressed pair's moves by the sign of the error before;
+- `MISLED_VALUES_1024` sums the errors on correct trials, misleading punishments among them: over a mapping's last 128 that mean is 0.08 to 0.25 of the reward, which is not a true reward's.
+
+**In these two runs every error had its reward's sign.** The engine's value never passed the reward: the 4 152 and 4 136 deliveries above zero are the 3 715 and 3 706 true rewards and the 437 and 430 misleading ones, and none was exactly zero. So the first two tables read here what they read under H-25. The gate holds that block by block: the positive deliveries are the rewards of either kind, and the moves after a positive delivery and after a negative one are `MISLED_KIND_MOVES_1024`'s after a reward of either kind and after a punishment of either kind. It is a reading of these runs and not a property of the rule.
+
+**The oracles held** at every one of the 15 360 trials: the drawn sources to the units the harness's critic oracle counted from the train, the targets to the selected readout's units, the engine's value, error and weights to the harness's critic, the reward to the coin, and the composer's and the network's traces and weights to the record.
+
+### The step of the stopping rule reached
+
+**Step 3**: *"Yes: the configuration learns and revises under a reward right seven times in eight. The next decision is an ADR choosing among a less reliable reward, more answers than two, a reward delayed past a trial, another size and the operating regime, named and not taken."* **The next decision is that ADR.** It is named and not taken. What this round hands it:
+
+- **Seven in eight is not at the schedule's edge.** The reliability was derived as the least the schedule holds under a slowdown of four thirds. The slowdown read was 1.13 on average and the slowest reversal took 24 of 32 blocks. A less reliable reward on this schedule is not ruled out by this reading; by ADR-0147's arithmetic four in five would have put 21 blocks at 35.
+- **Why the slowdown is under the naive one**: the critic's value settles lower, so each true reward teaches more, by 1.3 to 2.0 times in the answer's pair. By ADR-0147's arithmetic that gain grows as the reliability falls; this round read it at one reliability.
+- **What stands against it**: a misleading punishment costs about two true rewards in the answer's pair even with the clamp passing on no more than −1 in two of three. At four in five one correct trial in five is punished. Which of the two is the larger there is not read.
+- **The second mapping** is where the margin is thinnest: 113 and 107 of 128, and the mirrored arm's first reversal at 24 blocks.
+
+Steps 4, 5 and 6 did not arise; step 7 is kept.
+
 ## Consequences
 
+- Good: the first reading of the learning configuration under a reward that is not always true is a yes, with H-25 beside it block for block.
+- Good: the reading says why the slowdown is under the naive one, from tables in the tree: what a true reward moved, what a misleading punishment moved, and how often the gate's clamp acted.
 - Good: every trial's reward is read back whole and held to a coin written twice, so no table of this round calls an error's sign a reward's.
 - Good: H-25 stands beside the run block for block, table for table.
 - Bad: the clamp's part is read from what the run did, not from a run without the clamp. A reading can say how often and by how much the signal lay beyond the gate; it cannot say what the learning would have been otherwise.
+- Bad: one reliability, one seed and one size. Whether seven in eight is near an edge is not read; the reading above says only that the schedule was not strained.
 - Bad: two more arms in the weekly job, each about H-25's cost.
 
 ## Alternatives considered and why rejected
@@ -125,4 +245,5 @@ The build's tests are ADR-0148's, in `task.rs`.
 
 - `runtime/cortex-runtime/tests/inhibition.rs`: `MISLED_ARMS`, `MISLED_FEEDBACK`, `MISLEADING_BOUNDS`, `MISLEADING_BY_MAPPING_1024`, `RELIABILITY`, `holds_expected_reward`, `Misled`, `misled`, `misled_step`, `MisledRead`, `misled_arm`, the two weekly tests and the gate's test named above.
 - `runtime/cortex-runtime/tests/instrument/harness.rs`: `misleads`.
-- Whitepaper §11.1 and §9; `CHANGELOG.md`.
+- The arms' pinned tables, `MISLED_*_1024`, the verdict `MISLED_1024` and its step `MISLED_STEP_1024`, and the gate's checks over them.
+- Whitepaper §11.1 and §9; `CHANGELOG.md`; `CLAUDE.md`; `README.md`; `docs/zh-TW/README.md`.
