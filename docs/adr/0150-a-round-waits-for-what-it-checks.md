@@ -20,13 +20,15 @@ decision-makers: VirtualCortex maintainers
 | The evidence, the gate, the merge | about 30 m | |
 | After the merge | 20 to 30 m each | a pull request that rewrites the ADR's commit hashes, then the next decision's |
 
+The round after it, brief 061's ([ADR-0149](0149-a-reward-right-seven-times-in-eight-measured.md)), read the same shape on slower runners: its shards ended after 84 minutes and its sweep after 246.
+
 The runs the round exists for are the 26 minutes of the arms' first pass. The maintainers asked on 2026-10-07 what of the rest could go with nothing lost, and decided the four below. A fifth was weighed and not taken: moving the calibration behind the rewarded run.
 
 **What each wait checks:**
 - **The sweep, 145 minutes past the shards.** [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) sends a round that changed `src/` to the whole-tree sweep, because a change to source *"may reroute what the existing tests reach elsewhere"*. [ADR-0030](0030-verification-governance.md) says of the scheduled sweep that *"it blocks nothing … and its survivors are the next round's list"*, and ADR-0075 priced a round's sweep the same way. The lines the round changed are already mutated by the pull request's own gate. So the sweep's result is wanted, and nothing about the merge depends on it. The briefs nevertheless asked for a dispatch *"green in every job"* before the merge, and the merge waited.
 - **The second pull request.** `main` takes a round by a rebase, which gives its commits new hashes. Each round's ADR cites its commits, so each round opened a second pull request to cite them *"as `main` holds them"*, and set its ADRs to `accepted` there. The commits the ADR first cited do not go away: GitHub keeps a merged pull request's commits under `refs/pull/<n>/head`.
 - **The arms' second pass.** It shows that the pinned tables reproduce. The dispatch then shows it again, on other hardware and another operating system, which is the stronger evidence.
-- **Six shards.** The whole-domain tests' shards read 41 to 68 minutes in that dispatch, at two tests a time on a four-core runner. The repository is public, and the hosted runners are not metered.
+- **Six shards.** The whole-domain tests' shards read 41 to 68 minutes in that dispatch and 42 to 84 in the next, at two tests a time on a four-core runner. The repository is public, and the hosted runners are not metered.
 
 **`CLAUDE.md`.** Its section *"What this repository is"* opens: *"This file is the switchboard, not the rulebook."* The section's account of what exists has grown by a clause or two every round into one sentence of several thousand words. Every session reads it whole at its start, every round edits it, and two pull requests open at once conflict in it. The whitepaper's §1.6 is the table of what is built, §11.1 holds every hypothesis with its verdict, and the changelog holds every round.
 
@@ -72,8 +74,8 @@ The runs the round exists for are the 26 minutes of the arms' first pass. The ma
 
 ### Twelve shards (option 4(a))
 
-- **The whole-domain tests are dealt to twelve shards**, by cost, as [ADR-0092](0092-the-shards-dealt-by-cost.md) deals them. At the table after ADR-0145, 85 tests and 39 759 s, a shard plans about 3 300 s summed and about half of that in wall time.
-- **The floor is the longest test**, 1 997 s in that table, which no number of shards divides.
+- **The whole-domain tests are dealt to twelve shards**, by cost, as [ADR-0092](0092-the-shards-dealt-by-cost.md) deals them. At the table after ADR-0149, 87 tests and 44 765 s, a shard plans about 3 730 s summed and about half of that in wall time.
+- **The floor is the longest test**, 1 979 s in that table, which no number of shards divides.
 - **With the sweep's seven jobs a dispatch at `scope=both` is nineteen jobs**, inside the twenty jobs the account's plan runs at once.
 
 ### `CLAUDE.md` (option 6(a))

@@ -213,8 +213,8 @@ jobs:
     # them, and ADR-0117's put one shard at 59 per cent of the bound where the table replayed
     # afterwards planned 45. Six shards since ADR-0121: ADR-0120's regenerated table, read on
     # runners about a fifth slower, planned 57 per cent at five. Twelve since ADR-0150: a round's
-    # merge waits for these shards, six read 41 to 68 minutes, and the floor is the longest
-    # test, 1 997 s in ADR-0145's table; with the sweep's seven jobs a dispatch is nineteen.
+    # merge waits for these shards, six read up to 84 minutes, and the floor is the longest
+    # test, 1 979 s in ADR-0149's table; with the sweep's seven jobs a dispatch is nineteen.
     name: Weekly (exhaustive tests ${{ matrix.shard }}/12, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
