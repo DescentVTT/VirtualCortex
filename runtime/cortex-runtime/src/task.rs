@@ -51,6 +51,16 @@
 //! window, onto the readout the engine selected, so that the task gives the channel the
 //! engine's own selection chose and not the stimulus it drew. The two deliveries before it
 //! write what they wrote, and every run pinned under them reruns unchanged.
+//!
+//! A task may carry a [`Hold`] (ADR-0143, ADR-0144): the gate's output delivered to the network.
+//! With it the selection is made at the readout window's close, from the counts it reads at the
+//! trial's end without it, and from there the channel the gate holds — the one whose net
+//! output `compute_gating` left above zero, the channel not selected — receives basal messages
+//! of negative efficacy into every unit of its set, on a cadence, until the hold's last tick;
+//! nothing at a tie, where both outputs are zero. Beside it stands the released delivery
+//! ([`Delivery::Released`]): the address's sources drawn by the engine as the drawn delivery
+//! draws them and every unit a target, at a tie as at any trial. A task with no hold runs the
+//! trial it ran, and the three deliveries before the released one write what they wrote.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -266,15 +276,62 @@ impl Stimulus {
 
     /// `messages` of `message` into every unit of the set, in the set's order.
     fn send(&self, inject: &Inject, messages: u32, message: u32) -> Result<u32, InjectError> {
-        let mut sent = 0u32;
-        // Every unit below the arena, which `Task::check` bounded.
-        for unit in self.set.units() {
-            for _ in 0..messages {
-                inject.inject(unit, message)?;
-                sent = sent.saturating_add(1);
-            }
+        send(&self.set, inject, messages, message)
+    }
+}
+
+/// `messages` of `message` into every unit of `set`, in the set's order; returns the messages
+/// injected. An injector that refuses one stops there.
+fn send(set: &Set, inject: &Inject, messages: u32, message: u32) -> Result<u32, InjectError> {
+    let mut sent = 0u32;
+    // Every unit below the arena, which `Task::check` bounded.
+    for unit in set.units() {
+        for _ in 0..messages {
+            inject.inject(unit, message)?;
+            sent = sent.saturating_add(1);
         }
-        Ok(sent)
+    }
+    Ok(sent)
+}
+
+/// The gate's output delivered (ADR-0143, ADR-0144): `messages` basal messages of a negative
+/// `efficacy_q16` into every unit of the channel the gate holds, injected between ticks before
+/// every `every`-th tick of the trial from the readout window's close while the tick is below
+/// `until` (the trial's ticks counted from zero), so that the first lands on the tick after
+/// the close and the last on `until` at the latest, as a [`Cancel`]'s lands on the tick after
+/// its offset. The channel held is the gate's own reading: the one whose net output
+/// `compute_gating` left above zero when the selection was made at the close, the channel not
+/// selected; at a tie both outputs are zero and nothing is delivered. The membrane rule drops
+/// an input that lands inside a unit's refractory window (ADR-0018), so a unit that fired in
+/// the window's last ticks takes its first message after its window ends. The executor scales
+/// the message by the tick's synaptic gain and clamps one message's efficacy at −2.0 (F-47), so
+/// a deeper hold is more messages or a shorter cadence. [`Task::check`] refuses a hold of no
+/// message or no cadence, one whose efficacy is not negative, one that ends at or before the
+/// window's close (no tick of it is due), and one whose last message would land after the
+/// trial's last tick.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Hold {
+    /// One past the last trial tick before which a message can be due.
+    pub until: u32,
+    /// The cadence: a message is due before the tick the window closes at and before every
+    /// `every`-th tick after it.
+    pub every: u32,
+    /// The messages into every unit of the channel held, each time one is due.
+    pub messages: u32,
+    /// Each message's efficacy, Q16.16, below zero.
+    pub efficacy_q16: i32,
+}
+
+impl Hold {
+    /// True when the hold's messages are due before trial tick `k`, the readout window closing
+    /// at `close`: `k` at or after the close, below `until`, and a whole number of cadences
+    /// after the close. A cadence of zero is never due.
+    pub const fn is_due(&self, close: u32, k: u32) -> bool {
+        match k.checked_sub(close) {
+            // `checked_rem` is `None` at a cadence of zero.
+            Some(since) => k < self.until && matches!(since.checked_rem(self.every), Some(0)),
+            None => false,
+        }
     }
 }
 
@@ -412,6 +469,22 @@ impl Readout {
             _ => None,
         }
     }
+
+    /// The gate's output delivered (ADR-0143): `hold`'s messages into every unit of each
+    /// channel the gate holds, a channel whose net output the last selection left above zero —
+    /// the channel not selected; none at a tie, where both outputs are zero, and none before a
+    /// selection, the channels at rest. Returns the messages injected; an injector that
+    /// refuses one stops there.
+    pub fn hold(&self, inject: &Inject, hold: &Hold) -> Result<u32, InjectError> {
+        let message = spike_message(hold.efficacy_q16, false);
+        let mut sent = 0u32;
+        for (set, channel) in self.sets.iter().zip(self.channels.iter()) {
+            if channel.gpi_snr_inhibition > 0 {
+                sent = sent.saturating_add(send(set, inject, hold.messages, message)?);
+            }
+        }
+        Ok(sent)
+    }
 }
 
 /// Where a trial's reward takes its sign from.
@@ -450,6 +523,12 @@ pub enum Delivery {
     /// the task gives only the channel the engine's own selection chose. [`Task::check`]
     /// refuses it on an engine without the critic or without its window.
     Drawn,
+    /// The synapses from the units the engine's critic counted within its window since the
+    /// previous reward onto every unit: the drawn delivery with its targets released
+    /// (ADR-0143, ADR-0144). The selection enters the address nowhere, so it is written at a
+    /// tie as at any trial, and a synapse is addressed exactly when its source was drawn.
+    /// [`Task::check`] refuses it as it refuses the drawn delivery.
+    Released,
 }
 
 /// The critic of the reward-prediction error (ADR-0106, ADR-0107): the expected reward of each
@@ -505,6 +584,16 @@ pub enum TaskError {
     CancelOutsideTrial,
     /// A cancel whose efficacy is not negative: a second drive, not a cancel.
     CancelNotNegative,
+    /// A hold of no message or no cadence would deliver nothing (ADR-0144).
+    EmptyHold,
+    /// A hold whose efficacy is not negative: a drive into the channel, not a hold.
+    HoldNotNegative,
+    /// A hold that ends at or before the readout window's close, where its first message
+    /// would be due: no tick of it is.
+    HoldBeforeClose,
+    /// A hold whose last message would land after the trial's last tick, where the trial is
+    /// over and the next trial's train begins.
+    HoldOutsideTrial,
     /// A stimulus or readout set of no units.
     EmptySet,
     /// A set whose pattern the rule refuses (ADR-0065): a period of zero or beyond the mask's
@@ -545,10 +634,10 @@ pub enum TaskError {
     /// The injector refused a message of the stimulus or of the drive; the trial stopped there.
     Inject(InjectError),
     /// The executor refused the addressed set (ADR-0068): a unit outside the arena, or, under
-    /// the drawn delivery, an engine without the critic or without its window (ADR-0139).
-    /// `check` holds every readout inside the arena and refuses the drawn delivery on such an
-    /// engine before any tick, so a trial's addressing is never refused; the refusal is the
-    /// executor's, surfaced here as the injector's is.
+    /// the drawn delivery or the released one, an engine without the critic or without its
+    /// window (ADR-0139, ADR-0144). `check` holds every readout inside the arena and refuses
+    /// either delivery on such an engine before any tick, so a trial's addressing is never
+    /// refused; the refusal is the executor's, surfaced here as the injector's is.
     Address(AddressError),
 }
 
@@ -588,13 +677,16 @@ pub struct Outcome {
     /// Under the engine's critic (ADR-0131), the engine's value of the trial's reward, before
     /// its weights moved; none without it, or when the reward is withheld.
     pub value_q16: Option<i32>,
+    /// The messages the hold delivered in the trial (ADR-0144); zero without a hold, and at a
+    /// tie.
+    pub held: u32,
 }
 
 /// A two-alternative task on an executor: two stimuli, two readouts, a background drive, a
 /// trial's length, a seed, a reward magnitude, the assignment of stimuli to readouts, where
-/// the reward's sign comes from, where its dopamine term reaches, and the critic, when it has
-/// one. Every field is the caller's; `check` says what a run needs of them and of the
-/// executor.
+/// the reward's sign comes from, where its dopamine term reaches, the critic, when it has
+/// one, and the hold, when it has one. Every field is the caller's; `check` says what a run
+/// needs of them and of the executor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Task {
     pub stimuli: [Stimulus; 2],
@@ -619,6 +711,10 @@ pub struct Task {
     /// The critic (ADR-0107): the reward delivered is the outcome's less the presented
     /// stimulus's expected reward; none delivers the outcome's reward itself.
     pub critic: Option<Critic>,
+    /// The gate's output delivered (ADR-0144): the selection made at the readout window's
+    /// close and the channel not selected held from there; none selects at the trial's end
+    /// and delivers nothing, the trial before ADR-0144.
+    pub hold: Option<Hold>,
 }
 
 impl Task {
@@ -649,7 +745,10 @@ impl Task {
     /// holds the most spikes a trial can produce, a readout count that cannot reach the
     /// drive's width, a reward that is delivered only where it can do something, and a
     /// critic's expectations, where the task has one, within the reward's magnitude, and no
-    /// critic of the task's on an engine that carries its own.
+    /// critic of the task's on an engine that carries its own; a hold, where the task carries
+    /// one, with a message and a cadence, negative, due at the window's close and landing
+    /// inside the trial; and under the drawn delivery or the released one an engine that
+    /// draws.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
         let sets = [
@@ -704,6 +803,23 @@ impl Task {
         if self.window.end() > u64::from(self.ticks) {
             return Err(TaskError::WindowOutsideTrial);
         }
+        if let Some(hold) = self.hold {
+            if hold.messages == 0 || hold.every == 0 {
+                return Err(TaskError::EmptyHold);
+            }
+            if hold.efficacy_q16 >= 0 {
+                return Err(TaskError::HoldNotNegative);
+            }
+            // The first message is due before the tick the window closes at.
+            if u64::from(hold.until) <= self.window.end() {
+                return Err(TaskError::HoldBeforeClose);
+            }
+            // The last message is injected before tick `until - 1` at the latest and lands on
+            // tick `until`, which must be inside the trial.
+            if hold.until >= self.ticks {
+                return Err(TaskError::HoldOutsideTrial);
+            }
+        }
         let per_unit = u64::from(spikes_per_unit(self.ticks));
         if (exec.train_capacity() as u64) < units.saturating_mul(per_unit) {
             return Err(TaskError::TrainTooSmall);
@@ -733,8 +849,9 @@ impl Task {
         if self.critic.is_some() && exec.critic().is_some() {
             return Err(TaskError::TwoCritics);
         }
-        // The drawn delivery needs the counts it draws from (ADR-0139), refused before any tick.
-        if self.delivery == Delivery::Drawn {
+        // The drawn delivery and the released one need the counts they draw from (ADR-0139,
+        // ADR-0144), refused before any tick.
+        if matches!(self.delivery, Delivery::Drawn | Delivery::Released) {
             exec.draws()?;
         }
         if self.feedback != Feedback::Withheld {
@@ -752,8 +869,12 @@ impl Task {
     /// cancel, if it carries one, injected before each tick it is due at, the train read once
     /// over the task's window of the trial, the selection, and the reward delivered between
     /// ticks, its sign by `feedback` — under a critic, the reward less the presented
-    /// stimulus's expectation, which then moves (ADR-0107). Refused as `check` refuses, and
-    /// when the injector refuses a message.
+    /// stimulus's expectation, which then moves (ADR-0107). Under a hold (ADR-0144) the train
+    /// is read and the selection made before the tick the window closes at, the first the
+    /// hold is due at, and the hold's messages go into the channel the gate holds before each
+    /// tick it is due at; the window is whole by then, so the counts and the selection are
+    /// the ones the trial's end would read. Refused as `check` refuses, and when the injector
+    /// refuses a message.
     pub fn trial<const CAP: usize>(
         &mut self,
         exec: &mut Executor<CAP>,
@@ -765,26 +886,46 @@ impl Task {
         let inject = exec.injector();
         let presented = self.stimuli[usize::from(stimulus)];
         presented.inject(&inject)?;
+        // The train's stamp is the tick's low word (§8.4), as `start` is read here; the
+        // window's first tick is inside the trial, which `check` held, and so is its close.
+        let opens = (start as u32).wrapping_add(self.window.from);
+        let close = self.window.from.wrapping_add(self.window.ticks);
+        let mut decided: Option<([u32; 2], Option<u8>)> = None;
+        let mut held = 0u32;
         for k in 0..self.ticks {
             presented.cancel_at(&inject, k)?;
+            if let Some(hold) = self.hold.filter(|hold| hold.is_due(close, k)) {
+                // The selection, made once, before the first tick the hold is due at: the
+                // tick the window closes at, every tick of the window run and in the train.
+                decided.get_or_insert_with(|| {
+                    let counts = self
+                        .readout
+                        .count_window(exec.train(), opens, self.window.ticks);
+                    (counts, self.readout.select(counts))
+                });
+                held = held.saturating_add(self.readout.hold(&inject, &hold)?);
+            }
             self.drive.step(&inject, exec.ticks())?;
             exec.tick();
         }
-        // The train's stamp is the tick's low word (§8.4), as `start` is read here; the
-        // window's first tick is inside the trial, which `check` held.
-        let counts = self.readout.count_window(
-            exec.train(),
-            (start as u32).wrapping_add(self.window.from),
-            self.window.ticks,
-        );
-        let selection = self.readout.select(counts);
+        // Without a hold the train is read and the selection made here, at the trial's end.
+        let (counts, selection) = match decided {
+            Some(read) => read,
+            None => {
+                let counts = self
+                    .readout
+                    .count_window(exec.train(), opens, self.window.ticks);
+                (counts, self.readout.select(counts))
+            }
+        };
         let correct = selection == Some(self.answer(stimulus));
         // Where the dopamine term reaches from the next tick (ADR-0068): under the addressed
         // delivery the synapses from the stimulus presented onto the readout the engine
         // selected, none at a tie; under the drawn one (ADR-0139) from the units the engine's
         // critic counted in its window onto the same readout, the counts this trial's since
-        // the reward comes after; under the global one every synapse alike. Written whatever
-        // the feedback, so that the set is the outcome's and not the reward's.
+        // the reward comes after; under the released one (ADR-0144) from those units onto
+        // every unit, at a tie too; under the global one every synapse alike. Written
+        // whatever the feedback, so that the set is the outcome's and not the reward's.
         match self.delivery {
             Delivery::Global => exec.address_all(),
             Delivery::Addressed => {
@@ -802,6 +943,10 @@ impl Task {
                 }
                 None => exec.address_drawn(core::iter::empty())?,
             },
+            Delivery::Released => {
+                let units = exec.units().len() as u32;
+                exec.address_drawn(0..units)?
+            }
         }
         let positive = match self.feedback {
             Feedback::Answer => correct,
@@ -819,6 +964,7 @@ impl Task {
                         .critic
                         .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
                     value_q16: None,
+                    held,
                 });
             }
         };
@@ -853,6 +999,7 @@ impl Task {
             signal_q16,
             expected_q16,
             value_q16,
+            held,
         })
     }
 }
@@ -932,6 +1079,7 @@ mod tests {
             feedback,
             delivery: Delivery::Global,
             critic: None,
+            hold: None,
         }
     }
 
@@ -2502,6 +2650,623 @@ mod tests {
         );
     }
 
+    /// The hold's rule at its edges (ADR-0144): due before the tick the window closes at and
+    /// before every `every`-th tick after it, below `until`; never before the close, never at
+    /// `until` or after it, and never with no cadence.
+    #[test]
+    fn a_hold_is_due_on_its_cadence_from_the_close_and_at_no_other_tick() {
+        let h = Hold {
+            until: 48,
+            every: 8,
+            messages: 1,
+            efficacy_q16: -ONE,
+        };
+        let due =
+            |h: Hold, close: u32| -> Vec<u32> { (0..64).filter(|&k| h.is_due(close, k)).collect() };
+        assert_eq!(due(h, 16), vec![16, 24, 32, 40]);
+        assert!(!h.is_due(16, 48), "at `until`, though on the cadence");
+        assert_eq!(due(Hold { until: 49, ..h }, 16), vec![16, 24, 32, 40, 48]);
+        assert_eq!(due(Hold { until: 41, ..h }, 16), vec![16, 24, 32, 40]);
+        assert_eq!(due(Hold { until: 40, ..h }, 16), vec![16, 24, 32]);
+        assert_eq!(
+            due(Hold { until: 17, ..h }, 16),
+            vec![16],
+            "the close alone"
+        );
+        assert_eq!(due(Hold { until: 16, ..h }, 16), Vec::<u32>::new());
+        assert_eq!(
+            due(Hold { every: 1, ..h }, 16),
+            (16..48).collect::<Vec<u32>>(),
+            "a cadence of one: every tick from the close below `until`"
+        );
+        assert_eq!(
+            due(Hold { every: 0, ..h }, 16),
+            Vec::<u32>::new(),
+            "no cadence, never due"
+        );
+        assert_eq!(due(Hold { every: 64, ..h }, 16), vec![16]);
+        assert_eq!(due(h, 48), Vec::<u32>::new(), "a close at `until`");
+        assert_eq!(due(h, 56), Vec::<u32>::new(), "a close after `until`");
+        let top = Hold {
+            until: u32::MAX,
+            every: 1,
+            ..h
+        };
+        assert!(top.is_due(u32::MAX - 1, u32::MAX - 1) && !top.is_due(u32::MAX - 1, u32::MAX));
+        assert!(!top.is_due(u32::MAX, u32::MAX - 1), "before the close");
+    }
+
+    /// What the gate holds (ADR-0144): after a selection the hold's messages go into every unit
+    /// of the channel whose net output is above zero, the one not selected, and into no other
+    /// unit; at a tie, and before any selection, into none. An injector that refuses a message
+    /// stops the hold there.
+    #[test]
+    fn the_gate_holds_the_channel_not_selected_and_neither_at_a_tie() {
+        let hold = Hold {
+            until: 48,
+            every: 8,
+            messages: 3,
+            efficacy_q16: -ONE,
+        };
+        // The basal potentials two ticks after a delivery: the tick that drains the ring and
+        // the tick that integrates what it drained.
+        let landed = |counts: Option<[u32; 2]>| -> (Option<u8>, [i32; 2], u32, Vec<i32>, u64) {
+            let mut exec = network(1, ONE / 2);
+            let mut r = Readout::new([set(4, 4), set(12, 4)]);
+            let selection = counts.and_then(|c| r.select(c));
+            let outputs = r.channels().map(|c| c.gpi_snr_inhibition);
+            let sent = r.hold(&exec.injector(), &hold).unwrap();
+            exec.run(2);
+            let basal = exec.units().iter().map(|u| u.v_basal).collect();
+            (selection, outputs, sent, basal, exec.delivered())
+        };
+        let into = |held: core::ops::Range<usize>| -> Vec<i32> {
+            (0..16)
+                .map(|u| if held.contains(&u) { -3 * ONE } else { 0 })
+                .collect()
+        };
+        assert_eq!(
+            landed(Some([3, 1])),
+            (Some(0), [-2 * ONE, 2 * ONE], 12, into(12..16), 12),
+            "readout 0 selected: three messages into each unit of readout 1"
+        );
+        assert_eq!(
+            landed(Some([1, 3])),
+            (Some(1), [2 * ONE, -2 * ONE], 12, into(4..8), 12),
+            "readout 1 selected: into readout 0"
+        );
+        assert_eq!(
+            landed(Some([2, 2])),
+            (None, [0, 0], 0, into(0..0), 0),
+            "a tie: both outputs zero, nothing delivered"
+        );
+        assert_eq!(
+            landed(None),
+            (None, [0, 0], 0, into(0..0), 0),
+            "before a selection the channels are at rest"
+        );
+        // Sixty-four slots in the ring: seventeen messages into each of four units is four
+        // too many, and the hold stops where the ring refuses.
+        let exec = network(1, ONE / 2);
+        let mut r = Readout::new([set(4, 4), set(12, 4)]);
+        assert_eq!(r.select([3, 1]), Some(0));
+        let wide = Hold {
+            messages: 17,
+            ..hold
+        };
+        assert_eq!(r.hold(&exec.injector(), &wide), Err(InjectError::Full));
+        assert_eq!(
+            r.hold(
+                &network(1, ONE / 2).injector(),
+                &Hold {
+                    messages: 16,
+                    ..hold
+                }
+            ),
+            Ok(64)
+        );
+    }
+
+    /// Every refusal of a hold (ADR-0144), each at its edge, and a trial with a refused hold
+    /// runs no tick.
+    #[test]
+    fn every_refusal_of_a_hold_is_named() {
+        let exec = network(1, ONE / 2);
+        let mut ok = task(Feedback::Answer);
+        ok.window = Window { from: 4, ticks: 12 };
+        let hold = Hold {
+            until: 48,
+            every: 8,
+            messages: 1,
+            efficacy_q16: -1,
+        };
+        let with = |hold: Hold| Task {
+            hold: Some(hold),
+            ..ok
+        };
+        assert_eq!(ok.check(&exec), Ok(()));
+        assert_eq!(with(hold).check(&exec), Ok(()));
+        assert_eq!(
+            with(Hold {
+                messages: 0,
+                ..hold
+            })
+            .check(&exec),
+            Err(TaskError::EmptyHold)
+        );
+        assert_eq!(
+            with(Hold { every: 0, ..hold }).check(&exec),
+            Err(TaskError::EmptyHold)
+        );
+        assert_eq!(
+            with(Hold {
+                efficacy_q16: 0,
+                ..hold
+            })
+            .check(&exec),
+            Err(TaskError::HoldNotNegative)
+        );
+        assert_eq!(
+            with(Hold {
+                efficacy_q16: ONE,
+                ..hold
+            })
+            .check(&exec),
+            Err(TaskError::HoldNotNegative)
+        );
+        // The window closes at tick 16: a hold that ends there has no tick due, one that
+        // ends a tick later has the close itself.
+        assert_eq!(
+            with(Hold { until: 16, ..hold }).check(&exec),
+            Err(TaskError::HoldBeforeClose)
+        );
+        assert_eq!(
+            with(Hold { until: 0, ..hold }).check(&exec),
+            Err(TaskError::HoldBeforeClose)
+        );
+        assert_eq!(with(Hold { until: 17, ..hold }).check(&exec), Ok(()));
+        // The last message lands on tick `until` at the latest, which must be inside the
+        // trial's sixty-four.
+        assert_eq!(
+            with(Hold {
+                until: TICKS - 1,
+                ..hold
+            })
+            .check(&exec),
+            Ok(())
+        );
+        assert_eq!(
+            with(Hold {
+                until: TICKS,
+                ..hold
+            })
+            .check(&exec),
+            Err(TaskError::HoldOutsideTrial)
+        );
+        assert_eq!(
+            with(Hold {
+                until: u32::MAX,
+                ..hold
+            })
+            .check(&exec),
+            Err(TaskError::HoldOutsideTrial)
+        );
+        // A window that is the whole trial closes with it: no hold fits.
+        let mut whole = with(Hold {
+            until: TICKS,
+            ..hold
+        });
+        whole.window = Window::whole(TICKS);
+        assert_eq!(whole.check(&exec), Err(TaskError::HoldBeforeClose));
+        // The refusals in their order: an empty hold before its sign, its sign before its span.
+        assert_eq!(
+            with(Hold {
+                until: 0,
+                every: 0,
+                messages: 0,
+                efficacy_q16: 0
+            })
+            .check(&exec),
+            Err(TaskError::EmptyHold)
+        );
+        assert_eq!(
+            with(Hold {
+                until: 0,
+                efficacy_q16: 0,
+                ..hold
+            })
+            .check(&exec),
+            Err(TaskError::HoldNotNegative)
+        );
+        // A window refused is refused before the hold is read against it.
+        let mut outside = with(hold);
+        outside.window = Window {
+            from: TICKS,
+            ticks: 1,
+        };
+        assert_eq!(outside.check(&exec), Err(TaskError::WindowOutsideTrial));
+        let mut exec = network(1, ONE / 2);
+        assert_eq!(
+            with(Hold {
+                until: TICKS,
+                ..hold
+            })
+            .trial(&mut exec, 0),
+            Err(TaskError::HoldOutsideTrial)
+        );
+        assert_eq!((exec.ticks(), exec.delivered()), (0, 0), "no tick ran");
+    }
+
+    /// The fields a trial can move on a unit of these networks.
+    fn fields(exec: &Executor<8>) -> Vec<(i32, i32, i32, u16, u32)> {
+        exec.units()
+            .iter()
+            .map(|u| {
+                (
+                    u.v_soma,
+                    u.v_basal,
+                    u.v_thresh,
+                    u.refractory_ticks,
+                    u.last_soma_spike_tick,
+                )
+            })
+            .collect()
+    }
+
+    /// A task with no hold runs the trial it ran before the hold existed (ADR-0144): `trial`
+    /// against the trial as ADR-0139 left it, written out here as the oracle — the train read
+    /// once after the last tick and the selection made there — on twin engines over eight
+    /// trials under a drive, a cancel, a sub-window, the critic's window and each delivery
+    /// before the released one, a readout cued before some of them: the same outcome, the same
+    /// units' fields, the same train, the same messages drained, the same addressed set and the
+    /// same signal after every trial.
+    #[test]
+    fn a_trial_with_no_hold_is_the_trial_before_the_hold() {
+        fn before(t: &mut Task, exec: &mut Executor<8>, trial: u64) -> Outcome {
+            t.check(exec).unwrap();
+            let start = exec.ticks();
+            let stimulus = t.stimulus_at(trial);
+            let inject = exec.injector();
+            let presented = t.stimuli[usize::from(stimulus)];
+            presented.inject(&inject).unwrap();
+            for k in 0..t.ticks {
+                presented.cancel_at(&inject, k).unwrap();
+                t.drive.step(&inject, exec.ticks()).unwrap();
+                exec.tick();
+            }
+            let counts = t.readout.count_window(
+                exec.train(),
+                (start as u32).wrapping_add(t.window.from),
+                t.window.ticks,
+            );
+            let selection = t.readout.select(counts);
+            let correct = selection == Some(t.answer(stimulus));
+            let selected = selection.map(|r| t.readout.sets()[usize::from(r)]);
+            match t.delivery {
+                Delivery::Global => exec.address_all(),
+                Delivery::Addressed => exec
+                    .address(
+                        presented.set.units(),
+                        selected.iter().flat_map(|set| set.units()),
+                    )
+                    .unwrap(),
+                Delivery::Drawn => exec
+                    .address_drawn(selected.iter().flat_map(|set| set.units()))
+                    .unwrap(),
+                Delivery::Released => unreachable!("the oracle is of the trial before it"),
+            }
+            let delivered_q16 = if correct {
+                t.reward_q16
+            } else {
+                t.reward_q16.saturating_neg()
+            };
+            let signal_q16 = exec.reward(delivered_q16);
+            let prediction = exec.prediction().expect("the engine's critic");
+            Outcome {
+                trial,
+                stimulus,
+                counts,
+                selection,
+                correct,
+                reward_q16: prediction.error_q16,
+                signal_q16,
+                expected_q16: None,
+                value_q16: Some(prediction.value_q16),
+                held: 0,
+            }
+        }
+        for delivery in [Delivery::Global, Delivery::Addressed, Delivery::Drawn] {
+            let mut t = task(Feedback::Answer);
+            t.delivery = delivery;
+            t.window = Window { from: 4, ticks: 20 };
+            t.drive = Drive {
+                every: 1,
+                messages: 2,
+                efficacy_q16: 0x2000,
+                units: 16,
+                seed: 5,
+            };
+            for stimulus in t.stimuli.iter_mut() {
+                stimulus.cancel = Some(Cancel {
+                    offset: 30,
+                    ticks: 3,
+                    messages: 1,
+                    efficacy_q16: -ONE,
+                });
+            }
+            assert_eq!(t.hold, None);
+            let mut oracle = t;
+            let mut now = windowed_network(40);
+            let mut then = windowed_network(40);
+            let mut selections = Vec::new();
+            for trial in 0..8u64 {
+                // A readout cued before three of the trials, so that the run holds each
+                // selection and a tie.
+                let cued = [None, Some(0), None, Some(1), Some(1), None, Some(0), None];
+                if let Some(r) = cued[trial as usize] {
+                    cue(&now, t.readout.sets()[r]);
+                    cue(&then, t.readout.sets()[r]);
+                }
+                let outcome = t.trial(&mut now, trial).unwrap();
+                assert_eq!(
+                    outcome,
+                    before(&mut oracle, &mut then, trial),
+                    "{delivery:?} trial {trial}"
+                );
+                assert_eq!(fields(&now), fields(&then), "{delivery:?} trial {trial}");
+                assert_eq!(now.train().to_vec(), then.train().to_vec());
+                assert_eq!(
+                    (
+                        now.delivered(),
+                        now.addressed_counts(),
+                        now.modulator().dopamine_rpe,
+                        now.features().to_vec(),
+                    ),
+                    (
+                        then.delivered(),
+                        then.addressed_counts(),
+                        then.modulator().dopamine_rpe,
+                        then.features().to_vec(),
+                    ),
+                    "{delivery:?} trial {trial}"
+                );
+                assert_eq!(
+                    (0..16).map(|u| now.is_source(u)).collect::<Vec<bool>>(),
+                    (0..16).map(|u| then.is_source(u)).collect::<Vec<bool>>()
+                );
+                assert_eq!(
+                    t.readout, oracle.readout,
+                    "the channels as the gate left them"
+                );
+                selections.push(outcome.selection);
+            }
+            assert!(
+                [None, Some(0), Some(1)]
+                    .iter()
+                    .all(|s| selections.contains(s)),
+                "{delivery:?}: each selection and a tie among {selections:?}"
+            );
+        }
+    }
+
+    /// The hold on the engine (ADR-0144), sixteen armed units without synapses at a gain of
+    /// 1.0, the window the trial's first ticks and a hold of two messages at the bound every
+    /// eight ticks from the close below tick 56.
+    ///
+    /// - A cued readout fires inside the window and is selected at the close: the hold's
+    ///   messages — four times, four units, two messages — go into the other readout's units,
+    ///   whose potentials after the trial are those of the membrane rule stepped alone with
+    ///   −4.0 landing on the tick after each tick the hold was due at, and on no other; every
+    ///   other unit, the train and the outcome but its count of the hold's messages are those
+    ///   of the same trial with no hold.
+    /// - The selection is the one the trial's end reads: the counts are the train's over the
+    ///   window after the trial, with the window closing on the tick after the cued readout's
+    ///   spike as with it closing later; a window that closes on the spike's own tick does not
+    ///   hold it, the trial is a tie with the hold as without it, and nothing is delivered.
+    #[test]
+    fn a_hold_selects_at_the_window_s_close_and_holds_the_channel_not_selected() {
+        let hold = Hold {
+            until: 56,
+            every: 8,
+            messages: 2,
+            efficacy_q16: -0x0002_0000,
+        };
+        // One trial from a fresh network with `cued` cued before it, under a window of the
+        // trial's first `window` ticks: the outcome, the units' fields, the train and the
+        // messages drained.
+        type Ran = (
+            Outcome,
+            Vec<(i32, i32, i32, u16, u32)>,
+            Vec<(u32, u32)>,
+            u64,
+        );
+        let run = |cued: Option<usize>, window: u32, hold: Option<Hold>| -> Ran {
+            let mut exec = network(2, ONE / 2);
+            let mut t = task(Feedback::Answer);
+            t.window = Window {
+                from: 0,
+                ticks: window,
+            };
+            t.hold = hold;
+            if let Some(r) = cued {
+                cue(&exec, t.readout.sets()[r]);
+            }
+            let outcome = t.trial(&mut exec, 0).unwrap();
+            let read = t
+                .readout
+                .count_window(exec.train(), t.window.from, t.window.ticks);
+            assert_eq!(
+                outcome.counts, read,
+                "the counts are the train's at the end"
+            );
+            let train = exec.train().to_vec();
+            (outcome, fields(&exec), train, exec.delivered())
+        };
+        // The tick the cued readout's units fire on, read from a trial with no hold.
+        let (bare, _, train, drained) = run(Some(0), 24, None);
+        assert_eq!((bare.selection, bare.held, drained), (Some(0), 0, 16));
+        let spikes: Vec<u32> = train
+            .iter()
+            .filter(|&&(_, unit)| (4..8).contains(&unit))
+            .map(|&(tick, _)| tick)
+            .collect();
+        let at = spikes[0];
+        assert_eq!(spikes, vec![at; 4], "the cued readout fires together, once");
+        assert!(at < 16, "inside the windows below");
+        // The membrane rule stepped alone: an armed unit at rest taking −4.0 on the tick after
+        // each tick the hold is due at under a window that closes at `close`.
+        let alone = |close: u32| -> (i32, i32, i32, u16, u32) {
+            let mut unit = cortex_core::DendriticSuperNeuron::new(12);
+            unit.v_thresh = THRESHOLD_BASE;
+            for tick in 0..TICKS {
+                let landing = tick.checked_sub(1).is_some_and(|k| hold.is_due(close, k));
+                unit.integrate(if landing { -0x0004_0000 } else { 0 }, 0, tick);
+            }
+            (
+                unit.v_soma,
+                unit.v_basal,
+                unit.v_thresh,
+                unit.refractory_ticks,
+                unit.last_soma_spike_tick,
+            )
+        };
+        for close in [at.saturating_add(1), 24] {
+            for (cued, held_units) in [(0usize, 12..16usize), (1, 4..8)] {
+                let (without, fields_without, train_without, drained_without) =
+                    run(Some(cued), close, None);
+                let (with, fields_with, train_with, drained_with) =
+                    run(Some(cued), close, Some(hold));
+                let times = (close..hold.until).step_by(8).count() as u32;
+                assert_eq!(
+                    (with.selection, with.held),
+                    (Some(cued as u8), times.saturating_mul(8)),
+                    "close {close}: selected at the close, and the other readout held"
+                );
+                assert_eq!(
+                    with,
+                    Outcome {
+                        held: with.held,
+                        ..without
+                    },
+                    "close {close}: the outcome the trial's end reads"
+                );
+                assert_eq!(train_with, train_without, "no held unit fired either way");
+                assert_eq!(
+                    drained_with,
+                    drained_without.saturating_add(u64::from(with.held))
+                );
+                for (u, (held, bare)) in fields_with.iter().zip(&fields_without).enumerate() {
+                    if held_units.contains(&u) {
+                        assert_eq!(*held, alone(close), "close {close} unit {u}: held");
+                        assert!(held.1 < 0 && bare.1 == 0, "unit {u} below rest");
+                    } else {
+                        assert_eq!(held, bare, "close {close} unit {u}: not reached");
+                    }
+                }
+            }
+        }
+        // A window that closes on the spike's own tick does not hold the spike: a tie, with
+        // the hold as without it, and nothing delivered.
+        let (without, fields_without, train_without, drained_without) = run(Some(0), at, None);
+        let (with, fields_with, train_with, drained_with) = run(Some(0), at, Some(hold));
+        assert_eq!((without.selection, without.counts), (None, [0, 0]));
+        assert_eq!(with, without);
+        assert_eq!(
+            (fields_with, train_with, drained_with, with.held),
+            (fields_without, train_without, drained_without, 0)
+        );
+        // No cue at all: a tie, and nothing delivered.
+        let (tie, _, _, drained) = run(None, 24, Some(hold));
+        assert_eq!((tie.selection, tie.held, drained), (None, 0, 8));
+    }
+
+    /// The released delivery (ADR-0144): a trial leaves as the sources the units the critic's
+    /// window counted, as the drawn delivery does, and as the targets every unit, whatever was
+    /// selected, a tie included; refused before any tick on an engine without the critic or
+    /// without its window.
+    #[test]
+    fn the_released_delivery_addresses_the_units_the_critic_counted_onto_every_unit() {
+        let sources =
+            |exec: &Executor<8>| -> Vec<u32> { (0..16).filter(|&u| exec.is_source(u)).collect() };
+        let targets =
+            |exec: &Executor<8>| -> Vec<u32> { (0..16).filter(|&u| exec.is_target(u)).collect() };
+        let counted = |exec: &Executor<8>| -> Vec<u32> {
+            (0..16)
+                .filter(|&u| exec.features()[u as usize] != 0)
+                .collect()
+        };
+        let every: Vec<u32> = (0..16).collect();
+        let mut t = task(Feedback::Withheld);
+        t.delivery = Delivery::Released;
+        // Withheld, so that the counts the address was drawn from still stand after the trial.
+        let mut exec = windowed_network(30);
+        let tie = t.trial(&mut exec, 0).unwrap();
+        let presented: Vec<u32> = t.stimuli[usize::from(tie.stimulus)].set.units().collect();
+        assert_eq!(tie.selection, None);
+        assert_eq!(counted(&exec), presented, "the window counted the volley");
+        assert_eq!(
+            (sources(&exec), targets(&exec)),
+            (presented.clone(), every.clone()),
+            "a tie: the drawn sources onto every unit"
+        );
+        // The drawn delivery from the same state: the same sources, and at a tie no target.
+        let mut drawn = t;
+        drawn.delivery = Delivery::Drawn;
+        let mut beside = windowed_network(30);
+        drawn.trial(&mut beside, 0).unwrap();
+        assert_eq!(
+            (sources(&beside), targets(&beside)),
+            (presented, vec![]),
+            "the drawn delivery's sources, and its targets none at a tie"
+        );
+        // A window that spans the ticks between two trials: a cued readout is selected and
+        // drawn beside the stimulus's units, and every unit is a target still.
+        let mut exec = windowed_network(1_000);
+        t.trial(&mut exec, 0).unwrap();
+        exec.run(400);
+        cue(&exec, t.readout.sets()[1]);
+        let selected = t.trial(&mut exec, 2).unwrap();
+        assert_eq!(selected.selection, Some(1));
+        let drawn_units = counted(&exec);
+        assert!(drawn_units.contains(&12) && drawn_units.len() < 16);
+        assert_eq!((sources(&exec), targets(&exec)), (drawn_units, every));
+        // Rewarded, the reward zeroes the counts after the address is written.
+        t.feedback = Feedback::Answer;
+        let mut exec = windowed_network(30);
+        let rewarded = t.trial(&mut exec, 0).unwrap();
+        assert_eq!(
+            (sources(&exec).len(), targets(&exec).len(), counted(&exec)),
+            (4, 16, vec![])
+        );
+        assert_eq!(rewarded.reward_q16, -REWARD, "a tie is punished");
+        // Refused before any tick without the critic, and without its window.
+        let mut none = network(2, ONE / 2);
+        assert_eq!(
+            t.check(&none),
+            Err(TaskError::Address(AddressError::NoCritic))
+        );
+        assert_eq!(
+            t.trial(&mut none, 3),
+            Err(TaskError::Address(AddressError::NoCritic))
+        );
+        assert_eq!(none.ticks(), 0, "no tick ran");
+        let mut unwindowed = windowed_network(0);
+        assert_eq!(
+            t.trial(&mut unwindowed, 3),
+            Err(TaskError::Address(AddressError::NoWindow))
+        );
+        assert_eq!(
+            (unwindowed.ticks(), unwindowed.addressed_counts()),
+            (0, (16, 16)),
+            "no tick ran, and the set is as at birth"
+        );
+        // The deliveries that draw nothing are not refused there.
+        for delivery in [Delivery::Global, Delivery::Addressed] {
+            t.delivery = delivery;
+            assert_eq!(t.check(&network(2, ONE / 2)), Ok(()), "{delivery:?}");
+        }
+    }
+
     /// The cancel's rule at its edges (ADR-0076): due from its offset for its ticks, widened
     /// at the top of the tick space, and never with no tick.
     #[test]
@@ -2871,6 +3636,127 @@ mod prop {
                         "{c:?} at {k}"
                     );
                     assert_eq!(c.end(), u64::from(offset).saturating_add(u64::from(ticks)));
+                }
+            }
+        }
+    }
+
+    /// A hold delivers at its times and at no other (ADR-0144): over seeded holds and windows,
+    /// a trial with a readout cued delivers the hold's messages into the other readout's four
+    /// units once for every tick from the window's close below `until` on the cadence, by a
+    /// hand rule, and a trial with none cued delivers nothing; the ring drains the stimulus's
+    /// messages, the cue's and the hold's and no more; and the rule over the lattice of closes,
+    /// ends, cadences and ticks.
+    #[test]
+    fn a_hold_delivers_at_its_times_and_at_no_other() {
+        let mut lcg = Lcg::new(37);
+        let cue = spike_message(0x0001_4000, false);
+        for round in 0..48u32 {
+            let close = lcg.below(24).saturating_add(20);
+            let until = close
+                .saturating_add(1)
+                .saturating_add(lcg.below(62u32.saturating_sub(close)));
+            let every = lcg.below(12).saturating_add(1);
+            let messages = lcg.below(3).saturating_add(1);
+            let hold = Hold {
+                until,
+                every,
+                messages,
+                efficacy_q16: (lcg.below(0x0002_0000) as i32)
+                    .saturating_neg()
+                    .saturating_sub(1),
+            };
+            let mut exec = Executor::<8>::new(Config {
+                workers: 1,
+                units: 16,
+                injector_capacity: 64,
+                train_capacity: 64,
+                modulation_baseline_q16: 0,
+                ..Config::default()
+            })
+            .unwrap();
+            for unit in exec.units_mut() {
+                unit.v_thresh = cortex_core::THRESHOLD_BASE;
+            }
+            let stimulus = |first: u32| Stimulus {
+                set: Set::contiguous(first, 4),
+                messages: 2,
+                efficacy_q16: 0x0001_4000,
+                cancel: None,
+            };
+            let mut t = Task {
+                stimuli: [stimulus(0), stimulus(8)],
+                readout: Readout::new([Set::contiguous(4, 4), Set::contiguous(12, 4)]),
+                drive: Drive {
+                    every: 0,
+                    messages: 0,
+                    efficacy_q16: 0,
+                    units: 16,
+                    seed: 0,
+                },
+                ticks: 64,
+                window: Window {
+                    from: 0,
+                    ticks: close,
+                },
+                seed: u64::from(round),
+                reward_q16: 0,
+                mirrored: false,
+                feedback: Feedback::Withheld,
+                delivery: Delivery::Global,
+                critic: None,
+                hold: Some(hold),
+            };
+            // A readout cued in two rounds of three, each readout in turn.
+            let cued = [Some(0usize), Some(1), None][(round % 3) as usize];
+            let mut cues = 0u64;
+            if let Some(r) = cued {
+                let inject = exec.injector();
+                for unit in t.readout.sets()[r].units() {
+                    for _ in 0..2 {
+                        inject.inject(unit, cue).unwrap();
+                        cues = cues.saturating_add(1);
+                    }
+                }
+            }
+            let times = (0..64u32)
+                .filter(|&k| {
+                    k >= close && k < until && k.wrapping_sub(close).checked_rem(every) == Some(0)
+                })
+                .count() as u32;
+            let outcome = t.trial(&mut exec, 0).unwrap();
+            assert_eq!(outcome.selection, cued.map(|r| r as u8), "{hold:?}");
+            let expected = if cued.is_some() {
+                times.saturating_mul(messages).saturating_mul(4)
+            } else {
+                0
+            };
+            assert!(cued.is_none() || times >= 1, "the close itself is due");
+            assert_eq!(outcome.held, expected, "{hold:?} closing at {close}");
+            assert_eq!(
+                exec.delivered(),
+                8u64.saturating_add(cues)
+                    .saturating_add(u64::from(expected)),
+                "{hold:?}: the ring drained what was sent"
+            );
+        }
+        for &k in U32_LATTICE.iter() {
+            for &close in U32_LATTICE.iter() {
+                for &until in U32_LATTICE.iter() {
+                    for every in [0u32, 1, 2, 3, 8, 255, 256, u32::MAX] {
+                        let h = Hold {
+                            until,
+                            every,
+                            messages: 1,
+                            efficacy_q16: -1,
+                        };
+                        let since = k.checked_sub(close);
+                        assert_eq!(
+                            h.is_due(close, k),
+                            k < until && since.is_some_and(|d| d.checked_rem(every) == Some(0)),
+                            "{h:?} closing at {close}, at {k}"
+                        );
+                    }
                 }
             }
         }

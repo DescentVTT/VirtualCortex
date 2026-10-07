@@ -16,8 +16,8 @@ pub(crate) use cortex_homeostasis::{
 pub(crate) use cortex_neuromod::{DOPAMINE_TAU_SHIFT, ValueCritic};
 
 pub(crate) use cortex_runtime::{
-    Cancel, Config, Critic, Delivery, Drive, Executor, Feedback, Image, Outcome, Readout, Set,
-    Stimulus, Task, TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
+    Cancel, Config, Critic, Delivery, Drive, Executor, Feedback, Hold, Image, Outcome, Readout,
+    Set, Stimulus, Task, TaskError, Window, blocks_for, run_driven, spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -337,6 +337,7 @@ pub(crate) fn task(
         feedback,
         delivery,
         critic: None,
+        hold: None,
     }
 }
 
@@ -2939,6 +2940,13 @@ pub(crate) struct Composer {
     /// traces and weights of its own from the composer's at the run's start; it is never
     /// written back, and the record is held to the composer alone.
     pub(crate) shadows: Vec<Shadow>,
+    /// The released delivery (brief 060, ADR-0144): false in every run before it, where under
+    /// the drawn delivery a replayed synapse is addressed when its source was drawn and its
+    /// readout the one the last trial selected; true under H-27, where the task hands
+    /// `Executor::address_drawn` every unit and a synapse is addressed when its source was
+    /// drawn, whatever its readout and whatever was selected, a tie included — the rule the
+    /// released shadow of brief 059 replayed open-loop, here the composer's own.
+    pub(crate) released: bool,
 }
 
 /// What one trial's consolidation did to the synapses of the pair the last trial's delivery
@@ -3157,6 +3165,7 @@ impl Composer {
             drawn: None,
             shifted: Vec::new(),
             shadows: Vec::new(),
+            released: false,
         }
     }
 
@@ -3331,7 +3340,7 @@ impl Composer {
             course: course.as_deref(),
             addressed: taught.as_ref().and_then(|t| t.addressed),
             drawn: drawn.as_deref(),
-            released: false,
+            released: self.released,
             baseline: self.baseline,
             signed: self.signed,
             global: self.global,
@@ -5225,6 +5234,7 @@ pub(crate) fn probe_task(shape: Shape, cancel: Option<Cancel>) -> Vec<u32> {
         feedback: Feedback::Withheld,
         delivery: Delivery::Global,
         critic: None,
+        hold: None,
     };
     let trial = (0..8u64)
         .find(|&k| t.stimulus_at(k) == 0)
@@ -9536,7 +9546,8 @@ pub(crate) type ShadowedRun = (
 ///
 /// Neither is written back: the record is held to the composer alone, as without them, and the
 /// executor is handed to no shadow. Without `shadowed` no shadow is taken and the fifth value
-/// is none; this is then `earned_run_delivered`, which calls it so.
+/// is none; this is then `earned_run_delivered`, which calls it so. It is `earned_run_held`
+/// with no hold, which it calls so.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_shadowed(
     exec: &mut Engine,
@@ -9552,6 +9563,92 @@ pub(crate) fn earned_run_shadowed(
     shadowed: bool,
     after: &mut dyn FnMut(&mut Engine, usize),
 ) -> ShadowedRun {
+    assert!(
+        delivery != Delivery::Released,
+        "the released delivery is `earned_run_held`'s"
+    );
+    let (run, moves, expected, values, shadows, beside) = earned_run_held(
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flips,
+        signed,
+        critic,
+        delivery,
+        shadowed,
+        None,
+        after,
+    );
+    assert!(
+        beside.held.iter().all(|&messages| messages == 0),
+        "no hold, no message of one"
+    );
+    (run, moves, expected, values, shadows)
+}
+
+/// What brief 060 reads beside a run (ADR-0144), every table one row a trial:
+/// - `shifted`: what the composer consolidated into the weights, by stimulus, readout and
+///   direction — the run's own, the record held to it;
+/// - `eligible`: at the trial's reward, the record's eligibility over the stimulus–readout
+///   synapses whose source the executor drew at that trial's end, `[readout][above zero, below
+///   zero]`; empty under a delivery that draws nothing;
+/// - `held`: the messages the hold delivered in the trial, zero without a hold and at a tie.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HeldRead {
+    pub(crate) shifted: Vec<Shifted>,
+    pub(crate) eligible: Vec<[[i64; 2]; 2]>,
+    pub(crate) held: Vec<u32>,
+}
+
+/// A run with its shadows' reading and what brief 060 reads beside it.
+pub(crate) type HeldRun = (
+    EarnedRun,
+    Vec<Moves>,
+    Vec<[i32; 2]>,
+    Vec<i32>,
+    Option<Shadowed>,
+    HeldRead,
+);
+
+/// The times a hold is due in a trial whose readout window closes at `close`: the ticks from
+/// the close below `until`, one every `every`; none for a cadence of zero.
+pub(crate) fn hold_times(hold: &Hold, close: u32) -> u32 {
+    match usize::try_from(hold.every) {
+        Ok(every @ 1..) => (close..hold.until).step_by(every).count() as u32,
+        _ => 0,
+    }
+}
+
+/// `earned_run_shadowed` under a hold or none, and under the released delivery beside the three
+/// (brief 060, ADR-0143, ADR-0144). With `hold` set the task carries it: the selection is made
+/// at the readout window's close and the channel not selected takes the hold's messages; the
+/// harness holds every trial's count of them to the hold's times, its messages and the units of
+/// the readout not selected, none at a tie. Under `Delivery::Released`, which needs the engine's
+/// critic and its window, the harness holds the executor's sources at every trial's end to the
+/// units the critic's oracle counted and every unit a target, at a tie too, and the composer
+/// consolidates a stimulus–readout synapse under the signal where its source was drawn, whatever
+/// its readout (`Composer::released`). The composer and the network's oracle replay the train,
+/// so a hold reaches them only through the spikes it leaves. With no hold and one of the three
+/// deliveries before it this is `earned_run_shadowed`, which calls it so.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_held(
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flips: &[usize],
+    signed: bool,
+    critic: Option<Critic>,
+    delivery: Delivery,
+    shadowed: bool,
+    hold: Option<Hold>,
+    after: &mut dyn FnMut(&mut Engine, usize),
+) -> HeldRun {
     assert!(
         !shadowed || delivery == Delivery::Drawn,
         "the shadows are of the drawn address"
@@ -9578,7 +9675,9 @@ pub(crate) fn earned_run_shadowed(
     composer.baseline = baseline_q16;
     composer.signed = signed;
     composer.global = delivery == Delivery::Global;
-    composer.drawn = (delivery == Delivery::Drawn).then(|| vec![false; units as usize]);
+    composer.drawn = matches!(delivery, Delivery::Drawn | Delivery::Released)
+        .then(|| vec![false; units as usize]);
+    composer.released = delivery == Delivery::Released;
     composer.taught = Some(Taught {
         addressed: None,
         signal: 0,
@@ -9590,6 +9689,7 @@ pub(crate) fn earned_run_shadowed(
         composer.shadow(true);
     }
     let mut eligible: Vec<[[i64; 2]; 2]> = Vec::new();
+    let mut held: Vec<u32> = Vec::with_capacity(trials);
     let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
     let task = task(
         SHAPE_F46,
@@ -9599,7 +9699,11 @@ pub(crate) fn earned_run_shadowed(
         mirrored,
         delivery,
     );
-    let task = Task { critic, ..task };
+    let task = Task {
+        critic,
+        hold,
+        ..task
+    };
     // The task is `Copy`: a copy reads the coin the run's own task drew.
     let probe = task;
     let mut read: Vec<EarnedTrial> = Vec::with_capacity(trials);
@@ -9811,12 +9915,43 @@ pub(crate) fn earned_run_shadowed(
                     );
                     // The record's eligibility from the sources just drawn (brief 059), read
                     // from the composer, which this trial's reading held to the record.
-                    if shadowed {
-                        eligible.push(composer.eligible(&counted));
-                    }
+                    eligible.push(composer.eligible(&counted));
+                    composer.drawn = Some(counted);
+                }
+                Delivery::Released => {
+                    let counted = counted
+                        .take()
+                        .expect("the released delivery reads the engine's critic");
+                    assert_eq!(
+                        (0..units).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                        counted,
+                        "trial {trial}: the drawn sources are exactly the units the window counted"
+                    );
+                    assert!(
+                        (0..units).all(|u| exec.is_target(u)),
+                        "trial {trial}: every unit is a target, whatever was selected"
+                    );
+                    eligible.push(composer.eligible(&counted));
                     composer.drawn = Some(counted);
                 }
             }
+            // The hold's messages (brief 060): its times a trial, its messages a time, into
+            // every unit of the readout not selected; none at a tie, and none without a hold.
+            let due = match (hold, outcome.selection) {
+                (Some(h), Some(r)) => {
+                    let other = readout_set(&sets, usize::from(r ^ 1)).len();
+                    u64::from(hold_times(&h, WINDOW.end() as u32))
+                        .saturating_mul(u64::from(h.messages))
+                        .saturating_mul(other)
+                }
+                _ => 0,
+            };
+            assert_eq!(
+                u64::from(outcome.held),
+                due,
+                "trial {trial}: the hold delivered its messages into the readout not selected"
+            );
+            held.push(outcome.held);
             let signal = exec.modulator().dopamine_rpe;
             assert_eq!(
                 outcome.signal_q16, signal,
@@ -9897,16 +10032,31 @@ pub(crate) fn earned_run_shadowed(
         Shadowed {
             run: composer.shifted.clone(),
             released: released.shifted.clone(),
-            eligible,
+            eligible: eligible.clone(),
             couplings,
         }
     });
+    assert_eq!(held.len(), trials, "a count of the hold's messages a trial");
+    assert_eq!(
+        eligible.len(),
+        if matches!(delivery, Delivery::Drawn | Delivery::Released) {
+            trials
+        } else {
+            0
+        },
+        "an eligibility a trial under a delivery that draws"
+    );
     (
         (blocks, trace, composer.out, read, composer.volley_ticks),
         composer.moves,
         expected_after,
         values,
         shadowed,
+        HeldRead {
+            shifted: composer.shifted,
+            eligible,
+            held,
+        },
     )
 }
 
