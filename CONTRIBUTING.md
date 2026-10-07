@@ -74,7 +74,7 @@ Rounds of work are written as numbered, self-contained prompts in [`briefs/`](br
 
 ### Architecture decision records
 
-`docs/adr/` holds one [MADR](https://adr.github.io/madr/) file per decision. To propose one: copy the newest file, take the next number, set `status: proposed`, fill in context, drivers, options, outcome and confirmation, and open a pull request. It becomes `accepted` on merge with that status. Superseding a decision means adding `supersedes: ADR-NNNN` to the new record and `superseded-by:` to the old one; `spec-graph` reports the omission. Never renumber, never delete.
+`docs/adr/` holds one [MADR](https://adr.github.io/madr/) file per decision. To propose one: copy the newest file, take the next number, set `status: proposed`, fill in context, drivers, options, outcome and confirmation, and open a pull request. It becomes `accepted` on merge: the pull request's last commit sets the status, so that no second pull request is needed to say so ([ADR-0150](docs/adr/0150-a-round-waits-for-what-it-checks.md)). Superseding a decision means adding `supersedes: ADR-NNNN` to the new record and `superseded-by:` to the old one; `spec-graph` reports the omission. Never renumber, never delete.
 
 ## Verification
 

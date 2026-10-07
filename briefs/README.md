@@ -60,6 +60,31 @@ Numbers are three digits, allocated in order, never reused. Take the next free o
    done.
 6. Do not edit the body otherwise. A frozen snapshot claims nothing about now and cannot drift.
 
+## Evidencing a round
+
+How a round that measures reaches its merge ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md)).
+A brief written before that ADR may ask for more waiting than this; where the two differ, this
+section is the rule.
+
+1. **The arms run once** on the developer machine. Their tables are written from that run's dumps
+   and committed. The dispatch reproduces them; a table it does not reproduce stops the round as a
+   finding. Everything before the arms is unchanged: the protocol committed first, the calibration
+   before any rewarded run, and constants that do not move after one.
+2. **The dispatch's scope follows the diff**
+   ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=both` when a file
+   under `src/` changed, `scope=exhaustive` otherwise.
+3. **The round asks for its merge when the dispatch's whole-domain shards are green** and the pull
+   request's gate is green on its last commit. It does not wait for the sweep. Its ADR names the
+   dispatch and says the sweep had not ended.
+4. **The cost table** is regenerated from the shards' artifacts, which the run gives as each shard
+   uploads them.
+5. **The ADR cites the round's commits by the hashes its branch holds, with the pull request's
+   number.** They are not rewritten after the merge, and no second pull request follows.
+6. **The commit that asks for the merge sets the round's ADRs to `accepted`**, in their files and in
+   the index.
+7. **The sweep's outcome is read when it ends and written down by the next decision's ADR.** A
+   survivor is a finding there, and the next round's list.
+
 ## Writing one
 
 Copy the newest live brief and replace every section. Re-derive the context on the day you write
