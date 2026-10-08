@@ -172,6 +172,22 @@
 //! $2p - 1$) and the readings are integer rules written before the run; the gate runs the coin's
 //! count, the clauses at their edges and eight trials with the feedback beside eight under the
 //! answer's.
+//!
+//! Brief 062 runs H-29 here as ADR-0151 wrote it and ADR-0153 records it: H-25's two arms, from
+//! H-25's image under H-25's delivery and schedule, with the one change the number of answers —
+//! a task of three readouts (`Task<3>`, ADR-0152), each stimulus's answer moved to the next
+//! readout at a flip. The readouts are dealt by ADR-0151's rule: the deals in an order
+//! committed before any coupling was read (`deals`), the one taken the first whose six
+//! couplings on H-25's image are within ten per cent (`first_dealt`), held to the rule in each
+//! arm's calibration with a frozen block of the task read by the sight's rule. The run is its
+//! own (`answered_run`): the selection, the mapping and the address held to hand rules, the
+//! engine's critic to its oracle, and every excitatory synapse of the arena to the network's
+//! oracle at every trial, the six pairs named among them; the two-readout composer is not in
+//! it. Two arms, each its own weekly `exhaustive` test, pinned by block. The four clauses
+//! (every mapping learned by each stimulus, the six couplings bounded, the network outside
+//! them held, each stimulus's expected reward held) and the readings are integer rules written
+//! before the run; the gate runs the deals' order, the rules at their edges and eight trials
+//! with three readouts.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -65920,6 +65936,15 @@ struct Network {
 
 impl Network {
     fn new(exec: &Engine, sets: &[Set; 4], classes: &[usize]) -> Self {
+        Self::placed(exec, &|source, target| {
+            place_of(sets, classes, source, target)
+        })
+    }
+
+    /// `new` with each synapse's place by the caller's rule (brief 062), handed the synapse's
+    /// source, an excitatory unit, and its target: a task of three readouts names its six
+    /// pairs. `new` calls it with the two-readout rule, `place_of`.
+    fn placed(exec: &Engine, place: &dyn Fn(u32, u32) -> Place) -> Self {
         let blocks = exec.blocks();
         let units = exec.units();
         let chains = units
@@ -65932,9 +65957,7 @@ impl Network {
                 unit.chain(blocks)
                     .map(|idx| {
                         let block = blocks.get(idx as usize).expect("a block of the arena");
-                        wiring_of(block, idx as usize, &|target| {
-                            place_of(sets, classes, source, target)
-                        })
+                        wiring_of(block, idx as usize, &|target| place(source, target))
                     })
                     .collect()
             })
@@ -65970,6 +65993,19 @@ impl Network {
     /// read for the next trial. `answers` names each stimulus's answer under the mapping in
     /// force. Returns where the trial's consolidation went.
     fn replay(&mut self, exec: &mut Engine, trial: usize, answers: [usize; 2]) -> Went {
+        self.replay_each(exec, trial, answers, &mut |_, _| {})
+    }
+
+    /// `replay` with every consolidation handed to `each` as it is replayed (brief 062): the
+    /// slot, which names its place, and what its weight moved by. `replay` calls it with a
+    /// reader that reads nothing.
+    fn replay_each(
+        &mut self,
+        exec: &mut Engine,
+        trial: usize,
+        answers: [usize; 2],
+        each: &mut dyn FnMut(&Wired, i32),
+    ) -> Went {
         let end = exec.ticks();
         assert!(end <= u64::from(u32::MAX), "the stamp is the tick");
         let end = end as u32;
@@ -66034,6 +66070,7 @@ impl Network {
                             };
                             let side = usize::from(amount < 0);
                             went[row][side] = went[row][side].saturating_add(i64::from(amount));
+                            each(syn, amount);
                         },
                     );
                 }
@@ -167656,12 +167693,1426 @@ fn first_dealt(by_place: &PlaceCouplings) -> Option<(usize, Deal)> {
         .find(|(_, deal)| dealt(&deal_couplings(by_place, deal)))
 }
 
+// ------------------------------------------ written before the run, continued (ADR-0153)
+
+/// The arms of H-29 (ADR-0151): H-25's two, in their order, each its own weekly test, from
+/// H-25's image, under H-25's delivery and H-20's flips. From the assignment the answers run
+/// (0, 1), (1, 2), (2, 0), (0, 1); from the mirrored assignment (1, 0), (2, 1), (0, 2), (1, 0).
+const ANSWERED_ARMS: [Reversal; 2] = DRAWN_ARMS;
+
+/// H-25's delivery, unchanged: the address's sources drawn by the executor, its targets the
+/// selected readout's units, none where nothing was selected.
+const ANSWERED_DELIVERY: Delivery = DRAWN_DELIVERY;
+
+/// ADR-0151 writes no prediction for the verdict.
+const ANSWERED_PREDICTED: Option<bool> = None;
+
+/// ADR-0151's predicted readings, Hypotheses written before the run and never asserted:
+/// (a) the first mapping passes 40 of 64 later than H-25's (`later_start`); (b) before a
+/// mapping is learned each stimulus's value falls below zero, toward minus a third of the
+/// reward (`below_zero_first`); (c) after a flip the old answer's readout is selected first,
+/// and the third readout's pairs then fall below the image's (`eliminated`).
+const LATER_START_PREDICTED: bool = true;
+const BELOW_ZERO_FIRST_PREDICTED: bool = true;
+const ELIMINATION_PREDICTED: bool = true;
+
+/// Clause 1's second part (ADR-0151): among a mapping's last 128 trials each stimulus selects
+/// its answer in more than half of its presentations, read in integers as
+/// `correct × 2 > presentations`. It does not move after a rewarded run.
+const EACH_TIMES: u32 = 2;
+
+/// The six stimulus–readout pairs, in the order a reading names the first of two.
+const ANSWERED_PAIRS: [(usize, usize); 6] = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)];
+
+/// The sets of an H-29 task: the two stimuli and the three readouts.
+type AnsweredSets = ([Set; 2], [Set; ANSWERS]);
+
+// ------------------------------------------------------------- the mapping (ADR-0151)
+
+/// The answers an arm starts from: the assignment's, (0, 1), or the mirrored one's, (1, 0).
+fn first_answers(arm: Reversal) -> [usize; 2] {
+    if first_mapping(arm) { [1, 0] } else { [0, 1] }
+}
+
+/// The answers in force at the trial of index `trial`, by a hand rule and not the task's: each
+/// of the run's first answers moved on one readout for every flip of the schedule at or before
+/// the trial, the last readout to the first.
+fn answers_at(first: [usize; 2], trial: usize) -> [usize; 2] {
+    let flips = SCHEDULE_FLIPS.iter().filter(|&&f| f <= trial).count();
+    first.map(|answer| {
+        answer
+            .saturating_add(flips)
+            .checked_rem(ANSWERS)
+            .unwrap_or(0)
+    })
+}
+
+/// The answers in force over the mapping of index `m`, of four.
+fn answers_of(first: [usize; 2], m: usize) -> [usize; 2] {
+    answers_at(first, SPANS.get(m).map_or(0, |span| span.0))
+}
+
+/// The three readouts by their role to a stimulus whose answer is `answer`: the answer; the
+/// readout before it, which was the stimulus's answer until the last flip; and the readout
+/// after it, the third, which will be its answer after the next.
+fn roles(answer: usize) -> [usize; ANSWERS] {
+    [0usize, 2, 1].map(|step| {
+        answer
+            .saturating_add(step)
+            .checked_rem(ANSWERS)
+            .unwrap_or(0)
+    })
+}
+
+/// The stimulus that a flip into the mapping of index `m` moves onto the readout the other is
+/// leaving: the one whose answer under the mapping is the other's answer under the mapping
+/// before. The other moves onto the readout that was no one's. None for the first mapping, or
+/// where the two stimuli share an answer.
+fn onto_the_other_s(first: [usize; 2], m: usize) -> Option<usize> {
+    let now = answers_of(first, m);
+    let before = answers_of(first, m.checked_sub(1)?);
+    [0usize, 1]
+        .into_iter()
+        .find(|&s| now[s] == before[s ^ 1] && now[s ^ 1] != before[s])
+}
+
+/// The selection among three by a hand rule and not the gate's: the readout whose count is
+/// above both others', none where the largest is shared.
+fn largest_alone(counts: [u32; ANSWERS]) -> Option<u8> {
+    let [a, b, c] = counts;
+    if a > b && a > c {
+        Some(0)
+    } else if b > a && b > c {
+        Some(1)
+    } else if c > a && c > b {
+        Some(2)
+    } else {
+        None
+    }
+}
+
+// ----------------------------------------------------- the readings' shape (brief 062)
+
+/// One trial of an H-29 run as the harness read it: the stimulus presented; the three counts;
+/// the selection; whether it was the stimulus's answer; the reward as the task recorded it —
+/// under the engine's critic the error the modulator received; the engine's value, zero
+/// without its critic; and the signal the reward left.
+type AnsweredTrial = (u8, [u32; ANSWERS], Option<u8>, bool, i32, i32, i32);
+
+/// One block of an H-29 run, sixty-four trials, by the presented stimulus `[A, B]` where a
+/// field is of two:
+/// - `presented` and `correct`: the stimulus's trials, and those that selected its answer;
+/// - `selected`: its trials by what was selected, `[readout 0, readout 1, readout 2, none]`;
+/// - `counts`: the readouts' spikes in the window after its volley, summed;
+/// - `before`: the readouts' spikes in the window before the injection, summed over the block;
+/// - `seen`: the trials in which the window after held more readout spikes than the window
+///   before, the calibration's measure;
+/// - `volley`: the stimulus's own units' spikes before the window opens, summed;
+/// - `values` and `errors`: the engine's value at its trials' rewards and the errors the
+///   modulator received, summed;
+/// - `sums`: the arena's inhibitory and excitatory sums after the block;
+/// - `signal`: the modulator's signal after the block's last reward;
+/// - `couplings`: the six stimulus–readout couplings after the block, `[stimulus][readout]`;
+/// - `went`: where the block's consolidation went, by the network's oracle — the answer's
+///   pairs, the other four pairs, and outside the pairs, `[raised, lowered]`;
+/// - `by_pair`: the same by pair, `[stimulus][readout][raised, lowered]`;
+/// - `sourced`: at its trials' ends, the units the delivery wrote as the address's sources —
+///   its own set's units among them, its own set's units left out, and the units of no part of
+///   its set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AnsweredBlock {
+    presented: [u32; 2],
+    correct: [u32; 2],
+    selected: [[u32; 4]; 2],
+    counts: [[u64; ANSWERS]; 2],
+    before: [u64; ANSWERS],
+    seen: u32,
+    volley: [u64; 2],
+    values: [i64; 2],
+    errors: [i64; 2],
+    sums: (i64, i64),
+    signal: i32,
+    couplings: [[i64; ANSWERS]; 2],
+    went: Went,
+    by_pair: [[[i64; 2]; ANSWERS]; 2],
+    sourced: [[u32; 3]; 2],
+}
+
+/// A block before its first trial.
+const NO_BLOCK: AnsweredBlock = AnsweredBlock {
+    presented: [0; 2],
+    correct: [0; 2],
+    selected: [[0; 4]; 2],
+    counts: [[0; ANSWERS]; 2],
+    before: [0; ANSWERS],
+    seen: 0,
+    volley: [0; 2],
+    values: [0; 2],
+    errors: [0; 2],
+    sums: (0, 0),
+    signal: 0,
+    couplings: [[0; ANSWERS]; 2],
+    went: [[0; 2]; 3],
+    by_pair: [[[0; 2]; ANSWERS]; 2],
+    sourced: [[0; 3]; 2],
+};
+
+/// An H-29 run as the harness read it: its blocks; every trial; the FNV-1a hash of every
+/// trial's `(stimulus, selection, correct)`, as `run_on_scheduled` hashes them; and the six
+/// couplings at the end of the first trial under each mapping a flip put in force.
+struct AnsweredRun {
+    blocks: Vec<AnsweredBlock>,
+    read: Vec<AnsweredTrial>,
+    trace: u64,
+    at_flips: [Option<[[i64; ANSWERS]; 2]>; 3],
+}
+
+/// Every trial's whole reading, hashed: `fnv1a_64` over its numbers as `i32` words.
+fn answered_hash(read: &[AnsweredTrial]) -> u64 {
+    let mut words: Vec<i32> = Vec::with_capacity(read.len().saturating_mul(9));
+    for &(stimulus, counts, selection, correct, reward, value, signal) in read {
+        words.push(i32::from(stimulus));
+        words.extend(counts.map(|n| i32::try_from(n).unwrap_or(i32::MAX)));
+        words.push(i32::from(selection.map_or(ANSWERS as u8, |r| r)));
+        words.push(i32::from(correct));
+        words.extend([reward, value, signal]);
+    }
+    fnv1a_64(&words)
+}
+
+/// Each unit's class in `CLASSES`'s order under an H-29 task's sets: inhibitory, whatever set
+/// holds it; an excitatory unit of a stimulus's set; of a readout's; any other — the units of
+/// the six places a deal leaves in no set among them.
+fn answered_classes(exec: &Engine, sets: &AnsweredSets) -> Vec<usize> {
+    exec.units()
+        .iter()
+        .enumerate()
+        .map(|(position, unit)| {
+            assert_eq!(unit.id, position as u64, "a unit's id is its position");
+            let id = position as u32;
+            if unit.flags & FLAG_INHIBITORY != 0 {
+                0
+            } else if sets.0.iter().any(|set| set.contains(id)) {
+                1
+            } else if sets.1.iter().any(|set| set.contains(id)) {
+                2
+            } else {
+                3
+            }
+        })
+        .collect()
+}
+
+/// Where a synapse of an excitatory unit lies under an H-29 task's sets (`place_of`'s rule
+/// over three readouts): in one of the six stimulus–readout pairs — its source a unit of the
+/// stimulus's set, its target a unit of the readout's, of either polarity — or outside them,
+/// by its source's row and its target's class.
+fn answered_place(sets: &AnsweredSets, classes: &[usize], source: u32, target: u32) -> Place {
+    let stimulus = sets.0.iter().position(|set| set.contains(source));
+    let readout = sets.1.iter().position(|set| set.contains(target));
+    match (stimulus, readout) {
+        (Some(s), Some(r)) => Place::Pair(s, r),
+        _ => Place::Outside(
+            classes
+                .get(source as usize)
+                .map_or(0, |c| c.saturating_sub(1)),
+            classes.get(target as usize).copied().unwrap_or(0),
+        ),
+    }
+}
+
+/// The six couplings on `exec`, `[stimulus][readout]`, as `coupling` sums each.
+fn answered_couplings(exec: &Engine, sets: &AnsweredSets) -> [[i64; ANSWERS]; 2] {
+    sets.0
+        .map(|stimulus| sets.1.map(|readout| coupling(exec, stimulus, readout)))
+}
+
+/// The prior's census of the six pairs at 1 024 units: the synapses the prior's walk gives
+/// from a unit of each stimulus's set onto a unit of each readout's.
+fn answered_census(sets: &AnsweredSets) -> [[u32; ANSWERS]; 2] {
+    let mut out = [[0u32; ANSWERS]; 2];
+    for synapse in prior(1024).synapses() {
+        let stimulus = sets.0.iter().position(|set| set.contains(synapse.source));
+        let readout = sets.1.iter().position(|set| set.contains(synapse.target));
+        if let (Some(s), Some(r)) = (stimulus, readout) {
+            out[s][r] = out[s][r].saturating_add(1);
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------- the run (brief 062)
+
+/// A run of an H-29 task on `exec` for `trials` trials (brief 062): ADR-0065's two stimuli
+/// with ADR-0076's cancel, the three readouts of `sets`, the answers `first` moved on at each
+/// of H-20's flips by `Task::flip`, under `feedback` — the answer's, or withheld for a frozen
+/// block — and `delivery`, the drawn one or the addressed one; the instrument's lead-in of one
+/// readout window first, as `run_on_scheduled` runs it. At every trial the harness holds:
+/// - the task's answers to the hand rule (`answers_at`), the selection to the hand rule
+///   (`largest_alone`), and `correct` to the two;
+/// - under the engine's critic, its value, the error the modulator received, every unit's
+///   weight and the window's opening to the critic's oracle (`value_step`), as
+///   `earned_run_held` holds them;
+/// - the address the delivery wrote: under the drawn delivery its sources exactly the units
+///   the critic's oracle counted, under the addressed one the presented stimulus's units, and
+///   its targets the selected readout's units, none where nothing was selected;
+/// - every excitatory synapse of the arena — its trace, its weight and its block's stamp — to
+///   the network's oracle (`Network`), replayed from the train under the address and the
+///   signal the last trial left.
+///
+/// The composer of the two-readout runs is not here: its pairs are among the synapses the
+/// network's oracle replays, each named by its pair.
+fn answered_run(
+    exec: &mut Engine,
+    sets: &AnsweredSets,
+    first: [usize; 2],
+    feedback: Feedback,
+    delivery: Delivery,
+    trials: usize,
+) -> AnsweredRun {
+    assert!(
+        matches!(feedback, Feedback::Answer | Feedback::Withheld),
+        "the answer's feedback, or none for a frozen block"
+    );
+    assert!(
+        matches!(delivery, Delivery::Drawn | Delivery::Addressed),
+        "the drawn delivery, or the host's for a frozen block"
+    );
+    let units = exec.units().len() as u32;
+    assert_eq!(units, 1024, "the cancel is pinned at 1 024 units");
+    assert_eq!(
+        exec.addressed_counts(),
+        (units as usize, units as usize),
+        "every unit a source and a target before the first trial"
+    );
+    assert_eq!(
+        exec.modulator().dopamine_rpe,
+        0,
+        "the signal is at rest before the first trial"
+    );
+    let (stimuli, readouts) = *sets;
+    let classes = answered_classes(exec, sets);
+    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
+    let stimulus = |set: Set| Stimulus {
+        set,
+        messages: SHAPE_F46.0,
+        efficacy_q16: SHAPE_F46.1,
+        cancel: Some(cancel_of(picked)),
+    };
+    let mut task: Task<ANSWERS> = Task {
+        stimuli: stimuli.map(stimulus),
+        readout: Readout::new(readouts),
+        drive: drive(units),
+        ticks: TRIAL_TICKS,
+        window: WINDOW,
+        seed: SEED,
+        reward_q16: REWARD_Q16,
+        answers: first.map(|answer| answer as u8),
+        feedback,
+        delivery,
+        critic: None,
+        hold: None,
+    };
+    task.check(exec).expect("the task fits the executor");
+    // The stimulus sets counted as a readout counts them.
+    let own = Readout::new(stimuli);
+    let mut network = Network::placed(exec, &|source, target| {
+        answered_place(sets, &classes, source, target)
+    });
+    // The engine's critic's oracle (ADR-0131, ADR-0134), as `earned_run_held` keeps it: the
+    // weights and the counts as the record and the executor hold them at the start, the tick
+    // the train was last read to, and the tick the window opened at.
+    let engine_critic = exec.critic();
+    let mut weights: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
+    let mut pending: Vec<u32> = exec.features().to_vec();
+    let mut read_from = exec.ticks();
+    let window = u64::from(exec.critic_window_ticks());
+    let mut opened = exec.ticks();
+    if engine_critic.is_some() {
+        assert_eq!(
+            feedback,
+            Feedback::Answer,
+            "an engine with a critic is an arm's, rewarded"
+        );
+        assert!(window != 0, "H-25's configuration carries the window");
+        assert_eq!(
+            (
+                exec.window_opened(),
+                exec.features().iter().all(|&c| c == 0)
+            ),
+            (opened, true),
+            "the window opened at the engine's start, where the run starts, and nothing is pending"
+        );
+    } else {
+        assert_eq!(
+            delivery,
+            Delivery::Addressed,
+            "with no critic nothing is drawn"
+        );
+    }
+    let inject = exec.injector();
+    for _ in 0..LEAD_IN {
+        task.drive
+            .step(&inject, exec.ticks())
+            .expect("the drive runs");
+        exec.tick();
+    }
+    let mut blocks = Vec::new();
+    let mut read: Vec<AnsweredTrial> = Vec::with_capacity(trials);
+    let mut sequence: Vec<i32> = Vec::with_capacity(trials);
+    let mut at_flips = [None; 3];
+    let mut block = NO_BLOCK;
+    for trial in 0..trials {
+        if SCHEDULE_FLIPS.contains(&trial) {
+            task.flip();
+        }
+        let answers = answers_at(first, trial);
+        assert_eq!(
+            task.answers.map(usize::from),
+            answers,
+            "trial {trial}: the task's answers are the hand rule's"
+        );
+        let overwritten = exec.train_overwritten();
+        let start = exec.ticks() as u32;
+        let before =
+            task.readout
+                .count_window(exec.train(), start.wrapping_sub(WINDOW.ticks), WINDOW.ticks);
+        let outcome = task.trial(exec, trial as u64).expect("a trial runs");
+        assert!(
+            exec.train_overwritten().saturating_sub(overwritten)
+                <= u64::from(spikes_per_unit(TRIAL_TICKS)).saturating_mul(u64::from(units)),
+            "the ring let go no more than one trial's bound"
+        );
+        let in_volley = own.count_window(exec.train(), start, WINDOW.from);
+        let s = usize::from(outcome.stimulus);
+        assert_eq!(
+            outcome.selection,
+            largest_alone(outcome.counts),
+            "trial {trial}: the selection is the largest count alone"
+        );
+        assert_eq!(
+            outcome.correct,
+            outcome.selection.map(usize::from) == Some(answers[s]),
+            "trial {trial}: correct is the answer under the mapping in force, a tie not"
+        );
+        assert_eq!(
+            (outcome.expected_q16, outcome.held),
+            (None, 0),
+            "trial {trial}: no critic of the task's and no hold"
+        );
+        let given = match (feedback, outcome.correct) {
+            (Feedback::Answer, true) => REWARD_Q16,
+            (Feedback::Answer, false) => REWARD_Q16.saturating_neg(),
+            _ => 0,
+        };
+        // The engine's critic's oracle: the train's spikes since the last reading within the
+        // window into its counts; the units counted, which the drawn delivery reads before the
+        // reward zeroes them; then the value, the error and the step.
+        let mut counted: Option<Vec<bool>> = None;
+        let (expected, value) = match engine_critic {
+            Some(valued) => {
+                let end = exec.ticks();
+                assert!(end <= u64::from(u32::MAX), "the stamp is the tick");
+                let mut reached = false;
+                for &(tick, unit) in exec.train().iter().rev() {
+                    if u64::from(tick) < read_from {
+                        reached = true;
+                        break;
+                    }
+                    if u64::from(tick).saturating_sub(opened) >= window {
+                        continue;
+                    }
+                    if let Some(count) = pending.get_mut(unit as usize) {
+                        *count = count.saturating_add(1);
+                    }
+                }
+                assert!(
+                    reached || exec.train_overwritten() == 0,
+                    "trial {trial}: the train holds every spike since the last reading"
+                );
+                read_from = end;
+                counted = Some(pending.iter().map(|&c| c != 0).collect());
+                let (value, error, moved) = value_step(&weights, &pending, valued, given);
+                assert_eq!(
+                    outcome.value_q16,
+                    Some(value),
+                    "trial {trial}: the engine's value is the oracle's"
+                );
+                weights = moved;
+                pending.iter_mut().for_each(|c| *c = 0);
+                assert!(
+                    exec.units()
+                        .iter()
+                        .zip(&weights)
+                        .all(|(u, &w)| u.value_weight == w),
+                    "trial {trial}: every weight is the oracle's"
+                );
+                assert!(
+                    exec.features().iter().all(|&c| c == 0),
+                    "trial {trial}: the counts start again"
+                );
+                opened = end;
+                assert_eq!(
+                    exec.window_opened(),
+                    opened,
+                    "trial {trial}: the window opens again at the reward"
+                );
+                (error, value)
+            }
+            None => {
+                assert_eq!(
+                    outcome.value_q16, None,
+                    "trial {trial}: no critic of the engine's, no value"
+                );
+                (given, 0)
+            }
+        };
+        assert_eq!(
+            outcome.reward_q16, expected,
+            "trial {trial}: the reward's sign is the outcome's, less the engine's value under its critic, and none is withheld"
+        );
+        // The address the delivery wrote at the trial's end.
+        let sources: Vec<bool> = (0..units).map(|u| exec.is_source(u)).collect();
+        match counted.take() {
+            Some(counted) => assert_eq!(
+                sources, counted,
+                "trial {trial}: the drawn sources are exactly the units the window counted"
+            ),
+            None => assert_eq!(
+                sources,
+                (0..units)
+                    .map(|u| stimuli[s].contains(u))
+                    .collect::<Vec<bool>>(),
+                "trial {trial}: the host's sources are the presented stimulus's units"
+            ),
+        }
+        let selected = outcome.selection.map(|r| readouts[usize::from(r)]);
+        assert_eq!(
+            (0..units).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+            (0..units)
+                .map(|u| selected.is_some_and(|set| set.contains(u)))
+                .collect::<Vec<bool>>(),
+            "trial {trial}: the targets are the selected readout's units, none where nothing was selected"
+        );
+        let signal = exec.modulator().dopamine_rpe;
+        assert_eq!(
+            outcome.signal_q16, signal,
+            "trial {trial}: the task read the signal after its reward"
+        );
+        if feedback == Feedback::Withheld {
+            assert_eq!(
+                signal, 0,
+                "trial {trial}: withheld, the signal stays at rest"
+            );
+        }
+        // The network's oracle, held to the record, with every consolidation by its pair.
+        let mut by_pair = [[[0i64; 2]; ANSWERS]; 2];
+        let went = network.replay_each(exec, trial, answers, &mut |slot, amount| {
+            if let Place::Pair(stimulus, readout) = slot.place {
+                let side = &mut by_pair[stimulus][readout][usize::from(amount < 0)];
+                *side = side.saturating_add(i64::from(amount));
+            }
+        });
+        // The block's tallies.
+        block.presented[s] = block.presented[s].saturating_add(1);
+        block.correct[s] = block.correct[s].saturating_add(u32::from(outcome.correct));
+        let what = outcome.selection.map_or(ANSWERS, usize::from);
+        block.selected[s][what] = block.selected[s][what].saturating_add(1);
+        for (sum, &n) in block.counts[s].iter_mut().zip(&outcome.counts) {
+            *sum = sum.saturating_add(u64::from(n));
+        }
+        for (sum, &n) in block.before.iter_mut().zip(&before) {
+            *sum = sum.saturating_add(u64::from(n));
+        }
+        let total =
+            |counts: &[u32; ANSWERS]| counts.iter().fold(0u32, |sum, &n| sum.saturating_add(n));
+        block.seen = block
+            .seen
+            .saturating_add(u32::from(total(&outcome.counts) > total(&before)));
+        block.volley[s] = block.volley[s].saturating_add(u64::from(in_volley[s]));
+        block.values[s] = block.values[s].saturating_add(i64::from(value));
+        block.errors[s] = block.errors[s].saturating_add(i64::from(outcome.reward_q16));
+        add_went(&mut block.went, &went);
+        for (sum, &amount) in block
+            .by_pair
+            .iter_mut()
+            .flatten()
+            .flatten()
+            .zip(by_pair.iter().flatten().flatten())
+        {
+            *sum = sum.saturating_add(amount);
+        }
+        let own_units = stimuli[s].len() as u32;
+        let own_drawn = stimuli[s]
+            .units()
+            .filter(|&u| sources.get(u as usize).copied().unwrap_or(false))
+            .count() as u32;
+        let drawn = sources.iter().filter(|&&is| is).count() as u32;
+        let sourced = [
+            own_drawn,
+            own_units.saturating_sub(own_drawn),
+            drawn.saturating_sub(own_drawn),
+        ];
+        for (sum, &n) in block.sourced[s].iter_mut().zip(&sourced) {
+            *sum = sum.saturating_add(n);
+        }
+        read.push((
+            outcome.stimulus,
+            outcome.counts,
+            outcome.selection,
+            outcome.correct,
+            outcome.reward_q16,
+            value,
+            signal,
+        ));
+        sequence.push(
+            i32::from(outcome.stimulus)
+                | i32::from(outcome.selection.map_or(3, |r| r)) << 1
+                | i32::from(outcome.correct) << 3,
+        );
+        if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
+            at_flips[f] = Some(answered_couplings(exec, sets));
+        }
+        if trial.wrapping_add(1) % BLOCK == 0 {
+            block.sums = weights_by_polarity(exec);
+            block.signal = signal;
+            block.couplings = answered_couplings(exec, sets);
+            blocks.push(block);
+            block = NO_BLOCK;
+        }
+    }
+    AnsweredRun {
+        blocks,
+        read,
+        trace: fnv1a_64(&sequence),
+        at_flips,
+    }
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0151)
+
+/// Clause 1's and clause 4's counts, per mapping and stimulus `[A, B]`, over the mapping's last
+/// `LAST_BLOCKS` blocks — trials 1 409 to 1 536, 3 457 to 3 584, 5 505 to 5 632 and 7 553 to
+/// 7 680: the stimulus's presentations, those that selected its answer, and the engine's
+/// values at their rewards summed; zeros for a run of any other length.
+fn answered_last(blocks: &[AnsweredBlock]) -> [[StimulusValue; 2]; 4] {
+    if blocks.len() != SCHEDULE_BLOCKS {
+        return [[(0, 0, 0); 2]; 4];
+    }
+    MAPPINGS.map(|(_, to)| {
+        let mut out = [(0u32, 0u32, 0i64); 2];
+        for b in blocks.iter().take(to).skip(to.saturating_sub(LAST_BLOCKS)) {
+            for (s, of) in out.iter_mut().enumerate() {
+                of.0 = of.0.saturating_add(b.presented[s]);
+                of.1 = of.1.saturating_add(b.correct[s]);
+                of.2 = of.2.saturating_add(b.values[s]);
+            }
+        }
+        out
+    })
+}
+
+/// Clause 1's rule for one mapping (ADR-0151): at least `REWARDED_MIN` of its last 128 trials
+/// correct, and among them each stimulus selecting its answer in more than half of its
+/// presentations.
+fn learned_by_each(last: &[StimulusValue; 2]) -> bool {
+    last[0].1.saturating_add(last[1].1) >= REWARDED_MIN
+        && last
+            .iter()
+            .all(|&(n, c, _)| c.saturating_mul(EACH_TIMES) > n)
+}
+
+/// Clause 2's reading (ADR-0151): the first block, by index, at whose end one of the six
+/// couplings stood above 1.30 of its image's (`over_bound`), with that pair, `(block,
+/// stimulus, readout)` — the first in `ANSWERED_PAIRS`' order where two did at once; none when
+/// none did at any block's end.
+fn answered_over(
+    image: &[[i64; ANSWERS]; 2],
+    blocks: &[AnsweredBlock],
+) -> Option<(usize, usize, usize)> {
+    blocks.iter().enumerate().find_map(|(j, b)| {
+        ANSWERED_PAIRS
+            .iter()
+            .find(|&&(s, r)| over_bound(b.couplings[s][r], image[s][r]))
+            .map(|&(s, r)| (j, s, r))
+    })
+}
+
+/// The excitatory sum outside the six couplings: `excitatory` less each of them.
+fn answered_outside(excitatory: i64, couplings: &[[i64; ANSWERS]; 2]) -> i64 {
+    couplings
+        .iter()
+        .flatten()
+        .fold(excitatory, |sum, &c| sum.saturating_sub(c))
+}
+
+/// Clause 3's reading over an arm's blocks (ADR-0151, H-24's band, `within_band`): the first
+/// block, by index, whose end left the band, with its outside sum; none when every block's end
+/// lies within it.
+fn answered_left(image: i64, blocks: &[AnsweredBlock]) -> Option<(usize, i64)> {
+    blocks
+        .iter()
+        .map(|b| answered_outside(b.sums.1, &b.couplings))
+        .enumerate()
+        .find(|&(_, outside)| !within_band(outside, image))
+}
+
+/// H-29's criterion (ADR-0151), clause by clause per arm `[assignment first, mirrored first]`:
+/// (1) each of the four mappings learned by each stimulus, `learned_by_each`; (2) the six
+/// couplings bounded, a run of 120 blocks with none past 1.30 of its image's at any block's
+/// end; (3) the network held, a run of 120 blocks every one of whose ends lies within the
+/// band; and (4) each stimulus's mean value within a quarter of the reward of $2p - 1$, per
+/// mapping, H-23's `holds_expected`. `yes` is all in both arms; a no names the clause and the
+/// arm — under clause 1 the mapping, under clause 2 the block and the pair, under clause 3 the
+/// first block that left the band with its sum, under clause 4 the mapping and the stimulus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Answered {
+    learned: [[bool; 4]; 2],
+    bounded: [bool; 2],
+    over: [Option<(usize, usize, usize)>; 2],
+    held: [bool; 2],
+    left: [Option<(usize, i64)>; 2],
+    expected: [[[bool; 2]; 4]; 2],
+    yes: bool,
+}
+
+fn answered(image: &[[i64; ANSWERS]; 2], outside: i64, arms: [&[AnsweredBlock]; 2]) -> Answered {
+    let last = arms.map(answered_last);
+    let learned = last.map(|mappings| mappings.map(|m| learned_by_each(&m)));
+    let over = arms.map(|blocks| answered_over(image, blocks));
+    let bounded = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && over[k].is_none());
+    let left = arms.map(|blocks| answered_left(outside, blocks));
+    let held = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && left[k].is_none());
+    let expected = last.map(|mappings| mappings.map(|m| m.map(holds_expected)));
+    Answered {
+        learned,
+        bounded,
+        over,
+        held,
+        left,
+        expected,
+        yes: learned.iter().flatten().all(|&l| l)
+            && bounded.iter().all(|&b| b)
+            && held.iter().all(|&h| h)
+            && expected.iter().flatten().flatten().all(|&e| e),
+    }
+}
+
+/// The step of H-29's stopping rule a verdict reaches (ADR-0151): 3 for a yes; 4 for a no on
+/// clause 3; otherwise 5 for a no on clause 1; otherwise 6 for a no on clause 2; otherwise 7,
+/// a no on clause 4 alone.
+fn answered_step(verdict: &Answered) -> u8 {
+    if verdict.yes {
+        3
+    } else if !verdict.held.iter().all(|&h| h) {
+        4
+    } else if !verdict.learned.iter().flatten().all(|&l| l) {
+        5
+    } else if !verdict.bounded.iter().all(|&b| b) {
+        6
+    } else {
+        7
+    }
+}
+
+// --------------------------------------------------- the readings' rules (brief 062)
+
+/// The speed of each mapping's learning, as `crossings` reads it over a two-readout run: per
+/// mapping, the blocks from its first to the first of its blocks with at least `CROSSING_MARK`
+/// correct, that block counted; none when none of its blocks did or the run does not hold it.
+fn answered_crossings(blocks: &[AnsweredBlock]) -> [Option<usize>; 4] {
+    MAPPINGS.map(|(from, to)| {
+        blocks
+            .get(from..to)
+            .and_then(|mine| {
+                mine.iter()
+                    .position(|b| b.correct[0].saturating_add(b.correct[1]) >= CROSSING_MARK)
+            })
+            .map(|j| j.saturating_add(1))
+    })
+}
+
+/// Per mapping, its trials' outcomes `[correct, wrong, tied]`: the selections of the answer,
+/// the selections of another readout, and the trials that selected nothing; zeros for a
+/// mapping the run does not hold.
+fn answered_tally(blocks: &[AnsweredBlock]) -> [[u32; 3]; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let Some(mine) = blocks.get(from..to) else {
+            return [0; 3];
+        };
+        let mut out = [0u32; 3];
+        for b in mine {
+            for (selected, &correct) in b.selected.iter().zip(&b.correct) {
+                let selections = selected[..ANSWERS]
+                    .iter()
+                    .fold(0u32, |sum, &n| sum.saturating_add(n));
+                out[0] = out[0].saturating_add(correct);
+                out[1] = out[1].saturating_add(selections.saturating_sub(correct));
+                out[2] = out[2].saturating_add(selected[ANSWERS]);
+            }
+        }
+        out
+    })
+}
+
+/// One block's selections of a stimulus by the readouts' roles to it under `answers`: `[the
+/// answer, the readout before it, the readout after it, none]`.
+fn block_by_role(block: &AnsweredBlock, answers: [usize; 2], s: usize) -> [u32; 4] {
+    let [answer, before, after] = roles(answers[s]);
+    [
+        block.selected[s][answer],
+        block.selected[s][before],
+        block.selected[s][after],
+        block.selected[s][ANSWERS],
+    ]
+}
+
+/// Per mapping and stimulus, the stimulus's selections over the mapping's blocks by the
+/// readouts' roles to it (`block_by_role`): its answer, the readout before it — its answer
+/// until the flip — the readout after it, the third, and none.
+fn by_role(first: [usize; 2], blocks: &[AnsweredBlock]) -> [[[u32; 4]; 2]; 4] {
+    [0usize, 1, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        let answers = answers_of(first, m);
+        [0usize, 1].map(|s| {
+            let mut out = [0u32; 4];
+            for b in blocks.iter().take(to).skip(from) {
+                for (sum, n) in out.iter_mut().zip(block_by_role(b, answers, s)) {
+                    *sum = sum.saturating_add(n);
+                }
+            }
+            out
+        })
+    })
+}
+
+/// Per flip and stimulus, the blocks from the flip to the first block of the mapping it put
+/// in force in which the stimulus selected its new answer in more than half of its
+/// presentations, that block counted; none when no block of the mapping did.
+fn each_crossed(blocks: &[AnsweredBlock]) -> [[Option<usize>; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        [0usize, 1].map(|s| {
+            blocks
+                .get(from..to)
+                .and_then(|mine| {
+                    mine.iter()
+                        .position(|b| b.correct[s].saturating_mul(EACH_TIMES) > b.presented[s])
+                })
+                .map(|j| j.saturating_add(1))
+        })
+    })
+}
+
+/// Per flip and stimulus, the trials from the flip to the first that selected the stimulus's
+/// new answer, that trial counted; none when none did before the next flip or the run's end.
+fn first_new_answered(first: [usize; 2], read: &[AnsweredTrial]) -> [[Option<usize>; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = SPANS[m];
+        let answers = answers_of(first, m);
+        [0usize, 1].map(|s| {
+            read.iter()
+                .take(to)
+                .skip(from)
+                .position(|t| usize::from(t.0) == s && t.2.map(usize::from) == Some(answers[s]))
+                .map(|j| j.saturating_add(1))
+        })
+    })
+}
+
+/// Per flip and stimulus, the blocks from the flip, in a row, in which the stimulus selected
+/// its old answer — the readout before its new one — more often than its new answer and more
+/// often than the third: how long the old answer held (ADR-0151's reading (c)).
+fn old_held(first: [usize; 2], blocks: &[AnsweredBlock]) -> [[usize; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        let answers = answers_of(first, m);
+        [0usize, 1].map(|s| {
+            blocks
+                .iter()
+                .take(to)
+                .skip(from)
+                .take_while(|b| {
+                    let [new, old, third, _] = block_by_role(b, answers, s);
+                    old > new && old > third
+                })
+                .count()
+        })
+    })
+}
+
+/// A coupling as a fraction of its image's, in parts per ten thousand, by the readouts' roles
+/// to a stimulus under `answers`: `[the answer's, the one before's, the one after's]`.
+fn couplings_by_role(
+    image: &[[i64; ANSWERS]; 2],
+    block: &AnsweredBlock,
+    answers: [usize; 2],
+    s: usize,
+) -> [i64; ANSWERS] {
+    roles(answers[s]).map(|r| per_myriad(block.couplings[s][r], image[s][r]))
+}
+
+/// Per mapping, stimulus and role, the lowest and the highest of the stimulus's coupling into
+/// the readout of that role at any of the mapping's blocks' ends, and the coupling at its last
+/// block's end, each as a fraction of the image's in parts per ten thousand: `[lowest,
+/// highest, last]`. Zeros for a mapping of which the run holds no block.
+fn course_by_role(
+    first: [usize; 2],
+    image: &[[i64; ANSWERS]; 2],
+    blocks: &[AnsweredBlock],
+) -> [[[[i64; 3]; ANSWERS]; 2]; 4] {
+    [0usize, 1, 2, 3].map(|m| {
+        let (from, to) = MAPPINGS[m];
+        let answers = answers_of(first, m);
+        [0usize, 1].map(|s| {
+            let mut out: [Option<[i64; 3]>; ANSWERS] = [None; ANSWERS];
+            for b in blocks.iter().take(to).skip(from) {
+                for (of, now) in out.iter_mut().zip(couplings_by_role(image, b, answers, s)) {
+                    let [low, high, _] = of.unwrap_or([now; 3]);
+                    *of = Some([low.min(now), high.max(now), now]);
+                }
+            }
+            out.map(|of| of.unwrap_or([0; 3]))
+        })
+    })
+}
+
+/// The highest coupling of each mapping (`highest`'s rule over six couplings): per mapping,
+/// the highest of the six at any of its blocks' ends as a fraction of its image's, in parts
+/// per ten thousand, with its block and pair — the first in block order and then in
+/// `ANSWERED_PAIRS`' where two read the same; none for a mapping of which the run holds no
+/// block.
+fn answered_highest(image: &[[i64; ANSWERS]; 2], blocks: &[AnsweredBlock]) -> [Option<Peak>; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut best: Option<Peak> = None;
+        for (j, b) in blocks.iter().enumerate().take(to).skip(from) {
+            for &(s, r) in &ANSWERED_PAIRS {
+                let fraction = per_myriad(b.couplings[s][r], image[s][r]);
+                if best.is_none_or(|(high, ..)| fraction > high) {
+                    best = Some((fraction, j, s, r));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// The engine's mean value per block and stimulus, truncated toward zero; zero for a stimulus
+/// the block did not present.
+fn answered_means(blocks: &[AnsweredBlock]) -> Vec<[i64; 2]> {
+    blocks
+        .iter()
+        .map(|b| {
+            [0usize, 1].map(|s| {
+                b.values[s]
+                    .checked_div(i64::from(b.presented[s]))
+                    .unwrap_or(0)
+            })
+        })
+        .collect()
+}
+
+/// The value's trough in each mapping, per mapping and stimulus: the lowest of a block's
+/// per-stimulus means over the mapping's blocks, with the block's index within the mapping;
+/// zeros for a mapping the table does not hold.
+fn answered_troughs(means: &[[i64; 2]]) -> [[(i64, usize); 2]; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let Some(mine) = means.get(from..to) else {
+            return [(0, 0); 2];
+        };
+        [0usize, 1].map(|s| {
+            let mut low: Option<(i64, usize)> = None;
+            for (j, block) in mine.iter().enumerate() {
+                if low.is_none_or(|(least, _)| block[s] < least) {
+                    low = Some((block[s], j));
+                }
+            }
+            low.unwrap_or((0, 0))
+        })
+    })
+}
+
+/// Where the consolidation went, summed over each mapping's blocks.
+fn went_by_mapping(blocks: &[AnsweredBlock]) -> [Went; 4] {
+    MAPPINGS.map(|(from, to)| {
+        let mut out: Went = [[0; 2]; 3];
+        for b in blocks.iter().take(to).skip(from) {
+            add_went(&mut out, &b.went);
+        }
+        out
+    })
+}
+
+/// The lowest and the last of a per-block reading as fractions of `image`, in parts per ten
+/// thousand: the inhibitory sum's course, and the outside sum's with its highest.
+fn low_high_last(image: i64, sums: &[i64]) -> (i64, i64, i64) {
+    let read: Vec<i64> = sums.iter().map(|&sum| per_myriad(sum, image)).collect();
+    (
+        read.iter().copied().min().unwrap_or(0),
+        read.iter().copied().max().unwrap_or(0),
+        read.last().copied().unwrap_or(0),
+    )
+}
+
+/// ADR-0151's predicted reading (a) as a rule: the first mapping passes `CROSSING_MARK` later
+/// than H-25's did, a mapping that never passes it later than any that did.
+fn later_start(mine: Option<usize>, h25: Option<usize>) -> bool {
+    match (mine, h25) {
+        (Some(mine), Some(h25)) => mine > h25,
+        (None, Some(_)) => true,
+        (_, None) => false,
+    }
+}
+
+/// ADR-0151's predicted reading (b) as a rule, per stimulus: before the first mapping passes
+/// `CROSSING_MARK` — over its blocks before the crossing block, or all of them when it never
+/// passes — some block's mean value of the stimulus is below zero.
+fn below_zero_first(means: &[[i64; 2]], crossing: Option<usize>) -> [bool; 2] {
+    let (from, to) = MAPPINGS[0];
+    let until = crossing.map_or(to, |n| from.saturating_add(n).saturating_sub(1));
+    [0usize, 1].map(|s| {
+        means
+            .iter()
+            .take(until.min(to))
+            .skip(from)
+            .any(|block| block[s] < 0)
+    })
+}
+
+/// ADR-0151's predicted reading (c) as a rule, per flip and stimulus: the old answer held in
+/// the block after the flip (`old_held` at least one), and over the mapping the stimulus's
+/// coupling into the third readout stood below the image's at some block's end.
+fn eliminated(held: [[usize; 2]; 3], course: &[[[[i64; 3]; ANSWERS]; 2]; 4]) -> [[bool; 2]; 3] {
+    [0usize, 1, 2].map(|f| {
+        [0usize, 1].map(|s| {
+            let third_low = course[f.saturating_add(1)][s][2][0];
+            held[f][s] >= 1 && third_low < 10_000
+        })
+    })
+}
+
+/// What brief 062 reads of an arm beside its blocks, each by its rule above.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AnsweredRead {
+    last: [[StimulusValue; 2]; 4],
+    over: Option<(usize, usize, usize)>,
+    left: Option<(usize, i64)>,
+    crossings: [Option<usize>; 4],
+    tally: [[u32; 3]; 4],
+    by_role: [[[u32; 4]; 2]; 4],
+    each_crossed: [[Option<usize>; 2]; 3],
+    first_new: [[Option<usize>; 2]; 3],
+    old_held: [[usize; 2]; 3],
+    course: [[[[i64; 3]; ANSWERS]; 2]; 4],
+    highest: [Option<Peak>; 4],
+    troughs: [[(i64, usize); 2]; 4],
+    went: [Went; 4],
+    inhibitory: (i64, i64, i64),
+    outside: (i64, i64, i64),
+    later_start: bool,
+    below_zero_first: [bool; 2],
+    eliminated: [[bool; 2]; 3],
+    sums_after: (i64, i64),
+}
+
+/// An arm's readings from its tables, `k` its index in `ANSWERED_ARMS`: every rule above over
+/// the blocks and the trials, the image's couplings and sums, and H-25's crossings beside.
+fn answered_read(k: usize, run: &AnsweredRun) -> AnsweredRead {
+    let first = first_answers(ANSWERED_ARMS[k]);
+    let image = &DEALT_COUPLINGS_1024;
+    let (image_inhibitory, image_excitatory) = QUIET_1024[SETTLED].1;
+    let image_outside = answered_outside(image_excitatory, image);
+    let blocks = run.blocks.as_slice();
+    let means = answered_means(blocks);
+    let crossings = answered_crossings(blocks);
+    let held = old_held(first, blocks);
+    let course = course_by_role(first, image, blocks);
+    let inhibitory: Vec<i64> = blocks.iter().map(|b| b.sums.0).collect();
+    let outside: Vec<i64> = blocks
+        .iter()
+        .map(|b| answered_outside(b.sums.1, &b.couplings))
+        .collect();
+    AnsweredRead {
+        last: answered_last(blocks),
+        over: answered_over(image, blocks),
+        left: answered_left(image_outside, blocks),
+        crossings,
+        tally: answered_tally(blocks),
+        by_role: by_role(first, blocks),
+        each_crossed: each_crossed(blocks),
+        first_new: first_new_answered(first, &run.read),
+        old_held: held,
+        course,
+        highest: answered_highest(image, blocks),
+        troughs: answered_troughs(&means),
+        went: went_by_mapping(blocks),
+        inhibitory: low_high_last(image_inhibitory, &inhibitory),
+        outside: low_high_last(image_outside, &outside),
+        later_start: later_start(crossings[0], CROSSINGS_DRAWN_1024[k][0]),
+        below_zero_first: below_zero_first(&means, crossings[0]),
+        eliminated: eliminated(held, &course),
+        sums_after: blocks.last().map_or((0, 0), |b| b.sums),
+    }
+}
+
+// ------------------------------------------------------- the calibration (brief 062)
+
+/// The image an arm of H-29 decodes, H-25's (brief 062's calibration; H-29's stopping rule,
+/// step 2), built and held as H-25's and H-28's arms build and hold it: the settled engine
+/// held to ADR-0077 step by step and its images, H-20's image by its CRC, a frozen block of the
+/// two-readout task from the zero image held to ADR-0077's frozen run, and H-21's, H-22's and
+/// H-23's images each the one before in every byte but its own and held by its CRC. Returns the
+/// zero image and H-25's.
+fn answered_images(name: &str) -> (Vec<u8>, Vec<u8>) {
+    let (zero, signed) = signed_images(name);
+    assert_eq!(
+        crc64(&signed),
+        PUNISHED_IMAGE_CRC_1024,
+        "{name}: H-20's image, H-19's and H-18's"
+    );
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (frozen.inhibitory_baseline_q16(), frozen.signed_gate()),
+            (None, false),
+            "{name}: the calibration's image leaves the inhibitory baseline and the signed gate unset"
+        );
+        let calibration = taught_run(&mut frozen, Arm::Withheld, 1024, BLOCK);
+        calibration_holds(&format!("{name} calibration"), &calibration);
+    }
+    let targeted = targeted_image(&signed, TARGET_PERIOD_1024);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: H-21's image is H-20's in every byte but the target period's and the seal"
+    );
+    assert_eq!(
+        crc64(&targeted),
+        TARGET_IMAGE_CRC_1024,
+        "{name}: H-21's image"
+    );
+    let valued = valued_image(&targeted, VALUED_CRITIC);
+    assert!(
+        only_the_critic(&targeted, &valued),
+        "{name}: H-22's image is H-21's in every byte but the critic's and the seal"
+    );
+    assert_eq!(
+        crc64(&valued),
+        VALUED_IMAGE_CRC_1024,
+        "{name}: H-22's image"
+    );
+    let windowed = with_window_bytes(&valued, WINDOW_TICKS_1024);
+    assert!(
+        only_the_window(&valued, &windowed),
+        "{name}: H-23's image is H-22's in every byte but the window's and the seal"
+    );
+    assert_eq!(
+        crc64(&windowed),
+        WINDOWED_IMAGE_CRC_1024,
+        "{name}: H-23's image, H-25's, the image this arm decodes"
+    );
+    (zero, windowed)
+}
+
+/// The readouts' deal held to its rule on H-25's image (H-29's stopping rule, step 2): the
+/// couplings by place read from the image and held to their pins, the first deal that passes
+/// in the committed order the one taken, its six couplings the pinned ones and the ones
+/// `coupling` sums over its sets, and its sets' census the prior's. Everything is dumped
+/// before anything is held; no deal passing stops the round there, as a finding.
+fn deal_calibration(name: &str, windowed: &[u8]) -> AnsweredSets {
+    let exec = signed_from(windowed, 1024);
+    let by_place = place_couplings(&exec);
+    let taken = first_dealt(&by_place);
+    let passing = deals()
+        .iter()
+        .filter(|deal| dealt(&deal_couplings(&by_place, deal)))
+        .count();
+    eprintln!(
+        "DUMP {name} PIN place couplings {by_place:?} first dealt {taken:?} passing {passing} of {DEALS}"
+    );
+    let (index, deal) =
+        taken.expect("no deal passes the readouts' rule, and the round stops here as a finding");
+    let sets = answered_sets(&deal);
+    let couplings = answered_couplings(&exec, &sets);
+    eprintln!(
+        "DUMP {name} PIN dealt couplings {couplings:?} census {:?}",
+        answered_census(&sets)
+    );
+    assert_eq!(
+        by_place, PLACE_COUPLINGS_1024,
+        "{name}: the couplings by place"
+    );
+    assert_eq!(
+        (index, deal, passing),
+        (DEAL_INDEX_1024, DEAL_1024, DEALS_PASSING_1024),
+        "{name}: the deal taken is the first that passes"
+    );
+    assert_eq!(
+        (couplings, deal_couplings(&by_place, &deal)),
+        (DEALT_COUPLINGS_1024, DEALT_COUPLINGS_1024),
+        "{name}: the deal's six couplings on the image"
+    );
+    assert!(dealt(&couplings), "{name}: within ten per cent, none zero");
+    assert_eq!(
+        answered_census(&sets),
+        DEALT_SYNAPSES_1024,
+        "{name}: the prior's census of the same six"
+    );
+    sets
+}
+
+/// A frozen block of the H-29 task from the zero image (H-29's stopping rule, step 2):
+/// ADR-0077's frozen run — the settled network with the baseline at zero, the reward withheld,
+/// ADR-0076's stimulus, the host's address, sixty-four trials — with the three readouts of
+/// `sets` in the two's place. No weight of either polarity moves, which is asserted.
+fn answered_frozen(zero: &[u8], sets: &AnsweredSets) -> (AnsweredBlock, u64, u64) {
+    let mut exec = frozen_from(zero, 1024);
+    assert_eq!(exec.ticks(), SETTLED_TICK, "the image's tick");
+    let sums = weights_by_polarity(&exec);
+    let run = answered_run(
+        &mut exec,
+        sets,
+        [0, 1],
+        Feedback::Withheld,
+        Delivery::Addressed,
+        BLOCK,
+    );
+    let [block] = run.blocks.as_slice() else {
+        panic!("a block of sixty-four trials");
+    };
+    assert_eq!(block.sums, sums, "no weight moves at a modulation of zero");
+    assert_eq!(
+        (block.went, block.by_pair, block.signal),
+        ([[0; 2]; 3], [[[0; 2]; ANSWERS]; 2], 0),
+        "nothing consolidates and the signal stays at rest"
+    );
+    (*block, run.trace, answered_hash(&run.read))
+}
+
+/// The sight's rule over a frozen block (ADR-0151's stopping rule, step 2, ADR-0065's mark):
+/// the window after the volley held more readout spikes than the window before the injection
+/// in at least `SEEN_MIN` of its sixty-four trials.
+fn answered_sees(block: &AnsweredBlock) -> bool {
+    block.seen >= SEEN_MIN
+}
+
+// ---------------------------------------------------------------- the arm (brief 062)
+
+/// One arm of H-29 at 1 024 units (brief 062): the calibration before any rewarded run (H-29's
+/// stopping rule, step 2) — H-25's image built and held link by link, H-25's first block under
+/// two readouts reproduced table by table, the deal held to the readouts' rule on that image,
+/// and a frozen block of the task with three readouts read by the sight's rule — then the
+/// arm's 7 680 trials from H-25's image under H-25's delivery and H-20's flips with the three
+/// readouts, the critic's oracle and the network's held to the record at every trial;
+/// everything dumped, the clauses and the readings computed before anything is held; then the
+/// pinned tables of the whole run.
+fn answered_arm(arm: Reversal) {
+    let k = ANSWERED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-29");
+    let name = format!("answered1024 {arm:?}");
+    let (zero, windowed) = answered_images(&name);
+    drawn_first_block(&windowed, arm, &name);
+    let sets = deal_calibration(&name, &windowed);
+    let (frozen, frozen_trace, frozen_read) = answered_frozen(&zero, &sets);
+    let two = &BACKGROUND_1024[SETTLED].0;
+    eprintln!(
+        "DUMP {name} PIN frozen {:?}",
+        (frozen, frozen_trace, frozen_read)
+    );
+    eprintln!(
+        "DUMP {name} the frozen block: seen in {} of {BLOCK}, at least {SEEN_MIN}: {}; per readout after the volley {:?} and before the injection {:?}; selections by stimulus [readout 0, 1, 2, none] {:?}; beside the two-answer geometry's frozen block, seen {} after {:?} before {:?}",
+        frozen.seen,
+        answered_sees(&frozen),
+        frozen.counts,
+        frozen.before,
+        frozen.selected,
+        two.6,
+        two.2,
+        two.5
+    );
+    assert!(
+        answered_sees(&frozen),
+        "{name}: the readouts do not see the stimulus, and the round stops here as a finding"
+    );
+    assert_eq!(
+        Some((frozen, frozen_trace, frozen_read)),
+        FROZEN_ANSWERED_1024,
+        "{name}: the frozen block with three readouts"
+    );
+    eprintln!(
+        "DUMP {name} calibration holds: ADR-0077's settled candidate, H-20's to H-23's images, H-25's first block under two readouts, the deal by its rule and the frozen block's sight"
+    );
+    let mut exec = signed_from(&windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.ticks()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            TARGET_PERIOD_1024,
+            exec.ticks(),
+            Ok(()),
+            SETTLED_TICK
+        ),
+        "{name}: H-25's configuration, the window open at the load, and the engine draws"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        answered_couplings(&exec, &sets),
+        DEALT_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let first = first_answers(arm);
+    let run = answered_run(
+        &mut exec,
+        &sets,
+        first,
+        Feedback::Answer,
+        ANSWERED_DELIVERY,
+        SCHEDULE_TRIALS,
+    );
+    assert_eq!(
+        (run.blocks.len(), run.read.len()),
+        (SCHEDULE_BLOCKS, SCHEDULE_TRIALS),
+        "{name}: 120 blocks of 64 trials"
+    );
+    let at_flips = run
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
+    eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
+    eprintln!("DUMP {name} PIN read {:#018x}", answered_hash(&run.read));
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} TRIALS {:?}", run.read);
+    let read = answered_read(k, &run);
+    eprintln!("DUMP {name} PIN readings {read:?}");
+    let image_outside = answered_outside(image_sums.1, &DEALT_COUPLINGS_1024);
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned by each {:?} over {:?} left {:?} the expected reward held {:?}; no prediction for the verdict: {ANSWERED_PREDICTED:?}",
+        read.last.map(|m| learned_by_each(&m)),
+        read.over,
+        read.left,
+        read.last.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} the predicted readings: (a) a later start, predicted {LATER_START_PREDICTED}: {} — crossings {:?} beside H-25's {:?}; (b) a value below zero first, predicted {BELOW_ZERO_FIRST_PREDICTED}: {:?} — troughs {:?}; (c) elimination after a flip, predicted {ELIMINATION_PREDICTED}: {:?} — the old answer held {:?} blocks",
+        read.later_start,
+        read.crossings,
+        CROSSINGS_DRAWN_1024[k],
+        read.below_zero_first,
+        read.troughs,
+        read.eliminated,
+        read.old_held
+    );
+    eprintln!(
+        "DUMP {name} the stimulus that moves onto the other's old answer at each flip {:?}; each stimulus's crossing after each flip {:?}; its first new selection {:?}",
+        [1usize, 2, 3].map(|m| onto_the_other_s(first, m)),
+        read.each_crossed,
+        read.first_new
+    );
+    eprintln!(
+        "DUMP {name} value by block {:?} beside H-25's {:?}",
+        answered_means(&run.blocks),
+        value_means(DRAWN_VALUES_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-25's {:?}",
+        run.blocks
+            .iter()
+            .map(|b| per_myriad(b.sums.0, image_sums.0))
+            .collect::<Vec<i64>>(),
+        course(image_sums.0, DRAWN_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} outside course, per myriad of the image's {:?}",
+        run.blocks
+            .iter()
+            .map(|b| per_myriad(answered_outside(b.sums.1, &b.couplings), image_outside))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} went by mapping, [answer's pairs, other pairs, outside][raised, lowered]: {:?} beside H-25's {:?}",
+        read.went,
+        over_mappings(
+            DRAWN_WENT_1024[k],
+            [[0i64; 2]; 3],
+            &|sum: &mut Went, row: &Went| add_went(sum, row)
+        )
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    assert_eq!(
+        run.blocks.as_slice(),
+        ANSWERED_BLOCKS_1024[k],
+        "{name}: the blocks"
+    );
+    assert_eq!(
+        (run.trace, answered_hash(&run.read)),
+        (ANSWERED_TRACES_1024[k], ANSWERED_READ_1024[k]),
+        "{name}: the accuracy sequence and every trial's reading"
+    );
+    assert_eq!(
+        Some(at_flips),
+        ANSWERED_AT_FLIPS_1024[k],
+        "{name}: the couplings after the first trial of each new mapping"
+    );
+    assert_eq!(
+        Some(read),
+        ANSWERED_READINGS_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        weights_by_polarity(&exec),
+        read.sums_after,
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-29's arm that starts from the assignment (brief 062): the answers (0, 1), (1, 2), (2, 0)
+/// and (0, 1).
+#[test]
+#[ignore]
+fn three_answers_from_the_assignment_at_1024_units_exhaustive() {
+    answered_arm(Reversal::AssignmentFirst);
+}
+
+/// H-29's arm that starts from the mirrored assignment (brief 062): the answers (1, 0), (2, 1),
+/// (0, 2) and (1, 0).
+#[test]
+#[ignore]
+fn three_answers_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    answered_arm(Reversal::MirroredFirst);
+}
+
 // --------------------------------------------------------------------- the gate (brief 062)
 
 /// The gate's test (ADR-0061's class; brief 062): the places a readout can take held to the
 /// rule that derives them; the deals in their order — their number, the first and the last,
 /// every deal one of the rule's and after the one before it — and the readouts' rule at its
-/// edges and over tables written by hand. Nothing else added to the gate.
+/// edges and over tables written by hand; then the arms and the constants as ADR-0151 fixed
+/// them; the mapping's hand rule over the schedule; the deal taken held to the rule over the
+/// pinned couplings by place, every deal before it failing, and its census to the prior's walk
+/// and to the arena; H-29's four clauses at their edges and the verdict with the step it
+/// reaches over tables written by hand; the readings' rules over tables written by hand; and
+/// eight trials of the task with three readouts on the instrument's network under H-25's
+/// delivery, both oracles held at every trial, beside four with the reward withheld on the
+/// same network frozen. Nothing else added to the gate.
 #[test]
 fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     // The places within both stimuli's windows, by the rule: at most the prior's window from
@@ -167932,4 +169383,732 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     one[1][0] = 2000;
     let (_, deal) = first_dealt(&one).expect("a deal that leaves place 3 out");
     assert!(deal.iter().all(|mask| mask.wrapping_shr(3) & 1 == 0));
+    // ------------------------------------------------ the protocol (ADR-0151, ADR-0153)
+    // The arms, the delivery, the predictions and the constants.
+    assert_eq!(ANSWERED_ARMS, DRAWN_ARMS, "H-25's two arms");
+    assert_eq!(
+        (ANSWERED_DELIVERY, ANSWERED_PREDICTED),
+        (Delivery::Drawn, None),
+        "H-25's delivery, and no prediction for the verdict"
+    );
+    assert_eq!(
+        [
+            LATER_START_PREDICTED,
+            BELOW_ZERO_FIRST_PREDICTED,
+            ELIMINATION_PREDICTED
+        ],
+        [true; 3],
+        "the three predicted readings"
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            EACH_TIMES,
+            BOUND_PER_CENT,
+            SCHEDULE_BLOCKS,
+            BAND_QUARTERS,
+            BAND_DIVISOR,
+            HOLDS_DIVISOR,
+            LAST_BLOCKS * BLOCK,
+            SEEN_MIN,
+            CROSSING_MARK
+        ),
+        (80, 2, 130, 120, (3, 5), 4, 4, 128, 56, 40),
+        "the clauses' constants, as ADR-0151 wrote them"
+    );
+    // The mapping by the hand rule: the two arms' four mappings, the answers at the flips'
+    // edges, and between them every ordered pair of two different answers among three.
+    let assignment = first_answers(Reversal::AssignmentFirst);
+    let mirrored = first_answers(Reversal::MirroredFirst);
+    assert_eq!((assignment, mirrored), ([0, 1], [1, 0]));
+    assert_eq!(
+        [0usize, 1, 2, 3].map(|m| answers_of(assignment, m)),
+        [[0, 1], [1, 2], [2, 0], [0, 1]]
+    );
+    assert_eq!(
+        [0usize, 1, 2, 3].map(|m| answers_of(mirrored, m)),
+        [[1, 0], [2, 1], [0, 2], [1, 0]]
+    );
+    assert_eq!(
+        [
+            0,
+            SCHEDULE_FLIPS[0] - 1,
+            SCHEDULE_FLIPS[0],
+            SCHEDULE_FLIPS[1] - 1,
+            SCHEDULE_FLIPS[1],
+            SCHEDULE_FLIPS[2] - 1,
+            SCHEDULE_FLIPS[2],
+            SCHEDULE_TRIALS - 1
+        ]
+        .map(|trial| answers_at(assignment, trial)),
+        [
+            [0, 1],
+            [0, 1],
+            [1, 2],
+            [1, 2],
+            [2, 0],
+            [2, 0],
+            [0, 1],
+            [0, 1]
+        ],
+        "a flip is in force from its own trial"
+    );
+    assert_eq!(
+        answers_of(assignment, 4),
+        [0, 1],
+        "past the last mapping: the first's"
+    );
+    let mut pairs: Vec<[usize; 2]> = [assignment, mirrored]
+        .iter()
+        .flat_map(|&first| [0usize, 1, 2].map(|m| answers_of(first, m)))
+        .collect();
+    pairs.sort_unstable();
+    assert_eq!(pairs, [[0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1]]);
+    assert_eq!(
+        [0usize, 1, 2].map(roles),
+        [[0, 2, 1], [1, 0, 2], [2, 1, 0]],
+        "the answer, the readout before it and the readout after it"
+    );
+    // At every flip one stimulus moves onto the readout the other is leaving: A from the
+    // assignment and B from the mirrored assignment.
+    assert_eq!(
+        [1usize, 2, 3].map(|m| onto_the_other_s(assignment, m)),
+        [Some(0); 3]
+    );
+    assert_eq!(
+        [1usize, 2, 3].map(|m| onto_the_other_s(mirrored, m)),
+        [Some(1); 3]
+    );
+    assert_eq!(
+        onto_the_other_s(assignment, 0),
+        None,
+        "no flip into the first"
+    );
+    assert_eq!(
+        onto_the_other_s([0, 0], 1),
+        None,
+        "a shared answer moves onto no one's"
+    );
+    // The selection's hand rule, and the task's own selection and flip held to the harness's
+    // over small counts and the schedule's four mappings.
+    assert_eq!(
+        [
+            [3, 2, 1],
+            [2, 3, 1],
+            [1, 2, 3],
+            [3, 3, 1],
+            [3, 1, 3],
+            [1, 3, 3],
+            [2, 2, 2],
+            [0, 0, 0],
+            [1, 0, 0]
+        ]
+        .map(largest_alone),
+        [
+            Some(0),
+            Some(1),
+            Some(2),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0)
+        ]
+    );
+    let taken_sets = answered_sets(&DEAL_1024);
+    let mut gate = Readout::new(taken_sets.1);
+    for a in 0..5u32 {
+        for b in 0..5u32 {
+            for c in 0..5u32 {
+                assert_eq!(
+                    gate.select([a, b, c]),
+                    largest_alone([a, b, c]),
+                    "{a} {b} {c}"
+                );
+            }
+        }
+    }
+    // The deal taken, held to the rule over the pinned couplings by place: the first that
+    // passes in the committed order, every deal before it failing; its couplings the pinned
+    // ones, within ten per cent; and the deals that pass in all.
+    assert_eq!(
+        first_dealt(&PLACE_COUPLINGS_1024),
+        Some((DEAL_INDEX_1024, DEAL_1024))
+    );
+    assert_eq!(all[DEAL_INDEX_1024], DEAL_1024);
+    assert_eq!(
+        (DEAL_INDEX_1024, DEAL_1024.map(places_of)),
+        (
+            103,
+            [vec![3, 4, 5, 6], vec![7, 12, 14, 18], vec![8, 15, 16, 19]]
+        ),
+        "the 104th deal"
+    );
+    assert!(
+        all[..DEAL_INDEX_1024]
+            .iter()
+            .all(|deal| !dealt(&deal_couplings(&PLACE_COUPLINGS_1024, deal))),
+        "every deal before it fails the rule"
+    );
+    assert_eq!(
+        deal_couplings(&PLACE_COUPLINGS_1024, &DEAL_1024),
+        DEALT_COUPLINGS_1024
+    );
+    assert!(dealt(&DEALT_COUPLINGS_1024));
+    assert_eq!(
+        all.iter()
+            .filter(|deal| dealt(&deal_couplings(&PLACE_COUPLINGS_1024, deal)))
+            .count(),
+        DEALS_PASSING_1024
+    );
+    let left_out: Vec<u32> = (0..PERIOD)
+        .filter(|&place| {
+            place != A_OFFSET
+                && place != B_OFFSET
+                && DEAL_1024
+                    .iter()
+                    .all(|mask| mask.wrapping_shr(place) & 1 == 0)
+        })
+        .collect();
+    assert_eq!(left_out, [1, 2, 9, 10, 13, 17], "six places in no set");
+    // The prior's census of the same six, by the prior's walk and by the arena the walk
+    // fills.
+    assert_eq!(answered_census(&taken_sets), DEALT_SYNAPSES_1024);
+    let mut in_arena = [[0u32; ANSWERS]; 2];
+    for unit in exec.units() {
+        let Some(s) = taken_sets
+            .0
+            .iter()
+            .position(|set| set.contains(unit.id as u32))
+        else {
+            continue;
+        };
+        for synapse in unit.fan_out(exec.blocks()) {
+            if let Some(r) = taken_sets
+                .1
+                .iter()
+                .position(|set| set.contains(synapse.target))
+            {
+                in_arena[s][r] = in_arena[s][r].saturating_add(1);
+            }
+        }
+    }
+    assert_eq!(in_arena, DEALT_SYNAPSES_1024);
+    // Clause 1's rule at its edges: 80 of the last 128, and each stimulus in more than half of
+    // its presentations.
+    assert!(learned_by_each(&[(64, 40, 0), (64, 40, 0)]));
+    assert!(!learned_by_each(&[(64, 40, 0), (64, 39, 0)]), "79 of 128");
+    assert!(learned_by_each(&[(60, 47, 0), (68, 35, 0)]), "35 of 68");
+    assert!(
+        !learned_by_each(&[(60, 48, 0), (68, 34, 0)]),
+        "82 of 128, and exactly half of B's"
+    );
+    assert!(
+        !learned_by_each(&[(64, 64, 0), (64, 21, 0)]),
+        "ADR-0151's case: one stimulus answered every time and the other at chance, 85 of 128"
+    );
+    assert!(
+        !learned_by_each(&[(64, 32, 0), (64, 64, 0)]),
+        "either stimulus"
+    );
+    assert!(learned_by_each(&[(64, 33, 0), (64, 64, 0)]));
+    assert!(
+        !learned_by_each(&[(128, 128, 0), (0, 0, 0)]),
+        "a stimulus never presented has no half"
+    );
+    // The verdict over tables written by hand, and the step it reaches. An arm of 120 blocks:
+    // each stimulus presented 32 times a block and answered 25, every coupling the image's,
+    // the excitatory sum the image's, and each stimulus's values the reward of 2c − n a block.
+    const R: i64 = REWARD_Q16 as i64;
+    let image = DEALT_COUPLINGS_1024;
+    let (_, image_excitatory) = QUIET_1024[SETTLED].1;
+    let outside = answered_outside(image_excitatory, &image);
+    assert_eq!(
+        outside,
+        image_excitatory - image.iter().flatten().sum::<i64>(),
+        "the excitatory sum less the six"
+    );
+    let block = |correct: [u32; 2]| AnsweredBlock {
+        presented: [32, 32],
+        correct,
+        values: correct.map(|c| (2 * i64::from(c) - 32) * R),
+        sums: (0, image_excitatory),
+        couplings: image,
+        ..NO_BLOCK
+    };
+    let arm = || vec![block([25, 25]); SCHEDULE_BLOCKS];
+    let good = arm();
+    let yes = answered(&image, outside, [&good, &good]);
+    assert_eq!(
+        yes,
+        Answered {
+            learned: [[true; 4]; 2],
+            bounded: [true; 2],
+            over: [None; 2],
+            held: [true; 2],
+            left: [None; 2],
+            expected: [[[true; 2]; 4]; 2],
+            yes: true,
+        }
+    );
+    assert_eq!(answered_step(&yes), 3);
+    assert_eq!(
+        answered_last(&good),
+        [[(64, 50, 36 * R); 2]; 4],
+        "each mapping's last two blocks"
+    );
+    // Clause 1, by the count: the first mapping's last two blocks of the first arm at 78.
+    let mut short = arm();
+    short[22] = block([19, 20]);
+    short[23] = block([19, 20]);
+    let no = answered(&image, outside, [&short, &good]);
+    assert_eq!(
+        (no.learned, no.yes, answered_step(&no)),
+        ([[false, true, true, true], [true; 4]], false, 5)
+    );
+    assert_eq!(
+        (no.bounded, no.held, no.expected),
+        ([true; 2], [true; 2], [[[true; 2]; 4]; 2]),
+        "and nothing else"
+    );
+    // The block before a mapping's last two is not read.
+    let mut earlier = arm();
+    earlier[21] = block([0, 0]);
+    assert!(answered(&image, outside, [&earlier, &good]).yes);
+    // Clause 1, by a stimulus: the second mapping's last two blocks of the second arm with A
+    // answered every time and B in exactly half.
+    let mut lopsided = arm();
+    lopsided[54] = block([32, 16]);
+    lopsided[55] = block([32, 16]);
+    let no = answered(&image, outside, [&good, &lopsided]);
+    assert_eq!(
+        (no.learned, answered_step(&no)),
+        ([[true; 4], [true, false, true, true]], 5),
+        "96 of 128, and B at half"
+    );
+    // Clause 2: one coupling one LSB past 1.30 of its image's at one block's end, and at the
+    // bound itself not.
+    let bound = image[1][2] * BOUND_PER_CENT / 100;
+    let mut over = arm();
+    over[70].couplings[1][2] = bound + 1;
+    over[70].sums.1 = image_excitatory + bound + 1 - image[1][2];
+    let no = answered(&image, outside, [&over, &good]);
+    assert_eq!(
+        (no.over, no.bounded, no.held, answered_step(&no)),
+        ([Some((70, 1, 2)), None], [false, true], [true; 2], 6)
+    );
+    let mut at = arm();
+    at[70].couplings[1][2] = bound;
+    at[70].sums.1 = image_excitatory + bound - image[1][2];
+    assert!(answered(&image, outside, [&at, &good]).yes, "at the bound");
+    assert_eq!(
+        answered_over(&image, &over[..70]),
+        None,
+        "no block before it"
+    );
+    // Clause 3: the outside sum one below three quarters of the image's at one block's end, and
+    // one above five quarters; the edges themselves hold. It is read before clause 1.
+    let low = (outside * 3).div_euclid(4);
+    let high = (outside * 5).div_euclid(4);
+    let coupled = image_excitatory - outside;
+    for (sum, leaves) in [(low, outside % 4 != 0), (low - 1, true), (low + 1, false)] {
+        let mut moved = arm();
+        moved[100].sums.1 = coupled + sum;
+        let verdict = answered(&image, outside, [&good, &moved]);
+        assert_eq!(verdict.left, [None, leaves.then_some((100, sum))], "{sum}");
+        assert_eq!(verdict.held, [true, !leaves]);
+        assert_eq!(answered_step(&verdict), if leaves { 4 } else { 3 });
+    }
+    for (sum, leaves) in [(high, false), (high + 1, true)] {
+        let mut moved = arm();
+        moved[3].sums.1 = coupled + sum;
+        let verdict = answered(&image, outside, [&moved, &good]);
+        assert_eq!(verdict.left, [leaves.then_some((3, sum)), None], "{sum}");
+    }
+    let mut both = arm();
+    both[22] = block([19, 20]);
+    both[23] = block([19, 20]);
+    both[100].sums.1 = coupled + low - 1;
+    assert_eq!(
+        answered_step(&answered(&image, outside, [&both, &good])),
+        4,
+        "clause 3 is read first"
+    );
+    // Clause 4 alone: one stimulus's values over one mapping's last 128 trials one LSB past a
+    // quarter of the reward a trial from (2c − n) r, and at the quarter not.
+    let mut off = arm();
+    off[119].values[0] = 18 * R + 16 * R + 1;
+    let no = answered(&image, outside, [&good, &off]);
+    assert_eq!(
+        (no.expected[1][3], no.expected[1][2], answered_step(&no)),
+        ([false, true], [true, true], 7)
+    );
+    let mut on = arm();
+    on[119].values[0] = 18 * R + 16 * R;
+    assert!(answered(&image, outside, [&good, &on]).yes);
+    let mut under = arm();
+    under[118].values[1] = 18 * R - 16 * R - 1;
+    assert_eq!(
+        answered(&image, outside, [&under, &good]).expected[0][3],
+        [true, false]
+    );
+    // A run of any other length holds nothing, and its step is the network's.
+    let cut = &good[..SCHEDULE_BLOCKS - 1];
+    let no = answered(&image, outside, [cut, &good]);
+    assert_eq!(
+        (no.learned[0], no.bounded, no.held, no.expected[0]),
+        ([false; 4], [false, true], [false, true], [[false; 2]; 4])
+    );
+    assert_eq!(answered_step(&no), 4);
+    // The readings' rules over tables written by hand.
+    // The crossings: per mapping, the blocks to the first with 40 correct, that block counted.
+    let mut slow = vec![block([10, 10]); SCHEDULE_BLOCKS];
+    slow[5] = block([20, 20]);
+    slow[24] = block([39, 0]);
+    slow[26] = block([39, 1]);
+    slow[119] = block([32, 32]);
+    assert_eq!(
+        answered_crossings(&slow),
+        [Some(6), Some(3), None, Some(32)],
+        "both stimuli's correct trials together"
+    );
+    assert_eq!(answered_crossings(&slow[..30]), [Some(6), None, None, None]);
+    // The tally: correct, wrong and tied.
+    let chosen = |selected: [[u32; 4]; 2], correct: [u32; 2]| AnsweredBlock {
+        selected,
+        correct,
+        ..block(correct)
+    };
+    let mut tallied = vec![NO_BLOCK; SCHEDULE_BLOCKS];
+    tallied[0] = chosen([[20, 5, 4, 3], [1, 25, 6, 0]], [20, 25]);
+    tallied[23] = chosen([[2, 0, 0, 30], [0, 0, 0, 32]], [2, 0]);
+    tallied[24] = chosen([[0, 9, 0, 0], [0, 0, 7, 0]], [9, 7]);
+    assert_eq!(
+        answered_tally(&tallied),
+        [[47, 16, 65], [16, 0, 0], [0; 3], [0; 3]]
+    );
+    // The selections by role: from the assignment the first mapping's answers are (0, 1), so
+    // A's are its answer at readout 0, the one before at 2 and the one after at 1; the second
+    // mapping's are (1, 2).
+    assert_eq!(
+        block_by_role(&tallied[0], [0, 1], 0),
+        [20, 4, 5, 3],
+        "A under answer 0: readout 0, then 2, then 1, then none"
+    );
+    assert_eq!(block_by_role(&tallied[0], [0, 1], 1), [25, 1, 6, 0]);
+    assert_eq!(block_by_role(&tallied[0], [2, 0], 0), [4, 5, 20, 3]);
+    let roled = by_role(assignment, &tallied);
+    assert_eq!(roled[0], [[22, 4, 5, 33], [25, 1, 6, 32]]);
+    assert_eq!(roled[1], [[9, 0, 0, 0], [7, 0, 0, 0]]);
+    assert_eq!(
+        by_role(mirrored, &tallied)[0],
+        [[5, 22, 4, 33], [1, 6, 25, 32]],
+        "under (1, 0): A's answer readout 1 and B's readout 0"
+    );
+    // Each stimulus's crossing after a flip, its first new selection, and how long its old
+    // answer held. From the assignment the second mapping's answers are (1, 2): A's old answer
+    // is readout 0 and B's readout 1.
+    let mut after = vec![NO_BLOCK; SCHEDULE_BLOCKS];
+    for b in after.iter_mut().take(27).skip(24) {
+        *b = chosen([[30, 2, 0, 0], [0, 20, 6, 6]], [2, 6]);
+    }
+    after[27] = chosen([[16, 16, 0, 0], [0, 13, 13, 6]], [16, 13]);
+    after[28] = chosen([[15, 17, 0, 0], [0, 6, 20, 6]], [17, 20]);
+    assert_eq!(
+        each_crossed(&after),
+        [[Some(5), Some(5)], [None; 2], [None; 2]],
+        "more than half of 32: 17 and 20, in the fifth block"
+    );
+    assert_eq!(
+        old_held(assignment, &after),
+        [[3, 3], [0, 0], [0, 0]],
+        "three blocks: in the fourth the old answer no longer leads both others"
+    );
+    assert_eq!(
+        old_held(mirrored, &after),
+        [[0, 0]; 3],
+        "by the arm's own answers"
+    );
+    let mut trials: Vec<AnsweredTrial> = vec![(0, [0; 3], None, false, 0, 0, 0); SCHEDULE_TRIALS];
+    trials[SCHEDULE_FLIPS[0]] = (0, [0; 3], Some(0), false, 0, 0, 0);
+    trials[SCHEDULE_FLIPS[0] + 2] = (1, [0; 3], Some(2), true, 0, 0, 0);
+    trials[SCHEDULE_FLIPS[0] + 6] = (0, [0; 3], Some(1), true, 0, 0, 0);
+    trials[SCHEDULE_FLIPS[2] - 1] = (0, [0; 3], Some(2), true, 0, 0, 0);
+    trials[SCHEDULE_FLIPS[2]] = (1, [0; 3], Some(1), true, 0, 0, 0);
+    assert_eq!(
+        first_new_answered(assignment, &trials),
+        [[Some(7), Some(3)], [Some(2048), None], [None, Some(1)]],
+        "the old answer's selection at the flip's own trial is not the new one's, and the trial before the next flip is the mapping's last"
+    );
+    // The couplings' course by role, as fractions of the image's in parts per ten thousand.
+    let scaled = |parts: [[i64; ANSWERS]; 2]| {
+        let mut b = block([25, 25]);
+        for &(s, r) in &ANSWERED_PAIRS {
+            b.couplings[s][r] = image[s][r] * parts[s][r] / 10_000;
+        }
+        b
+    };
+    let mut wandering = vec![scaled([[10_000; ANSWERS]; 2]); SCHEDULE_BLOCKS];
+    wandering[30] = scaled([[9_000, 12_000, 10_000], [10_000, 8_000, 11_000]]);
+    wandering[55] = scaled([[10_000, 11_000, 9_500], [10_000; 3]]);
+    let course = course_by_role(assignment, &image, &wandering);
+    let near = |read: [i64; 3], parts: [i64; 3]| {
+        read.iter()
+            .zip(parts)
+            .all(|(&r, p)| (p - 1..=p).contains(&r))
+    };
+    assert!(
+        course[0].iter().flatten().all(|&c| near(c, [10_000; 3])),
+        "the first mapping holds the image's"
+    );
+    // A under (1, 2): its answer readout 1, the one before readout 0, the one after readout 2.
+    assert!(
+        near(course[1][0][0], [10_000, 12_000, 11_000]),
+        "{course:?}"
+    );
+    assert!(near(course[1][0][1], [9_000, 10_000, 10_000]));
+    assert!(near(course[1][0][2], [9_500, 10_000, 9_500]));
+    // B under (1, 2): its answer readout 2, the one before readout 1, the one after readout 0.
+    assert!(near(course[1][1][0], [10_000, 11_000, 10_000]));
+    assert!(near(course[1][1][1], [8_000, 10_000, 10_000]));
+    assert!(near(course[1][1][2], [10_000, 10_000, 10_000]));
+    let peaks = answered_highest(&image, &wandering);
+    assert_eq!(
+        peaks.map(|p| p.map(|(_, j, s, r)| (j, s, r))),
+        [
+            Some((0, 0, 0)),
+            Some((30, 0, 1)),
+            Some((56, 0, 0)),
+            Some((88, 0, 0))
+        ],
+        "the first of two that read the same, in block order and then the pairs'"
+    );
+    assert!(peaks[1].is_some_and(|(parts, ..)| (11_999..=12_000).contains(&parts)));
+    assert_eq!(answered_highest(&image, &wandering[..24])[1], None);
+    // The value's mean per block and its trough per mapping.
+    let valued = |values: [i64; 2], presented: [u32; 2]| AnsweredBlock {
+        values,
+        presented,
+        ..NO_BLOCK
+    };
+    let mut worth = vec![valued([64, -64], [32, 32]); SCHEDULE_BLOCKS];
+    worth[2] = valued([-96, 31], [32, 0]);
+    worth[7] = valued([-97, -640], [32, 32]);
+    worth[30] = valued([-33, 6_400], [33, 32]);
+    let means = answered_means(&worth);
+    assert_eq!(
+        (means[0], means[2], means[7], means[30]),
+        ([2, -2], [-3, 0], [-3, -20], [-1, 200]),
+        "truncated toward zero, and zero for a stimulus not presented"
+    );
+    assert_eq!(
+        answered_troughs(&means),
+        [
+            [(-3, 2), (-20, 7)],
+            [(-1, 6), (-2, 0)],
+            [(2, 0), (-2, 0)],
+            [(2, 0), (-2, 0)]
+        ],
+        "the first block of two that read the same"
+    );
+    assert_eq!(answered_troughs(&means[..30])[1], [(0, 0); 2]);
+    // Where the consolidation went, by mapping, and the low, the high and the last of a course.
+    let mut going = vec![NO_BLOCK; SCHEDULE_BLOCKS];
+    going[0].went = [[5, -1], [2, -2], [0, -7]];
+    going[23].went = [[1, 0], [0, 0], [3, 0]];
+    going[24].went = [[9, -9], [0, 0], [0, 0]];
+    assert_eq!(
+        went_by_mapping(&going),
+        [
+            [[6, -1], [2, -2], [3, -7]],
+            [[9, -9], [0, 0], [0, 0]],
+            [[0; 2]; 3],
+            [[0; 2]; 3]
+        ]
+    );
+    assert_eq!(
+        low_high_last(1_000, &[1_000, 850, 1_010, 900]),
+        (8_500, 10_100, 9_000)
+    );
+    assert_eq!(low_high_last(1_000, &[]), (0, 0, 0));
+    // The predicted readings' rules. (a): later than H-25's, a mapping that never passes later
+    // than any that did.
+    assert!(later_start(Some(7), Some(6)) && !later_start(Some(6), Some(6)));
+    assert!(!later_start(Some(5), Some(6)) && later_start(None, Some(6)));
+    assert!(!later_start(Some(7), None) && !later_start(None, None));
+    // (b): a mean below zero in a block before the first mapping's crossing block.
+    assert_eq!(below_zero_first(&means, Some(8)), [true, true]);
+    assert_eq!(
+        below_zero_first(&means, Some(4)),
+        [true, true],
+        "A's third block, before the fourth, and B's first"
+    );
+    assert_eq!(
+        below_zero_first(&means, Some(3)),
+        [false, true],
+        "the crossing block itself is not read"
+    );
+    assert_eq!(below_zero_first(&means, Some(2)), [false, true]);
+    assert_eq!(
+        below_zero_first(&means, Some(1)),
+        [false, false],
+        "no block before it"
+    );
+    assert_eq!(
+        below_zero_first(&means, None),
+        [true, true],
+        "the whole mapping"
+    );
+    let rising: Vec<[i64; 2]> = vec![[1, 0]; SCHEDULE_BLOCKS];
+    assert_eq!(
+        below_zero_first(&rising, None),
+        [false, false],
+        "zero is not below"
+    );
+    // (c): the old answer held at least a block, and the third readout's coupling below the
+    // image's at some block's end of the mapping.
+    assert_eq!(
+        eliminated([[3, 3], [0, 2], [1, 1]], &course),
+        [[true, false], [false, false], [false, false]],
+        "after the first flip A's third fell to 0.95 and B's stood at the image's; after the others nothing fell"
+    );
+    // Eight trials of the task with three readouts on the instrument's network under H-25's
+    // delivery, its image carrying the inhibitory baseline and the signed gate as the arms'
+    // do and the critic with its window as H-23's does: the critic's oracle and the network's
+    // held to the record at every trial, the stimuli H-25's draw, and every reward the
+    // outcome's. Then four with the reward withheld under the host's address on the same
+    // network frozen, where nothing consolidates.
+    let flagged = signed_image(&inhibited_image(&Image::encode(&exec).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    let bytes = with_window_bytes(&valued_image(&flagged, VALUED_CRITIC), window);
+    let mut rewarded = signed_from(&bytes, 1024);
+    let run = answered_run(
+        &mut rewarded,
+        &taken_sets,
+        assignment,
+        Feedback::Answer,
+        ANSWERED_DELIVERY,
+        GATE_TRIALS,
+    );
+    eprintln!("DUMP answered gate: {GATE_TRIALS} trials {:?}", run.read);
+    assert_eq!((run.read.len(), run.blocks.len()), (GATE_TRIALS, 0));
+    assert_eq!(run.at_flips, [None; 3]);
+    for (t, trial) in run.read.iter().enumerate() {
+        assert_eq!(
+            trial.0,
+            (mix64(SEED ^ t as u64) & 1) as u8,
+            "trial {t}: the stimulus is H-25's draw"
+        );
+        assert_eq!(
+            i64::from(trial.4) + i64::from(trial.5),
+            if trial.3 { R } else { -R },
+            "trial {t}: the error and the value are the reward, the outcome's"
+        );
+        assert_eq!(trial.2, largest_alone(trial.1));
+    }
+    assert!(
+        run.read.iter().any(|t| t.1.iter().any(|&n| n > 0)),
+        "the readouts fire"
+    );
+    let mut frozen = frozen_from(&Image::encode(&exec).expect("quiescent"), 1024);
+    let sums = weights_by_polarity(&frozen);
+    let still = answered_run(
+        &mut frozen,
+        &taken_sets,
+        mirrored,
+        Feedback::Withheld,
+        Delivery::Addressed,
+        4,
+    );
+    assert!(still.read.iter().all(|t| (t.4, t.5, t.6) == (0, 0, 0)));
+    assert_eq!(
+        weights_by_polarity(&frozen),
+        sums,
+        "frozen, no weight moves"
+    );
+    assert_eq!(
+        still.read.iter().map(|t| t.0).collect::<Vec<u8>>(),
+        run.read[..4].iter().map(|t| t.0).collect::<Vec<u8>>(),
+        "the same seed draws the same stimuli"
+    );
+    assert_ne!(answered_hash(&still.read), answered_hash(&run.read[..4]));
 }
+
+// ----------------------------------------------------------- the deal taken (ADR-0153)
+
+/// Each stimulus's coupling into each shared place on H-25's image, `[stimulus][place]` in
+/// `SHARED_PLACES`'s order, read once the order of the deals was committed: the twenty-eight
+/// numbers the readouts' rule reads. Each arm's calibration holds them to the image.
+const PLACE_COUPLINGS_1024: PlaceCouplings = [
+    [
+        703_639, 999_283, 895_229, 773_142, 678_323, 686_862, 685_329, 678_891, 1_223_561, 855_375,
+        796_796, 695_659, 826_558, 798_661,
+    ],
+    [
+        824_421, 900_220, 835_204, 874_475, 631_173, 829_251, 865_793, 775_030, 787_470, 836_992,
+        723_315, 705_115, 846_092, 830_072,
+    ],
+];
+
+/// The deal taken (ADR-0151, ADR-0153): the first, in `deals`' order, whose six couplings on
+/// H-25's image are equal within ten per cent with none zero — the 104th of 92 400. Readout 0
+/// is places 3, 4, 5 and 6, readout 1 places 7, 12, 14 and 18, readout 2 places 8, 15, 16 and
+/// 19; places 13 and 17 are left, with 1, 2, 9 and 10, in no set. It is not chosen for what a
+/// frozen block or a run reads of it.
+const DEAL_INDEX_1024: usize = 103;
+const DEAL_1024: Deal = [0x0_0078, 0x4_5080, 0x9_8100];
+
+/// The deals of the 92 400 that pass the rule on H-25's image: about one in nine.
+const DEALS_PASSING_1024: usize = 10_598;
+
+/// The deal's six couplings on H-25's image, `[stimulus][readout]`: the largest 1.097 of the
+/// smallest. A two-answer coupling on the same image is 6.6 to 7.0 million.
+const DEALT_COUPLINGS_1024: [[i64; ANSWERS]; 2] = [
+    [3_371_293, 3_413_771, 3_137_694],
+    [3_434_320, 3_130_528, 3_219_630],
+];
+
+/// The prior's census of the same six: the synapses from a stimulus's set onto a readout's,
+/// where ADR-0151's arithmetic expected about 387 and the two-answer geometry counts 775 to
+/// 809 (`SYNAPSES_1024`).
+const DEALT_SYNAPSES_1024: [[u32; ANSWERS]; 2] = [[400, 404, 384], [416, 367, 391]];
+
+// ----------------------------------------------------------- the measurement (brief 062)
+
+/// The frozen block of the task with three readouts from the zero image (H-29's stopping
+/// rule, step 2), read before any rewarded run: its block, its accuracy sequence's hash and
+/// every trial's reading by one hash. The window after the volley held more readout spikes
+/// than the window before the injection in 62 trials of 64, as under two readouts; the three
+/// readouts fired 189, 170 and 149 spikes after stimulus A's volleys and 134, 171 and 150
+/// after B's, against 109, 115 and 114 before the injections. With nothing learned A selected
+/// readout 0 in 16 of its 34 trials and B readout 1 in 15 of its 30, and nothing was selected
+/// in 12 of the 64.
+const FROZEN_ANSWERED_1024: Option<(AnsweredBlock, u64, u64)> = Some((
+    AnsweredBlock {
+        presented: [34, 30],
+        correct: [16, 15],
+        selected: [[16, 7, 4, 7], [5, 15, 5, 5]],
+        counts: [[189, 170, 149], [134, 171, 150]],
+        before: [109, 115, 114],
+        seen: 62,
+        volley: [1728, 1525],
+        values: [0, 0],
+        errors: [0, 0],
+        sums: (165876268, 218243354),
+        signal: 0,
+        couplings: [[3371293, 3413771, 3137694], [3434320, 3130528, 3219630]],
+        went: [[0, 0], [0, 0], [0, 0]],
+        by_pair: [[[0, 0], [0, 0], [0, 0]], [[0, 0], [0, 0], [0, 0]]],
+        sourced: [[1734, 0, 0], [1530, 0, 0]],
+    },
+    0xabbe411e1a681c69,
+    0x46440c3530909aab,
+));
+
+/// H-29's arms' tables, pinned from the one run of each (ADR-0153); empty until it is made.
+const ANSWERED_BLOCKS_1024: [&[AnsweredBlock]; 2] = [&[], &[]];
+const ANSWERED_TRACES_1024: [u64; 2] = [0, 0];
+const ANSWERED_READ_1024: [u64; 2] = [0, 0];
+const ANSWERED_AT_FLIPS_1024: [Option<[[[i64; ANSWERS]; 2]; 3]>; 2] = [None, None];
+const ANSWERED_READINGS_1024: [Option<AnsweredRead>; 2] = [None, None];
