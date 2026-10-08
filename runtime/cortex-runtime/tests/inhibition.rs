@@ -167492,3 +167492,444 @@ const MISLED_1024: Misled = Misled {
 
 /// The step of H-28's stopping rule the verdict reaches: 3, a yes.
 const MISLED_STEP_1024: u8 = 3;
+
+// =================================================================================== H-29
+
+// -------------------------------------------- written before the run (ADR-0151, ADR-0153)
+
+/// The readouts of H-29 (ADR-0151): three, where every learning run before it had two.
+const ANSWERS: usize = 3;
+
+/// The places of a period a readout of H-29 can take (ADR-0151): those within both stimuli's
+/// windows, at most `PRIOR_WINDOW` places on the ring of the period from stimulus A's place
+/// and from stimulus B's, and neither's own. Fourteen: 3 to 8 and 12 to 19. The gate holds the
+/// list to the rule.
+const SHARED_PLACES: [u32; 14] = [3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17, 18, 19];
+
+/// Those of them the prior makes inhibitory, every fifth unit from the fifth: one a readout.
+/// A deal's readouts are numbered by them in ascending order, so that two deals that differ
+/// by the readouts' names alone are one deal.
+const INHIBITORY_PLACES: [u32; ANSWERS] = [4, 14, 19];
+
+/// The eleven others, from which each readout takes three, nine in all; two are left in no
+/// set.
+const FREE_PLACES: [u32; 11] = [3, 5, 6, 7, 8, 12, 13, 15, 16, 17, 18];
+
+/// A readout's places (ADR-0151): four of the fourteen, one of them inhibitory.
+const PLACES_EACH: u32 = 4;
+const _: () = assert!(
+    INHIBITORY_PLACES.len() + FREE_PLACES.len() == SHARED_PLACES.len()
+        && PLACES_EACH as usize * ANSWERS <= SHARED_PLACES.len()
+);
+
+/// The deals that satisfy ADR-0151's rule: every way of giving each of the three readouts,
+/// named by its inhibitory place, three of the eleven free places, no place twice.
+const DEALS: usize = 92_400;
+// 165 ways of taking three of eleven, 56 of the eight left and 10 of the five left.
+const _: () = assert!(DEALS == 165 * 56 * 10);
+
+/// The readouts' rule's tolerance (ADR-0151): the six couplings equal within ten per cent —
+/// the largest at most eleven tenths of the smallest — and none zero, ADR-0065's rule for the
+/// rotation (`balanced`), over six couplings where it read four.
+const DEALT_TENTHS: (i64, i64) = (10, 11);
+
+/// A deal: each readout's places as a mask over the period, the readout of index `r` the one
+/// that holds `INHIBITORY_PLACES[r]`.
+type Deal = [u32; ANSWERS];
+
+/// A stimulus's coupling into each shared place, `[stimulus][place]` in `SHARED_PLACES`'s
+/// order: the weights of the synapses an excitatory unit of the stimulus's set sends to a unit
+/// at that place of any whole period, summed. A deal's six couplings are sums of four of them.
+type PlaceCouplings = [[i64; SHARED_PLACES.len()]; 2];
+
+// ------------------------------------------------- the deals and their order (ADR-0153)
+
+/// Every ascending triple of `places`, which ascend, in lexicographic order: the first place
+/// outermost.
+fn triples(places: &[u32]) -> Vec<[u32; 3]> {
+    let mut out = Vec::new();
+    for (i, &a) in places.iter().enumerate() {
+        for (j, &b) in places.iter().enumerate().skip(i.saturating_add(1)) {
+            for &c in places.iter().skip(j.saturating_add(1)) {
+                out.push([a, b, c]);
+            }
+        }
+    }
+    out
+}
+
+/// A readout's mask: its inhibitory place and its three free ones.
+fn readout_mask(inhibitory: u32, free: [u32; 3]) -> u32 {
+    free.iter()
+        .fold(1u32.wrapping_shl(inhibitory), |mask, &place| {
+            mask | 1u32.wrapping_shl(place)
+        })
+}
+
+/// The places of `places` that `taken` does not hold, in order.
+fn left_of(places: &[u32], taken: [u32; 3]) -> Vec<u32> {
+    places
+        .iter()
+        .copied()
+        .filter(|place| !taken.contains(place))
+        .collect()
+}
+
+/// The deals in the order they are tried (ADR-0153), committed before any coupling was read.
+/// The readouts are numbered by their inhibitory place, 4, 14 and 19. A deal is the first
+/// readout's three free places, then the second's of the eight left, then the third's of the
+/// five left, each an ascending triple; the deals are in lexicographic order of the three
+/// triples, the first readout's outermost. So the first deal gives the first readout places 3,
+/// 5 and 6, the second 7, 8 and 12 and the third 13, 15 and 16, and the last gives them 16, 17
+/// and 18, then 12, 13 and 15, then 6, 7 and 8. The order is of the places' numbers and reads
+/// nothing of the network.
+fn deals() -> Vec<Deal> {
+    let mut out = Vec::with_capacity(DEALS);
+    for a in triples(&FREE_PLACES) {
+        let after_a = left_of(&FREE_PLACES, a);
+        for b in triples(&after_a) {
+            let after_b = left_of(&after_a, b);
+            for c in triples(&after_b) {
+                out.push([
+                    readout_mask(INHIBITORY_PLACES[0], a),
+                    readout_mask(INHIBITORY_PLACES[1], b),
+                    readout_mask(INHIBITORY_PLACES[2], c),
+                ]);
+            }
+        }
+    }
+    out
+}
+
+/// The set of the units at the places of `mask` in every whole period of the task's geometry
+/// at 1 024 units: `geometry`'s rotation, period and count.
+fn places_set(mask: u32) -> Set {
+    let [a, ..] = geometry(1024, ROTATION_1024);
+    Set { mask, ..a }
+}
+
+/// The sets of an H-29 task under a deal: ADR-0065's two stimuli, unchanged, and the deal's
+/// three readouts.
+fn answered_sets(deal: &Deal) -> ([Set; 2], [Set; ANSWERS]) {
+    let [a, b, ..] = geometry(1024, ROTATION_1024);
+    ([a, b], deal.map(places_set))
+}
+
+/// Each stimulus's coupling into each shared place on `exec`, as `coupling` sums it.
+fn place_couplings(exec: &Engine) -> PlaceCouplings {
+    let [a, b, ..] = geometry(1024, ROTATION_1024);
+    [a, b].map(|stimulus| {
+        SHARED_PLACES.map(|place| coupling(exec, stimulus, places_set(1u32.wrapping_shl(place))))
+    })
+}
+
+/// A deal's six couplings from the couplings by place, `[stimulus][readout]`: each the sum
+/// over the readout's places.
+fn deal_couplings(by_place: &PlaceCouplings, deal: &Deal) -> [[i64; ANSWERS]; 2] {
+    by_place.map(|stimulus| {
+        deal.map(|mask| {
+            SHARED_PLACES
+                .iter()
+                .zip(stimulus.iter())
+                .filter(|&(&place, _)| mask.wrapping_shr(place) & 1 == 1)
+                .fold(0i64, |sum, (_, &c)| sum.saturating_add(c))
+        })
+    })
+}
+
+/// The readouts' rule (ADR-0151): the six couplings equal within ten per cent — the largest
+/// at most eleven tenths of the smallest — and none zero.
+fn dealt(couplings: &[[i64; ANSWERS]; 2]) -> bool {
+    let all = || couplings.iter().flatten().copied();
+    let min = all().min().unwrap_or(0);
+    let max = all().max().unwrap_or(0);
+    min > 0 && max.saturating_mul(DEALT_TENTHS.0) <= min.saturating_mul(DEALT_TENTHS.1)
+}
+
+/// The deal taken (ADR-0151): the first, in `deals`' order, that passes the rule on the
+/// couplings by place, with its index; none when no deal passes, which stops the round before
+/// any rewarded run (H-29's stopping rule, step 2).
+fn first_dealt(by_place: &PlaceCouplings) -> Option<(usize, Deal)> {
+    deals()
+        .into_iter()
+        .enumerate()
+        .find(|(_, deal)| dealt(&deal_couplings(by_place, deal)))
+}
+
+// --------------------------------------------------------------------- the gate (brief 062)
+
+/// The gate's test (ADR-0061's class; brief 062): the places a readout can take held to the
+/// rule that derives them; the deals in their order — their number, the first and the last,
+/// every deal one of the rule's and after the one before it — and the readouts' rule at its
+/// edges and over tables written by hand. Nothing else added to the gate.
+#[test]
+fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
+    // The places within both stimuli's windows, by the rule: at most the prior's window from
+    // each stimulus's place on the ring of the period, and neither's own.
+    let p = prior(1024);
+    assert_eq!((PRIOR_WINDOW, PERIOD, ROTATION_1024), (8, 20, 0));
+    let within = |place: u32, stimulus: u32| {
+        place != stimulus && ring_distance(PERIOD, place, stimulus) <= PRIOR_WINDOW
+    };
+    let shared: Vec<u32> = (0..PERIOD)
+        .filter(|&place| within(place, A_OFFSET) && within(place, B_OFFSET))
+        .collect();
+    assert_eq!(shared, SHARED_PLACES, "fourteen: 3 to 8 and 12 to 19");
+    let of_a: Vec<u32> = (0..PERIOD).filter(|&q| within(q, A_OFFSET)).collect();
+    let of_b: Vec<u32> = (0..PERIOD).filter(|&q| within(q, B_OFFSET)).collect();
+    assert_eq!(
+        (of_a, of_b),
+        (
+            (1..=8).chain(12..=19).collect::<Vec<u32>>(),
+            (3..=10).chain(12..=19).collect::<Vec<u32>>()
+        ),
+        "A's window and B's, as ADR-0151 wrote them"
+    );
+    // The inhibitory ones by the prior's rule, in every period: the pattern's period is a
+    // multiple of the rule's.
+    let inhibitory: Vec<u32> = SHARED_PLACES
+        .iter()
+        .copied()
+        .filter(|&place| p.is_inhibitory(ROTATION_1024.saturating_add(place)))
+        .collect();
+    assert_eq!(inhibitory, INHIBITORY_PLACES);
+    assert_eq!(PERIOD % p.inhibitory_every, 0);
+    let free: Vec<u32> = SHARED_PLACES
+        .iter()
+        .copied()
+        .filter(|place| !INHIBITORY_PLACES.contains(place))
+        .collect();
+    assert_eq!(free, FREE_PLACES);
+    assert!(
+        FREE_PLACES.windows(2).all(|w| w[0] < w[1]) && INHIBITORY_PLACES[0] < INHIBITORY_PLACES[1]
+    );
+    assert_eq!((ANSWERS, PLACES_EACH, DEALT_TENTHS), (3, 4, (10, 11)));
+    // The triples of a list: every ascending one, the first place outermost.
+    assert_eq!(
+        triples(&[1, 2, 3, 4]),
+        [[1, 2, 3], [1, 2, 4], [1, 3, 4], [2, 3, 4]]
+    );
+    assert_eq!(triples(&[5, 7, 9]), [[5, 7, 9]]);
+    assert!(triples(&[5, 7]).is_empty() && triples(&[]).is_empty());
+    assert_eq!(triples(&FREE_PLACES).len(), 165);
+    assert_eq!(left_of(&[1, 2, 3, 4, 5], [2, 4, 9]), [1, 3, 5]);
+    assert_eq!(readout_mask(4, [3, 5, 6]), 0b111_1000);
+    assert_eq!(readout_mask(19, [16, 17, 18]), 0xF_0000);
+    assert_eq!(readout_mask(14, [3, 12, 18]), 0x4_5008);
+    // The deals: their number, the first and the last as the order's sentence states them.
+    let all = deals();
+    assert_eq!(all.len(), DEALS);
+    let places_of = |mask: u32| -> Vec<u32> {
+        (0..PERIOD)
+            .filter(|&place| mask.wrapping_shr(place) & 1 == 1)
+            .collect()
+    };
+    assert_eq!(
+        all[0].map(places_of),
+        [vec![3, 4, 5, 6], vec![7, 8, 12, 14], vec![13, 15, 16, 19]],
+        "the first deal"
+    );
+    assert_eq!(
+        all[1].map(places_of),
+        [vec![3, 4, 5, 6], vec![7, 8, 12, 14], vec![13, 15, 17, 19]],
+        "the second moves the third readout's last place"
+    );
+    assert_eq!(
+        all[10].map(places_of),
+        [vec![3, 4, 5, 6], vec![7, 8, 13, 14], vec![12, 15, 16, 19]],
+        "the eleventh moves the second readout's"
+    );
+    assert_eq!(
+        all[560].map(places_of),
+        [vec![3, 4, 5, 7], vec![6, 8, 12, 14], vec![13, 15, 16, 19]],
+        "the 561st moves the first readout's"
+    );
+    assert_eq!(
+        all[DEALS - 1].map(places_of),
+        [vec![4, 16, 17, 18], vec![12, 13, 14, 15], vec![6, 7, 8, 19]],
+        "the last deal"
+    );
+    // Every deal is one of the rule's, and comes after the one before it in the order.
+    let key = |deal: &Deal| -> [Vec<u32>; ANSWERS] {
+        [0usize, 1, 2].map(|r| {
+            places_of(deal[r])
+                .into_iter()
+                .filter(|place| *place != INHIBITORY_PLACES[r])
+                .collect()
+        })
+    };
+    let stimuli = (1u32 << A_OFFSET) | (1u32 << B_OFFSET);
+    let every_shared = SHARED_PLACES
+        .iter()
+        .fold(0u32, |mask, &place| mask | 1u32.wrapping_shl(place));
+    let mut before: Option<[Vec<u32>; ANSWERS]> = None;
+    for (n, deal) in all.iter().enumerate() {
+        for (r, &mask) in deal.iter().enumerate() {
+            assert_eq!(mask.count_ones(), PLACES_EACH, "deal {n}: four places");
+            assert_eq!(mask & !every_shared, 0, "deal {n}: of the fourteen");
+            assert_eq!(mask & stimuli, 0, "deal {n}: no stimulus's place");
+            let held: Vec<u32> = INHIBITORY_PLACES
+                .iter()
+                .copied()
+                .filter(|&place| mask.wrapping_shr(place) & 1 == 1)
+                .collect();
+            assert_eq!(
+                held,
+                [INHIBITORY_PLACES[r]],
+                "deal {n}: one inhibitory place, the readout's own"
+            );
+        }
+        assert_eq!(
+            (deal[0] & deal[1], deal[0] & deal[2], deal[1] & deal[2]),
+            (0, 0, 0),
+            "deal {n}: no place twice"
+        );
+        let now = key(deal);
+        if let Some(previous) = &before {
+            assert!(previous < &now, "deal {n} comes after the one before it");
+        }
+        before = Some(now);
+    }
+    // A deal's sets at 1 024 units: the stimuli ADR-0065's, each readout 204 units, 51 of them
+    // the prior's inhibitory ones, every one within the window of a unit of each stimulus in
+    // its own period, and four places of each readout in every stimulus unit's window.
+    let [a, b, r0, r1] = geometry(1024, ROTATION_1024);
+    for deal in [all[0], all[DEALS / 2], all[DEALS - 1]] {
+        let (stimulus_sets, readouts) = answered_sets(&deal);
+        assert_eq!(stimulus_sets, [a, b], "ADR-0065's stimuli, unchanged");
+        for (r, readout) in readouts.iter().enumerate() {
+            assert_eq!(
+                (readout.first, readout.period, readout.count, readout.mask),
+                (ROTATION_1024, PERIOD, a.count, deal[r])
+            );
+            assert_eq!(readout.len(), 204);
+            assert_eq!(
+                readout.units().filter(|&u| p.is_inhibitory(u)).count(),
+                51,
+                "one inhibitory unit a period"
+            );
+            assert!(!readout.overlaps(&a) && !readout.overlaps(&b));
+            for other in readouts.iter().skip(r.saturating_add(1)) {
+                assert!(!readout.overlaps(other));
+            }
+            // Unit 0, stimulus A's first, is the one unit at the ring's seam: the four units
+            // past the last whole period lie in its window where places 12 to 15 of a period
+            // before would, so it sees a readout's places among 3 to 8 and 16 to 19 only.
+            for stimulus in [a, b] {
+                for x in stimulus.units() {
+                    let seen = readout
+                        .units()
+                        .filter(|&u| ring_distance(1024, x, u) <= PRIOR_WINDOW)
+                        .count();
+                    let expected = if x == 0 {
+                        places_of(deal[r])
+                            .iter()
+                            .filter(|&&place| !(12..=15).contains(&place))
+                            .count()
+                    } else {
+                        4
+                    };
+                    assert_eq!(seen, expected, "stimulus unit {x}, readout {r}");
+                }
+            }
+        }
+        // A two-answer readout was nine places, 459 units.
+        assert_eq!((r0.len(), r1.len()), (459, 459));
+    }
+    // The rule at its edges: within ten per cent, the largest at most eleven tenths of the
+    // smallest, and none zero.
+    assert!(dealt(&[[100, 100, 100], [100, 100, 100]]));
+    assert!(dealt(&[[100, 110, 105], [103, 100, 110]]));
+    assert!(!dealt(&[[100, 111, 105], [103, 100, 110]]), "one past");
+    assert!(!dealt(&[[100, 110, 105], [103, 99, 110]]), "one below");
+    assert!(dealt(&[
+        [1_000_000, 1_100_000, 1_000_000],
+        [1_100_000, 1_000_000, 1_100_000]
+    ]));
+    assert!(!dealt(&[
+        [1_000_000, 1_100_001, 1_000_000],
+        [1_100_000, 1_000_000, 1_100_000]
+    ]));
+    assert!(!dealt(&[[0, 0, 0], [0, 0, 0]]), "none zero");
+    assert!(!dealt(&[[10, 10, 10], [10, 0, 10]]));
+    assert!(!dealt(&[[10, 10, 10], [10, -1, 10]]), "nor below it");
+    for (s, r) in [(0usize, 0usize), (0, 2), (1, 1), (1, 2)] {
+        let mut c = [[100i64; ANSWERS]; 2];
+        c[s][r] = 111;
+        assert!(!dealt(&c), "every coupling is read: {s} {r}");
+        c[s][r] = 90;
+        assert!(!dealt(&c), "every coupling is read: {s} {r}");
+    }
+    // A deal's couplings from the couplings by place: each the sum over the readout's four
+    // places. A table that counts each place by its number for stimulus A, and by a thousand
+    // times it for B.
+    let by_number: PlaceCouplings = [
+        SHARED_PLACES.map(i64::from),
+        SHARED_PLACES.map(|place| i64::from(place).saturating_mul(1000)),
+    ];
+    assert_eq!(
+        deal_couplings(&by_number, &all[0]),
+        [[18, 41, 63], [18_000, 41_000, 63_000]],
+        "3 + 4 + 5 + 6, 7 + 8 + 12 + 14 and 13 + 15 + 16 + 19"
+    );
+    assert_eq!(
+        deal_couplings(&by_number, &all[DEALS - 1]),
+        [[55, 54, 40], [55_000, 54_000, 40_000]]
+    );
+    assert_eq!(
+        first_dealt(&by_number),
+        None,
+        "the six are read together, and B's are a thousand times A's"
+    );
+    // With both stimuli's places counted by their numbers: the first deal that passes is one
+    // that passes, with every deal before it failing.
+    let level: PlaceCouplings = [SHARED_PLACES.map(i64::from); 2];
+    let (n, deal) = first_dealt(&level).expect("a deal balances the places' numbers");
+    assert_eq!(all[n], deal);
+    assert!(dealt(&deal_couplings(&level, &deal)));
+    assert!(all[..n].iter().all(|d| !dealt(&deal_couplings(&level, d))));
+    assert!(n > 0, "the first deal's 18, 41 and 63 do not");
+    // No deal passes where one readout's own place outweighs every other: the round would
+    // stop there.
+    let mut lopsided: PlaceCouplings = [[1000; 14]; 2];
+    lopsided[0][1] = 1_000_000;
+    assert_eq!(first_dealt(&lopsided), None);
+    // The first deal that passes, over tables written by hand. Every place alike: the first
+    // deal. Every place alike but place 6 doubled: the first deal whose three readouts weigh
+    // the same cannot hold 6, so no deal with it passes, and the first without it in the first
+    // readout is the 561st on, where 6 is the second readout's; the first to pass leaves 6 in
+    // no set.
+    let alike: PlaceCouplings = [[1000; 14]; 2];
+    assert_eq!(first_dealt(&alike), Some((0, all[0])));
+    let mut heavy = alike;
+    heavy[0][3] = 2000;
+    heavy[1][3] = 2000;
+    let (n, deal) = first_dealt(&heavy).expect("a deal that leaves place 6 out");
+    assert!(deal.iter().all(|mask| mask.wrapping_shr(6) & 1 == 0));
+    assert!(
+        all[..n]
+            .iter()
+            .all(|d| d.iter().any(|mask| mask.wrapping_shr(6) & 1 == 1))
+    );
+    assert_eq!(
+        deal.map(places_of),
+        [vec![3, 4, 5, 7], vec![8, 12, 13, 14], vec![15, 16, 17, 19]]
+    );
+    // On the instrument's network before any settling, a deal's couplings from the couplings by
+    // place are the couplings `coupling` sums over the deal's sets. Nothing is read of which
+    // deal passes: the order above was committed before any coupling was.
+    let exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    let by_place = place_couplings(&exec);
+    for deal in [all[0], all[DEALS / 2], all[DEALS - 1]] {
+        let (stimuli, readouts) = answered_sets(&deal);
+        assert_eq!(
+            deal_couplings(&by_place, &deal),
+            stimuli.map(|s| readouts.map(|r| coupling(&exec, s, r)))
+        );
+    }
+    // One stimulus's couplings alone can fail a deal the other's pass.
+    let mut one = alike;
+    one[1][0] = 2000;
+    let (_, deal) = first_dealt(&one).expect("a deal that leaves place 3 out");
+    assert!(deal.iter().all(|mask| mask.wrapping_shr(3) & 1 == 0));
+}
