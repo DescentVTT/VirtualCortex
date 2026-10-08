@@ -30,7 +30,7 @@ standing changes.
 
 - **The engine runs.** The records with their layout assertions, the update rules, synaptic fan-out
   with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena,
-  the `.cortex` image (format 20), the criticality controller, sleep with the episodic ledger and
+  the `.cortex` image (format 21), the criticality controller, sleep with the episodic ledger and
   its replay, and the symbolic layer (hypervectors, categorial reduction, induction, the discovery
   path) are Implemented.
 - **It learns.** On the reference network at 1 024 units the engine learns a two-alternative task,
