@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-09
 depends-on: ADR-0152
 decision-makers: VirtualCortex maintainers
@@ -169,7 +169,7 @@ The frozen block was read before any rewarded run and is pinned with the protoco
 ### The weekly tests and their cost
 
 - **Two weekly tests**: `three_answers_from_the_{assignment, mirrored_assignment}_at_1024_units_exhaustive`.
-- **Each is H-25's arm** without the composer and its shadows, with the calibration above in front of it. On the developer machine each took 1 217 s side by side with the other, its calibration included (a ratio, not admissible). H-25's arms are 1 817 and 1 837 s in the table.
+- **Each is H-25's arm** without the composer and its shadows, with the calibration above in front of it. On the developer machine each took 1 217 s side by side with the other, its calibration included (a ratio, not admissible). H-25's arms are 1 817 and 1 837 s in the table before this round.
 - **The dispatch's scope**: ADR-0152 changed files under `src/`, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly is dispatched at `scope=both`.
 
 ### The order of the work, as the history holds it
@@ -356,7 +356,30 @@ At the end of the mapping that failed, A's coupling into its old answer was stil
 
 ### The evidence
 
-*This section is written when the dispatch's whole-domain shards have ended.*
+- **The dispatch's scope.** The diff changes files under `src/` — the task, ADR-0152's — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**, as brief 062 asks: run [37810004245](https://github.com/DescentVTT/VirtualCortex/actions/runs/37810004245) at `d0f60bd`, the arms' tables, at 16:35:36Z on 2026-10-08. It is the first run of ADR-0150's twelve shards: twelve whole-domain jobs and the sweep's seven ran at once, and the pull request's five queued behind them.
+- **Every whole-domain shard is green**, 16:35:41Z to 17:27:38Z. All eighty-nine `exhaustive` tests passed, each exit 0 with one test reported: the eighty-seven before this round reproduced their pinned numbers on the hosted runners, and **the two arms reproduced their tables there, in 915 s from the assignment and 1 041 s from the mirrored assignment**; H-25's arms took 1 175 and 1 745 s in the same run.
+- **The shards**, dealt by the table before this round, which did not know the two arms and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 22.7 min | H-24 from the assignment 796; H-18 from the mirrored 682 | 8 | 2 164 | 1 296 s, 18 % |
+  | 1 | 36.0 min | H-20 from the mirrored 1 942; H-14's three arms 1 146 | 7 | 4 130 | 2 074 s, 29 % |
+  | 2 | 41.4 min | H-27 from the assignment 1 865; H-21 from the mirrored 1 764 | 8 | 4 688 | 2 401 s, 33 % |
+  | 3 | 40.4 min | the control from the assignment 1 755; H-28 from the assignment 1 750 | 8 | 4 608 | 2 335 s, 32 % |
+  | 4 | 41.0 min | H-25 from the mirrored 1 745; H-28 from the mirrored 1 730 | 9 | 4 553 | 2 371 s, 33 % |
+  | 5 | 35.2 min | H-22 from the mirrored 1 870; H-15's three arms 1 142 | 8 | 3 979 | 2 031 s, 28 % |
+  | 6 | 37.9 min | H-24 from the mirrored 1 990; H-18 from the assignment 1 082 | 8 | 4 188 | 2 179 s, 30 % |
+  | 7 | 26.5 min | H-25 from the assignment 1 175; H-16's three arms 908 | 6 | 2 769 | 1 531 s, 21 % |
+  | 8 | 20.7 min | H-21 from the assignment 1 068; H-19 from the mirrored 688 | 7 | 2 237 | 1 169 s, 16 % |
+  | 9 | 47.9 min | H-27 from the mirrored 1 766; H-20 from the assignment 1 709 | 6 | 4 695 | 2 783 s, 39 % |
+  | 10 | 52.0 min | H-23 from the assignment 2 188; the control from the mirrored 1 638 | 7 | 5 415 | 3 027 s, 42 % |
+  | 11 | 36.1 min | H-23 from the mirrored 1 184; H-22 from the assignment 1 181 | 7 | 3 377 | 2 096 s, 29 % |
+
+  The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.61 to 1.99 of their summed seconds over the wall. **No shard passed 60 per cent of its bound**: the heaviest read 42. H-29's arm from the assignment ran in shard 11 and the one from the mirrored assignment in shard 9. The runners differed in speed within the run: H-24's two arms, the same work, read 796 and 1 990 s.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 37810004245`): 89 lines, 46 803 s. ADR-0092's deal plans each of the twelve shards at 3 899 to 3 901 s summed, about 1 960 to 2 420 s of wall time at the run's ratios, **27 to 34 per cent of the bound**, inside the brief's 60.
+- **The sweep had not ended** when the shards did, and the merge does not wait for it (ADR-0150). Its job over the state crates had ended green at 17:05:31Z; its six jobs over the runtime were running. Its outcome is read when it ends and written down by the next decision's ADR, a survivor a finding there.
+- **The pull request's gate** is green in every job on `98360b5` and on `b1d5b69`, the determinism pin on AArch64 and the MSRV among them; the mutation gate on the changed lines found 20 mutants in each, 16 caught and 4 unviable, none missed. The four unviable are the tool's synthesized returns for `Task::trial`, whose `Outcome` has no default. The gate's run on `d0f60bd` was cancelled by the push of `b1d5b69` eight minutes after it; `b1d5b69` holds its tests. The same gate on the developer machine read 15 caught by the tool and the same 4 unviable; the sixteenth, whose build the Windows linker's lock failed in every round, was caught when applied by hand.
+- **On the developer machine**, at `b1d5b69`, whose Rust sources are `d0f60bd`'s: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 711 passed and 129 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; 89 whole-domain tests are listed.
 
 ### The step of the stopping rule reached
 
