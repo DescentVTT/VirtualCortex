@@ -94,10 +94,10 @@ pub const SECTION_AMENDMENT: u32 = 41;
 /// (ADR-0094), the class of short-term plasticity's flag at `[32]` and its $U$ and two shifts
 /// at `[33..36)` (ADR-0114), the slow current's flag at `[36]`, its leak and input shifts at
 /// `[37]` and `[38]` and its two voltages at `[40..48)` (ADR-0123), the critic's flag at
-/// `[48]` and its shift and scale at `[49]` and `[50]` (ADR-0131), the critic's window at
-/// `[52..54)` (ADR-0134), and 14 reserved bytes that MUST be zero (`[26..28)`, `[39]`, `[51]`
-/// and `[54..64)`); always written and required, so that the modulation a run continues under is
-/// in the image.
+/// `[48]` and its shift and scale at `[49]` and `[50]` (ADR-0131), the whole punishment's flag
+/// at `[51]` (ADR-0155), the critic's window at `[52..54)` (ADR-0134), and 13 reserved bytes
+/// that MUST be zero (`[26..28)`, `[39]` and `[54..64)`); always written and required, so that
+/// the modulation a run continues under is in the image.
 pub const SECTION_MODULATOR: u32 = 42;
 /// The engine's homeostasis state (ADR-0036): one 64-byte record, `cortex-homeostasis`'s
 /// `HomeostaticDrivePool` with its synaptic gain, its control step and the open window of the
@@ -274,7 +274,13 @@ impl CortexFileHeader {
     ///   `[51]` and `[54..64)` stay reserved. A version-19 image's zeros there read as unset, which
     ///   is the rule before this version bit for bit; the loader still refuses a version-19
     ///   header, as it refuses every foreign version.
-    pub const FORMAT_VERSION: u32 = 20;
+    /// - 21: the modulator section's `[51]` is the whole punishment's flag, one while it is set
+    ///   and zero while it is unset; set, a reward below zero that meets a value of the critic
+    ///   below zero reaches the modulator whole, and the loader refuses it without the critic
+    ///   (ADR-0154, ADR-0155). `[26..28)`, `[39]` and `[54..64)` stay reserved. A version-20
+    ///   image's zero there reads as unset, which is the rule before this version bit for bit;
+    ///   the loader still refuses a version-20 header, as it refuses every foreign version.
+    pub const FORMAT_VERSION: u32 = 21;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -458,7 +464,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
     }
 
     #[test]
@@ -504,8 +510,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            20,
-            "ADR-0134: the critic's window in the modulator section"
+            21,
+            "ADR-0155: the whole punishment's flag in the modulator section"
         );
     }
 

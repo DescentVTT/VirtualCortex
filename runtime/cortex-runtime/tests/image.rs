@@ -1185,7 +1185,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     );
     // `[32..36)` is the class of short-term plasticity's since ADR-0114, `[36..48)` but `[39]`
     // the slow current's since ADR-0123, and `[48..51)` the critic's since ADR-0131.
-    for at in [26, 27, 39, 51, 63] {
+    for at in [26, 27, 39, 54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1207,7 +1207,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(19)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(20)))
         ),
         "the previous format's header fails closed, as every foreign version does"
     );
@@ -1298,7 +1298,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
     }
     // `[32..36)` is the class of short-term plasticity's since ADR-0114, `[36..48)` but `[39]`
     // the slow current's since ADR-0123, and `[48..51)` the critic's since ADR-0131.
-    for at in [26, 27, 39, 51, 63] {
+    for at in [26, 27, 39, 54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1312,7 +1312,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "byte {at} is reserved"
         );
     }
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 15;
@@ -1467,7 +1467,7 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
     }
     // `[36..48)` but `[39]` is the slow current's since ADR-0123, and `[48..51)` the critic's
     // since ADR-0131.
-    for at in [26, 27, 39, 51, 63] {
+    for at in [26, 27, 39, 54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1512,7 +1512,7 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
         Err(ImageError::MarkWithoutClass(0))
     ));
     // A header stamped with format 16, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 16;
@@ -1718,7 +1718,7 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
             );
         }
     }
-    for at in [39, 51, 63] {
+    for at in [39, 54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1778,7 +1778,7 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
         "a slow potential without the mark"
     );
     // A header stamped with format 17, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 17;
@@ -1921,7 +1921,7 @@ fn the_critic_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads
             "{bytes:?}: bytes the writer never produces"
         );
     }
-    for at in [51, 63] {
+    for at in [54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1965,7 +1965,7 @@ fn the_critic_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads
         None
     );
     // A header stamped with format 18, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 18;
@@ -2172,7 +2172,7 @@ fn the_critic_s_window_is_written_to_and_read_from_the_image_and_is_the_shortest
         })
     ));
     // The bytes beside the window are reserved.
-    for at in [51, 54, 63] {
+    for at in [54, 55, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -2187,7 +2187,7 @@ fn the_critic_s_window_is_written_to_and_read_from_the_image_and_is_the_shortest
         );
     }
     // A header stamped with format 19, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 20);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 19;
@@ -2199,6 +2199,176 @@ fn the_critic_s_window_is_written_to_and_read_from_the_image_and_is_the_shortest
             Err(ImageError::Header(HeaderError::ForeignVersion(19)))
         ),
         "a format-19 header fails closed, as every foreign version does (L-6)"
+    );
+}
+
+/// The whole punishment in the modulator section (ADR-0155; format 21): a flag byte at `[51]`,
+/// between the critic's constants and its window. Unset, it is zero — the byte a format-20
+/// writer left there — and reads as unset whatever the configuration says; set, it is written
+/// and read back whatever the configuration says, beside the critic and its window or beside
+/// the critic alone. Refused: the flag without the critic, as the configuration's is; a flag
+/// that is neither zero nor one and the bytes that stay reserved, which the writer never
+/// produces; and a header stamped with the previous version, as every foreign version is.
+#[test]
+fn the_whole_punishment_is_written_to_and_read_from_the_image_and_refused_without_the_critic() {
+    let critic = ValueCritic { shift: 9, scale: 2 };
+    let with = |critic: Option<ValueCritic>, window: u16, whole: bool| Config {
+        train_capacity: 8,
+        critic,
+        critic_window_ticks: window,
+        whole_punishment: whole,
+        ..Config::default()
+    };
+    // Three units, two blocks: synapses of delays 7, 3 and 250, the shortest the window's.
+    let network = |config: Config| {
+        let mut exec = Executor::<8>::new(Config {
+            units: 3,
+            blocks: 2,
+            ..config
+        })
+        .unwrap();
+        {
+            let blocks = exec.blocks_mut();
+            assert!(blocks[0].set_synapse(0, 1, 100, 7, false));
+            assert!(blocks[0].set_synapse(2, 2, 100, 250, false));
+            assert!(blocks[1].set_synapse(1, 0, 100, 3, false));
+        }
+        assert!(exec.units_mut()[0].set_first_block(0));
+        assert!(exec.units_mut()[1].set_first_block(1));
+        exec
+    };
+    // Unset: zero, and the image's unset outranks the configuration's set.
+    let unset = Image::encode(&network(with(Some(critic), 3, false))).unwrap();
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(
+        &section[48..54],
+        &[1, 9, 2, 0, 3, 0],
+        "the critic, the flag unset, the window"
+    );
+    let loaded = Image::decode::<8>(&unset, with(Some(critic), 0, true)).unwrap();
+    assert_eq!(
+        (loaded.whole_punishment(), loaded.critic()),
+        (false, Some(critic)),
+        "the image's unset outranks the configuration's set"
+    );
+    // Set beside the critic and its window: written at `[51]` and nowhere else, and read back
+    // whatever the configuration says.
+    let set = Image::encode(&network(with(Some(critic), 3, true))).unwrap();
+    let section_set = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(
+        &section_set[48..54],
+        &[1, 9, 2, 1, 3, 0],
+        "the critic, the flag set, the window"
+    );
+    assert_eq!(&section_set[54..64], &[0u8; 10]);
+    for (at, (a, b)) in section.iter().zip(&section_set).enumerate() {
+        assert_eq!(a == b, at != 51, "byte {at}: the flag's byte and no other");
+    }
+    let loaded = Image::decode::<8>(&set, with(None, 0, false)).unwrap();
+    assert_eq!(
+        (
+            loaded.whole_punishment(),
+            loaded.critic(),
+            loaded.critic_window_ticks()
+        ),
+        (true, Some(critic), 3),
+        "the image's set outranks the configuration's unset"
+    );
+    assert_eq!(Image::encode(&loaded).unwrap(), set, "one image, twice");
+    // Set beside the critic alone, with no window.
+    let alone = Image::encode(&network(with(Some(critic), 0, true))).unwrap();
+    assert_eq!(
+        &section_bytes(&alone, SECTION_MODULATOR)[48..54],
+        &[1, 9, 2, 1, 0, 0]
+    );
+    let loaded = Image::decode::<8>(&alone, with(None, 0, false)).unwrap();
+    assert_eq!(
+        (loaded.whole_punishment(), loaded.critic_window_ticks()),
+        (true, 0)
+    );
+    // The flag's byte: zero is unset, one is set, and any other is a byte the writer never
+    // produces.
+    let with_flag = |flag: u8| {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[51] = flag);
+        img
+    };
+    assert!(
+        !Image::decode::<8>(&with_flag(0), with(None, 0, true))
+            .unwrap()
+            .whole_punishment(),
+        "zero is unset"
+    );
+    assert_eq!(with_flag(0), unset, "the unset image, byte for byte");
+    assert!(
+        Image::decode::<8>(&with_flag(1), with(None, 0, false))
+            .unwrap()
+            .whole_punishment()
+    );
+    for flag in [2, 3, 0x80, 0xFF] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&with_flag(flag), with(None, 0, false)),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "{flag}: a flag the writer never produces"
+        );
+    }
+    // The flag without the critic, refused as the configuration's is, whatever it says.
+    let mut bare = alone.clone();
+    patch_section(&mut bare, SECTION_MODULATOR, |s| {
+        s[48..51].copy_from_slice(&[0, 0, 0])
+    });
+    for config in [with(Some(critic), 0, false), with(None, 0, false)] {
+        assert!(
+            matches!(
+                Image::decode::<8>(&bare, config),
+                Err(ImageError::Config(
+                    ConfigError::WholePunishmentWithoutCritic
+                ))
+            ),
+            "the flag without the critic"
+        );
+    }
+    patch_section(&mut bare, SECTION_MODULATOR, |s| s[51] = 0);
+    assert_eq!(
+        Image::decode::<8>(&bare, with(Some(critic), 0, true))
+            .unwrap()
+            .critic(),
+        None,
+        "with neither, the image loads unset"
+    );
+    // The bytes that stay reserved.
+    for at in [26, 27, 39, 54, 55, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, with(None, 0, false)),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    // A header stamped with format 20, as every foreign version is (L-6).
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
+    let mut older = unset.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 20;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, with(None, 0, false)),
+            Err(ImageError::Header(HeaderError::ForeignVersion(20)))
+        ),
+        "a format-20 header fails closed, as every foreign version does (L-6)"
     );
 }
 

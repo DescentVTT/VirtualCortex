@@ -363,6 +363,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             slow_current: None,
             critic: None,
             critic_window_ticks: 0,
+            whole_punishment: false,
         },
         wire_random,
         20_000,

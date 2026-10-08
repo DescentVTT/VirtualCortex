@@ -206,6 +206,15 @@ pub struct Config {
     /// image, the image's outranks this one, and the loader refuses a window that is not the
     /// shortest delay of any synapse the image carries ([`crate::shortest_delay`]).
     pub critic_window_ticks: u16,
+    /// The whole punishment (ADR-0154, ADR-0155): while set, a reward below zero that meets a
+    /// value below zero reaches the modulator whole (`cortex-neuromod`'s
+    /// `ValueCritic::received_q16`) where the critic's error is softer; every other reward
+    /// reaches it as the error, and the critic's weights move by the error in every case.
+    /// Unset (the default), the modulator receives the error at every reward, the critic of
+    /// ADR-0131 bit for bit. Refused while the critic is unset. For an engine built from an
+    /// image, the image's outranks this one: it changes what the run does, so it is part of the
+    /// image (§8.3).
+    pub whole_punishment: bool,
 }
 
 impl Default for Config {
@@ -236,6 +245,7 @@ impl Default for Config {
             slow_current: None,
             critic: None,
             critic_window_ticks: 0,
+            whole_punishment: false,
         }
     }
 }
@@ -364,17 +374,24 @@ pub enum ConfigError {
     /// `critic_window_ticks` is set while `critic` is not: the window gates the critic's
     /// features and nothing else (ADR-0134).
     WindowWithoutCritic,
+    /// `whole_punishment` is set while `critic` is not: it is a rule of what the modulator
+    /// receives at the critic's reading and of nothing else (ADR-0155).
+    WholePunishmentWithoutCritic,
 }
 
-/// What the critic read at a reward (ADR-0131): the value, and the error the modulator
-/// received in the reward's place.
+/// What the critic read at a reward (ADR-0131): the value, the error the weights moved by, and
+/// what the modulator received in the reward's place (ADR-0155).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Prediction {
     /// The value, Q16.16: the weights times the units' spikes since the previous reward,
     /// scaled.
     pub value_q16: i32,
-    /// The reward less the value, saturating, Q16.16.
+    /// The reward less the value, saturating, Q16.16: the critic's error, which moved its
+    /// weights.
     pub error_q16: i32,
+    /// What the modulator received, Q16.16: the error, or, while the whole punishment is set
+    /// (ADR-0155), the reward where the reward and the value were both below zero.
+    pub received_q16: i32,
 }
 
 /// Why an episode could not be tagged (ADR-0038).
@@ -883,6 +900,8 @@ pub struct Executor<const CAP: usize> {
     /// The tick the critic's window opened at: the previous reward's the critic took, or the
     /// engine's start, its build or its load, before the first.
     window_opened: u64,
+    /// The whole punishment (ADR-0155): the configuration's, or the image's.
+    whole_punishment: bool,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -993,6 +1012,9 @@ impl<const CAP: usize> Executor<CAP> {
         }
         if config.critic.is_none() && config.critic_window_ticks != 0 {
             return Err(ConfigError::WindowWithoutCritic);
+        }
+        if config.critic.is_none() && config.whole_punishment {
+            return Err(ConfigError::WholePunishmentWithoutCritic);
         }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
@@ -1110,6 +1132,7 @@ impl<const CAP: usize> Executor<CAP> {
             prediction: None,
             critic_window_ticks: config.critic_window_ticks,
             window_opened: 0,
+            whole_punishment: config.whole_punishment,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1215,8 +1238,9 @@ impl<const CAP: usize> Executor<CAP> {
         &self.features
     }
 
-    /// What the critic read at the last reward (ADR-0131): the value and the error the
-    /// modulator received; none before the first reward, or while the critic is unset.
+    /// What the critic read at the last reward (ADR-0131): the value, the error and what the
+    /// modulator received (ADR-0155); none before the first reward, or while the critic is
+    /// unset.
     pub fn prediction(&self) -> Option<Prediction> {
         self.prediction
     }
@@ -1236,6 +1260,13 @@ impl<const CAP: usize> Executor<CAP> {
         self.window_opened
     }
 
+    /// The whole punishment (ADR-0155), from the configuration or the image: while set, a
+    /// reward below zero that meets a value below zero reaches the modulator whole; unset, the
+    /// modulator receives the critic's error at every reward, as before ADR-0155.
+    pub fn whole_punishment(&self) -> bool {
+        self.whole_punishment
+    }
+
     /// A reward into the dopamine signal, between ticks (ADR-0032): an input, like an
     /// injection, so a run that replays its rewards at the same ticks is the same run. The next
     /// tick's fan-out consolidates under the raised modulation; the signal then decays by
@@ -1250,6 +1281,11 @@ impl<const CAP: usize> Executor<CAP> {
     /// the tick and every worker waits at the barrier holding no reference into the arena
     /// (axiom A3). The critic's window opens again at this tick (ADR-0134): the spikes of the
     /// next tick are the first after the reward.
+    ///
+    /// While the whole punishment is set (ADR-0154, ADR-0155), what the modulator receives is
+    /// `ValueCritic::received_q16` of the reward and the value: the reward itself where both
+    /// are below zero, the error everywhere else. The weights move by the error in every case,
+    /// so the value holds the expected reward as it did.
     pub fn reward(&mut self, reward_q16: i32) -> i32 {
         let Some(critic) = self.critic else {
             return self.modulator.reward(reward_q16);
@@ -1268,12 +1304,18 @@ impl<const CAP: usize> Executor<CAP> {
             *count = 0;
         }
         self.features = features;
+        let received_q16 = if self.whole_punishment {
+            ValueCritic::received_q16(reward_q16, value_q16)
+        } else {
+            error_q16
+        };
         self.prediction = Some(Prediction {
             value_q16,
             error_q16,
+            received_q16,
         });
         self.window_opened = self.tick;
-        self.modulator.reward(error_q16)
+        self.modulator.reward(received_q16)
     }
 
     /// Between ticks: the addressed set becomes the synapses from a unit of `sources` onto a
@@ -3844,7 +3886,8 @@ mod tests {
                     exec.prediction(),
                     Some(Prediction {
                         value_q16: value,
-                        error_q16: error
+                        error_q16: error,
+                        received_q16: error
                     }),
                     "window {window}"
                 );
@@ -4043,6 +4086,7 @@ mod tests {
                         Prediction {
                             value_q16: value,
                             error_q16: error,
+                            received_q16: error,
                         },
                         weights.iter().map(|&w| w as i16).collect(),
                     )
@@ -4072,6 +4116,217 @@ mod tests {
             excluded_some |= windowed.iter().zip(&unset).any(|(w, u)| w.0 != u.0);
         }
         assert!(excluded_some, "some length leaves a spike out");
+    }
+
+    /// The whole punishment (ADR-0155): unset by default; refused while the critic is unset;
+    /// taken with the critic, with its window or without it.
+    #[test]
+    fn the_whole_punishment_is_unset_by_default_and_refused_without_the_critic() {
+        assert!(!Config::default().whole_punishment, "unset by default");
+        let with = |critic, window, whole| {
+            Executor::<8>::new(Config {
+                units: 3,
+                train_capacity: 8,
+                critic,
+                critic_window_ticks: window,
+                whole_punishment: whole,
+                ..Config::default()
+            })
+        };
+        assert!(!with(None, 0, false).unwrap().whole_punishment());
+        let critic = Some(ValueCritic { shift: 9, scale: 2 });
+        for window in [0, 100] {
+            assert!(
+                !with(critic, window, false).unwrap().whole_punishment(),
+                "{window}: unset with the critic"
+            );
+            assert!(
+                with(critic, window, true).unwrap().whole_punishment(),
+                "{window}: taken with the critic"
+            );
+        }
+        assert!(
+            matches!(
+                with(None, 0, true),
+                Err(ConfigError::WholePunishmentWithoutCritic)
+            ),
+            "refused without the critic"
+        );
+    }
+
+    /// The whole punishment's composition (ADR-0155), each number from an oracle written from
+    /// ADR-0154's text: two engines of four armed units, one with the parameter unset and one
+    /// with it set, given the same kicks, the same weights written by hand before each window
+    /// and the same rewards. At every reward of both the value is the weights times the counts,
+    /// over four, floored; the prediction records it, the error — the reward less it — and what
+    /// the modulator received; and every weight moves by the error times its count over 512,
+    /// floored, in the two engines alike. Unset, the modulator receives the error at every
+    /// reward, the critic of ADR-0131 bit for bit. Set, it receives the reward where the reward
+    /// and the value are both below zero and the error everywhere else: the four cases by sign,
+    /// a reward of zero, a value of zero, one LSB below zero on each side, and the width. Each
+    /// engine's modulator is held to an oracle's, decayed tick by tick and given what the
+    /// engine's rule says it receives.
+    #[test]
+    fn with_the_whole_punishment_set_a_punishment_under_a_value_below_zero_reaches_the_modulator_whole()
+     {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        let critic = ValueCritic { shift: 9, scale: 2 };
+        let make = |whole| {
+            let mut exec = Executor::<8>::new(Config {
+                units: 4,
+                nodes_per_worker: 128,
+                train_capacity: 64,
+                critic: Some(critic),
+                whole_punishment: whole,
+                ..Config::default()
+            })
+            .unwrap();
+            for unit in exec.units_mut() {
+                unit.v_thresh = THRESHOLD_BASE;
+                unit.stp_u_rel = STP_U;
+                unit.stp_r_ves = STP_MAX;
+            }
+            exec
+        };
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        let weights = |exec: &Executor<8>| -> Vec<i16> {
+            exec.units().iter().map(|u| u.value_weight).collect()
+        };
+        const R: i32 = 0x1_0000;
+        // A case: the weights written before the window, the units kicked, the reward, and the
+        // value's sign the weights are written for.
+        let cases: [([i16; 4], &[u32], i32, i32); 13] = [
+            // The four cases by sign.
+            ([-20_000, -8, 5, 0], &[0, 1], -R, -1),
+            ([20_000, 0, -5, 0], &[0], -R, 1),
+            ([-20_000, 0, 5, -3], &[0, 3], R, -1),
+            ([20_000, 8, -5, 0], &[0, 1], R, 1),
+            // Zero on either side is not below zero.
+            ([-20_000, 0, 0, 0], &[0], 0, -1),
+            ([20_000, 0, 0, 0], &[0], 0, 1),
+            ([20_000, -20_000, 9, -9], &[], -R, 0),
+            ([0, 0, 0, 0], &[0, 1, 2, 3], -R, 0),
+            // One LSB below zero on each side: the error is softer by the whole of it.
+            ([-1, 0, 0, 0], &[0], -1, -1),
+            ([8, 0, 0, 0], &[0], -1, 1),
+            // The width, and beyond it.
+            ([-20_000, 0, 0, 0], &[0], i32::MIN, -1),
+            ([20_000, 0, 0, 0], &[0], i32::MIN, 1),
+            ([-20_000, 0, 0, 0], &[0], i32::MAX, -1),
+        ];
+        let mut engines = [make(false), make(true)];
+        let mut oracles = [NeuromodulatorState::new(); 2];
+        let mut whole_cases = 0u32;
+        for (case, &(written, kicked, reward, sign)) in cases.iter().enumerate() {
+            for (exec, oracle) in engines.iter_mut().zip(oracles.iter_mut()) {
+                // Armed again before each window, a thousand ticks long: a kick lands past the
+                // refractory window of the last spike of the window before.
+                for (unit, &weight) in exec.units_mut().iter_mut().zip(&written) {
+                    unit.v_thresh = THRESHOLD_BASE;
+                    unit.stp_u_rel = STP_U;
+                    unit.stp_r_ves = STP_MAX;
+                    unit.value_weight = weight;
+                }
+                let inject = exec.injector();
+                for &unit in kicked {
+                    for _ in 0..14 {
+                        inject.inject(unit, strong).unwrap();
+                    }
+                }
+                for _ in 0..1_000 {
+                    exec.tick();
+                    oracle.decay_dopamine(DOPAMINE_TAU_SHIFT);
+                }
+                assert_eq!(weights(exec), written, "case {case}: a tick moves none");
+                assert_eq!(
+                    exec.modulator(),
+                    &*oracle,
+                    "case {case}: decayed tick by tick"
+                );
+            }
+            let counts = engines[0].features().to_vec();
+            assert_eq!(engines[1].features(), &counts[..], "case {case}: one train");
+            for (unit, &count) in counts.iter().enumerate() {
+                assert_eq!(
+                    count > 0,
+                    kicked.contains(&(unit as u32)),
+                    "case {case}: unit {unit} fired as kicked"
+                );
+            }
+            let exact: i64 = written
+                .iter()
+                .zip(&counts)
+                .map(|(&w, &c)| i64::from(w).saturating_mul(i64::from(c)))
+                .sum();
+            let value = exact.div_euclid(4) as i32;
+            assert_eq!(
+                value.signum(),
+                sign,
+                "case {case}: the value's sign, {value}"
+            );
+            let error = (i64::from(reward) - i64::from(value))
+                .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+            // ADR-0154's rule, by hand: the reward where both are below zero.
+            let whole = if reward < 0 && value < 0 {
+                reward
+            } else {
+                error
+            };
+            assert_eq!(
+                whole != error,
+                reward < 0 && value < 0,
+                "case {case}: softer exactly where both are below zero"
+            );
+            whole_cases = whole_cases.saturating_add(u32::from(whole != error));
+            let moved: Vec<i16> = written
+                .iter()
+                .zip(&counts)
+                .map(|(&w, &c)| {
+                    (i64::from(w) + (i64::from(error) * i64::from(c)).div_euclid(512))
+                        .clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16
+                })
+                .collect();
+            for ((exec, oracle), received) in engines
+                .iter_mut()
+                .zip(oracles.iter_mut())
+                .zip([error, whole])
+            {
+                let set = exec.whole_punishment();
+                assert_eq!(
+                    exec.reward(reward),
+                    oracle.reward(received),
+                    "case {case} set {set}: the modulator receives {received}"
+                );
+                assert_eq!(exec.modulator(), &*oracle, "case {case} set {set}");
+                assert_eq!(
+                    exec.prediction(),
+                    Some(Prediction {
+                        value_q16: value,
+                        error_q16: error,
+                        received_q16: received
+                    }),
+                    "case {case} set {set}"
+                );
+                assert_eq!(
+                    weights(exec),
+                    moved,
+                    "case {case} set {set}: the weights move by the error"
+                );
+                assert_eq!(
+                    exec.features(),
+                    &[0; 4],
+                    "case {case} set {set}: counted afresh"
+                );
+            }
+            if case == 0 {
+                assert_ne!(
+                    engines[0].modulator(),
+                    engines[1].modulator(),
+                    "the two engines' signals part at the first whole punishment"
+                );
+            }
+        }
+        assert_eq!(whole_cases, 3, "three of the cases meet both below zero");
     }
 
     /// The address drawn (ADR-0139): refused while the critic is unset and while its window is

@@ -23,7 +23,8 @@
 //! critic's constants sit there too, set or unset, and a unit's weight onto it is a field of its
 //! record, zero in every unit while the critic is unset; since ADR-0134 the critic's window sits
 //! beside them, zero while unset and, when set, the shortest delay of any synapse the image
-//! carries.
+//! carries; since ADR-0155 the whole punishment's flag sits between the critic and its window,
+//! set or unset.
 
 use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
 use cortex_affect::InteroceptiveState;
@@ -205,14 +206,34 @@ const CRITIC_SCALE: usize = 50;
 const CRITIC_SET: u8 = 1;
 
 /// The modulator section's critic's window (ADR-0134; format 20): its length in ticks at
-/// `[52..54)`, a `u16`, zero while unset. `[51]` and `[54..64)` stay reserved and must be zero. A
-/// record a format-19 writer left zero there reads as unset, which is the critic of ADR-0131 bit
-/// for bit.
+/// `[52..54)`, a `u16`, zero while unset. `[54..64)` stay reserved and must be zero. A record a
+/// format-19 writer left zero there reads as unset, which is the critic of ADR-0131 bit for bit.
 const CRITIC_WINDOW: core::ops::Range<usize> = 52..54;
 
+/// The modulator section's whole punishment (ADR-0155; format 21): a flag byte at `[51]`,
+/// between the critic's constants and its window, `WHOLE_PUNISHMENT_SET` while it is set and
+/// zero while it is unset. A record a format-20 writer left zero there reads as unset, which is
+/// the critic of ADR-0131 bit for bit.
+const WHOLE_PUNISHMENT_FLAG: usize = 51;
+const WHOLE_PUNISHMENT_SET: u8 = 1;
+
 /// The modulator record's reserved bytes: between the signed gate and the target period, the
-/// slow current's one, the one between the critic and its window, and the tail after the window.
-const MODULATOR_RESERVED: [core::ops::Range<usize>; 4] = [26..28, 39..40, 51..52, 54..64];
+/// slow current's one, and the tail after the critic's window.
+const MODULATOR_RESERVED: [core::ops::Range<usize>; 3] = [26..28, 39..40, 54..64];
+
+/// The whole punishment a modulator record carries (ADR-0155): unset while its flag is zero,
+/// set while it is `WHOLE_PUNISHMENT_SET`, which `Executor::new` refuses without the critic as
+/// it refuses the configuration's; any other flag is a byte the writer never produces.
+fn whole_punishment_of(record: &[u8]) -> Result<bool, ImageError> {
+    match record[WHOLE_PUNISHMENT_FLAG] {
+        0 => Ok(false),
+        WHOLE_PUNISHMENT_SET => Ok(true),
+        _ => Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0,
+        }),
+    }
+}
 
 /// The critic's window a modulator record carries (ADR-0134), in ticks: zero while unset.
 fn critic_window_of(record: &[u8]) -> u16 {
@@ -546,10 +567,11 @@ impl Image {
         // plasticity's flag at `[32]` and its three bytes at `[33..36)` (ADR-0114; format 17),
         // the slow current's flag at `[36]`, its shifts at `[37]` and `[38]` and its voltages
         // at `[40..48)` (ADR-0123; format 18), the critic's flag at `[48]` and its shift and
-        // scale at `[49]` and `[50]` (ADR-0131; format 19), the critic's window at `[52..54)`
-        // (ADR-0134; format 20) and 14 reserved bytes. The baselines, the period, the gate, the
-        // class, the slow current, the critic and its window change what a run does, so they are
-        // in the image, not in a configuration (§8.3).
+        // scale at `[49]` and `[50]` (ADR-0131; format 19), the whole punishment's flag at
+        // `[51]` (ADR-0155; format 21), the critic's window at `[52..54)` (ADR-0134; format 20)
+        // and 13 reserved bytes. The baselines, the period, the gate, the class, the slow
+        // current, the critic, its window and the whole punishment change what a run does, so
+        // they are in the image, not in a configuration (§8.3).
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -580,6 +602,9 @@ impl Image {
             modulator_bytes[CRITIC_SCALE] = critic.scale;
         }
         modulator_bytes[CRITIC_WINDOW].copy_from_slice(&exec.critic_window_ticks().to_le_bytes());
+        if exec.whole_punishment() {
+            modulator_bytes[WHOLE_PUNISHMENT_FLAG] = WHOLE_PUNISHMENT_SET;
+        }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
         // what a run does, so they are in the image (ADR-0036).
@@ -756,11 +781,12 @@ impl Image {
         let terms = term.map_or(0, |t| t.record_count() as usize);
         let clauses = clause.map_or(0, |c| c.record_count() as usize);
         // The modulator's one record (ADR-0032), read here for the class of short-term
-        // plasticity (ADR-0114), the slow current (ADR-0123), the critic (ADR-0131) and its
-        // window (ADR-0134): each worker holds the first two from `Executor::new`, which sizes
-        // the critic's counts and refuses a window without a critic, and a unit marked for
-        // either of the first two, or carrying a weight for the third, is refused below while
-        // there is none. The image's, set or unset, outrank the configuration's (§8.3).
+        // plasticity (ADR-0114), the slow current (ADR-0123), the critic (ADR-0131), its
+        // window (ADR-0134) and the whole punishment (ADR-0155): each worker holds the first
+        // two from `Executor::new`, which sizes the critic's counts and refuses a window or a
+        // whole punishment without a critic, and a unit marked for either of the first two, or
+        // carrying a weight for the third, is refused below while there is none. The image's,
+        // set or unset, outrank the configuration's (§8.3).
         if modulator.record_count() != 1 {
             return Err(ImageError::Directory(SECTION_MODULATOR));
         }
@@ -768,6 +794,7 @@ impl Image {
         let slow_current = slow_current_of(section_of(bytes, &modulator)?)?;
         let critic = critic_of(section_of(bytes, &modulator)?)?;
         let critic_window_ticks = critic_window_of(section_of(bytes, &modulator)?);
+        let whole_punishment = whole_punishment_of(section_of(bytes, &modulator)?)?;
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
@@ -780,6 +807,7 @@ impl Image {
             slow_current,
             critic,
             critic_window_ticks,
+            whole_punishment,
             ..config
         })?;
         let horizon = WorkerWheel::horizon_ticks();
@@ -904,9 +932,9 @@ impl Image {
             // `Executor::new` would have demanded), the inhibitory baseline's flag at `[24]`
             // and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
             // (ADR-0094), the class of short-term plasticity at `[32..36)`, the slow current at
-            // `[36..48)`, the critic at `[48..51)` and its window at `[52..54)`, read above
-            // (ADR-0114, ADR-0123, ADR-0131, ADR-0134), 14 reserved bytes; its count was held to
-            // one above.
+            // `[36..48)`, the critic at `[48..51)`, the whole punishment's flag at `[51]` and
+            // the critic's window at `[52..54)`, read above (ADR-0114, ADR-0123, ADR-0131,
+            // ADR-0155, ADR-0134), 13 reserved bytes; its count was held to one above.
             let record = section_of(bytes, &modulator)?;
             let reserved_not_zero = || ImageError::ReservedNotZero {
                 section: SECTION_MODULATOR,
