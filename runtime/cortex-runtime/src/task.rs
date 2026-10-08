@@ -15,7 +15,7 @@
 //! injector ring, so the set fires together about twelve ticks on, as a replay does,
 //! ADR-0038), the background drive runs every tick, the train is read once at the end over
 //! the task's [`Window`] of the trial (the whole trial, or the ticks in which a stimulus's
-//! local synapses land; ADR-0065), the two channels select, and the reward is delivered
+//! local synapses land; ADR-0065), the channels select, and the reward is delivered
 //! before the next trial's first tick, inside the eligibility trace's window
 //! ([`cortex_core::ELIGIBILITY_TAU_SHIFT`]) whatever the trial's length below it. A [`Set`]
 //! is a periodic pattern of units since ADR-0065, so that a stimulus can be units spaced
@@ -68,6 +68,14 @@
 //! neither the stimulus nor the shuffled control reads ([`MISLEADING_BITS`]), so a run stays a
 //! function of its seed. What a trial records as correct is the selection, whatever reward it
 //! then received. Under the three feedbacks before it a trial is the trial it was.
+//!
+//! A readout holds as many channels as it has sets (ADR-0151, ADR-0152): two unless the type
+//! names another number. Each channel's direct drive is its own count and its indirect drive
+//! the largest of the other channels' counts, so a channel is selected when its count is above
+//! every other's and none where the largest is shared. The mapping is an answer for each
+//! stimulus, a readout's index, and a flip moves every answer to the next readout, the last to
+//! the first. With two channels the largest of the others is the other and a flip trades the
+//! two answers, so a task of two readouts runs the trial it ran.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -364,15 +372,22 @@ impl Window {
     }
 }
 
-/// The readout: two disjoint sets of units and the two action channels their spike counts
-/// drive. A trial's spikes are counted per set from the train; each channel's own count is
-/// its direct-pathway drive and the other's its indirect-pathway drive, the hyperdirect drive
-/// zero, and `compute_gating` selects: a channel whose count exceeds the other's, and neither
-/// at a tie (a net output of exactly zero is not a selection, the crate's own rule).
+/// The most channels a readout can hold: an action channel's index is `0..=63`
+/// (`BasalGangliaChannelState::channel_id`), so a selection fits the `u8` an outcome records it
+/// in. [`Readout::new`] holds a readout to it where it is compiled.
+pub const MAX_CHANNELS: usize = 64;
+
+/// The readout: `N` disjoint sets of units and the `N` action channels their spike counts
+/// drive, two unless the type names another number (ADR-0151, ADR-0152). A trial's spikes are
+/// counted per set from the train; each channel's own count is its direct-pathway drive and
+/// the largest of the other channels' counts its indirect-pathway drive, the hyperdirect drive
+/// zero, and `compute_gating` selects: the channel whose count exceeds every other's, and none
+/// where the largest is shared (a net output of exactly zero is not a selection, the crate's
+/// own rule). With two channels the largest of the others is the other's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Readout {
-    sets: [Set; 2],
-    channels: [BasalGangliaChannelState; 2],
+pub struct Readout<const N: usize = 2> {
+    sets: [Set; N],
+    channels: [BasalGangliaChannelState; N],
 }
 
 /// A count as a Q16.16 drive: `count × 1.0`, saturating at the width. [`Task::check`] refuses
@@ -382,11 +397,19 @@ fn count_q16(count: u32) -> i32 {
     (i64::from(count) << 16).min(i64::from(i32::MAX)) as i32
 }
 
-impl Readout {
-    /// A readout over `sets`, the channels at rest with ids 0 and 1.
-    pub fn new(sets: [Set; 2]) -> Self {
-        let channel = |id: u32| BasalGangliaChannelState {
-            channel_id: id,
+impl<const N: usize> Readout<N> {
+    /// A readout over `sets`, the channels at rest with their indices as ids, 0 and 1 for two.
+    /// A readout of more than [`MAX_CHANNELS`] channels does not compile.
+    pub fn new(sets: [Set; N]) -> Self {
+        const {
+            assert!(
+                N <= MAX_CHANNELS,
+                "a readout holds at most MAX_CHANNELS channels"
+            )
+        };
+        let channel = |id: usize| BasalGangliaChannelState {
+            // Below `MAX_CHANNELS`, held above.
+            channel_id: id as u32,
             striatal_d1_drive: 0,
             striatal_d2_drive: 0,
             stn_hyperdirect_drive: 0,
@@ -398,17 +421,17 @@ impl Readout {
         };
         Self {
             sets,
-            channels: [channel(0), channel(1)],
+            channels: core::array::from_fn(channel),
         }
     }
 
-    /// The two sets.
-    pub const fn sets(&self) -> &[Set; 2] {
+    /// The sets, one a channel.
+    pub const fn sets(&self) -> &[Set; N] {
         &self.sets
     }
 
-    /// The two channels as the last selection left them.
-    pub const fn channels(&self) -> &[BasalGangliaChannelState; 2] {
+    /// The channels as the last selection left them.
+    pub const fn channels(&self) -> &[BasalGangliaChannelState; N] {
         &self.channels
     }
 
@@ -416,8 +439,8 @@ impl Readout {
     /// `start` (a wrapping difference, §8.4). `train` is in tick order and holds nothing after
     /// the trial, as the executor's train does when it is read at the trial's end, so the scan
     /// runs from the newest entry back to the first one before the trial and stops.
-    pub fn count(&self, train: &[(u32, u32)], start: u32, ticks: u32) -> [u32; 2] {
-        let mut counts = [0u32; 2];
+    pub fn count(&self, train: &[(u32, u32)], start: u32, ticks: u32) -> [u32; N] {
+        let mut counts = [0u32; N];
         for &(tick, unit) in train.iter().rev() {
             if tick.wrapping_sub(start) >= ticks {
                 break;
@@ -438,8 +461,8 @@ impl Readout {
     /// from `start` read as `i32`, so the train's span must be below $2^{31}$ ticks (§8.4).
     /// On a train read at the trial's end with the whole trial as the window, this is
     /// [`count`](Self::count).
-    pub fn count_window(&self, train: &[(u32, u32)], start: u32, ticks: u32) -> [u32; 2] {
-        let mut counts = [0u32; 2];
+    pub fn count_window(&self, train: &[(u32, u32)], start: u32, ticks: u32) -> [u32; N] {
+        let mut counts = [0u32; N];
         for &(tick, unit) in train.iter().rev() {
             let distance = tick.wrapping_sub(start);
             if (distance as i32) < 0 {
@@ -457,31 +480,43 @@ impl Readout {
         counts
     }
 
-    /// The selection from two counts: each channel's own count into its direct drive, the
-    /// other's into its indirect drive, and `compute_gating` on both; the channel selected, or
-    /// none when neither is or both are.
-    pub fn select(&mut self, counts: [u32; 2]) -> Option<u8> {
-        let drives = [count_q16(counts[0]), count_q16(counts[1])];
-        let mut selected = [false; 2];
+    /// The selection from the channels' counts (ADR-0151, ADR-0152): each channel's own count
+    /// into its direct drive, the largest of the other channels' counts into its indirect
+    /// drive — zero for a channel with no other — its hyperdirect drive zero, and
+    /// `compute_gating` on each. The gate releases a channel whose count is above every
+    /// other's, so it releases at most one: the channel selected, or none where the largest
+    /// count is shared. With two channels the largest of the others is the other's, the
+    /// selection before ADR-0152.
+    pub fn select(&mut self, counts: [u32; N]) -> Option<u8> {
+        let drives = counts.map(count_q16);
+        let mut selected = None;
         for (k, channel) in self.channels.iter_mut().enumerate() {
-            let other = if k == 0 { 1 } else { 0 };
+            let others = drives
+                .iter()
+                .enumerate()
+                .filter(|&(j, _)| j != k)
+                .map(|(_, &drive)| drive)
+                .max()
+                .unwrap_or(0);
             channel.striatal_d1_drive = drives[k];
-            channel.striatal_d2_drive = drives[other];
+            channel.striatal_d2_drive = others;
             channel.stn_hyperdirect_drive = 0;
-            selected[k] = channel.compute_gating();
+            if channel.compute_gating() {
+                // Below `MAX_CHANNELS`, which `new` held.
+                selected = Some(k as u8);
+            }
         }
-        match selected {
-            [true, false] => Some(0),
-            [false, true] => Some(1),
-            _ => None,
-        }
+        selected
     }
 
     /// The gate's output delivered (ADR-0143): `hold`'s messages into every unit of each
     /// channel the gate holds, a channel whose net output the last selection left above zero —
-    /// the channel not selected; none at a tie, where both outputs are zero, and none before a
-    /// selection, the channels at rest. Returns the messages injected; an injector that
-    /// refuses one stops there.
+    /// with two channels the one not selected; none where every channel shares the largest
+    /// count, where every output is zero, and none before a selection, the channels at rest.
+    /// Among more than two (ADR-0152) it is the gate's reading still: every channel below the
+    /// largest count is held, so where two share the largest a third below them is held though
+    /// nothing was selected. Returns the messages injected; an injector that refuses one stops
+    /// there.
     pub fn hold(&self, inject: &Inject, hold: &Hold) -> Result<u32, InjectError> {
         let message = spike_message(hold.efficacy_q16, false);
         let mut sent = 0u32;
@@ -624,8 +659,11 @@ pub enum TaskError {
     MalformedSet,
     /// A set that reaches past the unit arena.
     SetOutsideArena,
-    /// Two of the four sets share a unit.
+    /// Two of the sets, the stimuli's and the readout's, share a unit.
     SetsOverlap,
+    /// A stimulus's answer names no readout among the task's (ADR-0152): an index at or beyond
+    /// the number of channels.
+    AnswerOutsideReadout,
     /// A trial of no ticks.
     NoTicks,
     /// A readout window of no ticks: every trial a tie.
@@ -675,16 +713,16 @@ impl From<AddressError> for TaskError {
     }
 }
 
-/// What one trial did.
+/// What one trial did, of a task of `N` readouts, two unless the type names another number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Outcome {
+pub struct Outcome<const N: usize = 2> {
     /// The trial's index.
     pub trial: u64,
     /// The stimulus presented, 0 or 1.
     pub stimulus: u8,
     /// The spikes in each readout set within the task's window of the trial.
-    pub counts: [u32; 2],
-    /// The readout selected, or none at a tie.
+    pub counts: [u32; N],
+    /// The readout selected, or none where the largest count was shared.
     pub selection: Option<u8>,
     /// Whether the selection was the stimulus's rewarded readout, whatever reward the trial
     /// then received (ADR-0148).
@@ -705,15 +743,16 @@ pub struct Outcome {
     pub held: u32,
 }
 
-/// A two-alternative task on an executor: two stimuli, two readouts, a background drive, a
-/// trial's length, a seed, a reward magnitude, the assignment of stimuli to readouts, where
-/// the reward's sign comes from, where its dopamine term reaches, the critic, when it has
-/// one, and the hold, when it has one. Every field is the caller's; `check` says what a run
-/// needs of them and of the executor.
+/// A task on an executor: two stimuli, a readout of `N` channels — two unless the type names
+/// another number (ADR-0151, ADR-0152) — a background drive, a trial's length, a seed, a
+/// reward magnitude, the readout each stimulus is rewarded at, where the reward's sign comes
+/// from, where its dopamine term reaches, the critic, when it has one, and the hold, when it
+/// has one. Every field is the caller's; `check` says what a run needs of them and of the
+/// executor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Task {
+pub struct Task<const N: usize = 2> {
     pub stimuli: [Stimulus; 2],
-    pub readout: Readout,
+    pub readout: Readout<N>,
     /// The background drive, run on every tick of every trial; a drive whose `every` is zero
     /// is never due.
     pub drive: Drive,
@@ -726,8 +765,10 @@ pub struct Task {
     pub seed: u64,
     /// The reward's magnitude, Q16.16, at least zero; the sign is the outcome's.
     pub reward_q16: i32,
-    /// Stimulus `s` is rewarded at readout `s` when false, at the other when true.
-    pub mirrored: bool,
+    /// The mapping (ADR-0152): stimulus `s` is rewarded at readout `answers[s]`, an index
+    /// below the number of channels. With two readouts `[0, 1]` is the assignment and `[1, 0]`
+    /// the mirrored one, the two values of the flag this field replaced.
+    pub answers: [u8; 2],
     pub feedback: Feedback,
     /// Where the dopamine term reaches (ADR-0068).
     pub delivery: Delivery,
@@ -740,13 +781,19 @@ pub struct Task {
     pub hold: Option<Hold>,
 }
 
-impl Task {
-    /// The readout stimulus `stimulus` is rewarded at.
+impl<const N: usize> Task<N> {
+    /// The readout stimulus `stimulus`, 0 or 1, is rewarded at.
     pub const fn answer(&self, stimulus: u8) -> u8 {
-        if self.mirrored {
-            stimulus ^ 1
-        } else {
-            stimulus
+        self.answers[stimulus as usize]
+    }
+
+    /// The mapping moved on (ADR-0151, ADR-0152): every stimulus's answer to the next readout,
+    /// the last to the first. With two readouts each answer moves to the other, the flag
+    /// negated. An answer `check` would refuse moves to the first readout.
+    pub fn flip(&mut self) {
+        for answer in &mut self.answers {
+            let next = answer.wrapping_add(1);
+            *answer = if usize::from(next) < N { next } else { 0 };
         }
     }
 
@@ -769,7 +816,8 @@ impl Task {
     }
 
     /// What a run needs: every set well-formed, non-empty and inside `exec`'s arena, no two
-    /// sharing a unit, a stimulus with a message, a trial with a tick, a cancel (where a
+    /// sharing a unit, a stimulus with a message, an answer for each stimulus that names a
+    /// readout among the task's, a trial with a tick, a cancel (where a
     /// stimulus carries one) with a message and a tick, after the first injection, inside the
     /// trial and negative, a readout window with a tick and inside the trial, a train that
     /// holds the most spikes a trial can produce, a readout count that cannot reach the
@@ -781,13 +829,14 @@ impl Task {
     /// draws.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
-        let sets = [
-            self.stimuli[0].set,
-            self.stimuli[1].set,
-            self.readout.sets[0],
-            self.readout.sets[1],
-        ];
-        for set in &sets {
+        // The stimuli's sets, then the readout's, one a channel.
+        let sets = || {
+            self.stimuli
+                .iter()
+                .map(|stimulus| &stimulus.set)
+                .chain(self.readout.sets.iter())
+        };
+        for set in sets() {
             if !set.is_well_formed() {
                 return Err(TaskError::MalformedSet);
             }
@@ -798,8 +847,8 @@ impl Task {
                 return Err(TaskError::SetOutsideArena);
             }
         }
-        for (i, a) in sets.iter().enumerate() {
-            for b in sets.iter().skip(i.saturating_add(1)) {
+        for (i, a) in sets().enumerate() {
+            for b in sets().skip(i.saturating_add(1)) {
                 if a.overlaps(b) {
                     return Err(TaskError::SetsOverlap);
                 }
@@ -807,6 +856,10 @@ impl Task {
         }
         if self.stimuli.iter().any(|s| s.messages == 0) {
             return Err(TaskError::NoStimulus);
+        }
+        // An answer names a readout among the task's (ADR-0152).
+        if self.answers.iter().any(|&answer| usize::from(answer) >= N) {
+            return Err(TaskError::AnswerOutsideReadout);
         }
         if self.ticks == 0 {
             return Err(TaskError::NoTicks);
@@ -909,7 +962,7 @@ impl Task {
         &mut self,
         exec: &mut Executor<CAP>,
         trial: u64,
-    ) -> Result<Outcome, TaskError> {
+    ) -> Result<Outcome<N>, TaskError> {
         self.check(exec)?;
         let start = exec.ticks();
         let stimulus = self.stimulus_at(trial);
@@ -920,7 +973,7 @@ impl Task {
         // window's first tick is inside the trial, which `check` held, and so is its close.
         let opens = (start as u32).wrapping_add(self.window.from);
         let close = self.window.from.wrapping_add(self.window.ticks);
-        let mut decided: Option<([u32; 2], Option<u8>)> = None;
+        let mut decided: Option<([u32; N], Option<u8>)> = None;
         let mut held = 0u32;
         for k in 0..self.ticks {
             presented.cancel_at(&inject, k)?;
@@ -1108,7 +1161,7 @@ mod tests {
             window: Window::whole(TICKS),
             seed: 0,
             reward_q16: REWARD,
-            mirrored: false,
+            answers: [0, 1],
             feedback,
             delivery: Delivery::Global,
             critic: None,
@@ -1755,7 +1808,7 @@ mod tests {
         assert!(!both.correct);
         // Mirrored, the same counts answer the other stimulus.
         let mut mirrored = task(Feedback::Answer);
-        mirrored.mirrored = true;
+        mirrored.answers = [1, 0];
         assert_eq!((mirrored.answer(0), mirrored.answer(1)), (1, 0));
         assert_eq!((t.answer(0), t.answer(1)), (0, 1));
         exec.run(400);
@@ -3894,6 +3947,1042 @@ mod tests {
             }
         }
     }
+
+    // --------------------------------------------- three answers (ADR-0151, ADR-0152)
+
+    /// Twenty-four armed units without synapses, as [`network`], for a readout of three:
+    /// stimuli at `[0, 4)` and `[8, 12)`, readouts at `[4, 8)`, `[12, 16)` and `[16, 20)`, and
+    /// four units in no set; with the engine's critic and its window when `window` is given.
+    fn wide(workers: usize, baseline_q16: i32, window: Option<u16>) -> Executor<8> {
+        let mut exec = Executor::<8>::new(Config {
+            workers,
+            units: 24,
+            injector_capacity: 64,
+            train_capacity: spikes_per_unit(TICKS).saturating_mul(24) as usize,
+            modulation_baseline_q16: baseline_q16,
+            critic: window.map(|_| ValueCritic { shift: 9, scale: 2 }),
+            critic_window_ticks: window.unwrap_or(0),
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+        exec
+    }
+
+    /// [`task`] with a third readout at `[16, 20)`, on [`wide`]'s network.
+    fn task3(feedback: Feedback) -> Task<3> {
+        Task {
+            stimuli: [stimulus(0), stimulus(8)],
+            readout: Readout::new([set(4, 4), set(12, 4), set(16, 4)]),
+            drive: Drive {
+                every: 0,
+                messages: 0,
+                efficacy_q16: 0,
+                units: 24,
+                seed: 0,
+            },
+            ticks: TICKS,
+            window: Window::whole(TICKS),
+            seed: 0,
+            reward_q16: REWARD,
+            answers: [0, 1],
+            feedback,
+            delivery: Delivery::Global,
+            critic: None,
+            hold: None,
+        }
+    }
+
+    /// What a selection leaves on a channel: its direct, indirect and hyperdirect drives, its
+    /// net output and its flag.
+    fn gate(c: &BasalGangliaChannelState) -> (i32, i32, i32, i32, u32) {
+        (
+            c.striatal_d1_drive,
+            c.striatal_d2_drive,
+            c.stn_hyperdirect_drive,
+            c.gpi_snr_inhibition,
+            c.selected_flag,
+        )
+    }
+
+    /// The selection among three (ADR-0151, ADR-0152): the channel whose count is above both
+    /// others, each channel's indirect drive the largest of the other two and not their sum,
+    /// and none where the largest is shared, by two or by all; among one channel, any count
+    /// above zero; among none, nothing; and among the most a readout holds, the last.
+    #[test]
+    fn a_selection_among_three_is_the_largest_count_alone_and_none_where_it_is_shared() {
+        let mut r = Readout::new([set(4, 4), set(12, 4), set(16, 4)]);
+        assert_eq!(r.channels().each_ref().map(|c| c.channel_id), [0, 1, 2]);
+        assert_eq!(r.select([0, 0, 0]), None);
+        assert_eq!(
+            r.channels().each_ref().map(gate),
+            [(0, 0, 0, 0, 0); 3],
+            "every output zero: nothing released"
+        );
+        assert_eq!(r.select([5, 3, 4]), Some(0));
+        assert_eq!(
+            r.channels().each_ref().map(gate),
+            [
+                (5 * ONE, 4 * ONE, 0, -ONE, 1),
+                (3 * ONE, 5 * ONE, 0, 2 * ONE, 0),
+                (4 * ONE, 5 * ONE, 0, ONE, 0),
+            ],
+            "each channel against the largest of the other two"
+        );
+        assert_eq!(r.select([3, 5, 4]), Some(1));
+        assert_eq!(r.select([3, 4, 5]), Some(2));
+        assert_eq!(
+            r.channels().each_ref().map(gate),
+            [
+                (3 * ONE, 5 * ONE, 0, 2 * ONE, 0),
+                (4 * ONE, 5 * ONE, 0, ONE, 0),
+                (5 * ONE, 4 * ONE, 0, -ONE, 1),
+            ]
+        );
+        assert_eq!(r.select([1, 0, 0]), Some(0), "one spike above the others");
+        assert_eq!(r.select([0, 1, 0]), Some(1));
+        assert_eq!(r.select([0, 0, 1]), Some(2));
+        assert_eq!(
+            r.select([10, 6, 6]),
+            Some(0),
+            "above each of the others, though below the two together"
+        );
+        assert_eq!(r.select([6, 10, 6]), Some(1));
+        assert_eq!(r.select([6, 6, 10]), Some(2));
+        // The largest shared by two: nothing selected, and the third's output above zero.
+        assert_eq!(r.select([4, 4, 1]), None);
+        assert_eq!(
+            r.channels().each_ref().map(gate),
+            [
+                (4 * ONE, 4 * ONE, 0, 0, 0),
+                (4 * ONE, 4 * ONE, 0, 0, 0),
+                (ONE, 4 * ONE, 0, 3 * ONE, 0),
+            ]
+        );
+        assert_eq!(r.select([4, 1, 4]), None);
+        assert_eq!(r.select([1, 4, 4]), None);
+        assert_eq!(r.select([4, 4, 4]), None, "shared by all");
+        // At the width, as between two.
+        assert_eq!(r.select([32_767, 32_766, 32_766]), Some(0));
+        assert_eq!(r.select([32_766, 32_766, 32_767]), Some(2));
+        assert_eq!(r.select([5, 32_768, 32_767]), Some(1));
+        assert_eq!(
+            r.select([32_769, 5, 32_768]),
+            None,
+            "beyond the width two counts tie: the mis-read `check` refuses"
+        );
+        // One channel has no other: its indirect drive is zero, and any count selects it.
+        let mut one = Readout::new([set(4, 4)]);
+        assert_eq!(one.select([0]), None);
+        assert_eq!(one.select([1]), Some(0));
+        assert_eq!(gate(&one.channels()[0]), (ONE, 0, 0, -ONE, 1));
+        // No channel selects nothing.
+        let mut none: Readout<0> = Readout::new([]);
+        assert_eq!(none.select([]), None);
+        assert_eq!(none.count_window(&[(0, 4)], 0, 8), []);
+        // The most channels a readout holds: their ids are their indices, and the last is
+        // selected where its count alone is the largest.
+        let mut many = Readout::new([set(0, 1); MAX_CHANNELS]);
+        assert_eq!(MAX_CHANNELS, 64);
+        for (k, channel) in many.channels().iter().enumerate() {
+            assert_eq!(channel.channel_id as usize, k);
+        }
+        let mut counts = [1u32; MAX_CHANNELS];
+        assert_eq!(many.select(counts), None);
+        counts[63] = 2;
+        assert_eq!(many.select(counts), Some(63));
+        counts[0] = 2;
+        assert_eq!(many.select(counts), None, "the first shares it");
+        counts[31] = 3;
+        assert_eq!(many.select(counts), Some(31));
+    }
+
+    /// A trial among three counts each set and selects by the rule: on [`wide`]'s network a
+    /// cued readout fires its four units, the third among them, and the outcome is correct
+    /// where the selection is the stimulus's answer, any readout's index.
+    #[test]
+    fn a_trial_among_three_selects_the_cued_readout_and_judges_it_by_the_answer() {
+        let mut exec = wide(2, ONE / 2, None);
+        let mut t = task3(Feedback::Answer);
+        assert_eq!(t.check(&exec), Ok(()));
+        let tie = t.trial(&mut exec, 0).unwrap();
+        assert_eq!((tie.counts, tie.selection), ([0, 0, 0], None));
+        assert!(!tie.correct);
+        assert_eq!(tie.reward_q16, -REWARD, "a tie is an error, punished");
+        for (trial, cued, answers) in [
+            (1u64, 2usize, [2u8, 2]),
+            (2, 2, [0, 1]),
+            (3, 0, [0, 0]),
+            (4, 1, [2, 0]),
+            (5, 1, [1, 1]),
+        ] {
+            exec.run(400);
+            cue(&exec, t.readout.sets()[cued]);
+            t.answers = answers;
+            let outcome = t.trial(&mut exec, trial).unwrap();
+            let mut counts = [0u32; 3];
+            counts[cued] = 4;
+            assert_eq!(outcome.counts, counts, "trial {trial}");
+            assert_eq!(outcome.selection, Some(cued as u8), "trial {trial}");
+            let answer = answers[usize::from(outcome.stimulus)];
+            assert_eq!(t.answer(outcome.stimulus), answer);
+            assert_eq!(
+                outcome.correct,
+                usize::from(answer) == cued,
+                "trial {trial}"
+            );
+            assert_eq!(
+                outcome.reward_q16.signum(),
+                if outcome.correct { 1 } else { -1 },
+                "trial {trial}"
+            );
+        }
+        // Two cued, the third silent: the largest is shared and nothing is selected.
+        exec.run(400);
+        cue(&exec, t.readout.sets()[0]);
+        cue(&exec, t.readout.sets()[2]);
+        let shared = t.trial(&mut exec, 6).unwrap();
+        assert_eq!((shared.counts, shared.selection), ([4, 0, 4], None));
+        assert!(!shared.correct);
+    }
+
+    /// The mapping's flip (ADR-0151, ADR-0152): every answer to the next readout and the last
+    /// to the first. Among three the two arms' four mappings come round in three flips; among
+    /// two each answer moves to the other, the flag negated; among one nothing moves; and an
+    /// answer beyond the readouts moves to the first.
+    #[test]
+    fn a_flip_moves_every_answer_to_the_next_readout_and_the_last_to_the_first() {
+        let mut three = task3(Feedback::Answer);
+        let mut seen = vec![three.answers];
+        for _ in 0..3 {
+            three.flip();
+            seen.push(three.answers);
+        }
+        assert_eq!(seen, [[0, 1], [1, 2], [2, 0], [0, 1]]);
+        three.answers = [1, 0];
+        let mut seen = vec![three.answers];
+        for _ in 0..3 {
+            three.flip();
+            seen.push(three.answers);
+        }
+        assert_eq!(seen, [[1, 0], [2, 1], [0, 2], [1, 0]]);
+        three.answers = [2, 2];
+        three.flip();
+        assert_eq!(three.answers, [0, 0], "the last to the first, both");
+        three.answers = [3, u8::MAX];
+        three.flip();
+        assert_eq!(three.answers, [0, 0], "beyond the readouts: to the first");
+        // Among two: the flag negated, and negated back.
+        let mut two = task(Feedback::Answer);
+        assert_eq!(two.answers, [0, 1]);
+        two.flip();
+        assert_eq!(two.answers, [1, 0]);
+        assert_eq!((two.answer(0), two.answer(1)), (1, 0));
+        two.flip();
+        assert_eq!(two.answers, [0, 1]);
+        two.answers = [1, 1];
+        two.flip();
+        assert_eq!(two.answers, [0, 0]);
+        two.answers = [2, 0];
+        two.flip();
+        assert_eq!(
+            two.answers,
+            [0, 1],
+            "an answer `check` refuses moves to the first"
+        );
+        // Among one there is no next.
+        let mut one = Task {
+            stimuli: [stimulus(0), stimulus(8)],
+            readout: Readout::new([set(4, 4)]),
+            drive: two.drive,
+            ticks: TICKS,
+            window: Window::whole(TICKS),
+            seed: 0,
+            reward_q16: REWARD,
+            answers: [0, 0],
+            feedback: Feedback::Answer,
+            delivery: Delivery::Global,
+            critic: None,
+            hold: None,
+        };
+        assert_eq!(one.check(&network(1, ONE / 2)), Ok(()));
+        one.flip();
+        assert_eq!(one.answers, [0, 0]);
+    }
+
+    /// Every refusal of `check` with three readouts, by name (ADR-0152): each of the task's
+    /// refusals met by a task of three, the third readout's set read as the other two are —
+    /// empty, malformed, outside the arena, sharing a unit with each other set, beyond the
+    /// width — and the new one, an answer that names no readout among the three, either
+    /// stimulus's, at the first index past them; among two, the first index past two.
+    #[test]
+    fn every_refusal_is_named_with_three_readouts() {
+        type Change = fn(&mut Task<3>);
+        const CANCEL: Cancel = Cancel {
+            offset: 1,
+            ticks: 1,
+            messages: 1,
+            efficacy_q16: -1,
+        };
+        const HOLD: Hold = Hold {
+            until: 48,
+            every: 8,
+            messages: 1,
+            efficacy_q16: -1,
+        };
+        fn third(set: Set) -> Readout<3> {
+            Readout::new([Set::contiguous(4, 4), Set::contiguous(12, 4), set])
+        }
+        fn early(t: &mut Task<3>) {
+            t.window = Window { from: 0, ticks: 16 };
+        }
+        let exec = wide(1, ONE / 2, None);
+        let ok = task3(Feedback::Answer);
+        assert_eq!(ok.check(&exec), Ok(()));
+        let cases: [(Change, TaskError); 33] = [
+            (|t| t.stimuli[1].messages = 0, TaskError::NoStimulus),
+            (|t| t.readout = third(set(16, 0)), TaskError::EmptySet),
+            (
+                |t| {
+                    t.readout = third(Set {
+                        period: 0,
+                        ..set(16, 4)
+                    })
+                },
+                TaskError::MalformedSet,
+            ),
+            (
+                |t| {
+                    t.readout = third(Set {
+                        period: 2,
+                        mask: 0b100,
+                        ..set(16, 2)
+                    })
+                },
+                TaskError::MalformedSet,
+            ),
+            (
+                |t| t.readout = third(set(21, 4)),
+                TaskError::SetOutsideArena,
+            ),
+            (|t| t.readout = third(set(3, 1)), TaskError::SetsOverlap),
+            (|t| t.readout = third(set(11, 1)), TaskError::SetsOverlap),
+            (|t| t.readout = third(set(7, 1)), TaskError::SetsOverlap),
+            (|t| t.readout = third(set(15, 1)), TaskError::SetsOverlap),
+            (|t| t.ticks = 0, TaskError::NoTicks),
+            (
+                |t| {
+                    t.stimuli[0].cancel = Some(Cancel {
+                        messages: 0,
+                        ..CANCEL
+                    })
+                },
+                TaskError::EmptyCancel,
+            ),
+            (
+                |t| {
+                    t.stimuli[1].cancel = Some(Cancel {
+                        offset: 0,
+                        ..CANCEL
+                    })
+                },
+                TaskError::CancelAtInjection,
+            ),
+            (
+                |t| {
+                    t.stimuli[0].cancel = Some(Cancel {
+                        offset: TICKS - 1,
+                        ..CANCEL
+                    })
+                },
+                TaskError::CancelOutsideTrial,
+            ),
+            (
+                |t| {
+                    t.stimuli[0].cancel = Some(Cancel {
+                        efficacy_q16: 0,
+                        ..CANCEL
+                    })
+                },
+                TaskError::CancelNotNegative,
+            ),
+            (
+                |t| t.window = Window { from: 0, ticks: 0 },
+                TaskError::EmptyWindow,
+            ),
+            (
+                |t| {
+                    t.window = Window {
+                        from: TICKS - 8,
+                        ticks: 9,
+                    }
+                },
+                TaskError::WindowOutsideTrial,
+            ),
+            (
+                |t| {
+                    early(t);
+                    t.hold = Some(Hold {
+                        messages: 0,
+                        ..HOLD
+                    })
+                },
+                TaskError::EmptyHold,
+            ),
+            (
+                |t| {
+                    early(t);
+                    t.hold = Some(Hold {
+                        efficacy_q16: 0,
+                        ..HOLD
+                    })
+                },
+                TaskError::HoldNotNegative,
+            ),
+            (
+                |t| {
+                    early(t);
+                    t.hold = Some(Hold { until: 16, ..HOLD })
+                },
+                TaskError::HoldBeforeClose,
+            ),
+            (
+                |t| {
+                    early(t);
+                    t.hold = Some(Hold {
+                        until: TICKS,
+                        ..HOLD
+                    })
+                },
+                TaskError::HoldOutsideTrial,
+            ),
+            (
+                |t| t.ticks = 2 * MIN_INTERVAL_TICKS + 1,
+                TaskError::TrainTooSmall,
+            ),
+            (|t| t.reward_q16 = -1, TaskError::NegativeReward),
+            (|t| t.reward_q16 = 0, TaskError::NoReward),
+            (
+                |t| {
+                    t.critic = Some(Critic {
+                        expected_q16: [0, REWARD + 1],
+                        shift: 5,
+                    })
+                },
+                TaskError::ExpectationBeyondReward,
+            ),
+            (
+                |t| t.delivery = Delivery::Drawn,
+                TaskError::Address(AddressError::NoCritic),
+            ),
+            (
+                |t| t.delivery = Delivery::Released,
+                TaskError::Address(AddressError::NoCritic),
+            ),
+            (|t| t.answers = [3, 0], TaskError::AnswerOutsideReadout),
+            (|t| t.answers = [0, 3], TaskError::AnswerOutsideReadout),
+            (|t| t.answers = [3, 3], TaskError::AnswerOutsideReadout),
+            (|t| t.answers = [2, 4], TaskError::AnswerOutsideReadout),
+            (
+                |t| t.answers = [u8::MAX, 2],
+                TaskError::AnswerOutsideReadout,
+            ),
+            (
+                // The sets are read before the answers, and the answers before the trial's
+                // length.
+                |t| {
+                    t.answers = [0, 3];
+                    t.readout = third(set(16, 0))
+                },
+                TaskError::EmptySet,
+            ),
+            (
+                |t| {
+                    t.answers = [0, 3];
+                    t.ticks = 0
+                },
+                TaskError::AnswerOutsideReadout,
+            ),
+        ];
+        for (k, (change, refusal)) in cases.iter().enumerate() {
+            let mut t = ok;
+            change(&mut t);
+            assert_eq!(t.check(&exec), Err(*refusal), "case {k}");
+            let mut fresh = wide(1, ONE / 2, None);
+            assert_eq!(t.trial(&mut fresh, 0), Err(*refusal), "case {k}");
+            assert_eq!(
+                (fresh.ticks(), fresh.delivered()),
+                (0, 0),
+                "case {k}: no tick ran"
+            );
+            assert!(fresh.is_quiescent(), "case {k}: nothing injected");
+        }
+        // Each cancel and each hold above is refused for the one field changed.
+        let mut t = ok;
+        t.stimuli[0].cancel = Some(CANCEL);
+        early(&mut t);
+        t.hold = Some(HOLD);
+        assert_eq!(t.check(&exec), Ok(()));
+        // Every answer that names a readout among the three runs, the same for both stimuli
+        // too: a mapping is the caller's.
+        for a in 0..3u8 {
+            for b in 0..3u8 {
+                let mut t = ok;
+                t.answers = [a, b];
+                assert_eq!(t.check(&exec), Ok(()), "{a} {b}");
+                assert_eq!((t.answer(0), t.answer(1)), (a, b));
+            }
+        }
+        // The refusals that need another engine.
+        assert_eq!(
+            ok.check(&wide(1, ONE, None)),
+            Err(TaskError::RewardAtCeiling)
+        );
+        let valued = wide(1, ONE / 2, Some(30));
+        assert_eq!(
+            Task {
+                critic: Some(Critic::new(5)),
+                ..ok
+            }
+            .check(&valued),
+            Err(TaskError::TwoCritics)
+        );
+        let mut drawn = ok;
+        drawn.delivery = Delivery::Drawn;
+        assert_eq!(drawn.check(&valued), Ok(()));
+        assert_eq!(
+            drawn.check(&wide(1, ONE / 2, Some(0))),
+            Err(TaskError::Address(AddressError::NoWindow))
+        );
+        let big = Executor::<8>::new(Config {
+            units: 1 << 16,
+            injector_capacity: 64,
+            train_capacity: 1 << 22,
+            modulation_baseline_q16: ONE / 2,
+            ..Config::default()
+        })
+        .unwrap();
+        let mut t = ok;
+        t.ticks = 1;
+        t.window = Window::whole(1);
+        t.readout = third(set(16, 32_768));
+        assert_eq!(
+            t.check(&big),
+            Err(TaskError::CountBeyondWidth),
+            "the third readout's count is bounded as the other two's"
+        );
+        t.readout = third(set(16, 32_767));
+        assert_eq!(t.check(&big), Ok(()), "one fewer fits");
+        // Among two readouts the first index past them is two.
+        let narrow = network(1, ONE / 2);
+        let two = task(Feedback::Answer);
+        for (answers, refused) in [
+            ([0u8, 1], false),
+            ([1, 0], false),
+            ([0, 0], false),
+            ([1, 1], false),
+            ([2, 1], true),
+            ([0, 2], true),
+            ([u8::MAX, 0], true),
+        ] {
+            let t = Task { answers, ..two };
+            assert_eq!(
+                t.check(&narrow),
+                if refused {
+                    Err(TaskError::AnswerOutsideReadout)
+                } else {
+                    Ok(())
+                },
+                "{answers:?}"
+            );
+        }
+    }
+
+    /// Under each delivery, what a trial among three addresses (ADR-0152): the selected
+    /// readout's units as the targets when the third channel is selected, as when another is;
+    /// no target where the largest count is shared, by two with the third silent or by all;
+    /// under the released delivery every unit a target whatever was selected, and under the
+    /// global one every unit on both sides.
+    #[test]
+    fn each_delivery_addresses_the_third_readout_when_it_is_selected_and_none_at_a_tie() {
+        let addressed = |exec: &Executor<8>| -> (Vec<u32>, Vec<u32>) {
+            (
+                (0..24).filter(|&u| exec.is_source(u)).collect(),
+                (0..24).filter(|&u| exec.is_target(u)).collect(),
+            )
+        };
+        let stimulus_units = |t: &Task<3>, trial: u64| -> Vec<u32> {
+            t.stimuli[usize::from(t.stimulus_at(trial))]
+                .set
+                .units()
+                .collect()
+        };
+        // The trials: which readouts are cued, and the selection they leave.
+        let trials: [(&[usize], Option<u8>); 6] = [
+            (&[], None),
+            (&[2], Some(2)),
+            (&[0, 2], None),
+            (&[1], Some(1)),
+            (&[0, 1, 2], None),
+            (&[0], Some(0)),
+        ];
+        let units_of = |r: u8| -> Vec<u32> {
+            let first = [4u32, 12, 16][usize::from(r)];
+            (first..first.saturating_add(4)).collect()
+        };
+        // The addressed delivery: the presented stimulus onto the selected readout.
+        let mut exec = wide(2, ONE / 2, None);
+        let mut t = task3(Feedback::Answer);
+        t.delivery = Delivery::Addressed;
+        assert_eq!(exec.addressed_counts(), (24, 24), "before the first trial");
+        for (trial, &(cued, selection)) in trials.iter().enumerate() {
+            exec.run(400);
+            for &r in cued {
+                cue(&exec, t.readout.sets()[r]);
+            }
+            let outcome = t.trial(&mut exec, trial as u64).unwrap();
+            assert_eq!(outcome.selection, selection, "addressed, trial {trial}");
+            assert_eq!(
+                addressed(&exec),
+                (
+                    stimulus_units(&t, trial as u64),
+                    selection.map_or(vec![], units_of)
+                ),
+                "addressed, trial {trial}"
+            );
+        }
+        // The global delivery: every unit, both sides, whatever was selected.
+        t.delivery = Delivery::Global;
+        for (trial, &(cued, selection)) in trials.iter().enumerate() {
+            exec.run(400);
+            for &r in cued {
+                cue(&exec, t.readout.sets()[r]);
+            }
+            let outcome = t.trial(&mut exec, trial as u64).unwrap();
+            assert_eq!(outcome.selection, selection, "global, trial {trial}");
+            assert_eq!(exec.addressed_counts(), (24, 24), "global, trial {trial}");
+        }
+        // The drawn delivery and the released one: the sources the units the window counted —
+        // the first trial's volley, then none, the window closed between the trials — and the
+        // targets the selected readout's units, or every unit.
+        for (delivery, released) in [(Delivery::Drawn, false), (Delivery::Released, true)] {
+            let mut exec = wide(2, ONE / 2, Some(30));
+            let mut t = task3(Feedback::Answer);
+            t.delivery = delivery;
+            for (trial, &(cued, selection)) in trials.iter().enumerate() {
+                if trial > 0 {
+                    exec.run(400);
+                }
+                for &r in cued {
+                    cue(&exec, t.readout.sets()[r]);
+                }
+                let outcome = t.trial(&mut exec, trial as u64).unwrap();
+                assert_eq!(outcome.selection, selection, "{delivery:?}, trial {trial}");
+                let sources = if trial == 0 {
+                    stimulus_units(&t, 0)
+                } else {
+                    vec![]
+                };
+                let targets = if released {
+                    (0..24).collect()
+                } else {
+                    selection.map_or(vec![], units_of)
+                };
+                assert_eq!(
+                    addressed(&exec),
+                    (sources, targets),
+                    "{delivery:?}, trial {trial}"
+                );
+            }
+        }
+    }
+
+    /// The hold among three is the gate's reading (ADR-0144, ADR-0152): its messages go into
+    /// every unit of each channel whose net output the selection left above zero — both of the
+    /// channels not selected; the third alone where two share the largest count, though
+    /// nothing was selected; and none where all three share it.
+    #[test]
+    fn the_gate_holds_every_channel_below_the_largest_count_among_three() {
+        let hold = Hold {
+            until: 56,
+            every: 8,
+            messages: 2,
+            efficacy_q16: -ONE,
+        };
+        // Due before ticks 24, 32, 40 and 48: four times.
+        let times = (0..TICKS).filter(|&k| hold.is_due(24, k)).count() as u32;
+        assert_eq!(times, 4);
+        for (cued, selection, channels_held) in [
+            (&[0usize][..], Some(0u8), 2u32),
+            (&[2], Some(2), 2),
+            (&[0, 1], None, 1),
+            (&[1, 2], None, 1),
+            (&[0, 1, 2], None, 0),
+            (&[], None, 0),
+        ] {
+            let mut exec = wide(1, 0, None);
+            let mut t = task3(Feedback::Withheld);
+            t.reward_q16 = 0;
+            t.window = Window { from: 0, ticks: 24 };
+            t.hold = Some(hold);
+            for &r in cued {
+                cue(&exec, t.readout.sets()[r]);
+            }
+            let outcome = t.trial(&mut exec, 0).unwrap();
+            assert_eq!(outcome.selection, selection, "{cued:?}");
+            let expected = times
+                .saturating_mul(hold.messages)
+                .saturating_mul(4)
+                .saturating_mul(channels_held);
+            assert_eq!(outcome.held, expected, "{cued:?}");
+            let held: Vec<bool> = t
+                .readout
+                .channels()
+                .iter()
+                .map(|c| c.gpi_snr_inhibition > 0)
+                .collect();
+            assert_eq!(
+                held.iter().filter(|&&h| h).count() as u32,
+                channels_held,
+                "{cued:?}"
+            );
+            assert!(
+                cued.iter().all(|&r| !held[r]),
+                "{cued:?}: a channel at the largest count is not held"
+            );
+            exec.tick();
+            assert_eq!(
+                exec.delivered(),
+                8u64.saturating_add((cued.len() as u64).saturating_mul(8))
+                    .saturating_add(u64::from(expected)),
+                "{cued:?}: the ring drained the stimulus, the cues and the hold"
+            );
+        }
+    }
+
+    /// Under two readouts a trial is the trial it was and a flip the flip it was (ADR-0152):
+    /// `trial` and `flip` against the task as ADR-0148 left it, written out here as the oracle
+    /// — two channels composed by hand, each one's own count its direct drive and the other's
+    /// its indirect, the mapping a flag negated at a flip, the counts a filter over the train
+    /// and the hold a walk over the two channels — on twin engines over twelve trials with a
+    /// flip before the fifth and the ninth, from either mapping, under a drive, a cancel and a
+    /// sub-window, a readout cued before some of them: under each feedback, with the task's
+    /// critic and the addressed delivery, the engine's and the drawn one, the engine's and the
+    /// released one under a hold, and no critic under the global one. The same outcome, the
+    /// same channels, the same answers, the same units' fields, the same train, the same
+    /// messages drained, the same addressed set, the same signal, the same counts, the same
+    /// expectations and the same weights after every trial.
+    #[test]
+    fn a_trial_under_two_readouts_is_the_trial_it_was_and_a_flip_the_flip_it_was() {
+        /// What the oracle holds in the task's place: the two channels, the flag and the
+        /// critic.
+        struct Before {
+            channels: [BasalGangliaChannelState; 2],
+            mirrored: bool,
+            critic: Option<Critic>,
+        }
+        /// The two counts over the window that opens at `opens`, and the selection from them
+        /// as the two-channel composition made it.
+        fn read(
+            o: &mut Before,
+            sets: &[Set; 2],
+            exec: &mut Executor<8>,
+            opens: u32,
+            ticks: u32,
+        ) -> ([u32; 2], Option<u8>) {
+            let counts = [0usize, 1].map(|r| {
+                exec.train()
+                    .iter()
+                    .filter(|&&(tick, unit)| {
+                        tick.wrapping_sub(opens) < ticks && sets[r].contains(unit)
+                    })
+                    .count() as u32
+            });
+            let drives = [count_q16(counts[0]), count_q16(counts[1])];
+            let mut selected = [false; 2];
+            for (k, channel) in o.channels.iter_mut().enumerate() {
+                let other = if k == 0 { 1 } else { 0 };
+                channel.striatal_d1_drive = drives[k];
+                channel.striatal_d2_drive = drives[other];
+                channel.stn_hyperdirect_drive = 0;
+                selected[k] = channel.compute_gating();
+            }
+            let selection = match selected {
+                [true, false] => Some(0),
+                [false, true] => Some(1),
+                _ => None,
+            };
+            (counts, selection)
+        }
+        fn before(o: &mut Before, t: &Task, exec: &mut Executor<8>, trial: u64) -> Outcome {
+            let start = exec.ticks();
+            let draw = mix64(t.seed ^ trial);
+            let stimulus = (draw & 1) as u8;
+            let inject = exec.injector();
+            let presented = t.stimuli[usize::from(stimulus)];
+            presented.inject(&inject).unwrap();
+            let sets = *t.readout.sets();
+            let opens = (start as u32).wrapping_add(t.window.from);
+            let close = t.window.from.wrapping_add(t.window.ticks);
+            let mut decided: Option<([u32; 2], Option<u8>)> = None;
+            let mut held = 0u32;
+            for k in 0..t.ticks {
+                presented.cancel_at(&inject, k).unwrap();
+                if let Some(hold) = t.hold.filter(|hold| hold.is_due(close, k)) {
+                    if decided.is_none() {
+                        decided = Some(read(o, &sets, exec, opens, t.window.ticks));
+                    }
+                    let message = spike_message(hold.efficacy_q16, false);
+                    for (set, channel) in sets.iter().zip(o.channels.iter()) {
+                        if channel.gpi_snr_inhibition > 0 {
+                            for unit in set.units() {
+                                for _ in 0..hold.messages {
+                                    inject.inject(unit, message).unwrap();
+                                    held = held.saturating_add(1);
+                                }
+                            }
+                        }
+                    }
+                }
+                t.drive.step(&inject, exec.ticks()).unwrap();
+                exec.tick();
+            }
+            let (counts, selection) = match decided {
+                Some(made) => made,
+                None => read(o, &sets, exec, opens, t.window.ticks),
+            };
+            let answer = if o.mirrored { stimulus ^ 1 } else { stimulus };
+            let correct = selection == Some(answer);
+            let selected = selection.map(|r| sets[usize::from(r)]);
+            match t.delivery {
+                Delivery::Global => exec.address_all(),
+                Delivery::Addressed => exec
+                    .address(
+                        presented.set.units(),
+                        selected.iter().flat_map(|set| set.units()),
+                    )
+                    .unwrap(),
+                Delivery::Drawn => exec
+                    .address_drawn(selected.iter().flat_map(|set| set.units()))
+                    .unwrap(),
+                Delivery::Released => exec.address_drawn(0..16u32).unwrap(),
+            }
+            let positive = match t.feedback {
+                Feedback::Answer => correct,
+                Feedback::Shuffled => (draw >> 32) & 1 == 1,
+                Feedback::SevenInEight => correct != (draw & MISLEADING_BITS == 0),
+                Feedback::Withheld => {
+                    return Outcome {
+                        trial,
+                        stimulus,
+                        counts,
+                        selection,
+                        correct,
+                        reward_q16: 0,
+                        signal_q16: exec.modulator().dopamine_rpe,
+                        expected_q16: o.critic.map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
+                        value_q16: None,
+                        held,
+                    };
+                }
+            };
+            let outcome_q16 = if positive {
+                t.reward_q16
+            } else {
+                t.reward_q16.saturating_neg()
+            };
+            let (delivered_q16, expected_q16) = match o.critic.as_mut() {
+                Some(critic) => {
+                    let (error, before, after) = critic.predict(stimulus, outcome_q16);
+                    (error, Some([before, after]))
+                }
+                None => (outcome_q16, None),
+            };
+            let signal_q16 = exec.reward(delivered_q16);
+            let (reward_q16, value_q16) = match exec.prediction() {
+                Some(prediction) => (prediction.error_q16, Some(prediction.value_q16)),
+                None => (delivered_q16, None),
+            };
+            Outcome {
+                trial,
+                stimulus,
+                counts,
+                selection,
+                correct,
+                reward_q16,
+                signal_q16,
+                expected_q16,
+                value_q16,
+                held,
+            }
+        }
+        #[derive(Clone, Copy, Debug)]
+        enum Mode {
+            TaskCritic,
+            Drawn,
+            ReleasedHeld,
+            Global,
+        }
+        let mut selections = Vec::new();
+        let mut held_in_all = 0u32;
+        for feedback in [
+            Feedback::Answer,
+            Feedback::Shuffled,
+            Feedback::Withheld,
+            Feedback::SevenInEight,
+        ] {
+            for mode in [
+                Mode::TaskCritic,
+                Mode::Drawn,
+                Mode::ReleasedHeld,
+                Mode::Global,
+            ] {
+                for mirrored in [false, true] {
+                    let mut t = task(feedback);
+                    t.window = Window { from: 4, ticks: 20 };
+                    t.drive = Drive {
+                        every: 1,
+                        messages: 2,
+                        efficacy_q16: 0x2000,
+                        units: 16,
+                        seed: 5,
+                    };
+                    for stimulus in t.stimuli.iter_mut() {
+                        stimulus.cancel = Some(Cancel {
+                            offset: 30,
+                            ticks: 3,
+                            messages: 1,
+                            efficacy_q16: -ONE,
+                        });
+                    }
+                    t.answers = if mirrored { [1, 0] } else { [0, 1] };
+                    let (mut now, mut then) = match mode {
+                        Mode::TaskCritic => {
+                            t.delivery = Delivery::Addressed;
+                            t.critic = Some(Critic::new(5));
+                            (network(2, ONE / 2), network(2, ONE / 2))
+                        }
+                        Mode::Drawn => {
+                            t.delivery = Delivery::Drawn;
+                            (windowed_network(40), windowed_network(40))
+                        }
+                        Mode::ReleasedHeld => {
+                            t.delivery = Delivery::Released;
+                            t.hold = Some(Hold {
+                                until: 48,
+                                every: 8,
+                                messages: 1,
+                                efficacy_q16: -ONE,
+                            });
+                            (windowed_network(40), windowed_network(40))
+                        }
+                        Mode::Global => {
+                            t.delivery = Delivery::Global;
+                            (network(2, ONE / 2), network(2, ONE / 2))
+                        }
+                    };
+                    let mut oracle = Before {
+                        channels: *t.readout.channels(),
+                        mirrored,
+                        critic: t.critic,
+                    };
+                    let case = format!("{feedback:?}, {mode:?}, mirrored {mirrored}");
+                    for trial in 0..12u64 {
+                        if trial == 4 || trial == 8 {
+                            t.flip();
+                            oracle.mirrored = !oracle.mirrored;
+                        }
+                        let cued = [
+                            None,
+                            Some(0),
+                            None,
+                            Some(1),
+                            Some(1),
+                            None,
+                            Some(0),
+                            None,
+                            Some(0),
+                            Some(1),
+                            None,
+                            Some(1),
+                        ];
+                        if let Some(r) = cued[trial as usize] {
+                            cue(&now, t.readout.sets()[r]);
+                            cue(&then, t.readout.sets()[r]);
+                        }
+                        let outcome = t.trial(&mut now, trial).unwrap();
+                        assert_eq!(
+                            outcome,
+                            before(&mut oracle, &t, &mut then, trial),
+                            "{case} trial {trial}"
+                        );
+                        assert_eq!(
+                            (*t.readout.channels(), t.critic, t.answers),
+                            (
+                                oracle.channels,
+                                oracle.critic,
+                                if oracle.mirrored { [1, 0] } else { [0, 1] }
+                            ),
+                            "{case} trial {trial}"
+                        );
+                        assert_eq!(
+                            (t.answer(0), t.answer(1)),
+                            if oracle.mirrored { (1, 0) } else { (0, 1) }
+                        );
+                        assert_eq!(fields(&now), fields(&then), "{case} trial {trial}");
+                        assert_eq!(now.train().to_vec(), then.train().to_vec(), "{case}");
+                        assert_eq!(
+                            (
+                                now.delivered(),
+                                now.addressed_counts(),
+                                now.modulator().dopamine_rpe,
+                                now.features().to_vec(),
+                                now.prediction(),
+                                now.units()
+                                    .iter()
+                                    .map(|u| u.value_weight)
+                                    .collect::<Vec<i16>>(),
+                            ),
+                            (
+                                then.delivered(),
+                                then.addressed_counts(),
+                                then.modulator().dopamine_rpe,
+                                then.features().to_vec(),
+                                then.prediction(),
+                                then.units()
+                                    .iter()
+                                    .map(|u| u.value_weight)
+                                    .collect::<Vec<i16>>(),
+                            ),
+                            "{case} trial {trial}"
+                        );
+                        assert_eq!(
+                            (0..16)
+                                .map(|u| (now.is_source(u), now.is_target(u)))
+                                .collect::<Vec<(bool, bool)>>(),
+                            (0..16)
+                                .map(|u| (then.is_source(u), then.is_target(u)))
+                                .collect::<Vec<(bool, bool)>>(),
+                            "{case} trial {trial}"
+                        );
+                        selections.push((outcome.selection, outcome.correct));
+                        held_in_all = held_in_all.saturating_add(outcome.held);
+                    }
+                }
+            }
+        }
+        // The runs held each selection, a tie, a correct trial and a wrong one, and a hold
+        // that delivered.
+        for selection in [None, Some(0), Some(1)] {
+            assert!(selections.iter().any(|&(s, _)| s == selection));
+        }
+        assert!(selections.iter().any(|&(_, c)| c) && selections.iter().any(|&(_, c)| !c));
+        assert!(held_in_all > 0);
+    }
 }
 
 /// The lattice property (ADR-0030): over seeded trains and seeded set pairs the selection is
@@ -3984,7 +5073,7 @@ mod prop {
             window: Window::whole(64),
             seed: 0,
             reward_q16: 0x4000,
-            mirrored: false,
+            answers: [0, 1],
             feedback: Feedback::SevenInEight,
             delivery: Delivery::Global,
             critic: None,
@@ -4174,7 +5263,7 @@ mod prop {
                 },
                 seed: u64::from(round),
                 reward_q16: 0,
-                mirrored: false,
+                answers: [0, 1],
                 feedback: Feedback::Withheld,
                 delivery: Delivery::Global,
                 critic: None,
@@ -4402,5 +5491,201 @@ mod prop {
                 assert_eq!(readout.select([a, b]), expected, "{a} {b}");
             }
         }
+    }
+
+    /// The selection over the lattice of counts (ADR-0151, ADR-0152). Among three, for every
+    /// triple of the lattice — within the width, at it and beyond it — and over seeded triples
+    /// of small counts, where ties are common: the hand rule, the one channel whose count as
+    /// a drive is above both others', or none where the largest is shared; and every
+    /// channel's drives, output and flag as the rule leaves them. Among two, for every pair of
+    /// the `u32` lattice: the rule in place before ADR-0152 written out — each channel's own
+    /// count its direct drive and the other's its indirect — the same selection and the same
+    /// two channels, field by field.
+    #[test]
+    fn the_selection_is_the_largest_count_alone_over_the_lattice() {
+        const COUNTS: [u32; 9] = [0, 1, 2, 3, 100, 32_766, 32_767, 32_768, u32::MAX];
+        // A count as its drive, by hand: one a spike up to the width's last whole count, and
+        // the width beyond it.
+        let drive = |count: u32| -> i64 {
+            if count <= 32_767 {
+                i64::from(count) * 65_536
+            } else {
+                i64::from(i32::MAX)
+            }
+        };
+        let mut three = Readout::new([
+            Set::contiguous(0, 1),
+            Set::contiguous(1, 1),
+            Set::contiguous(2, 1),
+        ]);
+        let mut hand = |counts: [u32; 3]| -> Option<u8> {
+            let d = counts.map(drive);
+            let expected = if d[0] > d[1] && d[0] > d[2] {
+                Some(0)
+            } else if d[1] > d[0] && d[1] > d[2] {
+                Some(1)
+            } else if d[2] > d[0] && d[2] > d[1] {
+                Some(2)
+            } else {
+                None
+            };
+            assert_eq!(three.select(counts), expected, "{counts:?}");
+            let others = [d[1].max(d[2]), d[0].max(d[2]), d[0].max(d[1])];
+            for (k, channel) in three.channels().iter().enumerate() {
+                assert_eq!(
+                    (
+                        i64::from(channel.striatal_d1_drive),
+                        i64::from(channel.striatal_d2_drive),
+                        channel.stn_hyperdirect_drive,
+                        i64::from(channel.gpi_snr_inhibition),
+                        channel.selected_flag,
+                    ),
+                    (
+                        d[k],
+                        others[k],
+                        0,
+                        others[k] - d[k],
+                        u32::from(expected == Some(k as u8)),
+                    ),
+                    "{counts:?} channel {k}"
+                );
+            }
+            expected
+        };
+        let mut seen = [0u32; 4];
+        for &a in &COUNTS {
+            for &b in &COUNTS {
+                for &c in &COUNTS {
+                    let selected = hand([a, b, c]);
+                    seen[selected.map_or(3, usize::from)] += 1;
+                }
+            }
+        }
+        assert_eq!(
+            seen,
+            [189, 189, 189, 162],
+            "each channel as often, and a shared largest in 162 of 729"
+        );
+        let mut lcg = Lcg::new(43);
+        let mut ties = 0u32;
+        for _ in 0..4096 {
+            let counts = [lcg.below(6), lcg.below(6), lcg.below(6)];
+            ties += u32::from(hand(counts).is_none());
+        }
+        assert!(
+            (800..1150).contains(&ties),
+            "about 51 in 216 of 4 096: {ties}"
+        );
+        // Among two: the composition before ADR-0152, on channels of its own.
+        let mut two = Readout::new([Set::contiguous(0, 1), Set::contiguous(1, 1)]);
+        let mut before = *two.channels();
+        for &a in U32_LATTICE.iter().chain(COUNTS.iter()) {
+            for &b in U32_LATTICE.iter().chain(COUNTS.iter()) {
+                let drives = [drive(a) as i32, drive(b) as i32];
+                let mut selected = [false; 2];
+                for (k, channel) in before.iter_mut().enumerate() {
+                    let other = if k == 0 { 1 } else { 0 };
+                    channel.striatal_d1_drive = drives[k];
+                    channel.striatal_d2_drive = drives[other];
+                    channel.stn_hyperdirect_drive = 0;
+                    selected[k] = channel.compute_gating();
+                }
+                let expected = match selected {
+                    [true, false] => Some(0),
+                    [false, true] => Some(1),
+                    _ => None,
+                };
+                assert_eq!(two.select([a, b]), expected, "{a} {b}");
+                assert_eq!(*two.channels(), before, "{a} {b}");
+            }
+        }
+    }
+
+    /// The flip over every mapping (ADR-0152): among one, two, three, four and the most
+    /// readouts a task can hold, for every pair of answers below the number of readouts, each
+    /// answer after a flip is the next index by a hand rule, the remainder of one more over
+    /// the number; as many flips as there are readouts bring the mapping back; and `check`'s
+    /// refusal of an answer is the index at or beyond the number, for every `u8`.
+    #[test]
+    fn a_flip_is_the_next_readout_by_the_remainder_over_every_mapping() {
+        fn over<const N: usize>() {
+            let stimulus = |first: u32| Stimulus {
+                set: Set::contiguous(first, 1),
+                messages: 1,
+                efficacy_q16: 0x0001_4000,
+                cancel: None,
+            };
+            // The readouts' sets one unit each from unit 2, the stimuli at units 0 and 1.
+            let sets: [Set; N] = core::array::from_fn(|k| Set::contiguous(k as u32 + 2, 1));
+            let exec = Executor::<8>::new(Config {
+                workers: 1,
+                units: 66,
+                injector_capacity: 64,
+                train_capacity: 132,
+                modulation_baseline_q16: 0,
+                ..Config::default()
+            })
+            .unwrap();
+            let task = |answers: [u8; 2]| Task {
+                stimuli: [stimulus(0), stimulus(1)],
+                readout: Readout::new(sets),
+                drive: Drive {
+                    every: 0,
+                    messages: 0,
+                    efficacy_q16: 0,
+                    units: 66,
+                    seed: 0,
+                },
+                ticks: 64,
+                window: Window::whole(64),
+                seed: 0,
+                reward_q16: 0,
+                answers,
+                feedback: Feedback::Withheld,
+                delivery: Delivery::Global,
+                critic: None,
+                hold: None,
+            };
+            let next = |a: u8| (usize::from(a) + 1).checked_rem(N).unwrap() as u8;
+            for a in 0..N as u8 {
+                for b in 0..N as u8 {
+                    let mut t = task([a, b]);
+                    t.flip();
+                    assert_eq!(t.answers, [next(a), next(b)], "{N}: {a} {b}");
+                    assert!(
+                        t.answers.iter().all(|&answer| usize::from(answer) < N),
+                        "{N}: a flip keeps the answers inside"
+                    );
+                    for _ in 1..N {
+                        t.flip();
+                    }
+                    assert_eq!(t.answers, [a, b], "{N}: as many flips as readouts");
+                }
+            }
+            for a in 0..=u8::MAX {
+                let refused = usize::from(a) >= N;
+                for answers in [[a, 0], [0, a]] {
+                    assert_eq!(
+                        task(answers).check(&exec),
+                        if refused {
+                            Err(TaskError::AnswerOutsideReadout)
+                        } else {
+                            Ok(())
+                        },
+                        "{N}: {answers:?}"
+                    );
+                }
+                if refused {
+                    let mut t = task([a, a]);
+                    t.flip();
+                    assert_eq!(t.answers, [0, 0], "{N}: {a} moves to the first readout");
+                }
+            }
+        }
+        over::<1>();
+        over::<2>();
+        over::<3>();
+        over::<4>();
+        over::<64>();
     }
 }

@@ -334,12 +334,19 @@ pub(crate) fn task(
         window: WINDOW,
         seed: SEED,
         reward_q16: REWARD_Q16,
-        mirrored,
+        answers: answers_of(mirrored),
         feedback,
         delivery,
         critic: None,
         hold: None,
     }
+}
+
+/// The answers of a mapping under two readouts (ADR-0152): the assignment's, stimulus `s` at
+/// readout `s`, or the mirrored one's, each stimulus at the other — the two values of the flag
+/// `Task::answers` replaced.
+pub(crate) fn answers_of(mirrored: bool) -> [u8; 2] {
+    if mirrored { [1, 0] } else { [0, 1] }
 }
 
 // -------------------------------------------------------------------------- the readings
@@ -505,7 +512,8 @@ pub(crate) fn run_on(
 }
 
 /// `run_on` with the task's mapping flipped once (brief 040): before the trial of index
-/// `flip`, if one is given, `task.mirrored` is negated and nothing else is touched, so the
+/// `flip`, if one is given, the task's mapping is flipped (`Task::flip`, each stimulus's answer
+/// to the other readout, the flag negated before ADR-0152) and nothing else is touched, so the
 /// trials before it are `run_on`'s and a trial after it is judged, rewarded and counted
 /// correct under the other mapping; with none it is `run_on`, which calls it so. It is
 /// `run_on_scheduled` with a schedule of one flip or none, which it calls so.
@@ -528,7 +536,8 @@ pub(crate) fn flipped_at(flips: &[usize], trial: usize) -> bool {
 }
 
 /// `run_on_flipped` under a schedule of flips (brief 047): before the trial of each index in
-/// `flips`, which strictly increase, `task.mirrored` is negated and nothing else is touched,
+/// `flips`, which strictly increase, the task's mapping is flipped (`Task::flip`, each
+/// stimulus's answer to the other readout) and nothing else is touched,
 /// so a trial is judged, rewarded and counted correct under the mapping `flipped_at` gives
 /// it; with one flip or none it is `run_on_flipped`, which calls it so.
 pub(crate) fn run_on_scheduled(
@@ -572,7 +581,7 @@ pub(crate) fn run_on_scheduled(
     let mut ties = 0u32;
     for trial in 0..trials {
         if flips.contains(&trial) {
-            task.mirrored = !task.mirrored;
+            task.flip();
         }
         let overwritten = exec.train_overwritten();
         let start = exec.ticks() as u32;
@@ -5231,7 +5240,7 @@ pub(crate) fn probe_task(shape: Shape, cancel: Option<Cancel>) -> Vec<u32> {
         window: Window::whole(PROBE_TICKS),
         seed: SEED,
         reward_q16: 0,
-        mirrored: false,
+        answers: [0, 1],
         feedback: Feedback::Withheld,
         delivery: Delivery::Global,
         critic: None,

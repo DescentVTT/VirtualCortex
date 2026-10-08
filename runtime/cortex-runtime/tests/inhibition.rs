@@ -106727,7 +106727,7 @@ fn hold_probe(hold: Hold, ticks: u32) -> (Option<u8>, u32, (i32, i32)) {
         window: WINDOW,
         seed: SEED,
         reward_q16: 0,
-        mirrored: false,
+        answers: [0, 1],
         feedback: Feedback::Withheld,
         delivery: Delivery::Global,
         critic: None,
