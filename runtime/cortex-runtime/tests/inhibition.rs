@@ -169046,6 +169046,8 @@ fn answered_arm(arm: Reversal) {
     eprintln!("DUMP {name} TRIALS {:?}", run.read);
     let read = answered_read(k, &run);
     eprintln!("DUMP {name} PIN readings {read:?}");
+    let by_trial = trials_read(first, &run.read);
+    eprintln!("DUMP {name} PIN trials read {by_trial:?}");
     let image_outside = answered_outside(image_sums.1, &DEALT_COUPLINGS_1024);
     eprintln!(
         "DUMP {name} verdict of this arm: learned by each {:?} over {:?} left {:?} the expected reward held {:?}; no prediction for the verdict: {ANSWERED_PREDICTED:?}",
@@ -169119,6 +169121,11 @@ fn answered_arm(arm: Reversal) {
         Some(read),
         ANSWERED_READINGS_1024[k],
         "{name}: the readings"
+    );
+    assert_eq!(
+        Some(by_trial),
+        ANSWERED_TRIALS_1024[k],
+        "{name}: the trials by brief 063's reader, beside which H-30's stand"
     );
     assert_eq!(
         weights_by_polarity(&exec),
@@ -175359,3 +175366,1226 @@ const ANSWERED_1024: Answered = Answered {
 /// The step of H-29's stopping rule the verdict reaches: 5, a no on clause 1 with clause 3
 /// held.
 const ANSWERED_STEP_1024: u8 = 5;
+
+// =================================================================================== H-30
+
+// -------------------------------------------- written before the run (ADR-0154, ADR-0156)
+
+/// The arms of H-30 (ADR-0154): H-29's two, in their order, each its own weekly test, from
+/// H-29's image with the whole punishment written into it and nothing else, under H-29's
+/// readouts, deal, delivery, schedule and seed.
+const WHOLE_ARMS: [Reversal; 2] = ANSWERED_ARMS;
+
+/// H-29's delivery, H-25's, unchanged.
+const WHOLE_DELIVERY: Delivery = ANSWERED_DELIVERY;
+
+/// ADR-0154 predicts a yes.
+const WHOLE_PREDICTED: bool = true;
+
+/// ADR-0154's predicted readings, Hypotheses written before the run and never asserted:
+/// (a) at each flip and stimulus the old answer leads for fewer blocks than in H-29
+/// (`lets_go_sooner`); (b) every reversal is faster than its own in H-29 (`faster`); (c) a
+/// stimulus's block mean is below minus half the reward in fewer blocks of a mapping after a
+/// flip than in H-29 (`recovers_sooner`); (d) the old answer's coupling ends every mapping
+/// after a flip below the image's (`old_below_image`).
+const LETS_GO_SOONER_PREDICTED: bool = true;
+const FASTER_PREDICTED: bool = true;
+const RECOVERS_SOONER_PREDICTED: bool = true;
+const OLD_BELOW_IMAGE_PREDICTED: bool = true;
+
+/// Where the modulator section holds the whole punishment's flag (ADR-0155): `[51]`, one
+/// while set.
+const WHOLE_AT: usize = 51;
+const WHOLE_SET: u8 = 1;
+
+/// The margin a reading calls close (ADR-0153's reading, kept): the largest count at most two
+/// spikes above the next, a tie among them.
+const MARGIN_SPIKES: u32 = 2;
+
+// ---------------------------------------------------------------- the image (brief 063)
+
+/// The image with the modulator section's `[51]` written `flag` and the section re-sealed;
+/// every other byte the image's.
+fn with_whole_byte(image: &[u8], flag: u8) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let (at, offset, length) = modulator_entry(&img);
+    img[offset..][WHOLE_AT] = flag;
+    let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+    entry.crc64 = crc64(&img[offset..][..length]);
+    img[at..][..64].copy_from_slice(&entry.encode());
+    img
+}
+
+/// The masked check (ADR-0154's one change): `whole` differs from `image` only in the
+/// modulator section's flag byte, zero in `image`, and in the section's entry in the table,
+/// which holds its seal; and writing zero back gives `image` bit for bit.
+fn only_the_whole(image: &[u8], whole: &[u8]) -> bool {
+    let (at, offset, _) = modulator_entry(image);
+    let flag = offset.saturating_add(WHOLE_AT);
+    let entry = at..at.saturating_add(64);
+    image.len() == whole.len()
+        && image[flag] == 0
+        && whole[flag] == WHOLE_SET
+        && differing(image, whole)
+            .iter()
+            .all(|p| *p == flag || entry.contains(p))
+        && with_whole_byte(whole, 0) == image
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0154)
+
+/// H-30's criterion (ADR-0154), per arm `[assignment first, mirrored first]`: clauses 1 to 4
+/// are H-29's by H-29's rules (`answered`); clause 5 is each of an arm's three reversals
+/// passing `CROSSING_MARK` within `REVERSAL_BLOCKS_MAX` blocks of its flip, the crossing block
+/// counted — H-25's rule (`reversals_within`) over the crossings as H-29 reads them
+/// (`answered_crossings`). `yes` is all five in both arms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Whole {
+    answered: Answered,
+    in_time: [[bool; 3]; 2],
+    yes: bool,
+}
+
+fn unsoftened(image: &[[i64; ANSWERS]; 2], outside: i64, arms: [&[AnsweredBlock]; 2]) -> Whole {
+    let answered = answered(image, outside, arms);
+    let in_time = arms.map(|blocks| reversals_within(answered_crossings(blocks)));
+    Whole {
+        answered,
+        in_time,
+        yes: answered.yes && in_time.iter().flatten().all(|&t| t),
+    }
+}
+
+/// The step of H-30's stopping rule a verdict reaches (ADR-0154): 3 for a yes; 4 for a no on
+/// clause 3; otherwise 5 for a no on clause 1; otherwise 6 for a no on clause 5; otherwise 7
+/// for a no on clause 2; otherwise 8, a no on clause 4 alone.
+fn whole_step(verdict: &Whole) -> u8 {
+    let four = &verdict.answered;
+    if verdict.yes {
+        3
+    } else if !four.held.iter().all(|&h| h) {
+        4
+    } else if !four.learned.iter().flatten().all(|&l| l) {
+        5
+    } else if !verdict.in_time.iter().flatten().all(|&t| t) {
+        6
+    } else if !four.bounded.iter().all(|&b| b) {
+        7
+    } else {
+        8
+    }
+}
+
+// --------------------------------------------------- the readings' rules (brief 063)
+
+/// The error the critic took at a punished trial against `value`, by hand: minus the reward,
+/// less the value.
+fn punished_error(value: i32) -> i64 {
+    i64::from(REWARD_Q16)
+        .saturating_neg()
+        .saturating_sub(i64::from(value))
+}
+
+/// The largest of three counts and the next.
+fn top_two(counts: [u32; ANSWERS]) -> (u32, u32) {
+    let mut sorted = counts;
+    sorted.sort_unstable();
+    (sorted[2], sorted[1])
+}
+
+/// What brief 063 reads of a run's trials, no clause; per mapping where a field is of four,
+/// per flip and stimulus `[A, B]` where it is of three:
+/// - `below`: the punished trials whose value was below zero — how many, the errors the critic
+///   took, summed, and what the modulator received, summed. With the whole punishment unset
+///   the two sums are one; set, the second is the reward a trial;
+/// - `above`: the punished trials whose value was at or above zero — how many, and what the
+///   modulator received, summed, the critic's errors on either engine;
+/// - `rewarded`: the rewarded trials — how many, and what the modulator received, summed;
+/// - `old`: the trials that selected the stimulus's old answer, the readout before its new one
+///   — how many, those of them whose value was below zero, the errors the critic took, summed,
+///   and what the modulator received, summed;
+/// - `signal`: the signal after the reward — the trials it stood at or below −1.0, the trials
+///   it stood at or above 1.0, the gate's two bounds, its lowest and its highest;
+/// - `margin`: the trials whose largest count was at most `MARGIN_SPIKES` above the next, a tie
+///   among them, and the largest counts summed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TrialsRead {
+    below: [(u32, i64, i64); 4],
+    above: [(u32, i64); 4],
+    rewarded: [(u32, i64); 4],
+    old: [[(u32, u32, i64, i64); 2]; 3],
+    signal: [(u32, u32, i32, i32); 4],
+    margin: [(u32, u64); 4],
+}
+
+/// `TrialsRead` over a run's trials, `first` its first answers: zeros for a mapping the run
+/// does not reach. A trial is punished when it is not correct, the answer's feedback.
+fn trials_read(first: [usize; 2], read: &[AnsweredTrial]) -> TrialsRead {
+    let mut out = TrialsRead {
+        below: [(0, 0, 0); 4],
+        above: [(0, 0); 4],
+        rewarded: [(0, 0); 4],
+        old: [[(0, 0, 0, 0); 2]; 3],
+        signal: [(0, 0, 0, 0); 4],
+        margin: [(0, 0); 4],
+    };
+    for (m, &(from, to)) in SPANS.iter().enumerate() {
+        let mut bounds: Option<(i32, i32)> = None;
+        for &(_, counts, _, correct, received, value, signal) in read.iter().take(to).skip(from) {
+            let received = i64::from(received);
+            if correct {
+                let of = &mut out.rewarded[m];
+                *of = (of.0.saturating_add(1), of.1.saturating_add(received));
+            } else if value < 0 {
+                let of = &mut out.below[m];
+                *of = (
+                    of.0.saturating_add(1),
+                    of.1.saturating_add(punished_error(value)),
+                    of.2.saturating_add(received),
+                );
+            } else {
+                let of = &mut out.above[m];
+                *of = (of.0.saturating_add(1), of.1.saturating_add(received));
+            }
+            let (low, high) =
+                bounds.map_or((signal, signal), |(l, h)| (l.min(signal), h.max(signal)));
+            bounds = Some((low, high));
+            let of = &mut out.signal[m];
+            of.0 =
+                of.0.saturating_add(u32::from(signal <= ONE.saturating_neg()));
+            of.1 = of.1.saturating_add(u32::from(signal >= ONE));
+            let (top, next) = top_two(counts);
+            let of = &mut out.margin[m];
+            *of = (
+                of.0.saturating_add(u32::from(top.saturating_sub(next) <= MARGIN_SPIKES)),
+                of.1.saturating_add(u64::from(top)),
+            );
+        }
+        if let Some((low, high)) = bounds {
+            out.signal[m].2 = low;
+            out.signal[m].3 = high;
+        }
+    }
+    for (f, of_flip) in out.old.iter_mut().enumerate() {
+        let m = f.saturating_add(1);
+        let (from, to) = SPANS[m];
+        let answers = answers_of(first, m);
+        for (s, of) in of_flip.iter_mut().enumerate() {
+            let [_, before, _] = roles(answers[s]);
+            for &(stimulus, _, selection, _, received, value, _) in read.iter().take(to).skip(from)
+            {
+                if usize::from(stimulus) == s && selection.map(usize::from) == Some(before) {
+                    *of = (
+                        of.0.saturating_add(1),
+                        of.1.saturating_add(u32::from(value < 0)),
+                        of.2.saturating_add(punished_error(value)),
+                        of.3.saturating_add(i64::from(received)),
+                    );
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Per mapping and stimulus, the blocks of the mapping whose mean value of the stimulus was
+/// below minus half the reward (ADR-0153's reading: H-29's were 5 to 24 after a flip).
+fn below_half(means: &[[i64; 2]]) -> [[usize; 2]; 4] {
+    MAPPINGS.map(|(from, to)| {
+        [0usize, 1].map(|s| {
+            means
+                .iter()
+                .take(to)
+                .skip(from)
+                .filter(|block| block[s].saturating_mul(2) < i64::from(REWARD_Q16).saturating_neg())
+                .count()
+        })
+    })
+}
+
+/// ADR-0154's predicted reading (a) as a rule, per flip and stimulus: the old answer led for
+/// fewer blocks than in H-29 (`old_held` of each).
+fn lets_go_sooner(mine: [[usize; 2]; 3], h29: [[usize; 2]; 3]) -> [[bool; 2]; 3] {
+    [0usize, 1, 2].map(|f| [0usize, 1].map(|s| mine[f][s] < h29[f][s]))
+}
+
+/// ADR-0154's predicted reading (b) as a rule, per reversal: it passed `CROSSING_MARK` in fewer
+/// blocks than its own in H-29; a reversal that passed where H-29's never did is faster, and
+/// one that never passed is not.
+fn faster(mine: [Option<usize>; 4], h29: [Option<usize>; 4]) -> [bool; 3] {
+    [1usize, 2, 3].map(|m| match (mine[m], h29[m]) {
+        (Some(mine), Some(h29)) => mine < h29,
+        (Some(_), None) => true,
+        (None, _) => false,
+    })
+}
+
+/// ADR-0154's predicted reading (c) as a rule, per flip and stimulus: the stimulus's block mean
+/// was below minus half the reward in fewer blocks of the mapping than in H-29 (`below_half`
+/// of each).
+fn recovers_sooner(mine: [[usize; 2]; 4], h29: [[usize; 2]; 4]) -> [[bool; 2]; 3] {
+    [1usize, 2, 3].map(|m| [0usize, 1].map(|s| mine[m][s] < h29[m][s]))
+}
+
+/// ADR-0154's predicted reading (d) as a rule, per flip and stimulus: the stimulus's coupling
+/// into its old answer's readout, the one before its new answer's, stood below the image's at
+/// the mapping's last block's end (`course_by_role`'s last).
+fn old_below_image(course: &[[[[i64; 3]; ANSWERS]; 2]; 4]) -> [[bool; 2]; 3] {
+    [1usize, 2, 3].map(|m| [0usize, 1].map(|s| course[m][s][1][2] < 10_000))
+}
+
+/// What brief 063 reads of an arm beside its blocks: H-29's readings by H-29's reader over this
+/// run, clause 5 per reversal, the blocks below minus half the reward, the trials' readings,
+/// and ADR-0154's four predicted readings by their rules against H-29's pinned tables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WholeRead {
+    answered: AnsweredRead,
+    in_time: [bool; 3],
+    below_half: [[usize; 2]; 4],
+    trials: TrialsRead,
+    lets_go_sooner: [[bool; 2]; 3],
+    faster: [bool; 3],
+    recovers_sooner: [[bool; 2]; 3],
+    old_below_image: [[bool; 2]; 3],
+}
+
+/// H-29's blocks below minus half the reward, arm `k`, from its pinned blocks.
+fn h29_below_half(k: usize) -> [[usize; 2]; 4] {
+    below_half(&answered_means(ANSWERED_BLOCKS_1024[k]))
+}
+
+/// An arm's readings from its tables, `k` its index in `WHOLE_ARMS`.
+fn whole_read(k: usize, run: &AnsweredRun) -> WholeRead {
+    let first = first_answers(WHOLE_ARMS[k]);
+    let answered = answered_read(k, run);
+    let h29 = ANSWERED_READINGS_1024[k].expect("H-29's readings of the arm");
+    let mine_below = below_half(&answered_means(&run.blocks));
+    WholeRead {
+        answered,
+        in_time: reversals_within(answered.crossings),
+        below_half: mine_below,
+        trials: trials_read(first, &run.read),
+        lets_go_sooner: lets_go_sooner(answered.old_held, h29.old_held),
+        faster: faster(answered.crossings, h29.crossings),
+        recovers_sooner: recovers_sooner(mine_below, h29_below_half(k)),
+        old_below_image: old_below_image(&answered.course),
+    }
+}
+
+// ------------------------------------------------------- the calibration (brief 063)
+
+/// The first trial of a run at which a reward below zero meets a value below zero, by a hand
+/// rule over the trials as read — a trial not correct, punished under the answer's feedback,
+/// whose value is below zero — with the value there; none when no trial is one.
+fn first_met(read: &[AnsweredTrial]) -> Option<(usize, i32)> {
+    read.iter()
+        .enumerate()
+        .find(|(_, trial)| !trial.3 && trial.5 < 0)
+        .map(|(at, trial)| (at, trial.5))
+}
+
+/// The two runs of the calibration held to one another (H-30's stopping rule, step 2): `unset`
+/// from H-29's image and `set` from the same image with the whole punishment written, over the
+/// same trials. Up to the first trial at which a reward below zero meets a value below zero,
+/// found on the unset run by `first_met`, the two are one, trial for trial in every number
+/// read. At it they present the same stimulus to the same counts, selection and value; the
+/// unset run's modulator received the reward less the value and the set run's the reward; and
+/// the two signals part by the value. Returns the trial's index and the value there; none met
+/// stops the round there as a finding.
+fn parts_at_first_met(name: &str, unset: &[AnsweredTrial], set: &[AnsweredTrial]) -> (usize, i32) {
+    assert_eq!(unset.len(), set.len(), "{name}: the same trials");
+    let (at, value) = first_met(unset).expect(
+        "no reward below zero met a value below zero, and the round stops here as a finding",
+    );
+    assert_eq!(
+        set[..at],
+        unset[..at],
+        "{name}: up to trial {at} the two runs are one, trial for trial"
+    );
+    assert_eq!(
+        first_met(set),
+        Some((at, value)),
+        "{name}: the set run meets it at the same trial, against the same value"
+    );
+    let (u, s) = (unset[at], set[at]);
+    assert_eq!(
+        (s.0, s.1, s.2, s.3, s.5),
+        (u.0, u.1, u.2, u.3, u.5),
+        "{name}: trial {at} presents the same stimulus to the same counts, selection and value"
+    );
+    let punishment = REWARD_Q16.saturating_neg();
+    assert_eq!(
+        (u.4, s.4),
+        (punishment.saturating_sub(value), punishment),
+        "{name}: trial {at}: unset, the modulator receives the reward less the value; set, the reward"
+    );
+    assert_eq!(
+        s.6.saturating_sub(u.6),
+        value,
+        "{name}: trial {at}: the two signals part by the value"
+    );
+    (at, value)
+}
+
+/// The calibration of an arm of H-30 with the parameter set (H-30's stopping rule, step 2):
+/// the arm's first block from H-29's image and from the same image with the whole punishment
+/// written, under H-29's readouts and delivery, both oracles and the hand rule of what the
+/// modulator receives held at every trial of both. The unset block is H-29's pinned first
+/// block, table for table, and the two runs are held to one another by `parts_at_first_met`.
+/// Everything is dumped before anything is held. Returns the first trial met with its value,
+/// and the set run's trials.
+fn whole_calibration(
+    name: &str,
+    k: usize,
+    windowed: &[u8],
+    whole_image: &[u8],
+    sets: &AnsweredSets,
+) -> ((usize, i32), Vec<AnsweredTrial>) {
+    let first = first_answers(WHOLE_ARMS[k]);
+    let block_from = |image: &[u8], set: bool| {
+        let mut exec = signed_from(image, 1024);
+        assert_eq!(
+            exec.whole_punishment(),
+            set,
+            "{name}: the image's parameter"
+        );
+        answered_run(
+            &mut exec,
+            sets,
+            first,
+            Feedback::Answer,
+            WHOLE_DELIVERY,
+            BLOCK,
+        )
+    };
+    let unset = block_from(windowed, false);
+    let set = block_from(whole_image, true);
+    eprintln!(
+        "DUMP {name} PIN first met {:?}; the unset block's trials {:?}; the set block's {:?}",
+        first_met(&unset.read),
+        unset.read,
+        set.read
+    );
+    assert_eq!(
+        unset.blocks.as_slice(),
+        &ANSWERED_BLOCKS_1024[k][..1],
+        "{name}: with the parameter unset the first block is H-29's, table for table"
+    );
+    let met = parts_at_first_met(name, &unset.read, &set.read);
+    assert_ne!(
+        answered_hash(&set.read),
+        answered_hash(&unset.read),
+        "{name}: from that trial the set run is another run"
+    );
+    (met, set.read)
+}
+
+// ---------------------------------------------------------------- the arm (brief 063)
+
+/// One arm of H-30 at 1 024 units (brief 063): the calibration before any rewarded run of the
+/// protocol (H-30's stopping rule, step 2) — H-29's image built and held link by link, to its
+/// CRC as it is and as H-29 read it at format 20, the deal held to the readouts' rule on it,
+/// the image this arm decodes shown to be H-29's with the flag's byte written and nothing else
+/// and held by its CRC, and the arm's first block with the parameter unset and set held to
+/// H-29's and to one another — then the arm's 7 680 trials from that image under H-29's
+/// readouts, delivery and flips, the critic's oracle, the hand rule of what the modulator
+/// receives and the network's oracle held to the record at every trial; everything dumped, the
+/// clauses and the readings computed before anything is held; then the pinned tables of the
+/// whole run.
+fn whole_arm(arm: Reversal) {
+    let k = WHOLE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-30");
+    let name = format!("whole1024 {arm:?}");
+    let (_, windowed) = answered_images(&name);
+    let sets = deal_calibration(&name, &windowed);
+    let whole_image = with_whole_byte(&windowed, WHOLE_SET);
+    eprintln!(
+        "DUMP {name} PIN image crc {:#018x}, {} bytes differ from H-29's",
+        crc64(&whole_image),
+        differing(&windowed, &whole_image).len()
+    );
+    assert!(
+        only_the_whole(&windowed, &whole_image),
+        "{name}: the image is H-29's in every byte but the flag's and the seal"
+    );
+    let (met, calibrated) = whole_calibration(&name, k, &windowed, &whole_image, &sets);
+    assert_eq!(
+        Some(crc64(&whole_image)),
+        WHOLE_IMAGE_CRC_1024,
+        "{name}: the image this arm decodes"
+    );
+    assert_eq!(
+        Some(met),
+        WHOLE_FIRST_MET_1024[k],
+        "{name}: the first trial at which a reward below zero meets a value below zero, and the value there"
+    );
+    eprintln!(
+        "DUMP {name} calibration holds: H-20's to H-23's images, H-29's image as it read it, the deal by its rule, the flag's byte alone, and the first block unset H-29's and set H-29's up to trial {}",
+        met.0
+    );
+    let mut exec = signed_from(&whole_image, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.whole_punishment(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.ticks()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            true,
+            TARGET_PERIOD_1024,
+            exec.ticks(),
+            Ok(()),
+            SETTLED_TICK
+        ),
+        "{name}: H-29's configuration with the whole punishment set"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        answered_couplings(&exec, &sets),
+        DEALT_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let first = first_answers(arm);
+    let run = answered_run(
+        &mut exec,
+        &sets,
+        first,
+        Feedback::Answer,
+        WHOLE_DELIVERY,
+        SCHEDULE_TRIALS,
+    );
+    assert_eq!(
+        (run.blocks.len(), run.read.len()),
+        (SCHEDULE_BLOCKS, SCHEDULE_TRIALS),
+        "{name}: 120 blocks of 64 trials"
+    );
+    assert_eq!(
+        run.read[..BLOCK],
+        calibrated[..],
+        "{name}: the arm's first block is the calibration's, so the arm is H-29's up to trial {}",
+        met.0
+    );
+    let at_flips = run
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
+    eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
+    eprintln!("DUMP {name} PIN read {:#018x}", answered_hash(&run.read));
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} TRIALS {:?}", run.read);
+    let read = whole_read(k, &run);
+    eprintln!("DUMP {name} PIN readings {read:?}");
+    let h29 = ANSWERED_READINGS_1024[k].expect("H-29's readings of the arm");
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned by each {:?} over {:?} left {:?} the expected reward held {:?} the revision in time {:?}; predicted {WHOLE_PREDICTED}",
+        read.answered.last.map(|m| learned_by_each(&m)),
+        read.answered.over,
+        read.answered.left,
+        read.answered.last.map(|m| m.map(holds_expected)),
+        read.in_time
+    );
+    eprintln!(
+        "DUMP {name} the predicted readings: (a) the old answer lets go sooner, predicted {LETS_GO_SOONER_PREDICTED}: {:?} — held {:?} beside H-29's {:?}; (b) every reversal faster, predicted {FASTER_PREDICTED}: {:?} — crossings {:?} beside H-29's {:?}; (c) the value recovers sooner, predicted {RECOVERS_SOONER_PREDICTED}: {:?} — blocks below minus half {:?} beside H-29's {:?}; (d) the old answer's coupling below the image's at each mapping's end, predicted {OLD_BELOW_IMAGE_PREDICTED}: {:?}",
+        read.lets_go_sooner,
+        read.answered.old_held,
+        h29.old_held,
+        read.faster,
+        read.answered.crossings,
+        h29.crossings,
+        read.recovers_sooner,
+        read.below_half,
+        h29_below_half(k),
+        read.old_below_image
+    );
+    eprintln!(
+        "DUMP {name} the trials' readings {:?} beside H-29's {:?}",
+        read.trials, ANSWERED_TRIALS_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} value by block {:?} beside H-29's {:?}",
+        answered_means(&run.blocks),
+        answered_means(ANSWERED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-29's {:?}",
+        run.blocks
+            .iter()
+            .map(|b| per_myriad(b.sums.0, image_sums.0))
+            .collect::<Vec<i64>>(),
+        ANSWERED_BLOCKS_1024[k]
+            .iter()
+            .map(|b| per_myriad(b.sums.0, image_sums.0))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} went by mapping, [answer's pairs, other pairs, outside][raised, lowered]: {:?} beside H-29's {:?}",
+        read.answered.went, h29.went
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    assert_eq!(
+        run.blocks.as_slice(),
+        WHOLE_BLOCKS_1024[k],
+        "{name}: the blocks"
+    );
+    assert_eq!(
+        (run.trace, answered_hash(&run.read)),
+        (WHOLE_TRACES_1024[k], WHOLE_READ_1024[k]),
+        "{name}: the accuracy sequence and every trial's reading"
+    );
+    assert_eq!(
+        Some(at_flips),
+        WHOLE_AT_FLIPS_1024[k],
+        "{name}: the couplings after the first trial of each new mapping"
+    );
+    assert_eq!(Some(read), WHOLE_READINGS_1024[k], "{name}: the readings");
+    assert_eq!(
+        weights_by_polarity(&exec),
+        read.answered.sums_after,
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-30's arm that starts from the assignment (brief 063): H-29's answers, (0, 1), (1, 2),
+/// (2, 0) and (0, 1), with the whole punishment set.
+#[test]
+#[ignore]
+fn a_punishment_the_value_does_not_soften_from_the_assignment_at_1024_units_exhaustive() {
+    whole_arm(Reversal::AssignmentFirst);
+}
+
+/// H-30's arm that starts from the mirrored assignment (brief 063): H-29's answers, (1, 0),
+/// (2, 1), (0, 2) and (1, 0), with the whole punishment set.
+#[test]
+#[ignore]
+fn a_punishment_the_value_does_not_soften_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    whole_arm(Reversal::MirroredFirst);
+}
+
+// --------------------------------------------------------------------- the gate (brief 063)
+
+/// The trials of the gate's two runs on the instrument's network: enough for a punishment to
+/// meet a value below zero and for the runs to go on past it.
+const WHOLE_GATE_TRIALS: usize = GATE_TRIALS;
+
+/// The gate's test (ADR-0061's class; brief 063): the arms, the delivery, the predictions and
+/// the constants as ADR-0154 fixed them; the hand rule of what the modulator receives at its
+/// cases and against the engine's rule; the image's patch on the instrument's network — the
+/// flag's byte alone, read back by the loader, refused without the critic; H-30's clause 5 at
+/// its edges and the verdict with the step it reaches over tables written by hand, each
+/// clause's place in the stopping rule's order; the readings' rules over tables and trials
+/// written by hand; and trials of the task with three readouts on the instrument's network
+/// with the whole punishment set beside the same trials with it unset, every oracle held at
+/// every trial of both and the two runs held to one another as the calibration holds them.
+/// Nothing else added to the gate.
+#[test]
+fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
+    // ------------------------------------------------ the protocol (ADR-0154, ADR-0156)
+    assert_eq!(WHOLE_ARMS, ANSWERED_ARMS, "H-29's two arms");
+    assert_eq!(
+        (WHOLE_DELIVERY, WHOLE_PREDICTED),
+        (Delivery::Drawn, true),
+        "H-29's delivery, and a yes predicted"
+    );
+    assert_eq!(
+        [
+            LETS_GO_SOONER_PREDICTED,
+            FASTER_PREDICTED,
+            RECOVERS_SOONER_PREDICTED,
+            OLD_BELOW_IMAGE_PREDICTED
+        ],
+        [true; 4],
+        "the four predicted readings"
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            EACH_TIMES,
+            BOUND_PER_CENT,
+            BAND_QUARTERS,
+            BAND_DIVISOR,
+            HOLDS_DIVISOR,
+            REVERSAL_BLOCKS_MAX,
+            CROSSING_MARK,
+            SCHEDULE_BLOCKS
+        ),
+        (80, 2, 130, (3, 5), 4, 4, 23, 40, 120),
+        "clauses 1 to 4 are H-29's and clause 5 is H-25's clause 3, as ADR-0154 wrote them"
+    );
+    assert_eq!((WHOLE_AT, WHOLE_SET, MARGIN_SPIKES), (51, 1, 2));
+    assert_eq!(
+        (WINDOWED_IMAGE_CRC_1024, WINDOWED_IMAGE_CRC_FORMAT_20_1024),
+        (0x1158_6a76_f741_5129, 0x5044_ed79_36a7_b5f3),
+        "H-29's image at format 21 and as H-29 read it at 20"
+    );
+    // What the modulator receives, by the hand rule: the error, unless the engine carries the
+    // whole punishment and the reward and the value are both below zero; then the reward.
+    const R: i32 = REWARD_Q16;
+    assert_eq!(received_by_hand(false, -R, -100, -R + 100), -R + 100);
+    assert_eq!(
+        received_by_hand(true, -R, -100, -R + 100),
+        -R,
+        "whole, where the error is softer"
+    );
+    assert_eq!(received_by_hand(true, -R, 100, -R - 100), -R - 100);
+    assert_eq!(
+        received_by_hand(true, -R, 0, -R),
+        -R,
+        "a value of zero softens nothing"
+    );
+    assert_eq!(received_by_hand(true, R, -100, R + 100), R + 100);
+    assert_eq!(received_by_hand(true, R, 100, R - 100), R - 100);
+    assert_eq!(
+        received_by_hand(true, 0, -100, 100),
+        100,
+        "a reward of zero is no punishment"
+    );
+    assert_eq!(received_by_hand(true, -1, -1, 0), -1, "one LSB below each");
+    for reward in [-R, -1, 0, 1, R] {
+        for value in [-R, -100, -1, 0, 1, 100, R] {
+            let error = ValueCritic::error_q16(reward, value);
+            assert_eq!(
+                received_by_hand(true, reward, value, error),
+                ValueCritic::received_q16(reward, value),
+                "{reward} {value}: the hand rule is the engine's"
+            );
+            assert_eq!(received_by_hand(false, reward, value, error), error);
+        }
+    }
+    // ---------------------------------------------------------------- the image's patch
+    // On the instrument's network before any settling, its image carrying the inhibitory
+    // baseline and the signed gate as the arms' do and the critic with its window as H-23's
+    // does: the flag's byte and the section's seal alone, read back by the loader, and refused
+    // on an image that carries no critic.
+    let p = prior(1024);
+    let exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    let flagged = signed_image(&inhibited_image(&Image::encode(&exec).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    let valued = valued_image(&flagged, VALUED_CRITIC);
+    let bytes = with_window_bytes(&valued, window);
+    let whole_bytes = with_whole_byte(&bytes, WHOLE_SET);
+    assert!(only_the_whole(&bytes, &whole_bytes));
+    let changed = differing(&bytes, &whole_bytes);
+    assert!(
+        !changed.is_empty() && changed.len() <= 9,
+        "the flag and the section's seal: {} bytes",
+        changed.len()
+    );
+    assert!(!only_the_whole(&bytes, &bytes), "the flag is not written");
+    assert!(
+        !only_the_whole(&whole_bytes, &whole_bytes),
+        "over an image that carries it already"
+    );
+    assert!(
+        !only_the_whole(&bytes, &with_whole_byte(&bytes, 2)),
+        "any other flag"
+    );
+    assert!(
+        !only_the_whole(&bytes, &with_whole_byte(&valued, WHOLE_SET)),
+        "an image that differs in the window's bytes too"
+    );
+    assert_eq!(with_whole_byte(&whole_bytes, 0), bytes);
+    let loaded = signed_from(&whole_bytes, 1024);
+    assert!(loaded.whole_punishment() && !signed_from(&bytes, 1024).whole_punishment());
+    assert_eq!(
+        (loaded.critic(), loaded.critic_window_ticks()),
+        (Some(VALUED_CRITIC), window),
+        "beside the critic and its window, as they were"
+    );
+    assert_eq!(
+        Image::encode(&loaded).expect("quiescent"),
+        whole_bytes,
+        "one image, twice"
+    );
+    assert!(
+        matches!(
+            Image::decode::<2048>(&with_whole_byte(&flagged, WHOLE_SET), config(1024, 2, 0)),
+            Err(ImageError::Config(
+                ConfigError::WholePunishmentWithoutCritic
+            ))
+        ),
+        "the flag without the critic is refused"
+    );
+    // ---------------------------------------------------- the criterion (ADR-0154)
+    // The verdict over tables written by hand, and the step it reaches. An arm of 120 blocks:
+    // each stimulus presented 32 times a block and answered 25, every coupling the image's, the
+    // excitatory sum the image's, and each stimulus's values the reward of 2c − n a block.
+    const RQ: i64 = REWARD_Q16 as i64;
+    let image = DEALT_COUPLINGS_1024;
+    let (_, image_excitatory) = QUIET_1024[SETTLED].1;
+    let outside = answered_outside(image_excitatory, &image);
+    let block = |correct: [u32; 2]| AnsweredBlock {
+        presented: [32, 32],
+        correct,
+        values: correct.map(|c| (2 * i64::from(c) - 32) * RQ),
+        sums: (0, image_excitatory),
+        couplings: image,
+        ..NO_BLOCK
+    };
+    let arm = || vec![block([25, 25]); SCHEDULE_BLOCKS];
+    // An arm whose mapping of index `m` stays at 39 of 64 for its first `below` blocks.
+    let late = |below: usize, m: usize| {
+        let mut blocks = arm();
+        for b in blocks.iter_mut().skip(MAPPINGS[m].0).take(below) {
+            *b = block([20, 19]);
+        }
+        blocks
+    };
+    let good = arm();
+    let yes = unsoftened(&image, outside, [&good, &good]);
+    assert_eq!(
+        yes,
+        Whole {
+            answered: answered(&image, outside, [&good, &good]),
+            in_time: [[true; 3]; 2],
+            yes: true,
+        }
+    );
+    assert!(yes.answered.yes, "H-29's four hold on the same tables");
+    assert_eq!(whole_step(&yes), 3);
+    // Clause 5 at its edge: a reversal that passes 40 of 64 in its 23rd block holds, and in its
+    // 24th does not; each reversal of each arm is read, and the first mapping, no reversal, is
+    // not.
+    for (k, m) in [(0usize, 1usize), (0, 2), (1, 3), (1, 1)] {
+        let at_edge = late(22, m);
+        let past = late(23, m);
+        assert_eq!(
+            (
+                answered_crossings(&at_edge)[m],
+                answered_crossings(&past)[m]
+            ),
+            (Some(23), Some(24))
+        );
+        let pair = |blocks: &[AnsweredBlock]| {
+            if k == 0 {
+                unsoftened(&image, outside, [blocks, &good])
+            } else {
+                unsoftened(&image, outside, [&good, blocks])
+            }
+        };
+        let holds = pair(&at_edge);
+        assert_eq!(
+            (holds.in_time, holds.yes, whole_step(&holds)),
+            ([[true; 3]; 2], true, 3),
+            "arm {k}, mapping {m}: at the bound"
+        );
+        let fails = pair(&past);
+        let mut in_time = [[true; 3]; 2];
+        in_time[k][m - 1] = false;
+        assert_eq!(
+            (fails.in_time, fails.yes, whole_step(&fails)),
+            (in_time, false, 6),
+            "arm {k}, mapping {m}: one block past it"
+        );
+        assert!(fails.answered.yes, "on clause 5 alone");
+    }
+    let first_slow = late(23, 0);
+    assert_eq!(answered_crossings(&first_slow)[0], Some(24));
+    assert!(
+        unsoftened(&image, outside, [&first_slow, &good]).yes,
+        "the first mapping is learned, not revised: clause 5 does not read it"
+    );
+    // A reversal that passes only in its 31st block, its last two holding clause 1: step 6. One
+    // that never passes fails clause 1 too, which is read first: step 5.
+    let last_two = late(30, 2);
+    let no = unsoftened(&image, outside, [&last_two, &good]);
+    assert_eq!(
+        (
+            answered_crossings(&last_two)[2],
+            no.answered.yes,
+            whole_step(&no)
+        ),
+        (Some(31), true, 6)
+    );
+    let never = late(32, 2);
+    let no = unsoftened(&image, outside, [&good, &never]);
+    assert_eq!(
+        (
+            answered_crossings(&never)[2],
+            no.in_time[1],
+            no.answered.learned[1],
+            whole_step(&no)
+        ),
+        (None, [true, false, true], [true, true, false, true], 5),
+        "clause 1 is read before clause 5"
+    );
+    // Clause 3 is read before every other, and clause 5 before clauses 2 and 4.
+    let low = (outside * 3).div_euclid(4);
+    let coupled = image_excitatory - outside;
+    let mut left = late(23, 1);
+    left[100].sums.1 = coupled + low - 1;
+    let no = unsoftened(&image, outside, [&left, &good]);
+    assert_eq!(
+        (no.answered.held, no.in_time[0], whole_step(&no)),
+        ([false, true], [false, true, true], 4),
+        "clause 3 is read first"
+    );
+    let bound = image[1][2] * BOUND_PER_CENT / 100;
+    let over = |mut blocks: Vec<AnsweredBlock>| {
+        blocks[70].couplings[1][2] = bound + 1;
+        blocks[70].sums.1 = image_excitatory + bound + 1 - image[1][2];
+        blocks
+    };
+    let no = unsoftened(&image, outside, [&over(late(23, 3)), &good]);
+    assert_eq!(
+        (no.answered.bounded, no.in_time[0], whole_step(&no)),
+        ([false, true], [true, true, false], 6),
+        "clause 5 is read before clause 2"
+    );
+    let no = unsoftened(&image, outside, [&good, &over(arm())]);
+    assert_eq!(
+        (no.answered.bounded, no.in_time, whole_step(&no)),
+        ([true, false], [[true; 3]; 2], 7),
+        "clause 2 with clause 5 holding"
+    );
+    let off = |mut blocks: Vec<AnsweredBlock>| {
+        blocks[119].values[0] = 18 * RQ + 16 * RQ + 1;
+        blocks
+    };
+    let no = unsoftened(&image, outside, [&off(arm()), &good]);
+    assert_eq!(
+        (
+            no.answered.expected[0][3],
+            no.answered.bounded,
+            whole_step(&no)
+        ),
+        ([false, true], [true; 2], 8),
+        "clause 4 alone"
+    );
+    let no = unsoftened(&image, outside, [&off(over(arm())), &good]);
+    assert_eq!(whole_step(&no), 7, "clause 2 is read before clause 4");
+    let no = unsoftened(&image, outside, [&off(late(23, 1)), &good]);
+    assert_eq!(whole_step(&no), 6, "and clause 5 before clause 4");
+    // A run of any other length holds nothing, and its step is the network's.
+    let cut = &good[..SCHEDULE_BLOCKS - 1];
+    let no = unsoftened(&image, outside, [cut, &good]);
+    assert_eq!((no.yes, whole_step(&no)), (false, 4));
+    assert_eq!(
+        unsoftened(&image, outside, [&good[..56], &good]).in_time[0],
+        [true, false, false],
+        "a reversal the run does not reach is not in time"
+    );
+    // ------------------------------------------------ the readings' rules (brief 063)
+    assert_eq!(
+        [0, -100, 100, R, -R, i32::MIN, i32::MAX].map(punished_error),
+        [
+            -RQ,
+            -RQ + 100,
+            -RQ - 100,
+            -2 * RQ,
+            0,
+            -RQ + (1i64 << 31),
+            -RQ - i64::from(i32::MAX)
+        ],
+        "minus the reward, less the value"
+    );
+    assert_eq!(
+        [[3, 7, 5], [4, 4, 1], [0, 0, 0], [9, 2, 9]].map(top_two),
+        [(7, 5), (4, 4), (0, 0), (9, 9)]
+    );
+    // The trials' readings over trials written by hand. Every trial a rewarded one that reads
+    // nothing — correct, no count, no reward, no value, the signal at rest — but for those
+    // named. From the assignment the second mapping's answers are (1, 2): A's old answer is
+    // readout 0 and B's readout 1.
+    let assignment = first_answers(Reversal::AssignmentFirst);
+    let mirrored = first_answers(Reversal::MirroredFirst);
+    let mut trials: Vec<AnsweredTrial> = vec![(0, [0; 3], None, true, 0, 0, 0); SCHEDULE_TRIALS];
+    trials[0] = (0, [5, 2, 1], Some(0), true, R, 0, R);
+    trials[1] = (1, [3, 3, 0], None, false, -R + 100, -100, -R);
+    trials[2] = (1, [1, 4, 2], Some(1), true, R + 50, -50, 70_000);
+    trials[3] = (0, [0, 6, 1], Some(1), false, -R - 200, 200, -70_000);
+    let flip = SCHEDULE_FLIPS[0];
+    trials[flip] = (0, [9, 1, 1], Some(0), false, -R, -300, -1);
+    trials[flip + 1] = (1, [0, 8, 0], Some(1), false, -R - 10, 10, 5);
+    trials[flip + 2] = (0, [2, 0, 7], Some(2), false, -R, -1, 0);
+    let read = trials_read(assignment, &trials);
+    assert_eq!(
+        read,
+        TrialsRead {
+            below: [
+                (1, -RQ + 100, -RQ + 100),
+                (2, -2 * RQ + 301, -2 * RQ),
+                (0, 0, 0),
+                (0, 0, 0)
+            ],
+            above: [(1, -RQ - 200), (1, -RQ - 10), (0, 0), (0, 0)],
+            rewarded: [(1534, 2 * RQ + 50), (2045, 0), (2048, 0), (2048, 0)],
+            old: [
+                [(1, 1, -RQ + 300, -RQ), (1, 0, -RQ - 10, -RQ - 10)],
+                [(0, 0, 0, 0); 2],
+                [(0, 0, 0, 0); 2]
+            ],
+            signal: [
+                (2, 2, -70_000, 70_000),
+                (0, 0, -1, 5),
+                (0, 0, 0, 0),
+                (0, 0, 0, 0)
+            ],
+            margin: [(1534, 18), (2045, 24), (2048, 0), (2048, 0)],
+        },
+        "the punished trials by the value's sign, the rewarded, the old answer's, the signal at the gate's bounds and the margin"
+    );
+    assert_eq!(
+        trials_read(mirrored, &trials).old,
+        [[(0, 0, 0, 0); 2]; 3],
+        "by the arm's own answers: under (2, 1) A's old answer is readout 1 and B's readout 0"
+    );
+    let short = trials_read(assignment, &trials[..4]);
+    assert_eq!(
+        (
+            short.rewarded,
+            short.below[0],
+            short.above[0],
+            short.signal,
+            short.margin,
+            short.old
+        ),
+        (
+            [(2, 2 * RQ + 50), (0, 0), (0, 0), (0, 0)],
+            (1, -RQ + 100, -RQ + 100),
+            (1, -RQ - 200),
+            [
+                (2, 2, -70_000, 70_000),
+                (0, 0, 0, 0),
+                (0, 0, 0, 0),
+                (0, 0, 0, 0)
+            ],
+            [(2, 18), (0, 0), (0, 0), (0, 0)],
+            [[(0, 0, 0, 0); 2]; 3]
+        ),
+        "zeros for a mapping the run does not reach"
+    );
+    // The blocks below minus half the reward: exactly minus half is not below.
+    let mut means: Vec<[i64; 2]> = vec![[0, 0]; SCHEDULE_BLOCKS];
+    means[24] = [-RQ / 2, -RQ / 2 - 1];
+    means[30] = [-40_000, 10];
+    means[119] = [-RQ, -RQ];
+    assert_eq!(below_half(&means), [[0, 0], [1, 1], [0, 0], [1, 1]]);
+    assert_eq!(below_half(&means[..30]), [[0, 0], [0, 1], [0, 0], [0, 0]]);
+    // The predicted readings' rules. (a): fewer blocks than H-29's, per flip and stimulus.
+    assert_eq!(
+        lets_go_sooner([[4, 5], [0, 3], [7, 7]], [[5, 5], [1, 3], [6, 8]]),
+        [[true, false], [true, false], [false, true]]
+    );
+    // (b): fewer blocks than its own in H-29; the first mapping is not read.
+    assert_eq!(
+        faster(
+            [Some(9), Some(20), None, Some(30)],
+            [Some(1), Some(21), Some(31), None]
+        ),
+        [true, false, true],
+        "a reversal that never passed is not faster, and one that passed where H-29's never did is"
+    );
+    assert_eq!(
+        faster(
+            [None, Some(21), Some(22), None],
+            [None, Some(21), Some(21), None]
+        ),
+        [false, false, false],
+        "as many blocks is not fewer"
+    );
+    // (c): fewer blocks below minus half the reward than in H-29; the first mapping is not read.
+    assert_eq!(
+        recovers_sooner(
+            [[9, 9], [4, 5], [0, 3], [7, 7]],
+            [[0, 0], [5, 5], [1, 3], [6, 8]]
+        ),
+        [[true, false], [true, false], [false, true]]
+    );
+    // (d): the old answer's coupling, the role before the answer's, below the image's at the
+    // mapping's last block's end.
+    let mut course = [[[[10_000i64; 3]; ANSWERS]; 2]; 4];
+    course[0][0][1][2] = 9_000;
+    course[1][0][1] = [8_000, 11_000, 9_999];
+    course[1][1][1] = [8_000, 9_999, 10_000];
+    course[2][0][0][2] = 9_000;
+    course[2][1][2][2] = 9_000;
+    course[3][1][1][2] = 1;
+    assert_eq!(
+        old_below_image(&course),
+        [[true, false], [false, false], [false, true]],
+        "the old answer's last, and no other role's, no earlier block's and not the first mapping's"
+    );
+    // Trials of the task with three readouts on the instrument's network, the whole punishment
+    // set, beside the same trials with it unset: every oracle held at every trial of both, the
+    // two runs one up to the first trial at which a punishment meets a value below zero, and
+    // at every trial of the set run the modulator receiving the reward where the reward and the
+    // value are both below zero and the reward less the value everywhere else.
+    let taken_sets = answered_sets(&DEAL_1024);
+    let gate_run = |image: &[u8]| {
+        let mut engine = signed_from(image, 1024);
+        answered_run(
+            &mut engine,
+            &taken_sets,
+            assignment,
+            Feedback::Answer,
+            WHOLE_DELIVERY,
+            WHOLE_GATE_TRIALS,
+        )
+    };
+    let unset = gate_run(&bytes);
+    let set = gate_run(&whole_bytes);
+    eprintln!("DUMP whole gate: unset {:?} set {:?}", unset.read, set.read);
+    let (at, value) = parts_at_first_met("the gate", &unset.read, &set.read);
+    assert!(
+        value < 0 && at.saturating_add(1) < WHOLE_GATE_TRIALS,
+        "the runs go on past trial {at}"
+    );
+    assert_ne!(set.read[at..], unset.read[at..]);
+    let mut wholes = 0u32;
+    for (t, trial) in set.read.iter().enumerate() {
+        let given = if trial.3 { RQ } else { -RQ };
+        let whole_here = !trial.3 && trial.5 < 0;
+        wholes = wholes.saturating_add(u32::from(whole_here));
+        assert_eq!(
+            i64::from(trial.4),
+            if whole_here {
+                -RQ
+            } else {
+                given - i64::from(trial.5)
+            },
+            "trial {t}: the reward where both are below zero, the reward less the value elsewhere"
+        );
+        assert_eq!(trial.2, largest_alone(trial.1));
+    }
+    assert!(wholes >= 1, "a punishment met a value below zero");
+    for (t, trial) in unset.read.iter().enumerate() {
+        assert_eq!(
+            i64::from(trial.4) + i64::from(trial.5),
+            if trial.3 { RQ } else { -RQ },
+            "trial {t}: unset, the error and the value are the reward"
+        );
+    }
+}
+
+// ---------------------------------------------- H-29's trials by brief 063's reader (ADR-0156)
+
+/// H-29's two arms' trials by `trials_read`, in `ANSWERED_ARMS`'s order: what brief 063 reads
+/// of H-30's trials, read of H-29's so that the two stand side by side. With the parameter
+/// unset what the modulator received at a punished trial is the critic's error, so each
+/// `below` and `old` holds one sum twice. H-29's arms hold it; no pinned number of theirs
+/// moves.
+const ANSWERED_TRIALS_1024: [Option<TrialsRead>; 2] = [Some(H29_TRIALS_A), Some(H29_TRIALS_M)];
+const H29_TRIALS_A: TrialsRead = TrialsRead {
+    below: [
+        (137, -7763534, -7763534),
+        (1417, -27900906, -27900906),
+        (1472, -36801582, -36801582),
+        (972, -32997325, -32997325),
+    ],
+    above: [
+        (228, -20700912),
+        (153, -12635499),
+        (85, -6453771),
+        (131, -10930967),
+    ],
+    rewarded: [
+        (1171, 33306951),
+        (478, 38046962),
+        (491, 43396552),
+        (945, 47135277),
+    ],
+    old: [
+        [
+            (604, 559, -13028239, -13028239),
+            (554, 508, -13717088, -13717088),
+        ],
+        [
+            (466, 448, -10338825, -10338825),
+            (419, 396, -12684296, -12684296),
+        ],
+        [
+            (192, 168, -8484236, -8484236),
+            (368, 346, -12223438, -12223438),
+        ],
+    ],
+    signal: [
+        (222, 170, -165707, 131844),
+        (201, 330, -193994, 172980),
+        (181, 388, -139673, 183936),
+        (216, 363, -152463, 163589),
+    ],
+    margin: [(621, 14045), (1069, 16933), (1323, 14974), (1123, 16389)],
+};
+const H29_TRIALS_M: TrialsRead = TrialsRead {
+    below: [
+        (292, -14720951, -14720951),
+        (1229, -27734909, -27734909),
+        (1070, -34136246, -34136246),
+        (1081, -32102125, -32102125),
+    ],
+    above: [
+        (150, -14073227),
+        (162, -15218237),
+        (119, -11224804),
+        (157, -13657436),
+    ],
+    rewarded: [
+        (1094, 33791635),
+        (657, 40410530),
+        (859, 47394462),
+        (810, 47091440),
+    ],
+    old: [
+        [
+            (615, 589, -12599784, -12599784),
+            (352, 286, -14450424, -14450424),
+        ],
+        [
+            (187, 162, -7941217, -7941217),
+            (404, 382, -12605473, -12605473),
+        ],
+        [
+            (401, 350, -13256278, -13256278),
+            (364, 327, -13574313, -13574313),
+        ],
+    ],
+    signal: [
+        (236, 198, -165481, 145342),
+        (237, 313, -197891, 172928),
+        (237, 378, -166996, 177160),
+        (258, 372, -191103, 184770),
+    ],
+    margin: [(667, 13865), (1069, 16860), (1191, 15611), (1111, 16195)],
+};
+
+// ----------------------------------------------- the calibration's pins (brief 063, ADR-0156)
+
+/// The image each arm of H-30 decodes, its CRC-64: H-29's with the whole punishment's flag
+/// written and nothing else, committed before any rewarded run of the protocol.
+const WHOLE_IMAGE_CRC_1024: Option<u64> = Some(0x9bd4d0dbfc9e78c0);
+
+/// Per arm, the first trial at which a reward below zero meets a value below zero, by index,
+/// and the value there: up to it the arm is H-29's, trial for trial, and at it the two part.
+/// Read by the calibration and committed before any rewarded run of the protocol: from the
+/// assignment the fourth trial, against a value of −1 600, 0.024 of the reward, and from the
+/// mirrored assignment the seventh, against −208, 0.003 of it.
+const WHOLE_FIRST_MET_1024: [Option<(usize, i32)>; 2] = [Some((3, -1600)), Some((6, -208))];
+
+// ----------------------------------------------------- the arms' tables (brief 063, ADR-0156)
+
+/// The two arms at 1 024 units, in `WHOLE_ARMS`'s order, each pinned whole from one run: the
+/// blocks, the accuracy sequence's hash, every trial's reading's hash, the couplings after the
+/// first trial of each new mapping, and the readings.
+const WHOLE_BLOCKS_1024: [&[AnsweredBlock]; 2] = [&[], &[]];
+const WHOLE_TRACES_1024: [u64; 2] = [0; 2];
+const WHOLE_READ_1024: [u64; 2] = [0; 2];
+const WHOLE_AT_FLIPS_1024: [Option<[[[i64; ANSWERS]; 2]; 3]>; 2] = [None; 2];
+const WHOLE_READINGS_1024: [Option<WholeRead>; 2] = [None; 2];
