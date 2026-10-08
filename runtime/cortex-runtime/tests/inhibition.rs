@@ -175672,6 +175672,100 @@ fn whole_read(k: usize, run: &AnsweredRun) -> WholeRead {
     }
 }
 
+/// A run's trials' readings held to its blocks (brief 063), per mapping: the punished and the
+/// rewarded trials are the mapping's trials; the rewarded ones are the blocks' correct ones;
+/// what the modulator received sums to the blocks' errors; and, per flip and stimulus, the
+/// trials that selected the old answer are the blocks' selections of the readout before the
+/// answer. `whole` says whether the run's engine carried the whole punishment: then every
+/// punished trial under a value below zero received the reward itself, which is no softer than
+/// the critic's error, and otherwise it received the critic's error.
+fn trials_hold(
+    name: &str,
+    whole: bool,
+    first: [usize; 2],
+    blocks: &[AnsweredBlock],
+    read: &TrialsRead,
+) {
+    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
+    let roled = by_role(first, blocks);
+    for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+        let mine = blocks.iter().take(to).skip(from);
+        let trials = to.saturating_sub(from).saturating_mul(BLOCK) as u32;
+        let correct = mine.clone().fold(0u32, |sum, b| {
+            sum.saturating_add(b.correct[0])
+                .saturating_add(b.correct[1])
+        });
+        let received = mine.fold(0i64, |sum, b| {
+            sum.saturating_add(b.errors[0]).saturating_add(b.errors[1])
+        });
+        let (below, above, rewarded) = (read.below[m], read.above[m], read.rewarded[m]);
+        assert_eq!(
+            below.0.saturating_add(above.0).saturating_add(rewarded.0),
+            trials,
+            "{name}, mapping {m}: the punished and the rewarded trials are the mapping's"
+        );
+        assert_eq!(
+            rewarded.0, correct,
+            "{name}, mapping {m}: the rewarded trials are the blocks' correct ones"
+        );
+        assert_eq!(
+            below.2.saturating_add(above.1).saturating_add(rewarded.1),
+            received,
+            "{name}, mapping {m}: what the modulator received sums to the blocks' errors"
+        );
+        let whole_punishments = i64::from(REWARD_Q16)
+            .saturating_neg()
+            .saturating_mul(i64::from(below.0));
+        if whole {
+            assert_eq!(
+                below.2, whole_punishments,
+                "{name}, mapping {m}: every punishment under a value below zero is received whole"
+            );
+            assert!(
+                below.1 >= below.2,
+                "{name}, mapping {m}: the critic's errors are no larger a punishment"
+            );
+        } else {
+            assert_eq!(
+                below.1, below.2,
+                "{name}, mapping {m}: unset, the modulator receives the critic's error"
+            );
+            assert!(
+                below.2 >= whole_punishments,
+                "{name}, mapping {m}: softer than the reward"
+            );
+        }
+        assert!(
+            read.signal[m].2 <= read.signal[m].3,
+            "{name}, mapping {m}: the lowest signal at most the highest"
+        );
+        assert!(
+            read.signal[m].0.saturating_add(read.signal[m].1) <= trials
+                && read.margin[m].0 <= trials,
+            "{name}, mapping {m}: counts of the mapping's trials"
+        );
+    }
+    for (f, of_flip) in read.old.iter().enumerate() {
+        for (s, &(selected, below, errors, received)) in of_flip.iter().enumerate() {
+            assert_eq!(
+                selected,
+                roled[f.saturating_add(1)][s][1],
+                "{name}, flip {f}, stimulus {s}: the old answer's trials are the blocks' selections of the readout before the answer"
+            );
+            assert!(
+                below <= selected,
+                "{name}, flip {f}, stimulus {s}: those under a value below zero are among them"
+            );
+            if !whole {
+                assert_eq!(
+                    errors, received,
+                    "{name}, flip {f}, stimulus {s}: unset, the error is what was received"
+                );
+            }
+        }
+    }
+}
+
 // ------------------------------------------------------- the calibration (brief 063)
 
 /// The first trial of a run at which a reward below zero meets a value below zero, by a hand
@@ -176423,6 +176517,18 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
         [[true, false], [false, false], [false, true]],
         "the old answer's last, and no other role's, no earlier block's and not the first mapping's"
     );
+    // H-29's trials by this round's reader, held to H-29's pinned blocks: the pin written from
+    // the last round's dumps is the blocks' in every number the two share.
+    for (k, &arm) in ANSWERED_ARMS.iter().enumerate() {
+        let h29 = ANSWERED_TRIALS_1024[k].expect("H-29's trials' readings");
+        trials_hold(
+            &format!("H-29 {arm:?}"),
+            false,
+            first_answers(arm),
+            ANSWERED_BLOCKS_1024[k],
+            &h29,
+        );
+    }
     // Trials of the task with three readouts on the instrument's network, the whole punishment
     // set, beside the same trials with it unset: every oracle held at every trial of both, the
     // two runs one up to the first trial at which a punishment meets a value below zero, and
