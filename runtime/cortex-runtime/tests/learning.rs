@@ -179,7 +179,8 @@ fn task(units: u32, feedback: Feedback, mirrored: bool) -> Task {
         window: Window::whole(TRIAL_TICKS),
         seed: SEED,
         reward_q16: REWARD_Q16,
-        mirrored,
+        // The flag's two values as answers (ADR-0152): the assignment, or the mirrored one.
+        answers: if mirrored { [1, 0] } else { [0, 1] },
         feedback,
         delivery: Delivery::Global,
         critic: None,
