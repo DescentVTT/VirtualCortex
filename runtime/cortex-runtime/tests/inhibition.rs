@@ -6146,11 +6146,11 @@ const REVERSAL_CENSUS_1024: [&[(u32, u64)]; 2] = [
 /// The one inhibited image both arms decode, its CRC-64: the same bytes in both tests. Since
 /// ADR-0094 the image's format is not the one H-17 read, so its header's version and seal are
 /// not the bytes H-17 read, and ADR-0095 pins the image as it is now beside the CRC H-17 read;
-/// ADR-0114 moved the format from 16 to 17, ADR-0123 from 17 to 18, ADR-0131 from 18 to 19 and
-/// ADR-0134 from 19 to 20, and each re-pinned it the same way (it was `0xd2965219775c394a` at
-/// format 16, `0x938ad516b6badd90` at 17, `0x50af5c06f491f0fe` at 18 and `0x11b3db0935771424` at
-/// 19).
-const REVERSAL_IMAGE_CRC_1024: u64 = 0x443ce10ddfc9b4a7;
+/// ADR-0114 moved the format from 16 to 17, ADR-0123 from 17 to 18, ADR-0131 from 18 to 19,
+/// ADR-0134 from 19 to 20 and ADR-0155 from 20 to 21, and each re-pinned it the same way (it was
+/// `0xd2965219775c394a` at format 16, `0x938ad516b6badd90` at 17, `0x50af5c06f491f0fe` at 18,
+/// `0x11b3db0935771424` at 19 and `0x443ce10ddfc9b4a7` at 20).
+const REVERSAL_IMAGE_CRC_1024: u64 = 0x052066021e2f507d;
 /// The same image with its header's version written back to 15 and the header resealed: the
 /// CRC-64 H-17 read (ADR-0091), so that every byte of the image but the version and the seal is
 /// the image H-17 ran from (ADR-0095).
@@ -13846,12 +13846,13 @@ const PUNISHED_MOVES_1024: [&[MovesBlock]; 2] = [
     ],
 ];
 /// The one signed image every arm of H-18, H-19 and H-20 decodes, its CRC-64. ADR-0114 moved
-/// the format from 16 to 17, ADR-0123 from 17 to 18, ADR-0131 from 18 to 19 and ADR-0134 from 19
-/// to 20, so its header's version and seal are not the bytes those arms read; the image as it is
-/// now, re-pinned as ADR-0095 re-pinned H-17's (it was `0x766de462f9b77576` at format 17,
-/// `0xb5486d72bb9c5818` at 18, the CRC H-21 read, and `0xf454ea7d7a7abcc2` at 19, the CRC H-22
-/// read).
-const PUNISHED_IMAGE_CRC_1024: u64 = 0xa1dbd07990c41c41;
+/// the format from 16 to 17, ADR-0123 from 17 to 18, ADR-0131 from 18 to 19, ADR-0134 from 19 to
+/// 20 and ADR-0155 from 20 to 21, so its header's version and seal are not the bytes those arms
+/// read; the image as it is now, re-pinned as ADR-0095 re-pinned H-17's (it was
+/// `0x766de462f9b77576` at format 17, `0xb5486d72bb9c5818` at 18, the CRC H-21 read,
+/// `0xf454ea7d7a7abcc2` at 19, the CRC H-22 read, and `0xa1dbd07990c41c41` at 20, the CRC H-23
+/// to H-29 read).
+const PUNISHED_IMAGE_CRC_1024: u64 = 0xe0c757765122f89b;
 /// The same image with its header's version written back to 16 and the header resealed: the
 /// CRC-64 H-18, H-19 and H-20 read (ADR-0096, ADR-0108, ADR-0110), so that every byte of the
 /// image but the version and the seal is the image they ran from (ADR-0114, as ADR-0095).
@@ -14526,8 +14527,8 @@ fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
         (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
-        (0xa1db_d079_90c4_1c41, 0x3771_636d_3851_91ac),
-        "H-18's image, at format 20 and as read at format 16"
+        (0xe0c7_5776_5122_f89b, 0x3771_636d_3851_91ac),
+        "H-18's image, at format 21 and as read at format 16"
     );
     // The criterion's clauses 1 and 2 at their edges over blocks written by hand, as H-18's.
     let blocks_of = |correct: &[u32]| -> Vec<Block> {
@@ -22324,8 +22325,8 @@ fn a_few_trials_over_a_schedule_at_1024_units_and_the_rules_of_the_schedule() {
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
         (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
-        (0xa1db_d079_90c4_1c41, 0x3771_636d_3851_91ac),
-        "H-19's image, H-18's, at format 20 and as H-19 read it at format 16"
+        (0xe0c7_5776_5122_f89b, 0x3771_636d_3851_91ac),
+        "H-19's image, H-18's, at format 21 and as H-19 read it at format 16"
     );
     // The schedule's rule: the mapping in force is the other than the first from the 1 537th
     // trial to the 3 584th and from the 5 633rd to the last; under H-19's one flip, from the
@@ -29795,8 +29796,8 @@ fn the_target_s_rule_the_clauses_of_h_21_and_the_image_s_patch() {
     );
     assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
     assert_eq!(
-        PUNISHED_IMAGE_CRC_1024, 0xa1db_d079_90c4_1c41,
-        "H-20's image, at format 20 (ADR-0134)"
+        PUNISHED_IMAGE_CRC_1024, 0xe0c7_5776_5122_f89b,
+        "H-20's image, at format 21 (ADR-0155)"
     );
     assert_eq!(
         (
@@ -41886,8 +41887,8 @@ fn the_critic_s_arithmetic_the_clauses_of_h_22_and_the_image_s_patch() {
     assert_eq!((CRITIC_AT, GROUPS, REWARD_Q16), (48, 6, ONE));
     assert_eq!(TARGET_PERIOD_1024, 58_201);
     assert_eq!(
-        TARGET_IMAGE_CRC_1024, 0xbb74_52f9_fec5_e146,
-        "H-21's image, at format 20 (ADR-0134)"
+        TARGET_IMAGE_CRC_1024, 0xfa68_d5f6_3f23_059c,
+        "H-21's image, at format 21 (ADR-0155)"
     );
     assert_eq!(
         (SCHEDULE_TRIALS, SCHEDULE_FLIPS, MAPPINGS),
@@ -42344,10 +42345,11 @@ fn the_critic_s_arithmetic_the_clauses_of_h_22_and_the_image_s_patch() {
 
 // ----------------------------------------------------------- the measurement (brief 055)
 
-/// H-21's image by its CRC-64: H-20's with the target period written (ADR-0129), at format 20
-/// (it was `0xafe7eff2d59da51f` at 18, the CRC H-21 read, and `0xeefb68fd147b41c5` at 19, the CRC
-/// H-22 read; ADR-0134 re-pinned it with the format as ADR-0095 re-pinned H-17's).
-const TARGET_IMAGE_CRC_1024: u64 = 0xbb7452f9fec5e146;
+/// H-21's image by its CRC-64: H-20's with the target period written (ADR-0129), at format 21
+/// (it was `0xafe7eff2d59da51f` at 18, the CRC H-21 read, `0xeefb68fd147b41c5` at 19, the CRC
+/// H-22 read, and `0xbb7452f9fec5e146` at 20, the CRC H-23 to H-29 read; ADR-0134 and ADR-0155
+/// re-pinned it with the format as ADR-0095 re-pinned H-17's).
+const TARGET_IMAGE_CRC_1024: u64 = 0xfa68d5f63f23059c;
 /// The same image with its header's version written back to 18 and the header resealed: the
 /// CRC-64 H-21 read (ADR-0129), so that every byte of the image but the version and the seal is
 /// the image H-21 ran from (ADR-0134, as ADR-0095).
@@ -54034,11 +54036,11 @@ fn the_window_s_rule_its_arithmetic_the_clauses_of_h_23_and_the_image_s_patch() 
             WINDOWED_IMAGE_CRC_1024
         ),
         (
-            0xeae8_ad81_9564_a88a,
+            0xabf4_2a8e_5482_4c50,
             0xbf67_9785_7fda_0809,
-            0x5044_ed79_36a7_b5f3
+            0x1158_6a76_f741_5129
         ),
-        "H-22's image at format 20 and as H-22 read it at 19, and the image each arm decodes"
+        "H-22's image at format 21 and as H-22 read it at 19, and the image each arm decodes"
     );
     // Clause 3's bound is the slowest reversal H-20 and H-21 read with the task's critic, both
     // arms: 23 blocks, H-21's first from the mirrored assignment.
@@ -54567,15 +54569,22 @@ fn the_window_s_rule_its_arithmetic_the_clauses_of_h_23_and_the_image_s_patch() 
 
 // ----------------------------------------------------------- the measurement (brief 056)
 
-/// H-22's image by its CRC-64: H-21's with the critic written (ADR-0132), at format 20.
-const VALUED_IMAGE_CRC_1024: u64 = 0xeae8ad819564a88a;
+/// H-22's image by its CRC-64: H-21's with the critic written (ADR-0132), at format 21 (it was
+/// `0xeae8ad819564a88a` at 20, the CRC H-23 to H-29 read; ADR-0155 re-pinned it with the format
+/// as ADR-0095 re-pinned H-17's).
+const VALUED_IMAGE_CRC_1024: u64 = 0xabf42a8e54824c50;
 /// The same image with its header's version written back to 19 and the header resealed: the
 /// CRC-64 H-22 read (ADR-0132), so that every byte of the image but the version and the seal is
 /// the image H-22 ran from (ADR-0134, as ADR-0095).
 const VALUED_IMAGE_CRC_FORMAT_19_1024: u64 = 0xbf6797857fda0809;
 /// The image each arm of H-23 decodes: H-22's with the window written at the length its rule
-/// reads, 100 ticks, committed before any rewarded run.
-const WINDOWED_IMAGE_CRC_1024: u64 = 0x5044ed7936a7b5f3;
+/// reads, 100 ticks, committed before any rewarded run. At format 21: ADR-0155 moved the format
+/// from 20 and re-pinned it as ADR-0095 re-pinned H-17's.
+const WINDOWED_IMAGE_CRC_1024: u64 = 0x11586a76f7415129;
+/// The same image with its header's version written back to 20 and the header resealed: the
+/// CRC-64 every arm from H-23's to H-29's read (ADR-0135 to ADR-0153), so that every byte of the
+/// image but the version and the seal is the image they ran from (ADR-0155, as ADR-0095).
+const WINDOWED_IMAGE_CRC_FORMAT_20_1024: u64 = 0x5044ed7936a7b5f3;
 
 /// The two arms at 1 024 units, in `WINDOWED_ARMS`'s order, each pinned whole from one run: the
 /// sight's blocks, the composition, the earned blocks, the moves, the strong punishments from the
@@ -66864,7 +66873,7 @@ fn the_clauses_of_h_24_the_network_s_oracle_and_the_readings_rules() {
         "clauses 1 and 2 are H-20's"
     );
     assert_eq!(
-        WINDOWED_IMAGE_CRC_1024, 0x5044_ed79_36a7_b5f3,
+        WINDOWED_IMAGE_CRC_1024, 0x1158_6a76_f741_5129,
         "H-23's image, the one each arm decodes"
     );
     // The image's outside sum: the settled image's excitatory sum less its four couplings.
@@ -84375,7 +84384,7 @@ fn the_clauses_of_h_25_the_drawn_sources_and_the_readings_rules() {
     );
     assert_eq!(
         (WINDOWED_IMAGE_CRC_1024, WINDOW_TICKS_1024),
-        (0x5044_ed79_36a7_b5f3, 100),
+        (0x1158_6a76_f741_5129, 100),
         "H-23's image, the one each arm decodes, and its window"
     );
     let outside = image_outside();
@@ -167943,6 +167952,17 @@ fn answered_census(sets: &AnsweredSets) -> [[u32; ANSWERS]; 2] {
 
 // ---------------------------------------------------------------- the run (brief 062)
 
+/// What the modulator receives at a reward, by a hand rule written from ADR-0154's text and
+/// not the engine's (brief 063): the critic's error, unless the engine carries the whole
+/// punishment and the reward and the value are both below zero; then the reward.
+fn received_by_hand(whole: bool, reward: i32, value: i32, error: i32) -> i32 {
+    if whole && reward < 0 && value < 0 {
+        reward
+    } else {
+        error
+    }
+}
+
 /// A run of an H-29 task on `exec` for `trials` trials (brief 062): ADR-0065's two stimuli
 /// with ADR-0076's cancel, the three readouts of `sets`, the answers `first` moved on at each
 /// of H-20's flips by `Task::flip`, under `feedback` — the answer's, or withheld for a frozen
@@ -167950,9 +167970,13 @@ fn answered_census(sets: &AnsweredSets) -> [[u32; ANSWERS]; 2] {
 /// readout window first, as `run_on_scheduled` runs it. At every trial the harness holds:
 /// - the task's answers to the hand rule (`answers_at`), the selection to the hand rule
 ///   (`largest_alone`), and `correct` to the two;
-/// - under the engine's critic, its value, the error the modulator received, every unit's
-///   weight and the window's opening to the critic's oracle (`value_step`), as
-///   `earned_run_held` holds them;
+/// - under the engine's critic, its value, every unit's weight and the window's opening to the
+///   critic's oracle (`value_step`), as `earned_run_held` holds them, and what the modulator
+///   received to a hand rule: the oracle's error, or, on an engine that carries the whole
+///   punishment (ADR-0155), the reward itself where the reward and the oracle's value are both
+///   below zero (`received_by_hand`);
+/// - the signal after the reward to the signal the last reward left, decayed over the trial's
+///   ticks (`signal_course`), plus what the hand rule says the modulator received;
 /// - the address the delivery wrote: under the drawn delivery its sources exactly the units
 ///   the critic's oracle counted, under the addressed one the presented stimulus's units, and
 ///   its targets the selected readout's units, none where nothing was selected;
@@ -168023,11 +168047,14 @@ fn answered_run(
     // weights and the counts as the record and the executor hold them at the start, the tick
     // the train was last read to, and the tick the window opened at.
     let engine_critic = exec.critic();
+    let whole = exec.whole_punishment();
     let mut weights: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
     let mut pending: Vec<u32> = exec.features().to_vec();
     let mut read_from = exec.ticks();
     let window = u64::from(exec.critic_window_ticks());
     let mut opened = exec.ticks();
+    // The signal the last reward left: at rest before the first.
+    let mut left = exec.modulator().dopamine_rpe;
     if engine_critic.is_some() {
         assert_eq!(
             feedback,
@@ -168157,7 +168184,12 @@ fn answered_run(
                     opened,
                     "trial {trial}: the window opens again at the reward"
                 );
-                (error, value)
+                assert_eq!(
+                    exec.prediction().map(|p| (p.value_q16, p.error_q16)),
+                    Some((value, error)),
+                    "trial {trial}: the engine's reading names the oracle's value and error"
+                );
+                (received_by_hand(whole, given, value, error), value)
             }
             None => {
                 assert_eq!(
@@ -168169,7 +168201,7 @@ fn answered_run(
         };
         assert_eq!(
             outcome.reward_q16, expected,
-            "trial {trial}: the reward's sign is the outcome's, less the engine's value under its critic, and none is withheld"
+            "trial {trial}: the reward's sign is the outcome's, less the engine's value under its critic but where a whole punishment meets a value below zero, and none is withheld"
         );
         // The address the delivery wrote at the trial's end.
         let sources: Vec<bool> = (0..units).map(|u| exec.is_source(u)).collect();
@@ -168205,6 +168237,12 @@ fn answered_run(
                 "trial {trial}: withheld, the signal stays at rest"
             );
         }
+        assert_eq!(
+            signal,
+            signal_end(&signal_course(left)).saturating_add(expected),
+            "trial {trial}: the signal is the one the last reward left, decayed over the trial, plus what the modulator received"
+        );
+        left = signal;
         // The network's oracle, held to the record, with every consolidation by its pair.
         let mut by_pair = [[[0i64; 2]; ANSWERS]; 2];
         let went = network.replay_each(exec, trial, answers, &mut |slot, amount| {
@@ -168809,6 +168847,11 @@ fn answered_images(name: &str) -> (Vec<u8>, Vec<u8>) {
         crc64(&windowed),
         WINDOWED_IMAGE_CRC_1024,
         "{name}: H-23's image, H-25's, the image this arm decodes"
+    );
+    assert_eq!(
+        crc64(&with_version(&windowed, 20)),
+        WINDOWED_IMAGE_CRC_FORMAT_20_1024,
+        "{name}: every byte but the header's version and seal is the image H-29 read (ADR-0095)"
     );
     (zero, windowed)
 }

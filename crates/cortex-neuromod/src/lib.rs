@@ -5,7 +5,9 @@
 //! The record's bytes for the image and the per-tick decay the executor applies are here too,
 //! and the rule of the critic that forms the prediction error the dopamine signal receives
 //! (ADR-0130, ADR-0131): the value, the error and the step over the units' value weights and
-//! their spikes since the previous reward, which the executor composes.
+//! their spikes since the previous reward, which the executor composes; and what the modulator
+//! receives where a punishment is delivered whole under a value below zero (ADR-0154,
+//! ADR-0155).
 
 #![no_std]
 // §8.1: an operation on a state field saturates or wraps by name; plain arithmetic is refused
@@ -172,9 +174,26 @@ impl ValueCritic {
     }
 
     /// The prediction error of a reward against the value: the reward less the value,
-    /// saturating. It is what the modulator receives in the reward's place.
+    /// saturating. It is what the modulator receives in the reward's place, but for a
+    /// punishment the value does not soften ([`received_q16`](Self::received_q16)), and what
+    /// moves the weights in every case.
     pub const fn error_q16(reward_q16: i32, value_q16: i32) -> i32 {
         reward_q16.saturating_sub(value_q16)
+    }
+
+    /// What the modulator receives at a reward against the value while a punishment is whole
+    /// (ADR-0154, ADR-0155): the reward less the value, saturating, unless the reward and the
+    /// value are both below zero; then the reward. A punishment the critic expected is not
+    /// softened by the expectation. It is written as the error against the value's part at or
+    /// above zero wherever the reward is below zero, which is the same number and compares the
+    /// reward alone. The critic's own error stays [`error_q16`](Self::error_q16): the weights
+    /// never move by this.
+    pub fn received_q16(reward_q16: i32, value_q16: i32) -> i32 {
+        if reward_q16 < 0 {
+            Self::error_q16(reward_q16, value_q16.max(0))
+        } else {
+            Self::error_q16(reward_q16, value_q16)
+        }
     }
 
     /// A weight after the step of `error_q16` on a unit that fired `count` times since the
@@ -445,6 +464,46 @@ mod tests {
         assert_eq!(at(31).step(0, -1_000, 1), at(30).step(0, -1_000, 1));
     }
 
+    /// What the modulator receives while a punishment is whole (ADR-0155), each number worked
+    /// by hand with the reward's magnitude 1.0: the four cases by the sign of the reward and of
+    /// the value, zero on either side, and the width and beyond it.
+    #[test]
+    fn a_punishment_under_a_value_below_zero_is_received_whole_and_every_other_reward_as_its_error()
+    {
+        let received = ValueCritic::received_q16;
+        let error = ValueCritic::error_q16;
+        // Both below zero: the reward, where the error is softer. −1.0 against −0.6.
+        assert_eq!(received(-0x1_0000, -0x9999), -0x1_0000);
+        assert_eq!(error(-0x1_0000, -0x9999), -0x6667, "the error, −0.4");
+        // A punishment against a value above zero: the error, more than the reward.
+        assert_eq!(received(-0x1_0000, 0x4000), -0x1_4000);
+        // A reward at or above zero: the error, whatever the value's sign.
+        assert_eq!(received(0x1_0000, -0x9999), 0x1_9999);
+        assert_eq!(received(0x1_0000, 0x4000), 0xC000);
+        // Zero on either side is not below zero.
+        assert_eq!(received(0, -5), 5, "a reward of zero is no punishment");
+        assert_eq!(received(0, 5), -5);
+        assert_eq!(received(0, 0), 0);
+        assert_eq!(received(-5, 0), -5, "a value of zero softens nothing");
+        assert_eq!(received(-5, 1), -6);
+        assert_eq!(received(-5, -1), -5, "one LSB below zero, whole");
+        assert_eq!(error(-5, -1), -4);
+        assert_eq!(received(-1, -1), -1, "where the error is nothing");
+        assert_eq!(received(1, -1), 2);
+        // The width, and beyond it.
+        assert_eq!(received(i32::MIN, -1), i32::MIN);
+        assert_eq!(received(i32::MIN, i32::MIN), i32::MIN, "the error is zero");
+        assert_eq!(received(i32::MIN, 1), i32::MIN, "saturates");
+        assert_eq!(received(i32::MIN, i32::MAX), i32::MIN);
+        assert_eq!(received(-1, i32::MIN), -1, "the error is the width's top");
+        assert_eq!(error(-1, i32::MIN), i32::MAX);
+        assert_eq!(received(-1, i32::MAX), i32::MIN);
+        assert_eq!(received(i32::MAX, -1), i32::MAX, "saturates");
+        assert_eq!(received(i32::MAX, i32::MIN), i32::MAX);
+        assert_eq!(received(i32::MAX, i32::MAX), 0);
+        assert_eq!(received(0, i32::MIN), i32::MAX, "zero less the bottom");
+    }
+
     #[test]
     fn the_record_round_trips_through_its_sixteen_bytes() {
         let m = NeuromodulatorState {
@@ -513,6 +572,51 @@ mod prop {
             }
         }
         let mut rng = Lcg::new(0x94);
+        for _ in 0..100_000 {
+            check(rng.i32_edge_biased(), rng.i32_edge_biased());
+        }
+    }
+
+    /// What the modulator receives while a punishment is whole (ADR-0155), over the lattice's
+    /// pairs and a seeded walk of rewards and values, against a hand rule written from
+    /// ADR-0154's text in `i64`: the reward where the reward and the value are both below zero,
+    /// the reward less the value clamped to the width everywhere else. Beside it: it is the
+    /// critic's error wherever either is at or above zero, and never above the error.
+    #[test]
+    fn what_the_modulator_receives_is_the_reward_where_both_are_below_zero_and_the_error_elsewhere()
+    {
+        let check = |reward: i32, value: i32| {
+            let error = i64::from(reward)
+                .saturating_sub(i64::from(value))
+                .clamp(i64::from(i32::MIN), i64::from(i32::MAX));
+            let oracle = if reward < 0 && value < 0 {
+                i64::from(reward)
+            } else {
+                error
+            };
+            let received = ValueCritic::received_q16(reward, value);
+            assert_eq!(i64::from(received), oracle, "{reward} {value}");
+            assert_eq!(
+                i64::from(ValueCritic::error_q16(reward, value)),
+                error,
+                "{reward} {value}: the critic's error is the rule's as it was"
+            );
+            assert!(
+                i64::from(received) <= error,
+                "{reward} {value}: never softer than the error"
+            );
+            assert_eq!(
+                i64::from(received) == error,
+                reward >= 0 || value >= 0,
+                "{reward} {value}: the error but where both are below zero, and softer there"
+            );
+        };
+        for &reward in I32_LATTICE.iter() {
+            for &value in I32_LATTICE.iter() {
+                check(reward, value);
+            }
+        }
+        let mut rng = Lcg::new(0x155);
         for _ in 0..100_000 {
             check(rng.i32_edge_biased(), rng.i32_edge_biased());
         }

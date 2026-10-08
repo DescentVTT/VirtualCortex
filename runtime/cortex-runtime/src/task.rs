@@ -728,7 +728,9 @@ pub struct Outcome<const N: usize = 2> {
     /// then received (ADR-0148).
     pub correct: bool,
     /// The reward delivered, signed; zero when withheld. Under a critic, the prediction error
-    /// the modulator received (ADR-0107).
+    /// the modulator received (ADR-0107); under the engine's critic with the whole punishment
+    /// set (ADR-0155), what the modulator received, which is the reward itself where it and
+    /// the value were both below zero.
     pub reward_q16: i32,
     /// The modulator's dopamine signal after the reward.
     pub signal_q16: i32,
@@ -1070,9 +1072,10 @@ impl<const N: usize> Task<N> {
         };
         let signal_q16 = exec.reward(delivered_q16);
         // Under the engine's critic (ADR-0131) the modulator received the reward less the
-        // engine's value, which the executor read at this reward; unset, it reads none.
+        // engine's value, or the reward whole where a punishment met a value below zero while
+        // that is set (ADR-0155), which the executor read at this reward; unset, it reads none.
         let (reward_q16, value_q16) = match exec.prediction() {
-            Some(prediction) => (prediction.error_q16, Some(prediction.value_q16)),
+            Some(prediction) => (prediction.received_q16, Some(prediction.value_q16)),
             None => (delivered_q16, None),
         };
         Ok(Outcome {
@@ -2295,12 +2298,18 @@ mod tests {
 
     /// `network` with the engine's critic set (ADR-0131): a step of 2^-9 and a scale of 2^-2.
     fn valued(baseline_q16: i32) -> Executor<8> {
+        valued_whole(baseline_q16, false)
+    }
+
+    /// `valued` with the whole punishment set or unset (ADR-0155).
+    fn valued_whole(baseline_q16: i32, whole_punishment: bool) -> Executor<8> {
         let mut exec = Executor::<8>::new(Config {
             units: 16,
             injector_capacity: 64,
             train_capacity: spikes_per_unit(TICKS).saturating_mul(16) as usize,
             modulation_baseline_q16: baseline_q16,
             critic: Some(ValueCritic { shift: 9, scale: 2 }),
+            whole_punishment,
             ..Config::default()
         })
         .unwrap();
@@ -2377,7 +2386,8 @@ mod tests {
             exec.prediction(),
             Some(Prediction {
                 value_q16: 0,
-                error_q16: -REWARD
+                error_q16: -REWARD,
+                received_q16: -REWARD
             })
         );
         let fired = since(&mut exec, 0);
@@ -2442,6 +2452,130 @@ mod tests {
             exec.features().iter().any(|&c| c > 0),
             "the stimulus's spikes wait for the next reward"
         );
+    }
+
+    /// The whole punishment under a task (ADR-0155): the same trials on two engines that carry
+    /// the critic, one with the parameter unset and one with it set. A first tie is punished
+    /// against a value of zero, and the two trials are one. The same stimulus then ties again,
+    /// against the value its units now carry, below zero: unset, the trial records the error,
+    /// softer than the reward; set, it records the reward, which is what the modulator
+    /// received — the two signals part by exactly what the two records part by — while the
+    /// engine's reading names the error beside it. The weights move by the error on both
+    /// engines alike. A rewarded trial against a value below zero then records the error on
+    /// both: nothing changes where the reward is at or above zero.
+    #[test]
+    fn a_task_records_a_whole_punishment_as_what_the_modulator_received() {
+        let mut engines = [valued_whole(ONE / 2, false), valued_whole(ONE / 2, true)];
+        assert_eq!(
+            [engines[0].whole_punishment(), engines[1].whole_punishment()],
+            [false, true]
+        );
+        let mut tasks = [task(Feedback::Answer), task(Feedback::Answer)];
+        let weights = |exec: &Executor<8>| -> Vec<i16> {
+            exec.units().iter().map(|u| u.value_weight).collect()
+        };
+        // Trial 0, no readout cued: a tie, the reward −r against a value of zero.
+        let first = [0usize, 1].map(|k| tasks[k].trial(&mut engines[k], 0).unwrap());
+        assert_eq!(
+            first[0], first[1],
+            "against a value of zero the two are one trial"
+        );
+        assert_eq!(
+            (first[0].selection, first[0].reward_q16, first[0].value_q16),
+            (None, -REWARD, Some(0))
+        );
+        // The same stimulus again, uncued: a tie against the value its units now carry.
+        let s = first[0].stimulus;
+        let same = (1..16u64).find(|&k| tasks[0].stimulus_at(k) == s).unwrap();
+        for exec in engines.iter_mut() {
+            exec.run(400 - TICKS as u64);
+        }
+        let before = weights(&engines[0]);
+        assert_eq!(weights(&engines[1]), before, "one history so far");
+        let second = [0usize, 1].map(|k| tasks[k].trial(&mut engines[k], same).unwrap());
+        let value = second[0].value_q16.expect("the engine's value");
+        assert!(
+            value < 0 && value > -REWARD,
+            "{value}: the stimulus predicts the punishment it met"
+        );
+        let error = -REWARD - value;
+        for (k, received) in [error, -REWARD].into_iter().enumerate() {
+            assert_eq!(
+                (second[k].selection, second[k].correct, second[k].value_q16),
+                (None, false, Some(value)),
+                "engine {k}: a tie against one value"
+            );
+            assert_eq!(
+                second[k].reward_q16, received,
+                "engine {k}: the trial records what the modulator received"
+            );
+            assert_eq!(
+                engines[k].prediction(),
+                Some(Prediction {
+                    value_q16: value,
+                    error_q16: error,
+                    received_q16: received
+                }),
+                "engine {k}: the engine's reading names the error beside it"
+            );
+            assert_eq!(
+                second[k].signal_q16,
+                engines[k].modulator().dopamine_rpe,
+                "engine {k}"
+            );
+        }
+        assert_eq!(
+            second[1].signal_q16 - second[0].signal_q16,
+            value,
+            "the signals part by what the value would have softened"
+        );
+        let moved: Vec<i16> = before
+            .iter()
+            .zip(engines[0].units())
+            .map(|(&w, unit)| {
+                assert!(unit.value_weight <= w, "a punishment moves a weight down");
+                unit.value_weight
+            })
+            .collect();
+        assert_ne!(moved, before, "the units that fired moved");
+        assert_eq!(
+            weights(&engines[1]),
+            moved,
+            "the weights move by the error on both engines alike"
+        );
+        // The same stimulus with its answer cued: a reward against a value below zero is the
+        // error on both.
+        let third = (same.saturating_add(1)..64u64)
+            .find(|&k| tasks[0].stimulus_at(k) == s)
+            .unwrap();
+        let rewarded = [0usize, 1].map(|k| {
+            engines[k].run(400 - TICKS as u64);
+            cue(
+                &engines[k],
+                tasks[k].readout.sets()[usize::from(tasks[k].answer(s))],
+            );
+            tasks[k].trial(&mut engines[k], third).unwrap()
+        });
+        let value = rewarded[0].value_q16.expect("the engine's value");
+        assert!(value < 0, "{value}: still below zero");
+        for (k, outcome) in rewarded.iter().enumerate() {
+            assert!(outcome.correct, "engine {k}");
+            assert_eq!(
+                (outcome.reward_q16, outcome.value_q16),
+                (REWARD - value, Some(value)),
+                "engine {k}: a reward at or above zero is received as its error"
+            );
+            assert_eq!(
+                engines[k].prediction(),
+                Some(Prediction {
+                    value_q16: value,
+                    error_q16: REWARD - value,
+                    received_q16: REWARD - value
+                }),
+                "engine {k}"
+            );
+        }
+        assert_eq!(weights(&engines[0]), weights(&engines[1]));
     }
 
     #[test]
@@ -3749,7 +3883,8 @@ mod tests {
                     Some(0),
                     Some(Prediction {
                         value_q16: 0,
-                        error_q16: sign
+                        error_q16: sign,
+                        received_q16: sign
                     })
                 ),
                 "trial {trial} cued {cued}"
