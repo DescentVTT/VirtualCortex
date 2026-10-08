@@ -35,7 +35,11 @@ standing changes.
   path) are Implemented.
 - **It learns.** On the reference network at 1 024 units the engine learns a two-alternative task,
   revises it through three reversals with its couplings bounded, and holds a reward that is right
-  seven times in eight (H-13 to H-28). The learning configuration is H-25's
+  seven times in eight (H-13 to H-28). Asked a choice among three answers on that configuration,
+  it learns the first mapping as it learns one between two and does not revise every mapping
+  inside the schedule: H-29 read no, on one stimulus of one mapping of eight
+  ([ADR-0153](docs/adr/0153-three-answers-measured.md)). The task takes any number of readouts up
+  to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
   - the inhibitory synapses under a baseline of their own, with the inhibitory rule's target at the
