@@ -11,7 +11,11 @@ decision-makers: VirtualCortex maintainers
 
 [ADR-0153](0153-three-answers-measured.md) read H-29 as no, on clause 1: with three readouts the first mapping was learned as between two, and a reversal took 21 to 31 of a mapping's 32 blocks, where H-25's took 14 to 21. Its stopping rule, step 5, names an ADR choosing between the selection, an exploration among its candidates and the readout's resolution. ADR-0153 handed that ADR a fourth reading, which the rule's list does not name: **the size of a punishment under the critic's value**. The maintainers took the fourth on 2026-10-09.
 
-**The sweep of that round's dispatch**, which the merge did not wait for ([ADR-0150](0150-a-round-waits-for-what-it-checks.md)): SWEEP-OUTCOME-PENDING
+**The sweep of that round's dispatch**, which the merge did not wait for ([ADR-0150](0150-a-round-waits-for-what-it-checks.md)): run [37810004245](https://github.com/DescentVTT/VirtualCortex/actions/runs/37810004245) ended at 19:46:25Z on 2026-10-08, two hours after the merge, green in all seven of the sweep's jobs.
+- **3 805 mutants over the tree, 3 629 caught and none missed**: 2 398 caught in the state crates and 1 231 in the runtime, 154 unviable and 22 timeouts.
+- **In `runtime/cortex-runtime/src/task.rs`**, the file ADR-0152 changed: 177 caught, 10 unviable, none missed and none timed out.
+- **The 22 timeouts** are mutants of `cortex-core`'s three chain iterators, of the injector, of the barrier's wait and of the workers' stop and run, the places [ADR-0062](0062-the-first-complete-sweeps-list.md) reads as inherent.
+- There is no survivor, so the round leaves no finding and no list for this one.
 
 **What ADR-0153 read:**
 - After a flip a stimulus's value fell to −0.58 to −0.95 of the reward, and its block mean stayed below minus half the reward for 5 to 24 blocks.
