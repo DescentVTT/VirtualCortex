@@ -5,7 +5,7 @@ depends-on: ADR-0155
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0156: A punishment the value does not soften, measured — H-30's protocol written before any rewarded run: H-29's two arms from H-29's image with the flag's byte written and nothing else, H-29's four clauses by H-29's rules and each reversal within H-25's 23 blocks, ADR-0154's four predicted readings as rules against H-29's pinned tables, and the calibration's two readings pinned
+# ADR-0156: A punishment the value does not soften, measured: H-30 is no, on clauses 1 and 5, where a yes was predicted — H-29's two arms from H-29's image with the flag's byte written and nothing else, each H-29's trial for trial up to its fourth or its seventh trial; the first reversal passed in 19 and 22 blocks where H-29's took 31 and 30, and its mapping was learned; the second and the third never passed 40 of 64 and their mappings were not learned, in both arms; the punishments under a value below zero, about half of all trials, were received whole, the signal stood at the gate's lower bound in half the trials after a flip, and the six couplings' sum sank to 0.93 to 0.96 of the image's with the readouts' answers; H-30's stopping rule reaches step 5, and the next decision, the one ADR-0153's step 5 names, is named and not taken
 
 ## Context and Problem Statement
 
@@ -77,7 +77,7 @@ What was read first (principle 2), on 2026-10-09:
 
 ### The calibration (H-30's stopping rule, step 2)
 
-- **With the parameter unset, every pinned number of the tree holds.** The whole-domain tests of the tree ran on the developer machine at the build's sources before any rewarded run of the protocol; the result is recorded with the evidence below. The six whole-image pins moved with the format and nothing else did (ADR-0155).
+- **With the parameter unset, every pinned number of the tree holds.** The whole-domain tests of the tree ran on the developer machine at the build's sources before any rewarded run of the protocol, from 23:09Z on 2026-10-08 to 01:29Z on 2026-10-09: 89 of 89 passed, H-29's two arms among them. The six whole-image pins moved with the format and nothing else did (ADR-0155).
 - **With the parameter set, each arm is H-29's up to the first trial at which a reward below zero meets a value below zero.** In each arm's test the first block runs from H-29's image and from the same image with the flag written (`whole_calibration`):
   - the unset block's tables are H-29's pinned first block, table for table;
   - up to the trial, the two runs are one in every number read of every trial;
@@ -91,14 +91,170 @@ What was read first (principle 2), on 2026-10-09:
   Both are pinned (`WHOLE_FIRST_MET_1024`). The arm's own first 64 trials are then asserted the calibration's.
 - **The gate** (`the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules`): the constants as ADR-0154 wrote them; the hand rule at its cases and against the engine's rule; the image's patch on the instrument's network, read back by the loader and refused without the critic; clause 5 at its edge, 23 blocks and 24, for each reversal of each arm, and each clause's place in the stopping rule's order over tables written by hand; the readings' rules over tables and trials written by hand; and eight trials of the task with the parameter set beside the same eight unset, every oracle held at every trial of both and the two held to one another as the calibration holds them. On that network the two part at the fifth trial, against a value of −116.
 
+### What was read
+
+The arms ran once each on the developer machine, from 01:30Z to 01:52Z on 2026-10-09, after the calibration's first half had ended green. Every oracle held at every one of each arm's 7 680 trials: the critic's value, error and weights; the hand rule of what the modulator received and the signal's course from it; the address; and every excitatory synapse of the arena. The tables are pinned from that run (`WHOLE_*_1024`). H-29's two arms ran beside them and held their trials by this round's reader to `ANSWERED_TRIALS_1024`.
+
+### The verdict
+
+**H-30 is no, on clauses 1 and 5, in both arms.** ADR-0154 predicted a yes.
+
+| Clause | From the assignment | From the mirrored assignment |
+| :--- | :--- | :--- |
+| 1, each mapping's last 128 | 119, 116, **69**, **60** correct | 119, 113, **60**, **67** correct |
+| 2, the highest coupling | 1.242 of its image's | 1.252 |
+| 3, the excitatory sum outside the six | 0.9996 to 1.0000 of the image's | 0.9997 to 1.0000 |
+| 4, the value against $2p - 1$ | within 0.22 of the reward | within 0.22 |
+| 5, each reversal's blocks to 40 of 64 | 19, **never**, **never** | 22, **never**, **never** |
+
+- **Clause 1 fails for the second and the third reversals' mappings in both arms**, by the count and by a stimulus. From the assignment the third mapping read A at 42 of 62 and B at 27 of 66, and the fourth A at 42 of 54 and B at 18 of 74. From the mirrored assignment the third read A at 21 of 62 and B at 39 of 66, and the fourth A at 37 of 54 and B at 30 of 74.
+- **The first mapping and the first reversal's hold in both.** The first mapping is H-29's within a trial or two: 119 and 119, where H-29 read 118 and 119. The first reversal's mapping read 116 and 113, where H-29 read 87 and 85; the second of those was the mapping H-29 failed.
+- **Clause 5 holds for the first reversal and fails for the two after it.** The first passed 40 of 64 in its 19th and its 22nd block, inside H-25's 23, where H-29's passed in its 31st and its 30th. The second and the third never passed it in their 32 blocks: their best blocks read 36 and 34 of 64 from the assignment, and 36 and 35 from the mirrored assignment. H-29's passed in 31 and 21, and in 23 and 23.
+- **Clauses 2, 3 and 4 hold.** Clause 4 holds where a stimulus's accuracy is under a half: B's mean value stood at −0.21 and −0.52 of the reward against −0.18 and −0.51 over the last 128 trials of the assignment arm's third and fourth mappings. The weights move by the critic's own error, and the value held the expected reward below zero.
+
+### The predicted readings
+
+None was asserted. Each is read by its rule against H-29's pinned tables of the same arm.
+
+| Predicted reading | Held | What was read |
+| :--- | :--- | :--- |
+| (a) the old answer lets go sooner | 8 of 12 | it led for 9, 10, 9, 16, 11, 5 blocks from the assignment (H-29: 24, 21, 22, 16, 6, 12) and for 11, 13, 13, 4, 7, 7 from the mirrored assignment (H-29: 22, 13, 5, 14, 16, 17) |
+| (b) every reversal faster than its own | 2 of 6 | the first reversal of each arm; the four others never passed |
+| (c) the value recovers sooner | 7 of 12 | blocks below minus half the reward: 7, 10, 17, 16, 6, 21 (H-29: 22, 19, 21, 21, 5, 18) and 10, 12, 19, 8, 10, 12 (H-29: 24, 11, 6, 15, 13, 12) |
+| (d) the old answer's coupling below the image's at the mapping's end | 12 of 12 | 0.855 to 0.965 of the image's; in H-29's failed mapping it had ended at 1.010 |
+
+- **(a) and (c) held at every flip and stimulus of the first reversal but one each, and at about half of those after it.**
+- **(d) held everywhere, and says less than it was written to.** The old answer's coupling fell below the image's because every coupling did; see below.
+
+### What the rule changed
+
+The two rounds differ in one byte of the image, and each arm is H-29's trial for trial up to its fourth or its seventh trial. What follows differs between them because of the rule.
+
+- **The punishments it reached.** A punished trial under a value below zero received the reward itself, −1.000, where the critic's error at the same trials averaged −0.44 to −0.87 of it. There were 3 801 of them in the assignment arm's 7 680 trials and 3 955 in the mirrored arm's: about half of all trials.
+
+  | Arm | Mapping | Punished under a value below zero, H-29 → H-30 | Mean received in H-29 | The critic's mean error in H-30 | Mean received in H-30 |
+  | :--- | :--- | ---: | ---: | ---: | ---: |
+  | assignment | first | 137 → 137 | −0.87 | −0.87 | −1.00 |
+  | | second | 1 417 → 820 | −0.30 | −0.49 | −1.00 |
+  | | third | 1 472 → 1 456 | −0.38 | −0.44 | −1.00 |
+  | | fourth | 972 → 1 388 | −0.52 | −0.53 | −1.00 |
+  | mirrored | first | 292 → 260 | −0.77 | −0.74 | −1.00 |
+  | | second | 1 229 → 922 | −0.34 | −0.46 | −1.00 |
+  | | third | 1 070 → 1 454 | −0.49 | −0.51 | −1.00 |
+  | | fourth | 1 081 → 1 319 | −0.45 | −0.58 | −1.00 |
+
+- **The punishments of the old answer**, the twelve rows of ADR-0153's table. In H-29 they delivered a mean of −0.31 to −0.67 of the reward. In H-30 they delivered −1.00 to −1.07, a little past the reward where some met a value above zero:
+
+  | Arm | Flip, stimulus | Trials that selected the old answer, H-29 → H-30 | Of H-30's, under a value below zero | Mean received, H-29 → H-30 |
+  | :--- | :--- | ---: | ---: | ---: |
+  | assignment | first, A | 604 → 287 | 234 | −0.33 → −1.07 |
+  | | first, B | 554 → 312 | 256 | −0.38 → −1.06 |
+  | | second, A | 466 → 365 | 333 | −0.34 → −1.03 |
+  | | second, B | 419 → 444 | 429 | −0.46 → −1.01 |
+  | | third, A | 192 → 313 | 289 | −0.67 → −1.01 |
+  | | third, B | 368 → 309 | 309 | −0.51 → −1.00 |
+  | mirrored | first, A | 615 → 338 | 290 | −0.31 → −1.05 |
+  | | first, B | 352 → 307 | 249 | −0.63 → −1.07 |
+  | | second, A | 187 → 402 | 383 | −0.65 → −1.02 |
+  | | second, B | 404 → 349 | 328 | −0.48 → −1.02 |
+  | | third, A | 401 → 286 | 268 | −0.50 → −1.01 |
+  | | third, B | 364 → 341 | 333 | −0.57 → −1.00 |
+
+  After the first flip the old answer was selected less often than in H-29 at all four rows, about half as often at three. After the second and the third it was selected more often at three rows of eight and less often at five.
+- **The first reversal was shortened**, in both arms, by 12 and by 8 blocks, and its mapping's last block read 58 and 55 correct of 64, where H-29's read 43 and 43.
+- **The reversals after it were lost.** In H-29 the second and the third reversals' mappings were learned in all four cases, with 82 to 114 of their last 128. In H-30 none was, and none passed 40 of 64 in any block.
+
+### The signal
+
+- **It stood at or below the gate's lower bound far more often.** After the reward the signal was at or below −1.0 in 799, 1 208 and 1 044 of the 2 048 trials of the assignment arm's mappings after a flip, and in 884, 1 130 and 976 of the mirrored arm's. H-29 read 201, 181 and 216, and 237, 237 and 258. In the first mapping the two rounds read alike, 244 and 289 against 222 and 236.
+- **It stood at or above the upper bound somewhat less**: 279, 296 and 284, and 288, 298 and 333, where H-29 read 330, 388 and 363, and 313, 378 and 372.
+- **Its range did not widen**: −2.96 to 2.75 over both arms, where H-29's was −3.02 to 2.82.
+- **A reward came to a signal further below zero.** After a punished trial the signal averaged −1.21 to −1.36, where H-29's averaged −0.39 to −0.63 after a flip. A rewarded trial received 1.31 to 1.41 of the reward in the last two mappings and left the signal at 1.12 to 1.20.
+
+### The six couplings
+
+- **Their sum sank below the image's.** At each mapping's end, as a fraction of the image's six summed:
+
+  | Arm | Round | First | Second | Third | Fourth |
+  | :--- | :--- | ---: | ---: | ---: | ---: |
+  | assignment | H-29 | 1.053 | 1.031 | 1.008 | 1.023 |
+  | | H-30 | 1.052 | 1.032 | **0.959** | **0.933** |
+  | mirrored | H-29 | 1.053 | 1.022 | 1.029 | 1.048 |
+  | | H-30 | 1.047 | 1.008 | **0.954** | **0.953** |
+
+- **By the readouts' roles**, at each mapping's end after a flip, as fractions of the image's, the answer's, the old answer's and the third's:
+
+  | Arm | Mapping | From A | From B |
+  | :--- | :--- | :--- | :--- |
+  | assignment | second | **1.240**, 0.965, 0.937 | **1.220**, 0.912, 0.912 |
+  | | third | **1.112**, 0.955, 0.886 | **1.016**, 0.944, 0.843 |
+  | | fourth | **1.061**, 0.925, 0.914 | **0.940**, 0.883, 0.872 |
+  | mirrored | second | **1.203**, 0.931, 0.888 | **1.165**, 0.965, 0.920 |
+  | | third | **0.974**, 0.947, 0.893 | **1.098**, 0.914, 0.901 |
+  | | fourth | **1.080**, 0.855, 0.932 | **1.039**, 0.940, 0.862 |
+
+  After the first reversal the answer's coupling stood at 1.165 to 1.240, higher than in H-29 at three of the four, where it read 1.098 to 1.176. After the second and the third it stood lower than the 1.119 to 1.233 H-29 read, twice below the image's, and the two other readouts' stood at 0.84 to 0.96.
+- **The third readout's pairs** stood at 0.843 to 0.937 of the image's at the end of a mapping after a flip, where H-29 read 0.893 to 0.972.
+- **Where the consolidation went**, by the network's oracle, per mapping after a flip, in millions:
+
+  | Arm | Round | The answer's pairs, net | The other four pairs, net | All six, net |
+  | :--- | :--- | :--- | :--- | :--- |
+  | assignment | H-29 | +1.32, +1.12, +1.67 | −1.75, −1.57, −1.36 | −0.43, −0.46, +0.31 |
+  | | H-30 | +1.78, +0.91, +0.89 | −2.18, −2.34, −1.42 | −0.40, −1.43, −0.53 |
+  | mirrored | H-29 | +1.14, +1.51, +1.88 | −1.76, −1.38, −1.50 | −0.62, +0.13, +0.38 |
+  | | H-30 | +1.46, +0.86, +1.11 | −2.23, −1.94, −1.12 | −0.77, −1.08, −0.00 |
+
+  The learning signal, the answer's net less the others', was 4.0 and 3.7 million over the first reversal's mapping, above H-29's 3.1 and 2.9, and 2.2 to 3.3 over the two after it, against H-29's 2.7 to 3.4. What changed more is the sum: over the second reversal's mapping the six couplings lost 1.4 and 1.1 million, where H-29's lost 0.5 and gained 0.1, and they did not regain it.
+
+### The readouts
+
+- **They came to answer less.** Over a mapping's last four blocks the answer's readout fired 7.7 to 11.3 spikes a presentation after the first reversal, where H-29's fired 6.3 to 9.1. After the third it fired 7.3 and 4.3 from the assignment and 6.6 and 5.3 from the mirrored assignment, where H-29's fired 12.1 and 7.4, and 10.8 and 8.9. The two other readouts fired 4.0 to 4.4, at or under the 4.4 to 5.7 a readout fires on the frozen network before anything is learned (ADR-0153).
+- **The largest count** averaged 9.12, 8.05, 6.65 and 6.16 spikes over the assignment arm's four mappings and 8.89, 7.55, 6.40 and 6.19 over the mirrored arm's. H-29 read 9.14, 8.27, 7.31 and 8.00, and 9.03, 8.23, 7.62 and 7.91.
+- **The margin** between the largest count and the next was at most two spikes in 40, 52, 66 and 71 per cent of a mapping's trials from the assignment and in 44, 55, 70 and 70 from the mirrored assignment; H-29 read 40 to 65.
+- **Nothing was selected** in 10.5, 11.8, 17.9 and 18.5 per cent of a mapping's trials, and in 9.6, 13.2, 18.8 and 17.9; H-29 read 9.8 to 16.0.
+- **Where the wrong selections went**: to the old answer, 58 to 74 per cent of them, where H-29 read 62 to 90. The third readout took 10 to 22 per cent of a mapping's trials, where H-29's took 6 to 19.
+
+### The rest of the network
+
+- **The inhibitory sum** rose to 1.010 and 1.008 of the image's and ended at 0.840 and 0.836, still falling; H-29's ended at 0.843 and 0.842.
+- **Outside the six couplings** the excitatory sum moved by four parts in ten thousand at most.
+- **The value's troughs after a flip** were −0.61 to −0.88 of the reward, where H-29's were −0.58 to −0.95.
+
+### What this reads, and what it does not
+
+- **The one change caused the difference.** The two rounds share every input but one byte, and each arm is H-29's until its fourth or its seventh trial. A faster first reversal and two lost ones after it are the rule's doing on this instrument.
+- **ADR-0153's account held for the first reversal.** A punishment the value does not soften shortened it, from 31 and 30 blocks to 19 and 22, and the old answer was selected half as often. The reverse order ADR-0154 named, that a reversal fast for another reason keeps its punishments large, does not account for that.
+- **What the prediction did not hold is what ADR-0154 named beside it**: *"what a signal held at its floor for many trials does to the pairs of the two other readouts."* Read from the tables: over the second and the third reversals' mappings about seven trials in ten are punished; each whole punishment moves the selected readout's pairs against their traces at the gate's full depth; the rewards, a quarter to a third of the trials, do not put back what that takes; and from the second reversal the six couplings stand under the image's. The readouts then answer a stimulus with little more than they answer anything, the counts lie within two spikes of one another in seven trials of ten, and the selection has little to read.
+- **That is an account of these tables, and its last step is not measured.** No run of this round held the couplings' sum while delivering whole punishments, so the flat readouts are read as the reason the later reversals were lost, not shown to be.
+- **It does not read the two-answer configuration.** No two-answer arm ran under the parameter, as brief 063 rules.
+
+### The evidence
+
+*This section is written when the dispatch's whole-domain shards have ended.*
+
+### The step of the stopping rule reached
+
+**Step 5**: *"Otherwise no on clause 1: the punishment's size is not what the revision lacks. The next decision is the one ADR-0153's step 5 names, among the selection, an exploration and the readout's resolution, with both rounds' readings."* Clause 3 holds, so step 4 does not arise; clause 1 fails, so step 5 is reached before clause 5's step 6 is read. **The next decision is that ADR.** It is named and not taken. What this round hands it, beside what ADR-0153 handed:
+
+- **The punishment's size was part of what the first revision lacked, and is not what the later ones lacked.** The step's sentence stands for the verdict; the first reversal's 19 and 22 blocks stand beside it.
+- **A whole punishment costs the couplings more than the rewards restore**, on this schedule and these readouts: the six summed fell to 0.93 to 0.96 of the image's, and the readouts' answers flattened with them. Whatever the next decision takes, a punishment at full depth on seven trials in ten, as the later mappings had, has that cost here.
+- **The ties and the margin grew with it**: nothing selected in 18 to 19 per cent of the trials of the last two mappings, and a margin of at most two spikes in 66 to 71 per cent. They are the readings ADR-0153's step 5 asks for, under a second condition.
+- **The wrong selections spread**: a smaller share to the old answer, a larger one to the third readout and to nothing.
+- **The parameter stays in the tree, unset.** The learning configuration is H-25's as it was, and H-29's reading of it among three answers stands.
+
+Step 3, the ADR on whether the parameter joins the learning configuration, does not arise. Steps 4, 6, 7 and 8 did not arise; step 9 is kept: no constant moved after a rewarded run, and there was no second attempt.
+
 ## Consequences
 
-- Good: one byte of the image is the one change, shown by a masked check, with H-29's image held as H-29 read it.
-- Good: the calibration shows where the parameter first acts and that nothing differs before it, in the test that then runs the arm.
-- Good: every reading has H-29's beside it by the same rule, from tables the tree holds.
-- Neutral: two weekly tests of about H-29's cost, and one test in the gate.
-- Neutral: H-29's arms gain one held table, their trials by this round's reader.
-- Bad: the calibration's two first blocks lengthen each arm by 128 trials under every oracle.
+- Good: the run that tells ADR-0153's account from its reverse, with one byte changed and H-29 beside it trial for trial until the rule first acts. The account held for the first reversal.
+- Good: the no is located. The first revision is in time under a whole punishment; the second and the third are lost, and the tables say what moved: the six couplings' sum, the readouts' answers and the margin.
+- Good: the critic stayed a predictor under the rule. Clause 4 holds in every mapping, with the value below zero where the accuracy is under a half.
+- Good: every reading has H-29's beside it by the same rule from tables the tree holds, and the calibration shows where the parameter first acts, in the test that then runs the arm.
+- Bad: H-30 is no, and a yes was predicted. The parameter does not join the learning configuration; it stays in the tree, unset, with its format.
+- Bad: the last step of the account, that the flattened readouts are why the later reversals were lost, is read from the tables and not measured.
+- Bad: one form of the rule and one schedule. A punishment bounded otherwise, or a whole one on a schedule with fewer punished trials, was not tried, and brief 063 does not empower either.
+- Neutral: two weekly tests of about H-29's cost, and one test in the gate. H-29's arms gain one held table, their trials by this round's reader.
+- Neutral: the calibration's two first blocks lengthen each arm by 128 trials under every oracle.
 
 ## Alternatives considered and why rejected
 
@@ -108,4 +264,5 @@ What was read first (principle 2), on 2026-10-09:
 ## Confirmation
 
 - `runtime/cortex-runtime/tests/inhibition.rs`: `WHOLE_ARMS`, `with_whole_byte`, `only_the_whole`, `Whole`, `unsoftened`, `whole_step`, `TrialsRead`, `trials_read`, `below_half`, `lets_go_sooner`, `faster`, `recovers_sooner`, `old_below_image`, `WholeRead`, `whole_read`, `first_met`, `parts_at_first_met`, `whole_calibration`, `whole_arm`, the two weekly tests and the gate's test named above.
-- The pins: `WHOLE_IMAGE_CRC_1024`, `WHOLE_FIRST_MET_1024`, `ANSWERED_TRIALS_1024`.
+- The pins: `WHOLE_IMAGE_CRC_1024`, `WHOLE_FIRST_MET_1024`, `ANSWERED_TRIALS_1024`, the arms' `WHOLE_*_1024`, the verdict `WHOLE_1024` and its step `WHOLE_STEP_1024`, and the gate's checks over them (`trials_hold` among them).
+- Whitepaper §8.8, §9 and §11.1; `CHANGELOG.md`; `CLAUDE.md`; `README.md`; `docs/zh-TW/README.md`.
