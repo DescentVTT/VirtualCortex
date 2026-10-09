@@ -167940,12 +167940,17 @@ const NO_BLOCK: AnsweredBlock = AnsweredBlock {
 
 /// An H-29 run as the harness read it: its blocks; every trial; the FNV-1a hash of every
 /// trial's `(stimulus, selection, correct)`, as `run_on_scheduled` hashes them; and the six
-/// couplings at the end of the first trial under each mapping a flip put in force.
+/// couplings at the end of the first trial under each mapping a flip put in force. Since brief
+/// 066, beside them and outside every hash and table of the rounds before: whether each trial's
+/// selection was drawn (ADR-0163), no trial's with the exploration unset; and each trial's
+/// consolidation by pair, `[stimulus][readout][raised, lowered]`, by the network's oracle.
 struct AnsweredRun {
     blocks: Vec<AnsweredBlock>,
     read: Vec<AnsweredTrial>,
     trace: u64,
     at_flips: [Option<[[i64; ANSWERS]; 2]>; 3],
+    drawn: Vec<bool>,
+    pairs: Vec<[[[i64; 2]; ANSWERS]; 2]>,
 }
 
 /// Every trial's whole reading, hashed: `fnv1a_64` over its numbers as `i32` words.
@@ -168039,12 +168044,18 @@ fn received_by_hand(whole: bool, reward: i32, value: i32, error: i32) -> i32 {
 /// with ADR-0076's cancel, the three readouts of `sets`, the answers `first` moved on at each
 /// of `schedule`'s flips by `Task::flip` — H-20's for H-29 and H-30, ADR-0157's for H-31
 /// (brief 064) — under `feedback` — the answer's, or withheld for a frozen block — and
-/// `delivery`, the drawn one or the addressed one; the instrument's lead-in of one readout
+/// `delivery`, the drawn one or the addressed one, and with the task's `exploration`, unset for
+/// every round before H-32 (brief 066); the instrument's lead-in of one readout
 /// window first, as `run_on_scheduled` runs it. After each block's last trial `at_block` is
 /// given the blocks and the trials read so far, before the next trial runs: where an arm of
 /// H-31 holds its calibration. At every trial the harness holds:
 /// - the task's answers to the hand rule (`answers_at`), the selection to the hand rule
 ///   (`largest_alone`), and `correct` to the two;
+/// - with the exploration set (ADR-0163), the trial drawn exactly where the hand rule says the
+///   trial's coin is below the part of the critic's oracle's value below zero
+///   (`explores_by_hand`), its selection then the hand rule's channel (`channel_by_hand`)
+///   whatever the counts, and the gate's by `largest_alone` at every other trial; unset, no
+///   trial drawn;
 /// - under the engine's critic, its value, every unit's weight and the window's opening to the
 ///   critic's oracle (`value_step`), as `earned_run_held` holds them, and what the modulator
 ///   received to a hand rule: the oracle's error, or, on an engine that carries the whole
@@ -168068,6 +168079,7 @@ fn answered_run(
     first: [usize; 2],
     feedback: Feedback,
     delivery: Delivery,
+    exploration: Exploration,
     schedule: &Schedule,
     trials: usize,
     at_block: &mut dyn FnMut(&[AnsweredBlock], &[AnsweredTrial]),
@@ -168114,7 +168126,7 @@ fn answered_run(
         delivery,
         critic: None,
         hold: None,
-        exploration: Exploration::Unset,
+        exploration,
     };
     task.check(exec).expect("the task fits the executor");
     // The stimulus sets counted as a readout counts them.
@@ -168166,6 +168178,8 @@ fn answered_run(
     let mut blocks = Vec::new();
     let mut read: Vec<AnsweredTrial> = Vec::with_capacity(trials);
     let mut sequence: Vec<i32> = Vec::with_capacity(trials);
+    let mut draws: Vec<bool> = Vec::with_capacity(trials);
+    let mut pairs: Vec<[[[i64; 2]; ANSWERS]; 2]> = Vec::with_capacity(trials);
     let mut at_flips = [None; 3];
     let mut block = NO_BLOCK;
     for trial in 0..trials {
@@ -168191,16 +168205,6 @@ fn answered_run(
         );
         let in_volley = own.count_window(exec.train(), start, WINDOW.from);
         let s = usize::from(outcome.stimulus);
-        assert_eq!(
-            outcome.selection,
-            largest_alone(outcome.counts),
-            "trial {trial}: the selection is the largest count alone"
-        );
-        assert_eq!(
-            outcome.correct,
-            outcome.selection.map(usize::from) == Some(answers[s]),
-            "trial {trial}: correct is the answer under the mapping in force, a tie not"
-        );
         assert_eq!(
             (outcome.expected_q16, outcome.held),
             (None, 0),
@@ -168281,6 +168285,32 @@ fn answered_run(
         assert_eq!(
             outcome.reward_q16, expected,
             "trial {trial}: the reward's sign is the outcome's, less the engine's value under its critic but where a whole punishment meets a value below zero, and none is withheld"
+        );
+        // The selection, by the hand rules: drawn where the exploration is set and the trial's
+        // coin is below the part of the oracle's value below zero, the channel then the hand
+        // rule's whatever the counts; the gate's, the largest count alone, everywhere else. The
+        // oracle's value is of the weights and the counts alone, so it reads nothing of the
+        // selection it is held against.
+        let by_hand = exploration == Exploration::ValueGated
+            && engine_critic.is_some()
+            && explores_by_hand(SEED, trial as u64, value);
+        assert_eq!(
+            outcome.drawn, by_hand,
+            "trial {trial}: drawn exactly where the coin is below the value's part below zero, and never with the exploration unset"
+        );
+        assert_eq!(
+            outcome.selection,
+            if by_hand {
+                Some(channel_by_hand(SEED, trial as u64))
+            } else {
+                largest_alone(outcome.counts)
+            },
+            "trial {trial}: the selection is the drawn channel where the trial is drawn, the largest count alone elsewhere"
+        );
+        assert_eq!(
+            outcome.correct,
+            outcome.selection.map(usize::from) == Some(answers[s]),
+            "trial {trial}: correct is the answer under the mapping in force, a tie not"
         );
         // The address the delivery wrote at the trial's end.
         let sources: Vec<bool> = (0..units).map(|u| exec.is_source(u)).collect();
@@ -168387,6 +168417,8 @@ fn answered_run(
                 | i32::from(outcome.selection.map_or(3, |r| r)) << 1
                 | i32::from(outcome.correct) << 3,
         );
+        draws.push(outcome.drawn);
+        pairs.push(by_pair);
         if let Some(f) = schedule.flips.iter().position(|&f| f == trial) {
             at_flips[f] = Some(answered_couplings(exec, sets));
         }
@@ -168404,6 +168436,8 @@ fn answered_run(
         read,
         trace: fnv1a_64(&sequence),
         at_flips,
+        drawn: draws,
+        pairs,
     }
 }
 
@@ -169014,6 +169048,7 @@ fn answered_frozen(zero: &[u8], sets: &AnsweredSets) -> (AnsweredBlock, u64, u64
         [0, 1],
         Feedback::Withheld,
         Delivery::Addressed,
+        Exploration::Unset,
         &SCHEDULE,
         BLOCK,
         &mut |_, _| {},
@@ -169127,6 +169162,7 @@ fn answered_arm(arm: Reversal) {
         first,
         Feedback::Answer,
         ANSWERED_DELIVERY,
+        Exploration::Unset,
         &SCHEDULE,
         SCHEDULE_TRIALS,
         &mut |_, _| {},
@@ -170308,6 +170344,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         assignment,
         Feedback::Answer,
         ANSWERED_DELIVERY,
+        Exploration::Unset,
         &SCHEDULE,
         GATE_TRIALS,
         &mut |_, _| {},
@@ -170340,6 +170377,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         mirrored,
         Feedback::Withheld,
         Delivery::Addressed,
+        Exploration::Unset,
         &SCHEDULE,
         4,
         &mut |_, _| {},
@@ -175978,6 +176016,7 @@ fn whole_calibration(
             first,
             Feedback::Answer,
             WHOLE_DELIVERY,
+            Exploration::Unset,
             &SCHEDULE,
             BLOCK,
             &mut |_, _| {},
@@ -176094,6 +176133,7 @@ fn whole_arm(arm: Reversal) {
         first,
         Feedback::Answer,
         WHOLE_DELIVERY,
+        Exploration::Unset,
         &SCHEDULE,
         SCHEDULE_TRIALS,
         &mut |_, _| {},
@@ -176851,6 +176891,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
             assignment,
             Feedback::Answer,
             WHOLE_DELIVERY,
+            Exploration::Unset,
             &SCHEDULE,
             WHOLE_GATE_TRIALS,
             &mut |_, _| {},
@@ -182531,6 +182572,7 @@ fn sized_arm(arm: Reversal) {
         first,
         Feedback::Answer,
         SIZED_DELIVERY,
+        Exploration::Unset,
         &SIZED_SCHEDULE,
         SIZED_SCHEDULE.trials,
         &mut |blocks, read| {
@@ -183601,6 +183643,7 @@ fn the_clauses_of_h_31_the_schedule_s_hand_rule_and_the_readings_rules() {
         mirrored,
         Feedback::Answer,
         SIZED_DELIVERY,
+        Exploration::Unset,
         &quick,
         GATE_TRIALS,
         &mut |_, _| ends += 1,
@@ -188626,3 +188669,1494 @@ const SIZED_1024: Answered = Answered {
 /// The step of H-31's stopping rule the verdict reaches: 5, a no on clause 1 with clause 3
 /// holding.
 const SIZED_STEP_1024: u8 = 5;
+
+// =================================================================================== H-32
+
+// -------------------------------------------- written before the run (ADR-0162, ADR-0164)
+
+/// The arms of H-32 (ADR-0162): H-29's two, in their order, each its own weekly test, from
+/// H-29's image with the whole punishment unset, under H-29's readouts, deal, delivery,
+/// schedule and seed, with the task's exploration set and nothing else.
+const EXPLORED_ARMS: [Reversal; 2] = ANSWERED_ARMS;
+
+/// H-29's delivery, H-25's, unchanged.
+const EXPLORED_DELIVERY: Delivery = ANSWERED_DELIVERY;
+
+/// The one change from H-29 (ADR-0162, ADR-0163): the task's exploration, gated by the engine's
+/// value.
+const EXPLORED: Exploration = Exploration::ValueGated;
+
+/// ADR-0162 writes no prediction for the verdict.
+const EXPLORED_PREDICTED: Option<bool> = None;
+
+/// ADR-0162's predicted readings, Hypotheses written before the run and never asserted:
+/// (a) over the second to the eighth block after each flip each stimulus selects its new answer
+/// in more of its presentations than in H-29's same blocks (`new_early`); (b) after a flip no
+/// stimulus's block mean value falls below −0.75 of the reward (`settles_higher`); (c) every
+/// reversal is faster than its own in H-29 (`faster`, brief 063's rule); (d) over each learned
+/// mapping's last 128 trials fewer than one trial in ten is drawn (`switches_off`); (e) the six
+/// couplings' sum stands at or above 0.99 of the image's at each mapping's end (`not_worn`).
+const NEW_EARLY_PREDICTED: bool = true;
+const SETTLES_HIGHER_PREDICTED: bool = true;
+const EXPLORED_FASTER_PREDICTED: bool = true;
+const SWITCHES_OFF_PREDICTED: bool = true;
+const NOT_WORN_PREDICTED: bool = true;
+
+/// Reading (a)'s blocks of a mapping after a flip, `[first, end)` by index within the mapping:
+/// its second to its eighth.
+const EARLY_BLOCKS: (usize, usize) = (1, 8);
+
+/// Reading (b)'s floor (ADR-0162): −0.75 of the reward, read in integers as
+/// `mean × 4 >= −3 × reward`.
+const FLOOR_QUARTERS: (i64, i64) = (3, 4);
+
+/// Reading (d)'s share (ADR-0162): fewer than one trial in ten of a mapping's last 128, read as
+/// `drawn × 10 < 128`.
+const OFF_TIMES: u32 = 10;
+
+/// Reading (e)'s floor (ADR-0162): 0.99 of the image's six couplings summed, read as
+/// `sum × 100 >= image × 99`.
+const NOT_WORN_PER_CENT: (i64, i64) = (99, 100);
+
+/// The regime ADR-0162 derives before any run, as the numbers the run is read against and never
+/// held to: no exploration until the value passes zero, about 25 presentations after a flip;
+/// then, while the gate still selects the old answer, in fifths of those presentations, three
+/// drawn, the new answer selected in one, the old in three and the third in one, with the value
+/// at minus three fifths of the reward.
+const REGIME_PRESENTATIONS: usize = 25;
+const REGIME_FIFTHS: (u32, [u32; ANSWERS]) = (3, [1, 3, 1]);
+
+// The hand rules below read the coin against the value's part below zero itself, which is
+// ADR-0163's comparison at a reward of 1.0, where one coin of the 65 536 is one LSB of the
+// value; and they deal the channel's draw among three by the thirds of 32 768 written out.
+const _: () = assert!(REWARD_Q16 == 1 << 16 && ANSWERS == 3);
+
+// --------------------------------------------- the exploration's hand rules (brief 066)
+
+/// The exploration's coin written a second time as the oracle's (ADR-0163): the draw of the
+/// seed and the trial's index, `mix64` of the two, shifted down sixteen places, its remainder
+/// over 65 536 — a shift and a remainder and not the task's mask.
+fn coin_by_hand(seed: u64, trial: u64) -> i64 {
+    mix64(seed ^ trial)
+        .checked_shr(16)
+        .and_then(|high| high.checked_rem(65_536))
+        .map_or(0, |coin| coin as i64)
+}
+
+/// Whether a trial's selection is drawn at the value `value`, by hand (ADR-0162, ADR-0163, at a
+/// reward of 1.0): the value below zero and the trial's coin below its part below zero, which
+/// is at most the reward.
+fn explores_by_hand(seed: u64, trial: u64, value: i32) -> bool {
+    let below = i64::from(value).saturating_neg().min(i64::from(REWARD_Q16));
+    value < 0 && coin_by_hand(seed, trial) < below
+}
+
+/// The channel a drawn selection is among three, by hand (ADR-0163): the same draw shifted down
+/// thirty-three places, its remainder over 32 768, in the thirds of 32 768 written out — below
+/// 10 923 the first readout, below 21 846 the second, the third from there — and not the task's
+/// multiplication.
+fn channel_by_hand(seed: u64, trial: u64) -> u8 {
+    let draw = mix64(seed ^ trial)
+        .checked_shr(33)
+        .and_then(|high| high.checked_rem(32_768))
+        .unwrap_or(0);
+    if draw < 10_923 {
+        0
+    } else if draw < 21_846 {
+        1
+    } else {
+        2
+    }
+}
+
+// ------------------------------------------------- the readings' shape (brief 066)
+
+/// One block of an H-32 run's exploration, sixty-four trials, by the presented stimulus
+/// `[A, B]`:
+/// - `drawn`: its trials whose selection was drawn;
+/// - `values`: the engine's value at them, summed, each below zero, where alone a coin draws;
+/// - `by_role`: the drawn selections by the readouts' roles to the stimulus under the mapping
+///   in force, `[the answer, the readout before it, the readout after it]` — the first are the
+///   drawn selections rewarded, the other two those punished;
+/// - `apart`: the drawn selections that were not the gate's own reading, the largest count
+///   alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ExploredBlock {
+    drawn: [u32; 2],
+    values: [i64; 2],
+    by_role: [[u32; ANSWERS]; 2],
+    apart: [u32; 2],
+}
+
+/// A block before its first trial.
+const NO_EXPLORED: ExploredBlock = ExploredBlock {
+    drawn: [0; 2],
+    values: [0; 2],
+    by_role: [[0; ANSWERS]; 2],
+    apart: [0; 2],
+};
+
+/// One block's exploration added into a sum of blocks.
+fn add_explored(into: &mut ExploredBlock, block: &ExploredBlock) {
+    for s in [0usize, 1] {
+        into.drawn[s] = into.drawn[s].saturating_add(block.drawn[s]);
+        into.values[s] = into.values[s].saturating_add(block.values[s]);
+        into.apart[s] = into.apart[s].saturating_add(block.apart[s]);
+        for (sum, &n) in into.by_role[s].iter_mut().zip(&block.by_role[s]) {
+            *sum = sum.saturating_add(n);
+        }
+    }
+}
+
+/// A run's exploration by block (`ExploredBlock`), over its whole blocks: `read` its trials,
+/// `drawn` whether each was drawn, `first` its first answers. A drawn trial selects a readout,
+/// so it has a role; one whose record names none is counted under no role.
+fn explored_blocks(
+    schedule: &Schedule,
+    first: [usize; 2],
+    read: &[AnsweredTrial],
+    drawn: &[bool],
+) -> Vec<ExploredBlock> {
+    let mut out = Vec::with_capacity(read.len().checked_div(BLOCK).unwrap_or(0));
+    for (j, trials) in read.chunks_exact(BLOCK).enumerate() {
+        let from = j.saturating_mul(BLOCK);
+        let mut block = NO_EXPLORED;
+        for (i, &(stimulus, counts, selection, _, _, value, _)) in trials.iter().enumerate() {
+            let at = from.saturating_add(i);
+            if !drawn.get(at).copied().unwrap_or(false) {
+                continue;
+            }
+            let s = usize::from(stimulus);
+            block.drawn[s] = block.drawn[s].saturating_add(1);
+            block.values[s] = block.values[s].saturating_add(i64::from(value));
+            block.apart[s] =
+                block.apart[s].saturating_add(u32::from(selection != largest_alone(counts)));
+            let answers = answers_at(schedule, first, at);
+            let role = roles(answers[s])
+                .iter()
+                .position(|&r| selection.map(usize::from) == Some(r));
+            if let Some(count) = role.and_then(|role| block.by_role[s].get_mut(role)) {
+                *count = count.saturating_add(1);
+            }
+        }
+        out.push(block);
+    }
+    out
+}
+
+/// A run's exploration summed over each mapping's blocks; zeros for a mapping the table does
+/// not hold.
+fn explored_by_mapping(schedule: &Schedule, blocks: &[ExploredBlock]) -> [ExploredBlock; 4] {
+    schedule.mappings().map(|(from, to)| {
+        let mut out = NO_EXPLORED;
+        for block in blocks.get(from..to).unwrap_or(&[]) {
+            add_explored(&mut out, block);
+        }
+        out
+    })
+}
+
+/// Per mapping, the trials drawn over its last `LAST_BLOCKS` blocks, its last 128 trials, of
+/// either stimulus; zero for a mapping the table does not hold to its end.
+fn drawn_last(schedule: &Schedule, blocks: &[ExploredBlock]) -> [u32; 4] {
+    schedule.mappings().map(|(_, to)| {
+        blocks
+            .get(to.saturating_sub(LAST_BLOCKS)..to)
+            .unwrap_or(&[])
+            .iter()
+            .fold(0u32, |sum, b| {
+                sum.saturating_add(b.drawn[0]).saturating_add(b.drawn[1])
+            })
+    })
+}
+
+/// What a reward consolidated in the pair it reached (brief 066's reading), by the kind of the
+/// trial that earned it: `[the gate's selection rewarded, the gate's punished, a drawn
+/// selection rewarded, a drawn one punished]`. Per kind: the trials of the kind that selected a
+/// readout and were followed by a trial of the run; and, over the trial after each, what the
+/// network's oracle consolidated in the pair of the stimulus the trial presented and the
+/// readout it selected, raised and lowered. The address a trial writes stands until the next
+/// trial's end and the signal its reward leaves decays over the next trial, so what the next
+/// trial consolidates in that pair is that reward's.
+type Reached = [(u32, i64, i64); 4];
+
+/// `Reached` per mapping of `schedule`, each trial under the mapping it ran in: `read` the
+/// run's trials, `drawn` whether each was drawn, `pairs` each trial's consolidation by pair.
+fn reached_by_mapping(
+    schedule: &Schedule,
+    read: &[AnsweredTrial],
+    drawn: &[bool],
+    pairs: &[[[[i64; 2]; ANSWERS]; 2]],
+) -> [Reached; 4] {
+    schedule.spans().map(|(from, to)| {
+        let mut out: Reached = [(0, 0, 0); 4];
+        for (at, &(stimulus, _, selection, correct, _, _, _)) in
+            read.iter().enumerate().take(to).skip(from)
+        {
+            let (Some(readout), Some(next)) = (selection, pairs.get(at.saturating_add(1))) else {
+                continue;
+            };
+            let was_drawn = drawn.get(at).copied().unwrap_or(false);
+            let kind = usize::from(was_drawn)
+                .saturating_mul(2)
+                .saturating_add(usize::from(!correct));
+            let [raised, lowered] = next[usize::from(stimulus)][usize::from(readout)];
+            let of = &mut out[kind];
+            *of = (
+                of.0.saturating_add(1),
+                of.1.saturating_add(raised),
+                of.2.saturating_add(lowered),
+            );
+        }
+        out
+    })
+}
+
+/// Per flip and stimulus, the stimulus's coupling into its old answer's readout — its answer
+/// until the flip, the readout before its new one — as a fraction of the image's in parts per
+/// ten thousand: at the end of the last block before the flip, and at the end of the mapping
+/// the flip put in force. Zeros for a mapping the table does not hold.
+fn old_couplings(
+    schedule: &Schedule,
+    first: [usize; 2],
+    image: &[[i64; ANSWERS]; 2],
+    blocks: &[AnsweredBlock],
+) -> [[(i64, i64); 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = schedule.mappings()[m];
+        let answers = answers_of(schedule, first, m);
+        [0usize, 1].map(|s| {
+            let [_, old, _] = roles(answers[s]);
+            let at = |end: usize| {
+                last_of(blocks, end).map_or(0, |b| per_myriad(b.couplings[s][old], image[s][old]))
+            };
+            (at(from), at(to))
+        })
+    })
+}
+
+/// What ADR-0162's regime is read against, per flip and stimulus `[A, B]`:
+/// - `until_below`: the stimulus's presentations from the flip up to the first whose value was
+///   below zero, that one counted; none when none was before the mapping's end;
+/// - `leading`: over the stimulus's trials of the mapping from that presentation on at which
+///   the gate's own reading — the largest count alone — was its old answer's readout: how many;
+///   those drawn; the engine's value at them, summed; and what they selected by role, `[the new
+///   answer, the old, the third]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Regime {
+    until_below: [[Option<usize>; 2]; 3],
+    leading: [[Leading; 2]; 3],
+}
+
+/// One stimulus's trials while the gate's own reading is its old answer (`Regime::leading`):
+/// how many, those drawn, the values summed, and the selections by role.
+type Leading = (u32, u32, i64, [u32; ANSWERS]);
+
+/// `Regime` over a run's trials on `schedule`, `first` its first answers; nothing for a mapping
+/// the run does not reach.
+fn regime(
+    schedule: &Schedule,
+    first: [usize; 2],
+    read: &[AnsweredTrial],
+    drawn: &[bool],
+) -> Regime {
+    let mut out = Regime {
+        until_below: [[None; 2]; 3],
+        leading: [[(0, 0, 0, [0; ANSWERS]); 2]; 3],
+    };
+    for f in [0usize, 1, 2] {
+        let m = f.saturating_add(1);
+        let (from, to) = schedule.spans()[m];
+        let answers = answers_of(schedule, first, m);
+        for s in [0usize, 1] {
+            let by_role = roles(answers[s]);
+            let [_, old, _] = by_role;
+            let mut presented = 0usize;
+            for (at, &(stimulus, counts, selection, _, _, value, _)) in
+                read.iter().enumerate().take(to).skip(from)
+            {
+                if usize::from(stimulus) != s {
+                    continue;
+                }
+                presented = presented.saturating_add(1);
+                if out.until_below[f][s].is_none() && value < 0 {
+                    out.until_below[f][s] = Some(presented);
+                }
+                if out.until_below[f][s].is_none()
+                    || largest_alone(counts).map(usize::from) != Some(old)
+                {
+                    continue;
+                }
+                let of = &mut out.leading[f][s];
+                of.0 = of.0.saturating_add(1);
+                of.1 =
+                    of.1.saturating_add(u32::from(drawn.get(at).copied().unwrap_or(false)));
+                of.2 = of.2.saturating_add(i64::from(value));
+                let role = by_role
+                    .iter()
+                    .position(|&r| selection.map(usize::from) == Some(r));
+                if let Some(count) = role.and_then(|role| of.3.get_mut(role)) {
+                    *count = count.saturating_add(1);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Per mapping, the trials at which the gate's own reading selected nothing, the largest count
+/// shared, whatever the trial then selected.
+fn gate_ties(schedule: &Schedule, read: &[AnsweredTrial]) -> [u32; 4] {
+    schedule.spans().map(|(from, to)| {
+        read.iter()
+            .take(to)
+            .skip(from)
+            .filter(|trial| largest_alone(trial.1).is_none())
+            .count() as u32
+    })
+}
+
+// ----------------------------------------- the predicted readings' rules (ADR-0162)
+
+/// Reading (a)'s counts: per flip and stimulus, the stimulus's selections of its new answer —
+/// its correct trials — over the `EARLY_BLOCKS` of the mapping the flip put in force, its
+/// second to its eighth; zeros for a mapping the table does not hold that far.
+fn new_early_counts(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [[u32; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, _) = schedule.mappings()[m];
+        let mine = blocks
+            .get(from.saturating_add(EARLY_BLOCKS.0)..from.saturating_add(EARLY_BLOCKS.1))
+            .unwrap_or(&[]);
+        [0usize, 1].map(|s| {
+            mine.iter()
+                .fold(0u32, |sum, b| sum.saturating_add(b.correct[s]))
+        })
+    })
+}
+
+/// ADR-0162's predicted reading (a) as a rule, per flip and stimulus: more selections of the new
+/// answer over the same blocks than in H-29, the presentations being the same trials'.
+fn new_early(mine: [[u32; 2]; 3], h29: [[u32; 2]; 3]) -> [[bool; 2]; 3] {
+    [0usize, 1, 2].map(|f| [0usize, 1].map(|s| mine[f][s] > h29[f][s]))
+}
+
+/// ADR-0162's predicted reading (b) as a rule, per flip and stimulus: the lowest of the
+/// stimulus's block means over the mapping the flip put in force (`answered_troughs`) at or
+/// above −0.75 of the reward.
+fn settles_higher(troughs: &[[(i64, usize); 2]; 4]) -> [[bool; 2]; 3] {
+    let floor = i64::from(REWARD_Q16)
+        .saturating_mul(FLOOR_QUARTERS.0)
+        .saturating_neg();
+    [1usize, 2, 3]
+        .map(|m| [0usize, 1].map(|s| troughs[m][s].0.saturating_mul(FLOOR_QUARTERS.1) >= floor))
+}
+
+/// ADR-0162's predicted reading (d) as a rule, per mapping: for a mapping learned by each
+/// stimulus, whether fewer than one trial in ten of its last 128 was drawn; none for a mapping
+/// not learned, of which the reading says nothing.
+fn switches_off(learned: [bool; 4], drawn: [u32; 4]) -> [Option<bool>; 4] {
+    let trials = LAST_BLOCKS.saturating_mul(BLOCK) as u32;
+    [0usize, 1, 2, 3].map(|m| learned[m].then(|| drawn[m].saturating_mul(OFF_TIMES) < trials))
+}
+
+/// ADR-0162's predicted reading (e) as a rule, per mapping: the six couplings' sum at the
+/// mapping's end at or above 0.99 of the image's six summed.
+fn not_worn(image: &[[i64; ANSWERS]; 2], ends: [i64; 4]) -> [bool; 4] {
+    let floor = six(image).saturating_mul(NOT_WORN_PER_CENT.0);
+    ends.map(|sum| sum.saturating_mul(NOT_WORN_PER_CENT.1) >= floor)
+}
+
+// --------------------------------------------------- the readings (brief 066)
+
+/// What brief 066 reads of an arm beside its blocks. H-29's readings by H-29's reader and the
+/// trials' by brief 063's, both over this run; the blocks below minus half the reward
+/// (`below_half`); the exploration summed over each mapping (`explored_by_mapping`) and the
+/// trials drawn over each mapping's last 128 (`drawn_last`); what a reward consolidated in the
+/// pair it reached, by the kind of trial (`reached_by_mapping`); the old answer's coupling at
+/// each flip and at each mapping's end (`old_couplings`); what the regime is read against
+/// (`regime`); the ties of the gate's own reading (`gate_ties`); the six couplings' sum at each
+/// mapping's end and its lowest, highest and last over the run as fractions of the image's in
+/// parts per ten thousand; the inhibitory sum at each mapping's end; and ADR-0162's five
+/// predicted readings by their rules, the first with its counts, against H-29's pinned tables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ExploredRead {
+    answered: AnsweredRead,
+    trials: TrialsRead,
+    below_half: [[usize; 2]; 4],
+    by_mapping: [ExploredBlock; 4],
+    drawn_last: [u32; 4],
+    reached: [Reached; 4],
+    old_couplings: [[(i64, i64); 2]; 3],
+    regime: Regime,
+    gate_ties: [u32; 4],
+    six_ends: [i64; 4],
+    six_course: (i64, i64, i64),
+    inhibitory_ends: [i64; 4],
+    new_early_counts: [[u32; 2]; 3],
+    new_early: [[bool; 2]; 3],
+    settles_higher: [[bool; 2]; 3],
+    faster: [bool; 3],
+    switches_off: [Option<bool>; 4],
+    not_worn: [bool; 4],
+}
+
+/// An arm's readings from its tables, `k` its index in `EXPLORED_ARMS`.
+fn explored_read(k: usize, run: &AnsweredRun) -> ExploredRead {
+    let first = first_answers(EXPLORED_ARMS[k]);
+    let image = &DEALT_COUPLINGS_1024;
+    let blocks = run.blocks.as_slice();
+    let answered = answered_read(&SCHEDULE, k, run);
+    let h29 = ANSWERED_READINGS_1024[k].expect("H-29's readings of the arm");
+    let explored = explored_blocks(&SCHEDULE, first, &run.read, &run.drawn);
+    let drawn = drawn_last(&SCHEDULE, &explored);
+    let six_ends = six_at_ends(&SCHEDULE, blocks);
+    let sixes: Vec<i64> = blocks.iter().map(|b| six(&b.couplings)).collect();
+    let early = new_early_counts(&SCHEDULE, blocks);
+    ExploredRead {
+        answered,
+        trials: trials_read(&SCHEDULE, first, &run.read),
+        below_half: below_half(&SCHEDULE, &answered_means(blocks)),
+        by_mapping: explored_by_mapping(&SCHEDULE, &explored),
+        drawn_last: drawn,
+        reached: reached_by_mapping(&SCHEDULE, &run.read, &run.drawn, &run.pairs),
+        old_couplings: old_couplings(&SCHEDULE, first, image, blocks),
+        regime: regime(&SCHEDULE, first, &run.read, &run.drawn),
+        gate_ties: gate_ties(&SCHEDULE, &run.read),
+        six_ends,
+        six_course: low_high_last(six(image), &sixes),
+        inhibitory_ends: inhibitory_at_ends(&SCHEDULE, blocks),
+        new_early_counts: early,
+        new_early: new_early(early, new_early_counts(&SCHEDULE, ANSWERED_BLOCKS_1024[k])),
+        settles_higher: settles_higher(&answered.troughs),
+        faster: faster(answered.crossings, h29.crossings),
+        switches_off: switches_off(answered.last.map(|m| learned_by_each(&m)), drawn),
+        not_worn: not_worn(image, six_ends),
+    }
+}
+
+/// Every trial's reading with whether it was drawn, hashed: `answered_hash`'s words, the draw
+/// after each trial's.
+fn explored_hash(read: &[AnsweredTrial], drawn: &[bool]) -> u64 {
+    assert_eq!(read.len(), drawn.len(), "a draw a trial");
+    let mut words: Vec<i32> = Vec::with_capacity(read.len().saturating_mul(10));
+    for (&(stimulus, counts, selection, correct, reward, value, signal), &was) in
+        read.iter().zip(drawn)
+    {
+        words.push(i32::from(stimulus));
+        words.extend(counts.map(|n| i32::try_from(n).unwrap_or(i32::MAX)));
+        words.push(i32::from(selection.map_or(ANSWERS as u8, |r| r)));
+        words.push(i32::from(correct));
+        words.extend([reward, value, signal]);
+        words.push(i32::from(was));
+    }
+    fnv1a_64(&words)
+}
+
+// ------------------------------------------------------- the calibration (brief 066)
+
+/// The first trial of a run at which the hand rule says the exploration draws, over the trials
+/// as read — the value below zero and the trial's coin below its part — with the value there
+/// and the hand rule's channel; none when no trial is one.
+fn first_drawn(read: &[AnsweredTrial]) -> Option<(usize, i32, u8)> {
+    read.iter()
+        .enumerate()
+        .find(|&(at, trial)| explores_by_hand(SEED, at as u64, trial.5))
+        .map(|(at, trial)| (at, trial.5, channel_by_hand(SEED, at as u64)))
+}
+
+/// The two runs of the calibration held to one another (H-32's stopping rule, step 2): `unset`
+/// from H-29's image and `set` from the same image with the task's exploration set, over the
+/// same trials. Up to the first trial at which the value is below zero and the coin draws,
+/// found on the unset run by `first_drawn`, the two are one, trial for trial in every number
+/// read, and neither draws. At it they present the same stimulus to the same counts and value;
+/// the unset run draws nothing and selects the largest count alone, and the set run records the
+/// trial drawn and selects the hand rule's channel. Returns the trial's index, the value there,
+/// the channel, and whether the two trials differ in a number read, which they do exactly where
+/// the channel is not the one the gate selected; none found stops the round there as a finding.
+fn parts_at_first_drawn(
+    name: &str,
+    unset: &AnsweredRun,
+    set: &AnsweredRun,
+) -> (usize, i32, u8, bool) {
+    assert_eq!(unset.read.len(), set.read.len(), "{name}: the same trials");
+    assert!(
+        unset.drawn.iter().all(|&was| !was),
+        "{name}: unset, no trial is drawn"
+    );
+    let (at, value, channel) = first_drawn(&unset.read)
+        .expect("no coin drew at a value below zero, and the round stops here as a finding");
+    assert_eq!(
+        set.read[..at],
+        unset.read[..at],
+        "{name}: up to trial {at} the two runs are one, trial for trial"
+    );
+    assert!(
+        set.drawn[..at].iter().all(|&was| !was),
+        "{name}: no trial before trial {at} is drawn"
+    );
+    assert_eq!(
+        first_drawn(&set.read),
+        Some((at, value, channel)),
+        "{name}: the set run draws first at the same trial, against the same value"
+    );
+    let (u, s) = (unset.read[at], set.read[at]);
+    assert_eq!(
+        (s.0, s.1, s.5),
+        (u.0, u.1, u.5),
+        "{name}: trial {at} presents the same stimulus to the same counts and value"
+    );
+    assert_eq!(
+        (set.drawn[at], s.2, u.2),
+        (true, Some(channel), largest_alone(u.1)),
+        "{name}: trial {at}: set, drawn, the selection the hand rule's channel; unset, the largest count alone"
+    );
+    let parted = s != u;
+    assert_eq!(
+        parted,
+        Some(channel) != u.2,
+        "{name}: trial {at}: the two trials differ exactly where the channel is not the gate's selection"
+    );
+    (at, value, channel, parted)
+}
+
+/// The calibration of an arm of H-32 with the exploration set (H-32's stopping rule, step 2):
+/// the arm's first block from H-29's image with the exploration unset and with it set, under
+/// H-29's readouts and delivery, every oracle and hand rule held at every trial of both. The
+/// unset block is H-29's pinned first block, table for table, and the two runs are held to one
+/// another by `parts_at_first_drawn`; the arm leaves H-29's at that trial, which is asserted.
+/// Everything is dumped before anything is held. Returns the first trial drawn with its value
+/// and channel, and the set run.
+fn explored_calibration(
+    name: &str,
+    k: usize,
+    windowed: &[u8],
+    sets: &AnsweredSets,
+) -> ((usize, i32, u8), AnsweredRun) {
+    let first = first_answers(EXPLORED_ARMS[k]);
+    let block_from = |exploration: Exploration| {
+        let mut exec = signed_from(windowed, 1024);
+        assert!(
+            !exec.whole_punishment(),
+            "{name}: H-29's image, the whole punishment unset"
+        );
+        answered_run(
+            &mut exec,
+            sets,
+            first,
+            Feedback::Answer,
+            EXPLORED_DELIVERY,
+            exploration,
+            &SCHEDULE,
+            BLOCK,
+            &mut |_, _| {},
+        )
+    };
+    let unset = block_from(Exploration::Unset);
+    let set = block_from(EXPLORED);
+    eprintln!(
+        "DUMP {name} PIN first drawn {:?}; the unset block's trials {:?}; the set block's {:?}, drawn {:?}",
+        first_drawn(&unset.read),
+        unset.read,
+        set.read,
+        set.drawn
+    );
+    assert_eq!(
+        unset.blocks.as_slice(),
+        &ANSWERED_BLOCKS_1024[k][..1],
+        "{name}: with the exploration unset the first block is H-29's, table for table"
+    );
+    let (at, value, channel, parted) = parts_at_first_drawn(name, &unset, &set);
+    assert!(
+        parted,
+        "{name}: at trial {at} the arm differs from H-29's (ADR-0162's stopping rule, step 2)"
+    );
+    assert_ne!(
+        answered_hash(&set.read),
+        answered_hash(&unset.read),
+        "{name}: from that trial the set run is another run"
+    );
+    ((at, value, channel), set)
+}
+
+// ---------------------------------------------------------------- the arm (brief 066)
+
+/// One arm of H-32 at 1 024 units (brief 066): the calibration before any rewarded run of the
+/// protocol (H-32's stopping rule, step 2) — H-29's image built and held link by link, to its
+/// CRC as it is and as H-29 read it at format 20, the whole punishment unset; the deal held to
+/// the readouts' rule on it; and the arm's first block with the exploration unset and set held
+/// to H-29's and to one another, the trial at which the arm leaves H-29's held to its pin —
+/// then the arm's 7 680 trials from that image under H-29's readouts, delivery and flips with
+/// the exploration set, the critic's oracle, the exploration's hand rules, the hand rule of
+/// what the modulator receives and the network's oracle held to the record at every trial;
+/// everything dumped, the clauses and the readings computed before anything is held; then the
+/// pinned tables of the whole run.
+fn explored_arm(arm: Reversal) {
+    let k = EXPLORED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-32");
+    let name = format!("explored1024 {arm:?}");
+    let (_, windowed) = answered_images(&name);
+    let sets = deal_calibration(&name, &windowed);
+    let (met, calibrated) = explored_calibration(&name, k, &windowed, &sets);
+    assert_eq!(
+        Some(met),
+        EXPLORED_FIRST_DRAWN_1024[k],
+        "{name}: the first trial at which the value is below zero and the coin draws, the value there and the channel drawn"
+    );
+    eprintln!(
+        "DUMP {name} calibration holds: H-20's to H-23's images, H-29's image as it read it with the whole punishment unset, the deal by its rule, and the first block unset H-29's and set H-29's up to trial {}",
+        met.0
+    );
+    let mut exec = signed_from(&windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.whole_punishment(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.ticks()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            false,
+            TARGET_PERIOD_1024,
+            exec.ticks(),
+            Ok(()),
+            SETTLED_TICK
+        ),
+        "{name}: H-29's configuration, the whole punishment unset"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        answered_couplings(&exec, &sets),
+        DEALT_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let first = first_answers(arm);
+    let run = answered_run(
+        &mut exec,
+        &sets,
+        first,
+        Feedback::Answer,
+        EXPLORED_DELIVERY,
+        EXPLORED,
+        &SCHEDULE,
+        SCHEDULE_TRIALS,
+        &mut |_, _| {},
+    );
+    assert_eq!(
+        (
+            run.blocks.len(),
+            run.read.len(),
+            run.drawn.len(),
+            run.pairs.len()
+        ),
+        (
+            SCHEDULE_BLOCKS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS
+        ),
+        "{name}: 120 blocks of 64 trials"
+    );
+    assert_eq!(
+        (&run.read[..BLOCK], &run.drawn[..BLOCK]),
+        (calibrated.read.as_slice(), calibrated.drawn.as_slice()),
+        "{name}: the arm's first block is the calibration's, so the arm is H-29's up to trial {}",
+        met.0
+    );
+    let at_flips = run
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    let explored = explored_blocks(&SCHEDULE, first, &run.read, &run.drawn);
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
+    eprintln!("DUMP {name} PIN explored {explored:?}");
+    eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
+    eprintln!(
+        "DUMP {name} PIN read {:#018x}",
+        explored_hash(&run.read, &run.drawn)
+    );
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} TRIALS {:?}", run.read);
+    eprintln!(
+        "DUMP {name} DRAWN {:?}",
+        run.drawn
+            .iter()
+            .enumerate()
+            .filter(|&(_, &was)| was)
+            .map(|(at, _)| at)
+            .collect::<Vec<usize>>()
+    );
+    eprintln!("DUMP {name} PAIRS {:?}", run.pairs);
+    let read = explored_read(k, &run);
+    eprintln!("DUMP {name} PIN readings {read:?}");
+    let h29 = ANSWERED_READINGS_1024[k].expect("H-29's readings of the arm");
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned by each {:?} over {:?} left {:?} the expected reward held {:?}; no prediction for the verdict: {EXPLORED_PREDICTED:?}",
+        read.answered.last.map(|m| learned_by_each(&m)),
+        read.answered.over,
+        read.answered.left,
+        read.answered.last.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} the predicted readings: (a) the new answer selected early, predicted {NEW_EARLY_PREDICTED}: {:?} — {:?} beside H-29's {:?}; (b) the value settles higher, predicted {SETTLES_HIGHER_PREDICTED}: {:?} — troughs {:?} beside H-29's {:?}; (c) every reversal faster, predicted {EXPLORED_FASTER_PREDICTED}: {:?} — crossings {:?} beside H-29's {:?}; (d) the exploration switches itself off, predicted {SWITCHES_OFF_PREDICTED}: {:?} — drawn over each mapping's last 128 {:?}; (e) the couplings not worn down, predicted {NOT_WORN_PREDICTED}: {:?} — the six couplings' sum at each mapping's end {:?} beside H-29's {:?}, the image's {}",
+        read.new_early,
+        read.new_early_counts,
+        new_early_counts(&SCHEDULE, ANSWERED_BLOCKS_1024[k]),
+        read.settles_higher,
+        read.answered.troughs,
+        h29.troughs,
+        read.faster,
+        read.answered.crossings,
+        h29.crossings,
+        read.switches_off,
+        read.drawn_last,
+        read.not_worn,
+        read.six_ends,
+        six_at_ends(&SCHEDULE, ANSWERED_BLOCKS_1024[k]),
+        six(&DEALT_COUPLINGS_1024)
+    );
+    eprintln!(
+        "DUMP {name} the regime, read against {REGIME_PRESENTATIONS} presentations and {REGIME_FIFTHS:?} fifths: {:?}",
+        read.regime
+    );
+    eprintln!(
+        "DUMP {name} the exploration by mapping {:?}; what a reward consolidated in the pair it reached, [gate's rewarded, gate's punished, drawn rewarded, drawn punished] {:?}",
+        read.by_mapping, read.reached
+    );
+    eprintln!(
+        "DUMP {name} the old answer: held {:?} blocks beside H-29's {:?}; its coupling at each flip and each mapping's end {:?} beside H-29's {:?}",
+        read.answered.old_held,
+        h29.old_held,
+        read.old_couplings,
+        old_couplings(
+            &SCHEDULE,
+            first,
+            &DEALT_COUPLINGS_1024,
+            ANSWERED_BLOCKS_1024[k]
+        )
+    );
+    eprintln!(
+        "DUMP {name} the gate's own ties {:?} beside H-29's {:?}; the trials' readings {:?} beside H-29's {:?}",
+        read.gate_ties,
+        h29.tally.map(|t| t[2]),
+        read.trials,
+        ANSWERED_TRIALS_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} value by block {:?} beside H-29's {:?}",
+        answered_means(&run.blocks),
+        answered_means(ANSWERED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-29's {:?}; at each mapping's end {:?} beside H-29's {:?}",
+        run.blocks
+            .iter()
+            .map(|b| per_myriad(b.sums.0, image_sums.0))
+            .collect::<Vec<i64>>(),
+        ANSWERED_BLOCKS_1024[k]
+            .iter()
+            .map(|b| per_myriad(b.sums.0, image_sums.0))
+            .collect::<Vec<i64>>(),
+        read.inhibitory_ends,
+        inhibitory_at_ends(&SCHEDULE, ANSWERED_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} went by mapping, [answer's pairs, other pairs, outside][raised, lowered]: {:?} beside H-29's {:?}",
+        read.answered.went, h29.went
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    assert_eq!(
+        run.blocks.as_slice(),
+        EXPLORED_BLOCKS_1024[k],
+        "{name}: the blocks"
+    );
+    assert_eq!(
+        explored.as_slice(),
+        EXPLORED_DRAWN_1024[k],
+        "{name}: the exploration by block"
+    );
+    assert_eq!(
+        (run.trace, explored_hash(&run.read, &run.drawn)),
+        (EXPLORED_TRACES_1024[k], EXPLORED_READ_1024[k]),
+        "{name}: the accuracy sequence, and every trial's reading with its draw"
+    );
+    assert_eq!(
+        Some(at_flips),
+        EXPLORED_AT_FLIPS_1024[k],
+        "{name}: the couplings after the first trial of each new mapping"
+    );
+    assert_eq!(
+        Some(read),
+        EXPLORED_READINGS_1024[k],
+        "{name}: the readings"
+    );
+    assert_eq!(
+        weights_by_polarity(&exec),
+        read.answered.sums_after,
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-32's arm that starts from the assignment (brief 066): H-29's answers, (0, 1), (1, 2),
+/// (2, 0) and (0, 1), with the exploration set.
+#[test]
+#[ignore]
+fn an_exploration_the_value_gates_from_the_assignment_at_1024_units_exhaustive() {
+    explored_arm(Reversal::AssignmentFirst);
+}
+
+/// H-32's arm that starts from the mirrored assignment (brief 066): H-29's answers, (1, 0),
+/// (2, 1), (0, 2) and (1, 0), with the exploration set.
+#[test]
+#[ignore]
+fn an_exploration_the_value_gates_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    explored_arm(Reversal::MirroredFirst);
+}
+
+// --------------------------------------------------------------------- the gate (brief 066)
+
+/// The trials of the gate's two runs on the instrument's network: enough for a coin to draw at
+/// a value below zero and for the runs to go on past it. Twelve: at the harness's seed the
+/// fourth trial's coin, 168 of 65 536, meets a value above zero on that network, and the next
+/// coin low enough for the value it holds by then is the tenth trial's, 2 389.
+const EXPLORED_GATE_TRIALS: usize = 12;
+
+/// The gate's test (ADR-0061's class; brief 066): the arms, the delivery, the exploration, the
+/// predictions and the constants as ADR-0162 fixed them; the exploration's hand rules at their
+/// cases, against an oracle written apart from the tree and against the task's own rule over
+/// every trial of a run; H-32's verdict by H-29's rules with the step it reaches in H-32's
+/// stopping rule's order, over tables written by hand; the readings' rules and the predicted
+/// readings' over tables and trials written by hand; and trials of the task with three readouts
+/// on the instrument's network with the exploration set beside the same trials with it unset,
+/// every oracle and hand rule held at every trial of both and the two runs held to one another
+/// as the calibration holds them. Nothing else added to the gate.
+#[test]
+fn the_clauses_of_h_32_the_exploration_s_hand_rules_and_the_readings_rules() {
+    // ------------------------------------------------ the protocol (ADR-0162, ADR-0164)
+    assert_eq!(EXPLORED_ARMS, ANSWERED_ARMS, "H-29's two arms");
+    assert_eq!(
+        (EXPLORED_DELIVERY, EXPLORED, EXPLORED_PREDICTED),
+        (Delivery::Drawn, Exploration::ValueGated, None),
+        "H-29's delivery, the exploration set, and no prediction for the verdict"
+    );
+    assert_eq!(
+        [
+            NEW_EARLY_PREDICTED,
+            SETTLES_HIGHER_PREDICTED,
+            EXPLORED_FASTER_PREDICTED,
+            SWITCHES_OFF_PREDICTED,
+            NOT_WORN_PREDICTED
+        ],
+        [true; 5],
+        "the five predicted readings"
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            EACH_TIMES,
+            BOUND_PER_CENT,
+            BAND_QUARTERS,
+            BAND_DIVISOR,
+            HOLDS_DIVISOR,
+            CROSSING_MARK,
+            LAST_BLOCKS
+        ),
+        (80, 2, 130, (3, 5), 4, 4, 40, 2),
+        "clauses 1 to 4 are H-29's, as ADR-0162 wrote them"
+    );
+    assert_eq!(
+        (SCHEDULE.flips, SCHEDULE.trials, SCHEDULE.blocks()),
+        ([1_536, 3_584, 5_632], 7_680, 120),
+        "H-25's schedule, H-20's, and not ADR-0157's"
+    );
+    assert_eq!(
+        (
+            EARLY_BLOCKS,
+            FLOOR_QUARTERS,
+            OFF_TIMES,
+            NOT_WORN_PER_CENT,
+            REGIME_PRESENTATIONS,
+            REGIME_FIFTHS
+        ),
+        ((1, 8), (3, 4), 10, (99, 100), 25, (3, [1, 3, 1])),
+        "the predicted readings' constants and the regime's numbers"
+    );
+    assert_eq!(
+        (WINDOWED_IMAGE_CRC_1024, WINDOWED_IMAGE_CRC_FORMAT_20_1024),
+        (0x1158_6a76_f741_5129, 0x5044_ed79_36a7_b5f3),
+        "H-29's image at format 21 and as H-29 read it at 20"
+    );
+    assert_eq!(
+        EXPLORED_FIRST_DRAWN_1024,
+        [Some((3, -1_600, 2)), Some((9, -4_863, 2))],
+        "the trial each arm leaves H-29's at, written from H-29's dumps before any run"
+    );
+    assert_eq!((EXPLORED_GATE_TRIALS, GATE_TRIALS), (12, 8));
+    // ------------------------------------------------ the hand rules (ADR-0163)
+    // Against the oracle written apart from the tree, SplitMix64's finaliser in another
+    // language, at the harness's seed: the coin of the first ten trials and the channel among
+    // three of the first sixteen.
+    const R: i32 = REWARD_Q16;
+    assert_eq!(SEED, 27);
+    assert_eq!(
+        [0u64, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(|trial| coin_by_hand(SEED, trial)),
+        [
+            22_913, 3_925, 61_639, 168, 34_719, 62_066, 34_817, 54_431, 61_251, 2_389
+        ],
+        "bits 16 to 31 of mix64(27 ^ k)"
+    );
+    let mut channels = [0u8; 16];
+    for (trial, channel) in channels.iter_mut().enumerate() {
+        *channel = channel_by_hand(SEED, trial as u64);
+    }
+    assert_eq!(
+        channels,
+        [0, 2, 2, 2, 1, 1, 0, 1, 1, 2, 1, 1, 2, 2, 0, 1],
+        "bits 33 to 47 of mix64(27 ^ k) among three"
+    );
+    // The coin against the value at its cases: trial 3's coin is 168, trial 0's 22 913.
+    assert!(
+        !explores_by_hand(SEED, 3, 0),
+        "a value of zero draws nothing"
+    );
+    assert!(!explores_by_hand(SEED, 3, 1) && !explores_by_hand(SEED, 3, R));
+    assert!(
+        !explores_by_hand(SEED, 3, -168) && explores_by_hand(SEED, 3, -169),
+        "a coin draws below the value's part below zero, not at it"
+    );
+    assert!(!explores_by_hand(SEED, 0, -22_913) && explores_by_hand(SEED, 0, -22_914));
+    assert!(!explores_by_hand(SEED, 2, -61_639) && explores_by_hand(SEED, 2, -61_640));
+    for trial in 0..256u64 {
+        assert!(
+            explores_by_hand(SEED, trial, -R)
+                && explores_by_hand(SEED, trial, -R - 1)
+                && explores_by_hand(SEED, trial, i32::MIN),
+            "trial {trial}: at minus the reward and beyond, every coin draws"
+        );
+        assert!(!explores_by_hand(SEED, trial, 0), "trial {trial}");
+    }
+    // Against the task's own rule, over every trial of a run: the coin, the channel among the
+    // task's three readouts, and the comparison at a lattice of values.
+    let taken_sets = answered_sets(&DEAL_1024);
+    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
+    let probe: Task<ANSWERS> = Task {
+        stimuli: taken_sets.0.map(|set| Stimulus {
+            set,
+            messages: SHAPE_F46.0,
+            efficacy_q16: SHAPE_F46.1,
+            cancel: Some(cancel_of(picked)),
+        }),
+        readout: Readout::new(taken_sets.1),
+        drive: drive(1024),
+        ticks: TRIAL_TICKS,
+        window: WINDOW,
+        seed: SEED,
+        reward_q16: REWARD_Q16,
+        answers: [0, 1],
+        feedback: Feedback::Answer,
+        delivery: EXPLORED_DELIVERY,
+        critic: None,
+        hold: None,
+        exploration: EXPLORED,
+    };
+    let mut by_channel = [0u32; ANSWERS];
+    let mut below = [0u32; 3];
+    for trial in 0..SCHEDULE_TRIALS as u64 {
+        let coin = probe.exploration_coin_at(trial);
+        assert_eq!(coin_by_hand(SEED, trial), i64::from(coin), "trial {trial}");
+        assert_eq!(
+            channel_by_hand(SEED, trial),
+            probe.drawn_at(trial),
+            "trial {trial}"
+        );
+        for value in [
+            i32::MIN,
+            -2 * R,
+            -R - 1,
+            -R,
+            -R + 1,
+            -R / 2,
+            -1_000,
+            -i32::from(coin) - 1,
+            -i32::from(coin),
+            -2,
+            -1,
+            0,
+            1,
+            R,
+            i32::MAX,
+        ] {
+            assert_eq!(
+                explores_by_hand(SEED, trial, value),
+                Exploration::draws(coin, value, REWARD_Q16),
+                "trial {trial} value {value}: the hand rule is the task's at a reward of 1.0"
+            );
+        }
+        by_channel[usize::from(channel_by_hand(SEED, trial))] += 1;
+        for (count, quarter) in below.iter_mut().zip([0x4000u16, 0x8000, 0xC000]) {
+            *count += u32::from(coin < quarter);
+        }
+    }
+    assert_eq!(
+        (by_channel, below),
+        ([2_573, 2_509, 2_598], [1_940, 3_845, 5_699]),
+        "over the run's 7 680 trials, by the apart oracle: each channel about a third, and the coins below a quarter, a half and three quarters of the width"
+    );
+    // ---------------------------------------------------- the criterion (ADR-0162)
+    // H-32's four clauses are H-29's by H-29's rules (`answered`), and its stopping rule reads
+    // them in H-29's order (`answered_step`): 3 for a yes; 4 for a no on clause 3; otherwise 5
+    // for a no on clause 1; otherwise 6 for a no on clause 2; otherwise 7, clause 4 alone. Over
+    // tables written by hand: an arm of 120 blocks, each stimulus presented 32 times a block and
+    // answered 25, every coupling the image's, the excitatory sum the image's, and each
+    // stimulus's values the reward of 2c − n a block.
+    const RQ: i64 = REWARD_Q16 as i64;
+    let image = DEALT_COUPLINGS_1024;
+    let (_, image_excitatory) = QUIET_1024[SETTLED].1;
+    let outside = answered_outside(image_excitatory, &image);
+    let block = |correct: [u32; 2]| AnsweredBlock {
+        presented: [32, 32],
+        correct,
+        values: correct.map(|c| (2 * i64::from(c) - 32) * RQ),
+        sums: (0, image_excitatory),
+        couplings: image,
+        ..NO_BLOCK
+    };
+    let arm = || vec![block([25, 25]); SCHEDULE_BLOCKS];
+    let good = arm();
+    let yes = answered(&SCHEDULE, &image, outside, [&good, &good]);
+    assert_eq!((yes.yes, answered_step(&yes)), (true, 3));
+    // Clause 1 at its edge, on a mapping after a flip: 80 of its last 128 with each stimulus
+    // above half holds; 79 does not, and neither does 80 with one stimulus at exactly half.
+    let last_two = |correct: [[u32; 2]; 2]| {
+        let mut blocks = arm();
+        blocks[54] = block(correct[0]);
+        blocks[55] = block(correct[1]);
+        blocks
+    };
+    let at_edge = answered(
+        &SCHEDULE,
+        &image,
+        outside,
+        [&last_two([[20, 20], [20, 20]]), &good],
+    );
+    assert_eq!((at_edge.yes, answered_step(&at_edge)), (true, 3));
+    let below_edge = answered(
+        &SCHEDULE,
+        &image,
+        outside,
+        [&last_two([[20, 20], [20, 19]]), &good],
+    );
+    assert_eq!(
+        (
+            below_edge.learned[0],
+            below_edge.yes,
+            answered_step(&below_edge)
+        ),
+        ([true, false, true, true], false, 5),
+        "79 of 128: the line stops among three answers"
+    );
+    let at_half = answered(
+        &SCHEDULE,
+        &image,
+        outside,
+        [&good, &last_two([[32, 16], [32, 16]])],
+    );
+    assert_eq!(
+        (at_half.learned[1], answered_step(&at_half)),
+        ([true, false, true, true], 5),
+        "96 of 128 with one stimulus at exactly half of its presentations"
+    );
+    // Clause 3 is read before every other.
+    let low = (outside * 3).div_euclid(4);
+    let coupled = image_excitatory - outside;
+    let mut left = last_two([[20, 20], [20, 19]]);
+    left[100].sums.1 = coupled + low - 1;
+    let no = answered(&SCHEDULE, &image, outside, [&left, &good]);
+    assert_eq!(
+        (no.held, no.learned[0][1], answered_step(&no)),
+        ([false, true], false, 4),
+        "clause 3 is read first"
+    );
+    // Clause 2 with clause 1 holding, and before clause 4.
+    let bound = image[1][2] * BOUND_PER_CENT / 100;
+    let over = |mut blocks: Vec<AnsweredBlock>| {
+        blocks[70].couplings[1][2] = bound + 1;
+        blocks[70].sums.1 = image_excitatory + bound + 1 - image[1][2];
+        blocks
+    };
+    let no = answered(&SCHEDULE, &image, outside, [&good, &over(arm())]);
+    assert_eq!(
+        (no.bounded, no.held, answered_step(&no)),
+        ([true, false], [true; 2], 6),
+        "clause 2 with the learning and the network holding"
+    );
+    let no = answered(
+        &SCHEDULE,
+        &image,
+        outside,
+        [&over(last_two([[20, 20], [20, 19]])), &good],
+    );
+    assert_eq!(answered_step(&no), 5, "clause 1 is read before clause 2");
+    let off = |mut blocks: Vec<AnsweredBlock>| {
+        blocks[119].values[0] = 18 * RQ + 16 * RQ + 1;
+        blocks
+    };
+    let no = answered(&SCHEDULE, &image, outside, [&off(arm()), &good]);
+    assert_eq!(
+        (no.expected[0][3], no.bounded, answered_step(&no)),
+        ([false, true], [true; 2], 7),
+        "clause 4 alone"
+    );
+    let no = answered(&SCHEDULE, &image, outside, [&off(over(arm())), &good]);
+    assert_eq!(answered_step(&no), 6, "clause 2 is read before clause 4");
+    // ------------------------------------------------ the readings' rules (brief 066)
+    // The exploration by block, over trials written by hand. Every trial ties on no count, is
+    // rewarded and reads nothing, but for those named. From the assignment the first mapping's
+    // answers are (0, 1) and the second's (1, 2).
+    let assignment = first_answers(Reversal::AssignmentFirst);
+    let flip = SCHEDULE_FLIPS[0];
+    let mut trials: Vec<AnsweredTrial> = vec![(0, [0; 3], None, true, 0, 0, 0); SCHEDULE_TRIALS];
+    let mut drawn = vec![false; SCHEDULE_TRIALS];
+    let mut pairs = vec![[[[0i64; 2]; ANSWERS]; 2]; SCHEDULE_TRIALS];
+    // A drawn onto the readout after its answer, apart from the gate's; punished.
+    trials[0] = (0, [5, 2, 1], Some(1), false, -R + 100, -100, 0);
+    drawn[0] = true;
+    pairs[1][0][1] = [5, -70];
+    pairs[1][1][0] = [77, -77];
+    // B drawn onto its answer, the gate's own reading; rewarded.
+    trials[1] = (1, [1, 4, 2], Some(1), true, R + 50, -50, 0);
+    drawn[1] = true;
+    pairs[2][1][1] = [900, -3];
+    // The gate's selections, one rewarded and one punished, under a value below zero.
+    trials[2] = (0, [6, 1, 0], Some(0), true, R + 999, -999, 0);
+    pairs[3][0][0] = [400, 0];
+    trials[3] = (0, [0, 1, 6], Some(2), false, -R, 0, 0);
+    pairs[4][0][2] = [1, -200];
+    // The second block: B drawn onto the readout before its answer, at a tie of the gate's.
+    trials[64] = (1, [3, 3, 0], Some(0), false, -R + 7, -7, 0);
+    drawn[64] = true;
+    pairs[65][1][0] = [0, -30];
+    // The first mapping's last trial: A drawn onto the readout before its answer; what its
+    // reward consolidates falls in the next mapping's first trial and is the first mapping's.
+    trials[flip - 1] = (0, [1, 1, 1], Some(2), false, -R + 1, -1, 0);
+    drawn[flip - 1] = true;
+    pairs[flip][0][2] = [2, -4];
+    // After the flip: A drawn onto its old answer, the gate's own; B drawn onto its new one.
+    trials[flip] = (0, [9, 1, 1], Some(0), false, -R + 300, -300, 0);
+    drawn[flip] = true;
+    pairs[flip + 1][0][0] = [0, -60];
+    trials[flip + 1] = (1, [0, 8, 0], Some(2), true, R + 10, -10, 0);
+    drawn[flip + 1] = true;
+    pairs[flip + 2][1][2] = [700, -1];
+    // The run's last trial selects, and no trial follows it.
+    trials[SCHEDULE_TRIALS - 1] = (0, [4, 0, 0], Some(0), true, R, 0, 0);
+    let explored = explored_blocks(&SCHEDULE, assignment, &trials, &drawn);
+    assert_eq!(explored.len(), SCHEDULE_BLOCKS);
+    let first_block = ExploredBlock {
+        drawn: [1, 1],
+        values: [-100, -50],
+        by_role: [[0, 0, 1], [1, 0, 0]],
+        apart: [1, 0],
+    };
+    let second_block = ExploredBlock {
+        drawn: [0, 1],
+        values: [0, -7],
+        by_role: [[0; 3], [0, 1, 0]],
+        apart: [0, 1],
+    };
+    let before_flip = ExploredBlock {
+        drawn: [1, 0],
+        values: [-1, 0],
+        by_role: [[0, 1, 0], [0; 3]],
+        apart: [1, 0],
+    };
+    let after_flip = ExploredBlock {
+        drawn: [1, 1],
+        values: [-300, -10],
+        by_role: [[0, 1, 0], [1, 0, 0]],
+        apart: [0, 1],
+    };
+    for (j, block) in explored.iter().enumerate() {
+        let expected = match j {
+            0 => first_block,
+            1 => second_block,
+            23 => before_flip,
+            24 => after_flip,
+            _ => NO_EXPLORED,
+        };
+        assert_eq!(*block, expected, "block {j}");
+    }
+    assert_eq!(
+        explored_blocks(&SCHEDULE, assignment, &trials[..100], &drawn[..100]),
+        [first_block],
+        "whole blocks alone"
+    );
+    assert_eq!(
+        explored_blocks(&SCHEDULE, assignment, &trials, &[]),
+        vec![NO_EXPLORED; SCHEDULE_BLOCKS],
+        "no draw, nothing explored"
+    );
+    let by_mapping = explored_by_mapping(&SCHEDULE, &explored);
+    assert_eq!(
+        by_mapping,
+        [
+            ExploredBlock {
+                drawn: [2, 2],
+                values: [-101, -57],
+                by_role: [[0, 1, 1], [1, 1, 0]],
+                apart: [2, 1],
+            },
+            after_flip,
+            NO_EXPLORED,
+            NO_EXPLORED
+        ]
+    );
+    assert_eq!(
+        explored_by_mapping(&SCHEDULE, &explored[..30])[1],
+        NO_EXPLORED,
+        "a mapping the table does not hold"
+    );
+    assert_eq!(drawn_last(&SCHEDULE, &explored), [1, 0, 0, 0]);
+    assert_eq!(drawn_last(&SCHEDULE, &explored[..23]), [0; 4]);
+    // What a reward consolidated in the pair it reached, by the kind of trial.
+    assert_eq!(
+        reached_by_mapping(&SCHEDULE, &trials, &drawn, &pairs),
+        [
+            [(1, 400, 0), (1, 1, -200), (1, 900, -3), (3, 7, -104)],
+            [(0, 0, 0), (0, 0, 0), (1, 700, -1), (1, 0, -60)],
+            [(0, 0, 0); 4],
+            [(0, 0, 0); 4]
+        ],
+        "the pair of the stimulus presented and the readout selected, in the trial after; a trial that selected nothing and the run's last reach none"
+    );
+    // The ties of the gate's own reading: every trial but the seven that name a largest count.
+    assert_eq!(gate_ties(&SCHEDULE, &trials), [1_532, 2_046, 2_048, 2_047]);
+    // The first draw by the hand rule over trials as read.
+    assert_eq!(
+        first_drawn(&trials),
+        None,
+        "trial 3's coin is 168 and its value zero"
+    );
+    let mut valued = trials.clone();
+    valued[3].5 = -168;
+    assert_eq!(first_drawn(&valued), None);
+    valued[3].5 = -169;
+    assert_eq!(first_drawn(&valued), Some((3, -169, 2)));
+    valued[1].5 = -3_926;
+    assert_eq!(first_drawn(&valued), Some((1, -3_926, 2)));
+    // The hash reads the draws.
+    let hashed = explored_hash(&trials, &drawn);
+    let mut other = drawn.clone();
+    other[7] = true;
+    assert_ne!(hashed, explored_hash(&trials, &other));
+    assert_ne!(hashed, answered_hash(&trials));
+    assert_eq!(hashed, explored_hash(&trials, &drawn));
+    // The old answer's coupling at each flip and at each mapping's end, against an image of
+    // 1 000 a pair: from the assignment A's old answer is readout 0 after the first flip and
+    // B's readout 1.
+    let flat = [[1_000i64; ANSWERS]; 2];
+    let mut coupled_blocks = vec![
+        AnsweredBlock {
+            couplings: flat,
+            ..NO_BLOCK
+        };
+        SCHEDULE_BLOCKS
+    ];
+    coupled_blocks[23].couplings = [[1_200, 1, 1], [1, 1_100, 1]];
+    coupled_blocks[55].couplings = [[950, 1, 1], [1, 900, 1]];
+    coupled_blocks[119].couplings[0][2] = 1_300;
+    assert_eq!(
+        old_couplings(&SCHEDULE, assignment, &flat, &coupled_blocks),
+        [
+            [(12_000, 9_500), (11_000, 9_000)],
+            [(10, 10_000), (10, 10_000)],
+            [(10_000, 13_000), (10_000, 10_000)]
+        ],
+        "the readout before the new answer, at the block before the flip and at the mapping's last"
+    );
+    assert_eq!(
+        old_couplings(&SCHEDULE, assignment, &flat, &coupled_blocks[..55])[0],
+        [(12_000, 0), (11_000, 0)],
+        "zero for an end the table does not hold"
+    );
+    // The regime's reading, over trials written by hand after the first flip: A's old answer
+    // is readout 0, its new one readout 1 and the third readout 2; B's old is 1 and new 2.
+    let mut led: Vec<AnsweredTrial> = vec![(0, [0; 3], None, true, 0, 0, 0); SCHEDULE_TRIALS];
+    let mut led_drawn = vec![false; SCHEDULE_TRIALS];
+    led[flip] = (0, [9, 1, 1], Some(0), false, 0, 100, 0);
+    led[flip + 1] = (1, [0, 8, 0], Some(2), true, 0, -5, 0);
+    led_drawn[flip + 1] = true;
+    led[flip + 2] = (0, [9, 1, 1], Some(0), false, 0, -1, 0);
+    led[flip + 3] = (0, [9, 1, 1], Some(2), false, 0, -40_000, 0);
+    led_drawn[flip + 3] = true;
+    led[flip + 4] = (0, [1, 9, 1], Some(1), true, 0, -30_000, 0);
+    led[flip + 5] = (0, [9, 1, 1], Some(0), false, 0, 500, 0);
+    assert_eq!(
+        regime(&SCHEDULE, assignment, &led, &led_drawn),
+        Regime {
+            until_below: [[Some(2), Some(1)], [None; 2], [None; 2]],
+            leading: [
+                [(3, 1, -39_501, [0, 2, 1]), (1, 1, -5, [1, 0, 0])],
+                [(0, 0, 0, [0; 3]); 2],
+                [(0, 0, 0, [0; 3]); 2]
+            ],
+        },
+        "from the first value below zero on, the trials at which the gate's own reading is the old answer"
+    );
+    assert_eq!(
+        regime(
+            &SCHEDULE,
+            assignment,
+            &led[..flip + 3],
+            &led_drawn[..flip + 3]
+        )
+        .leading[0],
+        [(1, 0, -1, [0, 1, 0]), (1, 1, -5, [1, 0, 0])],
+        "a run that ends inside the mapping"
+    );
+    // ADR-0162's predicted readings' rules. (a): the new answer's selections over a mapping's
+    // second to eighth blocks, more than H-29's.
+    let mut early = arm();
+    early[24] = block([0, 0]);
+    early[25] = block([1, 2]);
+    early[32] = block([0, 0]);
+    assert_eq!(
+        new_early_counts(&SCHEDULE, &early),
+        [[151, 152], [175, 175], [175, 175]],
+        "seven blocks, the first after the flip and the ninth not among them"
+    );
+    assert_eq!(
+        new_early_counts(&SCHEDULE, &early[..30]),
+        [[0; 2]; 3],
+        "a mapping the table does not hold that far"
+    );
+    assert_eq!(
+        new_early([[5, 5], [0, 3], [7, 7]], [[4, 5], [1, 3], [6, 8]]),
+        [[true, false], [false, false], [true, false]],
+        "as many is not more"
+    );
+    // (b): the lowest block mean after a flip at or above −0.75 of the reward; the first
+    // mapping is not read.
+    assert_eq!(
+        settles_higher(&[
+            [(-RQ, 0), (-RQ, 0)],
+            [(-49_152, 3), (-49_153, 4)],
+            [(0, 0), (-RQ, 1)],
+            [(100, 0), (-49_151, 0)]
+        ]),
+        [[true, false], [true, false], [true, true]],
+        "exactly minus three quarters holds"
+    );
+    // (d): fewer than one trial in ten of a learned mapping's last 128; nothing of a mapping
+    // not learned.
+    assert_eq!(
+        switches_off([true, true, false, true], [12, 13, 0, 0]),
+        [Some(true), Some(false), None, Some(true)],
+        "12 of 128 is fewer than one in ten, 13 is not"
+    );
+    // (e): the six couplings' sum at or above 0.99 of the image's.
+    assert_eq!(
+        not_worn(&[[100; ANSWERS]; 2], [594, 593, 600, 0]),
+        [true, false, true, false]
+    );
+    // -------------------------------------------- on the instrument's network (brief 066)
+    // Trials of the task with three readouts on the instrument's network before any settling,
+    // its image carrying the inhibitory baseline, the signed gate and the critic with its
+    // window as the arms' does: the exploration set beside the same trials with it unset, every
+    // oracle and hand rule held at every trial of both, and the two runs held to one another as
+    // the calibration holds them.
+    let p = prior(1024);
+    let exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    let flagged = signed_image(&inhibited_image(&Image::encode(&exec).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    let bytes = with_window_bytes(&valued_image(&flagged, VALUED_CRITIC), window);
+    let gate_run = |exploration: Exploration| {
+        let mut engine = signed_from(&bytes, 1024);
+        assert!(!engine.whole_punishment(), "the whole punishment unset");
+        answered_run(
+            &mut engine,
+            &taken_sets,
+            assignment,
+            Feedback::Answer,
+            EXPLORED_DELIVERY,
+            exploration,
+            &SCHEDULE,
+            EXPLORED_GATE_TRIALS,
+            &mut |_, _| {},
+        )
+    };
+    let unset = gate_run(Exploration::Unset);
+    let set = gate_run(EXPLORED);
+    eprintln!(
+        "DUMP explored gate: unset {:?} set {:?} drawn {:?}",
+        unset.read, set.read, set.drawn
+    );
+    let (at, value, channel, parted) = parts_at_first_drawn("the gate", &unset, &set);
+    assert!(
+        value < 0 && at.saturating_add(1) < EXPLORED_GATE_TRIALS,
+        "the runs go on past trial {at}"
+    );
+    assert_eq!(
+        (set.read[at].2, parted),
+        (Some(channel), Some(channel) != unset.read[at].2)
+    );
+    for (t, (trial, &was)) in set.read.iter().zip(&set.drawn).enumerate() {
+        assert_eq!(
+            was,
+            explores_by_hand(SEED, t as u64, trial.5),
+            "trial {t}: drawn exactly where the hand rule's coin is below the value's part below zero"
+        );
+        assert_eq!(
+            trial.2,
+            if was {
+                Some(channel_by_hand(SEED, t as u64))
+            } else {
+                largest_alone(trial.1)
+            },
+            "trial {t}"
+        );
+    }
+    assert!(set.drawn.iter().any(|&was| was), "a trial was drawn");
+    assert!(unset.drawn.iter().all(|&was| !was), "and none unset");
+    assert_eq!(
+        (set.pairs.len(), unset.pairs.len()),
+        (EXPLORED_GATE_TRIALS, EXPLORED_GATE_TRIALS)
+    );
+}
+
+// ------------------------------------------------- the calibration's pin (brief 066)
+
+/// The first trial of each arm at which the value is below zero and the coin draws, with the
+/// value there and the channel drawn, `[assignment first, mirrored first]` (H-32's stopping
+/// rule, step 2): the fourth trial and the tenth, at each of which H-29's arm selected readout
+/// 1 and the draw is readout 2. Written before any run with the exploration set, from the last
+/// round's dumps of H-29's two arms — each checked against its pinned hash — by ADR-0163's rule
+/// written apart from the tree; the calibration holds each arm to it.
+const EXPLORED_FIRST_DRAWN_1024: [Option<(usize, i32, u8)>; 2] =
+    [Some((3, -1_600, 2)), Some((9, -4_863, 2))];
+
+// ---------------------------------------------------- the pinned tables (brief 066)
+
+/// Each arm's 120 blocks, `[assignment first, mirrored first]`, as `answered_run` reads them.
+/// Empty until the arms have run.
+const EXPLORED_BLOCKS_1024: [&[AnsweredBlock]; 2] = [&[], &[]];
+const EXPLORED_DRAWN_1024: [&[ExploredBlock]; 2] = [&[], &[]];
+const EXPLORED_TRACES_1024: [u64; 2] = [0; 2];
+const EXPLORED_READ_1024: [u64; 2] = [0; 2];
+const EXPLORED_AT_FLIPS_1024: [Option<[[[i64; ANSWERS]; 2]; 3]>; 2] = [None; 2];
+const EXPLORED_READINGS_1024: [Option<ExploredRead>; 2] = [None; 2];
