@@ -75,6 +75,12 @@ jobs:
     name: Rust (check, test, fmt, clippy)
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    # A bound of its own (ADR-0159, F-67): the job once sat in its test step until it was
+    # cancelled by hand, and with no bound it would have run to the platform's six hours.
+    # Each test step is bounded at three times the longest it took in twelve green runs,
+    # rounded up to five minutes, so that a hang fails the step and keeps its log; the job's
+    # bound is the outer one, for a runner that stops answering.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -89,9 +95,11 @@ jobs:
         run: cargo check --workspace --all-targets --locked
 
       - name: Test
+        timeout-minutes: 35 # 651 s at the longest (ADR-0159)
         run: cargo test --workspace --locked
 
       - name: Test in the release profile (the engine's; no overflow checks) (ADR-0030)
+        timeout-minutes: 10 # 192 s at the longest (ADR-0159)
         run: cargo test --workspace --release --locked
 
       - name: Format
@@ -112,6 +120,7 @@ jobs:
     name: Rust (minimum supported version)
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    timeout-minutes: 60 # ADR-0159, as the job above
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -129,12 +138,14 @@ jobs:
         run: cargo check --workspace --all-targets --locked
 
       - name: Test on the MSRV
+        timeout-minutes: 50 # 925 s at the longest (ADR-0159)
         run: cargo test --workspace --locked
 
   arm64:
     name: Rust (AArch64 determinism, T-1)
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60 # ADR-0159, as the job above
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -146,6 +157,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Test on AArch64, the pinned arena hash included
+        timeout-minutes: 35 # 681 s at the longest (ADR-0159)
         run: cargo test --workspace --locked
 
   mutants:
