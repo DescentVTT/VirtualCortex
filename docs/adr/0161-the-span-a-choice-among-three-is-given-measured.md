@@ -186,7 +186,7 @@ Each mapping after a flip over its 31st and 32nd blocks, where H-20's schedule w
 
 - **The two rise together.** Over the twenty rows that are not one run read twice, their rank correlation is 0.91: 0.76 over H-29's twelve and 0.93 over H-31's eight after its first flip. Every row whose coupling stood at 1.25 or above led for 22 blocks or more; every row under 1.17 led for 22 or fewer.
 - **Before H-31's second flip the answer's couplings stood at 1.25 to 1.28**, where H-29's stood at 1.10 to 1.18. The mapping before it had been held half again as long and learned further, 120 and 117 against 87 and 85.
-- **The stimulus that failed the third reversal is the one whose coupling stood highest**, in both arms: B at 1.204 beside A's 1.123, and B at 1.320 beside A's 1.235. From the mirrored assignment B's old answer led in every one of the mapping's 48 blocks, and its coupling ended the run at 1.126 of the image's, with B's into its new answer at 0.953.
+- **The stimulus that failed the third reversal is the one of the two whose coupling stood higher**, in both arms: B at 1.204 beside A's 1.123, and B at 1.320 beside A's 1.235. From the mirrored assignment B's old answer led in every one of the mapping's 48 blocks, and its coupling ended the run at 1.126 of the image's, with B's into its new answer at 0.953.
 
 ### The punishments of the old answer
 
@@ -244,7 +244,7 @@ The softened punishment is softest where the old answer is selected most. Per fl
 - **That is an account of twenty rows of two rounds, and it is not measured.** No run held the coupling at a flip while varying how long the mapping before it lasted, or the reverse. The two rounds share an image, a seed and a deal.
 - **The assignment arm's fourth mapping fails clause 1 by one presentation**, as H-29's one failed mapping did by three. The mirrored arm's does not turn on a presentation: 72 of 128, B at 8 of 62, and no block at 40 of 64.
 - **It does not read a longer span.** A mapping of 64 blocks would give the last reversal more room and the one after it more to undo; which wins was not run, and brief 064 does not empower it.
-- **The account ADR-0157 cited**, that a learner driven by a prediction error holds a choice among three given the span, does not hold here at this span. Where the engine's premise differs is where ADR-0157 said it might: the selection has no noise of its own, so the new answer is found only while the old one is being unlearned, and the punishment that unlearns it is softened by the same value that makes the first learning stable.
+- **The account ADR-0157 cited**, that a learner driven by a prediction error holds a choice among three given the span, does not hold here at this span. Where the engine's premise differs is where ADR-0157 said it might: the selection has no noise of its own, so a new answer is found only where the counts' own spread selects it, and the punishment that would unlearn the old one is softened by the critic's value, most where the old answer is selected most.
 
 ### The evidence
 
