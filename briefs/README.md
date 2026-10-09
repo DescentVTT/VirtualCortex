@@ -82,8 +82,12 @@ section is the rule.
    number.** They are not rewritten after the merge, and no second pull request follows.
 6. **The commit that asks for the merge sets the round's ADRs to `accepted`**, in their files and in
    the index.
-7. **The sweep's outcome is read when it ends and written down by the next decision's ADR.** A
-   survivor is a finding there, and the next round's list.
+7. **The sweep's outcome is read when it ends and written down by the first ADR that merges after
+   it has ended**, a decision's or a round's
+   ([ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)). No ADR waits for it: one
+   written before it ends names the run and says so. The session that writes an ADR looks whether
+   the last dispatched sweep has ended and whether an ADR has recorded it. A survivor is a finding
+   there, and the next round's list.
 
 ## Writing one
 

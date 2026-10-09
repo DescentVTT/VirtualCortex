@@ -11,7 +11,7 @@ decision-makers: VirtualCortex maintainers
 
 [ADR-0156](0156-a-punishment-the-value-does-not-soften-measured.md) read H-30 as no, on clauses 1 and 5. Its stopping rule, step 5, names the decision [ADR-0153](0153-three-answers-measured.md)'s step 5 names: an ADR choosing between the selection, an exploration among its candidates and the readout's resolution, with both rounds' readings. **The maintainers took none of the three on 2026-10-09. They kept the configuration and took the schedule.**
 
-**The sweep of that round's dispatch**, which the merge did not wait for ([ADR-0150](0150-a-round-waits-for-what-it-checks.md)): SWEEP-OUTCOME-PENDING
+**The sweep of that round's dispatch**, run [37872100407](https://github.com/DescentVTT/VirtualCortex/actions/runs/37872100407), had not ended when this ADR merged: its job over the state crates had ended green, and its six jobs over the runtime were running. By [ADR-0158](0158-the-sweep-off-the-next-decisions-path.md), which merges with this ADR, its outcome is written down by the first ADR that merges after it has ended.
 
 **What the two rounds read together:**
 
