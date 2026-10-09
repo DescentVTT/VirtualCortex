@@ -41,6 +41,9 @@ standing changes.
   ([ADR-0153](docs/adr/0153-three-answers-measured.md)). With a punishment delivered whole where
   the critic's value is below zero, the first revision among three is in time and the two after
   it are lost: H-30 read no ([ADR-0156](docs/adr/0156-a-punishment-the-value-does-not-soften-measured.md)).
+  Given half again the blocks a mapping, the first revision among three completes and the ones
+  after it slow, the last not made by one stimulus in either arm, with a coupling past its bound:
+  H-31 read no ([ADR-0161](docs/adr/0161-the-span-a-choice-among-three-is-given-measured.md)).
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
