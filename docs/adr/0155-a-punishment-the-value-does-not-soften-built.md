@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-09
 depends-on: ADR-0154
 decision-makers: VirtualCortex maintainers
@@ -76,7 +76,7 @@ What was read first (principle 2), on 2026-10-09:
   | The frozen image H-20's arm leaves, `DRAINED_050`'s fifth field | `0x41c907b12bf1a4f3` | `0x00d580beea174029` | `0xd763b4a58364291e` at 17, `DRAINED_IMAGE_CRC_FORMAT_17` |
 
   The first five were read from one build of the images, each also at formats 20, 19, 18, 16 and 15, where every earlier pin was reproduced. The sixth was read from a run of H-20's arm in `tests/assembly.rs` that reproduced ADR-0110's sequence and sums and held the image to its format-17 CRC; its test is paused outside the weekly ([ADR-0127](0127-the-paused-line-leaves-the-weekly.md)), so no dispatch reproduces it. Every other whole-domain test reproduces its pinned numbers in the calibration of brief 063's measurement and in the weekly dispatched on its branch; the measurement's ADR records both.
-- **The mutation gate** ([ADR-0030](0030-verification-governance.md)): every mutant `cargo-mutants` makes in the changed lines is caught. The in-diff run's outcome is recorded with the measurement's evidence.
+- **The mutation gate** ([ADR-0030](0030-verification-governance.md)): every mutant `cargo-mutants` makes in the changed lines is caught, 19 of 27, the other eight unviable. The in-diff run's outcome is recorded with the measurement's evidence ([ADR-0156](0156-a-punishment-the-value-does-not-soften-measured.md)).
 
 ### Consequences
 

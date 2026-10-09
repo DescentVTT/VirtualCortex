@@ -1,16 +1,47 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-09
 ---
+
+> **Executed 2026-10-08 to 2026-10-09 (UTC) in pull request #190.** Writes ADR-0155 (a punishment the value does not
+> soften, built) and ADR-0156 (measured); opens and closes F-66. The rule was built as `ValueCritic::received_q16` in
+> `cortex-neuromod`, beside the critic's error: the reward less the value unless the reward and the value are both
+> below zero, then the reward. The parameter is `Config::whole_punishment`, refused without the critic, its flag the
+> modulator section's `[51]`; the image's format went from 20 to 21. With it set the modulator receives the rule's
+> result and the critic's weights move by the error as they did; the engine's reading names both, and a trial
+> records what the modulator received. Unset, every run is the run it was: before any rewarded run of the protocol
+> the tree's 89 whole-domain tests passed, the six whole-image pins re-pinned with the format, one mask taking each
+> from its format-20 CRC. H-30's clauses and constants were committed before the first rewarded run, and each arm
+> was H-29's trial for trial up to the first trial at which a reward below zero met a value below zero, the fourth
+> from the assignment and the seventh from the mirrored assignment.
+>
+> **H-30 is no, on clauses 1 and 5 in both arms, where a yes was predicted, and its stopping rule reached step 5.**
+> The first mapping and the first reversal's were learned, 119 and 116, and 119 and 113 of each mapping's last 128,
+> and the first reversal passed 40 of 64 in 19 and 22 blocks where H-29's took 31 and 30. The second and the third
+> reversals never passed it, and their mappings were not learned: 69 and 60, and 60 and 67. No coupling passed 1.30
+> of its image's, the excitatory sum outside the six couplings stayed within four parts in ten thousand of the
+> image's, and each stimulus's mean value stood within 0.22 of the reward of 2p − 1. The punishments under a value
+> below zero, about half of all trials, were received whole; the signal stood at or below the gate's lower bound in
+> 799 to 1 208 of a mapping's 2 048 trials after a flip, against H-29's 181 to 258; the six couplings' sum sank to
+> 0.93 to 0.96 of the image's and the readouts' answers flattened with it. The next decision, the ADR that H-29's
+> step 5 names, choosing between the selection, an exploration among its candidates and the readout's resolution, is
+> named and not taken. The parameter stays in the tree, unset.
+>
+> Every deliverable below is done and its box ticked. Beside them, H-29's two arms gained one held table, their
+> trials by this round's reader, so that each of H-30's readings by trial has H-29's by the same rule; no pinned
+> number of H-29's moved. Relative links gained one `../` so that they resolve from `archive/`; no word, claim or
+> figure changed.
+>
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 063: A punishment the value does not soften — ADR-0154's rule built, a reward below zero delivered whole where the critic's value is below zero, a parameter of the image, unset every run the run it was; then H-30 run once on H-29's readouts, schedule and arms
 
 ## Mission
 
-**This brief builds one rule of the critic and runs one hypothesis once.** [ADR-0153](../docs/adr/0153-three-answers-measured.md)
+**This brief builds one rule of the critic and runs one hypothesis once.** [ADR-0153](../../docs/adr/0153-three-answers-measured.md)
 read H-29 as no: among three answers a reversal took 21 to 31 of a mapping's 32 blocks. It also read that after a
 flip the critic's value falls below zero, so a punishment of the old answer delivers a third to an eighth of the
-reward. [ADR-0154](../docs/adr/0154-a-punishment-the-value-does-not-soften.md) takes that reading: with a parameter of
+reward. [ADR-0154](../../docs/adr/0154-a-punishment-the-value-does-not-soften.md) takes that reading: with a parameter of
 the image set, a reward below zero is delivered whole where the value is below zero. Nothing else changes.
 
 ADR-0154 wrote **H-30** before any run: H-29's four clauses, and each reversal within H-25's 23 blocks.
@@ -44,13 +75,13 @@ When the round is done, the tree holds:
 - A change to a record's bytes, reserved ones included, bumps `CortexFileHeader::version`, updates the layout in the
   whitepaper and gets a changelog entry.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. For the measurement, the runtime's gate grows by
-  at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
-  it. The mutation gate on the changed lines must pass ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
+  it. The mutation gate on the changed lines must pass ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says**
-  ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md)): the arms run once, the merge waits for the
+  ([ADR-0150](../../docs/adr/0150-a-round-waits-for-what-it-checks.md)): the arms run once, the merge waits for the
   dispatch's whole-domain shards and not for its sweep, the ADRs cite the pull request's commits, and the commit that
   asks for the merge sets them to `accepted`.
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal.
@@ -77,7 +108,7 @@ and the quoted sentences are what to re-derive.
    (`CRITIC_WINDOW`). `CortexFileHeader::FORMAT_VERSION` is 20. The loader refuses a window without a critic.
 5. **The signed gate** (`crates/cortex-core/src/dynamics/synapse.rs`, `consolidate_signed`): below zero a weight moves
    against its trace by `round(|trace| × |m|)`, *"`m` clamped at −1.0"*.
-6. **H-29** ([ADR-0153](../docs/adr/0153-three-answers-measured.md), `tests/inhibition.rs`): `answered_arm`,
+6. **H-29** ([ADR-0153](../../docs/adr/0153-three-answers-measured.md), `tests/inhibition.rs`): `answered_arm`,
    `answered_run` and `ANSWERED_ARMS`; the deal `DEAL_1024`; the image asserted by `WINDOWED_IMAGE_CRC_1024`; the tests
    `three_answers_from_the_{assignment,mirrored_assignment}_at_1024_units_exhaustive` and their `ANSWERED_*_1024`
    pins; the critic's oracle (`value_step` in `tests/instrument/harness.rs`) and the network's oracle held at every
@@ -93,7 +124,7 @@ and the quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The rule built, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The rule built, in a new ADR at the next free number (`ls docs/adr`).**
   - *The rule*, in `cortex-neuromod` beside `ValueCritic::error_q16`: what the modulator receives at a reward against
     a value. It is the reward less the value, unless the reward and the value are both below zero; then it is the
     reward.
@@ -109,7 +140,7 @@ and the quoted sentences are what to re-derive.
       receives, what the weights move by and what the prediction records;
     - the image: the flag written and read, a flag without a critic refused, the reserved bytes held to zero, and a
       format-20 image refused.
-- [ ] **H-30's protocol, in an ADR, before the first rewarded run.**
+- [x] **H-30's protocol, in an ADR, before the first rewarded run.**
   - The arms: H-29's two, from H-29's image with the parameter written into it and nothing else. The image before the
     parameter is asserted H-29's by its CRC.
   - H-30's clauses and constants, restated from ADR-0154 and pinned in the tests:
@@ -126,30 +157,30 @@ and the quoted sentences are what to re-derive.
     - where the wrong selections went, the ties and the margin, beside H-29's;
     - the six couplings' courses, the third readout's pairs among them, beside H-29's;
     - where the consolidation went and the inhibitory sum's course, beside H-29's.
-- [ ] **The calibration**, before any rewarded run of H-30's protocol:
+- [x] **The calibration**, before any rewarded run of H-30's protocol:
   - with the parameter unset, every pinned number of the tree holds, H-29's two arms among them;
   - with the parameter set, each arm is H-29's arm trial for trial up to the first trial at which a reward below zero
     meets a value below zero, and differs from it there. The trial's index is pinned for each arm.
-- [ ] **The runs**: H-30's two arms, each a weekly `exhaustive` test, run once, their tables pinned per block.
-- [ ] **The ADR's reading.**
+- [x] **The runs**: H-30's two arms, each a weekly `exhaustive` test, run once, their tables pinned per block.
+- [x] **The ADR's reading.**
   - H-30's verdict per clause and arm.
   - The prediction (yes) and each predicted reading against what was read.
   - What the rule changed: the punishments it reached and what they then delivered, beside H-29's.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** The build's tests, and at most one runtime test for the measurement: H-30's clauses at their edges
+- [x] **The gate.** The build's tests, and at most one runtime test for the measurement: H-30's clauses at their edges
   and the readings' rules over tables written by hand.
-- [ ] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at `scope=both`. Its
+- [x] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at `scope=both`. Its
   twelve whole-domain shards are green and reproduce every pinned number. The cost table is regenerated from their
   artifacts. The ADR names the dispatch and says where the sweep stood.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §5.2's and §8.7's layouts where the modulator section's bytes are listed, §6.5 (the loop as the runtime
     composes it), §11.1's H-30 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` only where the standing changes (ADR-0150): the image's format; `README.md` and `docs/zh-TW`'s
     reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADRs set to
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADRs set to
   `accepted` by the commit that asks for the merge.
 
 ## Not empowered
