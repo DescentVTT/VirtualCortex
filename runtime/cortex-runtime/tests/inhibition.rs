@@ -188,6 +188,20 @@
 //! them held, each stimulus's expected reward held) and the readings are integer rules written
 //! before the run; the gate runs the deals' order, the rules at their edges and eight trials
 //! with three readouts.
+//!
+//! Brief 064 runs H-31 here as ADR-0157 wrote it and ADR-0161 records it: H-29's two arms, from
+//! H-29's image with the whole punishment of ADR-0155 unset, under H-29's readouts, deal,
+//! delivery and seed, with the one change the schedule — a mapping after a flip 48 blocks where
+//! H-20's is 32, a run 168 blocks. The schedule is a parameter of a run from here on
+//! (`Schedule`): H-29's and H-30's readers, which took H-20's as constants, are given it, and
+//! given H-20's they read what they read. Each arm is H-29's arm trial for trial for its first
+//! 3 584 trials, which its own run holds at the end of its 56th block, before any trial past
+//! H-29's second flip, to H-29's pinned blocks, to the hash of H-29's trials there and to its
+//! trials by brief 063's reader. Two arms, each its own weekly `exhaustive` test, pinned by
+//! block from the 57th. The four clauses are H-29's by H-29's rules; the predicted readings and
+//! what the added span bought are integer rules written before the run; the gate runs the
+//! schedule's hand rule, the clauses at their edges over runs of 168 blocks and eight trials on
+//! a schedule written by hand.
 
 #![deny(clippy::arithmetic_side_effects)]
 
@@ -167736,6 +167750,59 @@ const ANSWERED_PAIRS: [(usize, usize); 6] = [(0, 0), (0, 1), (0, 2), (1, 0), (1,
 /// The sets of an H-29 task: the two stimuli and the three readouts.
 type AnsweredSets = ([Set; 2], [Set; ANSWERS]);
 
+// ------------------------------------------------ the schedule a run is given (ADR-0161)
+
+/// A run's schedule (ADR-0161): the trial each of its three flips comes before, by index and
+/// ascending, and the run's trials. H-29's and H-30's readers took H-20's as constants
+/// (`SCHEDULE_FLIPS`, `SCHEDULE_TRIALS`, `SPANS`, `MAPPINGS`); from brief 064 a run gives them
+/// its own, and a reader reads the four mappings of the schedule it is given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Schedule {
+    flips: [usize; 3],
+    trials: usize,
+}
+
+impl Schedule {
+    /// The four mappings' trials, `[first, end)` by index.
+    const fn spans(&self) -> [(usize, usize); 4] {
+        let [a, b, c] = self.flips;
+        [(0, a), (a, b), (b, c), (c, self.trials)]
+    }
+
+    /// The four mappings' blocks, `[first, end)` by index: every flip of a schedule falls
+    /// between two blocks, so every block lies under one mapping.
+    const fn mappings(&self) -> [(usize, usize); 4] {
+        let [a, b, c] = self.flips;
+        let (a, b, c) = (a / BLOCK, b / BLOCK, c / BLOCK);
+        [(0, a), (a, b), (b, c), (c, self.blocks())]
+    }
+
+    /// The run's blocks.
+    const fn blocks(&self) -> usize {
+        self.trials / BLOCK
+    }
+}
+
+/// H-20's schedule (ADR-0109), the one H-25, H-29 and H-30 ran on: `SCHEDULE_FLIPS` and
+/// `SCHEDULE_TRIALS`. Its spans are `SPANS` and its mappings `MAPPINGS`, held at compile time,
+/// so a reader given it reads what it read of the constants.
+const SCHEDULE: Schedule = Schedule {
+    flips: SCHEDULE_FLIPS,
+    trials: SCHEDULE_TRIALS,
+};
+const _: () = {
+    let (spans, mappings) = (SCHEDULE.spans(), SCHEDULE.mappings());
+    assert!(spans[0].0 == SPANS[0].0 && spans[0].1 == SPANS[0].1);
+    assert!(spans[1].0 == SPANS[1].0 && spans[1].1 == SPANS[1].1);
+    assert!(spans[2].0 == SPANS[2].0 && spans[2].1 == SPANS[2].1);
+    assert!(spans[3].0 == SPANS[3].0 && spans[3].1 == SPANS[3].1);
+    assert!(mappings[0].0 == MAPPINGS[0].0 && mappings[0].1 == MAPPINGS[0].1);
+    assert!(mappings[1].0 == MAPPINGS[1].0 && mappings[1].1 == MAPPINGS[1].1);
+    assert!(mappings[2].0 == MAPPINGS[2].0 && mappings[2].1 == MAPPINGS[2].1);
+    assert!(mappings[3].0 == MAPPINGS[3].0 && mappings[3].1 == MAPPINGS[3].1);
+    assert!(SCHEDULE.blocks() == SCHEDULE_BLOCKS);
+};
+
 // ------------------------------------------------------------- the mapping (ADR-0151)
 
 /// The answers an arm starts from: the assignment's, (0, 1), or the mirrored one's, (1, 0).
@@ -167743,11 +167810,11 @@ fn first_answers(arm: Reversal) -> [usize; 2] {
     if first_mapping(arm) { [1, 0] } else { [0, 1] }
 }
 
-/// The answers in force at the trial of index `trial`, by a hand rule and not the task's: each
-/// of the run's first answers moved on one readout for every flip of the schedule at or before
-/// the trial, the last readout to the first.
-fn answers_at(first: [usize; 2], trial: usize) -> [usize; 2] {
-    let flips = SCHEDULE_FLIPS.iter().filter(|&&f| f <= trial).count();
+/// The answers in force at the trial of index `trial` of a run on `schedule`, by a hand rule and
+/// not the task's: each of the run's first answers moved on one readout for every flip of the
+/// schedule at or before the trial, the last readout to the first.
+fn answers_at(schedule: &Schedule, first: [usize; 2], trial: usize) -> [usize; 2] {
+    let flips = schedule.flips.iter().filter(|&&f| f <= trial).count();
     first.map(|answer| {
         answer
             .saturating_add(flips)
@@ -167756,9 +167823,13 @@ fn answers_at(first: [usize; 2], trial: usize) -> [usize; 2] {
     })
 }
 
-/// The answers in force over the mapping of index `m`, of four.
-fn answers_of(first: [usize; 2], m: usize) -> [usize; 2] {
-    answers_at(first, SPANS.get(m).map_or(0, |span| span.0))
+/// The answers in force over the mapping of index `m`, of the schedule's four.
+fn answers_of(schedule: &Schedule, first: [usize; 2], m: usize) -> [usize; 2] {
+    answers_at(
+        schedule,
+        first,
+        schedule.spans().get(m).map_or(0, |span| span.0),
+    )
 }
 
 /// The three readouts by their role to a stimulus whose answer is `answer`: the answer; the
@@ -167777,9 +167848,9 @@ fn roles(answer: usize) -> [usize; ANSWERS] {
 /// leaving: the one whose answer under the mapping is the other's answer under the mapping
 /// before. The other moves onto the readout that was no one's. None for the first mapping, or
 /// where the two stimuli share an answer.
-fn onto_the_other_s(first: [usize; 2], m: usize) -> Option<usize> {
-    let now = answers_of(first, m);
-    let before = answers_of(first, m.checked_sub(1)?);
+fn onto_the_other_s(schedule: &Schedule, first: [usize; 2], m: usize) -> Option<usize> {
+    let now = answers_of(schedule, first, m);
+    let before = answers_of(schedule, first, m.checked_sub(1)?);
     [0usize, 1]
         .into_iter()
         .find(|&s| now[s] == before[s ^ 1] && now[s ^ 1] != before[s])
@@ -167965,9 +168036,12 @@ fn received_by_hand(whole: bool, reward: i32, value: i32, error: i32) -> i32 {
 
 /// A run of an H-29 task on `exec` for `trials` trials (brief 062): ADR-0065's two stimuli
 /// with ADR-0076's cancel, the three readouts of `sets`, the answers `first` moved on at each
-/// of H-20's flips by `Task::flip`, under `feedback` — the answer's, or withheld for a frozen
-/// block — and `delivery`, the drawn one or the addressed one; the instrument's lead-in of one
-/// readout window first, as `run_on_scheduled` runs it. At every trial the harness holds:
+/// of `schedule`'s flips by `Task::flip` — H-20's for H-29 and H-30, ADR-0157's for H-31
+/// (brief 064) — under `feedback` — the answer's, or withheld for a frozen block — and
+/// `delivery`, the drawn one or the addressed one; the instrument's lead-in of one readout
+/// window first, as `run_on_scheduled` runs it. After each block's last trial `at_block` is
+/// given the blocks and the trials read so far, before the next trial runs: where an arm of
+/// H-31 holds its calibration. At every trial the harness holds:
 /// - the task's answers to the hand rule (`answers_at`), the selection to the hand rule
 ///   (`largest_alone`), and `correct` to the two;
 /// - under the engine's critic, its value, every unit's weight and the window's opening to the
@@ -167986,13 +168060,16 @@ fn received_by_hand(whole: bool, reward: i32, value: i32, error: i32) -> i32 {
 ///
 /// The composer of the two-readout runs is not here: its pairs are among the synapses the
 /// network's oracle replays, each named by its pair.
+#[allow(clippy::too_many_arguments)]
 fn answered_run(
     exec: &mut Engine,
     sets: &AnsweredSets,
     first: [usize; 2],
     feedback: Feedback,
     delivery: Delivery,
+    schedule: &Schedule,
     trials: usize,
+    at_block: &mut dyn FnMut(&[AnsweredBlock], &[AnsweredTrial]),
 ) -> AnsweredRun {
     assert!(
         matches!(feedback, Feedback::Answer | Feedback::Withheld),
@@ -168090,10 +168167,10 @@ fn answered_run(
     let mut at_flips = [None; 3];
     let mut block = NO_BLOCK;
     for trial in 0..trials {
-        if SCHEDULE_FLIPS.contains(&trial) {
+        if schedule.flips.contains(&trial) {
             task.flip();
         }
-        let answers = answers_at(first, trial);
+        let answers = answers_at(schedule, first, trial);
         assert_eq!(
             task.answers.map(usize::from),
             answers,
@@ -168308,7 +168385,7 @@ fn answered_run(
                 | i32::from(outcome.selection.map_or(3, |r| r)) << 1
                 | i32::from(outcome.correct) << 3,
         );
-        if let Some(f) = SCHEDULE_FLIPS.iter().position(|&f| f == trial) {
+        if let Some(f) = schedule.flips.iter().position(|&f| f == trial) {
             at_flips[f] = Some(answered_couplings(exec, sets));
         }
         if trial.wrapping_add(1) % BLOCK == 0 {
@@ -168317,6 +168394,7 @@ fn answered_run(
             block.couplings = answered_couplings(exec, sets);
             blocks.push(block);
             block = NO_BLOCK;
+            at_block(&blocks, &read);
         }
     }
     AnsweredRun {
@@ -168329,15 +168407,16 @@ fn answered_run(
 
 // ------------------------------------------------------------ the criterion (ADR-0151)
 
-/// Clause 1's and clause 4's counts, per mapping and stimulus `[A, B]`, over the mapping's last
-/// `LAST_BLOCKS` blocks — trials 1 409 to 1 536, 3 457 to 3 584, 5 505 to 5 632 and 7 553 to
-/// 7 680: the stimulus's presentations, those that selected its answer, and the engine's
-/// values at their rewards summed; zeros for a run of any other length.
-fn answered_last(blocks: &[AnsweredBlock]) -> [[StimulusValue; 2]; 4] {
-    if blocks.len() != SCHEDULE_BLOCKS {
+/// Clause 1's and clause 4's counts, per mapping of `schedule` and stimulus `[A, B]`, over the
+/// mapping's last `LAST_BLOCKS` blocks — on H-20's schedule trials 1 409 to 1 536, 3 457 to
+/// 3 584, 5 505 to 5 632 and 7 553 to 7 680: the stimulus's presentations, those that selected
+/// its answer, and the engine's values at their rewards summed; zeros for a run of any other
+/// length than the schedule's.
+fn answered_last(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [[StimulusValue; 2]; 4] {
+    if blocks.len() != schedule.blocks() {
         return [[(0, 0, 0); 2]; 4];
     }
-    MAPPINGS.map(|(_, to)| {
+    schedule.mappings().map(|(_, to)| {
         let mut out = [(0u32, 0u32, 0i64); 2];
         for b in blocks.iter().take(to).skip(to.saturating_sub(LAST_BLOCKS)) {
             for (s, of) in out.iter_mut().enumerate() {
@@ -168395,11 +168474,13 @@ fn answered_left(image: i64, blocks: &[AnsweredBlock]) -> Option<(usize, i64)> {
         .find(|&(_, outside)| !within_band(outside, image))
 }
 
-/// H-29's criterion (ADR-0151), clause by clause per arm `[assignment first, mirrored first]`:
+/// H-29's criterion (ADR-0151), clause by clause per arm `[assignment first, mirrored first]`,
+/// over two runs on `schedule` — H-20's for H-29 and H-30, ADR-0157's for H-31 (ADR-0161):
 /// (1) each of the four mappings learned by each stimulus, `learned_by_each`; (2) the six
-/// couplings bounded, a run of 120 blocks with none past 1.30 of its image's at any block's
-/// end; (3) the network held, a run of 120 blocks every one of whose ends lies within the
-/// band; and (4) each stimulus's mean value within a quarter of the reward of $2p - 1$, per
+/// couplings bounded, a run of the schedule's blocks, 120 on H-20's, with none past 1.30 of its
+/// image's at any block's end; (3) the network held, a run of the schedule's blocks every one
+/// of whose ends lies within the band; and (4) each stimulus's mean value within a quarter of
+/// the reward of $2p - 1$, per
 /// mapping, H-23's `holds_expected`. `yes` is all in both arms; a no names the clause and the
 /// arm — under clause 1 the mapping, under clause 2 the block and the pair, under clause 3 the
 /// first block that left the band with its sum, under clause 4 the mapping and the stimulus.
@@ -168414,13 +168495,18 @@ struct Answered {
     yes: bool,
 }
 
-fn answered(image: &[[i64; ANSWERS]; 2], outside: i64, arms: [&[AnsweredBlock]; 2]) -> Answered {
-    let last = arms.map(answered_last);
+fn answered(
+    schedule: &Schedule,
+    image: &[[i64; ANSWERS]; 2],
+    outside: i64,
+    arms: [&[AnsweredBlock]; 2],
+) -> Answered {
+    let last = arms.map(|blocks| answered_last(schedule, blocks));
     let learned = last.map(|mappings| mappings.map(|m| learned_by_each(&m)));
     let over = arms.map(|blocks| answered_over(image, blocks));
-    let bounded = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && over[k].is_none());
+    let bounded = [0usize, 1].map(|k| arms[k].len() == schedule.blocks() && over[k].is_none());
     let left = arms.map(|blocks| answered_left(outside, blocks));
-    let held = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && left[k].is_none());
+    let held = [0usize, 1].map(|k| arms[k].len() == schedule.blocks() && left[k].is_none());
     let expected = last.map(|mappings| mappings.map(|m| m.map(holds_expected)));
     Answered {
         learned,
@@ -168458,8 +168544,8 @@ fn answered_step(verdict: &Answered) -> u8 {
 /// The speed of each mapping's learning, as `crossings` reads it over a two-readout run: per
 /// mapping, the blocks from its first to the first of its blocks with at least `CROSSING_MARK`
 /// correct, that block counted; none when none of its blocks did or the run does not hold it.
-fn answered_crossings(blocks: &[AnsweredBlock]) -> [Option<usize>; 4] {
-    MAPPINGS.map(|(from, to)| {
+fn answered_crossings(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [Option<usize>; 4] {
+    schedule.mappings().map(|(from, to)| {
         blocks
             .get(from..to)
             .and_then(|mine| {
@@ -168473,8 +168559,8 @@ fn answered_crossings(blocks: &[AnsweredBlock]) -> [Option<usize>; 4] {
 /// Per mapping, its trials' outcomes `[correct, wrong, tied]`: the selections of the answer,
 /// the selections of another readout, and the trials that selected nothing; zeros for a
 /// mapping the run does not hold.
-fn answered_tally(blocks: &[AnsweredBlock]) -> [[u32; 3]; 4] {
-    MAPPINGS.map(|(from, to)| {
+fn answered_tally(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [[u32; 3]; 4] {
+    schedule.mappings().map(|(from, to)| {
         let Some(mine) = blocks.get(from..to) else {
             return [0; 3];
         };
@@ -168508,10 +168594,10 @@ fn block_by_role(block: &AnsweredBlock, answers: [usize; 2], s: usize) -> [u32; 
 /// Per mapping and stimulus, the stimulus's selections over the mapping's blocks by the
 /// readouts' roles to it (`block_by_role`): its answer, the readout before it — its answer
 /// until the flip — the readout after it, the third, and none.
-fn by_role(first: [usize; 2], blocks: &[AnsweredBlock]) -> [[[u32; 4]; 2]; 4] {
+fn by_role(schedule: &Schedule, first: [usize; 2], blocks: &[AnsweredBlock]) -> [[[u32; 4]; 2]; 4] {
     [0usize, 1, 2, 3].map(|m| {
-        let (from, to) = MAPPINGS[m];
-        let answers = answers_of(first, m);
+        let (from, to) = schedule.mappings()[m];
+        let answers = answers_of(schedule, first, m);
         [0usize, 1].map(|s| {
             let mut out = [0u32; 4];
             for b in blocks.iter().take(to).skip(from) {
@@ -168527,9 +168613,9 @@ fn by_role(first: [usize; 2], blocks: &[AnsweredBlock]) -> [[[u32; 4]; 2]; 4] {
 /// Per flip and stimulus, the blocks from the flip to the first block of the mapping it put
 /// in force in which the stimulus selected its new answer in more than half of its
 /// presentations, that block counted; none when no block of the mapping did.
-fn each_crossed(blocks: &[AnsweredBlock]) -> [[Option<usize>; 2]; 3] {
+fn each_crossed(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [[Option<usize>; 2]; 3] {
     [1usize, 2, 3].map(|m| {
-        let (from, to) = MAPPINGS[m];
+        let (from, to) = schedule.mappings()[m];
         [0usize, 1].map(|s| {
             blocks
                 .get(from..to)
@@ -168544,10 +168630,14 @@ fn each_crossed(blocks: &[AnsweredBlock]) -> [[Option<usize>; 2]; 3] {
 
 /// Per flip and stimulus, the trials from the flip to the first that selected the stimulus's
 /// new answer, that trial counted; none when none did before the next flip or the run's end.
-fn first_new_answered(first: [usize; 2], read: &[AnsweredTrial]) -> [[Option<usize>; 2]; 3] {
+fn first_new_answered(
+    schedule: &Schedule,
+    first: [usize; 2],
+    read: &[AnsweredTrial],
+) -> [[Option<usize>; 2]; 3] {
     [1usize, 2, 3].map(|m| {
-        let (from, to) = SPANS[m];
-        let answers = answers_of(first, m);
+        let (from, to) = schedule.spans()[m];
+        let answers = answers_of(schedule, first, m);
         [0usize, 1].map(|s| {
             read.iter()
                 .take(to)
@@ -168561,10 +168651,10 @@ fn first_new_answered(first: [usize; 2], read: &[AnsweredTrial]) -> [[Option<usi
 /// Per flip and stimulus, the blocks from the flip, in a row, in which the stimulus selected
 /// its old answer — the readout before its new one — more often than its new answer and more
 /// often than the third: how long the old answer held (ADR-0151's reading (c)).
-fn old_held(first: [usize; 2], blocks: &[AnsweredBlock]) -> [[usize; 2]; 3] {
+fn old_held(schedule: &Schedule, first: [usize; 2], blocks: &[AnsweredBlock]) -> [[usize; 2]; 3] {
     [1usize, 2, 3].map(|m| {
-        let (from, to) = MAPPINGS[m];
-        let answers = answers_of(first, m);
+        let (from, to) = schedule.mappings()[m];
+        let answers = answers_of(schedule, first, m);
         [0usize, 1].map(|s| {
             blocks
                 .iter()
@@ -168595,13 +168685,14 @@ fn couplings_by_role(
 /// block's end, each as a fraction of the image's in parts per ten thousand: `[lowest,
 /// highest, last]`. Zeros for a mapping of which the run holds no block.
 fn course_by_role(
+    schedule: &Schedule,
     first: [usize; 2],
     image: &[[i64; ANSWERS]; 2],
     blocks: &[AnsweredBlock],
 ) -> [[[[i64; 3]; ANSWERS]; 2]; 4] {
     [0usize, 1, 2, 3].map(|m| {
-        let (from, to) = MAPPINGS[m];
-        let answers = answers_of(first, m);
+        let (from, to) = schedule.mappings()[m];
+        let answers = answers_of(schedule, first, m);
         [0usize, 1].map(|s| {
             let mut out: [Option<[i64; 3]>; ANSWERS] = [None; ANSWERS];
             for b in blocks.iter().take(to).skip(from) {
@@ -168620,8 +168711,12 @@ fn course_by_role(
 /// per ten thousand, with its block and pair — the first in block order and then in
 /// `ANSWERED_PAIRS`' where two read the same; none for a mapping of which the run holds no
 /// block.
-fn answered_highest(image: &[[i64; ANSWERS]; 2], blocks: &[AnsweredBlock]) -> [Option<Peak>; 4] {
-    MAPPINGS.map(|(from, to)| {
+fn answered_highest(
+    schedule: &Schedule,
+    image: &[[i64; ANSWERS]; 2],
+    blocks: &[AnsweredBlock],
+) -> [Option<Peak>; 4] {
+    schedule.mappings().map(|(from, to)| {
         let mut best: Option<Peak> = None;
         for (j, b) in blocks.iter().enumerate().take(to).skip(from) {
             for &(s, r) in &ANSWERED_PAIRS {
@@ -168653,8 +168748,8 @@ fn answered_means(blocks: &[AnsweredBlock]) -> Vec<[i64; 2]> {
 /// The value's trough in each mapping, per mapping and stimulus: the lowest of a block's
 /// per-stimulus means over the mapping's blocks, with the block's index within the mapping;
 /// zeros for a mapping the table does not hold.
-fn answered_troughs(means: &[[i64; 2]]) -> [[(i64, usize); 2]; 4] {
-    MAPPINGS.map(|(from, to)| {
+fn answered_troughs(schedule: &Schedule, means: &[[i64; 2]]) -> [[(i64, usize); 2]; 4] {
+    schedule.mappings().map(|(from, to)| {
         let Some(mine) = means.get(from..to) else {
             return [(0, 0); 2];
         };
@@ -168671,8 +168766,8 @@ fn answered_troughs(means: &[[i64; 2]]) -> [[(i64, usize); 2]; 4] {
 }
 
 /// Where the consolidation went, summed over each mapping's blocks.
-fn went_by_mapping(blocks: &[AnsweredBlock]) -> [Went; 4] {
-    MAPPINGS.map(|(from, to)| {
+fn went_by_mapping(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [Went; 4] {
+    schedule.mappings().map(|(from, to)| {
         let mut out: Went = [[0; 2]; 3];
         for b in blocks.iter().take(to).skip(from) {
             add_went(&mut out, &b.went);
@@ -168705,8 +168800,8 @@ fn later_start(mine: Option<usize>, h25: Option<usize>) -> bool {
 /// ADR-0151's predicted reading (b) as a rule, per stimulus: before the first mapping passes
 /// `CROSSING_MARK` — over its blocks before the crossing block, or all of them when it never
 /// passes — some block's mean value of the stimulus is below zero.
-fn below_zero_first(means: &[[i64; 2]], crossing: Option<usize>) -> [bool; 2] {
-    let (from, to) = MAPPINGS[0];
+fn below_zero_first(schedule: &Schedule, means: &[[i64; 2]], crossing: Option<usize>) -> [bool; 2] {
+    let (from, to) = schedule.mappings()[0];
     let until = crossing.map_or(to, |n| from.saturating_add(n).saturating_sub(1));
     [0usize, 1].map(|s| {
         means
@@ -168755,39 +168850,39 @@ struct AnsweredRead {
 
 /// An arm's readings from its tables, `k` its index in `ANSWERED_ARMS`: every rule above over
 /// the blocks and the trials, the image's couplings and sums, and H-25's crossings beside.
-fn answered_read(k: usize, run: &AnsweredRun) -> AnsweredRead {
+fn answered_read(schedule: &Schedule, k: usize, run: &AnsweredRun) -> AnsweredRead {
     let first = first_answers(ANSWERED_ARMS[k]);
     let image = &DEALT_COUPLINGS_1024;
     let (image_inhibitory, image_excitatory) = QUIET_1024[SETTLED].1;
     let image_outside = answered_outside(image_excitatory, image);
     let blocks = run.blocks.as_slice();
     let means = answered_means(blocks);
-    let crossings = answered_crossings(blocks);
-    let held = old_held(first, blocks);
-    let course = course_by_role(first, image, blocks);
+    let crossings = answered_crossings(schedule, blocks);
+    let held = old_held(schedule, first, blocks);
+    let course = course_by_role(schedule, first, image, blocks);
     let inhibitory: Vec<i64> = blocks.iter().map(|b| b.sums.0).collect();
     let outside: Vec<i64> = blocks
         .iter()
         .map(|b| answered_outside(b.sums.1, &b.couplings))
         .collect();
     AnsweredRead {
-        last: answered_last(blocks),
+        last: answered_last(schedule, blocks),
         over: answered_over(image, blocks),
         left: answered_left(image_outside, blocks),
         crossings,
-        tally: answered_tally(blocks),
-        by_role: by_role(first, blocks),
-        each_crossed: each_crossed(blocks),
-        first_new: first_new_answered(first, &run.read),
+        tally: answered_tally(schedule, blocks),
+        by_role: by_role(schedule, first, blocks),
+        each_crossed: each_crossed(schedule, blocks),
+        first_new: first_new_answered(schedule, first, &run.read),
         old_held: held,
         course,
-        highest: answered_highest(image, blocks),
-        troughs: answered_troughs(&means),
-        went: went_by_mapping(blocks),
+        highest: answered_highest(schedule, image, blocks),
+        troughs: answered_troughs(schedule, &means),
+        went: went_by_mapping(schedule, blocks),
         inhibitory: low_high_last(image_inhibitory, &inhibitory),
         outside: low_high_last(image_outside, &outside),
         later_start: later_start(crossings[0], CROSSINGS_DRAWN_1024[k][0]),
-        below_zero_first: below_zero_first(&means, crossings[0]),
+        below_zero_first: below_zero_first(schedule, &means, crossings[0]),
         eliminated: eliminated(held, &course),
         sums_after: blocks.last().map_or((0, 0), |b| b.sums),
     }
@@ -168917,7 +169012,9 @@ fn answered_frozen(zero: &[u8], sets: &AnsweredSets) -> (AnsweredBlock, u64, u64
         [0, 1],
         Feedback::Withheld,
         Delivery::Addressed,
+        &SCHEDULE,
         BLOCK,
+        &mut |_, _| {},
     );
     let [block] = run.blocks.as_slice() else {
         panic!("a block of sixty-four trials");
@@ -169028,7 +169125,9 @@ fn answered_arm(arm: Reversal) {
         first,
         Feedback::Answer,
         ANSWERED_DELIVERY,
+        &SCHEDULE,
         SCHEDULE_TRIALS,
+        &mut |_, _| {},
     );
     assert_eq!(
         (run.blocks.len(), run.read.len()),
@@ -169042,11 +169141,15 @@ fn answered_arm(arm: Reversal) {
     eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
     eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
     eprintln!("DUMP {name} PIN read {:#018x}", answered_hash(&run.read));
+    eprintln!(
+        "DUMP {name} PIN head read {:#018x}",
+        answered_hash(&run.read[..SIZED_REPLICATED_TRIALS])
+    );
     eprintln!("DUMP {name} PIN at flips {at_flips:?}");
     eprintln!("DUMP {name} TRIALS {:?}", run.read);
-    let read = answered_read(k, &run);
+    let read = answered_read(&SCHEDULE, k, &run);
     eprintln!("DUMP {name} PIN readings {read:?}");
-    let by_trial = trials_read(first, &run.read);
+    let by_trial = trials_read(&SCHEDULE, first, &run.read);
     eprintln!("DUMP {name} PIN trials read {by_trial:?}");
     let image_outside = answered_outside(image_sums.1, &DEALT_COUPLINGS_1024);
     eprintln!(
@@ -169068,7 +169171,7 @@ fn answered_arm(arm: Reversal) {
     );
     eprintln!(
         "DUMP {name} the stimulus that moves onto the other's old answer at each flip {:?}; each stimulus's crossing after each flip {:?}; its first new selection {:?}",
-        [1usize, 2, 3].map(|m| onto_the_other_s(first, m)),
+        [1usize, 2, 3].map(|m| onto_the_other_s(&SCHEDULE, first, m)),
         read.each_crossed,
         read.first_new
     );
@@ -169126,6 +169229,11 @@ fn answered_arm(arm: Reversal) {
         Some(by_trial),
         ANSWERED_TRIALS_1024[k],
         "{name}: the trials by brief 063's reader, beside which H-30's stand"
+    );
+    assert_eq!(
+        answered_hash(&run.read[..SIZED_REPLICATED_TRIALS]),
+        ANSWERED_HEAD_1024[k],
+        "{name}: the trials before the second flip, to which an arm of H-31 is held"
     );
     assert_eq!(
         weights_by_polarity(&exec),
@@ -169474,11 +169582,11 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     let mirrored = first_answers(Reversal::MirroredFirst);
     assert_eq!((assignment, mirrored), ([0, 1], [1, 0]));
     assert_eq!(
-        [0usize, 1, 2, 3].map(|m| answers_of(assignment, m)),
+        [0usize, 1, 2, 3].map(|m| answers_of(&SCHEDULE, assignment, m)),
         [[0, 1], [1, 2], [2, 0], [0, 1]]
     );
     assert_eq!(
-        [0usize, 1, 2, 3].map(|m| answers_of(mirrored, m)),
+        [0usize, 1, 2, 3].map(|m| answers_of(&SCHEDULE, mirrored, m)),
         [[1, 0], [2, 1], [0, 2], [1, 0]]
     );
     assert_eq!(
@@ -169492,7 +169600,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
             SCHEDULE_FLIPS[2],
             SCHEDULE_TRIALS - 1
         ]
-        .map(|trial| answers_at(assignment, trial)),
+        .map(|trial| answers_at(&SCHEDULE, assignment, trial)),
         [
             [0, 1],
             [0, 1],
@@ -169506,13 +169614,13 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         "a flip is in force from its own trial"
     );
     assert_eq!(
-        answers_of(assignment, 4),
+        answers_of(&SCHEDULE, assignment, 4),
         [0, 1],
         "past the last mapping: the first's"
     );
     let mut pairs: Vec<[usize; 2]> = [assignment, mirrored]
         .iter()
-        .flat_map(|&first| [0usize, 1, 2].map(|m| answers_of(first, m)))
+        .flat_map(|&first| [0usize, 1, 2].map(|m| answers_of(&SCHEDULE, first, m)))
         .collect();
     pairs.sort_unstable();
     assert_eq!(pairs, [[0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1]]);
@@ -169524,20 +169632,20 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     // At every flip one stimulus moves onto the readout the other is leaving: A from the
     // assignment and B from the mirrored assignment.
     assert_eq!(
-        [1usize, 2, 3].map(|m| onto_the_other_s(assignment, m)),
+        [1usize, 2, 3].map(|m| onto_the_other_s(&SCHEDULE, assignment, m)),
         [Some(0); 3]
     );
     assert_eq!(
-        [1usize, 2, 3].map(|m| onto_the_other_s(mirrored, m)),
+        [1usize, 2, 3].map(|m| onto_the_other_s(&SCHEDULE, mirrored, m)),
         [Some(1); 3]
     );
     assert_eq!(
-        onto_the_other_s(assignment, 0),
+        onto_the_other_s(&SCHEDULE, assignment, 0),
         None,
         "no flip into the first"
     );
     assert_eq!(
-        onto_the_other_s([0, 0], 1),
+        onto_the_other_s(&SCHEDULE, [0, 0], 1),
         None,
         "a shared answer moves onto no one's"
     );
@@ -169691,7 +169799,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     };
     let arm = || vec![block([25, 25]); SCHEDULE_BLOCKS];
     let good = arm();
-    let yes = answered(&image, outside, [&good, &good]);
+    let yes = answered(&SCHEDULE, &image, outside, [&good, &good]);
     assert_eq!(
         yes,
         Answered {
@@ -169706,7 +169814,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     );
     assert_eq!(answered_step(&yes), 3);
     assert_eq!(
-        answered_last(&good),
+        answered_last(&SCHEDULE, &good),
         [[(64, 50, 36 * R); 2]; 4],
         "each mapping's last two blocks"
     );
@@ -169714,7 +169822,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     let mut short = arm();
     short[22] = block([19, 20]);
     short[23] = block([19, 20]);
-    let no = answered(&image, outside, [&short, &good]);
+    let no = answered(&SCHEDULE, &image, outside, [&short, &good]);
     assert_eq!(
         (no.learned, no.yes, answered_step(&no)),
         ([[false, true, true, true], [true; 4]], false, 5)
@@ -169727,13 +169835,13 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     // The block before a mapping's last two is not read.
     let mut earlier = arm();
     earlier[21] = block([0, 0]);
-    assert!(answered(&image, outside, [&earlier, &good]).yes);
+    assert!(answered(&SCHEDULE, &image, outside, [&earlier, &good]).yes);
     // Clause 1, by a stimulus: the second mapping's last two blocks of the second arm with A
     // answered every time and B in exactly half.
     let mut lopsided = arm();
     lopsided[54] = block([32, 16]);
     lopsided[55] = block([32, 16]);
-    let no = answered(&image, outside, [&good, &lopsided]);
+    let no = answered(&SCHEDULE, &image, outside, [&good, &lopsided]);
     assert_eq!(
         (no.learned, answered_step(&no)),
         ([[true; 4], [true, false, true, true]], 5),
@@ -169745,7 +169853,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     let mut over = arm();
     over[70].couplings[1][2] = bound + 1;
     over[70].sums.1 = image_excitatory + bound + 1 - image[1][2];
-    let no = answered(&image, outside, [&over, &good]);
+    let no = answered(&SCHEDULE, &image, outside, [&over, &good]);
     assert_eq!(
         (no.over, no.bounded, no.held, answered_step(&no)),
         ([Some((70, 1, 2)), None], [false, true], [true; 2], 6)
@@ -169753,7 +169861,10 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     let mut at = arm();
     at[70].couplings[1][2] = bound;
     at[70].sums.1 = image_excitatory + bound - image[1][2];
-    assert!(answered(&image, outside, [&at, &good]).yes, "at the bound");
+    assert!(
+        answered(&SCHEDULE, &image, outside, [&at, &good]).yes,
+        "at the bound"
+    );
     assert_eq!(
         answered_over(&image, &over[..70]),
         None,
@@ -169767,7 +169878,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     for (sum, leaves) in [(low, outside % 4 != 0), (low - 1, true), (low + 1, false)] {
         let mut moved = arm();
         moved[100].sums.1 = coupled + sum;
-        let verdict = answered(&image, outside, [&good, &moved]);
+        let verdict = answered(&SCHEDULE, &image, outside, [&good, &moved]);
         assert_eq!(verdict.left, [None, leaves.then_some((100, sum))], "{sum}");
         assert_eq!(verdict.held, [true, !leaves]);
         assert_eq!(answered_step(&verdict), if leaves { 4 } else { 3 });
@@ -169775,7 +169886,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     for (sum, leaves) in [(high, false), (high + 1, true)] {
         let mut moved = arm();
         moved[3].sums.1 = coupled + sum;
-        let verdict = answered(&image, outside, [&moved, &good]);
+        let verdict = answered(&SCHEDULE, &image, outside, [&moved, &good]);
         assert_eq!(verdict.left, [leaves.then_some((3, sum)), None], "{sum}");
     }
     let mut both = arm();
@@ -169783,7 +169894,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     both[23] = block([19, 20]);
     both[100].sums.1 = coupled + low - 1;
     assert_eq!(
-        answered_step(&answered(&image, outside, [&both, &good])),
+        answered_step(&answered(&SCHEDULE, &image, outside, [&both, &good])),
         4,
         "clause 3 is read first"
     );
@@ -169791,23 +169902,23 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     // quarter of the reward a trial from (2c − n) r, and at the quarter not.
     let mut off = arm();
     off[119].values[0] = 18 * R + 16 * R + 1;
-    let no = answered(&image, outside, [&good, &off]);
+    let no = answered(&SCHEDULE, &image, outside, [&good, &off]);
     assert_eq!(
         (no.expected[1][3], no.expected[1][2], answered_step(&no)),
         ([false, true], [true, true], 7)
     );
     let mut on = arm();
     on[119].values[0] = 18 * R + 16 * R;
-    assert!(answered(&image, outside, [&good, &on]).yes);
+    assert!(answered(&SCHEDULE, &image, outside, [&good, &on]).yes);
     let mut under = arm();
     under[118].values[1] = 18 * R - 16 * R - 1;
     assert_eq!(
-        answered(&image, outside, [&under, &good]).expected[0][3],
+        answered(&SCHEDULE, &image, outside, [&under, &good]).expected[0][3],
         [true, false]
     );
     // A run of any other length holds nothing, and its step is the network's.
     let cut = &good[..SCHEDULE_BLOCKS - 1];
-    let no = answered(&image, outside, [cut, &good]);
+    let no = answered(&SCHEDULE, &image, outside, [cut, &good]);
     assert_eq!(
         (no.learned[0], no.bounded, no.held, no.expected[0]),
         ([false; 4], [false, true], [false, true], [[false; 2]; 4])
@@ -169821,11 +169932,14 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     slow[26] = block([39, 1]);
     slow[119] = block([32, 32]);
     assert_eq!(
-        answered_crossings(&slow),
+        answered_crossings(&SCHEDULE, &slow),
         [Some(6), Some(3), None, Some(32)],
         "both stimuli's correct trials together"
     );
-    assert_eq!(answered_crossings(&slow[..30]), [Some(6), None, None, None]);
+    assert_eq!(
+        answered_crossings(&SCHEDULE, &slow[..30]),
+        [Some(6), None, None, None]
+    );
     // The tally: correct, wrong and tied.
     let chosen = |selected: [[u32; 4]; 2], correct: [u32; 2]| AnsweredBlock {
         selected,
@@ -169837,7 +169951,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     tallied[23] = chosen([[2, 0, 0, 30], [0, 0, 0, 32]], [2, 0]);
     tallied[24] = chosen([[0, 9, 0, 0], [0, 0, 7, 0]], [9, 7]);
     assert_eq!(
-        answered_tally(&tallied),
+        answered_tally(&SCHEDULE, &tallied),
         [[47, 16, 65], [16, 0, 0], [0; 3], [0; 3]]
     );
     // The selections by role: from the assignment the first mapping's answers are (0, 1), so
@@ -169850,11 +169964,11 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     );
     assert_eq!(block_by_role(&tallied[0], [0, 1], 1), [25, 1, 6, 0]);
     assert_eq!(block_by_role(&tallied[0], [2, 0], 0), [4, 5, 20, 3]);
-    let roled = by_role(assignment, &tallied);
+    let roled = by_role(&SCHEDULE, assignment, &tallied);
     assert_eq!(roled[0], [[22, 4, 5, 33], [25, 1, 6, 32]]);
     assert_eq!(roled[1], [[9, 0, 0, 0], [7, 0, 0, 0]]);
     assert_eq!(
-        by_role(mirrored, &tallied)[0],
+        by_role(&SCHEDULE, mirrored, &tallied)[0],
         [[5, 22, 4, 33], [1, 6, 25, 32]],
         "under (1, 0): A's answer readout 1 and B's readout 0"
     );
@@ -169868,17 +169982,17 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     after[27] = chosen([[16, 16, 0, 0], [0, 13, 13, 6]], [16, 13]);
     after[28] = chosen([[15, 17, 0, 0], [0, 6, 20, 6]], [17, 20]);
     assert_eq!(
-        each_crossed(&after),
+        each_crossed(&SCHEDULE, &after),
         [[Some(5), Some(5)], [None; 2], [None; 2]],
         "more than half of 32: 17 and 20, in the fifth block"
     );
     assert_eq!(
-        old_held(assignment, &after),
+        old_held(&SCHEDULE, assignment, &after),
         [[3, 3], [0, 0], [0, 0]],
         "three blocks: in the fourth the old answer no longer leads both others"
     );
     assert_eq!(
-        old_held(mirrored, &after),
+        old_held(&SCHEDULE, mirrored, &after),
         [[0, 0]; 3],
         "by the arm's own answers"
     );
@@ -169889,7 +170003,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     trials[SCHEDULE_FLIPS[2] - 1] = (0, [0; 3], Some(2), true, 0, 0, 0);
     trials[SCHEDULE_FLIPS[2]] = (1, [0; 3], Some(1), true, 0, 0, 0);
     assert_eq!(
-        first_new_answered(assignment, &trials),
+        first_new_answered(&SCHEDULE, assignment, &trials),
         [[Some(7), Some(3)], [Some(2048), None], [None, Some(1)]],
         "the old answer's selection at the flip's own trial is not the new one's, and the trial before the next flip is the mapping's last"
     );
@@ -169904,7 +170018,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     let mut wandering = vec![scaled([[10_000; ANSWERS]; 2]); SCHEDULE_BLOCKS];
     wandering[30] = scaled([[9_000, 12_000, 10_000], [10_000, 8_000, 11_000]]);
     wandering[55] = scaled([[10_000, 11_000, 9_500], [10_000; 3]]);
-    let course = course_by_role(assignment, &image, &wandering);
+    let course = course_by_role(&SCHEDULE, assignment, &image, &wandering);
     let near = |read: [i64; 3], parts: [i64; 3]| {
         read.iter()
             .zip(parts)
@@ -169925,7 +170039,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     assert!(near(course[1][1][0], [10_000, 11_000, 10_000]));
     assert!(near(course[1][1][1], [8_000, 10_000, 10_000]));
     assert!(near(course[1][1][2], [10_000, 10_000, 10_000]));
-    let peaks = answered_highest(&image, &wandering);
+    let peaks = answered_highest(&SCHEDULE, &image, &wandering);
     assert_eq!(
         peaks.map(|p| p.map(|(_, j, s, r)| (j, s, r))),
         [
@@ -169937,7 +170051,10 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         "the first of two that read the same, in block order and then the pairs'"
     );
     assert!(peaks[1].is_some_and(|(parts, ..)| (11_999..=12_000).contains(&parts)));
-    assert_eq!(answered_highest(&image, &wandering[..24])[1], None);
+    assert_eq!(
+        answered_highest(&SCHEDULE, &image, &wandering[..24])[1],
+        None
+    );
     // The value's mean per block and its trough per mapping.
     let valued = |values: [i64; 2], presented: [u32; 2]| AnsweredBlock {
         values,
@@ -169955,7 +170072,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         "truncated toward zero, and zero for a stimulus not presented"
     );
     assert_eq!(
-        answered_troughs(&means),
+        answered_troughs(&SCHEDULE, &means),
         [
             [(-3, 2), (-20, 7)],
             [(-1, 6), (-2, 0)],
@@ -169964,14 +170081,14 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         ],
         "the first block of two that read the same"
     );
-    assert_eq!(answered_troughs(&means[..30])[1], [(0, 0); 2]);
+    assert_eq!(answered_troughs(&SCHEDULE, &means[..30])[1], [(0, 0); 2]);
     // Where the consolidation went, by mapping, and the low, the high and the last of a course.
     let mut going = vec![NO_BLOCK; SCHEDULE_BLOCKS];
     going[0].went = [[5, -1], [2, -2], [0, -7]];
     going[23].went = [[1, 0], [0, 0], [3, 0]];
     going[24].went = [[9, -9], [0, 0], [0, 0]];
     assert_eq!(
-        went_by_mapping(&going),
+        went_by_mapping(&SCHEDULE, &going),
         [
             [[6, -1], [2, -2], [3, -7]],
             [[9, -9], [0, 0], [0, 0]],
@@ -169990,31 +170107,31 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     assert!(!later_start(Some(5), Some(6)) && later_start(None, Some(6)));
     assert!(!later_start(Some(7), None) && !later_start(None, None));
     // (b): a mean below zero in a block before the first mapping's crossing block.
-    assert_eq!(below_zero_first(&means, Some(8)), [true, true]);
+    assert_eq!(below_zero_first(&SCHEDULE, &means, Some(8)), [true, true]);
     assert_eq!(
-        below_zero_first(&means, Some(4)),
+        below_zero_first(&SCHEDULE, &means, Some(4)),
         [true, true],
         "A's third block, before the fourth, and B's first"
     );
     assert_eq!(
-        below_zero_first(&means, Some(3)),
+        below_zero_first(&SCHEDULE, &means, Some(3)),
         [false, true],
         "the crossing block itself is not read"
     );
-    assert_eq!(below_zero_first(&means, Some(2)), [false, true]);
+    assert_eq!(below_zero_first(&SCHEDULE, &means, Some(2)), [false, true]);
     assert_eq!(
-        below_zero_first(&means, Some(1)),
+        below_zero_first(&SCHEDULE, &means, Some(1)),
         [false, false],
         "no block before it"
     );
     assert_eq!(
-        below_zero_first(&means, None),
+        below_zero_first(&SCHEDULE, &means, None),
         [true, true],
         "the whole mapping"
     );
     let rising: Vec<[i64; 2]> = vec![[1, 0]; SCHEDULE_BLOCKS];
     assert_eq!(
-        below_zero_first(&rising, None),
+        below_zero_first(&SCHEDULE, &rising, None),
         [false, false],
         "zero is not below"
     );
@@ -170034,6 +170151,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     // the mapping in force, the outside sum moved by what the oracle consolidated there, and the
     // drawn sources and those left out the stimulus's units a presentation.
     let verdict = answered(
+        &SCHEDULE,
         &image,
         outside,
         [ANSWERED_BLOCKS_1024[0], ANSWERED_BLOCKS_1024[1]],
@@ -170057,7 +170175,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
             "{arm:?}: every hash and table pinned"
         );
         // The readings by their rules over the pinned blocks, and the verdict's part of this arm.
-        assert_eq!(read.last, answered_last(blocks));
+        assert_eq!(read.last, answered_last(&SCHEDULE, blocks));
         assert_eq!(read.last.map(|m| learned_by_each(&m)), verdict.learned[k]);
         assert_eq!(read.over, answered_over(&image, blocks));
         assert_eq!(read.over.is_none(), verdict.bounded[k]);
@@ -170067,17 +170185,17 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
             read.last.map(|m| m.map(holds_expected)),
             verdict.expected[k]
         );
-        assert_eq!(read.crossings, answered_crossings(blocks));
-        assert_eq!(read.tally, answered_tally(blocks));
-        assert_eq!(read.by_role, by_role(first, blocks));
-        assert_eq!(read.each_crossed, each_crossed(blocks));
-        assert_eq!(read.old_held, old_held(first, blocks));
-        let course = course_by_role(first, &image, blocks);
+        assert_eq!(read.crossings, answered_crossings(&SCHEDULE, blocks));
+        assert_eq!(read.tally, answered_tally(&SCHEDULE, blocks));
+        assert_eq!(read.by_role, by_role(&SCHEDULE, first, blocks));
+        assert_eq!(read.each_crossed, each_crossed(&SCHEDULE, blocks));
+        assert_eq!(read.old_held, old_held(&SCHEDULE, first, blocks));
+        let course = course_by_role(&SCHEDULE, first, &image, blocks);
         assert_eq!(read.course, course);
-        assert_eq!(read.highest, answered_highest(&image, blocks));
+        assert_eq!(read.highest, answered_highest(&SCHEDULE, &image, blocks));
         let means = answered_means(blocks);
-        assert_eq!(read.troughs, answered_troughs(&means));
-        assert_eq!(read.went, went_by_mapping(blocks));
+        assert_eq!(read.troughs, answered_troughs(&SCHEDULE, &means));
+        assert_eq!(read.went, went_by_mapping(&SCHEDULE, blocks));
         let inhibitory: Vec<i64> = blocks.iter().map(|b| b.sums.0).collect();
         let outsides: Vec<i64> = blocks
             .iter()
@@ -170094,7 +170212,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         );
         assert_eq!(
             read.below_zero_first,
-            below_zero_first(&means, read.crossings[0])
+            below_zero_first(&SCHEDULE, &means, read.crossings[0])
         );
         assert_eq!(read.eliminated, eliminated(read.old_held, &course));
         assert_eq!(Some(read.sums_after), blocks.last().map(|b| b.sums));
@@ -170115,7 +170233,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         let mut previous = image;
         let mut previous_outside = outside;
         for (j, block) in blocks.iter().enumerate() {
-            let answers = answers_at(first, j * BLOCK);
+            let answers = answers_at(&SCHEDULE, first, j * BLOCK);
             assert_eq!(
                 (block.presented[0], block.presented[0] + block.presented[1]),
                 (DRAWN_BLOCKS_1024[k][j].1, BLOCK as u32),
@@ -170188,7 +170306,9 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         assignment,
         Feedback::Answer,
         ANSWERED_DELIVERY,
+        &SCHEDULE,
         GATE_TRIALS,
+        &mut |_, _| {},
     );
     eprintln!("DUMP answered gate: {GATE_TRIALS} trials {:?}", run.read);
     assert_eq!((run.read.len(), run.blocks.len()), (GATE_TRIALS, 0));
@@ -170218,7 +170338,9 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
         mirrored,
         Feedback::Withheld,
         Delivery::Addressed,
+        &SCHEDULE,
         4,
+        &mut |_, _| {},
     );
     assert!(still.read.iter().all(|t| (t.4, t.5, t.6) == (0, 0, 0)));
     assert_eq!(
@@ -175447,8 +175569,8 @@ struct Whole {
 }
 
 fn unsoftened(image: &[[i64; ANSWERS]; 2], outside: i64, arms: [&[AnsweredBlock]; 2]) -> Whole {
-    let answered = answered(image, outside, arms);
-    let in_time = arms.map(|blocks| reversals_within(answered_crossings(blocks)));
+    let answered = answered(&SCHEDULE, image, outside, arms);
+    let in_time = arms.map(|blocks| reversals_within(answered_crossings(&SCHEDULE, blocks)));
     Whole {
         answered,
         in_time,
@@ -175520,7 +175642,7 @@ struct TrialsRead {
 
 /// `TrialsRead` over a run's trials, `first` its first answers: zeros for a mapping the run
 /// does not reach. A trial is punished when it is not correct, the answer's feedback.
-fn trials_read(first: [usize; 2], read: &[AnsweredTrial]) -> TrialsRead {
+fn trials_read(schedule: &Schedule, first: [usize; 2], read: &[AnsweredTrial]) -> TrialsRead {
     let mut out = TrialsRead {
         below: [(0, 0, 0); 4],
         above: [(0, 0); 4],
@@ -175529,7 +175651,7 @@ fn trials_read(first: [usize; 2], read: &[AnsweredTrial]) -> TrialsRead {
         signal: [(0, 0, 0, 0); 4],
         margin: [(0, 0); 4],
     };
-    for (m, &(from, to)) in SPANS.iter().enumerate() {
+    for (m, &(from, to)) in schedule.spans().iter().enumerate() {
         let mut bounds: Option<(i32, i32)> = None;
         for &(_, counts, _, correct, received, value, signal) in read.iter().take(to).skip(from) {
             let received = i64::from(received);
@@ -175568,8 +175690,8 @@ fn trials_read(first: [usize; 2], read: &[AnsweredTrial]) -> TrialsRead {
     }
     for (f, of_flip) in out.old.iter_mut().enumerate() {
         let m = f.saturating_add(1);
-        let (from, to) = SPANS[m];
-        let answers = answers_of(first, m);
+        let (from, to) = schedule.spans()[m];
+        let answers = answers_of(schedule, first, m);
         for (s, of) in of_flip.iter_mut().enumerate() {
             let [_, before, _] = roles(answers[s]);
             for &(stimulus, _, selection, _, received, value, _) in read.iter().take(to).skip(from)
@@ -175590,8 +175712,8 @@ fn trials_read(first: [usize; 2], read: &[AnsweredTrial]) -> TrialsRead {
 
 /// Per mapping and stimulus, the blocks of the mapping whose mean value of the stimulus was
 /// below minus half the reward (ADR-0153's reading: H-29's were 5 to 24 after a flip).
-fn below_half(means: &[[i64; 2]]) -> [[usize; 2]; 4] {
-    MAPPINGS.map(|(from, to)| {
+fn below_half(schedule: &Schedule, means: &[[i64; 2]]) -> [[usize; 2]; 4] {
+    schedule.mappings().map(|(from, to)| {
         [0usize, 1].map(|s| {
             means
                 .iter()
@@ -175651,20 +175773,20 @@ struct WholeRead {
 
 /// H-29's blocks below minus half the reward, arm `k`, from its pinned blocks.
 fn h29_below_half(k: usize) -> [[usize; 2]; 4] {
-    below_half(&answered_means(ANSWERED_BLOCKS_1024[k]))
+    below_half(&SCHEDULE, &answered_means(ANSWERED_BLOCKS_1024[k]))
 }
 
 /// An arm's readings from its tables, `k` its index in `WHOLE_ARMS`.
 fn whole_read(k: usize, run: &AnsweredRun) -> WholeRead {
     let first = first_answers(WHOLE_ARMS[k]);
-    let answered = answered_read(k, run);
+    let answered = answered_read(&SCHEDULE, k, run);
     let h29 = ANSWERED_READINGS_1024[k].expect("H-29's readings of the arm");
-    let mine_below = below_half(&answered_means(&run.blocks));
+    let mine_below = below_half(&SCHEDULE, &answered_means(&run.blocks));
     WholeRead {
         answered,
         in_time: reversals_within(answered.crossings),
         below_half: mine_below,
-        trials: trials_read(first, &run.read),
+        trials: trials_read(&SCHEDULE, first, &run.read),
         lets_go_sooner: lets_go_sooner(answered.old_held, h29.old_held),
         faster: faster(answered.crossings, h29.crossings),
         recovers_sooner: recovers_sooner(mine_below, h29_below_half(k)),
@@ -175680,15 +175802,20 @@ fn whole_read(k: usize, run: &AnsweredRun) -> WholeRead {
 /// punished trial under a value below zero received the reward itself, which is no softer than
 /// the critic's error, and otherwise it received the critic's error.
 fn trials_hold(
+    schedule: &Schedule,
     name: &str,
     whole: bool,
     first: [usize; 2],
     blocks: &[AnsweredBlock],
     read: &TrialsRead,
 ) {
-    assert_eq!(blocks.len(), SCHEDULE_BLOCKS, "{name}: 120 blocks");
-    let roled = by_role(first, blocks);
-    for (m, &(from, to)) in MAPPINGS.iter().enumerate() {
+    assert_eq!(
+        blocks.len(),
+        schedule.blocks(),
+        "{name}: the blocks of the schedule"
+    );
+    let roled = by_role(schedule, first, blocks);
+    for (m, &(from, to)) in schedule.mappings().iter().enumerate() {
         let mine = blocks.iter().take(to).skip(from);
         let trials = to.saturating_sub(from).saturating_mul(BLOCK) as u32;
         let correct = mine.clone().fold(0u32, |sum, b| {
@@ -175849,7 +175976,9 @@ fn whole_calibration(
             first,
             Feedback::Answer,
             WHOLE_DELIVERY,
+            &SCHEDULE,
             BLOCK,
+            &mut |_, _| {},
         )
     };
     let unset = block_from(windowed, false);
@@ -175963,7 +176092,9 @@ fn whole_arm(arm: Reversal) {
         first,
         Feedback::Answer,
         WHOLE_DELIVERY,
+        &SCHEDULE,
         SCHEDULE_TRIALS,
+        &mut |_, _| {},
     );
     assert_eq!(
         (run.blocks.len(), run.read.len()),
@@ -176247,7 +176378,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     assert_eq!(
         yes,
         Whole {
-            answered: answered(&image, outside, [&good, &good]),
+            answered: answered(&SCHEDULE, &image, outside, [&good, &good]),
             in_time: [[true; 3]; 2],
             yes: true,
         }
@@ -176262,8 +176393,8 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
         let past = late(23, m);
         assert_eq!(
             (
-                answered_crossings(&at_edge)[m],
-                answered_crossings(&past)[m]
+                answered_crossings(&SCHEDULE, &at_edge)[m],
+                answered_crossings(&SCHEDULE, &past)[m]
             ),
             (Some(23), Some(24))
         );
@@ -176291,7 +176422,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
         assert!(fails.answered.yes, "on clause 5 alone");
     }
     let first_slow = late(23, 0);
-    assert_eq!(answered_crossings(&first_slow)[0], Some(24));
+    assert_eq!(answered_crossings(&SCHEDULE, &first_slow)[0], Some(24));
     assert!(
         unsoftened(&image, outside, [&first_slow, &good]).yes,
         "the first mapping is learned, not revised: clause 5 does not read it"
@@ -176302,7 +176433,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     let no = unsoftened(&image, outside, [&last_two, &good]);
     assert_eq!(
         (
-            answered_crossings(&last_two)[2],
+            answered_crossings(&SCHEDULE, &last_two)[2],
             no.answered.yes,
             whole_step(&no)
         ),
@@ -176312,7 +176443,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     let no = unsoftened(&image, outside, [&good, &never]);
     assert_eq!(
         (
-            answered_crossings(&never)[2],
+            answered_crossings(&SCHEDULE, &never)[2],
             no.in_time[1],
             no.answered.learned[1],
             whole_step(&no)
@@ -176409,7 +176540,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     trials[flip] = (0, [9, 1, 1], Some(0), false, -R, -300, -1);
     trials[flip + 1] = (1, [0, 8, 0], Some(1), false, -R - 10, 10, 5);
     trials[flip + 2] = (0, [2, 0, 7], Some(2), false, -R, -1, 0);
-    let read = trials_read(assignment, &trials);
+    let read = trials_read(&SCHEDULE, assignment, &trials);
     assert_eq!(
         read,
         TrialsRead {
@@ -176437,11 +176568,11 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
         "the punished trials by the value's sign, the rewarded, the old answer's, the signal at the gate's bounds and the margin"
     );
     assert_eq!(
-        trials_read(mirrored, &trials).old,
+        trials_read(&SCHEDULE, mirrored, &trials).old,
         [[(0, 0, 0, 0); 2]; 3],
         "by the arm's own answers: under (2, 1) A's old answer is readout 1 and B's readout 0"
     );
-    let short = trials_read(assignment, &trials[..4]);
+    let short = trials_read(&SCHEDULE, assignment, &trials[..4]);
     assert_eq!(
         (
             short.rewarded,
@@ -176471,8 +176602,14 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     means[24] = [-RQ / 2, -RQ / 2 - 1];
     means[30] = [-40_000, 10];
     means[119] = [-RQ, -RQ];
-    assert_eq!(below_half(&means), [[0, 0], [1, 1], [0, 0], [1, 1]]);
-    assert_eq!(below_half(&means[..30]), [[0, 0], [0, 1], [0, 0], [0, 0]]);
+    assert_eq!(
+        below_half(&SCHEDULE, &means),
+        [[0, 0], [1, 1], [0, 0], [1, 1]]
+    );
+    assert_eq!(
+        below_half(&SCHEDULE, &means[..30]),
+        [[0, 0], [0, 1], [0, 0], [0, 0]]
+    );
     // The predicted readings' rules. (a): fewer blocks than H-29's, per flip and stimulus.
     assert_eq!(
         lets_go_sooner([[4, 5], [0, 3], [7, 7]], [[5, 5], [1, 3], [6, 8]]),
@@ -176559,7 +176696,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
             "{arm:?}: another run than H-29's, from its first block"
         );
         // The readings by their rules over the pinned blocks, and the verdict's part of this arm.
-        assert_eq!(four.last, answered_last(blocks));
+        assert_eq!(four.last, answered_last(&SCHEDULE, blocks));
         assert_eq!(
             four.last.map(|m| learned_by_each(&m)),
             verdict.answered.learned[k]
@@ -176572,19 +176709,19 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
             four.last.map(|m| m.map(holds_expected)),
             verdict.answered.expected[k]
         );
-        assert_eq!(four.crossings, answered_crossings(blocks));
+        assert_eq!(four.crossings, answered_crossings(&SCHEDULE, blocks));
         assert_eq!(read.in_time, reversals_within(four.crossings));
         assert_eq!(read.in_time, verdict.in_time[k]);
-        assert_eq!(four.tally, answered_tally(blocks));
-        assert_eq!(four.by_role, by_role(first, blocks));
-        assert_eq!(four.each_crossed, each_crossed(blocks));
-        assert_eq!(four.old_held, old_held(first, blocks));
-        let course = course_by_role(first, &image, blocks);
+        assert_eq!(four.tally, answered_tally(&SCHEDULE, blocks));
+        assert_eq!(four.by_role, by_role(&SCHEDULE, first, blocks));
+        assert_eq!(four.each_crossed, each_crossed(&SCHEDULE, blocks));
+        assert_eq!(four.old_held, old_held(&SCHEDULE, first, blocks));
+        let course = course_by_role(&SCHEDULE, first, &image, blocks);
         assert_eq!(four.course, course);
-        assert_eq!(four.highest, answered_highest(&image, blocks));
+        assert_eq!(four.highest, answered_highest(&SCHEDULE, &image, blocks));
         let means = answered_means(blocks);
-        assert_eq!(four.troughs, answered_troughs(&means));
-        assert_eq!(four.went, went_by_mapping(blocks));
+        assert_eq!(four.troughs, answered_troughs(&SCHEDULE, &means));
+        assert_eq!(four.went, went_by_mapping(&SCHEDULE, blocks));
         let inhibitory: Vec<i64> = blocks.iter().map(|b| b.sums.0).collect();
         let outsides: Vec<i64> = blocks
             .iter()
@@ -176596,7 +176733,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
         );
         assert_eq!(four.outside, low_high_last(outside, &outsides));
         assert_eq!(Some(four.sums_after), blocks.last().map(|b| b.sums));
-        assert_eq!(read.below_half, below_half(&means));
+        assert_eq!(read.below_half, below_half(&SCHEDULE, &means));
         // The predicted readings by their rules against H-29's pinned tables.
         assert_eq!(
             read.lets_go_sooner,
@@ -176610,7 +176747,14 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
         assert_eq!(read.old_below_image, old_below_image(&course));
         // The trials' readings held to the blocks: every punishment under a value below zero
         // received whole.
-        trials_hold(&format!("H-30 {arm:?}"), true, first, blocks, &read.trials);
+        trials_hold(
+            &SCHEDULE,
+            &format!("H-30 {arm:?}"),
+            true,
+            first,
+            blocks,
+            &read.trials,
+        );
         for (m, tally) in four.tally.iter().enumerate() {
             let [a, b] = four.by_role[m];
             assert_eq!(
@@ -176622,7 +176766,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
         let mut previous = image;
         let mut previous_outside = outside;
         for (j, block) in blocks.iter().enumerate() {
-            let answers = answers_at(first, j * BLOCK);
+            let answers = answers_at(&SCHEDULE, first, j * BLOCK);
             assert_eq!(
                 block.presented, ANSWERED_BLOCKS_1024[k][j].presented,
                 "{arm:?}, block {j}: the same trials present each stimulus as in H-29"
@@ -176683,6 +176827,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     for (k, &arm) in ANSWERED_ARMS.iter().enumerate() {
         let h29 = ANSWERED_TRIALS_1024[k].expect("H-29's trials' readings");
         trials_hold(
+            &SCHEDULE,
             &format!("H-29 {arm:?}"),
             false,
             first_answers(arm),
@@ -176704,7 +176849,9 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
             assignment,
             Feedback::Answer,
             WHOLE_DELIVERY,
+            &SCHEDULE,
             WHOLE_GATE_TRIALS,
+            &mut |_, _| {},
         )
     };
     let unset = gate_run(&bytes);
@@ -181994,3 +182141,1234 @@ const WHOLE_1024: Whole = Whole {
 /// The step of H-30's stopping rule the verdict reaches: 5, a no on clause 1 with clause 3
 /// holding.
 const WHOLE_STEP_1024: u8 = 5;
+
+// =================================================================================== H-31
+
+// -------------------------------------------- written before the run (ADR-0157, ADR-0161)
+
+/// A mapping after a flip on ADR-0157's schedule: 48 blocks, where H-20's is 32. Derived two
+/// ways that agree: by the number of answers, half again for three what two had; and by H-29's
+/// slowest reversal, 31 blocks where H-25's slowest took 21 of its 32, the least whole number
+/// of blocks at or above 31 × 32 / 21. It is not fitted to what a run reads, and does not move
+/// after a trial past H-29's second flip.
+const SIZED_LATER_BLOCKS: usize = 48;
+const _: () = {
+    let two = LATER_MAPPING_TRIALS / BLOCK;
+    assert!(two == 32 && SIZED_LATER_BLOCKS * 2 == two * 3);
+    assert!(SIZED_LATER_BLOCKS * 21 >= 31 * two && (SIZED_LATER_BLOCKS - 1) * 21 < 31 * two);
+};
+
+/// ADR-0157's schedule, Specified there and built here: the first mapping H-20's 24 blocks and
+/// each of the three after a flip 48, so the flips come before the trials of index 1 536, 4 608
+/// and 7 680 and a run is 168 blocks, 10 752 trials.
+const SIZED_SCHEDULE: Schedule = Schedule {
+    flips: [
+        FLIP,
+        FLIP + SIZED_LATER_BLOCKS * BLOCK,
+        FLIP + 2 * SIZED_LATER_BLOCKS * BLOCK,
+    ],
+    trials: FLIP + 3 * SIZED_LATER_BLOCKS * BLOCK,
+};
+const _: () = {
+    let [a, b, c] = SIZED_SCHEDULE.flips;
+    assert!(a == 1_536 && b == 4_608 && c == 7_680);
+    assert!(a % BLOCK == 0 && b % BLOCK == 0 && c % BLOCK == 0);
+    assert!(SIZED_SCHEDULE.trials == 10_752 && SIZED_SCHEDULE.blocks() == 168);
+    let mappings = SIZED_SCHEDULE.mappings();
+    assert!(mappings[0].0 == 0 && mappings[0].1 == FLIP_BLOCK);
+    assert!(mappings[1].0 == 24 && mappings[1].1 == 72);
+    assert!(mappings[2].0 == 72 && mappings[2].1 == 120);
+    assert!(mappings[3].0 == 120 && mappings[3].1 == 168);
+};
+
+/// The trials an arm of H-31 is H-29's arm for (ADR-0157), and their blocks: every trial before
+/// H-29's second flip, 3 584 in 56 blocks. The image, the seed, the first mapping and the first
+/// flip are H-29's, and the two schedules first differ at H-29's second flip, so until the
+/// trial of index 3 584 the run is the same run.
+const SIZED_REPLICATED_TRIALS: usize = SCHEDULE_FLIPS[1];
+const SIZED_REPLICATED_BLOCKS: usize = SIZED_REPLICATED_TRIALS / BLOCK;
+const _: () = assert!(
+    SIZED_REPLICATED_TRIALS == 3_584
+        && SIZED_REPLICATED_BLOCKS == 56
+        && SIZED_SCHEDULE.flips[0] == SCHEDULE_FLIPS[0]
+        && SIZED_SCHEDULE.flips[1] > SCHEDULE_FLIPS[1]
+);
+
+/// The arms of H-31 (ADR-0157): H-29's two, in their order, each its own weekly test, from
+/// H-29's image — the whole punishment of ADR-0155 unset — under H-29's readouts, deal,
+/// delivery and seed, on ADR-0157's schedule.
+const SIZED_ARMS: [Reversal; 2] = ANSWERED_ARMS;
+
+/// H-29's delivery, H-25's, unchanged.
+const SIZED_DELIVERY: Delivery = ANSWERED_DELIVERY;
+
+/// ADR-0157 predicts a yes.
+const SIZED_PREDICTED: bool = true;
+
+/// ADR-0157's predicted readings, Hypotheses written before the run and never asserted:
+/// (a) the mapping H-29 failed is learned — from the mirrored assignment, the second mapping,
+/// by each stimulus over its last 128 trials (`failed_learned`); (b) every reversal passes
+/// `CROSSING_MARK` within `SIZED_REVERSAL_BLOCKS_MAX` blocks of its flip (`within_sized`);
+/// (c) the six couplings' sum stands at or above the image's at every mapping's end
+/// (`six_held`); (d) the inhibitory sum ends between 0.75 and 0.80 of the image's
+/// (`ends_between`).
+const FAILED_LEARNED_PREDICTED: bool = true;
+const WITHIN_SIZED_PREDICTED: bool = true;
+const SIX_HELD_PREDICTED: bool = true;
+const ENDS_BETWEEN_PREDICTED: bool = true;
+
+/// Predicted reading (a)'s mapping, the one H-29 failed (ADR-0153), `(arm, mapping)` by index:
+/// from the mirrored assignment, the second.
+const FAILED: (usize, usize) = (1, 1);
+
+/// Predicted reading (b)'s bound (ADR-0157): 35 blocks, half again H-25's 23
+/// (`REVERSAL_BLOCKS_MAX`), the half block counted whole.
+const SIZED_REVERSAL_BLOCKS_MAX: usize = 35;
+const _: () = assert!(SIZED_REVERSAL_BLOCKS_MAX == (REVERSAL_BLOCKS_MAX * 3).div_ceil(2));
+
+/// Predicted reading (d)'s bounds (ADR-0157): the inhibitory sum's end at or above 0.75 and at
+/// or below 0.80 of the image's, read in integers as `75 × image ≤ 100 × sum ≤ 80 × image`.
+const ENDS_PER_CENT: (i64, i64) = (75, 80);
+
+/// The blocks of a mapping after a flip that the added span holds (ADR-0157's reading): from
+/// its 32nd, the last H-20's schedule gave it, to its 48th — seventeen.
+const ADDED_FROM: usize = LATER_MAPPING_TRIALS / BLOCK;
+const ADDED_BLOCKS: usize = SIZED_LATER_BLOCKS - ADDED_FROM + 1;
+const _: () = assert!(ADDED_FROM == 32 && ADDED_BLOCKS == 17);
+
+// --------------------------------------------------- the readings' rules (brief 064)
+
+/// The six couplings summed.
+fn six(couplings: &[[i64; ANSWERS]; 2]) -> i64 {
+    couplings
+        .iter()
+        .flatten()
+        .fold(0i64, |sum, &c| sum.saturating_add(c))
+}
+
+/// A mapping's last block, by the index its blocks end before; none for a mapping of no block
+/// or one the run does not reach the end of.
+fn last_of(blocks: &[AnsweredBlock], to: usize) -> Option<&AnsweredBlock> {
+    to.checked_sub(1).and_then(|last| blocks.get(last))
+}
+
+/// Per mapping of `schedule`, the six couplings' sum at the mapping's last block's end; zero
+/// for a mapping the run does not reach the end of.
+fn six_at_ends(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [i64; 4] {
+    schedule
+        .mappings()
+        .map(|(_, to)| last_of(blocks, to).map_or(0, |b| six(&b.couplings)))
+}
+
+/// Per mapping of `schedule`, the inhibitory sum at the mapping's last block's end; zero for a
+/// mapping the run does not reach the end of.
+fn inhibitory_at_ends(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [i64; 4] {
+    schedule
+        .mappings()
+        .map(|(_, to)| last_of(blocks, to).map_or(0, |b| b.sums.0))
+}
+
+/// What the added span bought, per mapping after a flip: clause 1's and clause 4's counts as
+/// H-20's schedule would have read the mapping — over its 31st and 32nd blocks, the last two
+/// it had there, per stimulus `[A, B]` — beside which `answered_last` reads its last two. On
+/// H-20's schedule the two are one. Zeros for a mapping the run does not hold to its 32nd
+/// block.
+fn at_the_32nd(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [[StimulusValue; 2]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, _) = schedule.mappings()[m];
+        let to = from.saturating_add(ADDED_FROM);
+        let mut out = [(0u32, 0u32, 0i64); 2];
+        let Some(mine) = blocks.get(to.saturating_sub(LAST_BLOCKS)..to) else {
+            return out;
+        };
+        for b in mine {
+            for (s, of) in out.iter_mut().enumerate() {
+                of.0 = of.0.saturating_add(b.presented[s]);
+                of.1 = of.1.saturating_add(b.correct[s]);
+                of.2 = of.2.saturating_add(b.values[s]);
+            }
+        }
+        out
+    })
+}
+
+/// Per mapping after a flip, its correct trials by block from its 32nd to its 48th, `[A, B]` a
+/// block; zeros for a block past the mapping's end or one the run does not hold.
+fn added_blocks(schedule: &Schedule, blocks: &[AnsweredBlock]) -> [[[u32; 2]; ADDED_BLOCKS]; 3] {
+    [1usize, 2, 3].map(|m| {
+        let (from, to) = schedule.mappings()[m];
+        let mut out = [[0u32; 2]; ADDED_BLOCKS];
+        for (j, of) in out.iter_mut().enumerate() {
+            // The mapping's (32 + j)th block, by index.
+            let at = from
+                .saturating_add(ADDED_FROM)
+                .saturating_add(j)
+                .saturating_sub(1);
+            if let Some(b) = blocks.get(at).filter(|_| at < to) {
+                *of = b.correct;
+            }
+        }
+        out
+    })
+}
+
+/// ADR-0157's predicted reading (a) as a rule, over the two arms' counts (`answered_last` of
+/// each): the mapping H-29 failed, `FAILED`, is learned by each stimulus (`learned_by_each`).
+fn failed_learned(last: [&[[StimulusValue; 2]; 4]; 2]) -> bool {
+    learned_by_each(&last[FAILED.0][FAILED.1])
+}
+
+/// ADR-0157's predicted reading (b) as a rule, per reversal: it passed `CROSSING_MARK` within
+/// `SIZED_REVERSAL_BLOCKS_MAX` blocks of its flip, the crossing block counted — H-25's
+/// `reversals_within` with the bound half again; a reversal that never passed does not hold.
+fn within_sized(crossed: [Option<usize>; 4]) -> [bool; 3] {
+    [1usize, 2, 3].map(|m| crossed[m].is_some_and(|n| n <= SIZED_REVERSAL_BLOCKS_MAX))
+}
+
+/// ADR-0157's predicted reading (c) as a rule, per mapping: the six couplings' sum at the
+/// mapping's end at or above the image's six summed.
+fn six_held(image: &[[i64; ANSWERS]; 2], ends: [i64; 4]) -> [bool; 4] {
+    ends.map(|sum| sum >= six(image))
+}
+
+/// ADR-0157's predicted reading (d) as a rule: the inhibitory sum at the run's end within 0.75
+/// and 0.80 of the image's, both bounds held, an image above zero.
+fn ends_between(image: i64, last: i64) -> bool {
+    let scaled = last.saturating_mul(100);
+    image > 0
+        && scaled >= image.saturating_mul(ENDS_PER_CENT.0)
+        && scaled <= image.saturating_mul(ENDS_PER_CENT.1)
+}
+
+/// What brief 064 reads of an arm beside its blocks. H-29's readings by H-29's reader and the
+/// trials' by brief 063's, both over this run on ADR-0157's schedule; the blocks below minus
+/// half the reward (`below_half`); what the added span bought — each mapping after a flip at
+/// its 32nd block (`at_the_32nd`) and its correct trials by block from there to its 48th
+/// (`added_blocks`); the six couplings' sum at each mapping's end and its lowest, highest and
+/// last over the run as fractions of the image's in parts per ten thousand; the inhibitory sum
+/// at each mapping's end, and the first block at whose end it stood below half of the image's,
+/// H-21's bar (`drained_below`); and ADR-0157's predicted readings (b), (c) and (d) by their
+/// rules. Predicted reading (a) is read of the two arms together (`failed_learned`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SizedRead {
+    answered: AnsweredRead,
+    trials: TrialsRead,
+    below_half: [[usize; 2]; 4],
+    at_32: [[StimulusValue; 2]; 3],
+    added: [[[u32; 2]; ADDED_BLOCKS]; 3],
+    six_ends: [i64; 4],
+    six_course: (i64, i64, i64),
+    inhibitory_ends: [i64; 4],
+    drained: Option<usize>,
+    within_sized: [bool; 3],
+    six_held: [bool; 4],
+    ends_between: bool,
+}
+
+/// An arm's readings from its tables, `k` its index in `SIZED_ARMS`.
+fn sized_read(k: usize, run: &AnsweredRun) -> SizedRead {
+    let first = first_answers(SIZED_ARMS[k]);
+    let image = &DEALT_COUPLINGS_1024;
+    let image_inhibitory = QUIET_1024[SETTLED].1.0;
+    let blocks = run.blocks.as_slice();
+    let answered = answered_read(&SIZED_SCHEDULE, k, run);
+    let six_ends = six_at_ends(&SIZED_SCHEDULE, blocks);
+    let sixes: Vec<i64> = blocks.iter().map(|b| six(&b.couplings)).collect();
+    SizedRead {
+        answered,
+        trials: trials_read(&SIZED_SCHEDULE, first, &run.read),
+        below_half: below_half(&SIZED_SCHEDULE, &answered_means(blocks)),
+        at_32: at_the_32nd(&SIZED_SCHEDULE, blocks),
+        added: added_blocks(&SIZED_SCHEDULE, blocks),
+        six_ends,
+        six_course: low_high_last(six(image), &sixes),
+        inhibitory_ends: inhibitory_at_ends(&SIZED_SCHEDULE, blocks),
+        drained: blocks
+            .iter()
+            .position(|b| drained_below(b.sums.0, image_inhibitory)),
+        within_sized: within_sized(answered.crossings),
+        six_held: six_held(image, six_ends),
+        ends_between: ends_between(image_inhibitory, answered.sums_after.0),
+    }
+}
+
+// ------------------------------------------------------- the calibration (brief 064)
+
+/// A run's trial-level readings as `trials_read` reads on H-20's schedule a run that ends at
+/// its second flip: `read` with every entry of the third and the fourth mapping, and of the
+/// second and the third flip, zero.
+fn before_second_flip(read: &TrialsRead) -> TrialsRead {
+    let mut out = *read;
+    for m in [2usize, 3] {
+        out.below[m] = (0, 0, 0);
+        out.above[m] = (0, 0);
+        out.rewarded[m] = (0, 0);
+        out.signal[m] = (0, 0, 0, 0);
+        out.margin[m] = (0, 0);
+    }
+    for f in [1usize, 2] {
+        out.old[f] = [(0, 0, 0, 0); 2];
+    }
+    out
+}
+
+/// The calibration of an arm of H-31 (H-31's stopping rule, step 2), held by the arm's own run
+/// at the end of its 56th block, before the trial of index 3 584 — the first past H-29's
+/// second flip — is run: the 56 blocks so far are H-29's pinned first 56, table for table;
+/// every trial read so far hashes, in every number read of it, to H-29's first 3 584
+/// (`ANSWERED_HEAD_1024`, which H-29's own arms hold); and the trials by brief 063's reader on
+/// H-20's schedule are H-29's pinned ones over the first two mappings and the first flip
+/// (`ANSWERED_TRIALS_1024`). Everything is dumped before anything is held. A failure stops the
+/// run there, with no trial past H-29's second flip run, and the round as a finding.
+fn sized_calibration(name: &str, k: usize, blocks: &[AnsweredBlock], read: &[AnsweredTrial]) {
+    let first = first_answers(SIZED_ARMS[k]);
+    let by_trial = trials_read(&SCHEDULE, first, read);
+    eprintln!(
+        "DUMP {name} calibration, before the trial of index {SIZED_REPLICATED_TRIALS}: {} blocks, {} trials, read {:#018x}; trials read {by_trial:?}",
+        blocks.len(),
+        read.len(),
+        answered_hash(read)
+    );
+    assert_eq!(
+        (blocks.len(), read.len()),
+        (SIZED_REPLICATED_BLOCKS, SIZED_REPLICATED_TRIALS),
+        "{name}: 56 blocks of 64 trials, every trial before H-29's second flip"
+    );
+    assert_eq!(
+        blocks,
+        &ANSWERED_BLOCKS_1024[k][..SIZED_REPLICATED_BLOCKS],
+        "{name}: the first 56 blocks are H-29's, table for table"
+    );
+    assert_eq!(
+        answered_hash(read),
+        ANSWERED_HEAD_1024[k],
+        "{name}: every trial before H-29's second flip is H-29's in every number read of it"
+    );
+    assert_eq!(
+        Some(by_trial),
+        ANSWERED_TRIALS_1024[k].as_ref().map(before_second_flip),
+        "{name}: the trials by brief 063's reader are H-29's over the first two mappings and the first flip"
+    );
+    eprintln!(
+        "DUMP {name} calibration holds: the arm is H-29's arm trial for trial for its first {SIZED_REPLICATED_TRIALS} trials, and no trial past H-29's second flip has run"
+    );
+}
+
+// ---------------------------------------------------------------- the arm (brief 064)
+
+/// One arm of H-31 at 1 024 units (brief 064): H-29's image built and held link by link, to its
+/// CRC as it is and as H-29 read it at format 20, the whole punishment unset; the deal held to
+/// the readouts' rule on it; then the arm's 10 752 trials from that image under H-29's
+/// readouts, delivery and seed on ADR-0157's schedule, the critic's oracle, the hand rule of
+/// what the modulator receives and the network's oracle held to the record at every trial.
+/// The calibration (H-31's stopping rule, step 2) is held inside the run, at the end of its
+/// 56th block and before any trial past H-29's second flip (`sized_calibration`). Everything is
+/// dumped, the clauses and the readings computed before anything else is held; then the pinned
+/// tables: H-29's first 56 blocks and the 112 after them.
+fn sized_arm(arm: Reversal) {
+    let k = SIZED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-31");
+    let name = format!("sized1024 {arm:?}");
+    let (_, windowed) = answered_images(&name);
+    let sets = deal_calibration(&name, &windowed);
+    let mut exec = signed_from(&windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.whole_punishment(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.ticks()
+        ),
+        (
+            Some(VALUED_CRITIC),
+            WINDOW_TICKS_1024,
+            false,
+            TARGET_PERIOD_1024,
+            exec.ticks(),
+            Ok(()),
+            SETTLED_TICK
+        ),
+        "{name}: H-29's configuration, the whole punishment unset"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    let image_sums = QUIET_1024[SETTLED].1;
+    assert_eq!(
+        weights_by_polarity(&exec),
+        image_sums,
+        "{name}: the image's sums"
+    );
+    assert_eq!(
+        answered_couplings(&exec, &sets),
+        DEALT_COUPLINGS_1024,
+        "{name}: the same image"
+    );
+    let first = first_answers(arm);
+    let mut calibrated = 0u32;
+    let run = answered_run(
+        &mut exec,
+        &sets,
+        first,
+        Feedback::Answer,
+        SIZED_DELIVERY,
+        &SIZED_SCHEDULE,
+        SIZED_SCHEDULE.trials,
+        &mut |blocks, read| {
+            if blocks.len() == SIZED_REPLICATED_BLOCKS {
+                sized_calibration(&name, k, blocks, read);
+                calibrated = calibrated.saturating_add(1);
+            }
+        },
+    );
+    assert_eq!(
+        calibrated, 1,
+        "{name}: the calibration was held once, before the trial of index 3 584"
+    );
+    assert_eq!(
+        (run.blocks.len(), run.read.len()),
+        (SIZED_SCHEDULE.blocks(), SIZED_SCHEDULE.trials),
+        "{name}: 168 blocks of 64 trials"
+    );
+    let at_flips = run
+        .at_flips
+        .map(|c| c.expect("the run reached the trial after every flip"));
+    let (replicated, later) = run.blocks.split_at(SIZED_REPLICATED_BLOCKS);
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN later blocks {later:?}");
+    eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
+    eprintln!("DUMP {name} PIN read {:#018x}", answered_hash(&run.read));
+    eprintln!("DUMP {name} PIN at flips {at_flips:?}");
+    eprintln!("DUMP {name} TRIALS {:?}", run.read);
+    let read = sized_read(k, &run);
+    eprintln!("DUMP {name} PIN readings {read:?}");
+    let four = read.answered;
+    let h29 = ANSWERED_READINGS_1024[k].expect("H-29's readings of the arm");
+    let image = &DEALT_COUPLINGS_1024;
+    let image_outside = answered_outside(image_sums.1, image);
+    let learned = four.last.map(|m| learned_by_each(&m));
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned by each {learned:?} over {:?} left {:?} the expected reward held {:?}; predicted {SIZED_PREDICTED}",
+        four.over,
+        four.left,
+        four.last.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} the predicted readings: (a) the mapping H-29 failed learned, predicted {FAILED_LEARNED_PREDICTED}, read of arm {} mapping {}: this arm's mappings learned {learned:?} with last {:?}; (b) every reversal within {SIZED_REVERSAL_BLOCKS_MAX} blocks, predicted {WITHIN_SIZED_PREDICTED}: {:?} — crossings {:?} beside H-29's {:?}; (c) the six couplings' sum at or above the image's at each mapping's end, predicted {SIX_HELD_PREDICTED}: {:?} — per myriad {:?}, lowest, highest and last {:?}; (d) the inhibitory sum ends between 0.75 and 0.80 of the image's, predicted {ENDS_BETWEEN_PREDICTED}: {} — per myriad at each mapping's end {:?}, lowest, highest and last {:?}, first block below half {:?}",
+        FAILED.0,
+        FAILED.1,
+        four.last,
+        read.within_sized,
+        four.crossings,
+        h29.crossings,
+        read.six_held,
+        read.six_ends.map(|sum| per_myriad(sum, six(image))),
+        read.six_course,
+        read.ends_between,
+        read.inhibitory_ends
+            .map(|sum| per_myriad(sum, image_sums.0)),
+        four.inhibitory,
+        read.drained
+    );
+    eprintln!(
+        "DUMP {name} what the added span bought: each mapping after a flip at its 32nd block {:?} learned {:?}, at its 48th {:?} learned {:?}; correct by block from the 32nd to the 48th {:?}",
+        read.at_32,
+        read.at_32.map(|m| learned_by_each(&m)),
+        [four.last[1], four.last[2], four.last[3]],
+        [learned[1], learned[2], learned[3]],
+        read.added
+    );
+    eprintln!(
+        "DUMP {name} each stimulus's crossing after each flip {:?} beside H-29's {:?}; its first new selection {:?} beside H-29's {:?}; the old answer held {:?} blocks beside H-29's {:?}; blocks below minus half the reward {:?}",
+        four.each_crossed,
+        h29.each_crossed,
+        four.first_new,
+        h29.first_new,
+        four.old_held,
+        h29.old_held,
+        read.below_half
+    );
+    eprintln!(
+        "DUMP {name} selections by role {:?} beside H-29's {:?}; tally {:?} beside H-29's {:?}",
+        four.by_role, h29.by_role, four.tally, h29.tally
+    );
+    eprintln!(
+        "DUMP {name} the trials' readings {:?} beside H-29's {:?}",
+        read.trials, ANSWERED_TRIALS_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} value by block {:?}",
+        answered_means(&run.blocks)
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?}",
+        run.blocks
+            .iter()
+            .map(|b| per_myriad(b.sums.0, image_sums.0))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} six course, per myriad of the image's {:?}",
+        run.blocks
+            .iter()
+            .map(|b| per_myriad(six(&b.couplings), six(image)))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} outside course, per myriad of the image's {:?}",
+        run.blocks
+            .iter()
+            .map(|b| per_myriad(answered_outside(b.sums.1, &b.couplings), image_outside))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} went by mapping, [answer's pairs, other pairs, outside][raised, lowered]: {:?} beside H-29's {:?}; couplings by role [lowest, highest, last] {:?} beside H-29's {:?}; troughs {:?} beside H-29's {:?}",
+        four.went, h29.went, four.course, h29.course, four.troughs, h29.troughs
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    assert_eq!(
+        replicated,
+        &ANSWERED_BLOCKS_1024[k][..SIZED_REPLICATED_BLOCKS],
+        "{name}: the first 56 blocks, H-29's"
+    );
+    assert_eq!(
+        later, SIZED_LATER_1024[k],
+        "{name}: the 112 blocks from H-29's second flip"
+    );
+    assert_eq!(
+        (run.trace, answered_hash(&run.read)),
+        (SIZED_TRACES_1024[k], SIZED_READ_1024[k]),
+        "{name}: the accuracy sequence and every trial's reading"
+    );
+    assert_eq!(
+        Some(at_flips),
+        SIZED_AT_FLIPS_1024[k],
+        "{name}: the couplings after the first trial of each new mapping"
+    );
+    assert_eq!(Some(read), SIZED_READINGS_1024[k], "{name}: the readings");
+    assert_eq!(
+        weights_by_polarity(&exec),
+        four.sums_after,
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// H-31's arm that starts from the assignment (brief 064): H-29's answers, (0, 1), (1, 2),
+/// (2, 0) and (0, 1), each mapping after a flip 48 blocks.
+#[test]
+#[ignore]
+fn the_span_a_choice_among_three_is_given_from_the_assignment_at_1024_units_exhaustive() {
+    sized_arm(Reversal::AssignmentFirst);
+}
+
+/// H-31's arm that starts from the mirrored assignment (brief 064): H-29's answers, (1, 0),
+/// (2, 1), (0, 2) and (1, 0), each mapping after a flip 48 blocks.
+#[test]
+#[ignore]
+fn the_span_a_choice_among_three_is_given_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    sized_arm(Reversal::MirroredFirst);
+}
+
+// --------------------------------------------------------------------- the gate (brief 064)
+
+/// The gate's test (ADR-0061's class; brief 064): the arms, the delivery, the predictions and
+/// the constants as ADR-0157 fixed them; the schedule's hand rule — ADR-0157's schedule as
+/// written, H-20's the constants H-29's readers took, a mapping's trials its blocks', the
+/// answers in force at each flip's edges, and the two schedules one mapping at every trial
+/// before H-29's second flip and two at it; H-31's four clauses, H-29's by H-29's rules, at
+/// their edges over runs of 168 blocks written by hand, each read over the last two blocks of
+/// a mapping of ADR-0157's schedule and of no other, with the step each reaches; the predicted
+/// readings' rules at their edges; the readings' rules over tables and trials written by hand;
+/// and eight trials of the task on the instrument's network under a schedule written by hand,
+/// its three flips inside them, every oracle and the mapping's hand rule held at every trial.
+/// Nothing else added to the gate.
+#[test]
+fn the_clauses_of_h_31_the_schedule_s_hand_rule_and_the_readings_rules() {
+    // ------------------------------------------------ the protocol (ADR-0157, ADR-0161)
+    assert_eq!(SIZED_ARMS, ANSWERED_ARMS, "H-29's two arms");
+    assert_eq!(
+        (SIZED_DELIVERY, SIZED_PREDICTED),
+        (Delivery::Drawn, true),
+        "H-29's delivery, and a yes predicted"
+    );
+    assert_eq!(
+        [
+            FAILED_LEARNED_PREDICTED,
+            WITHIN_SIZED_PREDICTED,
+            SIX_HELD_PREDICTED,
+            ENDS_BETWEEN_PREDICTED
+        ],
+        [true; 4],
+        "the four predicted readings"
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            EACH_TIMES,
+            BOUND_PER_CENT,
+            BAND_QUARTERS,
+            BAND_DIVISOR,
+            HOLDS_DIVISOR,
+            LAST_BLOCKS * BLOCK,
+            CROSSING_MARK
+        ),
+        (80, 2, 130, (3, 5), 4, 4, 128, 40),
+        "the four clauses are H-29's, with H-29's constants, as ADR-0157 restates them"
+    );
+    assert_eq!(
+        (
+            SIZED_LATER_BLOCKS,
+            FLIP_BLOCK,
+            SIZED_REVERSAL_BLOCKS_MAX,
+            REVERSAL_BLOCKS_MAX,
+            ENDS_PER_CENT,
+            FAILED,
+            ADDED_FROM,
+            ADDED_BLOCKS,
+            DRAIN_FLOOR_PER_CENT
+        ),
+        (48, 24, 35, 23, (75, 80), (1, 1), 32, 17, 50),
+        "the span, the predicted readings' bounds and H-21's bar"
+    );
+    assert_eq!(
+        (WINDOWED_IMAGE_CRC_1024, WINDOWED_IMAGE_CRC_FORMAT_20_1024),
+        (0x1158_6a76_f741_5129, 0x5044_ed79_36a7_b5f3),
+        "H-29's image at format 21 and as H-29 read it at 20, the image an arm decodes"
+    );
+    // ------------------------------------------------ the schedule's hand rule (ADR-0157)
+    // ADR-0157's schedule as written: the flips before the trials of index 1 536, 4 608 and
+    // 7 680; 168 blocks, 10 752 trials; the first mapping 24 blocks and each after a flip 48.
+    assert_eq!(
+        SIZED_SCHEDULE,
+        Schedule {
+            flips: [1_536, 4_608, 7_680],
+            trials: 10_752
+        }
+    );
+    assert_eq!(
+        SIZED_SCHEDULE.spans(),
+        [(0, 1_536), (1_536, 4_608), (4_608, 7_680), (7_680, 10_752)]
+    );
+    assert_eq!(
+        SIZED_SCHEDULE.mappings(),
+        [(0, 24), (24, 72), (72, 120), (120, 168)]
+    );
+    assert_eq!(SIZED_SCHEDULE.blocks(), 168);
+    // H-20's schedule by the same rule is the constants H-29's and H-30's readers took.
+    assert_eq!(
+        (SCHEDULE.flips, SCHEDULE.trials, SCHEDULE.blocks()),
+        (SCHEDULE_FLIPS, SCHEDULE_TRIALS, SCHEDULE_BLOCKS)
+    );
+    assert_eq!((SCHEDULE.spans(), SCHEDULE.mappings()), (SPANS, MAPPINGS));
+    // On either, a mapping's trials are its blocks', a mapping starts where the one before
+    // ends, at a flip, the first starts the run and the last ends it.
+    for (schedule, later) in [(SCHEDULE, 32), (SIZED_SCHEDULE, 48)] {
+        let (spans, mappings) = (schedule.spans(), schedule.mappings());
+        for m in 0..4 {
+            assert_eq!(
+                spans[m],
+                (mappings[m].0 * BLOCK, mappings[m].1 * BLOCK),
+                "{schedule:?}, mapping {m}"
+            );
+        }
+        for m in 1..4 {
+            assert_eq!(
+                (spans[m].0, spans[m].0, mappings[m].1 - mappings[m].0),
+                (spans[m - 1].1, schedule.flips[m - 1], later),
+                "{schedule:?}, mapping {m}"
+            );
+        }
+        assert_eq!((spans[0].0, spans[3].1), (0, schedule.trials));
+        assert_eq!(
+            mappings[0],
+            (0, FLIP_BLOCK),
+            "the first mapping is 24 blocks"
+        );
+    }
+    // A schedule written by hand, its mappings of one, two, one and three blocks.
+    let hand = Schedule {
+        flips: [64, 192, 256],
+        trials: 448,
+    };
+    assert_eq!(hand.spans(), [(0, 64), (64, 192), (192, 256), (256, 448)]);
+    assert_eq!(hand.mappings(), [(0, 1), (1, 3), (3, 4), (4, 7)]);
+    assert_eq!(hand.blocks(), 7);
+    // The mapping by the hand rule on ADR-0157's schedule: the two arms' four mappings, H-29's,
+    // and the answers at the flips' edges.
+    let assignment = first_answers(Reversal::AssignmentFirst);
+    let mirrored = first_answers(Reversal::MirroredFirst);
+    assert_eq!(
+        [0usize, 1, 2, 3].map(|m| answers_of(&SIZED_SCHEDULE, assignment, m)),
+        [[0, 1], [1, 2], [2, 0], [0, 1]]
+    );
+    assert_eq!(
+        [0usize, 1, 2, 3].map(|m| answers_of(&SIZED_SCHEDULE, mirrored, m)),
+        [[1, 0], [2, 1], [0, 2], [1, 0]]
+    );
+    assert_eq!(
+        [0, 1_535, 1_536, 4_607, 4_608, 7_679, 7_680, 10_751].map(|trial| answers_at(
+            &SIZED_SCHEDULE,
+            assignment,
+            trial
+        )),
+        [
+            [0, 1],
+            [0, 1],
+            [1, 2],
+            [1, 2],
+            [2, 0],
+            [2, 0],
+            [0, 1],
+            [0, 1]
+        ],
+        "a flip is in force from its own trial"
+    );
+    assert_eq!(
+        [3_583, 3_584, 5_631, 5_632].map(|trial| answers_at(&SIZED_SCHEDULE, assignment, trial)),
+        [[1, 2], [1, 2], [2, 0], [2, 0]],
+        "H-20's second and third flips are no flips of this schedule: the mapping in force before each is in force after it"
+    );
+    // The two schedules: one mapping in force at every trial before H-29's second flip, and
+    // two at it — where an arm of H-31 stops being H-29's arm.
+    assert_eq!(
+        (SIZED_REPLICATED_TRIALS, SIZED_REPLICATED_BLOCKS),
+        (3_584, 56)
+    );
+    for first in [assignment, mirrored] {
+        for trial in 0..SIZED_REPLICATED_TRIALS {
+            assert_eq!(
+                answers_at(&SIZED_SCHEDULE, first, trial),
+                answers_at(&SCHEDULE, first, trial),
+                "trial {trial}"
+            );
+        }
+        assert_ne!(
+            answers_at(&SIZED_SCHEDULE, first, SIZED_REPLICATED_TRIALS),
+            answers_at(&SCHEDULE, first, SIZED_REPLICATED_TRIALS),
+            "the trial of index 3 584"
+        );
+        assert_eq!(
+            [1usize, 2, 3].map(|m| onto_the_other_s(&SIZED_SCHEDULE, first, m)),
+            [1usize, 2, 3].map(|m| onto_the_other_s(&SCHEDULE, first, m)),
+            "the same stimulus moves onto the other's old answer at each flip"
+        );
+    }
+    // ---------------------------------------------------- the criterion (ADR-0157)
+    // H-31's verdict is H-29's rule over two runs on ADR-0157's schedule. An arm of 168 blocks
+    // written by hand: each stimulus presented 32 times a block and answered 25, every coupling
+    // the image's, the excitatory sum the image's, and each stimulus's values the reward of
+    // 2c − n a block.
+    const R: i64 = REWARD_Q16 as i64;
+    let image = DEALT_COUPLINGS_1024;
+    let (image_inhibitory, image_excitatory) = QUIET_1024[SETTLED].1;
+    let outside = answered_outside(image_excitatory, &image);
+    let block = |correct: [u32; 2]| AnsweredBlock {
+        presented: [32, 32],
+        correct,
+        values: correct.map(|c| (2 * i64::from(c) - 32) * R),
+        sums: (image_inhibitory, image_excitatory),
+        couplings: image,
+        ..NO_BLOCK
+    };
+    let arm = || vec![block([25, 25]); SIZED_SCHEDULE.blocks()];
+    let sized = |arms: [&[AnsweredBlock]; 2]| answered(&SIZED_SCHEDULE, &image, outside, arms);
+    let good = arm();
+    let yes = sized([&good, &good]);
+    assert_eq!(
+        yes,
+        Answered {
+            learned: [[true; 4]; 2],
+            bounded: [true; 2],
+            over: [None; 2],
+            held: [true; 2],
+            left: [None; 2],
+            expected: [[[true; 2]; 4]; 2],
+            yes: true,
+        }
+    );
+    assert_eq!(answered_step(&yes), 3, "a yes: ADR-0151's second step");
+    assert_eq!(
+        answered_last(&SIZED_SCHEDULE, &good),
+        [[(64, 50, 36 * R); 2]; 4],
+        "each mapping's last two blocks"
+    );
+    // Clause 1 by the count, at 80 and at 79 of the last 128, for each mapping of each arm: its
+    // last two blocks are the 23rd and 24th, the 71st and 72nd, the 119th and 120th and the
+    // 167th and 168th of the run.
+    for k in [0usize, 1] {
+        for (m, last) in [23usize, 71, 119, 167].into_iter().enumerate() {
+            let mut at = arm();
+            at[last - 1] = block([20, 20]);
+            at[last] = block([20, 20]);
+            let mut short = at.clone();
+            short[last] = block([19, 20]);
+            let (at, short) = if k == 0 {
+                (sized([&at, &good]), sized([&short, &good]))
+            } else {
+                (sized([&good, &at]), sized([&good, &short]))
+            };
+            assert!(at.yes, "arm {k}, mapping {m}: 80 of 128");
+            let mut learned = [[true; 4]; 2];
+            learned[k][m] = false;
+            assert_eq!(
+                (short.learned, short.yes, answered_step(&short)),
+                (learned, false, 5),
+                "arm {k}, mapping {m}: 79 of 128"
+            );
+            assert_eq!(
+                (short.bounded, short.held, short.expected),
+                ([true; 2], [true; 2], [[[true; 2]; 4]; 2]),
+                "and nothing else"
+            );
+        }
+    }
+    // Only a mapping's last two blocks are read. The block before them is not; nor are the
+    // 55th and 56th of the run, the last two H-20's schedule gave the second mapping, which
+    // H-29's rule read there and reads here as the 31st and 32nd of 48.
+    let mut earlier = arm();
+    for j in [21usize, 54, 55, 69, 86, 87, 117, 165] {
+        earlier[j] = block([0, 0]);
+    }
+    assert!(sized([&earlier, &good]).yes);
+    // Clause 1 by a stimulus: the mapping H-29 failed, the mirrored arm's second, with A
+    // answered in exactly half of its presentations and B every time, 96 of 128.
+    let mut lopsided = arm();
+    lopsided[70] = block([16, 32]);
+    lopsided[71] = block([16, 32]);
+    let no = sized([&good, &lopsided]);
+    assert_eq!(
+        (no.learned, answered_step(&no)),
+        ([[true; 4], [true, false, true, true]], 5),
+        "96 of 128, and A at half"
+    );
+    lopsided[71] = block([17, 32]);
+    assert!(sized([&good, &lopsided]).yes, "33 of 64");
+    // Clause 2: one coupling one LSB past 1.30 of its image's at one block's end, and at the
+    // bound itself not; a block past H-20's 120 is read.
+    let bound = image[1][2] * BOUND_PER_CENT / 100;
+    let mut over = arm();
+    over[150].couplings[1][2] = bound + 1;
+    over[150].sums.1 = image_excitatory + bound + 1 - image[1][2];
+    let no = sized([&over, &good]);
+    assert_eq!(
+        (no.over, no.bounded, no.held, answered_step(&no)),
+        ([Some((150, 1, 2)), None], [false, true], [true; 2], 6)
+    );
+    let mut at = arm();
+    at[150].couplings[1][2] = bound;
+    at[150].sums.1 = image_excitatory + bound - image[1][2];
+    assert!(sized([&at, &good]).yes, "at the bound");
+    // Clause 3: the outside sum one below three quarters of the image's at one block's end, and
+    // one above five quarters; the edges themselves hold. It is read before clause 1.
+    let low = (outside * 3).div_euclid(4);
+    let high = (outside * 5).div_euclid(4);
+    let coupled = image_excitatory - outside;
+    for (sum, leaves) in [(low, outside % 4 != 0), (low - 1, true), (low + 1, false)] {
+        let mut moved = arm();
+        moved[160].sums.1 = coupled + sum;
+        let verdict = sized([&good, &moved]);
+        assert_eq!(verdict.left, [None, leaves.then_some((160, sum))], "{sum}");
+        assert_eq!(verdict.held, [true, !leaves]);
+        assert_eq!(answered_step(&verdict), if leaves { 4 } else { 3 });
+    }
+    for (sum, leaves) in [(high, false), (high + 1, true)] {
+        let mut moved = arm();
+        moved[3].sums.1 = coupled + sum;
+        let verdict = sized([&moved, &good]);
+        assert_eq!(verdict.left, [leaves.then_some((3, sum)), None], "{sum}");
+    }
+    let mut both = arm();
+    both[166] = block([19, 20]);
+    both[167] = block([19, 20]);
+    both[160].sums.1 = coupled + low - 1;
+    assert_eq!(
+        answered_step(&sized([&both, &good])),
+        4,
+        "clause 3 is read first"
+    );
+    both[160].sums.1 = image_excitatory;
+    both[150].couplings[1][2] = bound + 1;
+    both[150].sums.1 = image_excitatory + bound + 1 - image[1][2];
+    assert_eq!(
+        answered_step(&sized([&both, &good])),
+        5,
+        "then clause 1, before clause 2"
+    );
+    // Clause 4 alone: one stimulus's values over one mapping's last 128 trials one LSB past a
+    // quarter of the reward a trial from (2c − n) r, and at the quarter not.
+    let mut off = arm();
+    off[167].values[0] = 18 * R + 16 * R + 1;
+    let no = sized([&good, &off]);
+    assert_eq!(
+        (no.expected[1][3], no.expected[1][2], answered_step(&no)),
+        ([false, true], [true, true], 7)
+    );
+    let mut on = arm();
+    on[167].values[0] = 18 * R + 16 * R;
+    assert!(sized([&good, &on]).yes);
+    let mut under = arm();
+    under[70].values[1] = 18 * R - 16 * R - 1;
+    assert_eq!(sized([&under, &good]).expected[0][1], [true, false]);
+    // A run of any other length holds nothing: one block short, H-20's 120 blocks under this
+    // schedule, and this schedule's 168 under H-20's.
+    let cut = &good[..SIZED_SCHEDULE.blocks() - 1];
+    for (schedule, short) in [
+        (&SIZED_SCHEDULE, cut),
+        (&SIZED_SCHEDULE, &good[..SCHEDULE_BLOCKS]),
+        (&SCHEDULE, &good[..]),
+    ] {
+        let no = answered(schedule, &image, outside, [short, short]);
+        assert_eq!(
+            (no.learned, no.bounded, no.held, no.expected, no.yes),
+            (
+                [[false; 4]; 2],
+                [false; 2],
+                [false; 2],
+                [[[false; 2]; 4]; 2],
+                false
+            )
+        );
+        assert_eq!(answered_step(&no), 4);
+    }
+    assert!(
+        answered(
+            &SCHEDULE,
+            &image,
+            outside,
+            [&good[..SCHEDULE_BLOCKS], &good[..SCHEDULE_BLOCKS]]
+        )
+        .yes,
+        "the same 120 blocks under H-20's schedule"
+    );
+    // -------------------------------------------- the predicted readings' rules (ADR-0157)
+    // (a): the mapping H-29 failed, learned by each stimulus; no other mapping is read.
+    let fine = [[(64u32, 40u32, 0i64); 2]; 4];
+    assert!(failed_learned([&fine, &fine]));
+    let mut failed = fine;
+    failed[1] = [(64, 30, 0), (64, 55, 0)];
+    assert!(
+        !failed_learned([&fine, &failed]),
+        "H-29's reading: 85 of 128, and A at 30 of 64"
+    );
+    assert!(
+        failed_learned([&failed, &fine]),
+        "the assignment arm's second mapping is not the one"
+    );
+    let mut other = fine;
+    other[0] = [(64, 0, 0); 2];
+    other[2] = [(64, 0, 0); 2];
+    other[3] = [(64, 0, 0); 2];
+    assert!(failed_learned([&fine, &other]), "nor any other mapping");
+    failed[1] = [(64, 33, 0), (64, 47, 0)];
+    assert!(failed_learned([&fine, &failed]), "80 of 128, A at 33 of 64");
+    failed[1] = [(64, 33, 0), (64, 46, 0)];
+    assert!(!failed_learned([&fine, &failed]), "79 of 128");
+    // (b): within 35 blocks of the flip, the crossing block counted; the first mapping is not
+    // read, and a reversal that never passed does not hold.
+    assert_eq!(
+        within_sized([None, Some(35), Some(36), None]),
+        [true, false, false]
+    );
+    assert_eq!(
+        within_sized([Some(48), Some(1), Some(24), Some(35)]),
+        [true; 3]
+    );
+    assert_eq!(
+        (
+            within_sized([None, Some(31), Some(31), Some(21)]),
+            reversals_within([None, Some(31), Some(31), Some(21)])
+        ),
+        ([true; 3], [false, false, true]),
+        "H-29's reversals from the assignment: inside this bound, and two outside H-25's"
+    );
+    // (c): the six couplings' sum at each mapping's end at or above the image's six summed.
+    assert_eq!(six(&[[1, 2, 3], [4, 5, 6]]), 21);
+    let image_six = six(&image);
+    assert_eq!(image_six, image.iter().flatten().sum::<i64>());
+    assert_eq!(
+        six_held(&image, [image_six, image_six - 1, image_six + 1, 0]),
+        [true, false, true, false]
+    );
+    // (d): the inhibitory sum's end within 0.75 and 0.80 of the image's, both bounds held.
+    assert!(ends_between(1_000, 750) && ends_between(1_000, 800));
+    assert!(!ends_between(1_000, 749) && !ends_between(1_000, 801));
+    assert!(ends_between(1_000, 775) && !ends_between(1_000, 1_000));
+    assert!(
+        !ends_between(1_000, 843),
+        "where H-29's ended, after 120 blocks"
+    );
+    assert!(!ends_between(0, 0) && !ends_between(-1_000, -775));
+    assert!(
+        !ends_between(3, 2) && ends_between(4, 3),
+        "two thirds is under, and three quarters is at the bound"
+    );
+    // -------------------------------------------------- the readings' rules (brief 064)
+    // The sums at each mapping's end: the last block of each mapping of the schedule given,
+    // and of no other; zero for a mapping the run does not reach the end of.
+    let mut ended = arm();
+    for (n, j) in [23usize, 71, 119, 167].into_iter().enumerate() {
+        ended[j].couplings[0][0] = image[0][0] + 1_000 * (n as i64 + 1);
+        ended[j].sums.0 = 100 * (n as i64 + 1);
+    }
+    for j in [22usize, 55, 87, 166] {
+        ended[j].couplings[1][1] = 0;
+        ended[j].sums.0 = 7;
+    }
+    assert_eq!(
+        six_at_ends(&SIZED_SCHEDULE, &ended),
+        [
+            image_six + 1_000,
+            image_six + 2_000,
+            image_six + 3_000,
+            image_six + 4_000
+        ]
+    );
+    assert_eq!(
+        inhibitory_at_ends(&SIZED_SCHEDULE, &ended),
+        [100, 200, 300, 400]
+    );
+    assert_eq!(
+        six_at_ends(&SIZED_SCHEDULE, &ended[..167]),
+        [image_six + 1_000, image_six + 2_000, image_six + 3_000, 0]
+    );
+    assert_eq!(
+        inhibitory_at_ends(&SIZED_SCHEDULE, &ended[..71]),
+        [100, 0, 0, 0]
+    );
+    assert_eq!(
+        (
+            six_at_ends(&SCHEDULE, &ended[..SCHEDULE_BLOCKS]),
+            inhibitory_at_ends(&SCHEDULE, &ended[..SCHEDULE_BLOCKS])
+        ),
+        (
+            [
+                image_six + 1_000,
+                image_six - image[1][1],
+                image_six - image[1][1],
+                image_six + 3_000
+            ],
+            [100, 7, 7, 300]
+        ),
+        "H-20's schedule ends its mappings at the 24th, 56th, 88th and 120th block"
+    );
+    assert_eq!(last_of(&ended, 0), None);
+    assert_eq!(
+        (
+            last_of(&ended, 1),
+            last_of(&ended, 168),
+            last_of(&ended, 169)
+        ),
+        (Some(&ended[0]), Some(&ended[167]), None)
+    );
+    // What the added span bought: each mapping after a flip over its 31st and 32nd blocks —
+    // the 55th and 56th, the 103rd and 104th and the 151st and 152nd of the run — beside its
+    // last two.
+    let mut bought = arm();
+    bought[54] = block([10, 12]);
+    bought[55] = block([11, 13]);
+    bought[102] = block([1, 2]);
+    bought[103] = block([3, 4]);
+    bought[150] = block([32, 0]);
+    bought[151] = block([0, 32]);
+    let value = |c: u32| (2 * i64::from(c) - 64) * R;
+    assert_eq!(
+        at_the_32nd(&SIZED_SCHEDULE, &bought),
+        [
+            [(64, 21, value(21)), (64, 25, value(25))],
+            [(64, 4, value(4)), (64, 6, value(6))],
+            [(64, 32, value(32)), (64, 32, value(32))]
+        ]
+    );
+    assert_eq!(
+        answered_last(&SIZED_SCHEDULE, &bought)[1..],
+        [[(64, 50, 36 * R); 2]; 3],
+        "the last two of 48 are other blocks"
+    );
+    assert_eq!(
+        at_the_32nd(&SIZED_SCHEDULE, &bought[..151]),
+        [
+            [(64, 21, value(21)), (64, 25, value(25))],
+            [(64, 4, value(4)), (64, 6, value(6))],
+            [(0, 0, 0); 2]
+        ],
+        "a mapping the run does not hold to its 32nd block"
+    );
+    // On H-20's schedule a mapping after a flip ends at its 32nd block, so the two readings are
+    // one: over a table written by hand and over H-29's pinned arms.
+    let mut graded = bought[..SCHEDULE_BLOCKS].to_vec();
+    for (j, b) in graded.iter_mut().enumerate() {
+        *b = block([(j % 33) as u32, ((j * 7) % 33) as u32]);
+    }
+    assert_eq!(
+        at_the_32nd(&SCHEDULE, &graded),
+        answered_last(&SCHEDULE, &graded)[1..]
+    );
+    for blocks in ANSWERED_BLOCKS_1024 {
+        assert_eq!(
+            at_the_32nd(&SCHEDULE, blocks),
+            answered_last(&SCHEDULE, blocks)[1..]
+        );
+    }
+    // The correct trials by block from a mapping's 32nd to its 48th: the 56th to the 72nd, the
+    // 104th to the 120th and the 152nd to the 168th of the run.
+    let mut late = vec![NO_BLOCK; SIZED_SCHEDULE.blocks()];
+    for (j, b) in late.iter_mut().enumerate() {
+        b.correct = [j as u32, 1_000 + j as u32];
+    }
+    let added = added_blocks(&SIZED_SCHEDULE, &late);
+    for (m, from) in [55usize, 103, 151].into_iter().enumerate() {
+        for (j, of) in added[m].iter().enumerate() {
+            assert_eq!(*of, late[from + j].correct, "mapping {m}, block {j}");
+        }
+    }
+    assert_eq!(
+        (added[0][0], added[0][16], added[2][16]),
+        ([55, 1_055], [71, 1_071], [167, 1_167])
+    );
+    let cut_short = added_blocks(&SIZED_SCHEDULE, &late[..160]);
+    assert_eq!(
+        (cut_short[1], cut_short[2][8], cut_short[2][9]),
+        (added[1], [159, 1_159], [0, 0]),
+        "a block the run does not hold"
+    );
+    let two = added_blocks(&SCHEDULE, &late[..SCHEDULE_BLOCKS]);
+    for (m, from) in [55usize, 87, 119].into_iter().enumerate() {
+        assert_eq!(two[m][0], late[from].correct);
+        assert_eq!(
+            two[m][1..],
+            [[0u32; 2]; ADDED_BLOCKS - 1],
+            "on H-20's schedule the 32nd block is the mapping's last"
+        );
+    }
+    // The trials' readings before H-29's second flip: the entries of the third and the fourth
+    // mapping and of the second and the third flip zero, as brief 063's reader reads a run that
+    // ends there.
+    let trial = |stimulus: u8, selection: Option<u8>, correct: bool, value: i32| -> AnsweredTrial {
+        let reward = if correct { REWARD_Q16 } else { -REWARD_Q16 };
+        (
+            stimulus,
+            [5, 3, 1],
+            selection,
+            correct,
+            reward - value,
+            value,
+            reward - value,
+        )
+    };
+    let whole: Vec<AnsweredTrial> = (0..SCHEDULE_TRIALS)
+        .map(|t| {
+            let stimulus = (t % 2) as u8;
+            let selection = [Some(0u8), Some(1), Some(2), None][t % 4];
+            trial(stimulus, selection, t % 3 == 0, (t % 5) as i32 * 100 - 200)
+        })
+        .collect();
+    let full = trials_read(&SCHEDULE, assignment, &whole);
+    let head = trials_read(&SCHEDULE, assignment, &whole[..SIZED_REPLICATED_TRIALS]);
+    assert_eq!(head, before_second_flip(&full));
+    assert_ne!(head, full);
+    assert_eq!(
+        (&head.below[..2], &head.above[..2], &head.rewarded[..2]),
+        (&full.below[..2], &full.above[..2], &full.rewarded[..2])
+    );
+    assert_eq!(
+        (&head.signal[..2], &head.margin[..2], head.old[0]),
+        (&full.signal[..2], &full.margin[..2], full.old[0])
+    );
+    assert!(full.old[0].iter().all(|of| of.0 > 0) && full.rewarded[1].0 > 0);
+    assert_eq!(head.below[2..], [(0, 0, 0); 2]);
+    assert_eq!(head.above[2..], [(0, 0); 2]);
+    assert_eq!(head.rewarded[2..], [(0, 0); 2]);
+    assert_eq!(head.signal[2..], [(0, 0, 0, 0); 2]);
+    assert_eq!(head.margin[2..], [(0, 0); 2]);
+    assert_eq!(head.old[1..], [[(0, 0, 0, 0); 2]; 2]);
+    // The pin an arm's calibration holds: H-29's first 3 584 trials' hash, of each arm, another
+    // number than the hash of its 7 680.
+    for k in [0usize, 1] {
+        assert!(ANSWERED_HEAD_1024[k] != 0 && ANSWERED_HEAD_1024[k] != ANSWERED_READ_1024[k]);
+        assert!(ANSWERED_BLOCKS_1024[k].len() >= SIZED_REPLICATED_BLOCKS);
+    }
+    assert_ne!(ANSWERED_HEAD_1024[0], ANSWERED_HEAD_1024[1]);
+    // ------------------------------------------------ a run on a schedule written by hand
+    // Eight trials of the task with three readouts on the instrument's network under H-29's
+    // delivery, its image carrying the inhibitory baseline, the signed gate and the critic with
+    // its window as the arms' does, on a schedule whose three flips come before the trials of
+    // index 2, 5 and 6: the run flips where the schedule it is given says, the task's answers
+    // held to the hand rule at every trial with both oracles, and the couplings read after the
+    // first trial of each new mapping. No block ends in eight trials, so the calibration's
+    // closure is given nothing.
+    let p = prior(1024);
+    let exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    let flagged = signed_image(&inhibited_image(&Image::encode(&exec).expect("quiescent")));
+    let window = shortest_delay(signed_from(&flagged, 1024).blocks()).expect("a synapse");
+    let bytes = with_window_bytes(&valued_image(&flagged, VALUED_CRITIC), window);
+    let quick = Schedule {
+        flips: [2, 5, 6],
+        trials: GATE_TRIALS,
+    };
+    assert_eq!(
+        [0usize, 1, 2, 4, 5, 6, 7].map(|trial| answers_at(&quick, mirrored, trial)),
+        [[1, 0], [1, 0], [2, 1], [2, 1], [0, 2], [1, 0], [1, 0]]
+    );
+    let mut engine = signed_from(&bytes, 1024);
+    assert!(!engine.whole_punishment(), "the whole punishment unset");
+    let mut ends = 0u32;
+    let run = answered_run(
+        &mut engine,
+        &answered_sets(&DEAL_1024),
+        mirrored,
+        Feedback::Answer,
+        SIZED_DELIVERY,
+        &quick,
+        GATE_TRIALS,
+        &mut |_, _| ends += 1,
+    );
+    eprintln!("DUMP sized gate: {GATE_TRIALS} trials {:?}", run.read);
+    assert_eq!(
+        (run.read.len(), run.blocks.len(), ends),
+        (GATE_TRIALS, 0, 0)
+    );
+    assert!(
+        run.at_flips.iter().all(Option::is_some),
+        "the run reached the trial after each of the three flips"
+    );
+    for (t, trial) in run.read.iter().enumerate() {
+        let answers = answers_at(&quick, mirrored, t);
+        assert_eq!(
+            trial.3,
+            trial.2.map(usize::from) == Some(answers[usize::from(trial.0)]),
+            "trial {t}: correct is the answer under the mapping the schedule puts in force"
+        );
+        assert_eq!(
+            i64::from(trial.4) + i64::from(trial.5),
+            if trial.3 { R } else { -R },
+            "trial {t}: unset, the error and the value are the reward"
+        );
+        assert_eq!(trial.2, largest_alone(trial.1));
+    }
+}
+
+// ----------------------------------------------- the calibration's pin (brief 064, ADR-0161)
+
+/// The hash of every reading of H-29's first 3 584 trials (`answered_hash`), the trials before
+/// its second flip, in `ANSWERED_ARMS`'s order: what an arm of H-31 is held to at the end of
+/// its 56th block. First written from the dumps of H-29's two arms of 2026-10-09, each checked
+/// against the arm's pinned hash of its 7 680 trials (`ANSWERED_READ_1024`) by a second writing
+/// of the hash; H-29's own arms hold it from brief 064 on. No pinned number of H-29's moves.
+const ANSWERED_HEAD_1024: [u64; 2] = [0x385ef2444d22cb8d, 0x386c12a91850a707];
+
+// ----------------------------------------------------- the arms' tables (brief 064, ADR-0161)
+
+/// H-31's arms' blocks from H-29's second flip, the 57th to the 168th, pinned from the one run
+/// of each (ADR-0161). The first 56 are H-29's (`ANSWERED_BLOCKS_1024`), which the calibration
+/// holds the run to. Empty until the arms have run.
+const SIZED_LATER_1024: [&[AnsweredBlock]; 2] = [&[], &[]];
+const SIZED_TRACES_1024: [u64; 2] = [0; 2];
+const SIZED_READ_1024: [u64; 2] = [0; 2];
+const SIZED_AT_FLIPS_1024: [Option<[[[i64; ANSWERS]; 2]; 3]>; 2] = [None; 2];
+const SIZED_READINGS_1024: [Option<SizedRead>; 2] = [None; 2];
