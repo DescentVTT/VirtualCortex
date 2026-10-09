@@ -8,6 +8,13 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **Brief 066: H-32's protocol, written before any rewarded run of it ([ADR-0164](docs/adr/0164-an-exploration-the-value-gates-measured.md)).** In `runtime/cortex-runtime/tests/inhibition.rs`:
+  - **the run**: `answered_run` takes the task's exploration; every call of H-29's, H-30's and H-31's passes it unset. At every trial the run holds the draw and the selection to hand rules over the critic's oracle's value (`coin_by_hand`, `explores_by_hand`, `channel_by_hand`), a shift, a remainder and the thirds of 32 768 written out, and keeps beside the run whether each trial was drawn and each trial's consolidation by pair, outside every hash of the rounds before;
+  - **the arms**: H-29's two from H-29's image with the whole punishment unset and the exploration set (`explored_arm`), each a weekly test of 7 680 trials;
+  - **the clauses**: H-29's `answered` and `answered_step`, unchanged;
+  - **the predicted readings and the regime** as rules, never asserted (`new_early`, `settles_higher`, `faster`, `switches_off`, `not_worn`, `regime`), and the readings (`ExploredBlock`, `reached_by_mapping`, `old_couplings`, `gate_ties`, `ExploredRead`);
+  - **the calibration**: each arm's first block run unset and set and held to H-29's and to one another (`explored_calibration`, `parts_at_first_drawn`); the trial each arm first draws at pinned beforehand from H-29's own trials by the rule written apart from the tree — the fourth from the assignment, against a value of −1 600, and the tenth from the mirrored assignment, against −4 863, each onto readout 2 where H-29 selected readout 1;
+  - **the gate**: one test, the hand rules against the apart oracle and against the task's rule over a run's 7 680 trials, the verdict's steps over tables written by hand, the readings' rules, and twelve trials on the instrument's network set beside unset.
 - **An exploration the value gates, built ([ADR-0163](docs/adr/0163-an-exploration-the-value-gates-built.md)): ADR-0162's rule as an option of the task; no rule of the engine, nothing of the executor, no record and nothing of the image changed; whitepaper 4.103.0.** Placed as brief 066 asks and unset bit for bit, in `runtime/cortex-runtime/src/task.rs`:
   - **the option**: `Task::exploration`, `Exploration::Unset` or `Exploration::ValueGated`; every task of the tree names it unset;
   - **the value**: read by the task after the trial's last tick as `ValueCritic::value_q16` over `Executor::units` and `Executor::features`, the composition `Executor::reward` then makes, so the value the coin meets is the value the reward is taken against;
