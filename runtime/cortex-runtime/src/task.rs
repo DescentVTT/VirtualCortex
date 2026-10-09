@@ -76,6 +76,17 @@
 //! stimulus, a readout's index, and a flip moves every answer to the next readout, the last to
 //! the first. With two channels the largest of the others is the other and a flip trades the
 //! two answers, so a task of two readouts runs the trial it ran.
+//!
+//! A task's selection may be drawn ([`Exploration::ValueGated`], ADR-0162, ADR-0163). At the
+//! trial's end the task reads the engine's own value, the one the trial's reward is then taken
+//! against, from what the executor exposes; with a probability equal to the part of that value
+//! below zero over the reward's magnitude, the selection is one of the readout's channels, each
+//! with the same chance, whatever the counts, and the gate's otherwise. The coin and the draw
+//! among the channels are bits of the trial's own draw that no other draw reads
+//! ([`EXPLORATION_COIN_BITS`], [`EXPLORATION_CHANNEL_BITS`]), so a run stays a function of its
+//! seed. Everything after the selection is as it was: what is correct, what is addressed and
+//! the reward's sign are the selection's. With the exploration unset a trial is the trial it
+//! was, and with it set nothing changes where the value is at or above zero.
 
 use crate::executor::{AddressError, Executor, Inject, InjectError};
 use crate::synthesis::{Drive, mix64};
@@ -558,6 +569,71 @@ const _: () = assert!(
     "three bits, neither the stimulus's nor the shuffled coin's"
 );
 
+/// The bits of a trial's draw the exploration's coin reads (ADR-0163): 16 to 31 of [`mix64`]
+/// of the seed and the trial's index, the draw's second sixteen-bit word, which no other draw
+/// reads. Sixteen bits, the width of a Q16.16 fraction: at a reward of 1.0 one coin of the
+/// 65 536 is one LSB of the value.
+pub const EXPLORATION_COIN_BITS: u64 = 0x0000_0000_FFFF_0000;
+
+/// The bits of a trial's draw that name the channel of a drawn selection (ADR-0163): 33 to 47
+/// of the same draw, the fifteen of its third word above the shuffled control's coin.
+pub const EXPLORATION_CHANNEL_BITS: u64 = 0x0000_FFFE_0000_0000;
+
+// The two fields are whole runs of bits at the shifts `Task::exploration_coin_at` and
+// `Task::drawn_at` read them at, they share no bit, and neither holds the stimulus's bit, the
+// shuffled control's coin or a bit of the misleading coin.
+const _: () = assert!(
+    EXPLORATION_COIN_BITS == 0xFFFF << 16
+        && EXPLORATION_CHANNEL_BITS == 0x7FFF << 33
+        && EXPLORATION_COIN_BITS & EXPLORATION_CHANNEL_BITS == 0
+        && (EXPLORATION_COIN_BITS | EXPLORATION_CHANNEL_BITS)
+            & (MISLEADING_BITS | 0x0000_0001_0000_0001)
+            == 0,
+    "sixteen bits and fifteen, apart, and none of the stimulus's, the shuffled coin's or the misleading coin's"
+);
+
+/// Whether a trial's selection may be drawn (ADR-0162, ADR-0163).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Exploration {
+    /// The selection is the gate's at every trial: the trial before ADR-0163.
+    Unset,
+    /// The engine's value gates it (ADR-0162). At the trial's end the task reads the engine's
+    /// value $V$ — its critic's value of each unit's weight and its count since the previous
+    /// reward, the value the trial's reward is then taken against — and with probability
+    /// $p = \min(\max(-V, 0), r) / r$, $r$ the reward's magnitude, the selection is one of the
+    /// readout's channels, each with the same chance, whatever the counts; otherwise it is the
+    /// gate's. Nothing changes where the value is at or above zero. [`Task::check`] refuses it
+    /// on an engine without the critic, with a hold and with a reward's magnitude of zero.
+    ValueGated,
+}
+
+impl Exploration {
+    /// Whether a coin of sixteen bits draws at the value `value_q16` under a reward of
+    /// magnitude `reward_q16` (ADR-0163): `coin × r < below × 2^16`, where `below` is the part
+    /// of the value below zero, at most the magnitude. The product is in `i64`, each factor
+    /// within $2^{31}$ and $2^{16}$. So the coins that draw are the first
+    /// $\lceil \text{below} \cdot 2^{16} / r \rceil$ of the 65 536: none at a value at or above
+    /// zero, at least one at any value below it, and every one at minus the magnitude and
+    /// beyond. The probability is $p$ rounded up to the coin's width, and $p$ itself wherever
+    /// the magnitude divides $\text{below} \cdot 2^{16}$, as 1.0 does at every value. A
+    /// magnitude that is not above zero draws at no coin.
+    pub fn draws(coin: u16, value_q16: i32, reward_q16: i32) -> bool {
+        let below = value_q16.saturating_neg().max(0).min(reward_q16);
+        i64::from(coin).saturating_mul(i64::from(reward_q16)) < i64::from(below) << 16
+    }
+
+    /// The channel a draw of fifteen bits names among `channels` (ADR-0163): the floor of
+    /// `draw × channels / 2^15`, so that the draws are dealt in order into `channels` runs
+    /// whose lengths differ by at most one — equal where `channels` is a power of two, and
+    /// 10 923, 10 923 and 10 922 of the 32 768 among three. A draw is read by its low fifteen
+    /// bits, so the channel is below `channels`; zero where there is no channel.
+    pub fn channel(draw: u16, channels: usize) -> u8 {
+        // Within $2^{15} \cdot 2^{6}$ for a readout's channels, and below `channels` after the
+        // shift, which `MAX_CHANNELS` holds within the `u8`.
+        (u64::from(draw & 0x7FFF).saturating_mul(channels as u64) >> 15) as u8
+    }
+}
+
 /// Where a trial's dopamine term reaches (ADR-0068): which synapses consolidate the next
 /// trial's traces under `clamp(baseline + dopamine, 0, 1)`, every other synapse consolidating
 /// under the baseline alone. The addressed set is a function of the trial's outcome only.
@@ -699,6 +775,16 @@ pub enum TaskError {
     /// either delivery on such an engine before any tick, so a trial's addressing is never
     /// refused; the refusal is the executor's, surfaced here as the injector's is.
     Address(AddressError),
+    /// The exploration on an engine without the critic (ADR-0163): its probability is the
+    /// engine's own value, and such an engine holds none.
+    ExplorationWithoutCritic,
+    /// The exploration with a hold (ADR-0163): the hold delivers the gate's output from the
+    /// readout window's close, before the value the reward is taken against is read, and no
+    /// rule says which channel it holds at a trial whose selection is then drawn.
+    ExplorationWithHold,
+    /// The exploration with a reward magnitude of zero (ADR-0163): its probability is the
+    /// value's part below zero over the magnitude.
+    ExplorationWithoutReward,
 }
 
 impl From<InjectError> for TaskError {
@@ -722,7 +808,8 @@ pub struct Outcome<const N: usize = 2> {
     pub stimulus: u8,
     /// The spikes in each readout set within the task's window of the trial.
     pub counts: [u32; N],
-    /// The readout selected, or none where the largest count was shared.
+    /// The readout selected: the gate's, or none where the largest count was shared; where the
+    /// selection was drawn (ADR-0163), the trial's drawn channel whatever the counts.
     pub selection: Option<u8>,
     /// Whether the selection was the stimulus's rewarded readout, whatever reward the trial
     /// then received (ADR-0148).
@@ -743,14 +830,18 @@ pub struct Outcome<const N: usize = 2> {
     /// The messages the hold delivered in the trial (ADR-0144); zero without a hold, and at a
     /// tie.
     pub held: u32,
+    /// Whether the selection was drawn (ADR-0163): the exploration's coin drew at the engine's
+    /// value, so the selection is the trial's drawn channel and not the gate's reading, which
+    /// the readout's channels still hold. False with the exploration unset.
+    pub drawn: bool,
 }
 
 /// A task on an executor: two stimuli, a readout of `N` channels — two unless the type names
 /// another number (ADR-0151, ADR-0152) — a background drive, a trial's length, a seed, a
 /// reward magnitude, the readout each stimulus is rewarded at, where the reward's sign comes
-/// from, where its dopamine term reaches, the critic, when it has one, and the hold, when it
-/// has one. Every field is the caller's; `check` says what a run needs of them and of the
-/// executor.
+/// from, where its dopamine term reaches, the critic, when it has one, the hold, when it has
+/// one, and whether its selection may be drawn. Every field is the caller's; `check` says what
+/// a run needs of them and of the executor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Task<const N: usize = 2> {
     pub stimuli: [Stimulus; 2],
@@ -781,6 +872,9 @@ pub struct Task<const N: usize = 2> {
     /// close and the channel not selected held from there; none selects at the trial's end
     /// and delivers nothing, the trial before ADR-0144.
     pub hold: Option<Hold>,
+    /// Whether the selection may be drawn (ADR-0163): unset, it is the gate's at every trial,
+    /// the trial before ADR-0163.
+    pub exploration: Exploration,
 }
 
 impl<const N: usize> Task<N> {
@@ -817,6 +911,21 @@ impl<const N: usize> Task<N> {
         mix64(self.seed ^ trial) & MISLEADING_BITS == 0
     }
 
+    /// The exploration's coin for trial `trial` (ADR-0163): the sixteen
+    /// [`EXPLORATION_COIN_BITS`] of the same draw as a number, which [`Exploration::draws`]
+    /// reads against the engine's value.
+    pub const fn exploration_coin_at(&self, trial: u64) -> u16 {
+        ((mix64(self.seed ^ trial) & EXPLORATION_COIN_BITS) >> 16) as u16
+    }
+
+    /// The channel a drawn selection of trial `trial` is (ADR-0163): the fifteen
+    /// [`EXPLORATION_CHANNEL_BITS`] of the same draw dealt among the task's channels by
+    /// [`Exploration::channel`], each with the same chance to within one draw of the 32 768.
+    pub fn drawn_at(&self, trial: u64) -> u8 {
+        let draw = ((mix64(self.seed ^ trial) & EXPLORATION_CHANNEL_BITS) >> 33) as u16;
+        Exploration::channel(draw, N)
+    }
+
     /// What a run needs: every set well-formed, non-empty and inside `exec`'s arena, no two
     /// sharing a unit, a stimulus with a message, an answer for each stimulus that names a
     /// readout among the task's, a trial with a tick, a cancel (where a
@@ -827,8 +936,9 @@ impl<const N: usize> Task<N> {
     /// critic's expectations, where the task has one, within the reward's magnitude, and no
     /// critic of the task's on an engine that carries its own; a hold, where the task carries
     /// one, with a message and a cadence, negative, due at the window's close and landing
-    /// inside the trial; and under the drawn delivery or the released one an engine that
-    /// draws.
+    /// inside the trial; under the drawn delivery or the released one an engine that draws;
+    /// and with the exploration set an engine that carries the critic, no hold and a reward
+    /// whose magnitude is above zero.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
         // The stimuli's sets, then the readout's, one a channel.
@@ -939,6 +1049,20 @@ impl<const N: usize> Task<N> {
         if matches!(self.delivery, Delivery::Drawn | Delivery::Released) {
             exec.draws()?;
         }
+        // The exploration reads the engine's own value at the trial's end against the reward's
+        // magnitude (ADR-0163), refused before any tick where either is missing or a hold
+        // would act on the gate's reading before it.
+        if self.exploration == Exploration::ValueGated {
+            if exec.critic().is_none() {
+                return Err(TaskError::ExplorationWithoutCritic);
+            }
+            if self.hold.is_some() {
+                return Err(TaskError::ExplorationWithHold);
+            }
+            if self.reward_q16 == 0 {
+                return Err(TaskError::ExplorationWithoutReward);
+            }
+        }
         if self.feedback != Feedback::Withheld {
             if self.reward_q16 == 0 {
                 return Err(TaskError::NoReward);
@@ -958,8 +1082,11 @@ impl<const N: usize> Task<N> {
     /// is read and the selection made before the tick the window closes at, the first the
     /// hold is due at, and the hold's messages go into the channel the gate holds before each
     /// tick it is due at; the window is whole by then, so the counts and the selection are
-    /// the ones the trial's end would read. Refused as `check` refuses, and when the injector
-    /// refuses a message.
+    /// the ones the trial's end would read. With the exploration set (ADR-0163) the engine's
+    /// value is read at the trial's end, before the reward, and where the trial's coin draws
+    /// at it the selection is the trial's drawn channel in the gate's place; what is correct,
+    /// what is addressed and the reward's sign are then that selection's. Refused as `check`
+    /// refuses, and when the injector refuses a message.
     pub fn trial<const CAP: usize>(
         &mut self,
         exec: &mut Executor<CAP>,
@@ -994,7 +1121,7 @@ impl<const N: usize> Task<N> {
             exec.tick();
         }
         // Without a hold the train is read and the selection made here, at the trial's end.
-        let (counts, selection) = match decided {
+        let (counts, gated) = match decided {
             Some(read) => read,
             None => {
                 let counts = self
@@ -1002,6 +1129,21 @@ impl<const N: usize> Task<N> {
                     .count_window(exec.train(), opens, self.window.ticks);
                 (counts, self.readout.select(counts))
             }
+        };
+        // The exploration (ADR-0162, ADR-0163): the engine's value read here, between the
+        // trial's last tick and its reward, is the one the reward is taken against; where the
+        // trial's coin draws at it the selection is the trial's drawn channel, whatever the
+        // gate read, and the gate's everywhere else.
+        let drawn = match self.exploration {
+            Exploration::Unset => false,
+            Exploration::ValueGated => engine_value(exec).is_some_and(|value_q16| {
+                Exploration::draws(self.exploration_coin_at(trial), value_q16, self.reward_q16)
+            }),
+        };
+        let selection = if drawn {
+            Some(self.drawn_at(trial))
+        } else {
+            gated
         };
         let correct = selection == Some(self.answer(stimulus));
         // Where the dopamine term reaches from the next tick (ADR-0068): under the addressed
@@ -1053,6 +1195,7 @@ impl<const N: usize> Task<N> {
                         .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
                     value_q16: None,
                     held,
+                    drawn,
                 });
             }
         };
@@ -1089,8 +1232,24 @@ impl<const N: usize> Task<N> {
             expected_q16,
             value_q16,
             held,
+            drawn,
         })
     }
+}
+
+/// The engine's value between ticks (ADR-0131), as its next reward will read it: its critic's
+/// value of each unit's weight and its count since the previous reward, in unit order, the
+/// composition of `Executor::reward`. None on an engine without the critic.
+fn engine_value<const CAP: usize>(exec: &Executor<CAP>) -> Option<i32> {
+    let critic = exec.critic()?;
+    Some(
+        critic.value_q16(
+            exec.units()
+                .iter()
+                .zip(exec.features())
+                .map(|(unit, &count)| (unit.value_weight, count)),
+        ),
+    )
 }
 
 #[cfg(test)]
@@ -1169,6 +1328,7 @@ mod tests {
             delivery: Delivery::Global,
             critic: None,
             hold: None,
+            exploration: Exploration::Unset,
         }
     }
 
@@ -3193,6 +3353,7 @@ mod tests {
                 expected_q16: None,
                 value_q16: Some(prediction.value_q16),
                 held: 0,
+                drawn: false,
             }
         }
         for delivery in [Delivery::Global, Delivery::Addressed, Delivery::Drawn] {
@@ -3961,6 +4122,7 @@ mod tests {
                         expected_q16: t.critic.map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
                         value_q16: None,
                         held: 0,
+                        drawn: false,
                     };
                 }
                 Feedback::SevenInEight => unreachable!("the oracle is of the trial before it"),
@@ -3993,6 +4155,7 @@ mod tests {
                 expected_q16,
                 value_q16,
                 held: 0,
+                drawn: false,
             }
         }
         for feedback in [Feedback::Answer, Feedback::Shuffled, Feedback::Withheld] {
@@ -4129,6 +4292,7 @@ mod tests {
             delivery: Delivery::Global,
             critic: None,
             hold: None,
+            exploration: Exploration::Unset,
         }
     }
 
@@ -4343,6 +4507,7 @@ mod tests {
             delivery: Delivery::Global,
             critic: None,
             hold: None,
+            exploration: Exploration::Unset,
         };
         assert_eq!(one.check(&network(1, ONE / 2)), Ok(()));
         one.flip();
@@ -4922,6 +5087,7 @@ mod tests {
                         expected_q16: o.critic.map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
                         value_q16: None,
                         held,
+                        drawn: false,
                     };
                 }
             };
@@ -4953,6 +5119,7 @@ mod tests {
                 expected_q16,
                 value_q16,
                 held,
+                drawn: false,
             }
         }
         #[derive(Clone, Copy, Debug)]
@@ -5118,6 +5285,1014 @@ mod tests {
         assert!(selections.iter().any(|&(_, c)| c) && selections.iter().any(|&(_, c)| !c));
         assert!(held_in_all > 0);
     }
+
+    // ------------------------------------------- the exploration (ADR-0162, ADR-0163)
+
+    /// A task of `N` readouts, one unit each from unit 16, with the exploration set, whose
+    /// draws are read and whose trial is never run.
+    fn drawing<const N: usize>(seed: u64) -> Task<N> {
+        Task {
+            stimuli: [stimulus(0), stimulus(8)],
+            readout: Readout::new(core::array::from_fn(|k| {
+                set(16u32.saturating_add(k as u32), 1)
+            })),
+            drive: Drive {
+                every: 0,
+                messages: 0,
+                efficacy_q16: 0,
+                units: 16,
+                seed: 0,
+            },
+            ticks: TICKS,
+            window: Window::whole(TICKS),
+            seed,
+            reward_q16: REWARD,
+            answers: [0, 0],
+            feedback: Feedback::Answer,
+            delivery: Delivery::Global,
+            critic: None,
+            hold: None,
+            exploration: Exploration::ValueGated,
+        }
+    }
+
+    /// [`task`] with the exploration set.
+    fn exploring(feedback: Feedback) -> Task {
+        Task {
+            exploration: Exploration::ValueGated,
+            ..task(feedback)
+        }
+    }
+
+    /// Every unit's value weight written `weight`, as an image that carries them would hold
+    /// them: the engine's value of a trial is then `weight` times the spikes its critic
+    /// counted, over four at the tests' scale.
+    fn weigh(exec: &mut Executor<8>, weight: i16) {
+        for unit in exec.units_mut() {
+            unit.value_weight = weight;
+        }
+    }
+
+    /// The exploration's two draws against the oracle written apart from the tree (ADR-0163):
+    /// bits 16 to 31 of SplitMix64's finaliser of the seed and the trial's index, the coin,
+    /// over the first eight trials, and bits 33 to 47 dealt among two, three and four channels
+    /// as the floor of the draw times the channels over 32 768, over the first sixteen, at the
+    /// unit tests' seed and at the learning harness's.
+    #[test]
+    fn the_exploration_s_coin_and_channel_of_the_first_trials_at_seeds_0_and_27() {
+        assert_eq!(EXPLORATION_COIN_BITS, 0xFFFF << 16, "bits 16 to 31");
+        assert_eq!(EXPLORATION_CHANNEL_BITS, 0x7FFF << 33, "bits 33 to 47");
+        type Pins = (u64, [u16; 8], [u8; 16], [u8; 16], [u8; 16]);
+        let pins: [Pins; 2] = [
+            (
+                0,
+                [
+                    0x7b1d, 0x8902, 0x1c97, 0xdb01, 0xe233, 0xa389, 0xadef, 0x5932,
+                ],
+                [1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1],
+                [1, 0, 0, 0, 2, 0, 1, 2, 0, 0, 0, 1, 2, 0, 2, 1],
+                [2, 0, 0, 0, 3, 0, 2, 3, 1, 1, 0, 1, 3, 0, 3, 2],
+            ),
+            (
+                27,
+                [
+                    0x5981, 0x0f55, 0xf0c7, 0x00a8, 0x879f, 0xf272, 0x8801, 0xd49f,
+                ],
+                [0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0],
+                [0, 2, 2, 2, 1, 1, 0, 1, 1, 2, 1, 1, 2, 2, 0, 1],
+                [0, 3, 3, 3, 2, 1, 1, 1, 1, 2, 1, 2, 3, 3, 0, 1],
+            ),
+        ];
+        for (seed, coins, two, three, four) in pins {
+            let trials = |n: u64| 0..n;
+            assert_eq!(
+                trials(8)
+                    .map(|k| drawing::<2>(seed).exploration_coin_at(k))
+                    .collect::<Vec<u16>>(),
+                coins,
+                "seed {seed}: bits 16 to 31 of mix64(seed ^ k)"
+            );
+            assert_eq!(
+                trials(8)
+                    .map(|k| drawing::<3>(seed).exploration_coin_at(k))
+                    .collect::<Vec<u16>>(),
+                coins,
+                "seed {seed}: the coin is the trial's, whatever the channels"
+            );
+            assert_eq!(
+                trials(16)
+                    .map(|k| drawing::<2>(seed).drawn_at(k))
+                    .collect::<Vec<u8>>(),
+                two,
+                "seed {seed}: bits 33 to 47 among two"
+            );
+            assert_eq!(
+                trials(16)
+                    .map(|k| drawing::<3>(seed).drawn_at(k))
+                    .collect::<Vec<u8>>(),
+                three,
+                "seed {seed}: among three"
+            );
+            assert_eq!(
+                trials(16)
+                    .map(|k| drawing::<4>(seed).drawn_at(k))
+                    .collect::<Vec<u8>>(),
+                four,
+                "seed {seed}: among four"
+            );
+            assert!(
+                trials(16).all(|k| drawing::<1>(seed).drawn_at(k) == 0),
+                "seed {seed}: among one, the one"
+            );
+        }
+        // At the learning harness's seed over 4 096 trials, every count the apart oracle's: the
+        // coins below a quarter, a half and three quarters of the width, and each channel among
+        // three by the stimulus presented, so the two draws tell neither each other nor the
+        // stimulus.
+        let t = drawing::<3>(27);
+        let mut below = [0u32; 3];
+        let mut among = [[0u32; 3]; 2];
+        for trial in 0..4096u64 {
+            let coin = t.exploration_coin_at(trial);
+            for (count, quarter) in below.iter_mut().zip([0x4000u16, 0x8000, 0xC000]) {
+                *count += u32::from(coin < quarter);
+            }
+            among[usize::from(t.stimulus_at(trial))][usize::from(t.drawn_at(trial))] += 1;
+        }
+        assert_eq!(below, [1046, 2078, 3055], "of 4 096");
+        assert_eq!(
+            among,
+            [[707, 657, 666], [670, 674, 722]],
+            "[stimulus][channel]"
+        );
+    }
+
+    /// The coin against the value (ADR-0162, ADR-0163): no coin draws at a value at or above
+    /// zero; one LSB below it exactly the first coins do, as many as the reward's magnitude
+    /// leaves of the width, rounded up, and never none; at minus the magnitude and beyond it
+    /// every coin does; and between, the coins that draw are the first
+    /// $\lceil \text{below} \cdot 2^{16} / r \rceil$, counted over every coin against that hand
+    /// rule. A magnitude that is not above zero draws at no coin.
+    #[test]
+    fn a_coin_draws_exactly_below_the_value_s_part_below_zero_over_the_reward() {
+        let draws = Exploration::draws;
+        // At a reward of 1.0 a coin is one LSB of the value: the coins below the part below
+        // zero draw, and no other.
+        for value in [0, 1, 100, ONE, i32::MAX] {
+            assert!(
+                !draws(0, value, ONE) && !draws(u16::MAX, value, ONE),
+                "{value}: at or above zero, no coin"
+            );
+        }
+        assert!(
+            draws(0, -1, ONE) && !draws(1, -1, ONE),
+            "one LSB below: one coin"
+        );
+        assert!(draws(99, -100, ONE) && !draws(100, -100, ONE));
+        assert!(
+            draws(0x7FFF, -ONE / 2, ONE) && !draws(0x8000, -ONE / 2, ONE),
+            "at minus a half, half the coins"
+        );
+        assert!(
+            draws(0xFFFE, -ONE + 1, ONE) && !draws(0xFFFF, -ONE + 1, ONE),
+            "one LSB above minus the reward: every coin but the last"
+        );
+        for value in [-ONE, -ONE - 1, -2 * ONE, i32::MIN + 1, i32::MIN] {
+            assert!(
+                draws(0, value, ONE) && draws(u16::MAX, value, ONE),
+                "{value}: at minus the reward and beyond, every coin"
+            );
+        }
+        // At the unit tests' reward, a quarter: one LSB of the value is four coins.
+        assert!(draws(3, -1, REWARD) && !draws(4, -1, REWARD));
+        assert!(draws(u16::MAX, -REWARD, REWARD) && !draws(u16::MAX, -REWARD + 1, REWARD));
+        assert!(draws(0xFFFB, -REWARD + 1, REWARD), "the last four do not");
+        // Where the magnitude is not a power of two the count is rounded up: at three, one LSB
+        // below zero is a third, 21 846 coins of 65 536; and above 1.0 one LSB is still a coin.
+        assert!(draws(21_845, -1, 3) && !draws(21_846, -1, 3));
+        assert!(draws(43_690, -2, 3) && !draws(43_691, -2, 3));
+        assert!(draws(u16::MAX, -3, 3) && draws(u16::MAX, -4, 3));
+        assert!(draws(0, -1, 3 * ONE) && !draws(1, -1, 3 * ONE));
+        assert!(draws(0, -1, i32::MAX) && !draws(1, -1, i32::MAX));
+        assert!(
+            draws(u16::MAX, i32::MIN, i32::MAX) && draws(u16::MAX, -i32::MAX, i32::MAX),
+            "at the width"
+        );
+        assert!(
+            draws(u16::MAX, -2_147_450_880, i32::MAX) && !draws(u16::MAX, -2_147_450_879, i32::MAX),
+            "the last coin's edge at the widest magnitude: 65 535 parts of 65 536"
+        );
+        // Every coin, against the hand rule's count.
+        for reward in [1, 3, 1000, REWARD, ONE, 3 * ONE, i32::MAX] {
+            for value in [
+                1,
+                0,
+                -1,
+                -2,
+                -reward / 3,
+                -reward / 2,
+                -reward + 1,
+                -reward,
+                i32::MIN,
+            ] {
+                let below = (-i64::from(value)).clamp(0, i64::from(reward)) as u64;
+                let hand = (below * 65_536).div_ceil(reward as u64);
+                let drawn = (0..=u16::MAX)
+                    .filter(|&coin| draws(coin, value, reward))
+                    .count() as u64;
+                assert_eq!(drawn, hand, "value {value} reward {reward}");
+                assert!(
+                    (0..=u16::MAX)
+                        .all(|coin| draws(coin, value, reward) == (u64::from(coin) < hand)),
+                    "value {value} reward {reward}: the first coins, in order"
+                );
+            }
+        }
+        // No magnitude, or one below zero, which `check` refuses: no coin at any value.
+        for reward in [0, -1, -ONE, i32::MIN] {
+            for value in [i32::MIN, -ONE, -1, 0, 1, i32::MAX] {
+                assert!(
+                    !draws(0, value, reward) && !draws(u16::MAX, value, reward),
+                    "value {value} reward {reward}"
+                );
+            }
+        }
+    }
+
+    /// The draw among the channels (ADR-0163): over every draw of fifteen bits the channel is
+    /// the floor of the draw times the channels over 32 768, by a hand rule, so the draws are
+    /// dealt in order — the first to the first channel, the last to the last — into runs whose
+    /// lengths differ by at most one: equal among one, two, four and sixty-four, and 10 923,
+    /// 10 923 and 10 922 among three. A draw's sixteenth bit is not read.
+    #[test]
+    fn a_drawn_channel_is_each_of_the_channels_with_the_same_chance_to_within_one_draw() {
+        let channel = Exploration::channel;
+        for (channels, expected) in [
+            (1usize, vec![32_768u32]),
+            (2, vec![16_384; 2]),
+            (3, vec![10_923, 10_923, 10_922]),
+            (4, vec![8_192; 4]),
+            (5, vec![6_554, 6_554, 6_553, 6_554, 6_553]),
+            (64, vec![512; 64]),
+        ] {
+            let mut counts = vec![0u32; channels];
+            let mut last = 0u8;
+            for draw in 0..=0x7FFFu16 {
+                let c = channel(draw, channels);
+                assert_eq!(
+                    usize::from(c),
+                    usize::from(draw) * channels / 32_768,
+                    "{draw} among {channels}"
+                );
+                assert!(c >= last, "{draw} among {channels}: in order");
+                assert_eq!(
+                    channel(draw | 0x8000, channels),
+                    c,
+                    "the sixteenth bit is not read"
+                );
+                counts[usize::from(c)] += 1;
+                last = c;
+            }
+            assert_eq!(counts, expected, "among {channels}");
+            assert_eq!(
+                (channel(0, channels), usize::from(channel(0x7FFF, channels))),
+                (0, channels - 1),
+                "among {channels}: the first and the last"
+            );
+            let (low, high) = (
+                counts.iter().min().copied().unwrap(),
+                counts.iter().max().copied().unwrap(),
+            );
+            assert!(high - low <= 1, "among {channels}: within one draw");
+        }
+        assert_eq!(channel(0x7FFF, 0), 0, "no channel");
+        // The runs' edges among three, by hand: a third of 32 768 is 10 922 and two thirds.
+        assert_eq!(
+            [0u16, 10_922, 10_923, 21_845, 21_846, 32_767].map(|d| channel(d, 3)),
+            [0, 0, 1, 1, 2, 2]
+        );
+    }
+
+    /// The exploration's refusals (ADR-0163): on an engine without the critic, whose value it
+    /// would read; with a hold, which acts on the gate's reading before the value is whole;
+    /// and with a reward's magnitude of zero, over which its probability is taken — each
+    /// before anything is injected, and none with the exploration unset, where every task is
+    /// refused or run as it was.
+    #[test]
+    fn every_refusal_of_the_exploration_is_named() {
+        let plain = network(1, ONE / 2);
+        let valued_exec = valued(ONE / 2);
+        for feedback in [
+            Feedback::Answer,
+            Feedback::Shuffled,
+            Feedback::Withheld,
+            Feedback::SevenInEight,
+        ] {
+            assert_eq!(
+                exploring(feedback).check(&plain),
+                Err(TaskError::ExplorationWithoutCritic),
+                "{feedback:?}"
+            );
+            assert_eq!(
+                exploring(feedback).check(&valued_exec),
+                Ok(()),
+                "{feedback:?}"
+            );
+            assert_eq!(task(feedback).check(&plain), Ok(()), "{feedback:?}: unset");
+            assert_eq!(task(feedback).check(&valued_exec), Ok(()), "{feedback:?}");
+        }
+        let mut exec = network(1, ONE / 2);
+        assert_eq!(
+            exploring(Feedback::Answer).trial(&mut exec, 0),
+            Err(TaskError::ExplorationWithoutCritic)
+        );
+        assert!(
+            exec.is_quiescent() && exec.ticks() == 0,
+            "a refusal injects nothing"
+        );
+        // A hold: refused with the exploration, a task that runs without it.
+        let held = |exploration: Exploration| Task {
+            window: Window { from: 4, ticks: 12 },
+            hold: Some(Hold {
+                until: 48,
+                every: 8,
+                messages: 1,
+                efficacy_q16: -1,
+            }),
+            exploration,
+            ..task(Feedback::Answer)
+        };
+        assert_eq!(held(Exploration::Unset).check(&valued_exec), Ok(()));
+        assert_eq!(
+            held(Exploration::ValueGated).check(&valued_exec),
+            Err(TaskError::ExplorationWithHold)
+        );
+        assert_eq!(
+            held(Exploration::ValueGated).check(&plain),
+            Err(TaskError::ExplorationWithoutCritic),
+            "the critic is read first"
+        );
+        // No magnitude: with the reward withheld a task of no magnitude runs, and the
+        // exploration is refused on it; under a feedback that delivers the reward it is the
+        // exploration's refusal that is read first.
+        let none = |exploration: Exploration, feedback: Feedback| Task {
+            reward_q16: 0,
+            exploration,
+            ..task(feedback)
+        };
+        assert_eq!(
+            none(Exploration::Unset, Feedback::Withheld).check(&valued_exec),
+            Ok(())
+        );
+        assert_eq!(
+            none(Exploration::ValueGated, Feedback::Withheld).check(&valued_exec),
+            Err(TaskError::ExplorationWithoutReward)
+        );
+        assert_eq!(
+            none(Exploration::ValueGated, Feedback::Answer).check(&valued_exec),
+            Err(TaskError::ExplorationWithoutReward)
+        );
+        assert_eq!(
+            none(Exploration::Unset, Feedback::Answer).check(&valued_exec),
+            Err(TaskError::NoReward)
+        );
+        let one = Task {
+            reward_q16: 1,
+            ..exploring(Feedback::Withheld)
+        };
+        assert_eq!(one.check(&valued_exec), Ok(()), "one LSB is a magnitude");
+        // The refusals before it are read before it.
+        let below = Task {
+            reward_q16: -1,
+            ..exploring(Feedback::Answer)
+        };
+        assert_eq!(below.check(&valued_exec), Err(TaskError::NegativeReward));
+        let own = Task {
+            critic: Some(Critic::new(5)),
+            ..exploring(Feedback::Answer)
+        };
+        assert_eq!(own.check(&valued_exec), Err(TaskError::TwoCritics));
+        assert_eq!(
+            own.check(&plain),
+            Err(TaskError::ExplorationWithoutCritic),
+            "the task's own critic is not the engine's"
+        );
+        assert_eq!(
+            exploring(Feedback::Answer).check(&valued(ONE)),
+            Err(TaskError::RewardAtCeiling)
+        );
+    }
+
+    /// With the exploration unset a trial is the trial it was (ADR-0163): `trial` against the
+    /// trial as ADR-0155 left it, written out here as the oracle with the four feedbacks and
+    /// the four deliveries it had, on twin engines over eight trials under a drive, a cancel
+    /// and a sub-window, a readout cued before some of them — once under the task's critic
+    /// with the addressed delivery, and under the engine's critic and its window with every
+    /// delivery, every value weight written so far below zero that a set exploration's coin
+    /// would draw wherever the critic counted a spike. The same outcome, the same units'
+    /// fields, the same train, the same messages drained, the same addressed set, the same
+    /// signal, counts, reading and weights after every trial; and no trial drawn.
+    #[test]
+    fn with_the_exploration_unset_a_trial_is_the_trial_it_was() {
+        fn before(t: &mut Task, exec: &mut Executor<8>, trial: u64) -> Outcome {
+            t.check(exec).unwrap();
+            assert_eq!(t.hold, None, "the oracle is of a trial with no hold");
+            let start = exec.ticks();
+            let draw = mix64(t.seed ^ trial);
+            let stimulus = (draw & 1) as u8;
+            let inject = exec.injector();
+            let presented = t.stimuli[usize::from(stimulus)];
+            presented.inject(&inject).unwrap();
+            for k in 0..t.ticks {
+                presented.cancel_at(&inject, k).unwrap();
+                t.drive.step(&inject, exec.ticks()).unwrap();
+                exec.tick();
+            }
+            let counts = t.readout.count_window(
+                exec.train(),
+                (start as u32).wrapping_add(t.window.from),
+                t.window.ticks,
+            );
+            let selection = t.readout.select(counts);
+            let correct = selection == Some(t.answer(stimulus));
+            let selected = selection.map(|r| t.readout.sets()[usize::from(r)]);
+            match t.delivery {
+                Delivery::Global => exec.address_all(),
+                Delivery::Addressed => exec
+                    .address(
+                        presented.set.units(),
+                        selected.iter().flat_map(|set| set.units()),
+                    )
+                    .unwrap(),
+                Delivery::Drawn => exec
+                    .address_drawn(selected.iter().flat_map(|set| set.units()))
+                    .unwrap(),
+                Delivery::Released => exec.address_drawn(0..16).unwrap(),
+            }
+            let positive = match t.feedback {
+                Feedback::Answer => correct,
+                Feedback::Shuffled => (draw >> 32) & 1 == 1,
+                Feedback::SevenInEight => correct != ((draw >> 48) & 7 == 0),
+                Feedback::Withheld => {
+                    return Outcome {
+                        trial,
+                        stimulus,
+                        counts,
+                        selection,
+                        correct,
+                        reward_q16: 0,
+                        signal_q16: exec.modulator().dopamine_rpe,
+                        expected_q16: t.critic.map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
+                        value_q16: None,
+                        held: 0,
+                        drawn: false,
+                    };
+                }
+            };
+            let outcome_q16 = if positive {
+                t.reward_q16
+            } else {
+                t.reward_q16.saturating_neg()
+            };
+            let (delivered_q16, expected_q16) = match t.critic.as_mut() {
+                Some(critic) => {
+                    let (error, before, after) = critic.predict(stimulus, outcome_q16);
+                    (error, Some([before, after]))
+                }
+                None => (outcome_q16, None),
+            };
+            let signal_q16 = exec.reward(delivered_q16);
+            let (reward_q16, value_q16) = match exec.prediction() {
+                Some(prediction) => (prediction.received_q16, Some(prediction.value_q16)),
+                None => (delivered_q16, None),
+            };
+            Outcome {
+                trial,
+                stimulus,
+                counts,
+                selection,
+                correct,
+                reward_q16,
+                signal_q16,
+                expected_q16,
+                value_q16,
+                held: 0,
+                drawn: false,
+            }
+        }
+        // The task's critic with the addressed delivery, then the engine's with each delivery.
+        let cases = [
+            (false, Delivery::Addressed),
+            (true, Delivery::Global),
+            (true, Delivery::Addressed),
+            (true, Delivery::Drawn),
+            (true, Delivery::Released),
+        ];
+        let mut would_draw = 0u32;
+        for feedback in [
+            Feedback::Answer,
+            Feedback::Shuffled,
+            Feedback::Withheld,
+            Feedback::SevenInEight,
+        ] {
+            for (engine_s, delivery) in cases {
+                let mut t = task(feedback);
+                assert_eq!(t.exploration, Exploration::Unset);
+                t.window = Window { from: 4, ticks: 20 };
+                t.drive = Drive {
+                    every: 1,
+                    messages: 2,
+                    efficacy_q16: 0x2000,
+                    units: 16,
+                    seed: 5,
+                };
+                for stimulus in t.stimuli.iter_mut() {
+                    stimulus.cancel = Some(Cancel {
+                        offset: 30,
+                        ticks: 3,
+                        messages: 1,
+                        efficacy_q16: -ONE,
+                    });
+                }
+                t.delivery = delivery;
+                let (mut now, mut then) = if engine_s {
+                    let mut pair = (windowed_network(40), windowed_network(40));
+                    weigh(&mut pair.0, i16::MIN);
+                    weigh(&mut pair.1, i16::MIN);
+                    pair
+                } else {
+                    t.critic = Some(Critic::new(5));
+                    (network(2, ONE / 2), network(2, ONE / 2))
+                };
+                let mut oracle = t;
+                let case = format!("{feedback:?}, the engine's critic {engine_s}, {delivery:?}");
+                for trial in 0..8u64 {
+                    let cued = [None, Some(0), None, Some(1), Some(1), None, Some(0), None];
+                    if let Some(r) = cued[trial as usize] {
+                        cue(&now, t.readout.sets()[r]);
+                        cue(&then, t.readout.sets()[r]);
+                    }
+                    let outcome = t.trial(&mut now, trial).unwrap();
+                    assert_eq!(
+                        outcome,
+                        before(&mut oracle, &mut then, trial),
+                        "{case} trial {trial}"
+                    );
+                    assert!(
+                        !outcome.drawn,
+                        "{case} trial {trial}: unset, nothing is drawn"
+                    );
+                    assert_eq!(fields(&now), fields(&then), "{case} trial {trial}");
+                    assert_eq!(now.train().to_vec(), then.train().to_vec(), "{case}");
+                    assert_eq!(
+                        (
+                            now.delivered(),
+                            now.addressed_counts(),
+                            now.modulator().dopamine_rpe,
+                            now.features().to_vec(),
+                            now.prediction(),
+                            now.units()
+                                .iter()
+                                .map(|u| u.value_weight)
+                                .collect::<Vec<i16>>(),
+                        ),
+                        (
+                            then.delivered(),
+                            then.addressed_counts(),
+                            then.modulator().dopamine_rpe,
+                            then.features().to_vec(),
+                            then.prediction(),
+                            then.units()
+                                .iter()
+                                .map(|u| u.value_weight)
+                                .collect::<Vec<i16>>(),
+                        ),
+                        "{case} trial {trial}"
+                    );
+                    assert_eq!(
+                        (0..16)
+                            .map(|u| (now.is_source(u), now.is_target(u)))
+                            .collect::<Vec<(bool, bool)>>(),
+                        (0..16)
+                            .map(|u| (then.is_source(u), then.is_target(u)))
+                            .collect::<Vec<(bool, bool)>>(),
+                        "{case} trial {trial}"
+                    );
+                    assert_eq!((t.critic, t.readout), (oracle.critic, oracle.readout));
+                    // Where a set exploration would have drawn: the value the engine read below
+                    // zero and the trial's coin below its part.
+                    if let Some(value) = outcome.value_q16 {
+                        would_draw += u32::from(Exploration::draws(
+                            t.exploration_coin_at(trial),
+                            value,
+                            t.reward_q16,
+                        ));
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            would_draw, 96,
+            "a set exploration would have drawn at every trial of the engine's critic under a reward delivered: three feedbacks, four deliveries, eight trials"
+        );
+    }
+
+    /// The trials of the exploration's tests on [`valued`]'s network, one a fresh engine: every
+    /// value weight written `weight`, the readouts of `cued` cued, then `t`'s trial `trial`.
+    /// Returns the outcome, the engine, and the value by hand — `weight` times the spikes the
+    /// train holds, over four, the floor.
+    fn explored(
+        t: &mut Task,
+        weight: i16,
+        cued: &[usize],
+        trial: u64,
+    ) -> (Outcome, Executor<8>, i32) {
+        let mut exec = valued(ONE / 2);
+        weigh(&mut exec, weight);
+        for &r in cued {
+            cue(&exec, t.readout.sets()[r]);
+        }
+        let outcome = t.trial(&mut exec, trial).unwrap();
+        let spikes = exec.train().len() as i64;
+        let value = i64::from(weight).saturating_mul(spikes).div_euclid(4) as i32;
+        (outcome, exec, value)
+    }
+
+    /// Set, nothing changes where the value is at or above zero (ADR-0162, ADR-0163): over the
+    /// first eight trials at the unit tests' seed, under each feedback, with every weight at
+    /// zero — a value of zero — and at the positive rail, and with no readout cued, the
+    /// answer's and the other's, the trial with the exploration set is the trial with it unset
+    /// on a twin engine in every field of the outcome and of the engine, the selection the
+    /// gate's and nothing drawn.
+    #[test]
+    fn with_the_exploration_set_nothing_changes_where_the_value_is_at_or_above_zero() {
+        let mut values = [0u32; 2];
+        for feedback in [
+            Feedback::Answer,
+            Feedback::Shuffled,
+            Feedback::Withheld,
+            Feedback::SevenInEight,
+        ] {
+            for weight in [0i16, 1, i16::MAX] {
+                for trial in 0..8u64 {
+                    let answer =
+                        usize::from(task(feedback).answer(task(feedback).stimulus_at(trial)));
+                    for cued in [vec![], vec![answer], vec![answer ^ 1], vec![0, 1]] {
+                        let mut set = exploring(feedback);
+                        let mut unset = task(feedback);
+                        set.delivery = Delivery::Addressed;
+                        unset.delivery = Delivery::Addressed;
+                        let (got, mut exec, value) = explored(&mut set, weight, &cued, trial);
+                        let (was, mut twin, _) = explored(&mut unset, weight, &cued, trial);
+                        let case =
+                            format!("{feedback:?} weight {weight} trial {trial} cued {cued:?}");
+                        assert!(value >= 0, "{case}: {value}");
+                        values[usize::from(value > 0)] += 1;
+                        assert_eq!(got, was, "{case}");
+                        assert!(!got.drawn, "{case}");
+                        assert_eq!(
+                            got.selection,
+                            match cued.as_slice() {
+                                [r] => Some(*r as u8),
+                                _ => None,
+                            },
+                            "{case}: the gate's"
+                        );
+                        if feedback != Feedback::Withheld {
+                            assert_eq!(got.value_q16, Some(value), "{case}");
+                        }
+                        assert_eq!(
+                            (
+                                fields(&exec),
+                                exec.delivered(),
+                                exec.addressed_counts(),
+                                exec.modulator().dopamine_rpe,
+                                exec.prediction(),
+                                exec.features().to_vec(),
+                            ),
+                            (
+                                fields(&twin),
+                                twin.delivered(),
+                                twin.addressed_counts(),
+                                twin.modulator().dopamine_rpe,
+                                twin.prediction(),
+                                twin.features().to_vec(),
+                            ),
+                            "{case}"
+                        );
+                        assert_eq!(exec.train().to_vec(), twin.train().to_vec(), "{case}");
+                        assert_eq!(
+                            (0..16).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+                            (0..16).map(|u| twin.is_target(u)).collect::<Vec<bool>>(),
+                            "{case}"
+                        );
+                        assert_eq!(set.readout, unset.readout, "{case}: the gate's reading");
+                    }
+                }
+            }
+        }
+        assert!(
+            values[0] > 0 && values[1] > 0,
+            "a value of zero and values above it: {values:?}"
+        );
+    }
+
+    /// A selection is drawn exactly where the trial's coin is below the value's part below zero
+    /// (ADR-0162, ADR-0163). Over the first eight trials at the unit tests' seed, each on a
+    /// fresh engine whose every weight is written so that the value the engine reads at the
+    /// trial's end lies one LSB to either side of the coin's edge: at the reward of a quarter a
+    /// coin `c` draws at a value of `-(c / 4 + 1)` and not at `-(c / 4)`. With no readout cued,
+    /// the drawn channel's, the other's and both: where the coin draws the selection is the
+    /// trial's drawn channel whatever the gate read, the trial is correct where that channel is
+    /// the stimulus's answer, and the reward's sign is that outcome's; where it does not the
+    /// trial is the trial with the exploration unset. Either way the value recorded is the one
+    /// the task read, the one the reward was taken against, and the readout's channels hold the
+    /// gate's own reading.
+    #[test]
+    fn a_selection_is_drawn_exactly_where_the_coin_is_below_the_value_s_part_below_zero() {
+        let probe = exploring(Feedback::Answer);
+        let mut seen = [[false; 2]; 4];
+        let mut both = [[false; 2]; 2];
+        for trial in 0..8u64 {
+            let coin = probe.exploration_coin_at(trial);
+            let channel = probe.drawn_at(trial);
+            let stimulus = probe.stimulus_at(trial);
+            let answer = probe.answer(stimulus);
+            both[usize::from(stimulus)][usize::from(channel == answer)] = true;
+            // The stimulus's four units fire once each and a cued readout's units carry the
+            // same weight, so the value is the weight times the spikes over four; the edge is
+            // read on the value itself.
+            let quarter = i32::from(coin / 4);
+            for (kind, cued) in [
+                vec![],
+                vec![usize::from(channel)],
+                vec![usize::from(channel ^ 1)],
+                vec![0, 1],
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let spikes = 4 + 4 * cued.len() as i32;
+                let gate = match cued.as_slice() {
+                    [r] => Some(*r as u8),
+                    _ => None,
+                };
+                for draws in [false, true] {
+                    // The largest weight whose value is at or below the edge to be reached: a
+                    // value of `-(quarter + 1)` or below draws, one of `-quarter` or above
+                    // does not.
+                    let edge = if draws { -(quarter + 1) } else { -quarter };
+                    let weight = if draws {
+                        (edge * 4).div_euclid(spikes)
+                    } else {
+                        -((-edge * 4).div_euclid(spikes))
+                    };
+                    let weight = i16::try_from(weight).unwrap();
+                    let mut set = exploring(Feedback::Answer);
+                    let mut unset = task(Feedback::Answer);
+                    let (got, mut exec, value) = explored(&mut set, weight, &cued, trial);
+                    let (was, _, _) = explored(&mut unset, weight, &cued, trial);
+                    let case = format!(
+                        "trial {trial} coin {coin:#x} cued {cued:?} weight {weight} value {value}"
+                    );
+                    assert_eq!(exec.train().len() as i32, spikes, "{case}");
+                    assert!(
+                        if draws { value <= edge } else { value >= edge },
+                        "{case}: the value lies on its side of the edge"
+                    );
+                    assert_eq!(
+                        Exploration::draws(coin, value, REWARD),
+                        draws,
+                        "{case}: the coin against the value by the rule"
+                    );
+                    assert_eq!(
+                        (got.value_q16, exec.prediction().map(|p| p.value_q16)),
+                        (Some(value), Some(value)),
+                        "{case}: the value read is the one the reward was taken against"
+                    );
+                    assert_eq!(got.drawn, draws, "{case}");
+                    assert_eq!(was.selection, gate, "{case}: unset, the gate's");
+                    assert!(!was.drawn, "{case}");
+                    if draws {
+                        let correct = channel == answer;
+                        let reward = if correct { REWARD } else { -REWARD };
+                        assert_eq!(
+                            got,
+                            Outcome {
+                                selection: Some(channel),
+                                correct,
+                                reward_q16: reward - value,
+                                signal_q16: reward - value,
+                                drawn: true,
+                                ..was
+                            },
+                            "{case}: the trial's drawn channel, judged and rewarded as a selection"
+                        );
+                    } else {
+                        assert_eq!(got, was, "{case}: the trial with the exploration unset");
+                    }
+                    assert_eq!(
+                        set.readout, unset.readout,
+                        "{case}: the channels hold the gate's own reading"
+                    );
+                    assert_eq!(
+                        set.readout
+                            .channels()
+                            .each_ref()
+                            .map(|c| c.selected_flag == 1),
+                        [gate == Some(0), gate == Some(1)],
+                        "{case}"
+                    );
+                    seen[kind][usize::from(draws)] = true;
+                }
+            }
+        }
+        assert_eq!(seen, [[true; 2]; 4], "each cue, drawn and not");
+        assert_eq!(
+            both, [[true; 2]; 2],
+            "each stimulus, its drawn channel its answer and not"
+        );
+    }
+
+    /// Under each feedback a drawn selection is judged and rewarded as any selection (ADR-0163):
+    /// with every weight at the negative rail, where every coin draws, over the first eight
+    /// trials at the unit tests' seed and with no readout cued, the answer's and the other's.
+    /// The selection is the trial's drawn channel; correct is that channel against the
+    /// stimulus's answer; the reward's sign is the outcome's under the answer's feedback, the
+    /// coin's under the shuffled one, the outcome's unless the coin is misleading under the
+    /// seven in eight, and none where it is withheld, where the trial records the draw and no
+    /// value.
+    #[test]
+    fn a_drawn_selection_is_judged_and_rewarded_as_any_selection_under_each_feedback() {
+        for feedback in [
+            Feedback::Answer,
+            Feedback::Shuffled,
+            Feedback::Withheld,
+            Feedback::SevenInEight,
+        ] {
+            let mut signs = [false; 2];
+            for trial in 0..8u64 {
+                let probe = exploring(feedback);
+                let stimulus = probe.stimulus_at(trial);
+                let answer = probe.answer(stimulus);
+                let channel = probe.drawn_at(trial);
+                for cued in [
+                    vec![],
+                    vec![usize::from(answer)],
+                    vec![usize::from(answer ^ 1)],
+                ] {
+                    let mut t = exploring(feedback);
+                    let (got, exec, value) = explored(&mut t, i16::MIN, &cued, trial);
+                    let case = format!("{feedback:?} trial {trial} cued {cued:?}");
+                    assert!(
+                        value <= -REWARD,
+                        "{case}: {value}, at or beyond minus the reward"
+                    );
+                    assert_eq!(
+                        (got.drawn, got.selection, got.correct, got.stimulus),
+                        (true, Some(channel), channel == answer, stimulus),
+                        "{case}"
+                    );
+                    let positive = match feedback {
+                        Feedback::Answer => Some(got.correct),
+                        Feedback::Shuffled => Some(probe.coin_at(trial)),
+                        Feedback::SevenInEight => Some(got.correct != probe.misleading_at(trial)),
+                        Feedback::Withheld => None,
+                    };
+                    match positive {
+                        Some(positive) => {
+                            let reward = if positive { REWARD } else { -REWARD };
+                            assert_eq!(
+                                (got.reward_q16, got.value_q16),
+                                (reward.saturating_sub(value), Some(value)),
+                                "{case}"
+                            );
+                            signs[usize::from(positive)] = true;
+                        }
+                        None => {
+                            assert_eq!((got.reward_q16, got.value_q16), (0, None), "{case}");
+                            assert_eq!(exec.prediction(), None, "{case}: no reward, no reading");
+                        }
+                    }
+                }
+            }
+            if feedback != Feedback::Withheld {
+                assert_eq!(signs, [true; 2], "{feedback:?}: a reward of each sign");
+            }
+        }
+    }
+
+    /// Under each delivery, what is addressed at a drawn selection (ADR-0163), among three
+    /// readouts on [`wide`]'s network with the critic's window, every weight at the negative
+    /// rail so that every coin draws, each trial on a fresh engine: where the gate selected
+    /// another channel than the drawn one, and where it selected none — nothing cued, and two
+    /// cued, the largest count shared. Under the addressed delivery the sources are the
+    /// presented stimulus's units and the targets the drawn readout's; under the drawn one the
+    /// sources are the units the critic's window counted and the targets the drawn readout's;
+    /// under the released one those sources and every unit a target; under the global one every
+    /// unit on both sides. The same trials with the exploration unset address the gate's
+    /// selection, none at a tie.
+    #[test]
+    fn under_each_delivery_a_drawn_selection_addresses_the_drawn_readout() {
+        let addressed = |exec: &Executor<8>| -> (Vec<u32>, Vec<u32>) {
+            (
+                (0..24).filter(|&u| exec.is_source(u)).collect(),
+                (0..24).filter(|&u| exec.is_target(u)).collect(),
+            )
+        };
+        let units_of = |r: u8| -> Vec<u32> {
+            let first = [4u32, 12, 16][usize::from(r)];
+            (first..first + 4).collect()
+        };
+        let probe = Task {
+            exploration: Exploration::ValueGated,
+            ..task3(Feedback::Answer)
+        };
+        let mut drawn_channels = [false; 3];
+        let mut gates = [false; 2];
+        for delivery in [
+            Delivery::Global,
+            Delivery::Addressed,
+            Delivery::Drawn,
+            Delivery::Released,
+        ] {
+            for trial in 0..8u64 {
+                let channel = probe.drawn_at(trial);
+                drawn_channels[usize::from(channel)] = true;
+                let other = usize::from(channel + 1) % 3;
+                let third = usize::from(channel + 2) % 3;
+                for (cued, gate) in [
+                    (vec![], None),
+                    (vec![other], Some(other as u8)),
+                    (vec![third], Some(third as u8)),
+                    (vec![other, third], None),
+                    (vec![0, 1, 2], None),
+                ] {
+                    let stimulus_units: Vec<u32> = probe.stimuli
+                        [usize::from(probe.stimulus_at(trial))]
+                    .set
+                    .units()
+                    .collect();
+                    // The units the window counted: the volley, the stimulus's and the cued
+                    // readouts', in unit order.
+                    let mut counted = stimulus_units.clone();
+                    for &r in &cued {
+                        counted.extend(units_of(r as u8));
+                    }
+                    counted.sort_unstable();
+                    let run = |exploration: Exploration| {
+                        let mut exec = wide(2, ONE / 2, Some(30));
+                        for unit in exec.units_mut() {
+                            unit.value_weight = i16::MIN;
+                        }
+                        let mut t = Task {
+                            delivery,
+                            exploration,
+                            ..task3(Feedback::Answer)
+                        };
+                        for &r in &cued {
+                            cue(&exec, t.readout.sets()[r]);
+                        }
+                        let outcome = t.trial(&mut exec, trial).unwrap();
+                        (outcome, addressed(&exec))
+                    };
+                    let case = format!("{delivery:?} trial {trial} cued {cued:?}");
+                    let (got, set) = run(Exploration::ValueGated);
+                    let (was, unset) = run(Exploration::Unset);
+                    assert_eq!(
+                        (got.drawn, got.selection, was.drawn, was.selection),
+                        (true, Some(channel), false, gate),
+                        "{case}"
+                    );
+                    assert_ne!(
+                        got.selection, was.selection,
+                        "{case}: another than the gate's"
+                    );
+                    gates[usize::from(gate.is_some())] = true;
+                    let all: Vec<u32> = (0..24).collect();
+                    let (sources, drawn_targets, gated_targets) = match delivery {
+                        Delivery::Global => (all.clone(), all.clone(), all.clone()),
+                        Delivery::Addressed => (
+                            stimulus_units,
+                            units_of(channel),
+                            gate.map_or(vec![], units_of),
+                        ),
+                        Delivery::Drawn => {
+                            (counted, units_of(channel), gate.map_or(vec![], units_of))
+                        }
+                        Delivery::Released => (counted, all.clone(), all.clone()),
+                    };
+                    assert_eq!(set, (sources.clone(), drawn_targets), "{case}: drawn");
+                    assert_eq!(unset, (sources, gated_targets), "{case}: unset");
+                }
+            }
+        }
+        assert_eq!(
+            drawn_channels, [true; 3],
+            "each channel drawn at some trial"
+        );
+        assert_eq!(gates, [true; 2], "the gate selected another, and none");
+    }
 }
 
 /// The lattice property (ADR-0030): over seeded trains and seeded set pairs the selection is
@@ -5213,6 +6388,7 @@ mod prop {
             delivery: Delivery::Global,
             critic: None,
             hold: None,
+            exploration: Exploration::Unset,
         };
         let one = |seed: u64, trial: u64| {
             let t = Task { seed, ..drawing };
@@ -5403,6 +6579,7 @@ mod prop {
                 delivery: Delivery::Global,
                 critic: None,
                 hold: Some(hold),
+                exploration: Exploration::Unset,
             };
             // A readout cued in two rounds of three, each readout in turn.
             let cued = [Some(0usize), Some(1), None][(round % 3) as usize];
@@ -5780,6 +6957,7 @@ mod prop {
                 delivery: Delivery::Global,
                 critic: None,
                 hold: None,
+                exploration: Exploration::Unset,
             };
             let next = |a: u8| (usize::from(a) + 1).checked_rem(N).unwrap() as u8;
             for a in 0..N as u8 {
@@ -5822,5 +7000,197 @@ mod prop {
         over::<3>();
         over::<4>();
         over::<64>();
+    }
+
+    /// The exploration's draws over the lattice (ADR-0163): for every seed and every trial
+    /// built from the `u32` lattice's words, and over seeded pairs, the coin is the hand rule —
+    /// the draw's fifth and sixth bytes from the top, which hold bits 31 to 16 — and the
+    /// channel's draw the third and fourth, bits 47 to 32, without the lowest, dealt among two,
+    /// three and four channels by the division; each is the rule of a draw with the
+    /// stimulus's bit, the shuffled coin's and the misleading coin's three flipped, so it reads
+    /// none of them, and the three draws beside them are the ones they were. Over the lattice
+    /// of values and magnitudes and seeded coins, a coin draws by a hand rule in `i128`; and
+    /// over seeded draws among one to sixty-four channels, the channel is the division's,
+    /// below the channels.
+    #[test]
+    fn the_exploration_s_draws_are_the_hand_rules_over_the_lattice() {
+        let coin = |draw: u64| {
+            let b = draw.to_be_bytes();
+            u16::from_be_bytes([b[4], b[5]])
+        };
+        let field = |draw: u64| {
+            let b = draw.to_be_bytes();
+            u16::from_be_bytes([b[2], b[3]]) / 2
+        };
+        let among = |draw: u64, channels: u32| (u32::from(field(draw)) * channels / 32_768) as u8;
+        let stimulus = |first: u32| Stimulus {
+            set: Set::contiguous(first, 4),
+            messages: 2,
+            efficacy_q16: 0x0001_4000,
+            cancel: None,
+        };
+        // Tasks whose draws are read and whose trials are never run, of two, three and four
+        // readouts.
+        fn drawing<const N: usize>(stimuli: [Stimulus; 2], seed: u64) -> Task<N> {
+            Task {
+                stimuli,
+                readout: Readout::new(core::array::from_fn(|k| {
+                    Set::contiguous(16 + 4 * k as u32, 4)
+                })),
+                drive: Drive {
+                    every: 0,
+                    messages: 0,
+                    efficacy_q16: 0,
+                    units: 16,
+                    seed: 0,
+                },
+                ticks: 64,
+                window: Window::whole(64),
+                seed,
+                reward_q16: 0x4000,
+                answers: [0, 0],
+                feedback: Feedback::SevenInEight,
+                delivery: Delivery::Global,
+                critic: None,
+                hold: None,
+                exploration: Exploration::ValueGated,
+            }
+        }
+        let stimuli = [stimulus(0), stimulus(8)];
+        let others = MISLEADING_BITS | 0x0000_0001_0000_0001;
+        let one = |seed: u64, trial: u64| {
+            let (two, three, four) = (
+                drawing::<2>(stimuli, seed),
+                drawing::<3>(stimuli, seed),
+                drawing::<4>(stimuli, seed),
+            );
+            let draw = mix64(seed ^ trial);
+            assert_eq!(
+                two.exploration_coin_at(trial),
+                coin(draw),
+                "{seed:#x} {trial:#x}"
+            );
+            assert_eq!(three.exploration_coin_at(trial), coin(draw));
+            assert_eq!(
+                (
+                    two.drawn_at(trial),
+                    three.drawn_at(trial),
+                    four.drawn_at(trial)
+                ),
+                (among(draw, 2), among(draw, 3), among(draw, 4)),
+                "{seed:#x} {trial:#x}"
+            );
+            assert_eq!(
+                (coin(draw), field(draw)),
+                (coin(draw ^ others), field(draw ^ others)),
+                "{seed:#x} {trial:#x}: no bit of the stimulus's, the shuffled coin's or the misleading coin's"
+            );
+            assert_eq!(
+                (coin(draw), field(draw)),
+                (
+                    coin(draw ^ EXPLORATION_CHANNEL_BITS),
+                    field(draw ^ EXPLORATION_COIN_BITS)
+                ),
+                "{seed:#x} {trial:#x}: neither reads the other's bits"
+            );
+            // The three draws beside them are the ones they were.
+            assert_eq!(two.stimulus_at(trial), (draw % 2) as u8);
+            assert_eq!(two.coin_at(trial), (draw >> 32) % 2 == 1);
+            assert_eq!(two.misleading_at(trial), draw.to_be_bytes()[1] % 8 == 0);
+            (coin(draw), among(draw, 3))
+        };
+        let words = |high: u32, low: u32| u64::from(high) << 32 | u64::from(low);
+        for &a in U32_LATTICE.iter() {
+            for &b in U32_LATTICE.iter() {
+                for &c in U32_LATTICE.iter() {
+                    one(words(a, b), words(b, c));
+                    one(words(c, a), u64::from(b));
+                    one(u64::from(a), words(c, b));
+                }
+            }
+        }
+        let mut lcg = Lcg::new(43);
+        let mut below_half = 0u32;
+        let mut channels = [0u32; 3];
+        for _ in 0..4096 {
+            let (c, r) = one(lcg.next_u64(), lcg.next_u64());
+            below_half += u32::from(c < 0x8000);
+            channels[usize::from(r)] += 1;
+        }
+        assert!(
+            (1_900..=2_200).contains(&below_half),
+            "{below_half}: about half the coins below half the width"
+        );
+        assert!(
+            channels.iter().all(|n| (1_250..=1_480).contains(n)),
+            "{channels:?}: about a third each"
+        );
+        // Each bit alone, by the masks themselves.
+        for bit in 0..64u32 {
+            let draw = 1u64 << bit;
+            assert_eq!(
+                draw & EXPLORATION_COIN_BITS != 0,
+                (16..=31).contains(&bit),
+                "bit {bit}"
+            );
+            assert_eq!(
+                draw & EXPLORATION_CHANNEL_BITS != 0,
+                (33..=47).contains(&bit),
+                "bit {bit}"
+            );
+            assert_eq!(coin(draw) != 0, (16..=31).contains(&bit), "bit {bit}");
+            assert_eq!(field(draw) != 0, (33..=47).contains(&bit), "bit {bit}");
+        }
+        // The coin against the value: the hand rule in `i128`, over the lattice of values and
+        // magnitudes with the coin's edges, and over a seeded walk.
+        let hand = |coin: u16, value: i32, reward: i32| {
+            let below = if value < 0 {
+                (-i128::from(value)).min(i128::from(reward))
+            } else {
+                0
+            };
+            reward > 0 && i128::from(coin) * i128::from(reward) < below * 65_536
+        };
+        let mut drawn = [0u32; 2];
+        for &value in I32_LATTICE.iter() {
+            for &reward in I32_LATTICE.iter() {
+                for c in [
+                    0u16, 1, 3, 4, 0x3FFF, 0x4000, 0x7FFF, 0x8000, 0xFFFE, 0xFFFF,
+                ] {
+                    let got = Exploration::draws(c, value, reward);
+                    assert_eq!(got, hand(c, value, reward), "{c} {value} {reward}");
+                    drawn[usize::from(got)] += 1;
+                }
+            }
+        }
+        for _ in 0..20_000 {
+            let (c, value, reward) = (lcg.next_u16(), lcg.i32_edge_biased(), lcg.i32_edge_biased());
+            let got = Exploration::draws(c, value, reward);
+            assert_eq!(got, hand(c, value, reward), "{c} {value} {reward}");
+            drawn[usize::from(got)] += 1;
+            // Within a reward of 1.0 the coin is the value's part below zero itself.
+            let near = lcg.next_i32() % 0x0002_0000;
+            assert_eq!(
+                Exploration::draws(c, near, 0x0001_0000),
+                near < 0 && i64::from(c) < i64::from(-near).min(0x0001_0000),
+                "{c} {near}"
+            );
+        }
+        assert!(
+            drawn[0] > 1_000 && drawn[1] > 1_000,
+            "both sides: {drawn:?}"
+        );
+        // The channel: the division's, below the channels, for every number a readout holds.
+        for _ in 0..20_000 {
+            let draw = lcg.next_u16();
+            let n = lcg.below(MAX_CHANNELS as u32) as usize + 1;
+            let got = Exploration::channel(draw, n);
+            assert_eq!(
+                usize::from(got),
+                usize::from(draw % 0x8000) * n / 32_768,
+                "{draw} among {n}"
+            );
+            assert!(usize::from(got) < n, "{draw} among {n}");
+        }
     }
 }

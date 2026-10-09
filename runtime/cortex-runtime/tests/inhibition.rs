@@ -106792,6 +106792,7 @@ fn hold_probe(hold: Hold, ticks: u32) -> (Option<u8>, u32, (i32, i32)) {
         delivery: Delivery::Global,
         critic: None,
         hold: Some(hold),
+        exploration: Exploration::Unset,
     };
     // No unit the trial fires reaches the held unit: its potentials are the hold's alone.
     for source in [0u32, 1, SELECTED] {
@@ -168113,6 +168114,7 @@ fn answered_run(
         delivery,
         critic: None,
         hold: None,
+        exploration: Exploration::Unset,
     };
     task.check(exec).expect("the task fits the executor");
     // The stimulus sets counted as a readout counts them.

@@ -16,9 +16,9 @@ pub(crate) use cortex_homeostasis::{
 pub(crate) use cortex_neuromod::{DOPAMINE_TAU_SHIFT, ValueCritic};
 
 pub(crate) use cortex_runtime::{
-    Cancel, Config, Critic, Delivery, Drive, Executor, Feedback, Hold, Image, Outcome, Readout,
-    Set, Stimulus, Task, TaskError, Window, blocks_for, mix64, run_driven, spikes_per_unit,
-    synthesize,
+    Cancel, Config, Critic, Delivery, Drive, Executor, Exploration, Feedback, Hold, Image, Outcome,
+    Readout, Set, Stimulus, Task, TaskError, Window, blocks_for, mix64, run_driven,
+    spikes_per_unit, synthesize,
 };
 
 include!(concat!(
@@ -339,6 +339,7 @@ pub(crate) fn task(
         delivery,
         critic: None,
         hold: None,
+        exploration: Exploration::Unset,
     }
 }
 
@@ -5245,6 +5246,7 @@ pub(crate) fn probe_task(shape: Shape, cancel: Option<Cancel>) -> Vec<u32> {
         delivery: Delivery::Global,
         critic: None,
         hold: None,
+        exploration: Exploration::Unset,
     };
     let trial = (0..8u64)
         .find(|&k| t.stimulus_at(k) == 0)
