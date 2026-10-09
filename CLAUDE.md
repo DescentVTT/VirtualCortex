@@ -38,8 +38,10 @@ standing changes.
   seven times in eight (H-13 to H-28). Asked a choice among three answers on that configuration,
   it learns the first mapping as it learns one between two and does not revise every mapping
   inside the schedule: H-29 read no, on one stimulus of one mapping of eight
-  ([ADR-0153](docs/adr/0153-three-answers-measured.md)). The task takes any number of readouts up
-  to 64 (ADR-0152). The learning configuration is H-25's
+  ([ADR-0153](docs/adr/0153-three-answers-measured.md)). With a punishment delivered whole where
+  the critic's value is below zero, the first revision among three is in time and the two after
+  it are lost: H-30 read no ([ADR-0156](docs/adr/0156-a-punishment-the-value-does-not-soften-measured.md)).
+  The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
   - the inhibitory synapses under a baseline of their own, with the inhibitory rule's target at the
@@ -53,7 +55,8 @@ standing changes.
 - **What was asked and read as no stays in the tree, unset.** The rule held by the network is paused
   with the facilitating class and the slow current
   ([ADR-0126](docs/adr/0126-the-gate-raised-measured.md)); the address's neural target side is closed
-  with the hold and the released delivery (ADR-0146); the speed line is closed with the sweep kept
+  with the hold and the released delivery (ADR-0146); the whole punishment is a parameter of the
+  image no configuration sets (ADR-0155, ADR-0156); the speed line is closed with the sweep kept
   and the lanes reverted ([ADR-0105](docs/adr/0105-the-speed-line-closed.md)).
 - **What does not exist.** Every subsystem's real dynamics beyond these rules; the lookahead
   ADR-0099 ordered and a lever on the rest of the turn; the real-time mode's reach measured on the
