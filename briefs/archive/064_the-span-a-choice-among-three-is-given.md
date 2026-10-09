@@ -1,17 +1,48 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-09
 ---
+
+> **Executed 2026-10-09 (UTC) in pull request #193.** Writes ADR-0161 (the span a choice among three is given,
+> measured); opens no finding. The schedule became a parameter of a run in the harness: `Schedule`, a run's three
+> flips and its trials, given to H-29's and H-30's twenty readers and to `answered_run` where they took H-20's as
+> constants, H-20's held to those constants at compile time. ADR-0157's schedule is `SIZED_SCHEDULE`, 168 blocks. No
+> file under `src/` changed and no pinned number moved. H-31's clauses and constants were committed before any trial
+> past H-29's second flip; the tree's 91 whole-domain tests then passed; and each arm held, inside its own run at
+> the end of its 56th block, its blocks to H-29's pinned first 56, every trial's reading to the hash of H-29's first
+> 3 584 and its trials by brief 063's reader to H-29's.
+>
+> **H-31 is no, on clauses 1 and 2 in both arms and on clause 4 in one, where a yes was predicted, and its stopping
+> rule reached step 5.** The first mapping and the first and the second reversals' mappings were learned in both
+> arms, 118, 120 and 85, and 119, 117 and 118 of each mapping's last 128, the mapping H-29 failed among them. The
+> third reversal's was not: 96 with one stimulus at exactly half of its presentations, and 72 with one at 8 of 62,
+> where H-29 had learned it. An answer's coupling passed 1.30 of its image's in both arms, 1.318 and 1.320; the
+> excitatory sum outside the six couplings stayed within one part in ten thousand of the image's; one stimulus's
+> mean value in one mapping stood 0.31 of the reward from 2p − 1. The span bought the first reversal, 120 and 117
+> where 32 blocks had given 87 and 85, and the reversals after it were slower than H-29's, 46 and 37 blocks to 40 of
+> 64 where H-29's took 31 and 23. Read from the tables and not measured: across the twenty distinct flips and
+> stimuli of the two rounds the old answer led longer the higher its coupling stood at the flip. The next decision,
+> the ADR on an exploration that H-29's and H-30's stopping rules name, with three rounds' readings, is named and
+> not taken.
+>
+> Every deliverable below is done and its box ticked. Three things differ from the brief's letter, each by its
+> empowerment clause and recorded in ADR-0161: the calibration against H-29's first 3 584 trials is held inside
+> each arm's own run rather than before it; it is held to the hash of those trials' readings as well, a pin H-29's
+> own arms now hold, beside the blocks and the reader's trials the brief names; and an arm's pinned blocks are the
+> 112 from H-29's second flip, the first 56 being H-29's own table. Relative links gained one `../` so that they
+> resolve from `archive/`; no word, claim or figure changed.
+>
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 064: The span a choice among three is given — ADR-0157's schedule in the harness, a mapping after a flip 48 blocks where it was 32, the configuration H-29's and nothing under `src/` changed; then H-31 run once
 
 ## Mission
 
-**This brief builds nothing in the engine and runs one hypothesis once.** [ADR-0153](../docs/adr/0153-three-answers-measured.md)
+**This brief builds nothing in the engine and runs one hypothesis once.** [ADR-0153](../../docs/adr/0153-three-answers-measured.md)
 read that H-25's configuration learns a first choice among three and revises it slowly, 21 to 31 of a mapping's 32
-blocks. [ADR-0156](../docs/adr/0156-a-punishment-the-value-does-not-soften-measured.md) read that the one change
+blocks. [ADR-0156](../../docs/adr/0156-a-punishment-the-value-does-not-soften-measured.md) read that the one change
 aimed at the revision's speed gains the first reversal and loses the two after it.
-[ADR-0157](../docs/adr/0157-the-span-a-choice-among-three-is-given.md) keeps the configuration and sizes the schedule
+[ADR-0157](../../docs/adr/0157-the-span-a-choice-among-three-is-given.md) keeps the configuration and sizes the schedule
 for three answers: a mapping after a flip is 48 blocks.
 
 ADR-0157 wrote **H-31** before any run: H-29's four clauses on the longer schedule.
@@ -43,14 +74,14 @@ When the round is done, the tree holds:
   engine's premise differs. The measurement decides.
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0157's included.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
   mutate, and says so.
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says**
-  ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md)): the arms run once, the dispatch's scope follows
+  ([ADR-0150](../../docs/adr/0150-a-round-waits-for-what-it-checks.md)): the arms run once, the dispatch's scope follows
   the diff, the merge waits for the whole-domain shards, the ADR cites the pull request's commits, and the commit
   that asks for the merge sets it to `accepted`.
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal.
@@ -74,7 +105,7 @@ and the quoted sentences are what to re-derive.
    `went_by_mapping` and `low_high_last`.
 4. **The task's flip** (`runtime/cortex-runtime/src/task.rs`, `Task::flip`) and the harness's `run_on_scheduled`
    (`tests/instrument/harness.rs`), which takes the flips as a slice.
-5. **The whole punishment** ([ADR-0155](../docs/adr/0155-a-punishment-the-value-does-not-soften-built.md)):
+5. **The whole punishment** ([ADR-0155](../../docs/adr/0155-a-punishment-the-value-does-not-soften-built.md)):
    `Config::whole_punishment`, a flag of the image at format 21. H-29's image carries it unset.
 6. **H-29's readings** (ADR-0153): the first mapping passed 40 of 64 in its fifth and its seventh block; the reversals
    in 31, 31 and 21 blocks from the assignment and 30, 23 and 23 from the mirrored assignment; the first reversal's
@@ -83,17 +114,17 @@ and the quoted sentences are what to re-derive.
    sum ended at 0.843 and 0.842.
 7. **The weekly job**: twelve shards. The cost table holds 91 tests and 50 038 s; H-29's two arms are 1 446 and
    1 729 s of it and H-30's 1 798 and 1 729 s. The bound of a shard is 120 minutes.
-8. **The dispatch's scope** ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
+8. **The dispatch's scope** ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
    for a round that changes no file under `src/`.
 
 ## Deliverables
 
-- [ ] **The schedule as a parameter of a run, in the tests.**
+- [x] **The schedule as a parameter of a run, in the tests.**
   - A run's flips and its length are given to the readers that took `SCHEDULE_FLIPS` and `SCHEDULE_TRIALS` as
     constants, or readers for the longer schedule are written beside them. Either way H-29's and H-30's arms read
     what they read, table for table.
   - ADR-0157's schedule: the flips before the trials of index 1 536, 4 608 and 7 680; 168 blocks, 10 752 trials.
-- [ ] **H-31's protocol, in a new ADR at the next free number (`ls docs/adr`), before any trial past H-29's second
+- [x] **H-31's protocol, in a new ADR at the next free number (`ls docs/adr`), before any trial past H-29's second
   flip.**
   - The arms: H-29's two, from H-29's image, with H-29's readouts and deal and the whole punishment unset. The image
     is asserted H-29's by its CRC.
@@ -110,29 +141,29 @@ and the quoted sentences are what to re-derive.
     - where the wrong selections went, the ties and the margin, by mapping;
     - the six couplings' courses and their sum, and the value's troughs;
     - the inhibitory sum's course, beside H-21's bar of a half.
-- [ ] **The calibration**, before any trial past H-29's second flip:
+- [x] **The calibration**, before any trial past H-29's second flip:
   - every pinned number of the tree holds;
   - each arm is H-29's arm trial for trial for its first 3 584 trials, held to `ANSWERED_TRIALS_1024` and to H-29's
     pinned blocks.
-- [ ] **The runs**: H-31's two arms, each a weekly `exhaustive` test, run once, their tables pinned per block.
-- [ ] **The ADR's reading.**
+- [x] **The runs**: H-31's two arms, each a weekly `exhaustive` test, run once, their tables pinned per block.
+- [x] **The ADR's reading.**
   - H-31's verdict per clause and arm.
   - The prediction (yes) and each predicted reading against what was read.
   - What the added span bought: each mapping at its 32nd block beside its 48th.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** At most one runtime test: the schedule's hand rule, H-31's clauses at their edges and the
+- [x] **The gate.** At most one runtime test: the schedule's hand rule, H-31's clauses at their edges and the
   readings' rules over tables written by hand.
-- [ ] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
+- [x] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
   `scope=exhaustive`. Its twelve whole-domain shards are green and reproduce every pinned number. The cost table is
   regenerated from their artifacts. The ADR names the dispatch.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-31 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` only where the standing changes (ADR-0150); `README.md` and `docs/zh-TW`'s reader's guide as the
     result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADR set to
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADR set to
   `accepted` by the commit that asks for the merge.
 
 ## Not empowered
