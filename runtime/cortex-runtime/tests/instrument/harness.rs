@@ -213,17 +213,61 @@ pub(crate) fn prior_seeded(units: u32, seed: u64) -> Prior {
     }
 }
 
+/// The units ADR-0044's drive sends one message a tick for.
+pub(crate) const DRIVE_UNITS_A_MESSAGE: u32 = 128;
+
 /// The drive of ADR-0044: every tick, one message of 0.125 per 128 units into units drawn
 /// by the tick.
 pub(crate) fn drive(units: u32) -> Drive {
     Drive {
         every: 1,
-        messages: units / 128,
+        messages: units / DRIVE_UNITS_A_MESSAGE,
         efficacy_q16: 0x2000,
         units,
         seed: 3,
     }
 }
+
+/// The injector ring's entries every run to brief 067 had, at 256 and at 1 024 units.
+pub(crate) const INJECTOR_ENTRIES: usize = 1 << 12;
+
+/// The injector ring's entries at `units` (ADR-0168, brief 068): `INJECTOR_ENTRIES` up to 1 024
+/// units, as it was, and past that four entries a unit, the ring sized by the units as the
+/// train is. The ring is emptied once a tick, so what it must hold is the most a run injects
+/// before one tick, `widest_injection`.
+pub(crate) const fn injector_entries(units: u32) -> usize {
+    let by_units = (units as usize).saturating_mul(INJECTOR_ENTRIES / 1024);
+    if by_units > INJECTOR_ENTRIES {
+        by_units
+    } else {
+        INJECTOR_ENTRIES
+    }
+}
+
+/// The most messages a run of the task injects before one tick at `units`, whatever its rules
+/// return (brief 068): the widest cancel the pick can try, twice the scan's bound of messages
+/// into every unit of a stimulus set of a whole period's count from a rotation of zero, and the
+/// drive's messages. The first injection, `STIMULUS_MESSAGES` a unit, is narrower.
+pub(crate) const fn widest_injection(units: u32) -> usize {
+    let stimulus = (units / PERIOD) as usize;
+    let cancel = (LEAST_SCAN as usize).saturating_mul(2);
+    stimulus
+        .saturating_mul(cancel)
+        .saturating_add((units / DRIVE_UNITS_A_MESSAGE) as usize)
+}
+
+const _: () = assert!(
+    injector_entries(256) == INJECTOR_ENTRIES
+        && injector_entries(1024) == INJECTOR_ENTRIES
+        && injector_entries(2048) == 2 * INJECTOR_ENTRIES
+        && widest_injection(1024) == 3272
+        && widest_injection(2048) == 6544
+        && widest_injection(256) <= injector_entries(256)
+        && widest_injection(1024) <= injector_entries(1024)
+        && widest_injection(2048) <= injector_entries(2048)
+        && widest_injection(2048) > INJECTOR_ENTRIES
+        && LEAST_SCAN as usize * 2 > STIMULUS_MESSAGES as usize
+);
 
 /// The executor for a run: the gain held (`control_step_q0_16` 0), no sleep, a train that
 /// holds the most spikes a trial can produce, no arena and no store.
@@ -233,7 +277,7 @@ pub(crate) fn config(units: u32, workers: usize, baseline_q16: i32) -> Config {
         units: units as usize,
         blocks: blocks_for(&prior(units)) as usize,
         nodes_per_worker: 1 << 16,
-        injector_capacity: 1 << 12,
+        injector_capacity: injector_entries(units),
         train_capacity: (units as usize).saturating_mul(spikes_per_unit(TRIAL_TICKS) as usize),
         modulation_baseline_q16: baseline_q16,
         control_step_q0_16: 0,
@@ -5351,15 +5395,16 @@ pub(crate) fn probe_task(shape: Shape, cancel: Option<Cancel>) -> Vec<u32> {
     probe_task_on(&prior(1024), GAIN_1024, shape, cancel)
 }
 
-/// `probe_task` on the network of `p`, a prior at 1 024 units, at rest at `gain` (brief 067).
-/// `probe_task` calls it with the instrument's prior and the gain 1.75.
+/// `probe_task` on the network of `p`, at the prior's own size, at rest at `gain` (brief 067; the
+/// size the prior's since brief 068, where it was written 1 024). `probe_task` calls it with the
+/// instrument's prior at 1 024 units and the gain 1.75.
 pub(crate) fn probe_task_on(
     p: &Prior,
     gain: u32,
     shape: Shape,
     cancel: Option<Cancel>,
 ) -> Vec<u32> {
-    let mut exec = at_gain(p, config(1024, 1, 0), gain);
+    let mut exec = at_gain(p, config(p.units, 1, 0), gain);
     assert!(exec.is_quiescent());
     let stimulus = |first| Stimulus {
         set: Set::contiguous(first, 1),
@@ -5374,7 +5419,7 @@ pub(crate) fn probe_task_on(
             every: 0,
             messages: 0,
             efficacy_q16: 0,
-            units: 1024,
+            units: p.units,
             seed: 0,
         },
         ticks: PROBE_TICKS,
@@ -9857,6 +9902,10 @@ pub(crate) fn earned_run_held(
     hold: Option<Hold>,
     after: &mut dyn FnMut(&mut Engine, usize),
 ) -> HeldRun {
+    assert_eq!(
+        units, 1024,
+        "the cancel and the synapse counts of `DERIVED_1024` are pinned at 1 024 units"
+    );
     earned_run_held_on(
         &DERIVED_1024,
         exec,
@@ -9878,7 +9927,8 @@ pub(crate) fn earned_run_held(
 /// `earned_run_held` on the network `derived` describes (ADR-0165, brief 067): the four sets laid
 /// from its rotation, the stimulus carrying its cancel, and the composer's synapses held to its
 /// counts. `earned_run_held` calls it with `DERIVED_1024`, the constants the tree holds for the
-/// instrument's prior, so its run is the run it was.
+/// instrument's prior, so its run is the run it was. `units` is the engine's own count (brief
+/// 068): the form held it to 1 024, which `earned_run_held` now holds for its pinned constants.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_held_on(
     derived: &Derived,
@@ -9902,8 +9952,9 @@ pub(crate) fn earned_run_held_on(
     );
     assert_eq!(exec.signed_gate(), signed, "the signed gate is the image's");
     assert_eq!(
-        units, 1024,
-        "the cancel and the synapse counts below are pinned at 1 024 units"
+        exec.units().len(),
+        units as usize,
+        "the size given is the engine's"
     );
     assert_eq!(
         exec.modulation_baseline_q16(),

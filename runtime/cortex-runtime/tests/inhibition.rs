@@ -29326,7 +29326,14 @@ fn only_the_target(image: &[u8], targeted: &[u8]) -> bool {
 /// `WINDOW_TICKS`, the train asserted to hold each window whole as `settling` asserts it; each
 /// window's spikes per unit. Every weight is asserted unmoved after it.
 fn target_lead_in(zero: &[u8]) -> Vec<Vec<u32>> {
-    let mut exec = frozen_from(zero, 1024);
+    target_lead_in_at(zero, 1024)
+}
+
+/// `target_lead_in` of a settled image at `size` units (brief 068): the image decoded and the
+/// drive laid at that size. `target_lead_in` calls it with 1 024, so its lead-in is the one it
+/// was.
+fn target_lead_in_at(zero: &[u8], size: u32) -> Vec<Vec<u32>> {
+    let mut exec = frozen_from(zero, size);
     assert_eq!(
         (
             exec.inhibitory_baseline_q16(),
@@ -29336,7 +29343,7 @@ fn target_lead_in(zero: &[u8]) -> Vec<Vec<u32>> {
         "the settled image: the inhibitory baseline unset, the default period"
     );
     let before = weights_of(&exec);
-    let drive = drive(1024);
+    let drive = drive(size);
     let units = exec.units().len();
     let mut windows = Vec::new();
     for _ in 0..TARGET_LEAD_IN_WINDOWS {
@@ -66349,9 +66356,49 @@ fn fed_run_on(
     hold: Option<Hold>,
     feedback: Feedback,
 ) -> (BesideRun, Along) {
+    fed_run_at(
+        1024,
+        derived,
+        exec,
+        arm,
+        sets,
+        groups,
+        classes,
+        image,
+        delivery,
+        trials,
+        shadowed,
+        hold,
+        feedback,
+        &mut |_, _| {},
+    )
+}
+
+/// `fed_run_on` at `units` (ADR-0168, brief 068): the sets held to the geometry at that size and
+/// the run at that size; and `extra` called at every trial's end, after the run's own readings,
+/// with the engine and the trial — a reading of the caller's, which reads the engine and writes
+/// nothing to it. `fed_run_on` calls it with 1 024 and a reading of nothing, so its run is the run
+/// it was.
+#[allow(clippy::too_many_arguments)]
+fn fed_run_at(
+    units: u32,
+    derived: &Derived,
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    groups: &[usize],
+    classes: &[usize],
+    image: &[Vec<i16>],
+    delivery: Delivery,
+    trials: usize,
+    shadowed: bool,
+    hold: Option<Hold>,
+    feedback: Feedback,
+    extra: &mut dyn FnMut(&mut Engine, usize),
+) -> (BesideRun, Along) {
     assert_eq!(
         *sets,
-        geometry(1024, derived.rotation),
+        geometry(units, derived.rotation),
         "the sets are the network's"
     );
     let readouts = Readout::new([sets[2], sets[3]]);
@@ -66375,7 +66422,7 @@ fn fed_run_on(
         exec,
         feedback,
         first,
-        1024,
+        units,
         trials,
         GATE_BASELINE_Q16,
         &SCHEDULE_FLIPS,
@@ -66443,6 +66490,7 @@ fn fed_run_on(
                 spikes.push(spikes_block);
                 spikes_block = [0; CLASSES];
             }
+            extra(exec, trial);
         },
     );
     assert!(expected.is_empty(), "the task carries no critic");
@@ -197277,6 +197325,16 @@ const SPLIT_SCALE: u8 = VALUED_CRITIC.scale;
 /// dead band, $2^k$, under one per cent of the reward, read as `band × 100 < reward`.
 const DEAD_BAND_PER_CENT: i64 = 1;
 
+/// The shift the critic's rule holds past it (ADR-0168): the largest whose dead band is under
+/// `DEAD_BAND_PER_CENT` of the reward, 9, a band of 512 of 65 536. It is ADR-0132's own shift,
+/// which a volley of 33 to 64 units reaches with ADR-0132's scale.
+const SHIFT_HELD: u8 = VALUED_CRITIC.shift;
+const _: () = assert!(
+    SHIFT_HELD == 9
+        && (1i64 << SHIFT_HELD) * 100 < REWARD_Q16 as i64 * DEAD_BAND_PER_CENT
+        && (1i64 << (SHIFT_HELD + 1)) * 100 >= REWARD_Q16 as i64 * DEAD_BAND_PER_CENT
+);
+
 /// The widest sum of a shift and a scale the arithmetic scans to: the loader's two bounds.
 const CRITIC_SUM_MAX: u32 = CRITIC_SHIFT_MAX as u32 + CRITIC_SCALE_MAX as u32;
 const _: () = assert!(CRITIC_SUM_MAX == 44 && SPLIT_SCALE == 2);
@@ -197433,27 +197491,33 @@ fn frozen_measures(len: u64, block: &Block, composition: &Composition) -> [bool;
     [fires_once_of(len, block, composition), block.6 >= SEEN_MIN]
 }
 
-/// ADR-0132's arithmetic restated for a stimulus of `units` units (ADR-0167): the sum of the shift
-/// and the scale is the least at which one volley of `units` spikes moves the value of the same
-/// volley by at most the task critic's thirty-second of the error, `units × 32 ≤ 2^sum`, scanned
-/// from zero to `CRITIC_SUM_MAX`; the split keeps ADR-0132's scale, the shift the rest. None when
-/// no sum of the range fits, when the sum is below the scale, which is a stimulus of no unit, when
-/// the loader would refuse the constants, or when the shift's dead band is not under one per cent
-/// of the reward, ADR-0132's reason for the split. For 33 to 64 units it is ADR-0132's own, a shift
-/// of 9 and a scale of 2.
+/// ADR-0132's arithmetic restated for a stimulus of `units` units (ADR-0167), with the split
+/// ADR-0168 gives it past 64 units:
+/// - the sum of the shift and the scale is the least at which one volley of `units` spikes moves
+///   the value of the same volley by at most the task critic's thirty-second of the error,
+///   `units × 32 ≤ 2^sum`, scanned from zero to `CRITIC_SUM_MAX`;
+/// - the shift is the lesser of the sum less ADR-0132's scale and `SHIFT_HELD`, the largest shift
+///   whose dead band is under one per cent of the reward;
+/// - the scale is the sum less the shift.
+///
+/// None when no sum of the range fits, when the sum is below ADR-0132's scale, which is a
+/// stimulus of no unit, and when the loader would refuse the constants. Up to 64 units the shift
+/// is the sum less ADR-0132's scale and the scale is ADR-0132's, as ADR-0167 wrote the rule, and
+/// for 33 to 64 units it is ADR-0132's own, a shift of 9 and a scale of 2. Past 64 units, where
+/// the rule as ADR-0167 wrote it returned nothing — its shift's dead band a per cent of the
+/// reward and more — the shift stays at 9 and the scale takes the rest: 9 and 3 for 65 to 128
+/// units, 9 and 4 for 129 to 256.
 fn critic_for(units: u32) -> Option<ValueCritic> {
     let step = u64::from(units).checked_shl(TASK_STEP_SHIFT)?;
     let sum =
         (0..=CRITIC_SUM_MAX).find(|&n| 1u64.checked_shl(n).is_some_and(|whole| step <= whole))?;
-    let shift = u8::try_from(sum).ok()?.checked_sub(SPLIT_SCALE)?;
+    let sum = u8::try_from(sum).ok()?;
+    let shift = sum.checked_sub(SPLIT_SCALE)?.min(SHIFT_HELD);
     let critic = ValueCritic {
         shift,
-        scale: SPLIT_SCALE,
+        scale: sum.checked_sub(shift)?,
     };
-    let band = 1i64.checked_shl(u32::from(shift))?;
-    (critic.is_valid()
-        && band.saturating_mul(100) < i64::from(REWARD_Q16).saturating_mul(DEAD_BAND_PER_CENT))
-    .then_some(critic)
+    critic.is_valid().then_some(critic)
 }
 
 /// The excitatory sum outside the four couplings of an image: `image_outside` for any image, its
@@ -197629,7 +197693,8 @@ struct Derivation {
 }
 
 /// The configuration H-25 ran under, derived on ADR-0044's prior at 1 024 units from `seed`
-/// (ADR-0165, ADR-0167): each constant by the rule that derived it on the instrument's prior, in
+/// (ADR-0165, ADR-0167; `derive_at` with the size, since brief 068): each constant by the rule
+/// that derived it on the instrument's prior, in
 /// ADR-0165's order, nothing carried over from another network, and the derivation stopped at the
 /// first rule that returns nothing.
 /// 1. The rotation: `first_balanced` over the prior's census.
@@ -197652,28 +197717,37 @@ struct Derivation {
 /// inhibitory baseline, the signed gate, the target period, the critic and the window, each
 /// change shown to be the only one where a masked check exists for it.
 fn derive(seed: u64, name: &str) -> Derivation {
-    let p = prior_seeded(1024, seed);
+    derive_at(1024, seed, name)
+}
+
+/// `derive` at `units` (ADR-0168, brief 068): the same rules in the same order, with the size
+/// given wherever `derive` wrote 1 024 — the prior, every configuration, the geometry, the drive,
+/// the target period's exposure and every image's decoding. The stimulus set's units, which the
+/// frozen block's measures and the critic's rule read, are the geometry's at that size. `derive`
+/// calls it with 1 024, so on a network at 1 024 units it is the derivation it was.
+fn derive_at(units: u32, seed: u64, name: &str) -> Derivation {
+    let p = prior_seeded(units, seed);
     let mut d = Derivation::default();
     // 1. The rotation, by the prior's census: the couplings do not read the gain.
-    let laid = at_gain(&p, config(1024, 1, 0), GAINS[0]);
+    let laid = at_gain(&p, config(units, 1, 0), GAINS[0]);
     d.prior_sums = weights_by_polarity(&laid);
     let (rotation, scanned) =
-        first_balanced(&|rotation| couplings(&laid, &geometry(1024, rotation)));
+        first_balanced(&|rotation| couplings(&laid, &geometry(units, rotation)));
     d.scanned = scanned;
     d.rules.rotation = rotation;
     let Some(rotation) = rotation else {
         return d;
     };
-    let sets = geometry(1024, rotation);
+    let sets = geometry(units, rotation);
     let len = sets[0].len();
     assert_eq!(sets[1].len(), len, "{name}: two stimuli of one size");
     // 2. The gain, and with the picked gain's block its census and its synapses.
     let mut census_ticks: Vec<u64> = Vec::new();
     for &gain in &GAINS {
-        let mut exec = at_gain(&p, config(1024, 2, 0), gain);
+        let mut exec = at_gain(&p, config(units, 2, 0), gain);
         assert_eq!(exec.homeostasis().synaptic_gain_q16, gain);
         let (blocks, trace, _, counts, _, volley_ticks) =
-            compose_on_over(sets, &mut exec, SHAPE_F46, None, 1024, BLOCK);
+            compose_on_over(sets, &mut exec, SHAPE_F46, None, units, BLOCK);
         let block = *blocks.first().expect("a block of the calibration");
         d.calibrations.push((block, trace));
         if calibrated(&block) {
@@ -197688,7 +197762,7 @@ fn derive(seed: u64, name: &str) -> Derivation {
     };
     d.census = census_of(&census_ticks);
     // 3. The settled network and its image.
-    let mut exec = candidate_from(&p, 1024, gain, BACKGROUNDS[SETTLED]);
+    let mut exec = candidate_from(&p, units, gain, BACKGROUNDS[SETTLED]);
     assert_eq!(
         weights_by_polarity(&exec),
         d.prior_sums,
@@ -197697,7 +197771,7 @@ fn derive(seed: u64, name: &str) -> Derivation {
     d.lead_in = lead_in_until_settled_over(
         [sets[2], sets[3]],
         &mut exec,
-        1024,
+        units,
         d.prior_sums.1,
         LEAD_IN_EXTENDED,
     );
@@ -197715,7 +197789,7 @@ fn derive(seed: u64, name: &str) -> Derivation {
     d.quiet = Some((ticks, sums));
     let zero = frozen_image(&exec);
     {
-        let frozen = frozen_from(&zero, 1024);
+        let frozen = frozen_from(&zero, units);
         assert_eq!(
             (
                 weights_by_polarity(&frozen),
@@ -197744,9 +197818,9 @@ fn derive(seed: u64, name: &str) -> Derivation {
         let probe = probe_task_on(&p, gain, SHAPE_F46, Some(cancel));
         probed.push(probe.len() == 1);
         d.probes.push(probe);
-        let mut exec = at_gain(&p, config(1024, 2, 0), gain);
+        let mut exec = at_gain(&p, config(units, 2, 0), gain);
         let (blocks, trace, trials, counts, _, _) =
-            compose_on_over(sets, &mut exec, SHAPE_F46, Some(cancel), 1024, BLOCK);
+            compose_on_over(sets, &mut exec, SHAPE_F46, Some(cancel), units, BLOCK);
         assert_eq!(counts, d.synapses, "{name}: the same synapses");
         let block = *blocks.first().expect("a block of the candidate");
         d.cancelled.push((block, trace, composition(&trials)));
@@ -197760,9 +197834,9 @@ fn derive(seed: u64, name: &str) -> Derivation {
     };
     let cancel = cancel_over(span, messages);
     {
-        let mut frozen = frozen_from(&zero, 1024);
+        let mut frozen = frozen_from(&zero, units);
         let (blocks, trace, trials, counts, counted, volley_ticks) =
-            compose_on_over(sets, &mut frozen, SHAPE_F46, Some(cancel), 1024, BLOCK);
+            compose_on_over(sets, &mut frozen, SHAPE_F46, Some(cancel), units, BLOCK);
         assert_eq!(counts, d.synapses, "{name}: the settled network's synapses");
         let block = *blocks.first().expect("a frozen block");
         let composed = composition(&trials);
@@ -197775,9 +197849,13 @@ fn derive(seed: u64, name: &str) -> Derivation {
         return d;
     }
     // 5. The target period, on the settled image frozen.
-    let windows = target_lead_in(&zero);
+    let windows = target_lead_in_at(&zero, units);
     d.target_lead_in = windows.iter().map(|w| spikes_of(w)).collect();
-    let period = target_period(1024, TARGET_LEAD_IN_TICKS, spikes_of(&summed(&windows)));
+    let period = target_period(
+        u64::from(units),
+        TARGET_LEAD_IN_TICKS,
+        spikes_of(&summed(&windows)),
+    );
     d.rules.period = Some(period);
     // H-20's image of this network, then H-21's.
     let inhibited = inhibited_image(&zero);
@@ -197788,7 +197866,7 @@ fn derive(seed: u64, name: &str) -> Derivation {
         "{name}: the target period's bytes and the seal, and nothing else"
     );
     // 6. The critic's window and the critic.
-    d.rules.window = shortest_delay(signed_from(&targeted, 1024).blocks());
+    d.rules.window = shortest_delay(signed_from(&targeted, units).blocks());
     let Some(window) = d.rules.window else {
         return d;
     };
@@ -197814,7 +197892,7 @@ fn derive(seed: u64, name: &str) -> Derivation {
         crc64(&valued),
         crc64(&windowed),
     ]);
-    let image_couplings = pair_couplings(&signed_from(&windowed, 1024), &sets);
+    let image_couplings = pair_couplings(&signed_from(&windowed, units), &sets);
     d.couplings = Some(image_couplings);
     d.made = Some(Made {
         derived: Derived {
@@ -197885,116 +197963,216 @@ fn dump_derivation(name: &str, d: &Derivation) {
         calibrated(block_22),
         frozen_selections(&BACKGROUND_COUNTED_1024[SETTLED])
     );
+    eprintln!(
+        "DUMP {name} frozen block's margins, [A, B] of [the two counts' difference summed in magnitude, the two counts summed] {:?}; beside seed 22's at 1 024 units {:?}, seed 23's {:?} and seed 24's {:?}",
+        frozen_margins(&d.counted),
+        frozen_margins(&BACKGROUND_COUNTED_1024[SETTLED]),
+        frozen_margins(FROZEN_COUNTED_SEEDED[0]),
+        frozen_margins(FROZEN_COUNTED_SEEDED[1])
+    );
+    eprintln!(
+        "DUMP {name} beside seeds 23 and 24 at 1 024 units, the rules returned {RULES_SEEDED:?}"
+    );
 }
 
-/// Holds a derivation on the network of index `n` in `SEEDS` to its pinned tables: what each rule
-/// returned, and every table it was read from. On a network no earlier round ran on there is no
-/// table from another run to hold a derivation to: what holds it is the rule, run again, and the
-/// first run's tables pinned here, which the weekly run reproduces.
-fn derivation_held(name: &str, n: usize, d: &Derivation) {
-    assert_eq!(
-        Some(d.rules),
-        RULES_SEEDED[n],
-        "{name}: what each rule returned"
-    );
+/// The tables a derivation on one network is held to, pinned from its one run (brief 067; gathered
+/// per network by brief 068, so that a network of another size is held as one of another seed
+/// is): what each rule returned, and every table it was read from, as `Derivation` holds them.
+#[derive(Clone, Copy)]
+struct DerivationPins {
+    rules: Option<Rules>,
+    scanned: &'static [[i64; 4]],
+    prior_sums: (i64, i64),
+    calibrations: &'static [(Block, u64)],
+    census: &'static [(u32, u64)],
+    synapses: [[u32; 2]; 2],
+    probes: &'static [&'static [u32]],
+    cancelled: &'static [(Block, u64, Composition)],
+    lead_in: &'static [LeadInWindow],
+    quiet: Option<(u64, (i64, i64))>,
+    frozen: Option<(Block, u64, Composition)>,
+    counted: &'static [Counted],
+    frozen_census: &'static [(u32, u64)],
+    target_lead_in: &'static [u64],
+    crcs: Option<[u64; 6]>,
+    couplings: Option<[[i64; 2]; 2]>,
+}
+
+/// The tables one arm's run is held to, pinned from its one run: by block the sight's blocks, the
+/// earned blocks, the engine's value and the drawn sources; in one number each the accuracy
+/// sequence, the compositions, every trial's reading, every trial's value and every trial's drawn
+/// sources; the readings as written; and the critic's reading (brief 068), none where no table
+/// of it is written.
+#[derive(Clone, Copy)]
+struct ArmPins {
+    blocks: &'static [Block],
+    trace: u64,
+    composed: u64,
+    earned: &'static [EarnedBlock],
+    read: u64,
+    values: &'static [ValueBlock],
+    value_hash: u64,
+    sourced: &'static [Sourced],
+    sources_hash: u64,
+    readings: Option<SeededRead>,
+    critic: Option<CriticRead>,
+}
+
+/// A network a derivation and its two arms are run on (brief 068): its size, its prior's seed,
+/// the name its dumps carry, and its pinned tables. H-33's are the two of `SEEDS` at 1 024 units
+/// (`seeded_site`); H-34's the two of `TWICE_SEEDS` at `TWICE_SIZE` (`twice_site`).
+struct Site {
+    units: u32,
+    seed: u64,
+    name: String,
+    derivation: DerivationPins,
+    arms: [ArmPins; 2],
+}
+
+/// H-33's network of index `n` in `SEEDS`, at 1 024 units, with the tables its round pinned. The
+/// critic's reading is brief 068's, read at this size beside H-34's.
+fn seeded_site(n: usize) -> Site {
+    let seed = SEEDS[n];
+    Site {
+        units: 1024,
+        seed,
+        name: format!("seeded{seed}"),
+        derivation: DerivationPins {
+            rules: RULES_SEEDED[n],
+            scanned: SCANNED_SEEDED[n],
+            prior_sums: PRIOR_SUMS_SEEDED[n],
+            calibrations: CALIBRATIONS_SEEDED[n],
+            census: CENSUS_SEEDED[n],
+            synapses: SYNAPSES_SEEDED[n],
+            probes: PROBES_SEEDED[n],
+            cancelled: CANCELLED_SEEDED[n],
+            lead_in: LEAD_IN_SEEDED[n],
+            quiet: QUIET_SEEDED[n],
+            frozen: FROZEN_SEEDED[n],
+            counted: FROZEN_COUNTED_SEEDED[n],
+            frozen_census: FROZEN_CENSUS_SEEDED[n],
+            target_lead_in: TARGET_LEAD_IN_SEEDED[n],
+            crcs: CRCS_SEEDED[n],
+            couplings: COUPLINGS_SEEDED[n],
+        },
+        arms: [0usize, 1].map(|k| ArmPins {
+            blocks: SEEDED_BLOCKS[n][k],
+            trace: SEEDED_TRACES[n][k],
+            composed: SEEDED_COMPOSED[n][k],
+            earned: SEEDED_EARNED[n][k],
+            read: SEEDED_READ[n][k],
+            values: SEEDED_VALUES[n][k],
+            value_hash: SEEDED_VALUE_HASH[n][k],
+            sourced: SEEDED_SOURCED[n][k],
+            sources_hash: SEEDED_SOURCES_HASH[n][k],
+            readings: SEEDED_READINGS[n][k],
+            critic: SEEDED_CRITIC[n][k],
+        }),
+    }
+}
+
+/// Holds a derivation to a network's pinned tables: what each rule returned, and every table it
+/// was read from. On a network no earlier round ran on there is no table from another run to hold
+/// a derivation to: what holds it is the rule, run again, and the first run's tables pinned,
+/// which the weekly run reproduces.
+fn derivation_held(name: &str, pins: &DerivationPins, d: &Derivation) {
+    assert_eq!(Some(d.rules), pins.rules, "{name}: what each rule returned");
     assert_eq!(
         d.scanned.as_slice(),
-        SCANNED_SEEDED[n],
+        pins.scanned,
         "{name}: the couplings at each rotation scanned"
     );
-    assert_eq!(
-        d.prior_sums, PRIOR_SUMS_SEEDED[n],
-        "{name}: the prior's sums"
-    );
+    assert_eq!(d.prior_sums, pins.prior_sums, "{name}: the prior's sums");
     assert_eq!(
         d.calibrations.as_slice(),
-        CALIBRATIONS_SEEDED[n],
+        pins.calibrations,
         "{name}: the calibration's blocks"
     );
     assert_eq!(
         d.census.as_slice(),
-        CENSUS_SEEDED[n],
+        pins.census,
         "{name}: the volley's census"
     );
-    assert_eq!(d.synapses, SYNAPSES_SEEDED[n], "{name}: the synapses");
+    assert_eq!(d.synapses, pins.synapses, "{name}: the synapses");
     assert_eq!(
         d.probes.iter().map(Vec::as_slice).collect::<Vec<&[u32]>>(),
-        PROBES_SEEDED[n],
+        pins.probes,
         "{name}: the probes"
     );
     assert_eq!(
         d.cancelled.as_slice(),
-        CANCELLED_SEEDED[n],
+        pins.cancelled,
         "{name}: the candidates' frozen blocks"
     );
-    assert_eq!(
-        d.lead_in.as_slice(),
-        LEAD_IN_SEEDED[n],
-        "{name}: the lead-in"
-    );
-    assert_eq!(d.quiet, QUIET_SEEDED[n], "{name}: the quiet run");
-    assert_eq!(d.frozen, FROZEN_SEEDED[n], "{name}: the frozen block");
+    assert_eq!(d.lead_in.as_slice(), pins.lead_in, "{name}: the lead-in");
+    assert_eq!(d.quiet, pins.quiet, "{name}: the quiet run");
+    assert_eq!(d.frozen, pins.frozen, "{name}: the frozen block");
     assert_eq!(
         d.counted.as_slice(),
-        FROZEN_COUNTED_SEEDED[n],
+        pins.counted,
         "{name}: the frozen block's counts"
     );
     assert_eq!(
         d.frozen_census.as_slice(),
-        FROZEN_CENSUS_SEEDED[n],
+        pins.frozen_census,
         "{name}: the frozen block's census"
     );
     assert_eq!(
         d.target_lead_in.as_slice(),
-        TARGET_LEAD_IN_SEEDED[n],
+        pins.target_lead_in,
         "{name}: the target's lead-in"
     );
-    assert_eq!(d.crcs, CRCS_SEEDED[n], "{name}: the images");
-    assert_eq!(
-        d.couplings, COUPLINGS_SEEDED[n],
-        "{name}: the image's couplings"
-    );
+    assert_eq!(d.crcs, pins.crcs, "{name}: the images");
+    assert_eq!(d.couplings, pins.couplings, "{name}: the image's couplings");
 }
 
-/// The derivations on one of H-33's networks (brief 067), a test of their own: every rule run in
-/// ADR-0165's order on the prior of `SEEDS[n]`, everything dumped before anything is held, then
-/// the pinned tables.
-fn seeded_derivation(n: usize) {
-    let seed = SEEDS[n];
-    let name = format!("seeded{seed} derivation");
-    let d = derive(seed, &name);
+/// The derivations on one network (brief 067, brief 068), a test of their own: every rule run in
+/// ADR-0165's order on the site's prior at the site's size, everything dumped before anything is
+/// held, then the pinned tables.
+fn site_derivation(site: &Site) {
+    let name = format!("{} derivation", site.name);
+    let d = derive_at(site.units, site.seed, &name);
     dump_derivation(&name, &d);
     eprintln!(
         "DUMP {name} verdict of this network on clause 0: {}; the prediction, none: {SEEDED_PREDICTED:?}",
         d.rules.hold()
     );
-    derivation_held(&name, n, &d);
+    derivation_held(&name, &site.derivation, &d);
+}
+
+/// The derivations on H-33's network of index `n` in `SEEDS` (brief 067).
+fn seeded_derivation(n: usize) {
+    site_derivation(&seeded_site(n));
 }
 
 // ---------------------------------------------------------------- the run (brief 067)
 
-/// One arm of H-33 on the network of index `n` in `SEEDS` (brief 067): the derivation by the
-/// rules, held to the network's pinned derivation, which is this arm's calibration — on a network
-/// whose clause 0 does not hold there is no arm — then H-25's arm from H-25's image of this
-/// network: 7 680 trials under the drawn delivery with no task critic and H-20's flips, the drawn
-/// sources held to the critic's oracle's counts and the composer and the network's oracle held to
-/// the record at every trial (`fed_run_on`, H-25's run with no shadow beside it). Everything is
-/// dumped, and the clauses and the readings computed, before anything is held; then the pinned
-/// tables of the run, by block.
-fn seeded_arm(n: usize, arm: Reversal) {
+/// One arm on a network (brief 067; the network a `Site` since brief 068): the derivation by the
+/// rules at the site's size, held to the site's pinned derivation, which is this arm's
+/// calibration — on a network whose clause 0 does not hold there is no arm — then H-25's arm from
+/// H-25's image of this network: 7 680 trials under the drawn delivery with no task critic and
+/// H-20's flips, the drawn sources held to the critic's oracle's counts and the composer and the
+/// network's oracle held to the record at every trial (`fed_run_at`, H-25's run with no shadow
+/// beside it). Beside the run, at every trial's end, the critic's step is read (`Stepped`) from
+/// the weights before and after the reward and the window's counts, and held to the engine's own
+/// value. Everything is dumped, and the clauses and the readings computed, before anything is
+/// held; then the pinned tables of the run, by block. At the end the executor is shut down and
+/// every worker's report held to no entry dropped.
+fn site_arm(site: &Site, arm: Reversal) {
     let k = SEEDED_ARMS
         .iter()
         .position(|&a| a == arm)
-        .expect("an arm of H-33");
-    let seed = SEEDS[n];
-    let name = format!("seeded{seed} {arm:?}");
-    let d = derive(seed, &name);
+        .expect("an arm of H-33, which are H-34's");
+    let pins = &site.arms[k];
+    let units = site.units;
+    let name = format!("{} {arm:?}", site.name);
+    let d = derive_at(units, site.seed, &name);
     eprintln!(
         "DUMP {name} rules {:?} crcs {:?}",
         d.rules,
         d.crcs.map(|crcs| crcs.map(|crc| format!("{crc:#018x}")))
     );
-    derivation_held(&name, n, &d);
+    derivation_held(&name, &site.derivation, &d);
     assert!(
         d.rules.hold(),
         "{name}: clause 0 holds on this network, or it has no arm"
@@ -198004,9 +198182,9 @@ fn seeded_arm(n: usize, arm: Reversal) {
         .as_ref()
         .expect("a derivation whose rules hold makes a configuration");
     eprintln!("DUMP {name} calibration holds: the derivation is the one pinned");
-    let sets = geometry(1024, made.derived.rotation);
+    let sets = geometry(units, made.derived.rotation);
     let len = sets[0].len();
-    let mut exec = signed_from(&made.windowed, 1024);
+    let mut exec = signed_from(&made.windowed, units);
     assert_eq!(
         (
             exec.critic(),
@@ -198045,7 +198223,15 @@ fn seeded_arm(n: usize, arm: Reversal) {
         outside,
         "{name}: the cells sum to the image's outside sum"
     );
-    let ((run, _, values, watched, beside), _) = fed_run_on(
+    // The critic's step beside the run (brief 068): the window's counts by unit, from the train as
+    // the run's own readings take them, and the value of those counts under the weights before
+    // the reward and after it.
+    let window = u64::from(made.window);
+    let mut opened = exec.ticks();
+    let mut weights: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
+    let mut stepped: Vec<Stepped> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let ((run, _, values, watched, beside), _) = fed_run_at(
+        units,
         &made.derived,
         &mut exec,
         arm,
@@ -198058,6 +198244,40 @@ fn seeded_arm(n: usize, arm: Reversal) {
         false,
         None,
         Feedback::Answer,
+        &mut |exec, _| {
+            let end = exec.ticks();
+            let start = end.saturating_sub(u64::from(TRIAL_TICKS));
+            let mut counts = vec![0u32; weights.len()];
+            let mut in_trial = 0u64;
+            for &(tick, unit) in exec.train().iter().rev() {
+                let tick = u64::from(tick);
+                if tick < opened.min(start) {
+                    break;
+                }
+                if tick >= start {
+                    in_trial = in_trial.saturating_add(1);
+                }
+                if tick.checked_sub(opened).is_some_and(|d| d < window) {
+                    if let Some(count) = counts.get_mut(unit as usize) {
+                        *count = count.saturating_add(1);
+                    }
+                }
+            }
+            let after: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
+            let value = |held: &[i16]| {
+                made.critic
+                    .value_q16(held.iter().copied().zip(counts.iter().copied()))
+            };
+            stepped.push((
+                value(&weights),
+                value(&after),
+                counts.iter().filter(|&&c| c != 0).count() as u32,
+                counts.iter().fold(0u32, |sum, &c| sum.saturating_add(c)),
+                in_trial,
+            ));
+            weights = after;
+            opened = end;
+        },
     );
     assert!(beside.is_none(), "no shadow, no reading beside the run");
     let (blocks, trace, trials, read, _) = &run;
@@ -198066,8 +198286,18 @@ fn seeded_arm(n: usize, arm: Reversal) {
     let valued_by_block = value_blocks(read, &values);
     let sourced: Vec<Sourced> = admitted_blocks(read, &watched.sourced);
     assert_eq!(
-        (read.len(), values.len(), watched.sourced.len()),
-        (SCHEDULE_TRIALS, SCHEDULE_TRIALS, SCHEDULE_TRIALS)
+        (
+            read.len(),
+            values.len(),
+            watched.sourced.len(),
+            stepped.len()
+        ),
+        (
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS,
+            SCHEDULE_TRIALS
+        )
     );
     assert_eq!(
         [
@@ -198117,6 +198347,9 @@ fn seeded_arm(n: usize, arm: Reversal) {
         sums_after: weights_by_polarity(&exec),
     };
     eprintln!("DUMP {name} PIN readings {readings:?}");
+    let errors: Vec<i32> = read.iter().map(|t| t.4).collect();
+    let critic_read = critic_read(&stepped, &errors);
+    eprintln!("DUMP {name} PIN critic read {critic_read:?}");
     eprintln!(
         "DUMP {name} verdict of this arm: learned {:?} over {:?} revised {:?} held {} left {:?}; readings: value within a quarter of 2p − 1 {:?}; the prediction, none: {SEEDED_PREDICTED:?}",
         readings.correct.map(|c| c >= REWARDED_MIN),
@@ -198170,50 +198403,90 @@ fn seeded_arm(n: usize, arm: Reversal) {
             .map(|(b, s)| beside_host(b, s, &sizes))
             .collect::<Vec<[[u32; 3]; 2]>>()
     );
+    // The critic's reading (ADR-0168) beside the rule's own arithmetic, and the capacities.
+    eprintln!(
+        "DUMP {name} the critic's step, per mapping, per myriad of the error {:?} beside the rule's {} for a volley of {len} units under {:?}; the units the window counted a trial, in hundredths {:?} beside the volley's {len}; the spikes it counted a trial, in hundredths {:?}",
+        critic_read
+            .moved
+            .map(|(moved, error)| per_myriad(moved, error)),
+        rule_step_per_myriad(len, made.critic),
+        made.critic,
+        critic_read
+            .counted
+            .map(|(trials, counted, _)| per_hundred(counted, trials)),
+        critic_read
+            .counted
+            .map(|(trials, _, spikes)| per_hundred(spikes, trials))
+    );
+    eprintln!(
+        "DUMP {name} capacities at {units} units: the most spikes one trial's ticks put in the train {} of the train's {}; the injector ring {} entries beside the widest injection before a tick {}; the train let go {} spikes over the run, each older than the reading before it",
+        critic_read.most,
+        exec.train_capacity(),
+        injector_entries(units),
+        widest_injection(units),
+        exec.train_overwritten()
+    );
+    // The critic's step is the engine's: the value of the window's counts under the weights
+    // before the reward is the value the engine read at it, and the units counted are the
+    // sources the delivery drew, at every trial.
+    for (t, (step, &value)) in stepped.iter().zip(&values).enumerate() {
+        assert_eq!(
+            step.0, value,
+            "{name} trial {t}: the value of the window's counts is the engine's"
+        );
+        assert_eq!(
+            Some(step.2),
+            watched
+                .sourced
+                .get(t)
+                .map(|by| by.iter().fold(0u32, |sum, &n| sum.saturating_add(n))),
+            "{name} trial {t}: the units counted are the sources drawn"
+        );
+    }
+    assert!(
+        critic_read.most <= exec.train_capacity() as u64,
+        "{name}: a trial's spikes fit the train"
+    );
     // The pinned tables of the whole run, and the readings as the constants state.
     pinned(
         &format!("{name} sight"),
         blocks,
         *trace,
-        SEEDED_BLOCKS[n][k],
-        SEEDED_TRACES[n][k],
+        pins.blocks,
+        pins.trace,
     );
     assert_ne!(*trace, 0, "{name}: a sequence");
-    assert_eq!(*trace, SEEDED_TRACES[n][k], "{name}: the accuracy sequence");
+    assert_eq!(*trace, pins.trace, "{name}: the accuracy sequence");
     assert_eq!(
         compositions_hash(&compositions),
-        SEEDED_COMPOSED[n][k],
+        pins.composed,
         "{name}: the composition per block"
     );
-    assert_eq!(
-        earned.as_slice(),
-        SEEDED_EARNED[n][k],
-        "{name}: the earned blocks"
-    );
-    assert_eq!(earned_hash(read), SEEDED_READ[n][k], "{name}: the readings");
+    assert_eq!(earned.as_slice(), pins.earned, "{name}: the earned blocks");
+    assert_eq!(earned_hash(read), pins.read, "{name}: the readings");
     assert_eq!(
         valued_by_block.as_slice(),
-        SEEDED_VALUES[n][k],
+        pins.values,
         "{name}: the engine's value per block"
     );
     assert_eq!(
         values_hash(&values),
-        SEEDED_VALUE_HASH[n][k],
+        pins.value_hash,
         "{name}: every trial's value"
     );
     assert_eq!(
         sourced.as_slice(),
-        SEEDED_SOURCED[n][k],
+        pins.sourced,
         "{name}: the drawn sources per block"
     );
     assert_eq!(
         sources_hash(&watched.sourced),
-        SEEDED_SOURCES_HASH[n][k],
+        pins.sources_hash,
         "{name}: every trial's drawn sources"
     );
     assert_eq!(
         Some(readings),
-        SEEDED_READINGS[n][k],
+        pins.readings,
         "{name}: the readings as written"
     );
     assert_eq!(
@@ -198221,6 +198494,21 @@ fn seeded_arm(n: usize, arm: Reversal) {
         Some(readings.sums_after),
         "{name}: the sums after the run are the last block's"
     );
+    // The critic's reading where a table of it is written; the gate holds that every arm's is.
+    if let Some(pinned) = pins.critic {
+        assert_eq!(critic_read, pinned, "{name}: the critic's reading");
+    }
+    // No worker dropped an entry: the configuration keeps no trace, so there is none to drop.
+    let reports = exec.shutdown();
+    assert!(
+        !reports.is_empty() && reports.iter().all(|r| r.dropped == 0),
+        "{name}: no worker dropped a spike or a message"
+    );
+}
+
+/// One arm of H-33 on the network of index `n` in `SEEDS` (brief 067).
+fn seeded_arm(n: usize, arm: Reversal) {
+    site_arm(&seeded_site(n), arm);
 }
 
 /// The rules on the instrument's own prior (brief 067, H-33's calibration): `derive` at seed 22
@@ -198566,8 +198854,8 @@ fn the_rules_of_a_derivation_the_clauses_of_h_33_and_the_readings_rules() {
     );
     assert_eq!(
         (critic_for(65), critic_for(0)),
-        (None, None),
-        "a dead band of a per cent and more, and no volley, whose sum is below the scale"
+        (Some(ValueCritic { shift: 9, scale: 3 }), None),
+        "ADR-0168: past 64 units the shift is held and the scale takes the rest; and no volley, whose sum is below the scale"
     );
     // Clause 0 at its edges.
     assert!(RULES_1024.hold());
@@ -211628,3 +211916,764 @@ const SEEDED_1024: [Seeded; 2] = [Seeded {
 /// The step of ADR-0165's stopping rule the verdict reaches (`seeded_step`): 3, yes on both
 /// networks. The learning configuration is the rules', not one network's.
 const SEEDED_STEP_1024: u8 = 3;
+
+// =================================================================================== H-34
+
+// -------------------------------------------- written before the run (ADR-0168, ADR-0169)
+
+/// The size of H-34's networks (ADR-0168): 2 048 units, twice the size every learning result of
+/// H-25's configuration was read at, and the largest at which an arm of H-20's whole schedule
+/// fits one test of a weekly shard.
+const TWICE_SIZE: u32 = 2048;
+
+/// The networks of H-34 (ADR-0168): ADR-0044's generator at `TWICE_SIZE` units from seeds 22 and 23,
+/// every other parameter the instrument's prior's (`prior_seeded`). They are the first two of the
+/// three seeds read at 1 024 units; at another size each is another network. Neither was looked
+/// at before it was taken, none replaces one that reads badly, and no third and no other size is
+/// run. The drive's rule and seed and the task's seed are H-25's.
+const TWICE_SEEDS: [u64; 2] = [22, 23];
+const _: () =
+    assert!(TWICE_SIZE == 2 * 1024 && TWICE_SEEDS[0] == PRIOR_SEED && TWICE_SEEDS[1] == SEEDS[0]);
+
+/// The arms of H-34 on each network (ADR-0168): H-25's two, in their order, each its own weekly
+/// test, under H-25's delivery, schedule and task.
+const TWICE_ARMS: [Reversal; 2] = DRAWN_ARMS;
+const _: () = assert!(matches!(
+    (TWICE_ARMS, SEEDED_ARMS),
+    (
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst],
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    )
+));
+
+/// ADR-0168 writes no prediction for the verdict, and brief 068 adds none.
+const TWICE_PREDICTED: Option<bool> = None;
+
+/// The tokens one wheel slot of the harness's engine holds, `Engine`'s parameter (ADR-0013): not
+/// a capacity of `config`, and not the units.
+const WHEEL_SLOT: usize = 2048;
+
+// ----------------------------------------------------- the readings' shape (brief 068)
+
+/// One trial's reading of the critic's step (ADR-0168's reading, brief 068): the value of the
+/// window's counts under the weights before the trial's reward, which is the value the engine
+/// read at it; the value of the same counts under the weights after it; the units the window
+/// counted; the spikes it counted; and the spikes the trial's ticks put in the train.
+type Stepped = (i32, i32, u32, u32, u64);
+
+/// The critic's reading over an arm (ADR-0168): what a presentation moves the value by, and the
+/// units the critic counts a trial.
+/// - `moved`: per mapping, over its whole span of trials, the value's moves by its own
+///   presentation — the value of a trial's counts after its reward less the value before —
+///   summed in magnitude, and the errors summed in magnitude. Their quotient is the step a
+///   presentation takes of its error, which the rule sets at the volley's units over
+///   $2^{\text{shift} + \text{scale}}$.
+/// - `counted`: per mapping, its trials, the units the window counted summed over them, and the
+///   spikes it counted.
+/// - `against`: the trials whose value moved against its error's sign.
+/// - `most`: the most spikes one trial's ticks put in the train, beside the train's capacity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CriticRead {
+    moved: [(i64, i64); 4],
+    counted: [(u64, u64, u64); 4],
+    against: u32,
+    most: u64,
+}
+
+/// `CriticRead` of a run's trials and the error each trial's reward delivered; zeros for a run of
+/// any other length than the schedule's.
+fn critic_read(stepped: &[Stepped], errors: &[i32]) -> CriticRead {
+    let mut out = CriticRead {
+        moved: [(0, 0); 4],
+        counted: [(0, 0, 0); 4],
+        against: 0,
+        most: 0,
+    };
+    if stepped.len() != SCHEDULE_TRIALS || errors.len() != SCHEDULE_TRIALS {
+        return out;
+    }
+    for (m, &(from, to)) in SPANS.iter().enumerate() {
+        let trials = stepped.iter().zip(errors).take(to).skip(from);
+        for (&(before, after, units, spikes, in_trial), &error) in trials {
+            let moved = i64::from(after).saturating_sub(i64::from(before));
+            let error = i64::from(error);
+            out.moved[m].0 = out.moved[m].0.saturating_add(moved.saturating_abs());
+            out.moved[m].1 = out.moved[m].1.saturating_add(error.saturating_abs());
+            out.counted[m].0 = out.counted[m].0.saturating_add(1);
+            out.counted[m].1 = out.counted[m].1.saturating_add(u64::from(units));
+            out.counted[m].2 = out.counted[m].2.saturating_add(u64::from(spikes));
+            if moved != 0 && (moved < 0) != (error < 0) {
+                out.against = out.against.saturating_add(1);
+            }
+            out.most = out.most.max(in_trial);
+        }
+    }
+    out
+}
+
+/// `n` over `d` in hundredths, truncated; zero over nothing.
+fn per_hundred(n: u64, d: u64) -> u64 {
+    n.saturating_mul(100).checked_div(d).unwrap_or(0)
+}
+
+/// The step the critic's rule sets for a volley of `len` units, each counted once, in parts per
+/// ten thousand of the error: `len` over $2^{\text{shift} + \text{scale}}$.
+fn rule_step_per_myriad(len: u64, critic: ValueCritic) -> i64 {
+    let sum = u32::from(critic.shift).saturating_add(u32::from(critic.scale));
+    let whole = 1u64.checked_shl(sum).unwrap_or(u64::MAX);
+    len.saturating_mul(10_000).checked_div(whole).unwrap_or(0) as i64
+}
+
+/// The margins of a frozen block (ADR-0168's reading), by stimulus `[A, B]`: the difference of
+/// the two readouts' counts summed in magnitude over the stimulus's trials, and the two counts
+/// summed. A selection is the difference's sign, so the first over the second is how far from a
+/// tie the selections stand.
+fn frozen_margins(counted: &[Counted]) -> [[u64; 2]; 2] {
+    let mut out = [[0u64; 2]; 2];
+    for &(stimulus, [r0, r1]) in counted {
+        if let Some(by) = out.get_mut(usize::from(stimulus)) {
+            by[0] = by[0].saturating_add(u64::from(r0.abs_diff(r1)));
+            by[1] = by[1].saturating_add(u64::from(r0).saturating_add(u64::from(r1)));
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------- the run (brief 068)
+
+/// H-34's network of index `n` in `TWICE_SEEDS`, at `TWICE_SIZE` units, with the tables pinned from
+/// the one run of its derivation and of each of its arms.
+fn twice_site(n: usize) -> Site {
+    let seed = TWICE_SEEDS[n];
+    Site {
+        units: TWICE_SIZE,
+        seed,
+        name: format!("twice{seed}"),
+        derivation: DerivationPins {
+            rules: RULES_TWICE[n],
+            scanned: SCANNED_TWICE[n],
+            prior_sums: PRIOR_SUMS_TWICE[n],
+            calibrations: CALIBRATIONS_TWICE[n],
+            census: CENSUS_TWICE[n],
+            synapses: SYNAPSES_TWICE[n],
+            probes: PROBES_TWICE[n],
+            cancelled: CANCELLED_TWICE[n],
+            lead_in: LEAD_IN_TWICE[n],
+            quiet: QUIET_TWICE[n],
+            frozen: FROZEN_TWICE[n],
+            counted: FROZEN_COUNTED_TWICE[n],
+            frozen_census: FROZEN_CENSUS_TWICE[n],
+            target_lead_in: TARGET_LEAD_IN_TWICE[n],
+            crcs: CRCS_TWICE[n],
+            couplings: COUPLINGS_TWICE[n],
+        },
+        arms: [0usize, 1].map(|k| ArmPins {
+            blocks: TWICE_BLOCKS[n][k],
+            trace: TWICE_TRACES[n][k],
+            composed: TWICE_COMPOSED[n][k],
+            earned: TWICE_EARNED[n][k],
+            read: TWICE_READ[n][k],
+            values: TWICE_VALUES[n][k],
+            value_hash: TWICE_VALUE_HASH[n][k],
+            sourced: TWICE_SOURCED[n][k],
+            sources_hash: TWICE_SOURCES_HASH[n][k],
+            readings: TWICE_READINGS[n][k],
+            critic: TWICE_CRITIC[n][k],
+        }),
+    }
+}
+
+/// The derivations on the prior of seed 22 at 2 048 units (brief 068).
+#[test]
+#[ignore]
+fn the_rules_on_seed_22_at_2048_units_exhaustive() {
+    site_derivation(&twice_site(0));
+}
+
+/// The derivations on the prior of seed 23 at 2 048 units (brief 068).
+#[test]
+#[ignore]
+fn the_rules_on_seed_23_at_2048_units_exhaustive() {
+    site_derivation(&twice_site(1));
+}
+
+/// H-34's arm on the prior of seed 22 at 2 048 units that starts from the assignment (brief 068).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_22_from_the_assignment_at_2048_units_exhaustive() {
+    site_arm(&twice_site(0), Reversal::AssignmentFirst);
+}
+
+/// H-34's arm on the prior of seed 22 at 2 048 units that starts from the mirrored assignment
+/// (brief 068).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_22_from_the_mirrored_assignment_at_2048_units_exhaustive() {
+    site_arm(&twice_site(0), Reversal::MirroredFirst);
+}
+
+/// H-34's arm on the prior of seed 23 at 2 048 units that starts from the assignment (brief 068).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_23_from_the_assignment_at_2048_units_exhaustive() {
+    site_arm(&twice_site(1), Reversal::AssignmentFirst);
+}
+
+/// H-34's arm on the prior of seed 23 at 2 048 units that starts from the mirrored assignment
+/// (brief 068).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_2048_units_exhaustive() {
+    site_arm(&twice_site(1), Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 068): the size, the seeds and the constants as
+/// ADR-0168 and ADR-0169 fixed them; the geometry, the drive and the capacities of a run's
+/// configuration at the size, with 1 024's as they were; the critic's rule at its edges, held to
+/// the rule as it was written wherever that returned a value, and ADR-0132's three reasons under
+/// the extension; H-34's clauses at their edges and its stopping rule's steps over tables written
+/// by hand; and the readings' rules over tables written by hand. It synthesizes no network at
+/// 2 048 units and runs no rule on one. Nothing else added to the gate.
+#[test]
+fn the_critic_s_rule_at_its_edges_the_clauses_of_h_34_and_the_readings_rules() {
+    // The size, the seeds, the arms, and no prediction.
+    assert_eq!(
+        (TWICE_SIZE, TWICE_SEEDS, TWICE_ARMS),
+        (
+            2048,
+            [22, 23],
+            [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+        )
+    );
+    const _: () = assert!(TWICE_PREDICTED.is_none(), "ADR-0168 predicts no verdict");
+    for seed in TWICE_SEEDS {
+        assert_eq!(
+            Prior {
+                units: 1024,
+                ..prior_seeded(TWICE_SIZE, seed)
+            },
+            prior_seeded(1024, seed),
+            "seed {seed}: the size is the one change from the network read at 1 024 units"
+        );
+    }
+    assert_eq!(
+        (ROTATIONS, GAINS, LEAD_IN_EXTENDED, LEAST_SCAN, SEEN_MIN),
+        (20, [0x0001_C000, 0x0002_0000], 160, 32, 56),
+        "the ranges the rules scan are the ones they scanned at 1 024 units"
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            BOUND_PER_CENT,
+            REVERSAL_BLOCKS_MAX,
+            CROSSING_MARK,
+            SCHEDULE_BLOCKS,
+            BAND_QUARTERS,
+            BAND_DIVISOR
+        ),
+        (80, 130, 23, 40, 120, (3, 5), 4),
+        "clauses 1 to 4 are H-25's"
+    );
+    // The geometry at the size: 102 whole periods from a rotation of at most eight, 101 from a
+    // later one; a stimulus one unit a period and a readout nine.
+    for rotation in 0..ROTATIONS {
+        let periods: u64 = if rotation <= 8 { 102 } else { 101 };
+        assert_eq!(
+            geometry(TWICE_SIZE, rotation).map(|set| set.len()),
+            [
+                periods,
+                periods,
+                periods.saturating_mul(9),
+                periods.saturating_mul(9)
+            ],
+            "rotation {rotation}"
+        );
+    }
+    assert_eq!(
+        geometry(1024, 0).map(|set| set.len()),
+        [51, 51, 459, 459],
+        "at 1 024 units, as it was"
+    );
+    // The drive: one message a tick for every 128 units, seed 3.
+    let driven = |units: u32| {
+        let d = drive(units);
+        (d.every, d.messages, d.efficacy_q16, d.units, d.seed)
+    };
+    assert_eq!(
+        (driven(TWICE_SIZE), driven(1024)),
+        ((1, 16, 0x2000, 2048, 3), (1, 8, 0x2000, 1024, 3))
+    );
+    // The capacities of a run's configuration: the train and the injector by the units, with
+    // 1 024's as they were; the nodes and the trace as they were at either size.
+    let trial = spikes_per_unit(TRIAL_TICKS) as usize;
+    let capacities = |units: u32| {
+        let c = config(units, 2, 0);
+        (
+            c.units,
+            c.train_capacity,
+            c.injector_capacity,
+            c.nodes_per_worker,
+            c.trace_capacity,
+        )
+    };
+    assert_eq!(
+        capacities(1024),
+        (1024, trial.saturating_mul(1024), 4096, 65_536, 0)
+    );
+    assert_eq!(
+        capacities(256),
+        (256, trial.saturating_mul(256), 4096, 65_536, 0)
+    );
+    assert_eq!(
+        capacities(TWICE_SIZE),
+        (2048, trial.saturating_mul(2048), 8192, 65_536, 0)
+    );
+    assert_eq!(
+        (
+            widest_injection(1024),
+            widest_injection(TWICE_SIZE),
+            injector_entries(TWICE_SIZE)
+        ),
+        (3272, 6544, 8192),
+        "the widest injection before one tick: past 1 024's ring at 2 048 units, inside its own"
+    );
+    // A worker's nodes: a tick takes at most one wheel slot's tokens and, on worker 0, one ring's
+    // worth and one ripple's, and gives them back the tick after.
+    assert!(
+        WHEEL_SLOT
+            .saturating_add(injector_entries(TWICE_SIZE))
+            .saturating_add(24)
+            <= config(TWICE_SIZE, 2, 0).nodes_per_worker
+    );
+    // A readout's count fits the task's width at the size: 918 units, each at most once a
+    // burst's refractory interval of the readout window.
+    assert!(918u64.saturating_mul(u64::from(spikes_per_unit(WINDOW.ticks))) <= i16::MAX as u64);
+    // The critic's rule at its edges (ADR-0168). Where the rule as it was written returned a
+    // value it returns that value; past 64 units, where it returned nothing, the shift is held at
+    // the largest whose dead band is under one per cent of the reward and the scale takes the
+    // rest of the sum.
+    let split = |shift: u8, scale: u8| Some(ValueCritic { shift, scale });
+    assert_eq!(
+        [4, 32, 33, 51, 64].map(critic_for),
+        [
+            split(5, 2),
+            split(8, 2),
+            split(9, 2),
+            split(9, 2),
+            split(9, 2)
+        ],
+        "as they were"
+    );
+    assert_eq!(critic_for(51), Some(VALUED_CRITIC), "ADR-0132's own");
+    assert_eq!(
+        [65, 101, 102, 128].map(critic_for),
+        [split(9, 3); 4],
+        "65 to 128 units: a sum of twelve"
+    );
+    assert_eq!(
+        [129, 256].map(critic_for),
+        [split(9, 4); 2],
+        "129 to 256 units: a sum of thirteen"
+    );
+    assert_eq!(critic_for(0), None, "no volley: the sum is below the scale");
+    assert_eq!(
+        (critic_for(262_144), critic_for(262_145)),
+        (split(9, 14), None),
+        "the least stimulus at which the loader's bound on the scale returns nothing"
+    );
+    assert_eq!(critic_for(u32::MAX), None);
+    // The rule as ADR-0167 wrote it, restated: ADR-0132's scale and the shift the rest, nothing
+    // where the shift's dead band is not under one per cent of the reward.
+    let as_written = |units: u32| -> Option<ValueCritic> {
+        let step = u64::from(units).checked_shl(TASK_STEP_SHIFT)?;
+        let sum = (0..=CRITIC_SUM_MAX)
+            .find(|&n| 1u64.checked_shl(n).is_some_and(|whole| step <= whole))?;
+        let shift = u8::try_from(sum).ok()?.checked_sub(SPLIT_SCALE)?;
+        let band = 1i64.checked_shl(u32::from(shift))?;
+        (band.saturating_mul(100) < i64::from(REWARD_Q16).saturating_mul(DEAD_BAND_PER_CENT))
+            .then_some(ValueCritic {
+                shift,
+                scale: SPLIT_SCALE,
+            })
+    };
+    for units in 0..=4096u32 {
+        let (was, is) = (as_written(units), critic_for(units));
+        if units <= 64 {
+            assert_eq!(is, was, "{units} units: where the rule returned a value");
+        } else {
+            assert_eq!(
+                was, None,
+                "{units} units: the rule as written returned nothing"
+            );
+            let critic = is.expect("the extension returns a value");
+            assert_eq!(critic.shift, SHIFT_HELD, "{units} units: the shift held");
+            assert!(critic.scale > SPLIT_SCALE && critic.is_valid());
+            // The sum is the least at which the volley's step fits.
+            let sum = u32::from(critic.shift).saturating_add(u32::from(critic.scale));
+            let step = u64::from(units) << TASK_STEP_SHIFT;
+            assert!(step <= 1u64 << sum && step > 1u64 << sum.saturating_sub(1));
+        }
+    }
+    // ADR-0132's three reasons at 102 units under the extension are what it chose at 51: the
+    // dead band, the floor's drift a trial by the volley's units, and the volley's weights when
+    // it carries the whole reward; and the sum's own rule holds the step.
+    let (at_51, at_102) = (
+        critic_for(51).expect("a critic"),
+        critic_for(102).expect("a critic"),
+    );
+    assert_eq!((1i64 << at_51.shift, 1i64 << at_102.shift), (512, 512));
+    assert!(512 * 100 < i64::from(REWARD_Q16) && 1024 * 100 >= i64::from(REWARD_Q16));
+    assert_eq!((51 >> at_51.scale, 102 >> at_102.scale), (12, 12));
+    assert_eq!(
+        (
+            (i64::from(REWARD_Q16) << at_51.scale) / 51,
+            (i64::from(REWARD_Q16) << at_102.scale) / 102
+        ),
+        (5140, 5140)
+    );
+    assert_eq!(
+        (
+            rule_step_per_myriad(51, at_51),
+            rule_step_per_myriad(102, at_102),
+            rule_step_per_myriad(102, at_51)
+        ),
+        (249, 249, 498),
+        "a fortieth of the error at either size; ADR-0132's constants carried over would be a twentieth"
+    );
+    // The target period's rule reads the size: twice the units firing twice the spikes over the
+    // same ticks is the same period.
+    assert_eq!(
+        (
+            target_period(1024, TARGET_LEAD_IN_TICKS, 18_449),
+            target_period(2048, TARGET_LEAD_IN_TICKS, 36_898),
+            target_period(2048, TARGET_LEAD_IN_TICKS, 18_449)
+        ),
+        (TARGET_PERIOD_1024, TARGET_PERIOD_1024, 116_401)
+    );
+    // Clause 0's measures at a stimulus of 102 units: one spike a unit a presentation within two
+    // tenths of a spike a unit, at most a tenth of a spike a unit after the opening, and the
+    // stimulus seen in 56 trials of 64.
+    let frozen = |volley: u64, after: u64, seen: u32| -> (Block, Composition) {
+        (
+            (
+                0,
+                32,
+                [[0; 2]; 2],
+                [volley, volley],
+                [0; 2],
+                [0; 2],
+                seen,
+                0,
+                0,
+                0,
+                [[0; 2]; 2],
+                0,
+            ),
+            (
+                [[0; 2]; 2],
+                [[[0; 4]; 2]; 2],
+                [[0, 0], [0, 0], [0, after]],
+                0,
+                0,
+            ),
+        )
+    };
+    let measured = |len: u64, volley: u64, after: u64, seen: u32| {
+        let (block, composed) = frozen(volley, after, seen);
+        frozen_measures(len, &block, &composed)
+    };
+    assert_eq!(measured(102, 3264, 652, SEEN_MIN), [true, true]);
+    assert_eq!(measured(102, 3200, 652, SEEN_MIN), [true, true]);
+    assert_eq!(
+        measured(102, 3199, 652, SEEN_MIN),
+        [false, true],
+        "the volley short of one spike a unit by more than the tolerance"
+    );
+    assert_eq!(measured(102, 3267, 652, SEEN_MIN), [true, true]);
+    assert_eq!(
+        measured(102, 3268, 652, SEEN_MIN),
+        [false, true],
+        "a tenth of a spike a presentation past one a unit, before the window opens"
+    );
+    assert_eq!(
+        measured(102, 3264, 653, SEEN_MIN),
+        [false, true],
+        "past a tenth of a spike a unit after the opening"
+    );
+    assert_eq!(measured(102, 3264, 652, SEEN_MIN - 1), [true, false]);
+    assert_eq!(
+        measured(51, 3264, 652, SEEN_MIN),
+        [false, true],
+        "the measure is the stimulus's own size's"
+    );
+    // H-34's verdict and its stopping rule's steps over tables written by hand, against an image
+    // written by hand: H-33's five clauses by H-33's rules, each at its edge.
+    let image: [[i64; 2]; 2] = [[2_000, 2_100], [1_900, 2_000]];
+    let outside = 400_000i64;
+    let block = |correct: u32, outside: i64, couplings: [[i64; 2]; 2]| -> Block {
+        let excitatory = couplings
+            .iter()
+            .flatten()
+            .fold(outside, |sum, &c| sum.saturating_add(c));
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            excitatory,
+            0,
+            couplings,
+            0,
+        )
+    };
+    let rules = Rules {
+        critic: critic_for(102),
+        frozen: Some(measured(102, 3264, 652, SEEN_MIN)),
+        ..RULES_1024
+    };
+    assert!(rules.hold(), "a derivation whose critic is the extension's");
+    let full = vec![block(BLOCK as u32, outside, image); SCHEDULE_BLOCKS];
+    let of = |a: &[Block], m: &[Block]| seeded(&rules, Some((&image, outside, [a, m])));
+    let yes = of(&full, &full);
+    assert!(yes.derived && yes.yes);
+    assert_eq!(seeded_step(&[yes, yes]), 3, "yes on both networks");
+    // Clause 0: a rule that returned nothing, or a frozen block that fails a measure.
+    for unset in [
+        Rules {
+            critic: None,
+            ..rules
+        },
+        Rules {
+            gain: None,
+            ..rules
+        },
+        Rules {
+            frozen: Some(measured(102, 3264, 652, SEEN_MIN - 1)),
+            ..rules
+        },
+    ] {
+        let underived = seeded(&unset, Some((&image, outside, [&full, &full])));
+        assert_eq!(
+            underived,
+            Seeded {
+                derived: false,
+                arms: None,
+                yes: false
+            },
+            "{unset:?}"
+        );
+        assert_eq!(seeded_step(&[yes, underived]), 4);
+        assert_eq!(seeded_step(&[underived, yes]), 4, "on either network");
+    }
+    // Clause 1: 80 of a mapping's last 128 trials learn it, 79 do not.
+    let last = MAPPINGS[3].1;
+    let mut at_mark = full.clone();
+    at_mark[last - 1].0 = 40;
+    at_mark[last - 2].0 = 40;
+    assert!(of(&at_mark, &full).yes, "80 of the last 128");
+    let mut below = at_mark.clone();
+    below[last - 1].0 = 39;
+    let short = of(&below, &full);
+    assert_eq!(
+        short.arms.map(|verdict| verdict.learning.learned),
+        Some([[true, true, true, false], [true; 4]]),
+        "79 of the last 128"
+    );
+    assert_eq!(seeded_step(&[short, yes]), 6);
+    // Clause 2: a coupling at 1.30 of its image's holds; one past it does not.
+    let mut at_bound = full.clone();
+    at_bound[63] = block(BLOCK as u32, outside, [[2_000, 2_730], [1_900, 2_000]]);
+    assert!(of(&full, &at_bound).yes, "at the bound");
+    let mut past = full.clone();
+    past[63] = block(BLOCK as u32, outside, [[2_000, 2_731], [1_900, 2_000]]);
+    let unbounded = of(&full, &past);
+    assert_eq!(
+        unbounded.arms.map(|verdict| verdict.learning.over),
+        Some([None, Some((63, 0, 1))]),
+        "one past 1.30 of this image's 2 100, A→R1, at block 63"
+    );
+    assert_eq!(seeded_step(&[yes, unbounded]), 6);
+    // Clause 3: a reversal that passes 40 of 64 in its 23rd block is in time; in its 24th, not.
+    let mut in_time = full.clone();
+    for b in in_time
+        .iter_mut()
+        .skip(MAPPINGS[2].0)
+        .take(REVERSAL_BLOCKS_MAX - 1)
+    {
+        b.0 = CROSSING_MARK - 1;
+    }
+    assert!(of(&in_time, &full).yes, "the 23rd block");
+    let mut late = in_time.clone();
+    late[MAPPINGS[2].0 + REVERSAL_BLOCKS_MAX - 1].0 = CROSSING_MARK - 1;
+    let slow = of(&full, &late);
+    assert_eq!(
+        slow.arms
+            .map(|verdict| (verdict.learning.yes, verdict.revised, verdict.held)),
+        Some((true, [[true; 3], [true, false, true]], [true; 2])),
+        "the 24th block: clause 3 alone"
+    );
+    assert_eq!(seeded_step(&[yes, slow]), 7);
+    // Clause 4: the outside sum at 0.75 and at 1.25 of the image's holds; one past either does
+    // not.
+    let mut edges = full.clone();
+    edges[5] = block(BLOCK as u32, 300_000, image);
+    edges[100] = block(BLOCK as u32, 500_000, image);
+    assert!(of(&edges, &full).yes, "at both edges of the band");
+    let mut under = full.clone();
+    under[5] = block(BLOCK as u32, 299_999, image);
+    let mut above = full.clone();
+    above[100] = block(BLOCK as u32, 500_001, image);
+    let left = of(&under, &above);
+    assert_eq!(
+        left.arms.map(|verdict| (verdict.left, verdict.held)),
+        Some(([Some((5, 299_999)), Some((100, 500_001))], [false, false]))
+    );
+    assert_eq!(seeded_step(&[left, yes]), 5);
+    // The steps' order where two fail: clause 0, then 4, then 1 or 2, then 3 alone.
+    assert_eq!(seeded_step(&[left, short]), 5);
+    assert_eq!(seeded_step(&[slow, unbounded]), 6);
+    assert_eq!(seeded_step(&[slow, slow]), 7);
+    assert!(
+        !seeded(&rules, None).yes,
+        "a network whose arms did not run is no yes"
+    );
+    // The readings' rules over tables written by hand.
+    assert_eq!(
+        frozen_margins(&[
+            (0, [5, 2]),
+            (0, [1, 4]),
+            (1, [3, 3]),
+            (1, [0, 7]),
+            (2, [9, 9])
+        ]),
+        [[6, 12], [7, 13]]
+    );
+    assert_eq!(frozen_margins(&[]), [[0; 2]; 2]);
+    assert_eq!(
+        frozen_margins(&BACKGROUND_COUNTED_1024[SETTLED])
+            .map(|[_, spikes]| spikes)
+            .iter()
+            .sum::<u64>(),
+        measure(&BACKGROUND_1024[SETTLED].0).0.iter().sum::<u64>(),
+        "ADR-0077's frozen block: the counts summed are the readouts' spikes after the volley"
+    );
+    assert_eq!((per_hundred(7, 2), per_hundred(1, 0)), (350, 0));
+    let even: Vec<Stepped> = vec![(100, 110, 3, 4, 50); SCHEDULE_TRIALS];
+    let errors = vec![400i32; SCHEDULE_TRIALS];
+    let spans = SPANS.map(|(from, to)| to.saturating_sub(from) as u64);
+    assert_eq!(spans, [1536, 2048, 2048, 2048]);
+    assert_eq!(
+        critic_read(&even, &errors),
+        CriticRead {
+            moved: spans.map(|n| (
+                (n as i64).saturating_mul(10),
+                (n as i64).saturating_mul(400)
+            )),
+            counted: spans.map(|n| (n, n.saturating_mul(3), n.saturating_mul(4))),
+            against: 0,
+            most: 50,
+        }
+    );
+    assert_eq!(
+        critic_read(&even, &errors)
+            .moved
+            .map(|(moved, error)| per_myriad(moved, error)),
+        [250; 4],
+        "ten of four hundred, a fortieth"
+    );
+    let mut uneven = even.clone();
+    uneven[SPANS[1].0] = (100, 95, 0, 0, 99);
+    let read = critic_read(&uneven, &errors);
+    assert_eq!(
+        (read.moved[1], read.counted[1], read.against, read.most),
+        (
+            (2047 * 10 + 5, 2048 * 400),
+            (2048, 2047 * 3, 2047 * 4),
+            1,
+            99
+        ),
+        "a move against the error's sign is counted, in magnitude"
+    );
+    let mut negative = errors.clone();
+    negative[0] = -400;
+    assert_eq!(
+        critic_read(&even, &negative).against,
+        1,
+        "a punishment whose value rose"
+    );
+    assert_eq!(
+        critic_read(&even[1..], &errors[1..]),
+        CriticRead {
+            moved: [(0, 0); 4],
+            counted: [(0, 0, 0); 4],
+            against: 0,
+            most: 0,
+        },
+        "a run of another length reads nothing"
+    );
+}
+
+// ----------------------------------------------------------- the measurement (brief 068)
+
+/// What each rule returned on each network, `[seed 22, seed 23]` at 2 048 units, pinned from the
+/// one run of its derivation; none before it.
+const RULES_TWICE: [Option<Rules>; 2] = [None, None];
+/// The four couplings by the prior's census at each rotation scanned, per network.
+const SCANNED_TWICE: [&[[i64; 4]]; 2] = [&[], &[]];
+/// The prior's sums by polarity, per network.
+const PRIOR_SUMS_TWICE: [(i64, i64); 2] = [(0, 0), (0, 0)];
+/// The calibration's frozen block and its trace at each gain tried, per network.
+const CALIBRATIONS_TWICE: [&[(Block, u64)]; 2] = [&[], &[]];
+/// The volley's census of the picked gain's calibration block, per network.
+const CENSUS_TWICE: [&[(u32, u64)]; 2] = [&[], &[]];
+/// The synapses from each stimulus set onto each readout set, per network.
+const SYNAPSES_TWICE: [[[u32; 2]; 2]; 2] = [[[0; 2]; 2]; 2];
+/// The ticks a unit at rest fires on through the task under each candidate tried, per network.
+const PROBES_TWICE: [&[&[u32]]; 2] = [&[], &[]];
+/// Each candidate's frozen block on the prior's network, its trace and its composition.
+const CANCELLED_TWICE: [&[(Block, u64, Composition)]; 2] = [&[], &[]];
+/// The settling's windows, per network.
+const LEAD_IN_TWICE: [&[LeadInWindow]; 2] = [&[], &[]];
+/// The quiet run's ticks and the settled sums by polarity, per network.
+const QUIET_TWICE: [Option<(u64, (i64, i64))>; 2] = [None, None];
+/// The frozen block from the settled image under the picked cancel, per network.
+const FROZEN_TWICE: [Option<(Block, u64, Composition)>; 2] = [None, None];
+/// Every trial's counts of that frozen block, per network.
+const FROZEN_COUNTED_TWICE: [&[Counted]; 2] = [&[], &[]];
+/// That frozen block's volley census, per network.
+const FROZEN_CENSUS_TWICE: [&[(u32, u64)]; 2] = [&[], &[]];
+/// The settled image's spikes by window of the target's lead-in, per network.
+const TARGET_LEAD_IN_TWICE: [&[u64]; 2] = [&[], &[]];
+/// The CRC-64 of the six images of each network, the last the one its arms decode.
+const CRCS_TWICE: [Option<[u64; 6]>; 2] = [None, None];
+/// The image's four couplings, per network.
+const COUPLINGS_TWICE: [Option<[[i64; 2]; 2]>; 2] = [None, None];
+/// Each arm's 120 blocks, `[network][arm]`, pinned from its one run.
+const TWICE_BLOCKS: [[&[Block]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// Each arm's accuracy sequence in one number.
+const TWICE_TRACES: [[u64; 2]; 2] = [[0, 0], [0, 0]];
+/// Each arm's compositions in one number.
+const TWICE_COMPOSED: [[u64; 2]; 2] = [[0, 0], [0, 0]];
+/// Each arm's earned blocks.
+const TWICE_EARNED: [[&[EarnedBlock]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// Every trial's reading of each arm in one number.
+const TWICE_READ: [[u64; 2]; 2] = [[0, 0], [0, 0]];
+/// The engine's value by block, per arm.
+const TWICE_VALUES: [[&[ValueBlock]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// Every trial's value of each arm in one number.
+const TWICE_VALUE_HASH: [[u64; 2]; 2] = [[0, 0], [0, 0]];
+/// The drawn sources by block, per arm.
+const TWICE_SOURCED: [[&[Sourced]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// Every trial's drawn sources of each arm in one number.
+const TWICE_SOURCES_HASH: [[u64; 2]; 2] = [[0, 0], [0, 0]];
+/// Each arm's readings as written.
+const TWICE_READINGS: [[Option<SeededRead>; 2]; 2] = [[None, None], [None, None]];
+/// The critic's reading of each arm at 2 048 units.
+const TWICE_CRITIC: [[Option<CriticRead>; 2]; 2] = [[None, None], [None, None]];
+/// The critic's reading of each of H-33's arms at 1 024 units, `[seed 23, seed 24]` by arm, read
+/// by brief 068 beside H-34's; none before the run that reads it.
+const SEEDED_CRITIC: [[Option<CriticRead>; 2]; 2] = [[None, None], [None, None]];
