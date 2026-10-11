@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-11
 depends-on: ADR-0165
 decision-makers: VirtualCortex maintainers
@@ -260,6 +260,34 @@ The four arms ran once each, side by side from 13:28:52Z, in 1 915 to 1 935 s (o
 **Step 3 of H-33's stopping rule: yes.** The learning configuration is the rules', not one network's: on two networks it was not built on, the rules derived it, and it learned and revised as on the first.
 
 **The next decision is an ADR choosing among another size, the operating regime, a reward delayed past a trial and a less reliable reward.** It is named and not taken. Steps 4 to 7 did not arise, and step 8 is kept: no constant moved after a rule was run on a new network, there was no second attempt, and no other seed was run.
+
+### The evidence
+
+- **The dispatch's scope.** The diff changes no file under `src/`, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 067 asks: run [38145828467](https://github.com/DescentVTT/VirtualCortex/actions/runs/38145828467) at `2e6682e`, the pins, at 14:06:16Z on 2026-10-11. It ran the twelve whole-domain shards and no sweep, so no sweep's outcome is owed for it.
+- **Every whole-domain shard is green**, 14:07:11Z to 15:13:10Z. All 102 `exhaustive` tests passed, each exit 0 with one test reported. The ninety-five before this round reproduced their pinned numbers on the hosted runners through the forms the harness gained. **The rules on seed 22 returned the tree's constants there**, in 230 s. **The two derivations reproduced their tables**, in 245 and 238 s. **The four arms reproduced theirs**, each deriving its network again first: 1 815 and 1 842 s on seed 23, from the assignment and from the mirrored assignment, and 1 829 and 1 831 s on seed 24. H-25's own two arms took 1 295 and 1 671 s in the same run.
+- **The shards**, dealt by the table before this round, which did not know the seven tests and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 52.1 min | H-33 on seed 24 from the assignment 1 829; H-32 from the mirrored 1 782 | 10 | 5 905 | 3 031 s, 42 % |
+  | 1 | 50.4 min | H-33 on seed 23 from the mirrored 1 842; H-23 from the mirrored 1 776 | 9 | 5 793 | 2 930 s, 41 % |
+  | 2 | 47.9 min | H-31 from the mirrored 2 237; H-20 from the mirrored 1 733 | 9 | 5 427 | 2 779 s, 39 % |
+  | 3 | 52.0 min | H-31 from the assignment 2 334; H-27's control from the assignment 1 827 | 8 | 5 704 | 3 024 s, 42 % |
+  | 4 | 57.7 min | H-33 on seed 23 from the assignment 1 815; H-27 from the assignment 1 796 | 8 | 6 476 | 3 373 s, 47 % |
+  | 5 | 47.9 min | H-28 from the assignment 1 766; H-25 from the mirrored 1 671 | 9 | 5 375 | 2 781 s, 39 % |
+  | 6 | 47.6 min | H-30 from the mirrored 1 478; H-22 from the assignment 1 476 | 9 | 5 046 | 2 771 s, 38 % |
+  | 7 | 53.7 min | H-27's control from the mirrored 1 987; H-30 from the assignment 1 759 | 8 | 6 047 | 3 124 s, 43 % |
+  | 8 | 33.5 min | H-23 from the assignment 1 026; H-28 from the mirrored 1 026 | 8 | 3 729 | 1 940 s, 27 % |
+  | 9 | 39.6 min | H-22 from the mirrored 1 112; H-21 from the mirrored 1 107 | 7 | 4 578 | 2 304 s, 32 % |
+  | 10 | 44.6 min | H-32 from the assignment 1 769; H-21 from the assignment 1 758 | 7 | 4 785 | 2 582 s, 36 % |
+  | 11 | 65.9 min | H-20 from the assignment 2 026; H-33 on seed 24 from the mirrored 1 831 | 10 | 7 606 | 3 860 s, 54 % |
+
+  The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.82 to 1.99 of their summed seconds over the wall. **No shard passed 60 per cent of its bound.** The heaviest read 54: the deal had given shard 11 an arm it costed at 900 s, which took 1 831.
+- **The shards started at once.** All twelve started within three minutes of the dispatch, 14:07:11Z to 14:09:06Z, and the last ended 1 h 07 m after it. A dispatch at this scope has twelve jobs for the account's twenty places.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 38145828467`): 102 lines, 66 471 s, where the table before it held 95 and 55 664. ADR-0092's deal plans each of the twelve shards at 5 538 to 5 543 s summed, about 2 780 to 3 050 s of wall time at the run's ratios, **39 to 42 per cent of the bound**, inside the brief's 60.
+- **The pull request's gate** ([198](https://github.com/DescentVTT/VirtualCortex/pull/198)) is green in every job on `ab5b023`, the readings, which holds the Rust sources of `2e6682e`; the determinism pin on AArch64 and the MSRV are among them. The gate's run on `2e6682e` itself was cancelled by the push of `ab5b023` ten minutes after it, its documentation and mutation jobs having ended green. **The mutation gate on the changed lines** had nothing to mutate, no line under `src/` being changed, and said so: `No mutants to filter`.
+- **On the developer machine**, at `2e6682e`: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 731 passed and 142 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; 102 whole-domain tests are listed; and `cargo mutants --in-diff` listed no mutant. Before any rule ran on a new network, the tree's 96 other whole-domain tests passed there at `9677dfe`, 09:58:13Z to 13:24:07Z. The two derivations then ran once from 13:24:27Z, and the four arms once, 13:28:52Z to 14:01:07Z.
+- **The commits**, by the hashes the branch holds, in pull request 198: `9677dfe`, the protocol and the harness's forms; `2e6682e`, the derivations' and the arms' tables and the gate's checks over them; `ab5b023`, these readings.
 
 ## Consequences
 
