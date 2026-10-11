@@ -5,7 +5,7 @@ depends-on: ADR-0168
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0169: Twice the size, measured — H-34's protocol, written before any rule is run at 2 048 units: the derivation given its size, with every pinned number at 1 024 units as it was but the one assertion ADR-0168 names; the critic's rule as ADR-0168 writes it; the injector ring, the one capacity of a run's configuration the rules' ranges could reach at 2 048 units, sized by the units; no file under `src/` changed
+# ADR-0169: Twice the size, measured — H-34 is yes, on both networks, in both arms and in all five clauses: on ADR-0044's generator at 2 048 units from seeds 22 and 23 every rule gave a value — the rotation 0, the gain 1.75 and the cancel's 6 messages as at 1 024 units, the settling at the 100th and the 105th window, the cancel's span 10 and 21 ticks, the target period 59 599 and 59 119 ticks, the critic's shift and scale 9 and 3 by ADR-0168's extension — and the frozen block passed both measures; H-25's two arms then learned every mapping, 120 to 127 of each mapping's last 128, with no coupling past 1.30 of its image's, the highest 1.169 and 1.151, every reversal within 9 to 15 blocks of its flip and the network outside the couplings held; step 3 of the stopping rule, the learning configuration is its rules' at twice the size as at the first; the protocol written before any rule was run at 2 048 units, the derivation given its size with every pinned number at 1 024 units as it was but the one assertion ADR-0168 names, and the injector ring, the one capacity of a run's configuration the rules' ranges could reach at 2 048 units, sized by the units; no file under `src/` changed
 
 ## Context and Problem Statement
 
@@ -163,19 +163,153 @@ One test, `the_critic_s_rule_at_its_edges_the_clauses_of_h_34_and_the_readings_r
 - the geometry at 2 048 units from every rotation of the period, the drive, and each capacity of `config` at 256, 1 024 and 2 048 units;
 - the critic's rule at its edges and against the rule as ADR-0167 wrote it, and ADR-0132's three reasons under the extension at 102 units equal to what it chose at 51: a dead band of 512, a drift of 12 of 65 536 a trial, weights of 5 140 for the whole reward, and a step of 249 parts in ten thousand;
 - clause 0's measures for a stimulus of 102 units at their edges; H-34's verdict and each step over tables written by hand, each of clauses 1 to 4 at its edge — 80 and 79 of 128, 1.30 of the image's and one past it, the 23rd block and the 24th, 0.75 and 1.25 of the outside sum and one past either;
-- the readings' rules over tables written by hand.
+- the readings' rules over tables written by hand;
+- since the pins, over the two networks' pinned tables: each rule over the table its derivation pinned returning what the derivation pinned; every cancel the pick tried inside the injector ring; each arm's readings by their rules over its 120 blocks, a selection or a tie and a value for every presentation of every block; the critic's reading written for every arm at either size, a count a trial of each mapping's span and the units counted the sources drawn; and the verdict and its step as written.
 
 It synthesizes no network at 2 048 units and runs no rule on one. In H-33's gate the one assertion ADR-0168 names moves.
 
+### The calibration, as it ran (2026-10-11, UTC)
+
+On the developer machine, at the protocol's commit `fd0f025` with nothing uncommitted, pushed at 18:29:56Z:
+- **Before the commit**, through `derive_at` and `site_arm` at 1 024 units: the rules on seed 22 returned `RULES_1024`, every table on the way was the table its round pinned and the image's CRC-64 was H-23's, `0x11586a76f7415129`; and H-33's arm on seed 23 from the assignment reproduced its tables.
+- **Every pinned number of the tree**: the tree's 102 whole-domain tests but the six at 2 048 units, from 18:30:13Z to 22:22:43Z. Ninety-six ran under `cargo test --workspace --release --locked -- --ignored exhaustive --skip at_2048_units --skip on_seed_23 --skip on_seed_24`; H-33's six ran beside them, each in a process of its own with its dumps kept. All 102 passed. The workspace's other tests passed before it in the debug profile, in the release profile and on the MSRV, 732 passed and 148 ignored in each.
+- **At 1 024 units the rules returned the constants the tree holds on seeds 22, 23 and 24**, and the four arms of seeds 23 and 24 reproduced their tables through `site_arm` and `fed_run_at`.
+- **No rule had run at 2 048 units**: the first did at 22:23:13Z.
+
+### The derivations: clause 0 holds on both networks
+
+Each network's derivation ran once, the two side by side from 22:23:13Z, in 426 and 440 s. Every rule gave a value on both, and the frozen block passed both measures on both.
+
+| The rule returned | Seed 22, 1 024 | Seed 23, 1 024 | Seed 24, 1 024 | **Seed 22, 2 048** | **Seed 23, 2 048** |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| The rotation | 0 | 0 | 0 | **0** | **0** |
+| — the four couplings by census there, the largest over the smallest | 1.039 | 1.074 | 1.059 | 1.038 | 1.021 |
+| The gain | 1.75 | 1.75 | 1.75 | **1.75** | **1.75** |
+| — its calibration block's trials seen, of 64 | 62 | 63 | 62 | 63 | 63 |
+| The settled network, at window | 96 | 106 | 99 | **100** | **105** |
+| — the excitatory sum settled, of the prior's | 0.925 | 0.920 | 0.925 | 0.922 | 0.919 |
+| — the inhibitory sum settled, of the prior's | 0.776 | 0.752 | 0.767 | 0.764 | 0.754 |
+| — the quiet run, ticks | 2 500 | 2 519 | 2 424 | 2 538 | 2 489 |
+| The cancel's span, ticks | 9 | 8 | 12 | **10** | **21** |
+| The least messages at rest, and at the extreme standing | 3, 6 | 3, 6 | 3, 6 | **3, 6** | **3, 6** |
+| The cancel's messages, the pick | 6, the second candidate | 6, the second | 6, the second | **6, the second** | **6, the second** |
+| — the first candidate's stimulus spikes after the opening | 2 717 | 2 745 | 2 746 | 5 461 | 5 438 |
+| The frozen block: the stimulus's spikes after the opening | 0 | 0 | 1 | 0 | 1 |
+| The frozen block: trials seen, of 64 | 62 | 64 | 64 | **64** | **64** |
+| The settled network's spikes over the target's lead-in | 18 449 | 18 043 | 18 144 | 36 032 | 36 325 |
+| — a unit | 18.02 | 17.62 | 17.72 | 17.59 | 17.74 |
+| The target period, ticks | 58 201 | 59 510 | 59 179 | **59 599** | **59 119** |
+| The critic's window, ticks | 100 | 100 | 100 | **100** | **100** |
+| The critic's shift and scale | 9, 2 | 9, 2 | 9, 2 | **9, 3** | **9, 3** |
+
+- **Four constants came back as at 1 024 units on both networks**: the rotation, the gain, the cancel's messages and the critic's window. **The critic's constants are the extension's**, 9 and 3 for a stimulus of 102 units, as ADR-0168's table gives them. The three that differed among the networks at 1 024 units differ here too, inside or beside the range read there: the window the network settles at, the cancel's span and the target period.
+- **The two rules ADR-0168 named as least known returned what they returned at 1 024 units.** The rotation's scan stopped at its first rotation, the census's four couplings within 3.8 and 2.1 per cent of one another. The gain's first candidate, 1.75, was calibrated, the stimulus seen in 63 trials of 64 on each network. Neither rule was read returning another value.
+- **The settled network is the same network a unit.** The excitatory and the inhibitory sums settle at the same fractions of the prior's, the quiet run takes as long, and a unit fires 17.6 and 17.7 times over the target's lead-in where it fired 17.6 to 18.0, so the target period lies among the three read at 1 024.
+- **The cancel's span is 21 ticks on seed 23**, the longest read: the volley's spikes fall on ticks 1 to 8 but for two units once each on ticks 10 and 11 and one unit once on tick 21, of 6 514 volley spikes. On seed 22 it is 10, ticks 1 to 7 and one unit each on 9 and 10. Over 10 or 21 ticks the oracle's least counts are the same, 3 and 6.
+- **The pick took the second candidate on both**, for the reason it did at 1 024: under the first the stimulus fires again after the opening, 5 461 and 5 438 spikes over the block where a tenth of a spike a unit a presentation allows 652. The widest cancel tried was 6 messages into each of 102 units before a tick, 612 messages and the drive's 16, of the ring's 8 192; the 4 096 every run had would have held it.
+- **The synapses a rewarded run holds**, from each stimulus onto each readout: 1 549, 1 621, 1 600 and 1 581 on seed 22; 1 595, 1 577, 1 613 and 1 576 on seed 23; twice the 767 to 824 read at 1 024.
+- **The image each arm decodes**: CRC-64 `0x3300859e3fabf553` on seed 22 and `0xf1ea58899baaaab1` on seed 23.
+
+**The frozen block from the settled image**, sixty-four trials, beside the three networks' at 1 024:
+
+| | Seed 22, 1 024 | Seed 23, 1 024 | Seed 24, 1 024 | **Seed 22, 2 048** | **Seed 23, 2 048** |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| The volley's spikes a presentation, A and B, of the stimulus's units | 50.82, 50.83 of 51 | 50.71, 50.90 | 50.82, 50.87 | 101.65, 101.77 of 102 | 101.74, 101.70 |
+| The readouts' spikes after the volley, readout 0 and 1 | 645, 637 | 700, 693 | 683, 673 | 1 267, 1 345 | 1 409, 1 325 |
+| The readouts' spikes before the injection | 258, 256 | 250, 224 | 224, 232 | 489, 425 | 487, 473 |
+| Trials seen, of 64 | 62 | 64 | 64 | 64 | 64 |
+| ADR-0072's sign, trials of 64 | 53 | 61 | 56 | 62 | 64 |
+| A's selections: readout 0, readout 1, tie | 14, 15, 5 | 12, 18, 4 | 20, 10, 4 | 15, 16, 3 | 25, 9, 0 |
+| B's selections: readout 0, readout 1, tie | 12, 15, 3 | 17, 10, 3 | 10, 18, 2 | 9, 19, 2 | 16, 13, 1 |
+| The margin a trial, A and B, spikes | 3.09, 4.03 | 3.15, 4.27 | 3.62, 4.30 | 4.32, 4.90 | 5.79, 5.23 |
+| The two counts a trial, A and B, spikes | 19.2, 21.0 | 20.1, 23.7 | 20.4, 22.1 | 40.0, 41.7 | 41.0, 44.6 |
+| The margin, of the two counts | 0.161, 0.192 | 0.157, 0.180 | 0.177, 0.195 | 0.108, 0.118 | 0.141, 0.117 |
+
+- **The readouts fire twice the spikes**, 40 to 45 a trial where they fired 19 to 24, as twice the units do.
+- **The margin grows less than the counts**: 4.3 to 5.8 spikes a trial where it was 3.1 to 4.3, so it is 0.11 to 0.14 of the two counts where it was 0.16 to 0.20. A selection is read on twice the spikes and stands further from a tie in spikes, and **the ties fall** from 2 to 5 of a stimulus's trials to 0 to 3.
+- **The frozen networks lean, as at 1 024.** Seed 22's selects readout 1 a little more for both stimuli, as at 1 024 units. Seed 23's selects readout 0 for both, A in 25 of its 34 trials; at 1 024 it leant to the mirrored assignment.
+- **The sign, which seed 22's settled network failed at 53 at 1 024 units, reads 62 and 64.** It is no measure of clause 0.
+
+### H-34's verdict: yes, on both networks
+
+The four arms ran once each, side by side from 22:32:56Z to 23:36:03Z, in 3 761 to 3 786 s (on the developer machine, a ratio and not admissible; four arms at 1 024 units side by side took 1 915 to 1 935 s there in ADR-0167's round). Each derived its network again, held the derivation to the pins above before its first trial, ran its 7 680 trials with every oracle held at every trial, held the value of the window's counts to the engine's own and the units counted to the sources drawn at every trial, dumped everything and stopped at its first empty table. The tables were written from those dumps, and every filled table was held to the text of its dump by a script. The pins are `352e4d1`.
+
+| Network, arm | Clause 1: correct of each mapping's last 128 | Clause 2: the highest coupling, of its image's | Clause 3: blocks to 40 of 64 after each flip | Clause 4: the outside sum, of the image's |
+| :--- | :--- | :--- | :--- | :--- |
+| **Seed 22 at 2 048, from the assignment** | 121, 122, 123, 125 | 1.133, block 88, A→R0 | 15, 15, 10 | 0.9999 to 1.0000 |
+| **Seed 22 at 2 048, from the mirrored assignment** | 124, 125, 127, 123 | 1.169, block 119, A→R0 | 13, 13, 12 | 0.9999 to 1.0000 |
+| **Seed 23 at 2 048, from the assignment** | 126, 127, 126, 125 | 1.137, block 119, B→R0 | 13, 9, 12 | 0.9999 to 1.0001 |
+| **Seed 23 at 2 048, from the mirrored assignment** | 121, 120, 127, 126 | 1.151, block 82, A→R1 | 14, 12, 14 | 0.9998 to 1.0000 |
+| *Seed 22 at 1 024 (H-25), from the assignment* | *122, 124, 119, 116* | *1.181* | *19, 21, 16* | — |
+| *Seed 22 at 1 024 (H-25), from the mirrored assignment* | *124, 118, 123, 117* | *1.191* | *20, 15, 14* | — |
+| *Seed 23 at 1 024 (H-33), from the assignment* | *126, 124, 124, 123* | *1.183* | *15, 13, 13* | *0.9999 to 1.0000* |
+| *Seed 23 at 1 024 (H-33), from the mirrored assignment* | *122, 115, 118, 126* | *1.182* | *16, 14, 12* | *0.9999 to 1.0001* |
+
+- `TWICE_2048`: on each network `Seeded { derived: true, arms: Some(Drawn { learning: Scheduled { learned: [[true; 4]; 2], bounded: [true; 2], over: [None; 2], yes: true }, revised: [[true; 3]; 2], left: [None; 2], held: [true; 2], yes: true }), yes: true }`; `TWICE_STEP_2048` is 3.
+- **H-34 is yes**, with its scope: H-25's task, arms and schedule; 2 048 units; ADR-0044's generator with every parameter but the size; the drive's rule at seed 3 and the task's seed 27; two networks, seeds 22 and 23; and the critic's constants ADR-0168's extension gives a stimulus of 102 units. ADR-0168 wrote no prediction for it.
+- **No clause is near its edge.** The least-learned mapping reads 120 of its last 128 where 80 are asked; the highest coupling stands at 1.169 where 1.30 is the bound; the slowest reversal takes 15 blocks where 23 are allowed.
+- **Two things changed in the tests with the pins, beside the tables and the gate's checks over them**, neither a reading. `config` asserts that the ring it sizes holds the widest injection at its size, and the gate holds `TWICE_PREDICTED` to none at run time: on the MSRV toolchain a use inside a compile-time assertion alone left `widest_injection` and the constant reported as never used. The assertion in `config` reads two functions of the size and is true at every size; the dispatched run reproduces every table on that code.
+
+### The readings
+
+**The reversals are no slower at twice the size, and on these two networks they are sooner.** The twelve take 9 to 15 blocks; the eighteen read at 1 024 units took 12 to 21. On the same seed: seed 22's six average 13.0 blocks where they averaged 17.5 at 1 024, and seed 23's 12.3 where they averaged 13.8. Two networks a size are too few to call it the size's doing.
+
+**The first mapping** passes 40 of 64 in its 4th and 2nd block on seed 22, from the assignment and from the mirrored assignment, and in its 1st and 4th on seed 23; H-25 read 6 and 4, and H-33 4 and 3, and 1 and 8. On seed 23, whose frozen network selects readout 0 for stimulus A in 25 of 34 trials, which is A's answer under the assignment, the arm that starts from the assignment reads 40 correct in its first block and the mirrored one 24. Seed 22's two arms read 32 and 31.
+
+**The couplings move less.** Over the four arms the highest stands at 1.133 to 1.169 of its image's and the lowest at 0.929 to 0.957; at 1 024 units the six arms' highest stood at 1.181 to 1.195 and their lowest at 0.895 to 0.955. At each mapping's end the answer's two pairs stand at 1.07 to 1.16 of their image's and the other two at 0.93 to 1.01, where they stood at 1.11 to 1.20 and at 0.89 to 1.01. The mappings are learned as well or better with the couplings moved less far.
+
+**The critic's constants, ADR-0168's extension, give the step ADR-0132's gave.** Read at every trial from the weights before and after the reward and the window's counts, and held to the engine's own value at every one of the 30 720 trials at this size and the 30 720 at 1 024:
+
+| Per mapping, over the four arms | At 1 024 units, seeds 23 and 24, under 9 and 2 | **At 2 048 units, seeds 22 and 23, under 9 and 3** |
+| :--- | ---: | ---: |
+| What a presentation moves the value by, parts in ten thousand of its error | 253 to 256 | **253 to 255** |
+| — the rule's, the volley's units over $2^{\text{shift} + \text{scale}}$ | 249 | 249 |
+| The units the window counts a trial | 52.40 to 52.50 | **104.87 to 104.99** |
+| — the volley's | 51 | 102 |
+| Trials whose value moved against its error's sign | 0 | **0** |
+
+- The step is a fortieth of the error at either size, as ADR-0168's arithmetic had it; what it reads over the rule's 249 is the units the window counts beside the volley's.
+- **The value beside $2p - 1$.** Over each mapping's last 128 trials each stimulus's mean value lies within 0.10 of the reward of $2p - 1$, in all thirty-two cases; at 1 024 units H-33 read within 0.14, and H-23's bound, a reading here, is a quarter. After a flip the value's trough is −0.59 to −0.81 of the reward, where H-25 and H-33 read −0.56 to −0.89, and it stays above zero from the 10th to the 16th block after a flip, where they read the 13th to the 24th.
+
+**The drawn sources** are the presented stimulus's units in 99.66 to 99.68 per cent of their presentations, as at 1 024, with 3.25 to 3.26 other units a trial where 1 024 units read 1.62: twice the background units fire in the window.
+
+**The inhibitory sum** rises first, to 1.017 to 1.021 of the image's by the 15th to 17th block, and then falls through the run to 0.892 and 0.891 on seed 22 and 0.902 and 0.902 on seed 23. At 1 024 units it ended at 0.848 and 0.850 on seed 22, 0.908 and 0.910 on seed 23 and 0.896 and 0.897 on seed 24. It did not fall in every block in any arm.
+
+**The stimulus** fires once by ADR-0074's measure in all 120 blocks of each arm. **Ties** are 28 to 65 trials a mapping, where H-33 read 49 to 117. **The reach**: of the four pairs' synapses, 6 349 and 6 350 of 6 351 ended away from the image's weight on seed 22, and 6 360 and 6 358 of 6 361 on seed 23; 19 987 to 21 276 excitatory synapses outside the pairs ended away from it too, and their sum stayed within two parts in ten thousand of the image's.
+
+**The capacities were not reached.**
+- *The injector ring*: every injection's result was taken, and none was refused in any run. The widest cancel tried carried 6 messages a unit, 628 messages before a tick with the drive's, of the ring's 8 192.
+- *The train*: every reading asserted its window held. The most spikes one trial's ticks put in the train were 857 to 888 over the four arms, of the train's 671 744; at 1 024 units, 447 to 471 of 335 872.
+- *A worker's trace*: each arm's test reaches the shutdown of its executor only when every table holds, which the first run's did not; the dispatched run does, and holds every worker's report to no entry dropped.
+- *A worker's nodes and a wheel slot*: no test's process aborted.
+
+### What is read from the tables and not measured
+
+- **Why the reversals are sooner and the couplings move less** was not varied. The frozen block reads a selection on twice the spikes with fewer ties, and a selection that needs less of a coupling's change to turn would give both; no arm was run that separates it from the two networks' own difference.
+- **Whether the rules transfer to this size where they would return another value** is read for the same three as at 1 024 and for the critic's. The rotation, the gain, the cancel's messages and the critic's window came back as on all three networks at 1 024, so those rules were tested here in that they returned a value and the value worked.
+- **The critic's extension is read at one stimulus size**, 102 units. Its step is ADR-0132's there; 129 units and more, where the scale is 4, are not read.
+- **Two networks.** A yes on two is not a rate.
+
+### The step reached
+
+**Step 3 of H-34's stopping rule: yes.** The learning configuration is its rules' at twice the size as at the first: on two networks at 2 048 units the rules derived it, with the critic's constants by ADR-0168's extension, and it learned and revised as at 1 024.
+
+**The next decision is an ADR choosing among a larger size still, which needs the weekly job's bound decided first, the operating regime, a reward delayed past a trial and a less reliable reward.** It is named and not taken. Steps 4 to 7 did not arise, and step 8 is kept: no constant moved after a rule was run at the new size, there was no second attempt, and no other seed and no other size was run.
+
 ## Consequences
 
-- Good: the derivation that runs at the new size is the one held at 1 024 units to every table eight rounds pinned, on three seeds, by a calibration that runs it there first.
-- Good: what could fail at the new size for the harness's own reason was looked for before anything ran there: four sizes written in place, and one capacity.
+- Good: the second thing the line's results were scoped by, the size, is read at one step: at twice the units, on two networks, the rules derived the configuration and it learned and revised as at the first size.
+- Good: the derivation that ran at the new size is the one held at 1 024 units to every table eight rounds pinned, on three seeds, by a calibration that ran it there first.
+- Good: the critic's rule past 64 units, which ADR-0168 wrote from ADR-0132's reasons before any run, is read doing what it was written to do: the step a presentation takes of its error is the one it takes at 1 024 units, to the third figure.
+- Good: what could fail at the new size for the harness's own reason was looked for before anything ran there, four sizes written in place and one capacity, and nothing did.
 - Good: the critic's reading is taken from the weights and the counts at every trial and held to the engine's own value, at both sizes by one piece of code.
-- Bad: the harness cannot be run at 2 048 units before the protocol is committed, so that it holds there rests on its holding at 1 024 and on a reading of its code.
-- Bad: the injector ring is twice what it was at the new size. It bounds what a tick takes and does not enter a run that stays inside it; the round reads that it did.
-- Bad: each arm derives its network before its first trial, about a seventh of an arm again, at twice the cost.
+- Bad: the two rules ADR-0168 named as least known, the rotation's and the gain's, returned what they returned at 1 024 units. A rule that would have to return another value at a size has still not been read doing so.
+- Bad: the injector ring was sized for a cancel no run tried. The widest carried 628 messages before a tick, which the ring every run had would have held; the sizing covers the rule's range and was not needed by these two networks.
+- Bad: two networks, one step in size, one generator and one drive. That the reversals are sooner and the couplings move less is read on them and its cause is not.
+- Bad: each arm derives its network before its first trial, about a seventh of an arm again, at twice the cost; and an arm alone is about half of a weekly shard's bound.
+- Bad: the harness could not be run at 2 048 units before the protocol was committed, so that it held there rested on its holding at 1 024 and on a reading of its code. It held.
 - Neutral: six weekly tests, four of them arms, and one test in the gate.
+- Neutral: the frozen networks lean at this size too, and the first mapping follows the lean where there is one.
 
 ## Alternatives considered and why rejected
 
@@ -189,4 +323,4 @@ It synthesizes no network at 2 048 units and runs no rule on one. In H-33's gate
 
 ## Confirmation
 
-`runtime/cortex-runtime/tests/inhibition.rs` holds `derive_at`, the critic's rule, the sites, the six weekly tests at 2 048 units with their tables empty until their one run, and the gate's test; `tests/instrument/harness.rs` holds `injector_entries` and `widest_injection` with their compile-time assertions. Whitepaper 4.107.0 carries this ADR's row in §9. `npm run spec` holds the links, the rows and the version.
+`runtime/cortex-runtime/tests/inhibition.rs` holds `derive_at`, the critic's rule, the sites, the six weekly tests at 2 048 units with their pinned tables, and the gate's test, which holds the rules over those tables; `TWICE_2048` and `TWICE_STEP_2048` hold the verdict and its step as written, and `SEEDED_CRITIC` the critic's reading at 1 024 units. `tests/instrument/harness.rs` holds `injector_entries` and `widest_injection` with their compile-time assertions. Whitepaper 4.107.0 carries H-34's verdict in §11.1 and this ADR's row in §9. `npm run spec` holds the links, the rows and the version.

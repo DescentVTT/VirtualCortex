@@ -53,6 +53,10 @@ standing changes.
   of the configuration derived again by its rule, the engine learns and revises the two-alternative
   task as on the first: H-33 read yes
   ([ADR-0167](docs/adr/0167-another-network-of-the-same-size-measured.md)).
+  At twice the size, 2 048 units, on two networks of that generator, with each constant derived by
+  its rule and the critic's rule extended first past 64 units a stimulus (ADR-0168), it learns and
+  revises the task as at 1 024: H-34 read yes
+  ([ADR-0169](docs/adr/0169-twice-the-size-measured.md)).
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
