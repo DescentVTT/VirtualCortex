@@ -11,7 +11,12 @@ decision-makers: VirtualCortex maintainers
 
 [ADR-0164](0164-an-exploration-the-value-gates-measured.md) read H-32 as no. Its stopping rule, step 5, stops the line among three answers and names the next decision: *"an ADR that states what the learning configuration holds of a choice among three"*, and returns the line to the list H-28's stopping rule left: a less reliable reward, a reward delayed past a trial, another size and the operating regime. The maintainers took it on 2026-10-11, and took **another network**: the same size, another seed.
 
-**The sweep of that round's dispatch**, run [38111246283](https://github.com/DescentVTT/VirtualCortex/actions/runs/38111246283), had not ended when this ADR merged; its outcome is written down by the first ADR that merges after it has ended ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)).
+**The sweep of that round's dispatch**, written down here as [ADR-0158](0158-the-sweep-off-the-next-decisions-path.md) asks of the first ADR that merges after a sweep has ended: run [38111246283](https://github.com/DescentVTT/VirtualCortex/actions/runs/38111246283) ended at 07:36Z on 2026-10-11, fifty minutes after that round merged, green in all thirteen of the sweep's jobs. It is the first sweep of the runtime in twelve shards.
+- **3 849 mutants over the tree, 3 673 caught and none missed**: 2 404 caught in the state crates and 1 269 in the runtime, 154 unviable and 22 timeouts.
+- **In `runtime/cortex-runtime/src/task.rs`**, the file [ADR-0163](0163-an-exploration-the-value-gates-built.md) changed: 208 caught, 10 unviable, none missed and none timed out.
+- **The 22 timeouts** are in the places [ADR-0062](0062-the-first-complete-sweeps-list.md) reads as inherent: `cortex-core`'s three chain iterators, six; the injector, twelve; the barrier's wait, one; the workers' stop and run, three.
+- **Its twelve shards over the runtime took 1 h 13 m to 2 h 30 m each**, and the sweep ended 3 h 16 m after the dispatch, its jobs having started over the dispatch's first hour ([ADR-0166](0166-the-sweep-after-the-shards.md)).
+- There is no survivor, so the round leaves no finding.
 
 ### What the learning configuration holds of a choice among three
 
