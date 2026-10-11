@@ -299,7 +299,14 @@ jobs:
     # on the runner rather than written down. The two areas together are the whole tree, which
     # the completeness check below asserts rather than assumes.
     name: Weekly mutation sweep (${{ matrix.label }}, ADR-0058)
-    if: github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'mutants'
+    # After the whole-domain shards (ADR-0166): a round's merge waits for those and not for
+    # this, and with twelve shards of the runtime here a dispatch at `scope=both` is twenty-five
+    # jobs for the account's twenty places. On run 38111246283 the last whole-domain shard
+    # started an hour after the dispatch. `needs` gives the shards the first places;
+    # `!cancelled()` keeps the sweep running where they were skipped (`scope=mutants`) or one
+    # of them failed.
+    needs: [weekly]
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'mutants') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     strategy:
