@@ -44,6 +44,11 @@ standing changes.
   Given half again the blocks a mapping, the first revision among three completes and the ones
   after it slow, the last not made by one stimulus in either arm, with a coupling past its bound:
   H-31 read no ([ADR-0161](docs/adr/0161-the-span-a-choice-among-three-is-given-measured.md)).
+  With a selection drawn among the readouts with a probability equal to the part of the critic's
+  value below zero, the first revision among three is made in both arms and sooner, the second in
+  neither and the third in one: H-32 read no
+  ([ADR-0164](docs/adr/0164-an-exploration-the-value-gates-measured.md)), and by its stopping rule the
+  line among three answers stops there.
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
@@ -59,7 +64,8 @@ standing changes.
   with the facilitating class and the slow current
   ([ADR-0126](docs/adr/0126-the-gate-raised-measured.md)); the address's neural target side is closed
   with the hold and the released delivery (ADR-0146); the whole punishment is a parameter of the
-  image no configuration sets (ADR-0155, ADR-0156); the speed line is closed with the sweep kept
+  image no configuration sets (ADR-0155, ADR-0156); the exploration is an option of the task no
+  run's configuration sets (ADR-0163, ADR-0164); the speed line is closed with the sweep kept
   and the lanes reverted ([ADR-0105](docs/adr/0105-the-speed-line-closed.md)).
 - **What does not exist.** Every subsystem's real dynamics beyond these rules; the lookahead
   ADR-0099 ordered and a lever on the rest of the turn; the real-time mode's reach measured on the
