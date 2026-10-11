@@ -49,6 +49,10 @@ standing changes.
   neither and the third in one: H-32 read no
   ([ADR-0164](docs/adr/0164-an-exploration-the-value-gates-measured.md)), and by its stopping rule the
   line among three answers stops there.
+  On two other networks of the same size, ADR-0044's prior from seeds 23 and 24, with each constant
+  of the configuration derived again by its rule, the engine learns and revises the two-alternative
+  task as on the first: H-33 read yes
+  ([ADR-0167](docs/adr/0167-another-network-of-the-same-size-measured.md)).
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
