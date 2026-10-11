@@ -248,11 +248,11 @@ ADR-0162 derived: no exploration until the value passes zero, about 25 presentat
 
 **Step 5: the line stops among three answers.** Clause 3 holds and clause 1 does not.
 
-Four rounds have now read no on a choice among three, with one change each from H-29's configuration:
+Four rounds have now read no on a choice among three: H-29, and three that each changed one thing from its configuration.
 
 | Round | The one change | Mappings learned, of eight | What it bought | What it cost |
 | :--- | :--- | ---: | :--- | :--- |
-| H-29 | three readouts | 7 | — | — |
+| H-29 | three readouts where H-25 had two | 7 | — | — |
 | H-30 | a punishment the value does not soften | 4 | the first reversal in 19 and 22 blocks | the two after it, the couplings worn to 0.93 |
 | H-31 | a mapping after a flip of 48 blocks | 6 | the first reversal's mapping learned | the reversals after it slower, a coupling past 1.30 |
 | H-32 | a selection drawn where the value is below zero | 5 | the first reversal's mapping learned, in 23 and 18 blocks | the second reversal's mapping in both arms, the third's in one |
@@ -260,7 +260,7 @@ Four rounds have now read no on a choice among three, with one change each from 
 **The next decision, named and not taken**: an ADR that states what the learning configuration holds of a choice among three — a first choice learned as between two, and a revision that is slow and does not hold over three — and returns the line to the list H-28's stopping rule left: a less reliable reward, a reward delayed past a trial, another size and the operating regime. No further mechanism is tried on three answers without a reading that names it.
 
 What this round hands that ADR:
-- each of the three mechanisms tried bought the first reversal and none held the two after it;
+- each of the three changes tried after H-29 bought the first reversal and none held the two after it;
 - a reward on a readout that did not win the count teaches its pair about as a reward on the selected one does;
 - the selection's lack of noise is not, alone, what the revision lacks: over the second and the third reversals' second to eighth blocks the new answer was selected 1.6 times as often as in H-29, 403 times against 252, and the gate relearned those reversals no sooner.
 
