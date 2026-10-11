@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.104.0
+version: 4.105.0
 status: active
 date: 2026-10-11
 ---
@@ -11,7 +11,7 @@ date: 2026-10-11
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.104.0 |
+| Version | 4.105.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-11 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -2295,6 +2295,19 @@ Each mechanism is a design rationale for one crate. The equations state the inte
 <!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn the_clauses_of_h_32_the_exploration_s_hand_rules_and_the_readings_rules" min="1" reason="ADR-0164: the gate holds the hand rules, H-32's clauses and the readings' rules" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="const EXPLORED_1024: Answered" min="1" reason="ADR-0164: H-32's verdict is pinned as written, by H-29's rule over the pinned blocks" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="const EXPLORED_STEP_1024: u8 = 5;" min="1" reason="ADR-0164: H-32's verdict reaches step 5 of its stopping rule" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/instrument/harness.rs" symbol="pub(crate) fn prior_seeded(units: u32, seed: u64) -> Prior" min="1" reason="ADR-0167: ADR-0044's prior takes its seed, and the instrument's is it at seed 22" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/instrument/harness.rs" symbol="pub(crate) struct Derived" min="1" reason="ADR-0167: what a rewarded run takes from its network is given to it" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/instrument/harness.rs" symbol="pub(crate) fn earned_run_held_on" min="1" reason="ADR-0167: a rewarded run on the network a derivation describes; the instrument's calls it with the tree's constants" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="const SEEDS: [u64; 2] = [23, 24];" min="1" reason="ADR-0167: H-33's two networks are the next two seeds" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn derive(seed: u64, name: &str) -> Derivation" min="1" reason="ADR-0167: H-25's configuration is derived on a seeded prior by the rules, in ADR-0165's order" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn first_balanced" min="1" reason="ADR-0167: the rotation's rule scans one period" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn first_firing_once" min="1" reason="ADR-0167: the cancel's messages are ADR-0076's pick among three candidates" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn critic_for" min="1" reason="ADR-0167: ADR-0132's arithmetic is restated for the stimulus's units" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn seeded_step" min="1" reason="ADR-0167: the step of ADR-0165's stopping rule is a rule over the two networks' verdicts" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn the_rules_return_the_tree_s_constants_on_seed_22_at_1024_units_exhaustive" min="1" reason="ADR-0167: on seed 22 the rules return the constants the tree holds, down to H-25's image" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn the_rules_on_seed_23_at_1024_units_exhaustive" min="1" reason="ADR-0167: each new network's derivations are a weekly test" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn the_rules_on_seed_24_at_1024_units_exhaustive" min="1" reason="ADR-0167: each new network's derivations are a weekly test" -->
+<!-- @assert-count target="runtime/cortex-runtime/tests/inhibition.rs" symbol="fn the_rules_of_a_derivation_the_clauses_of_h_33_and_the_readings_rules" min="1" reason="ADR-0167: the gate holds the rules at their edges and over seed 22's tables, H-33's clauses and the readings' rules" -->
 
 The reference equations, for implementers:
 
@@ -2568,6 +2581,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0164](adr/0164-an-exploration-the-value-gates-measured.md) | An exploration the value gates, measured: H-32 is no, on clause 1 in both arms — the first reversal among three is learned in both arms and sooner, 113 and 117 of its last 128 where H-29 read 87 and 85, the second is learned in neither, 68 and 79, and the third is lost in one; the couplings bounded, the network held and the critic holding the expected reward; the regime's onset as derived, 22 to 29 presentations, and its level lower, the gate's reading spread among three; a reward on a drawn selection teaching its pair about as one on the gate's does; the gate itself relearning the first reversal sooner than in H-29 and the later ones no sooner; `answered_run` given the exploration, every trial's draw and selection held to hand rules over the critic's oracle's value; each arm held to H-29's trial for trial up to the trial pinned beforehand from H-29's own trials, the fourth and the tenth; by step 5 the line stops among three answers, the next decision an ADR that states what the configuration holds of a choice among three and returns the line to the list H-28's stopping rule left, named and not taken; the exploration stays in the tree unset |
 | [ADR-0165](adr/0165-another-network-of-the-same-size.md) | Another network of the same size: H-32's stopping rule taken — the line stops among three answers and what it holds there is stated: a first choice among three learned as one between two, the couplings bounded, the network held and the critic holding the expected reward, and no revision over three reversals inside the two-answer schedule, each of three changes buying the first reversal and none holding the two after it, the whole punishment and the exploration left in the tree unset; then the next question, the maintainers' choice: every learning result since H-13 is one seeded prior's, and of the configuration's constants seven came from that network by a rule — the rotation, the gain, the settled network, the cancel, the target period, the critic's window and the critic's arithmetic; on two priors of the same generator and size from seeds 23 and 24, the next two, each constant derived again by its rule with nothing carried over, then H-25's two arms; a rule that gives no value on a network a reading and not a failed calibration; nothing under `src/` changed; H-33: the rules derive a configuration and H-25's four clauses hold, on both networks in both arms, no prediction for the verdict; brief 067 runs it once |
 | [ADR-0166](adr/0166-the-sweep-after-the-shards.md) | The sweep after the shards: ADR-0158's twelve shards of the runtime's sweep made a dispatch at `scope=both` twenty-five jobs for twenty places, and on its first run, 38111246283, the jobs started over more than an hour and the whole-domain shards a merge waits for ended 1 h 56 m after the dispatch where nineteen jobs had ended them in 52 and 55 minutes; how much was the places and how much the platform's slow start that day is not known; `mutants-weekly` now needs `weekly` and runs whatever the shards did, by `!cancelled()`, so the shards and the pull request's gate take the first places and the twelve stay; no check removed |
+| [ADR-0167](adr/0167-another-network-of-the-same-size-measured.md) | Another network of the same size, measured: H-33's protocol written before any rule is run on a network of another seed — the harness's constants for the instrument's prior as what the rules return for a prior, each function that read one gaining a form that is given it and calling that form with seed 22's, so that every call and every pinned number of the tree is what it was; `derive`, H-25's configuration on ADR-0044's prior from a seed, each constant by the rule that derived it in ADR-0165's order and stopped at the first rule that returns nothing; the range each rule scans — one period of rotations, the two gains, 160 windows, 32 messages, the three candidates — and what it returns when nothing in it passes; the cancel's rule as the tree holds it, ADR-0076's pick among three candidates, where ADR-0165's table names the one seed 22 picked; ADR-0132's arithmetic restated for a stimulus of other than 51 units; H-33's five clauses and the step of its stopping rule as rules; on seed 22 the derivation held to every table eight rounds pinned and to the CRC of H-25's image; seven weekly tests and one in the gate, which runs nothing on a new network; no file under `src/` changed |
 
 ---
 
