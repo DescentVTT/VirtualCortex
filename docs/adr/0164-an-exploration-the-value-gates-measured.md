@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-11
 depends-on: ADR-0163
 decision-makers: VirtualCortex maintainers
@@ -270,14 +270,40 @@ Steps 3, 4, 6 and 7 did not arise, and step 8 is kept: no constant moved after a
 
 ### The evidence
 
-*This section is written when the dispatch's whole-domain shards have ended.*
+- **The dispatch's scope.** The diff changes two files under `src/`, `task.rs` and `lib.rs`, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**, as brief 066 asks: run [38111246283](https://github.com/DescentVTT/VirtualCortex/actions/runs/38111246283) at `c2e3e50`, the arms' tables, at 04:20:04Z on 2026-10-11. It ran the twelve whole-domain shards and the sweep's thirteen jobs.
+- **Every whole-domain shard is green**, 04:21:27Z to 06:16:45Z. All ninety-five `exhaustive` tests passed, each exit 0 with one test reported. The ninety-three before this round reproduced their pinned numbers on the hosted runners, H-29's, H-30's and H-31's arms through `answered_run` as it now is. **The two arms reproduced their tables there, in 1 756 s from the assignment and 2 160 s from the mirrored assignment**, each holding its calibration first. H-29's arms took 1 370 and 856 s, H-30's 1 768 and 1 769, and H-31's 2 061 and 2 128.
+- **The shards**, dealt by the table before this round, which did not know the two arms and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 45.3 min | H-28 from the mirrored 1 767; H-27 from the mirrored 1 558 | 7 | 4 967 | 2 643 s, 37 % |
+  | 1 | 28.8 min | H-25 from the assignment 1 079; H-24 from the assignment 961 | 8 | 3 173 | 1 665 s, 23 % |
+  | 2 | 47.0 min | H-31 from the mirrored 2 128; H-28 from the assignment 1 371 | 8 | 5 353 | 2 753 s, 38 % |
+  | 3 | 39.2 min | H-25 from the mirrored 1 782; H-19 from the assignment 1 130 | 9 | 4 510 | 2 258 s, 31 % |
+  | 4 | 31.9 min | H-29 from the assignment 1 370; H-16's arms 900 | 7 | 3 632 | 1 836 s, 26 % |
+  | 5 | 40.9 min | H-21 from the mirrored 1 393; the control from the mirrored 1 387 | 7 | 4 202 | 2 380 s, 33 % |
+  | 6 | 33.7 min | H-23 from the assignment 1 388; H-22 from the assignment 1 386 | 8 | 3 799 | 1 952 s, 27 % |
+  | 7 | 37.5 min | H-30 from the assignment 1 768; H-20 from the assignment 1 753 | 8 | 4 284 | 2 161 s, 30 % |
+  | 8 | 36.8 min | H-21 from the assignment 1 402; H-18 from the assignment 877 | 6 | 3 568 | 2 135 s, 30 % |
+  | 9 | 71.8 min | H-32 from the mirrored 2 160; H-23 from the mirrored 2 147 | 10 | 7 266 | 4 211 s, 58 % |
+  | 10 | 51.4 min | H-27 from the assignment 1 800; H-32 from the assignment 1 756 | 8 | 5 338 | 2 997 s, 42 % |
+  | 11 | 52.9 min | H-30 from the mirrored 1 769; H-22 from the mirrored 1 762 | 9 | 5 572 | 3 103 s, 43 % |
+
+  The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.67 to 2.00 of their summed seconds over the wall. **No shard passed 60 per cent of its bound.** The heaviest read 58: the deal had given shard 9 an arm it costed at 900 s, which took 2 160, beside a test that read 2 147 where the table held 1 374.
+- **The runners were slow to start.** The dispatch's twenty-five jobs wait for twenty places (ADR-0158), and on this run the last whole-domain shard started at 05:23:53Z, an hour after the dispatch.
+- **A test's seconds depend on the runner it drew.** In this run H-29's two arms read 1 370 and 856 s where the last dispatch read 1 733 and 1 588, and H-23's read 1 388 and 2 147. On the developer machine the two arms of H-32 ran side by side in 22 minutes.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 38111246283`): 95 lines, 55 664 s, where the table before it held 93 and 48 211. ADR-0092's deal plans each of the twelve shards at 4 636 to 4 641 s summed, about 2 320 to 2 780 s of wall time at the run's ratios, **32 to 39 per cent of the bound**, inside the brief's 60.
+- **The sweep had not ended when the shards did**, at 06:17Z ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)). Four of its thirteen jobs had, each green and with no mutant missed: the state crates' (2 404 caught, 81 unviable, 6 timeouts) and the runtime's shards 2, 5 and 9 (105, 105 and 108 caught). Nine were running. Its outcome is written down by the first ADR that merges after it has ended; a survivor is a finding there.
+- **The pull request's gate** ([196](https://github.com/DescentVTT/VirtualCortex/pull/196)) is green in every job on `92bb4b1`, the protocol, and on `3be8af0`, which holds the Rust sources of `c2e3e50`; the determinism pin on AArch64 and the MSRV are among them. The gate's run on `c2e3e50` itself was cancelled by the push of `3be8af0` eleven minutes after it. **The mutation gate on the changed lines** read 36 mutants, 32 caught and four unviable, none missed, on both.
+- **On the developer machine**, at `c2e3e50`: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 730 passed and 135 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; 95 whole-domain tests are listed. Before either arm ran, the tree's 93 other whole-domain tests passed there at `92bb4b1`, 13:33:42Z to 16:44:16Z on 2026-10-09. The two arms then ran once, 16:44:41Z to 17:06:32Z.
+- **The commits**, by the hashes the branch holds, in pull request 196: `c0537bf`, the build; `92bb4b1`, the protocol and the run that reads a drawn selection; `c2e3e50`, the arms' tables and the gate's checks over them; `3be8af0`, these readings.
 
 ### Consequences
 
 - Good: the run with the exploration set is held to as much as H-29's was, and at every drawn trial to a second writing of the rule.
 - Good: where each arm leaves H-29's was known, and pinned, before any run with the exploration set.
 - Good: H-29's, H-30's and H-31's arms run through the same `answered_run`, so the calibration with the exploration unset is also a check that the run's changes moved nothing.
-- Neutral: two weekly tests more, each an H-29 arm with two blocks of calibration before it.
+- Neutral: two weekly tests more, each an H-29 arm with two blocks of calibration before it, 1 756 and 2 160 s on the hosted runners, and one test in the gate.
 - Good: the question three stopping rules named is answered by a run: a selection that leaves the largest count, gated by the value with nothing to tune, does what was derived to the selections and the value, and does not make the revision among three hold.
 - Good: the line among three answers ends on a stopping rule written before the run, after four rounds, and no fifth mechanism is tried without a reading that names it.
 - Bad: why the first reversal gains and the later ones do not is read from the tables and not measured.

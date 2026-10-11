@@ -1,7 +1,43 @@
 ---
-status: proposed
-date: 2026-10-09
+status: archived
+date: 2026-10-11
 ---
+
+> **Executed 2026-10-09 to 2026-10-11 (UTC) in pull request #196.** Writes ADR-0163 (an exploration the value gates,
+> built) and ADR-0164 (measured); opens no finding. The exploration is an option of the task,
+> `Exploration::ValueGated`: after a trial's last tick the task reads the engine's value from what the executor
+> exposes, the number the reward is then taken against, and where the trial's coin draws at it the selection is the
+> trial's drawn channel in the gate's place. The coin is bits 16 to 31 of the trial's draw and the channel's draw
+> bits 33 to 47, held apart from the stimulus's, the shuffled control's and the misleading coin's at compile time. No
+> rule of the engine, nothing of the executor, no record and nothing of the image changed, and no pinned number
+> moved. H-32's clauses and constants were committed before any rewarded run of it; the tree's 93 other whole-domain
+> tests then passed with the exploration unset; and each arm, with it set, was H-29's arm trial for trial up to the
+> trial pinned beforehand from H-29's own trials, the fourth from the assignment and the tenth from the mirrored
+> assignment, and was drawn onto another readout there.
+>
+> **H-32 is no, on clause 1 in both arms, and its stopping rule reached step 5: the line stops among three
+> answers.** The first mapping and the first reversal's were learned in both arms, 118 and 113, and 118 and 117 of
+> each mapping's last 128, the reversal's the one H-29 read at 87 and 85. The second reversal's was learned in
+> neither, 68 and 79 where 80 are asked, and the third's was lost from the assignment, 77 with one stimulus at 26 of
+> its 74 presentations. No coupling passed 1.30 of its image's, the excitatory sum outside the six couplings stayed
+> within two parts in ten thousand of the image's, and every mean value stood within 0.21 of the reward of 2a − 1.
+> The regime ADR-0162 derived began as derived, 22 to 29 presentations after a flip, and settled lower, 36 to 48
+> trials in a hundred drawn where the gate's own reading was the old answer. A reward on a drawn selection raised
+> its pair about as one on the gate's own did. The gate's own reading moved to the new answer sooner than H-29's in
+> the first reversal and no sooner in the two after it. The next decision, an ADR that states what the learning
+> configuration holds of a choice among three and returns the line to the list H-28's stopping rule named, is
+> named and not taken. The exploration stays in the tree, unset.
+>
+> Every deliverable below is done and its box ticked. Four things differ from the brief's letter, each by its
+> empowerment clause and recorded in ADR-0163 or ADR-0164: the exploration is refused with a hold as well, a third
+> refusal beside the two the brief names; the round wrote two ADRs, the build's and the measurement's; the trial
+> each arm first draws at was pinned before any run with the exploration set, from H-29's own trials by the rule
+> written apart from the tree, and the calibration held each arm to it; and the gate's runs on the instrument's
+> network are twelve trials where the earlier rounds' were eight, the first coin low enough falling at the tenth.
+> The round's work ran on 2026-10-09 and its readings were written on 2026-10-11. Relative links gained one `../`
+> so that they resolve from `archive/`; no word, claim or figure changed.
+>
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 066: An exploration the value gates — ADR-0162's rule built in the task, a selection drawn among the readout's channels with a probability equal to the part of the engine's value below zero, unset every run the run it was; then H-32 run once on H-29's readouts, schedule and arms
 
@@ -10,7 +46,7 @@ date: 2026-10-09
 **This brief builds one option of the task and runs one hypothesis once.** H-29, H-30 and H-31 each read no on a
 choice among three answers, and each read the same thing: after a flip the gate goes on selecting the old answer,
 and the new one is selected only once the old one's pairs have been punished down to it.
-[ADR-0162](../docs/adr/0162-an-exploration-the-value-gates.md) takes the decision three stopping rules name: with the
+[ADR-0162](../../docs/adr/0162-an-exploration-the-value-gates.md) takes the decision three stopping rules name: with the
 task's exploration set, a trial's selection is drawn among the readout's channels with a probability equal to the part
 of the engine's own value that lies below zero. Nothing else changes.
 
@@ -49,14 +85,14 @@ once.
   and predicts no verdict. The measurement decides.
 - **The engine is read before a description of it is trusted**, this brief's and ADR-0162's included.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. For the measurement, the runtime's gate grows by
-  at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
-  it. The mutation gate on the changed lines must pass ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)); the build's own tests are beside
+  it. The mutation gate on the changed lines must pass ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says**
-  ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md),
-  [ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the arms run once, the merge waits for the
+  ([ADR-0150](../../docs/adr/0150-a-round-waits-for-what-it-checks.md),
+  [ADR-0158](../../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the arms run once, the merge waits for the
   dispatch's whole-domain shards and not for its sweep, the ADRs cite the pull request's commits, the commit that asks
   for the merge sets them to `accepted`, and a sweep that has ended and that no ADR has recorded is recorded by this
   round's.
@@ -85,7 +121,7 @@ quoted sentences are what to re-derive.
    window.
 5. **The outcome** (`Outcome`): `stimulus`, `counts`, `selection`, `correct`, `reward_q16`, `signal_q16`, `value_q16`
    and `held`.
-6. **H-29** ([ADR-0153](../docs/adr/0153-three-answers-measured.md), `tests/inhibition.rs`): `answered_arm`,
+6. **H-29** ([ADR-0153](../../docs/adr/0153-three-answers-measured.md), `tests/inhibition.rs`): `answered_arm`,
    `answered_run` on `SCHEDULE`, `ANSWERED_ARMS`; its pins `ANSWERED_*_1024` and `ANSWERED_TRIALS_1024`; the hand rule
    of the selection, `largest_alone`, and of the answers, `answers_at`; the critic's oracle and the network's held at
    every trial.
@@ -101,7 +137,7 @@ quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The exploration built, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The exploration built, in a new ADR at the next free number (`ls docs/adr`).**
   - *The rule*, in the task: with the exploration set, the value is read from the engine before the reward; the
     probability is the part of the value below zero over the reward's magnitude; the coin and the draw are bits of the
     trial's own draw; a drawn selection is one of the readout's channels with equal chance.
@@ -116,7 +152,7 @@ quoted sentences are what to re-derive.
     - the bits read are none of the stimulus's, the shuffled control's or the misleading coin's, held at compile time;
     - under each delivery, what is addressed at a drawn selection, where the gate selected another channel and where
       it selected none.
-- [ ] **H-32's protocol, in an ADR, before the first rewarded run.**
+- [x] **H-32's protocol, in an ADR, before the first rewarded run.**
   - The arms: H-29's two, from H-29's image, on H-25's schedule, with the exploration set and nothing else. The image
     is asserted H-29's by its CRC, with the whole punishment unset.
   - H-32's clauses and constants, restated from ADR-0162 and pinned in the tests: H-29's four, by H-29's rules.
@@ -133,29 +169,29 @@ quoted sentences are what to re-derive.
     - the blocks the old answer leads, and its coupling at each flip and at each mapping's end, beside H-29's;
     - the six couplings' courses and their highest; the ties and the margin of the gate's own reading;
     - the inhibitory sum's course, beside H-29's.
-- [ ] **The calibration**, before any rewarded run of H-32's protocol:
+- [x] **The calibration**, before any rewarded run of H-32's protocol:
   - with the exploration unset, every pinned number of the tree holds, H-29's two arms among them;
   - with it set, each arm is H-29's arm trial for trial up to the first trial at which the value is below zero and the
     coin draws, and differs from it there. The trial's index is pinned for each arm.
-- [ ] **The runs**: H-32's two arms, each a weekly `exhaustive` test, run once, their tables pinned per block.
-- [ ] **The ADR's reading.**
+- [x] **The runs**: H-32's two arms, each a weekly `exhaustive` test, run once, their tables pinned per block.
+- [x] **The ADR's reading.**
   - H-32's verdict per clause and arm.
   - Each predicted reading against what was read, and the regime against what was read.
   - What the exploration changed: the new answer's selections and the punishments of the old answer, beside H-29's.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** The build's tests, and at most one runtime test for the measurement: H-32's clauses at their edges
+- [x] **The gate.** The build's tests, and at most one runtime test for the measurement: H-32's clauses at their edges
   and the readings' rules over tables written by hand.
-- [ ] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at `scope=both`. Its
+- [x] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at `scope=both`. Its
   twelve whole-domain shards are green and reproduce every pinned number. The cost table is regenerated from their
   artifacts. The ADR names the dispatch and says where the sweep stood.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §6.5 (the loop as the runtime composes it), §11.1's H-32 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` only where the standing changes (ADR-0150); `README.md` and `docs/zh-TW`'s reader's guide as the
     result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADRs set to
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADRs set to
   `accepted` by the commit that asks for the merge.
 
 ## Not empowered
