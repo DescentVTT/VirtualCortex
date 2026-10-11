@@ -272,12 +272,17 @@ const _: () = assert!(
 /// The executor for a run: the gain held (`control_step_q0_16` 0), no sleep, a train that
 /// holds the most spikes a trial can produce, no arena and no store.
 pub(crate) fn config(units: u32, workers: usize, baseline_q16: i32) -> Config {
+    let injector_capacity = injector_entries(units);
+    assert!(
+        widest_injection(units) <= injector_capacity,
+        "the injector ring holds the widest injection a run's rules allow at {units} units"
+    );
     Config {
         workers,
         units: units as usize,
         blocks: blocks_for(&prior(units)) as usize,
         nodes_per_worker: 1 << 16,
-        injector_capacity: injector_entries(units),
+        injector_capacity,
         train_capacity: (units as usize).saturating_mul(spikes_per_unit(TRIAL_TICKS) as usize),
         modulation_baseline_q16: baseline_q16,
         control_step_q0_16: 0,
