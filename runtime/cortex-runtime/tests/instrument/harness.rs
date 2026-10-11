@@ -186,6 +186,15 @@ pub(crate) const LEAD_IN_WINDOWS: u64 = 9;
 /// window of eight, a quarter rewired, local delays of 1 to 3 ms and far ones of 14 to
 /// 25.6 ms, excitatory weights in [6 000, 12 000], seed 22.
 pub(crate) fn prior(units: u32) -> Prior {
+    prior_seeded(units, PRIOR_SEED)
+}
+
+/// The seed of the instrument's prior, the one every round to H-32 ran on.
+pub(crate) const PRIOR_SEED: u64 = 22;
+
+/// ADR-0044's prior at `units` from `seed` (ADR-0165, brief 067): `prior`'s generator with every
+/// parameter as it is and the seed the one thing given. `prior` calls it with seed 22.
+pub(crate) fn prior_seeded(units: u32, seed: u64) -> Prior {
     Prior {
         units,
         inhibitory_every: 5,
@@ -200,7 +209,7 @@ pub(crate) fn prior(units: u32) -> Prior {
         weight_max: 12000,
         inhibitory_gain_q4_4: 255,
         apical_q0_8: 0,
-        seed: 22,
+        seed,
     }
 }
 
@@ -319,7 +328,30 @@ pub(crate) fn task(
     mirrored: bool,
     delivery: Delivery,
 ) -> Task {
-    let [a, b, r0, r1] = geometry(units, rotation(units));
+    task_over(
+        geometry(units, rotation(units)),
+        shape,
+        cancel,
+        units,
+        feedback,
+        mirrored,
+        delivery,
+    )
+}
+
+/// `task` over the four sets given (brief 067): stimulus A, stimulus B, readout 0 and readout 1
+/// as `geometry` orders them, at whatever rotation they were laid from. `task` calls it with the
+/// sets of the rotation written for `units`, so its task is the task it was.
+pub(crate) fn task_over(
+    sets: [Set; 4],
+    shape: Shape,
+    cancel: Option<Cancel>,
+    units: u32,
+    feedback: Feedback,
+    mirrored: bool,
+    delivery: Delivery,
+) -> Task {
+    let [a, b, r0, r1] = sets;
     let stimulus = |set| Stimulus {
         set,
         messages: shape.0,
@@ -543,12 +575,43 @@ pub(crate) fn flipped_at(flips: &[usize], trial: usize) -> bool {
 /// it; with one flip or none it is `run_on_flipped`, which calls it so.
 pub(crate) fn run_on_scheduled(
     exec: &mut Engine,
+    task: Task,
+    units: u32,
+    trials: usize,
+    flips: &[usize],
+    observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
+) -> (Vec<Block>, u64) {
+    run_on_scheduled_over(
+        geometry(units, rotation(units)),
+        exec,
+        task,
+        units,
+        trials,
+        flips,
+        observe,
+    )
+}
+
+/// `run_on_scheduled` reading the four sets given (brief 067): the stimulus sets' spikes and the
+/// four couplings of every block are read over `sets`, which are the task's own. `run_on_scheduled`
+/// calls it with the sets of the rotation written for `units`, so its run is the run it was.
+pub(crate) fn run_on_scheduled_over(
+    sets: [Set; 4],
+    exec: &mut Engine,
     mut task: Task,
     units: u32,
     trials: usize,
     flips: &[usize],
     observe: &mut dyn FnMut(&mut Engine, usize, u32, &Outcome),
 ) -> (Vec<Block>, u64) {
+    assert_eq!(
+        (
+            [task.stimuli[0].set, task.stimuli[1].set],
+            *task.readout.sets()
+        ),
+        ([sets[0], sets[1]], [sets[2], sets[3]]),
+        "the sets read are the task's"
+    );
     assert!(
         flips.windows(2).all(|w| w[0] < w[1]),
         "a schedule's flips strictly increase: {flips:?}"
@@ -559,7 +622,7 @@ pub(crate) fn run_on_scheduled(
         "every unit a source and a target before the first trial, whatever the delivery"
     );
     task.check(exec).expect("the task fits the executor");
-    let [a, b, r0, r1] = geometry(units, rotation(units));
+    let [a, b, r0, r1] = sets;
     // The stimulus sets counted as a readout would count them: the same rule, the other
     // two sets.
     let stimuli = Readout::new([a, b]);
@@ -3154,7 +3217,12 @@ pub(crate) fn advance(synapses: &mut [Replayed], r: &Replay<'_>) -> Advanced {
 
 impl Composer {
     pub(crate) fn new(units: u32) -> Self {
-        let sets = geometry(units, rotation(units));
+        Self::over(geometry(units, rotation(units)), units)
+    }
+
+    /// The composer over the four sets given (brief 067), at whatever rotation they were laid
+    /// from. `new` calls it with the sets of the rotation written for `units`.
+    pub(crate) fn over(sets: [Set; 4], units: u32) -> Self {
         let [a, b, r0, r1] = sets;
         Self {
             sets,
@@ -3619,9 +3687,30 @@ pub(crate) fn compose_on(
     units: u32,
     trials: usize,
 ) -> Shaped {
+    compose_on_over(
+        geometry(units, rotation(units)),
+        exec,
+        shape,
+        cancel,
+        units,
+        trials,
+    )
+}
+
+/// `compose_on` over the four sets given (brief 067): the composer, the task and the run all
+/// read `sets`. `compose_on` calls it with the sets of the rotation written for `units`, so its
+/// run is the run it was.
+pub(crate) fn compose_on_over(
+    sets: [Set; 4],
+    exec: &mut Engine,
+    shape: Shape,
+    cancel: Option<Cancel>,
+    units: u32,
+    trials: usize,
+) -> Shaped {
     assert_eq!(exec.modulation_baseline_q16(), 0, "the weights are frozen");
     let sums = weights_by_polarity(exec);
-    let mut composer = Composer::new(units);
+    let mut composer = Composer::over(sets, units);
     composer.enumerate(exec);
     // The oracle replays the train from the executor's clock: what the record already
     // holds — the seeded stamps, traces and last spikes — is where it starts, not what it
@@ -3629,7 +3718,8 @@ pub(crate) fn compose_on(
     // enter the record's last pairing twice). On a fresh engine the clock is at zero.
     composer.cursor = exec.ticks() as u32;
     let mut counted: Vec<Counted> = Vec::with_capacity(trials);
-    let task = task(
+    let task = task_over(
+        sets,
         shape,
         cancel,
         units,
@@ -3637,11 +3727,13 @@ pub(crate) fn compose_on(
         false,
         Delivery::Global,
     );
-    let (blocks, trace) = run_on(
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
         exec,
         task,
         units,
         trials,
+        &[],
         &mut |exec, trial, start, outcome| {
             composer.observe(exec, trial, start, outcome);
             assert_eq!(
@@ -4185,7 +4277,13 @@ pub(crate) fn selected(counts: [u32; 2]) -> Option<u8> {
 /// each stimulus (ADR-0065's reading of the calibration, kept as it was read there).
 pub(crate) fn volley_once(units: u32, block: &Block) -> bool {
     let [a, _, _, _] = geometry(units, rotation(units));
-    let once = a.len().saturating_mul(10);
+    volley_once_of(a.len(), block)
+}
+
+/// `volley_once` for a stimulus set of `len` units (brief 067), which `volley_once` calls with
+/// the set's size at the rotation written for its units.
+pub(crate) fn volley_once_of(len: u64, block: &Block) -> bool {
+    let once = len.saturating_mul(10);
     let a_trials = u64::from(block.1);
     let b_trials = (BLOCK as u64).saturating_sub(a_trials);
     let per = |spikes: u64, trials: u64| spikes.saturating_mul(10).checked_div(trials);
@@ -4203,16 +4301,29 @@ pub(crate) fn volley_once(units: u32, block: &Block) -> bool {
 /// presentation.
 pub(crate) fn after_quiet(units: u32, composition: &Composition) -> bool {
     let [a, _, _, _] = geometry(units, rotation(units));
+    after_quiet_of(a.len(), composition)
+}
+
+/// `after_quiet` for a stimulus set of `len` units (brief 067), which `after_quiet` calls with
+/// the set's size at the rotation written for its units.
+pub(crate) fn after_quiet_of(len: u64, composition: &Composition) -> bool {
     let after = composition.2[2][1];
     after.saturating_mul(10)
         <= (BLOCK as u64)
-            .saturating_mul(a.len())
+            .saturating_mul(len)
             .saturating_mul(AFTER_MAX_TENTHS)
 }
 
 /// A candidate passes when it fires once: the volley clause and the after clause both.
 pub(crate) fn fires_once(units: u32, block: &Block, composition: &Composition) -> bool {
-    volley_once(units, block) && after_quiet(units, composition)
+    let [a, _, _, _] = geometry(units, rotation(units));
+    fires_once_of(a.len(), block, composition)
+}
+
+/// `fires_once` for a stimulus set of `len` units (brief 067): both clauses by their rules.
+/// `fires_once` calls it with the set's size at the rotation written for its units.
+pub(crate) fn fires_once_of(len: u64, block: &Block, composition: &Composition) -> bool {
+    volley_once_of(len, block) && after_quiet_of(len, composition)
 }
 
 /// The stimulus the round picks: the first candidate, in the candidates' order, whose
@@ -5082,9 +5193,16 @@ const _: () = assert!(CANCELS[0] < CANCELS[1] && CANCELS[1] < CANCELS[2]);
 /// The cancel of `messages` messages at the bound per tick over the derived span from the
 /// derived offset.
 pub(crate) const fn cancel_of(messages: u32) -> Cancel {
+    cancel_over(CANCEL_TICKS, messages)
+}
+
+/// The cancel of `messages` messages at the bound per tick over a span of `ticks` ticks from the
+/// derived offset (brief 067): `cancel_of` with the span a census gave, which `cancel_of` calls
+/// with the span `VOLLEY_TICKS_1024` gives.
+pub(crate) const fn cancel_over(ticks: u32, messages: u32) -> Cancel {
     Cancel {
         offset: CANCEL_OFFSET,
-        ticks: CANCEL_TICKS,
+        ticks,
         messages,
         efficacy_q16: CANCEL_MESSAGE_Q16,
     }
@@ -5183,10 +5301,22 @@ pub(crate) fn residual(shape: Shape, gain: u32, tick: u32) -> i32 {
 /// from the derived offset, that leaves a unit with `standing` potentials firing exactly
 /// once within one pair window of F-46's drive, by the oracle; none up to `LEAST_SCAN`.
 pub(crate) fn least_cancel(standing: (i32, i32), gain: u32) -> Option<u32> {
+    least_cancel_over(CANCEL_TICKS, standing, gain)
+}
+
+/// `least_cancel` over a span of `ticks` ticks (brief 067): the scan and the oracle are
+/// `least_cancel`'s, which calls it with the span `VOLLEY_TICKS_1024` gives.
+pub(crate) fn least_cancel_over(ticks: u32, standing: (i32, i32), gain: u32) -> Option<u32> {
     (1..=LEAST_SCAN).find(|&n| {
-        alone(standing, SHAPE_F46, Some(cancel_of(n)), gain, PROBE_TICKS)
-            .0
-            .len()
+        alone(
+            standing,
+            SHAPE_F46,
+            Some(cancel_over(ticks, n)),
+            gain,
+            PROBE_TICKS,
+        )
+        .0
+        .len()
             == 1
     })
 }
@@ -5218,8 +5348,18 @@ pub(crate) fn brief_cancels(offset: u32, ticks: u32, residual_tick: u32) -> [Can
 /// is unit 0 alone with `shape` and `cancel`, one trial of `PROBE_TICKS` ticks, and the
 /// ticks after the trial's first on which unit 0 fires, read from the train.
 pub(crate) fn probe_task(shape: Shape, cancel: Option<Cancel>) -> Vec<u32> {
-    let p = prior(1024);
-    let mut exec = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    probe_task_on(&prior(1024), GAIN_1024, shape, cancel)
+}
+
+/// `probe_task` on the network of `p`, a prior at 1 024 units, at rest at `gain` (brief 067).
+/// `probe_task` calls it with the instrument's prior and the gain 1.75.
+pub(crate) fn probe_task_on(
+    p: &Prior,
+    gain: u32,
+    shape: Shape,
+    cancel: Option<Cancel>,
+) -> Vec<u32> {
+    let mut exec = at_gain(p, config(1024, 1, 0), gain);
     assert!(exec.is_quiescent());
     let stimulus = |first| Stimulus {
         set: Set::contiguous(first, 1),
@@ -5927,6 +6067,27 @@ pub(crate) const CANCEL_PICKED_1024: Option<u32> = Some(CANCEL_AT_THE_EXTREME);
 /// 64) and the sign does not (13 of 64), so there is no rewarded run.
 pub(crate) const CANCEL_CALIBRATED_1024: bool = false;
 
+/// What a rewarded run at 1 024 units takes from the network it runs on (ADR-0165, brief 067):
+/// the rotation its four sets are laid from, the cancel its stimulus carries, and the synapses
+/// from each stimulus set onto each readout set, `[stimulus][readout]`, which the composer
+/// enumerates and the run holds its count to. On the instrument's prior these are the constants
+/// the tree holds, `DERIVED_1024`; on another prior they are what the rules return for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Derived {
+    pub(crate) rotation: u32,
+    pub(crate) cancel: Cancel,
+    pub(crate) synapses: [[u32; 2]; 2],
+}
+
+/// The instrument's prior, seed 22: the rotation written, ADR-0076's pick and ADR-0072's counts.
+pub(crate) const DERIVED_1024: Derived = Derived {
+    rotation: ROTATION_1024,
+    cancel: cancel_of(CANCEL_AT_THE_EXTREME),
+    synapses: SYNAPSES_1024,
+};
+
+const _: () = assert!(matches!(CANCEL_PICKED_1024, Some(CANCEL_AT_THE_EXTREME)));
+
 /// A candidate's frozen run with its cancel: the sight's blocks and trace, the composed
 /// trials, every trial's counts and the volley-tick census.
 pub(crate) type CancelledRun = (Vec<Block>, u64, Vec<Composed>, Vec<Counted>, Vec<u64>);
@@ -6074,13 +6235,18 @@ pub(crate) fn lead_in_sums(table: &[LeadInWindow]) -> Vec<i64> {
 /// 1.75 with the modulation baseline 0.5 (the rewarded runs') and the controller's step `step`
 /// in its homeostasis record; at 0 the gain is held, as in every run of the instrument.
 pub(crate) fn candidate(units: u32, step: u16) -> Engine {
-    let p = prior(units);
+    candidate_from(&prior(units), units, gain(units), step)
+}
+
+/// `candidate` on the network of `p`, a prior at `units`, at `gain` (brief 067). `candidate` calls
+/// it with the instrument's prior and the gain written for `units`.
+pub(crate) fn candidate_from(p: &Prior, units: u32, gain: u32, step: u16) -> Engine {
     let cfg = Config {
         control_step_q0_16: step,
         ..config(units, 2, BASELINE_Q16)
     };
-    let exec = at_gain(&p, cfg, gain(units));
-    assert_eq!(exec.homeostasis().synaptic_gain_q16, gain(units));
+    let exec = at_gain(p, cfg, gain);
+    assert_eq!(exec.homeostasis().synaptic_gain_q16, gain);
     assert_eq!(exec.homeostasis().control_step_q0_16, step);
     assert_eq!(exec.modulation_baseline_q16(), BASELINE_Q16);
     exec
@@ -6148,8 +6314,22 @@ pub(crate) fn lead_in_until_settled(
     prior: i64,
     bound: u64,
 ) -> Vec<LeadInWindow> {
-    let drive = drive(units);
     let [_, _, r0, r1] = geometry(units, rotation(units));
+    lead_in_until_settled_over([r0, r1], exec, units, prior, bound)
+}
+
+/// `lead_in_until_settled` reading the two readout sets given (brief 067): the lead-in runs under
+/// the drive alone, so the sets are read and steer nothing. `lead_in_until_settled` calls it with
+/// the readouts of the rotation written for `units`.
+pub(crate) fn lead_in_until_settled_over(
+    readouts: [Set; 2],
+    exec: &mut Engine,
+    units: u32,
+    prior: i64,
+    bound: u64,
+) -> Vec<LeadInWindow> {
+    let drive = drive(units);
+    let [r0, r1] = readouts;
     let mut table = Vec::new();
     for _ in 0..bound {
         table.push(lead_in_window(exec, &drive, [r0, r1]));
@@ -9677,6 +9857,45 @@ pub(crate) fn earned_run_held(
     hold: Option<Hold>,
     after: &mut dyn FnMut(&mut Engine, usize),
 ) -> HeldRun {
+    earned_run_held_on(
+        &DERIVED_1024,
+        exec,
+        feedback,
+        mirrored,
+        units,
+        trials,
+        baseline_q16,
+        flips,
+        signed,
+        critic,
+        delivery,
+        shadowed,
+        hold,
+        after,
+    )
+}
+
+/// `earned_run_held` on the network `derived` describes (ADR-0165, brief 067): the four sets laid
+/// from its rotation, the stimulus carrying its cancel, and the composer's synapses held to its
+/// counts. `earned_run_held` calls it with `DERIVED_1024`, the constants the tree holds for the
+/// instrument's prior, so its run is the run it was.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn earned_run_held_on(
+    derived: &Derived,
+    exec: &mut Engine,
+    feedback: Feedback,
+    mirrored: bool,
+    units: u32,
+    trials: usize,
+    baseline_q16: i32,
+    flips: &[usize],
+    signed: bool,
+    critic: Option<Critic>,
+    delivery: Delivery,
+    shadowed: bool,
+    hold: Option<Hold>,
+    after: &mut dyn FnMut(&mut Engine, usize),
+) -> HeldRun {
     assert!(
         !shadowed || delivery == Delivery::Drawn,
         "the shadows are of the drawn address"
@@ -9696,8 +9915,8 @@ pub(crate) fn earned_run_held(
         0,
         "the signal is at rest before the first trial"
     );
-    let sets = geometry(units, rotation(units));
-    let mut composer = Composer::new(units);
+    let sets = geometry(units, derived.rotation);
+    let mut composer = Composer::over(sets, units);
     composer.enumerate(exec);
     composer.cursor = exec.ticks() as u32;
     composer.baseline = baseline_q16;
@@ -9718,10 +9937,10 @@ pub(crate) fn earned_run_held(
     }
     let mut eligible: Vec<[[i64; 2]; 2]> = Vec::new();
     let mut held: Vec<u32> = Vec::with_capacity(trials);
-    let picked = CANCEL_PICKED_1024.expect("ADR-0076 picked a cancel");
-    let task = task(
+    let task = task_over(
+        sets,
         SHAPE_F46,
-        Some(cancel_of(picked)),
+        Some(derived.cancel),
         units,
         feedback,
         mirrored,
@@ -9761,7 +9980,8 @@ pub(crate) fn earned_run_held(
             "the window opened at the engine's start, where the run starts, and nothing is pending"
         );
     }
-    let (blocks, trace) = run_on_scheduled(
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
         exec,
         task,
         units,
@@ -10015,7 +10235,7 @@ pub(crate) fn earned_run_held(
     );
     assert_eq!(composer.out.len(), trials);
     assert_eq!(composer.moves.len(), trials);
-    assert_eq!(composer.counts(), SYNAPSES_1024);
+    assert_eq!(composer.counts(), derived.synapses);
     assert_eq!(
         expected_after.len(),
         if critic.is_some() { trials } else { 0 }

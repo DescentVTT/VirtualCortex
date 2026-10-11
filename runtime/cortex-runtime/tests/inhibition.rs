@@ -218,6 +218,7 @@ use cortex_core::{
     ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, Polarity,
     SYNAPSES_PER_BLOCK, SynapseBlock, istdp_alpha_q1_15,
 };
+use cortex_neuromod::{CRITIC_SCALE_MAX, CRITIC_SHIFT_MAX};
 use cortex_runtime::{ConfigError, ImageError, shortest_delay};
 
 // ------------------------------------------- written before the run (ADR-0085, ADR-0086)
@@ -310,7 +311,17 @@ fn reach_by_polarity(
     units: u32,
     pairs: &[(usize, usize)],
 ) -> Reach {
-    let sets = geometry(units, rotation(units));
+    reach_over(&geometry(units, rotation(units)), exec, before, pairs)
+}
+
+/// `reach_by_polarity` over the four sets given (brief 067), which `reach_by_polarity` calls with
+/// the sets of the rotation written for its units.
+fn reach_over(
+    sets: &[Set; 4],
+    exec: &Engine,
+    before: &[Vec<i16>],
+    pairs: &[(usize, usize)],
+) -> Reach {
     let mut out = Reach::default();
     for unit in exec.units() {
         let id = unit.id as u32;
@@ -324,7 +335,7 @@ fn reach_by_polarity(
                 continue;
             }
             let in_pair = pairs.iter().any(|&(stimulus, readout)| {
-                sets[stimulus].contains(id) && readout_set(&sets, readout).contains(s.target)
+                sets[stimulus].contains(id) && readout_set(sets, readout).contains(s.target)
             });
             let into = if inhibitory {
                 &mut out.inhibitory
@@ -21622,10 +21633,16 @@ fn over_bound(coupling: i64, image: i64) -> bool {
 /// readout)` — the first in `ALL_PAIRS`'s order where two did at once; none when no coupling
 /// did at any block's end.
 fn first_over(blocks: &[Block]) -> Option<(usize, usize, usize)> {
+    first_over_of(&IMAGE_COUPLINGS_1024, blocks)
+}
+
+/// `first_over` against the image couplings given (brief 067), `[stimulus][readout]`.
+/// `first_over` calls it with the instrument's image's.
+fn first_over_of(image: &[[i64; 2]; 2], blocks: &[Block]) -> Option<(usize, usize, usize)> {
     blocks.iter().enumerate().find_map(|(j, b)| {
         ALL_PAIRS
             .iter()
-            .find(|&&(s, r)| over_bound(b.10[s][r], IMAGE_COUPLINGS_1024[s][r]))
+            .find(|&&(s, r)| over_bound(b.10[s][r], image[s][r]))
             .map(|&(s, r)| (j, s, r))
     })
 }
@@ -21645,8 +21662,14 @@ struct Scheduled {
 }
 
 fn scheduled(arms: [&[Block]; 2]) -> Scheduled {
+    scheduled_of(&IMAGE_COUPLINGS_1024, arms)
+}
+
+/// `scheduled` against the image couplings given (brief 067): clause 2 read by `first_over_of`.
+/// `scheduled` calls it with the instrument's image's.
+fn scheduled_of(image: &[[i64; 2]; 2], arms: [&[Block]; 2]) -> Scheduled {
     let learned = arms.map(|blocks| mapping_correct(blocks).map(|c| c >= REWARDED_MIN));
-    let over = arms.map(first_over);
+    let over = arms.map(|blocks| first_over_of(image, blocks));
     let bounded = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && over[k].is_none());
     Scheduled {
         learned,
@@ -21902,11 +21925,17 @@ type Peak = (i64, usize, usize, usize);
 /// in block order and then in `ALL_PAIRS`'s where two read the same; none for a mapping of
 /// which the run holds no block.
 fn highest(blocks: &[Block]) -> [Option<Peak>; 4] {
+    highest_of(&IMAGE_COUPLINGS_1024, blocks)
+}
+
+/// `highest` against the image couplings given (brief 067), `[stimulus][readout]`. `highest`
+/// calls it with the instrument's image's.
+fn highest_of(image: &[[i64; 2]; 2], blocks: &[Block]) -> [Option<Peak>; 4] {
     MAPPINGS.map(|(from, to)| {
         let mut best: Option<Peak> = None;
         for (j, b) in blocks.iter().enumerate().take(to).skip(from) {
             for &(s, r) in &ALL_PAIRS {
-                let fraction = per_myriad(b.10[s][r], IMAGE_COUPLINGS_1024[s][r]);
+                let fraction = per_myriad(b.10[s][r], image[s][r]);
                 if best.is_none_or(|(high, ..)| fraction > high) {
                     best = Some((fraction, j, s, r));
                 }
@@ -66286,6 +66315,45 @@ fn fed_run(
     hold: Option<Hold>,
     feedback: Feedback,
 ) -> (BesideRun, Along) {
+    fed_run_on(
+        &DERIVED_1024,
+        exec,
+        arm,
+        sets,
+        groups,
+        classes,
+        image,
+        delivery,
+        trials,
+        shadowed,
+        hold,
+        feedback,
+    )
+}
+
+/// `fed_run` on the network `derived` describes (ADR-0165, brief 067): `earned_run_held_on` in
+/// `earned_run_held`'s place, with `sets` the four sets laid from the network's rotation.
+/// `fed_run` calls it with `DERIVED_1024`, so its run is the run it was.
+#[allow(clippy::too_many_arguments)]
+fn fed_run_on(
+    derived: &Derived,
+    exec: &mut Engine,
+    arm: Reversal,
+    sets: &[Set; 4],
+    groups: &[usize],
+    classes: &[usize],
+    image: &[Vec<i16>],
+    delivery: Delivery,
+    trials: usize,
+    shadowed: bool,
+    hold: Option<Hold>,
+    feedback: Feedback,
+) -> (BesideRun, Along) {
+    assert_eq!(
+        *sets,
+        geometry(1024, derived.rotation),
+        "the sets are the network's"
+    );
     let readouts = Readout::new([sets[2], sets[3]]);
     let mut heard: Vec<[u32; 2]> = Vec::with_capacity(trials);
     let mut spanned: Vec<[u32; 2]> = Vec::with_capacity(trials);
@@ -66302,7 +66370,8 @@ fn fed_run(
     let mut spikes_block = [0u64; CLASSES];
     let mut went_block: Went = [[0; 2]; 3];
     let mut opened = exec.ticks();
-    let (run, moves, expected, values, shadows, held) = earned_run_held(
+    let (run, moves, expected, values, shadows, held) = earned_run_held_on(
+        derived,
         exec,
         feedback,
         first,
@@ -83905,7 +83974,13 @@ struct Drawn {
 }
 
 fn drawn(image: i64, arms: [&[Block]; 2]) -> Drawn {
-    let learning = scheduled(arms);
+    drawn_of(&IMAGE_COUPLINGS_1024, image, arms)
+}
+
+/// `drawn` against the image couplings given (brief 067): clauses 1 and 2 by `scheduled_of`, and
+/// `image` the outside sum of the same image. `drawn` calls it with the instrument's image's.
+fn drawn_of(couplings: &[[i64; 2]; 2], image: i64, arms: [&[Block]; 2]) -> Drawn {
+    let learning = scheduled_of(couplings, arms);
     let revised = arms.map(|blocks| reversals_within(crossings(blocks)));
     let left = arms.map(|blocks| left_band(image, blocks));
     let held = [0usize, 1].map(|k| arms[k].len() == SCHEDULE_BLOCKS && left[k].is_none());
@@ -197172,3 +197247,1656 @@ const EXPLORED_1024: Answered = Answered {
 /// The step of H-32's stopping rule the verdict reaches (`answered_step`, H-29's order): 5, a no
 /// on clause 1 with clause 3 held. The line stops among three answers.
 const EXPLORED_STEP_1024: u8 = 5;
+
+// =================================================================================== H-33
+
+// -------------------------------------------- written before the run (ADR-0165, ADR-0167)
+
+/// The networks of H-33 (ADR-0165): ADR-0044's generator at 1 024 units from the two seeds after
+/// the instrument's, every other parameter the instrument's prior's (`prior_seeded`). They are the
+/// next two and were not looked at before they were taken; none replaces one that reads badly and
+/// no third is run. The drive's seed and the task's are H-25's.
+const SEEDS: [u64; 2] = [23, 24];
+const _: () = assert!(SEEDS[0] == PRIOR_SEED + 1 && SEEDS[1] == PRIOR_SEED + 2);
+
+/// The arms of H-33 on each network (ADR-0165): H-25's two, in their order, each its own weekly
+/// test, under H-25's delivery, schedule and task.
+const SEEDED_ARMS: [Reversal; 2] = DRAWN_ARMS;
+
+/// ADR-0165 writes no prediction for the verdict, and brief 067 adds none.
+const SEEDED_PREDICTED: Option<bool> = None;
+
+/// The rotations the rotation's rule scans, from zero and in order: one period's. A rotation of a
+/// whole period lays the same pattern one period on, so the twenty are every phase of it.
+const ROTATIONS: u32 = PERIOD;
+
+/// The scale ADR-0132's split took, which the critic's arithmetic keeps on another network.
+const SPLIT_SCALE: u8 = VALUED_CRITIC.scale;
+
+/// ADR-0132's reason for the split, as the bound the restated arithmetic holds it to: the step's
+/// dead band, $2^k$, under one per cent of the reward, read as `band × 100 < reward`.
+const DEAD_BAND_PER_CENT: i64 = 1;
+
+/// The widest sum of a shift and a scale the arithmetic scans to: the loader's two bounds.
+const CRITIC_SUM_MAX: u32 = CRITIC_SHIFT_MAX as u32 + CRITIC_SCALE_MAX as u32;
+const _: () = assert!(CRITIC_SUM_MAX == 44 && SPLIT_SCALE == 2);
+
+// ----------------------------------------------------------- the rules (ADR-0165, ADR-0167)
+
+/// What each rule returned on a network, in the order of the derivations (ADR-0165): none where a
+/// rule returned nothing, and none after it, the derivation having stopped there.
+/// - `rotation`: the first of `ROTATIONS` from which the four couplings by the prior's census are
+///   `balanced` (ADR-0065).
+/// - `gain`: the first of `GAINS` whose frozen block on the prior's network is `calibrated`
+///   (ADR-0066).
+/// - `settled`: the window at which ADR-0055's criterion first holds over the lead-in,
+///   `settled_within`, within `LEAD_IN_EXTENDED` windows (ADR-0077).
+/// - `span`: the last tick a volley spike fell on in the gain's frozen block, `span_of`; none for
+///   a block with no volley spike (ADR-0076).
+/// - `least`: the least messages at the bound a tick, over that span, that leave a unit firing
+///   once, at rest and at `EXTREME_STANDING`, `least_cancel_over` within `LEAST_SCAN`.
+/// - `cancel`: the messages of the first candidate — the least at rest, the least at the extreme,
+///   twice it — whose probe fires once and whose frozen block on the prior's network fires once
+///   (`first_firing_once`, ADR-0076's pick).
+/// - `frozen`: the frozen block from the settled image under that cancel, `[the stimulus fires
+///   once, the sight at SEEN_MIN]` — the two measures every round since H-13 has stood on.
+/// - `period`: the inhibitory rule's target period, `target_period` over the settled image's
+///   spikes (ADR-0128).
+/// - `window`: the shortest delay of any synapse the image carries, `shortest_delay` (ADR-0134).
+/// - `critic`: ADR-0132's arithmetic for the stimulus's units, `critic_for`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Rules {
+    rotation: Option<u32>,
+    gain: Option<u32>,
+    settled: Option<usize>,
+    span: Option<u32>,
+    least: [Option<u32>; 2],
+    cancel: Option<u32>,
+    frozen: Option<[bool; 2]>,
+    period: Option<u32>,
+    window: Option<u16>,
+    critic: Option<ValueCritic>,
+}
+
+impl Rules {
+    /// H-33's clause 0 (ADR-0165): every rule gave a value and the frozen block passed both
+    /// measures.
+    fn hold(&self) -> bool {
+        self.rotation.is_some()
+            && self.gain.is_some()
+            && self.settled.is_some()
+            && self.span.is_some()
+            && self.least.iter().all(Option::is_some)
+            && self.cancel.is_some()
+            && self.frozen == Some([true, true])
+            && self.period.is_some()
+            && self.window.is_some()
+            && self.critic.is_some()
+    }
+}
+
+/// The constants the tree holds for the instrument's prior, seed 22, as what the rules return:
+/// each a constant an earlier round derived by the rule beside it and pinned.
+const RULES_1024: Rules = Rules {
+    rotation: Some(ROTATION_1024),
+    gain: Some(GAIN_1024),
+    settled: SETTLED_AT_1024[SETTLED],
+    span: Some(CANCEL_TICKS),
+    least: [Some(CANCEL_ONCE_AT_REST), Some(CANCEL_AT_THE_EXTREME)],
+    cancel: CANCEL_PICKED_1024,
+    frozen: Some([true, true]),
+    period: Some(TARGET_PERIOD_1024),
+    window: Some(WINDOW_TICKS_1024),
+    critic: Some(VALUED_CRITIC),
+};
+
+/// The rotation's rule (ADR-0065): the first rotation of `ROTATIONS`, from zero, at which the four
+/// couplings `read` gives are `balanced`, with the couplings at every rotation scanned, the one
+/// taken last; none when no rotation of the range is. A rotation that puts a stimulus on the
+/// units the prior makes inhibitory reads a coupling of zero and so does not pass.
+fn first_balanced(read: &dyn Fn(u32) -> [i64; 4]) -> (Option<u32>, Vec<[i64; 4]>) {
+    let mut scanned = Vec::new();
+    for rotation in 0..ROTATIONS {
+        let couplings = read(rotation);
+        scanned.push(couplings);
+        if balanced(&couplings) {
+            return (Some(rotation), scanned);
+        }
+    }
+    (None, scanned)
+}
+
+/// The gain's rule (ADR-0066), `picked` over as many candidates as were run: the first of `GAINS`,
+/// in their order, whose frozen block is `calibrated`; none when none of those run is.
+fn first_calibrated(runs: &[(Block, u64)]) -> Option<u32> {
+    GAINS
+        .iter()
+        .zip(runs.iter())
+        .find(|(_, (block, _))| calibrated(block))
+        .map(|(&gain, _)| gain)
+}
+
+/// The cancel's candidates over a span at a gain (ADR-0076), as counts of messages at the bound a
+/// tick: the least that leaves a unit at rest firing once, the least that leaves a unit at
+/// `EXTREME_STANDING` firing once, and twice the second; with the two least counts as the oracle
+/// gave them. No candidates when either scan found none within `LEAST_SCAN`.
+fn cancel_candidates(span: u32, gain: u32) -> ([Option<u32>; 2], Option<[u32; 3]>) {
+    let least = [
+        least_cancel_over(span, (0, 0), gain),
+        least_cancel_over(span, EXTREME_STANDING, gain),
+    ];
+    let candidates = match least {
+        [Some(rest), Some(extreme)] => Some([rest, extreme, extreme.saturating_mul(2)]),
+        _ => None,
+    };
+    (least, candidates)
+}
+
+/// The cancel's pick (ADR-0076), `cancel_pick` over the candidates given and a stimulus set of
+/// `len` units: the first candidate, in their order, whose probe passed and whose frozen block
+/// fires once by ADR-0074's measure; none when none of those run does.
+fn first_firing_once(
+    len: u64,
+    candidates: &[u32],
+    probed: &[bool],
+    runs: &[(Block, u64, Composition)],
+) -> Option<u32> {
+    candidates
+        .iter()
+        .zip(probed.iter())
+        .zip(runs.iter())
+        .find(|&((_, &probed), (block, _, composition))| {
+            probed && fires_once_of(len, block, composition)
+        })
+        .map(|((&messages, _), _)| messages)
+}
+
+/// `quiet` as a rule that can return nothing: `exec` run without the drive until it is quiescent,
+/// the ticks it took; none when it is still active after `QUIET_BOUND` ticks, where `quiet` fails
+/// its test. A countdown, so it ends by construction.
+fn quiet_within(exec: &mut Engine) -> Option<u64> {
+    let mut ticks = 0u64;
+    for _ in 0..QUIET_BOUND {
+        if exec.is_quiescent() {
+            return Some(ticks);
+        }
+        exec.tick();
+        ticks = ticks.wrapping_add(1);
+    }
+    exec.is_quiescent().then_some(ticks)
+}
+
+/// The frozen block's two measures for a stimulus set of `len` units (ADR-0165's clause 0):
+/// ADR-0074's `fires_once`, and the sight — the window after the volley holding more readout
+/// spikes than the window before the injection in at least `SEEN_MIN` trials of the block.
+fn frozen_measures(len: u64, block: &Block, composition: &Composition) -> [bool; 2] {
+    [fires_once_of(len, block, composition), block.6 >= SEEN_MIN]
+}
+
+/// ADR-0132's arithmetic restated for a stimulus of `units` units (ADR-0167): the sum of the shift
+/// and the scale is the least at which one volley of `units` spikes moves the value of the same
+/// volley by at most the task critic's thirty-second of the error, `units × 32 ≤ 2^sum`, scanned
+/// from zero to `CRITIC_SUM_MAX`; the split keeps ADR-0132's scale, the shift the rest. None when
+/// no sum of the range fits, when the sum is below the scale, which is a stimulus of no unit, when
+/// the loader would refuse the constants, or when the shift's dead band is not under one per cent
+/// of the reward, ADR-0132's reason for the split. For 33 to 64 units it is ADR-0132's own, a shift
+/// of 9 and a scale of 2.
+fn critic_for(units: u32) -> Option<ValueCritic> {
+    let step = u64::from(units).checked_shl(TASK_STEP_SHIFT)?;
+    let sum =
+        (0..=CRITIC_SUM_MAX).find(|&n| 1u64.checked_shl(n).is_some_and(|whole| step <= whole))?;
+    let shift = u8::try_from(sum).ok()?.checked_sub(SPLIT_SCALE)?;
+    let critic = ValueCritic {
+        shift,
+        scale: SPLIT_SCALE,
+    };
+    let band = 1i64.checked_shl(u32::from(shift))?;
+    (critic.is_valid()
+        && band.saturating_mul(100) < i64::from(REWARD_Q16).saturating_mul(DEAD_BAND_PER_CENT))
+    .then_some(critic)
+}
+
+/// The excitatory sum outside the four couplings of an image: `image_outside` for any image, its
+/// excitatory sum less its four couplings.
+fn outside_image(couplings: &[[i64; 2]; 2], excitatory: i64) -> i64 {
+    couplings
+        .iter()
+        .flatten()
+        .fold(excitatory, |sum, &c| sum.saturating_sub(c))
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0165)
+
+/// H-33's verdict on one network (ADR-0165): clause 0, the rules derive a configuration; and,
+/// where it holds and the arms ran, clauses 1 to 4, H-25's four by H-25's rules (`drawn_of`)
+/// against the network's own image. `yes` is all five in both arms; a no names the clause, and
+/// under clauses 1 to 4 the arm, as H-25's verdict names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Seeded {
+    derived: bool,
+    arms: Option<Drawn>,
+    yes: bool,
+}
+
+/// A network's image for the clauses and its two arms' blocks: the image's four couplings, its
+/// outside sum, and the blocks `[assignment first, mirrored first]`.
+type SeededArms<'a> = (&'a [[i64; 2]; 2], i64, [&'a [Block]; 2]);
+
+fn seeded(rules: &Rules, arms: Option<SeededArms<'_>>) -> Seeded {
+    let derived = rules.hold();
+    let arms = arms
+        .filter(|_| derived)
+        .map(|(couplings, outside, blocks)| drawn_of(couplings, outside, blocks));
+    Seeded {
+        derived,
+        arms,
+        yes: derived && arms.is_some_and(|verdict| verdict.yes),
+    }
+}
+
+/// The step of ADR-0165's stopping rule the two networks' verdicts reach: 3, yes on both; 4, a no
+/// on clause 0 on either; otherwise 5, a no on clause 4; otherwise 6, a no on clause 1 or 2;
+/// otherwise 7, a no on clause 3 alone.
+fn seeded_step(networks: &[Seeded; 2]) -> u8 {
+    if networks.iter().all(|n| n.yes) {
+        return 3;
+    }
+    if networks.iter().any(|n| !n.derived) {
+        return 4;
+    }
+    let arms = || networks.iter().filter_map(|n| n.arms);
+    if arms().any(|verdict| !verdict.held.iter().all(|&h| h)) {
+        return 5;
+    }
+    if arms().any(|verdict| !verdict.learning.yes) {
+        return 6;
+    }
+    7
+}
+
+// ----------------------------------------------------- the readings' shape (brief 067)
+
+/// The selections of a frozen block by stimulus `[A, B]`: the trials that selected readout 0,
+/// readout 1 and neither, each trial's selection the sign of its counts as the task makes it.
+fn frozen_selections(counted: &[Counted]) -> [[u32; 3]; 2] {
+    let mut splits = [[0u32; 3]; 2];
+    for &(stimulus, counts) in counted {
+        if let Some(into) = splits
+            .get_mut(usize::from(stimulus))
+            .and_then(|s| s.get_mut(selected(counts).map_or(2, usize::from)))
+        {
+            *into = into.saturating_add(1);
+        }
+    }
+    splits
+}
+
+/// `couplings_course` against the image couplings given: the four couplings at each block's end
+/// as fractions of the image's, in parts per ten thousand.
+fn couplings_course_of(image: &[[i64; 2]; 2], blocks: &[Block]) -> Vec<[[i64; 2]; 2]> {
+    blocks
+        .iter()
+        .map(|b| [0usize, 1].map(|s| [0usize, 1].map(|r| per_myriad(b.10[s][r], image[s][r]))))
+        .collect()
+}
+
+/// The compositions of a run in one number: `fnv1a_64` over each block's own hash, as its two
+/// `i32` words.
+fn compositions_hash(compositions: &[Composition]) -> u64 {
+    let words: Vec<i32> = compositions
+        .iter()
+        .flat_map(|c| [c.4 as i32, (c.4 >> 32) as i32])
+        .collect();
+    fnv1a_64(&words)
+}
+
+/// What an arm of H-33 reads of its run (brief 067), each by the rule H-25's arm reads it by,
+/// against the network's own image: the correct trials of each mapping's last 128; the first
+/// block past the couplings' bound; the block each mapping passes 40 of 64 in; the first block
+/// that left the band; each stimulus's trials, correct trials and summed value over each
+/// mapping's last 128; each mapping's highest coupling; the value's trough after each flip; each
+/// mapping's trials by outcome; the blocks in which the stimulus fired once; whether the
+/// inhibitory sum fell in every block; the reach by polarity over the four pairs; and the sums by
+/// polarity after the run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SeededRead {
+    correct: [u32; 4],
+    over: Option<(usize, usize, usize)>,
+    crossings: [Option<usize>; 4],
+    left: Option<(usize, i64)>,
+    stimulus_values: [[StimulusValue; 2]; 4],
+    highest: [Option<Peak>; 4],
+    troughs: [[i64; 2]; 3],
+    tally: [[u32; 3]; 4],
+    once: u32,
+    falls: bool,
+    reach: Reach,
+    sums_after: (i64, i64),
+}
+
+// -------------------------------------------------------- the derivation (brief 067)
+
+/// What a derivation makes where every rule gave a value and the frozen block passed: the
+/// constants a rewarded run takes from the network, the gain, the settled image's sums by polarity
+/// and its four couplings, the target period, the window, the critic, and two images — the
+/// settled image frozen, and H-25's image of this network, the one each arm decodes.
+struct Made {
+    derived: Derived,
+    gain: u32,
+    sums: (i64, i64),
+    couplings: [[i64; 2]; 2],
+    period: u32,
+    window: u16,
+    critic: ValueCritic,
+    windowed: Vec<u8>,
+}
+
+/// A derivation on one prior (brief 067): what each rule returned, and the tables it was read
+/// from, in the derivations' order. A table after the rule that returned nothing is empty.
+/// - `scanned`: the four couplings by the prior's census at each rotation scanned.
+/// - `prior_sums`: the prior's sums by polarity, before any window.
+/// - `calibrations`: the frozen block and its trace on the prior's network at each gain tried.
+/// - `census`, `synapses`: of the picked gain's block, the volley's spikes by tick and the
+///   synapses from each stimulus set onto each readout set.
+/// - `probes`, `cancelled`: per candidate tried, the ticks a unit at rest fires on through the
+///   task, and the frozen block on the prior's network with its trace and composition.
+/// - `lead_in`, `quiet`: the settling's windows, and the quiet run's ticks and sums.
+/// - `frozen`, `counted`, `frozen_census`: the frozen block from the settled image under the
+///   picked cancel, with its trace and composition; every trial's counts; the volley's census.
+/// - `target_lead_in`: the settled image's spikes by window under the reference drive.
+/// - `crcs`: the CRC-64 of the settled image frozen, and of it with the inhibitory baseline, the
+///   signed gate, the target period, the critic and the window written, each onto the last.
+/// - `couplings`: the settled image's four couplings.
+#[derive(Default)]
+struct Derivation {
+    rules: Rules,
+    scanned: Vec<[i64; 4]>,
+    prior_sums: (i64, i64),
+    calibrations: Vec<(Block, u64)>,
+    census: Vec<(u32, u64)>,
+    synapses: [[u32; 2]; 2],
+    probes: Vec<Vec<u32>>,
+    cancelled: Vec<(Block, u64, Composition)>,
+    lead_in: Vec<LeadInWindow>,
+    quiet: Option<(u64, (i64, i64))>,
+    frozen: Option<(Block, u64, Composition)>,
+    counted: Vec<Counted>,
+    frozen_census: Vec<(u32, u64)>,
+    target_lead_in: Vec<u64>,
+    crcs: Option<[u64; 6]>,
+    couplings: Option<[[i64; 2]; 2]>,
+    made: Option<Made>,
+}
+
+/// The configuration H-25 ran under, derived on ADR-0044's prior at 1 024 units from `seed`
+/// (ADR-0165, ADR-0167): each constant by the rule that derived it on the instrument's prior, in
+/// ADR-0165's order, nothing carried over from another network, and the derivation stopped at the
+/// first rule that returns nothing.
+/// 1. The rotation: `first_balanced` over the prior's census.
+/// 2. The gain: the calibration's frozen block — the prior's network at the gain, the baseline
+///    zero, F-46's stimulus with no cancel, sixty-four trials — at each of `GAINS` in order until
+///    one is `calibrated`. The block's volley census is ADR-0072's composition's.
+/// 3. The settled network: `candidate_from` at the gain under the drive alone until
+///    `settled_within` holds or `LEAD_IN_EXTENDED` windows have run; then the quiet run and the
+///    image with the baseline at zero.
+/// 4. The cancel: the offset the refractory window and one; the span the census's; the candidates
+///    `cancel_candidates`; each in order probed on a unit at rest and run for a frozen block on the
+///    prior's network at the gain, until one fires once. Then the frozen block from the settled
+///    image under it, read by `frozen_measures`.
+/// 5. The target period: `target_period` over the settled image frozen under the reference drive
+///    for `TARGET_LEAD_IN_TICKS`.
+/// 6. The critic's window, `shortest_delay` of the image; and the critic, `critic_for` the
+///    stimulus set's units.
+///
+/// Then H-25's image is written as H-25's arms write it: the settled image frozen, with the
+/// inhibitory baseline, the signed gate, the target period, the critic and the window, each
+/// change shown to be the only one where a masked check exists for it.
+fn derive(seed: u64, name: &str) -> Derivation {
+    let p = prior_seeded(1024, seed);
+    let mut d = Derivation::default();
+    // 1. The rotation, by the prior's census: the couplings do not read the gain.
+    let laid = at_gain(&p, config(1024, 1, 0), GAINS[0]);
+    d.prior_sums = weights_by_polarity(&laid);
+    let (rotation, scanned) =
+        first_balanced(&|rotation| couplings(&laid, &geometry(1024, rotation)));
+    d.scanned = scanned;
+    d.rules.rotation = rotation;
+    let Some(rotation) = rotation else {
+        return d;
+    };
+    let sets = geometry(1024, rotation);
+    let len = sets[0].len();
+    assert_eq!(sets[1].len(), len, "{name}: two stimuli of one size");
+    // 2. The gain, and with the picked gain's block its census and its synapses.
+    let mut census_ticks: Vec<u64> = Vec::new();
+    for &gain in &GAINS {
+        let mut exec = at_gain(&p, config(1024, 2, 0), gain);
+        assert_eq!(exec.homeostasis().synaptic_gain_q16, gain);
+        let (blocks, trace, _, counts, _, volley_ticks) =
+            compose_on_over(sets, &mut exec, SHAPE_F46, None, 1024, BLOCK);
+        let block = *blocks.first().expect("a block of the calibration");
+        d.calibrations.push((block, trace));
+        if calibrated(&block) {
+            d.synapses = counts;
+            census_ticks = volley_ticks;
+            break;
+        }
+    }
+    d.rules.gain = first_calibrated(&d.calibrations);
+    let Some(gain) = d.rules.gain else {
+        return d;
+    };
+    d.census = census_of(&census_ticks);
+    // 3. The settled network and its image.
+    let mut exec = candidate_from(&p, 1024, gain, BACKGROUNDS[SETTLED]);
+    assert_eq!(
+        weights_by_polarity(&exec),
+        d.prior_sums,
+        "{name}: the prior"
+    );
+    d.lead_in = lead_in_until_settled_over(
+        [sets[2], sets[3]],
+        &mut exec,
+        1024,
+        d.prior_sums.1,
+        LEAD_IN_EXTENDED,
+    );
+    d.rules.settled = settled_within(d.prior_sums.1, &lead_in_sums(&d.lead_in));
+    if d.rules.settled.is_none() {
+        return d;
+    }
+    let Some(ticks) = quiet_within(&mut exec) else {
+        // The settled network did not fall quiet, so no image can be written from it: the
+        // settling's rule gave no network to stand on.
+        d.rules.settled = None;
+        return d;
+    };
+    let sums = weights_by_polarity(&exec);
+    d.quiet = Some((ticks, sums));
+    let zero = frozen_image(&exec);
+    {
+        let frozen = frozen_from(&zero, 1024);
+        assert_eq!(
+            (
+                weights_by_polarity(&frozen),
+                frozen.homeostasis().synaptic_gain_q16,
+                frozen.homeostasis().control_step_q0_16,
+                frozen.ticks()
+            ),
+            (sums, gain, BACKGROUNDS[SETTLED], exec.ticks()),
+            "{name}: the image carries the weights, the gain, the step and the clock"
+        );
+    }
+    // 4. The cancel, and the frozen block from the settled image under it.
+    let span = span_of(&d.census);
+    d.rules.span = (span > 0).then_some(span);
+    if d.rules.span.is_none() {
+        return d;
+    }
+    let (least, candidates) = cancel_candidates(span, gain);
+    d.rules.least = least;
+    let Some(candidates) = candidates else {
+        return d;
+    };
+    let mut probed: Vec<bool> = Vec::new();
+    for &messages in &candidates {
+        let cancel = cancel_over(span, messages);
+        let probe = probe_task_on(&p, gain, SHAPE_F46, Some(cancel));
+        probed.push(probe.len() == 1);
+        d.probes.push(probe);
+        let mut exec = at_gain(&p, config(1024, 2, 0), gain);
+        let (blocks, trace, trials, counts, _, _) =
+            compose_on_over(sets, &mut exec, SHAPE_F46, Some(cancel), 1024, BLOCK);
+        assert_eq!(counts, d.synapses, "{name}: the same synapses");
+        let block = *blocks.first().expect("a block of the candidate");
+        d.cancelled.push((block, trace, composition(&trials)));
+        if first_firing_once(len, &candidates, &probed, &d.cancelled).is_some() {
+            break;
+        }
+    }
+    d.rules.cancel = first_firing_once(len, &candidates, &probed, &d.cancelled);
+    let Some(messages) = d.rules.cancel else {
+        return d;
+    };
+    let cancel = cancel_over(span, messages);
+    {
+        let mut frozen = frozen_from(&zero, 1024);
+        let (blocks, trace, trials, counts, counted, volley_ticks) =
+            compose_on_over(sets, &mut frozen, SHAPE_F46, Some(cancel), 1024, BLOCK);
+        assert_eq!(counts, d.synapses, "{name}: the settled network's synapses");
+        let block = *blocks.first().expect("a frozen block");
+        let composed = composition(&trials);
+        d.rules.frozen = Some(frozen_measures(len, &block, &composed));
+        d.frozen = Some((block, trace, composed));
+        d.counted = counted;
+        d.frozen_census = census_of(&volley_ticks);
+    }
+    if d.rules.frozen != Some([true, true]) {
+        return d;
+    }
+    // 5. The target period, on the settled image frozen.
+    let windows = target_lead_in(&zero);
+    d.target_lead_in = windows.iter().map(|w| spikes_of(w)).collect();
+    let period = target_period(1024, TARGET_LEAD_IN_TICKS, spikes_of(&summed(&windows)));
+    d.rules.period = Some(period);
+    // H-20's image of this network, then H-21's.
+    let inhibited = inhibited_image(&zero);
+    let signed = signed_image(&inhibited);
+    let targeted = targeted_image(&signed, period);
+    assert!(
+        only_the_target(&signed, &targeted),
+        "{name}: the target period's bytes and the seal, and nothing else"
+    );
+    // 6. The critic's window and the critic.
+    d.rules.window = shortest_delay(signed_from(&targeted, 1024).blocks());
+    let Some(window) = d.rules.window else {
+        return d;
+    };
+    d.rules.critic = u32::try_from(len).ok().and_then(critic_for);
+    let Some(critic) = d.rules.critic else {
+        return d;
+    };
+    let valued = valued_image(&targeted, critic);
+    assert!(
+        only_the_critic(&targeted, &valued),
+        "{name}: the critic's bytes and the seal, and nothing else"
+    );
+    let windowed = with_window_bytes(&valued, window);
+    assert!(
+        only_the_window(&valued, &windowed),
+        "{name}: the window's bytes and the seal, and nothing else"
+    );
+    d.crcs = Some([
+        crc64(&zero),
+        crc64(&inhibited),
+        crc64(&signed),
+        crc64(&targeted),
+        crc64(&valued),
+        crc64(&windowed),
+    ]);
+    let image_couplings = pair_couplings(&signed_from(&windowed, 1024), &sets);
+    d.couplings = Some(image_couplings);
+    d.made = Some(Made {
+        derived: Derived {
+            rotation,
+            cancel,
+            synapses: d.synapses,
+        },
+        gain,
+        sums,
+        couplings: image_couplings,
+        period,
+        window,
+        critic,
+        windowed,
+    });
+    d
+}
+
+/// Dumps a derivation whole, as it is pinned, before anything of it is held; then each constant
+/// beside seed 22's and the frozen block's readings beside seed 22's.
+fn dump_derivation(name: &str, d: &Derivation) {
+    eprintln!("DUMP {name} PIN rules {:?}", d.rules);
+    eprintln!("DUMP {name} PIN scanned {:?}", d.scanned);
+    eprintln!("DUMP {name} PIN prior sums {:?}", d.prior_sums);
+    eprintln!("DUMP {name} PIN calibrations {:?}", d.calibrations);
+    eprintln!("DUMP {name} PIN census {:?}", d.census);
+    eprintln!("DUMP {name} PIN synapses {:?}", d.synapses);
+    eprintln!("DUMP {name} PIN probes {:?}", d.probes);
+    eprintln!("DUMP {name} PIN cancelled {:?}", d.cancelled);
+    eprintln!("DUMP {name} PIN lead-in {:?}", d.lead_in);
+    eprintln!("DUMP {name} PIN quiet {:?}", d.quiet);
+    eprintln!("DUMP {name} PIN frozen {:?}", d.frozen);
+    eprintln!("DUMP {name} PIN counted {:?}", d.counted);
+    eprintln!("DUMP {name} PIN frozen census {:?}", d.frozen_census);
+    eprintln!("DUMP {name} PIN target lead-in {:?}", d.target_lead_in);
+    eprintln!(
+        "DUMP {name} PIN crcs {:?}",
+        d.crcs.map(|crcs| crcs.map(|crc| format!("{crc:#018x}")))
+    );
+    eprintln!("DUMP {name} PIN couplings {:?}", d.couplings);
+    eprintln!(
+        "DUMP {name} the rules returned {:?} beside seed 22's {RULES_1024:?}; clause 0 {}",
+        d.rules,
+        d.rules.hold()
+    );
+    eprintln!(
+        "DUMP {name} lead-in windows {} beside seed 22's {}; prior sums {:?} beside {PRIOR_SUMS_1024:?}; quiet {:?} beside {:?}; synapses {:?} beside {SYNAPSES_1024:?}; image couplings {:?} beside {IMAGE_COUPLINGS_1024:?}; target lead-in {:?} beside {TARGET_LEAD_IN_1024:?}",
+        d.lead_in.len(),
+        BACKGROUND_LEAD_IN_1024[SETTLED].len(),
+        d.prior_sums,
+        d.quiet,
+        QUIET_1024[SETTLED],
+        d.synapses,
+        d.couplings,
+        d.target_lead_in
+    );
+    let (block_22, _, composed_22) = &BACKGROUND_1024[SETTLED];
+    eprintln!(
+        "DUMP {name} frozen block, the readouts' spikes [after, before, seen] {:?}, the stimulus's after the opening {:?}, the sign {:?}, the sight with each readout above {:?}, the selections [A, B] of [readout 0, readout 1, tie] {:?}; beside seed 22's {:?}, {}, {}, {}, {:?}",
+        d.frozen.map(|(block, _, _)| measure(&block)),
+        d.frozen.map(|(_, _, composed)| composed.2[2][1]),
+        d.frozen.map(|(_, _, composed)| composed.3),
+        d.frozen.map(|(block, _, _)| calibrated(&block)),
+        frozen_selections(&d.counted),
+        measure(block_22),
+        composed_22.2[2][1],
+        composed_22.3,
+        calibrated(block_22),
+        frozen_selections(&BACKGROUND_COUNTED_1024[SETTLED])
+    );
+}
+
+/// Holds a derivation on the network of index `n` in `SEEDS` to its pinned tables: what each rule
+/// returned, and every table it was read from. On a network no earlier round ran on there is no
+/// table from another run to hold a derivation to: what holds it is the rule, run again, and the
+/// first run's tables pinned here, which the weekly run reproduces.
+fn derivation_held(name: &str, n: usize, d: &Derivation) {
+    assert_eq!(
+        Some(d.rules),
+        RULES_SEEDED[n],
+        "{name}: what each rule returned"
+    );
+    assert_eq!(
+        d.scanned.as_slice(),
+        SCANNED_SEEDED[n],
+        "{name}: the couplings at each rotation scanned"
+    );
+    assert_eq!(
+        d.prior_sums, PRIOR_SUMS_SEEDED[n],
+        "{name}: the prior's sums"
+    );
+    assert_eq!(
+        d.calibrations.as_slice(),
+        CALIBRATIONS_SEEDED[n],
+        "{name}: the calibration's blocks"
+    );
+    assert_eq!(
+        d.census.as_slice(),
+        CENSUS_SEEDED[n],
+        "{name}: the volley's census"
+    );
+    assert_eq!(d.synapses, SYNAPSES_SEEDED[n], "{name}: the synapses");
+    assert_eq!(
+        d.probes.iter().map(Vec::as_slice).collect::<Vec<&[u32]>>(),
+        PROBES_SEEDED[n],
+        "{name}: the probes"
+    );
+    assert_eq!(
+        d.cancelled.as_slice(),
+        CANCELLED_SEEDED[n],
+        "{name}: the candidates' frozen blocks"
+    );
+    assert_eq!(
+        d.lead_in.as_slice(),
+        LEAD_IN_SEEDED[n],
+        "{name}: the lead-in"
+    );
+    assert_eq!(d.quiet, QUIET_SEEDED[n], "{name}: the quiet run");
+    assert_eq!(d.frozen, FROZEN_SEEDED[n], "{name}: the frozen block");
+    assert_eq!(
+        d.counted.as_slice(),
+        FROZEN_COUNTED_SEEDED[n],
+        "{name}: the frozen block's counts"
+    );
+    assert_eq!(
+        d.frozen_census.as_slice(),
+        FROZEN_CENSUS_SEEDED[n],
+        "{name}: the frozen block's census"
+    );
+    assert_eq!(
+        d.target_lead_in.as_slice(),
+        TARGET_LEAD_IN_SEEDED[n],
+        "{name}: the target's lead-in"
+    );
+    assert_eq!(d.crcs, CRCS_SEEDED[n], "{name}: the images");
+    assert_eq!(
+        d.couplings, COUPLINGS_SEEDED[n],
+        "{name}: the image's couplings"
+    );
+}
+
+/// The derivations on one of H-33's networks (brief 067), a test of their own: every rule run in
+/// ADR-0165's order on the prior of `SEEDS[n]`, everything dumped before anything is held, then
+/// the pinned tables.
+fn seeded_derivation(n: usize) {
+    let seed = SEEDS[n];
+    let name = format!("seeded{seed} derivation");
+    let d = derive(seed, &name);
+    dump_derivation(&name, &d);
+    eprintln!(
+        "DUMP {name} verdict of this network on clause 0: {}; the prediction, none: {SEEDED_PREDICTED:?}",
+        d.rules.hold()
+    );
+    derivation_held(&name, n, &d);
+}
+
+// ---------------------------------------------------------------- the run (brief 067)
+
+/// One arm of H-33 on the network of index `n` in `SEEDS` (brief 067): the derivation by the
+/// rules, held to the network's pinned derivation, which is this arm's calibration — on a network
+/// whose clause 0 does not hold there is no arm — then H-25's arm from H-25's image of this
+/// network: 7 680 trials under the drawn delivery with no task critic and H-20's flips, the drawn
+/// sources held to the critic's oracle's counts and the composer and the network's oracle held to
+/// the record at every trial (`fed_run_on`, H-25's run with no shadow beside it). Everything is
+/// dumped, and the clauses and the readings computed, before anything is held; then the pinned
+/// tables of the run, by block.
+fn seeded_arm(n: usize, arm: Reversal) {
+    let k = SEEDED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-33");
+    let seed = SEEDS[n];
+    let name = format!("seeded{seed} {arm:?}");
+    let d = derive(seed, &name);
+    eprintln!(
+        "DUMP {name} rules {:?} crcs {:?}",
+        d.rules,
+        d.crcs.map(|crcs| crcs.map(|crc| format!("{crc:#018x}")))
+    );
+    derivation_held(&name, n, &d);
+    assert!(
+        d.rules.hold(),
+        "{name}: clause 0 holds on this network, or it has no arm"
+    );
+    let made = d
+        .made
+        .as_ref()
+        .expect("a derivation whose rules hold makes a configuration");
+    eprintln!("DUMP {name} calibration holds: the derivation is the one pinned");
+    let sets = geometry(1024, made.derived.rotation);
+    let len = sets[0].len();
+    let mut exec = signed_from(&made.windowed, 1024);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.homeostasis().synaptic_gain_q16
+        ),
+        (
+            Some(made.critic),
+            made.window,
+            made.period,
+            exec.ticks(),
+            Ok(()),
+            made.gain
+        ),
+        "{name}: the derived configuration, the window open at the load, and the engine draws"
+    );
+    assert!(
+        exec.units().iter().all(|u| u.value_weight == 0) && exec.features().iter().all(|&c| c == 0),
+        "{name}: every weight and every count zero"
+    );
+    assert_eq!(
+        (weights_by_polarity(&exec), pair_couplings(&exec, &sets)),
+        (made.sums, made.couplings),
+        "{name}: the image's sums and couplings"
+    );
+    let groups = groups_of(&exec, &sets);
+    let sizes = group_sizes(&groups);
+    let classes = classes_of(&exec, &sets);
+    let image = weights_of(&exec);
+    let outside = outside_image(&made.couplings, made.sums.1);
+    assert_eq!(
+        cells_sum(&cells_of(&exec, &image, &sets, &classes)),
+        outside,
+        "{name}: the cells sum to the image's outside sum"
+    );
+    let ((run, _, values, watched, beside), _) = fed_run_on(
+        &made.derived,
+        &mut exec,
+        arm,
+        &sets,
+        &groups,
+        &classes,
+        &image,
+        DRAWN_DELIVERY,
+        SCHEDULE_TRIALS,
+        false,
+        None,
+        Feedback::Answer,
+    );
+    assert!(beside.is_none(), "no shadow, no reading beside the run");
+    let (blocks, trace, trials, read, _) = &run;
+    let earned = earned_blocks(read);
+    let compositions: Vec<Composition> = trials.chunks(BLOCK).map(composition).collect();
+    let valued_by_block = value_blocks(read, &values);
+    let sourced: Vec<Sourced> = admitted_blocks(read, &watched.sourced);
+    assert_eq!(
+        (read.len(), values.len(), watched.sourced.len()),
+        (SCHEDULE_TRIALS, SCHEDULE_TRIALS, SCHEDULE_TRIALS)
+    );
+    assert_eq!(
+        [
+            blocks.len(),
+            compositions.len(),
+            earned.len(),
+            valued_by_block.len(),
+            sourced.len()
+        ],
+        [SCHEDULE_BLOCKS; 5],
+        "{name}: 120 blocks"
+    );
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!(
+        "DUMP {name} PIN composed {:#018x}",
+        compositions_hash(&compositions)
+    );
+    eprintln!("DUMP {name} PIN earned {earned:?}");
+    eprintln!("DUMP {name} PIN read {:#018x}", earned_hash(read));
+    eprintln!("DUMP {name} PIN values {valued_by_block:?}");
+    eprintln!("DUMP {name} PIN value hash {:#018x}", values_hash(&values));
+    eprintln!("DUMP {name} PIN sourced {sourced:?}");
+    eprintln!(
+        "DUMP {name} PIN sources hash {:#018x}",
+        sources_hash(&watched.sourced)
+    );
+    // The clauses and the readings, computed before anything else is held.
+    let means = value_means(&valued_by_block);
+    let readings = SeededRead {
+        correct: mapping_correct(blocks),
+        over: first_over_of(&made.couplings, blocks),
+        crossings: crossings(blocks),
+        left: left_band(outside, blocks),
+        stimulus_values: stimulus_values(read, &values),
+        highest: highest_of(&made.couplings, blocks),
+        troughs: troughs(&means),
+        tally: tally(blocks),
+        once: blocks
+            .iter()
+            .zip(compositions.iter())
+            .filter(|(b, c)| fires_once_of(len, b, c))
+            .count() as u32,
+        falls: falls_every_block(made.sums.0, blocks),
+        reach: reach_over(&sets, &exec, &image, &ALL_PAIRS),
+        sums_after: weights_by_polarity(&exec),
+    };
+    eprintln!("DUMP {name} PIN readings {readings:?}");
+    eprintln!(
+        "DUMP {name} verdict of this arm: learned {:?} over {:?} revised {:?} held {} left {:?}; readings: value within a quarter of 2p − 1 {:?}; the prediction, none: {SEEDED_PREDICTED:?}",
+        readings.correct.map(|c| c >= REWARDED_MIN),
+        readings.over,
+        reversals_within(readings.crossings),
+        readings.left.is_none(),
+        readings.left,
+        readings.stimulus_values.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} crossings {:?} beside H-25's {:?}; correct {:?} beside {:?}; highest {:?} beside {:?}; troughs {:?} beside {:?}",
+        readings.crossings,
+        CROSSINGS_DRAWN_1024[k],
+        readings.correct,
+        CORRECT_DRAWN_1024[k],
+        readings.highest,
+        HIGHEST_DRAWN_1024[k],
+        readings.troughs,
+        TROUGHS_DRAWN_1024[k]
+    );
+    eprintln!(
+        "DUMP {name} couplings course {:?} beside H-25's {:?}",
+        couplings_course_of(&made.couplings, blocks),
+        couplings_course(DRAWN_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} value by block beside H-25's {:?}",
+        means
+            .iter()
+            .zip(value_means(DRAWN_VALUES_1024[k]))
+            .map(|(here, there)| (*here, there))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "DUMP {name} inhibitory course {:?} beside H-25's {:?}",
+        course(made.sums.0, blocks),
+        course(QUIET_1024[SETTLED].1.0, DRAWN_BLOCKS_1024[k])
+    );
+    eprintln!(
+        "DUMP {name} outside course, per myriad of the image's {:?}",
+        blocks
+            .iter()
+            .map(|b| per_myriad(outside_of(b), outside))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} the drawn sources beside the host's per block, [A, B] of [drawn, left out, others]: {:?}; group sizes {sizes:?}",
+        blocks
+            .iter()
+            .zip(&sourced)
+            .map(|(b, s)| beside_host(b, s, &sizes))
+            .collect::<Vec<[[u32; 3]; 2]>>()
+    );
+    // The pinned tables of the whole run, and the readings as the constants state.
+    pinned(
+        &format!("{name} sight"),
+        blocks,
+        *trace,
+        SEEDED_BLOCKS[n][k],
+        SEEDED_TRACES[n][k],
+    );
+    assert_ne!(*trace, 0, "{name}: a sequence");
+    assert_eq!(*trace, SEEDED_TRACES[n][k], "{name}: the accuracy sequence");
+    assert_eq!(
+        compositions_hash(&compositions),
+        SEEDED_COMPOSED[n][k],
+        "{name}: the composition per block"
+    );
+    assert_eq!(
+        earned.as_slice(),
+        SEEDED_EARNED[n][k],
+        "{name}: the earned blocks"
+    );
+    assert_eq!(earned_hash(read), SEEDED_READ[n][k], "{name}: the readings");
+    assert_eq!(
+        valued_by_block.as_slice(),
+        SEEDED_VALUES[n][k],
+        "{name}: the engine's value per block"
+    );
+    assert_eq!(
+        values_hash(&values),
+        SEEDED_VALUE_HASH[n][k],
+        "{name}: every trial's value"
+    );
+    assert_eq!(
+        sourced.as_slice(),
+        SEEDED_SOURCED[n][k],
+        "{name}: the drawn sources per block"
+    );
+    assert_eq!(
+        sources_hash(&watched.sourced),
+        SEEDED_SOURCES_HASH[n][k],
+        "{name}: every trial's drawn sources"
+    );
+    assert_eq!(
+        Some(readings),
+        SEEDED_READINGS[n][k],
+        "{name}: the readings as written"
+    );
+    assert_eq!(
+        blocks.last().map(|b| (b.7, b.8)),
+        Some(readings.sums_after),
+        "{name}: the sums after the run are the last block's"
+    );
+}
+
+/// The rules on the instrument's own prior (brief 067, H-33's calibration): `derive` at seed 22
+/// returns every constant the tree holds, each table it reads is the table an earlier round
+/// pinned, and the image it writes is H-25's, by the CRC of every image on the way to it.
+#[test]
+#[ignore]
+fn the_rules_return_the_tree_s_constants_on_seed_22_at_1024_units_exhaustive() {
+    let name = "rules1024 seed 22";
+    let d = derive(PRIOR_SEED, name);
+    dump_derivation(name, &d);
+    assert_eq!(
+        d.rules, RULES_1024,
+        "{name}: each rule returns its constant"
+    );
+    assert!(
+        d.rules.hold(),
+        "{name}: clause 0 holds on the instrument's prior"
+    );
+    assert_eq!(d.scanned.len(), 1, "{name}: the first rotation is balanced");
+    assert_eq!(d.prior_sums, PRIOR_SUMS_1024, "{name}: the prior's sums");
+    assert_eq!(
+        d.calibrations.as_slice(),
+        &CALIBRATION_1024[..1],
+        "{name}: the calibration's block at the first gain, which passes"
+    );
+    assert_eq!(
+        d.census.as_slice(),
+        VOLLEY_TICKS_1024.as_slice(),
+        "{name}: ADR-0072's census"
+    );
+    assert_eq!(d.synapses, SYNAPSES_1024, "{name}: ADR-0072's synapses");
+    assert_eq!(
+        d.cancelled.as_slice(),
+        &CANCELLED_1024[..2],
+        "{name}: ADR-0076's first two candidates, the second picked"
+    );
+    for (probe, &messages) in d.probes.iter().zip(&CANCELS) {
+        let pinned = PROBED_CANCEL_1024
+            .iter()
+            .find(|&&(_, cancel, _)| cancel == Some(cancel_of(messages)))
+            .map(|&(_, _, ticks)| ticks);
+        assert_eq!(
+            Some(probe.as_slice()),
+            pinned,
+            "{name}: ADR-0076's probe of {messages}"
+        );
+    }
+    assert_eq!(d.probes.len(), 2, "{name}: two candidates tried");
+    assert_eq!(
+        d.lead_in.as_slice(),
+        BACKGROUND_LEAD_IN_1024[SETTLED],
+        "{name}: ADR-0077's lead-in"
+    );
+    assert_eq!(
+        d.quiet,
+        Some(QUIET_1024[SETTLED]),
+        "{name}: ADR-0077's quiet run"
+    );
+    assert_eq!(
+        d.frozen,
+        Some(BACKGROUND_1024[SETTLED]),
+        "{name}: ADR-0077's frozen block"
+    );
+    assert_eq!(
+        d.counted.as_slice(),
+        BACKGROUND_COUNTED_1024[SETTLED].as_slice(),
+        "{name}: ADR-0077's counts"
+    );
+    assert_eq!(
+        d.frozen_census.as_slice(),
+        BACKGROUND_CENSUS_1024[SETTLED],
+        "{name}: ADR-0077's census"
+    );
+    assert_eq!(
+        d.target_lead_in.as_slice(),
+        TARGET_LEAD_IN_1024.as_slice(),
+        "{name}: ADR-0129's lead-in"
+    );
+    assert_eq!(
+        d.crcs
+            .map(|crcs| [crcs[1], crcs[2], crcs[3], crcs[4], crcs[5]]),
+        Some([
+            REVERSAL_IMAGE_CRC_1024,
+            PUNISHED_IMAGE_CRC_1024,
+            TARGET_IMAGE_CRC_1024,
+            VALUED_IMAGE_CRC_1024,
+            WINDOWED_IMAGE_CRC_1024
+        ]),
+        "{name}: H-17's image, H-20's, H-21's, H-22's and H-23's, the one H-25's arms decode"
+    );
+    assert_eq!(
+        d.couplings,
+        Some(IMAGE_COUPLINGS_1024),
+        "{name}: the image's couplings"
+    );
+    let made = d.made.as_ref().expect("a configuration");
+    assert_eq!(
+        (
+            made.derived,
+            made.gain,
+            made.sums,
+            made.couplings,
+            made.period,
+            made.window,
+            made.critic
+        ),
+        (
+            DERIVED_1024,
+            GAIN_1024,
+            QUIET_1024[SETTLED].1,
+            IMAGE_COUPLINGS_1024,
+            TARGET_PERIOD_1024,
+            WINDOW_TICKS_1024,
+            VALUED_CRITIC
+        ),
+        "{name}: what a rewarded run takes from the network is what the tree holds"
+    );
+    assert_eq!(
+        crc64(&made.windowed),
+        WINDOWED_IMAGE_CRC_1024,
+        "{name}: the image an arm would decode is H-25's"
+    );
+}
+
+/// The derivations on the prior of seed 23 (brief 067).
+#[test]
+#[ignore]
+fn the_rules_on_seed_23_at_1024_units_exhaustive() {
+    seeded_derivation(0);
+}
+
+/// The derivations on the prior of seed 24 (brief 067).
+#[test]
+#[ignore]
+fn the_rules_on_seed_24_at_1024_units_exhaustive() {
+    seeded_derivation(1);
+}
+
+/// H-33's arm on the prior of seed 23 that starts from the assignment (brief 067).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_23_from_the_assignment_at_1024_units_exhaustive() {
+    seeded_arm(0, Reversal::AssignmentFirst);
+}
+
+/// H-33's arm on the prior of seed 23 that starts from the mirrored assignment (brief 067).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    seeded_arm(0, Reversal::MirroredFirst);
+}
+
+/// H-33's arm on the prior of seed 24 that starts from the assignment (brief 067).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_24_from_the_assignment_at_1024_units_exhaustive() {
+    seeded_arm(1, Reversal::AssignmentFirst);
+}
+
+/// H-33's arm on the prior of seed 24 that starts from the mirrored assignment (brief 067).
+#[test]
+#[ignore]
+fn the_address_drawn_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    seeded_arm(1, Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 067): the seeds and the constants as ADR-0165 and
+/// ADR-0167 fixed them; every rule of a derivation at its edges over tables written by hand; the
+/// rules over the tables the tree pins for the instrument's prior, each returning the constant the
+/// tree holds, where that needs no run; H-33's clauses and its stopping rule's steps over tables
+/// written by hand; and the readings' rules over tables written by hand. It runs no rule on a
+/// network of another seed. Nothing else added to the gate.
+#[test]
+fn the_rules_of_a_derivation_the_clauses_of_h_33_and_the_readings_rules() {
+    // The seeds and the constants.
+    assert_eq!(SEEDS, [23, 24]);
+    assert_eq!(PRIOR_SEED, 22);
+    assert_eq!(prior(1024), prior_seeded(1024, PRIOR_SEED));
+    for seed in SEEDS {
+        let p = prior_seeded(1024, seed);
+        assert_eq!(
+            Prior {
+                seed: PRIOR_SEED,
+                ..p
+            },
+            prior(1024),
+            "seed {seed}: the seed is the one change"
+        );
+    }
+    assert_eq!(
+        SEEDED_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    const _: () = assert!(SEEDED_PREDICTED.is_none(), "ADR-0165 predicts no verdict");
+    assert_eq!(
+        (ROTATIONS, GAINS, LEAD_IN_EXTENDED, LEAST_SCAN, SEEN_MIN),
+        (20, [0x0001_C000, 0x0002_0000], 160, 32, 56),
+        "the ranges the rules scan"
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            BOUND_PER_CENT,
+            REVERSAL_BLOCKS_MAX,
+            CROSSING_MARK,
+            SCHEDULE_BLOCKS,
+            BAND_QUARTERS,
+            BAND_DIVISOR
+        ),
+        (80, 130, 23, 40, 120, (3, 5), 4),
+        "clauses 1 to 4 are H-25's"
+    );
+    // The rotation's rule at its edges.
+    let balanced_from = |first: u32| {
+        move |rotation: u32| -> [i64; 4] {
+            if rotation >= first {
+                [100, 110, 105, 100]
+            } else {
+                [100, 111, 0, 100]
+            }
+        }
+    };
+    assert_eq!(
+        first_balanced(&balanced_from(0)),
+        (Some(0), vec![[100, 110, 105, 100]])
+    );
+    let (rotation, scanned) = first_balanced(&balanced_from(2));
+    assert_eq!((rotation, scanned.len()), (Some(2), 3));
+    assert_eq!(first_balanced(&balanced_from(19)).0, Some(19));
+    let (rotation, scanned) = first_balanced(&balanced_from(20));
+    assert_eq!(
+        (rotation, scanned.len()),
+        (None, 20),
+        "no rotation of the period: the rule returns nothing"
+    );
+    // The gain's rule at its edges.
+    let sight = |seen: u32| -> (Block, u64) {
+        let mut block = CALIBRATION_1024[0].0;
+        block.6 = seen;
+        (block, 0)
+    };
+    assert_eq!(first_calibrated(&[sight(SEEN_MIN)]), Some(GAINS[0]));
+    assert_eq!(first_calibrated(&[sight(SEEN_MIN - 1)]), None);
+    assert_eq!(
+        first_calibrated(&[sight(SEEN_MIN - 1), sight(SEEN_MIN)]),
+        Some(GAINS[1])
+    );
+    assert_eq!(
+        first_calibrated(&[sight(0), sight(0)]),
+        None,
+        "neither candidate: the rule returns nothing"
+    );
+    assert_eq!(first_calibrated(&[]), None);
+    // The cancel's rule at its edges.
+    assert_eq!(
+        cancel_candidates(CANCEL_TICKS, GAIN_1024),
+        (
+            [Some(CANCEL_ONCE_AT_REST), Some(CANCEL_AT_THE_EXTREME)],
+            Some(CANCELS)
+        ),
+        "over ADR-0076's span at 1.75 the candidates are ADR-0076's"
+    );
+    assert_eq!(
+        cancel_candidates(0, GAIN_1024),
+        ([None, None], None),
+        "a span of no tick cancels nothing: no candidate"
+    );
+    let after = |spikes: u64| -> (Block, u64, Composition) {
+        (
+            CALIBRATION_1024[0].0,
+            0,
+            (
+                [[0; 2]; 2],
+                [[[0; 4]; 2]; 2],
+                [[0, 0], [0, 0], [0, spikes]],
+                0,
+                0,
+            ),
+        )
+    };
+    let (passing, loud) = (after(0), after(327));
+    assert_eq!(
+        first_firing_once(51, &[3, 6, 12], &[true; 3], &[passing; 3]),
+        Some(3)
+    );
+    assert_eq!(
+        first_firing_once(51, &[3, 6, 12], &[false, true, true], &[passing; 3]),
+        Some(6),
+        "a failed probe is skipped"
+    );
+    assert_eq!(
+        first_firing_once(51, &[3, 6, 12], &[true; 3], &[loud, loud, passing]),
+        Some(12)
+    );
+    assert_eq!(
+        first_firing_once(51, &[3, 6, 12], &[true; 3], &[loud; 3]),
+        None,
+        "no candidate fires once: the rule returns nothing"
+    );
+    assert_eq!(
+        first_firing_once(51, &[3, 6, 12], &[true], &[loud]),
+        None,
+        "of the candidates run, none"
+    );
+    // The frozen block's measures at their edges, and a network at rest falls quiet at once.
+    let mut block = BACKGROUND_1024[SETTLED].0;
+    let composed = BACKGROUND_1024[SETTLED].2;
+    block.6 = SEEN_MIN;
+    assert_eq!(frozen_measures(51, &block, &composed), [true, true]);
+    block.6 = SEEN_MIN - 1;
+    assert_eq!(frozen_measures(51, &block, &composed), [true, false]);
+    assert_eq!(
+        frozen_measures(51, &block, &loud.2),
+        [false, false],
+        "the stimulus fires again after the opening"
+    );
+    let p = prior(1024);
+    let mut fresh = at_gain(&p, config(1024, 1, 0), GAIN_1024);
+    assert_eq!(quiet_within(&mut fresh), Some(0));
+    // The critic's arithmetic at its edges.
+    assert_eq!(critic_for(51), Some(VALUED_CRITIC), "ADR-0132's own");
+    assert_eq!(
+        (critic_for(50), critic_for(33), critic_for(64)),
+        (
+            Some(VALUED_CRITIC),
+            Some(VALUED_CRITIC),
+            Some(VALUED_CRITIC)
+        ),
+        "33 to 64 units: the sum is eleven"
+    );
+    assert_eq!(
+        critic_for(32),
+        Some(ValueCritic { shift: 8, scale: 2 }),
+        "32 units fit a sum of ten"
+    );
+    assert_eq!(
+        critic_for(4),
+        Some(ValueCritic { shift: 5, scale: 2 }),
+        "four units fit a sum of seven"
+    );
+    assert_eq!(
+        (critic_for(65), critic_for(0)),
+        (None, None),
+        "a dead band of a per cent and more, and no volley, whose sum is below the scale"
+    );
+    // Clause 0 at its edges.
+    assert!(RULES_1024.hold());
+    assert!(!Rules::default().hold());
+    for unset in [
+        Rules {
+            rotation: None,
+            ..RULES_1024
+        },
+        Rules {
+            gain: None,
+            ..RULES_1024
+        },
+        Rules {
+            settled: None,
+            ..RULES_1024
+        },
+        Rules {
+            span: None,
+            ..RULES_1024
+        },
+        Rules {
+            least: [Some(3), None],
+            ..RULES_1024
+        },
+        Rules {
+            cancel: None,
+            ..RULES_1024
+        },
+        Rules {
+            frozen: None,
+            ..RULES_1024
+        },
+        Rules {
+            frozen: Some([true, false]),
+            ..RULES_1024
+        },
+        Rules {
+            frozen: Some([false, true]),
+            ..RULES_1024
+        },
+        Rules {
+            period: None,
+            ..RULES_1024
+        },
+        Rules {
+            window: None,
+            ..RULES_1024
+        },
+        Rules {
+            critic: None,
+            ..RULES_1024
+        },
+    ] {
+        assert!(!unset.hold(), "{unset:?}");
+    }
+    // The rules over the tables the tree pins for the instrument's prior: each returns the
+    // constant the tree holds.
+    let sets = geometry(1024, ROTATION_1024);
+    let (rotation, scanned) = first_balanced(&|r| couplings(&fresh, &geometry(1024, r)));
+    assert_eq!(
+        (rotation, scanned.len()),
+        (RULES_1024.rotation, 1),
+        "the rotation"
+    );
+    assert_eq!(
+        first_calibrated(&CALIBRATION_1024),
+        RULES_1024.gain,
+        "the gain"
+    );
+    assert_eq!(
+        settled_within(
+            PRIOR_SUMS_1024.1,
+            &lead_in_sums(BACKGROUND_LEAD_IN_1024[SETTLED])
+        ),
+        RULES_1024.settled,
+        "the settled network"
+    );
+    assert_eq!(
+        Some(span_of(&VOLLEY_TICKS_1024)),
+        RULES_1024.span,
+        "the span"
+    );
+    assert_eq!(
+        first_firing_once(sets[0].len(), &CANCELS, &[true; 3], &CANCELLED_1024),
+        RULES_1024.cancel,
+        "the cancel"
+    );
+    assert_eq!(
+        Some(frozen_measures(
+            sets[0].len(),
+            &BACKGROUND_1024[SETTLED].0,
+            &BACKGROUND_1024[SETTLED].2
+        )),
+        RULES_1024.frozen,
+        "the frozen block's two measures"
+    );
+    assert_eq!(
+        Some(target_period(
+            1024,
+            TARGET_LEAD_IN_TICKS,
+            TARGET_LEAD_IN_1024.iter().sum()
+        )),
+        RULES_1024.period,
+        "the target period"
+    );
+    assert_eq!(
+        shortest_delay(fresh.blocks()),
+        RULES_1024.window,
+        "the critic's window"
+    );
+    assert_eq!(
+        u32::try_from(sets[0].len()).ok().and_then(critic_for),
+        RULES_1024.critic,
+        "the critic"
+    );
+    assert_eq!(
+        outside_image(&IMAGE_COUPLINGS_1024, QUIET_1024[SETTLED].1.1),
+        image_outside(),
+        "the outside sum of the instrument's image"
+    );
+    assert_eq!(
+        DERIVED_1024,
+        Derived {
+            rotation: 0,
+            cancel: Cancel {
+                offset: 201,
+                ticks: 9,
+                messages: 6,
+                efficacy_q16: CANCEL_MESSAGE_Q16
+            },
+            synapses: SYNAPSES_1024
+        }
+    );
+    // H-33's verdict and its stopping rule's steps over tables written by hand, against an image
+    // written by hand.
+    let image: [[i64; 2]; 2] = [[1_000, 2_000], [3_000, 4_000]];
+    let outside = 90_000i64;
+    let block = |correct: u32, outside: i64, couplings: [[i64; 2]; 2]| -> Block {
+        let excitatory = couplings
+            .iter()
+            .flatten()
+            .fold(outside, |sum, &c| sum.saturating_add(c));
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            excitatory,
+            0,
+            couplings,
+            0,
+        )
+    };
+    assert_eq!(outside_image(&image, 100_000), outside);
+    let full = vec![block(BLOCK as u32, outside, image); SCHEDULE_BLOCKS];
+    let yes = seeded(&RULES_1024, Some((&image, outside, [&full, &full])));
+    assert!(yes.derived && yes.yes && yes.arms.is_some_and(|verdict| verdict.yes));
+    assert_eq!(seeded_step(&[yes, yes]), 3, "yes on both networks");
+    let underived = seeded(
+        &Rules {
+            settled: None,
+            ..RULES_1024
+        },
+        Some((&image, outside, [&full, &full])),
+    );
+    assert_eq!(
+        underived,
+        Seeded {
+            derived: false,
+            arms: None,
+            yes: false
+        },
+        "a rule that returned nothing: clause 0 fails and no arm is read"
+    );
+    assert_eq!(seeded_step(&[yes, underived]), 4);
+    assert_eq!(seeded_step(&[underived, yes]), 4, "on either network");
+    assert!(
+        !seeded(&RULES_1024, None).yes,
+        "a network whose arms did not run is no yes"
+    );
+    let mut drained = full.clone();
+    drained[70] = block(BLOCK as u32, outside.saturating_mul(5) / 4 + 1, image);
+    let left = seeded(&RULES_1024, Some((&image, outside, [&drained, &full])));
+    assert_eq!(
+        left.arms.map(|verdict| (verdict.left, verdict.held)),
+        Some(([Some((70, 112_501)), None], [false, true])),
+        "clause 4 fails in the first arm at block 70, with its sum"
+    );
+    assert_eq!(seeded_step(&[yes, left]), 5);
+    let mut unlearned = full.clone();
+    unlearned[MAPPINGS[2].1 - 1].0 = 0;
+    unlearned[MAPPINGS[2].1 - 2].0 = 0;
+    let not_learned = seeded(&RULES_1024, Some((&image, outside, [&full, &unlearned])));
+    assert_eq!(
+        not_learned.arms.map(|verdict| verdict.learning.learned[1]),
+        Some([true, true, false, true]),
+        "clause 1 fails in the second arm's third mapping"
+    );
+    assert_eq!(seeded_step(&[not_learned, yes]), 6);
+    let mut over = full.clone();
+    over[40] = block(BLOCK as u32, outside, [[1_000, 2_000], [3_901, 4_000]]);
+    let unbounded = seeded(&RULES_1024, Some((&image, outside, [&over, &full])));
+    assert_eq!(
+        unbounded.arms.map(|verdict| verdict.learning.over),
+        Some([Some((40, 1, 0)), None]),
+        "clause 2 fails at block 40, B→R0, one past 1.30 of this image's 3 000"
+    );
+    let mut at_bound = full.clone();
+    at_bound[40] = block(BLOCK as u32, outside, [[1_000, 2_000], [3_900, 4_000]]);
+    assert!(seeded(&RULES_1024, Some((&image, outside, [&at_bound, &full]))).yes);
+    assert_eq!(seeded_step(&[unbounded, yes]), 6);
+    assert_eq!(
+        seeded_step(&[left, not_learned]),
+        5,
+        "clause 4 comes before clauses 1 and 2"
+    );
+    let mut slow = full.clone();
+    for b in slow
+        .iter_mut()
+        .skip(MAPPINGS[1].0)
+        .take(REVERSAL_BLOCKS_MAX)
+    {
+        b.0 = CROSSING_MARK - 1;
+    }
+    let late = seeded(&RULES_1024, Some((&image, outside, [&full, &slow])));
+    assert_eq!(
+        late.arms
+            .map(|verdict| (verdict.learning.yes, verdict.revised, verdict.held)),
+        Some((true, [[true; 3], [false, true, true]], [true; 2])),
+        "clause 3 alone fails: the first reversal passes the mark in its 24th block"
+    );
+    assert_eq!(seeded_step(&[late, yes]), 7);
+    assert_eq!(seeded_step(&[late, not_learned]), 6);
+    // The readings' rules over tables written by hand.
+    assert_eq!(
+        frozen_selections(&[
+            (0, [3, 1]),
+            (0, [1, 3]),
+            (0, [2, 2]),
+            (1, [0, 1]),
+            (1, [0, 2]),
+            (0, [5, 0])
+        ]),
+        [[2, 1, 1], [0, 2, 0]]
+    );
+    assert_eq!(
+        frozen_selections(&BACKGROUND_COUNTED_1024[SETTLED]),
+        [[14, 15, 5], [12, 15, 3]],
+        "ADR-0077's frozen block, as H-16 read its lean"
+    );
+    assert_eq!(
+        couplings_course_of(&image, &[block(0, 0, [[1_100, 2_000], [1_500, 4_400]])]),
+        vec![[[11_000, 10_000], [5_000, 11_000]]]
+    );
+    assert_eq!(
+        couplings_course_of(&IMAGE_COUPLINGS_1024, DRAWN_BLOCKS_1024[0]),
+        couplings_course(DRAWN_BLOCKS_1024[0]),
+        "against the instrument's image it is `couplings_course`"
+    );
+    let hand: Composition = ([[0; 2]; 2], [[[0; 4]; 2]; 2], [[0; 2]; 3], 0, 7);
+    let mut other = hand;
+    other.4 = 8;
+    assert_eq!(
+        compositions_hash(&[hand, other]),
+        compositions_hash(&[hand, other])
+    );
+    assert_ne!(
+        compositions_hash(&[hand, other]),
+        compositions_hash(&[other, hand])
+    );
+    assert_ne!(compositions_hash(&[hand]), compositions_hash(&[hand, hand]));
+}
+
+// ----------------------------------------------------------- the measurement (brief 067)
+
+/// What each rule returned on each network, `[seed 23, seed 24]`, pinned from the one run of its
+/// derivation; none before it.
+const RULES_SEEDED: [Option<Rules>; 2] = [None; 2];
+/// The four couplings by the prior's census at each rotation scanned, per network.
+const SCANNED_SEEDED: [&[[i64; 4]]; 2] = [&[], &[]];
+/// The prior's sums by polarity, per network.
+const PRIOR_SUMS_SEEDED: [(i64, i64); 2] = [(0, 0); 2];
+/// The calibration's frozen block and its trace at each gain tried, per network.
+const CALIBRATIONS_SEEDED: [&[(Block, u64)]; 2] = [&[], &[]];
+/// The volley's census of the picked gain's block, per network.
+const CENSUS_SEEDED: [&[(u32, u64)]; 2] = [&[], &[]];
+/// The synapses from each stimulus set onto each readout set, per network.
+const SYNAPSES_SEEDED: [[[u32; 2]; 2]; 2] = [[[0; 2]; 2]; 2];
+/// The probe of each cancel candidate tried, per network.
+const PROBES_SEEDED: [&[&[u32]]; 2] = [&[], &[]];
+/// The frozen block of each cancel candidate tried on the prior's network, per network.
+const CANCELLED_SEEDED: [&[(Block, u64, Composition)]; 2] = [&[], &[]];
+/// The settling's lead-in, per network.
+const LEAD_IN_SEEDED: [&[LeadInWindow]; 2] = [&[], &[]];
+/// The quiet run's ticks and the sums it left, per network.
+const QUIET_SEEDED: [Option<(u64, (i64, i64))>; 2] = [None; 2];
+/// The frozen block from the settled image under the picked cancel, per network.
+const FROZEN_SEEDED: [Option<(Block, u64, Composition)>; 2] = [None; 2];
+/// Every trial's counts of that block, per network.
+const FROZEN_COUNTED_SEEDED: [&[Counted]; 2] = [&[], &[]];
+/// The volley's census of that block, per network.
+const FROZEN_CENSUS_SEEDED: [&[(u32, u64)]; 2] = [&[], &[]];
+/// The settled image's spikes by window under the reference drive, per network.
+const TARGET_LEAD_IN_SEEDED: [&[u64]; 2] = [&[], &[]];
+/// The CRC-64 of each image on the way to the one the arms decode, per network.
+const CRCS_SEEDED: [Option<[u64; 6]>; 2] = [None; 2];
+/// The settled image's four couplings, per network.
+const COUPLINGS_SEEDED: [Option<[[i64; 2]; 2]>; 2] = [None; 2];
+
+/// The arms' blocks, `[network][arm]`, pinned from the one run of each.
+const SEEDED_BLOCKS: [[&[Block]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// The arms' accuracy sequences.
+const SEEDED_TRACES: [[u64; 2]; 2] = [[0; 2]; 2];
+/// The arms' compositions, each run's in one number.
+const SEEDED_COMPOSED: [[u64; 2]; 2] = [[0; 2]; 2];
+/// The arms' earned blocks.
+const SEEDED_EARNED: [[&[EarnedBlock]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// The arms' readings, every trial's in one number.
+const SEEDED_READ: [[u64; 2]; 2] = [[0; 2]; 2];
+/// The engine's value per block.
+const SEEDED_VALUES: [[&[ValueBlock]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// Every trial's value in one number.
+const SEEDED_VALUE_HASH: [[u64; 2]; 2] = [[0; 2]; 2];
+/// The drawn sources per block.
+const SEEDED_SOURCED: [[&[Sourced]; 2]; 2] = [[&[], &[]], [&[], &[]]];
+/// Every trial's drawn sources in one number.
+const SEEDED_SOURCES_HASH: [[u64; 2]; 2] = [[0; 2]; 2];
+/// The arms' readings by the rules.
+const SEEDED_READINGS: [[Option<SeededRead>; 2]; 2] = [[None; 2]; 2];
