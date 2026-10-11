@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-09
 depends-on: ADR-0162
 decision-makers: VirtualCortex maintainers
