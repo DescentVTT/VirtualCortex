@@ -1,7 +1,51 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-11
 ---
+
+> **Executed 2026-10-11 (UTC) in pull request #198.** Writes ADR-0167 (another network of the same size, measured);
+> opens no finding. No file under `src/` changed and no pinned number moved. The harness's constants for the
+> instrument's prior became what the rules return for a prior: each function of a run's path that read one gained a
+> form that is given it, and the function it was calls that form with seed 22's, so no call of the tree changed.
+> `derive` runs the rules on ADR-0044's prior from a seed in ADR-0165's order and stops at the first that returns
+> nothing. The seeds, the range each rule scans and H-33's constants were committed and pushed before any rule ran on
+> a network of another seed; the tree's 96 other whole-domain tests then passed, among them the rules on seed 22
+> returning every constant the tree holds, each table on the way the one its round pinned, and the image H-25's by
+> its CRC.
+>
+> **H-33 is yes, on both networks, in both arms and in all five clauses, and its stopping rule reached step 3: the
+> learning configuration is the rules', not one network's.** On seeds 23 and 24 every rule gave a value: the
+> rotation 0, the gain 1.75 and the cancel's 6 messages as on seed 22; the settling at the 106th and the 99th window
+> where seed 22's settled at the 96th; the cancel's span 8 and 12 ticks against 9; the target period 59 510 and
+> 59 179 ticks against 58 201; the critic's window 100 ticks and its shift and scale 9 and 2. The frozen block fired
+> each stimulus unit once and saw the stimulus in 64 trials of 64 on each. H-25's two arms learned every mapping,
+> 126, 124, 124 and 123, and 122, 115, 118 and 126 of each mapping's last 128 on seed 23, and 117, 123, 120 and 115,
+> and 124, 120, 121 and 123 on seed 24, with no coupling past 1.30 of its image's, the highest 1.183 and 1.195,
+> every reversal within 12 to 21 blocks of its flip where the bound is 23, and the network outside the couplings
+> within two parts in ten thousand of the image's. Five of the eight constants came back the same on all three
+> networks, so those rules were tested in returning a value that worked and not in returning another; and no rule
+> returned nothing. The next decision, an ADR choosing among another size, the operating regime, a reward delayed
+> past a trial and a less reliable reward, is named and not taken.
+>
+> Every deliverable below is done and its box ticked. Six things differ from the brief's letter, each by its
+> empowerment clause or by its directive that the rules are the code, and each recorded in ADR-0167:
+> - the cancel's messages are ADR-0076's pick among three candidates, as the tree holds the rule, where the brief's
+>   table names `least_cancel` at the extreme standing, the candidate seed 22 picked; the two agree on all three
+>   networks;
+> - the cancel's span is read from the census of the picked gain's calibration block on the prior's network, as
+>   `VOLLEY_TICKS_1024` was, and the candidates' frozen blocks are run on that network, before the settled one;
+> - a derivation runs the gain's candidates and the cancel's in order until one passes, and does not run one after
+>   the one taken;
+> - clause 0's sight is ADR-0165's words, 56 trials of 64, with the harness's `calibrated` and ADR-0072's sign read
+>   beside it;
+> - an arm on a new network is H-25's run with no shadow beside it, and without H-23's first block reproduced,
+>   which reads seed 22's tables;
+> - the round adds seven weekly tests, one of them the rules on seed 22, and the gate's one test also reads the
+>   pinned tables of the new networks.
+>
+> Relative links gained one `../` so that they resolve from `archive/`; no word, claim or figure changed.
+>
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 067: Another network of the same size — ADR-0165's question: on two priors of the next two seeds, every constant of the learning configuration derived again by the rule that derived it, then H-25's two arms on each; nothing under `src/` changed; H-33 run once
 
@@ -9,7 +53,7 @@ date: 2026-10-11
 
 **This brief builds nothing in the engine and runs one hypothesis once.** Every learning result since H-13 was read
 on one network, ADR-0044's prior at 1 024 units from seed 22.
-[ADR-0165](../docs/adr/0165-another-network-of-the-same-size.md) asks whether the learning configuration is the rules'
+[ADR-0165](../../docs/adr/0165-another-network-of-the-same-size.md) asks whether the learning configuration is the rules'
 or that network's: on the same generator from seeds 23 and 24, each constant the configuration took from the network
 is derived again by its rule, and H-25's two arms are run.
 
@@ -48,16 +92,16 @@ When the round is done, the tree holds:
 - **The engine and the harness are read before a description of them is trusted**, this brief's and ADR-0165's
   included. The table of rules below is the map; the rules are the code.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)): a search for the first rotation or the first
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)): a search for the first rotation or the first
   window is a scan over a stated range.
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
   mutate, and says so.
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says**
-  ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md),
-  [ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the arms run once, the dispatch's scope
+  ([ADR-0150](../../docs/adr/0150-a-round-waits-for-what-it-checks.md),
+  [ADR-0158](../../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the arms run once, the dispatch's scope
   follows the diff, the merge waits for the whole-domain shards, the ADR cites the pull request's commits, the commit
   that asks for the merge sets it to `accepted`, and a sweep that has ended and that no ADR has recorded is recorded by
   this round's.
@@ -90,7 +134,7 @@ quoted sentences are what to re-derive.
    baseline at a half, `Delivery::Drawn`, H-20's schedule (`SCHEDULE`), the two starting assignments.
 4. **How H-25's image is built** (`tests/inhibition.rs`): link by link from the settled image, each link held by a
    CRC pinned for seed 22, the last `WINDOWED_IMAGE_CRC_1024`.
-5. **H-25** ([ADR-0140](../docs/adr/0140-the-address-drawn-measured.md)): `drawn_arm`, with the composer and the
+5. **H-25** ([ADR-0140](../../docs/adr/0140-the-address-drawn-measured.md)): `drawn_arm`, with the composer and the
    network's oracle held at every trial; its verdict `DRAWN_1024`; its clause 3 by `reversals_within` at
    `REVERSAL_BLOCKS_MAX` 23. It read the first mappings passing 40 of 64 in the 6th and 4th block, the reversals in
    19, 21 and 16 and in 20, 15 and 14 blocks, and the highest coupling at 1.191.
@@ -98,16 +142,16 @@ quoted sentences are what to re-derive.
    On a new network there is no table to hold a derivation to; what holds it is the rule.
 7. **The weekly job**: twelve shards. H-25's two arms read 1 079 and 1 782 s in the last dispatch. The bound of a
    shard is 120 minutes.
-8. **The dispatch's scope** ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
+8. **The dispatch's scope** ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
    for a round that changes no file under `src/`.
 
 ## Deliverables
 
-- [ ] **The harness's constants as what the rules return for a prior, in the tests.**
+- [x] **The harness's constants as what the rules return for a prior, in the tests.**
   - Each constant of the table is returned by its rule from a prior, or the rule is written beside the constant and
     held equal to it on seed 22.
   - On seed 22 every pinned number of the tree holds, and each rule returns the constant the tree holds.
-- [ ] **H-33's protocol, in a new ADR at the next free number (`ls docs/adr`), before any rule is run on a new
+- [x] **H-33's protocol, in a new ADR at the next free number (`ls docs/adr`), before any rule is run on a new
   network.**
   - The seeds, 23 and 24, and the order of the derivations: the rotation, the gain, the settled network, the cancel
     and the frozen block's two measures, the target period, the critic's window and the critic's arithmetic.
@@ -122,29 +166,29 @@ quoted sentences are what to re-derive.
     - the block each mapping passes 40 of 64 in, beside H-25's;
     - the couplings' courses and their highest; the value beside $2p - 1$ with its troughs;
     - the inhibitory sum's course.
-- [ ] **The calibration**, before any rule is run on a new network: every pinned number of the tree holds, and on seed
+- [x] **The calibration**, before any rule is run on a new network: every pinned number of the tree holds, and on seed
   22 the rules return the constants the tree holds.
-- [ ] **The derivations on each network**, each a test: what each rule returned, or that it returned nothing, and the
+- [x] **The derivations on each network**, each a test: what each rule returned, or that it returned nothing, and the
   frozen block's two measures.
-- [ ] **The runs**: on each network whose clause 0 holds, H-25's two arms, each a weekly `exhaustive` test, run once,
+- [x] **The runs**: on each network whose clause 0 holds, H-25's two arms, each a weekly `exhaustive` test, run once,
   their tables pinned per block.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - H-33's verdict per network, arm and clause.
   - Each derived constant on each network beside seed 22's, and what differs between the networks.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** At most one runtime test: the rules on seed 22 against the tree's constants where that is cheap
+- [x] **The gate.** At most one runtime test: the rules on seed 22 against the tree's constants where that is cheap
   enough for the gate, H-33's clauses at their edges and the readings' rules over tables written by hand.
-- [ ] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
+- [x] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
   `scope=exhaustive`. Its twelve whole-domain shards are green and reproduce every pinned number. The cost table is
   regenerated from their artifacts. The ADR names the dispatch.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-33 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` only where the standing changes (ADR-0150); `README.md` and `docs/zh-TW`'s reader's guide as the
     result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADR set to
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADR set to
   `accepted` by the commit that asks for the merge.
 
 ## Not empowered
