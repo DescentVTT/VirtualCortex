@@ -80,8 +80,9 @@ pub use store::TermError;
 pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
 pub use task::{
     Cancel, Critic, Delivery, EXPLORATION_CHANNEL_BITS, EXPLORATION_COIN_BITS, Exploration,
-    Feedback, Hold, MAX_CHANNELS, MAX_PERIOD, MIN_INTERVAL_TICKS, MISLEADING_BITS, Outcome,
-    Readout, Set, Stimulus, Task, TaskError, Window, spikes_per_unit,
+    Feedback, Hold, MAX_CHANNELS, MAX_PERIOD, MIN_INTERVAL_TICKS, MISLEADING_BITS,
+    MISLEADING_IN_FOUR_BITS, Outcome, Readout, Set, Stimulus, Task, TaskError, Window,
+    spikes_per_unit,
 };
 pub use trial::{ForkReport, Trial, TrialReport, run as run_trial};
 

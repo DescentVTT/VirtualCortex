@@ -9875,6 +9875,17 @@ pub(crate) fn misleads(seed: u64, trial: u64) -> bool {
         == Some(0)
 }
 
+/// The coin of the three in four written a second time as the oracle's (brief 069, ADR-0171): the
+/// same draw with bits 48 and 49 both zero, whatever bit 50 is — read here as the draw shifted
+/// down forty-eight places leaving no remainder over four, a shift and a remainder and not the
+/// task's mask.
+pub(crate) fn misleads_in_four(seed: u64, trial: u64) -> bool {
+    mix64(seed ^ trial)
+        .checked_shr(48)
+        .and_then(|high| high.checked_rem(4))
+        == Some(0)
+}
+
 /// `earned_run_shadowed` under a hold or none, and under the released delivery beside the three
 /// (brief 060, ADR-0143, ADR-0144). With `hold` set the task carries it: the selection is made
 /// at the readout window's close and the channel not selected takes the hold's messages; the
@@ -9890,7 +9901,9 @@ pub(crate) fn misleads(seed: u64, trial: u64) -> bool {
 /// Under `Feedback::SevenInEight` (brief 061, ADR-0148) the reward the harness holds the task to
 /// is the outcome's sign where the oracle's coin (`misleads`) is not misleading and the opposite
 /// where it is, whatever the outcome; `correct` stays the selection's, held as under every
-/// feedback, and both oracles replay from the signal the reward left, whatever its truth.
+/// feedback, and both oracles replay from the signal the reward left, whatever its truth. Under
+/// `Feedback::ThreeInFour` (brief 069, ADR-0171) it is the same by that feedback's coin
+/// (`misleads_in_four`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn earned_run_held(
     exec: &mut Engine,
@@ -10074,6 +10087,9 @@ pub(crate) fn earned_run_held_on(
                 Feedback::Shuffled => signed(probe.coin_at(trial as u64)),
                 Feedback::SevenInEight => {
                     signed(outcome.correct != misleads(probe.seed, trial as u64))
+                }
+                Feedback::ThreeInFour => {
+                    signed(outcome.correct != misleads_in_four(probe.seed, trial as u64))
                 }
                 Feedback::Withheld => 0,
             };
