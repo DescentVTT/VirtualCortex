@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-12
 depends-on: ADR-0173
 decision-makers: VirtualCortex maintainers
@@ -288,6 +288,47 @@ In the two that failed a misleading reward moved the pair it reached by 2.1 time
 
 **The oracles held** at every one of the 30 720 trials: the drawn sources to the units the harness's critic oracle counted from the train, the targets to the selected readout's units, the engine's value, error and weights to the harness's critic, the value of the window's counts to the engine's own, the reward to the coin, and the composer's and the network's traces and weights to the record.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes no file under `src/` — the runtime's tests, the documents and the cost table — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 070 asks: run [38307712843](https://github.com/DescentVTT/VirtualCortex/actions/runs/38307712843) at `a3b223c`, the pins' commit. The round's commits, in pull request #204: `34e975c` the protocol, before any rewarded run at three in four on either network; `a3b223c` the arms' tables, H-33's arms' reading by H-28's rules and the gate's checks over them; `f3f73a3` the readings and the documents; and the commit that carries this section, the cost table and the brief's archive.
+- **Every whole-domain shard is green.** All 114 `exhaustive` tests passed on the hosted runners, each exit 0 with one test reported, 81 785 s summed. The 110 before this round reproduced their pinned numbers, the twelve arms of them that now run through the one body among them: H-33's four in 1 149 to 1 802 s, H-34's four at 2 048 units in 2 165 to 3 554 s, H-28's two in 1 001 and 1 728 s, and H-35's two in 1 249 and 1 779 s. **H-36's four arms reproduced their tables there**: on seed 23 in 1 245 s from the assignment and 1 827 s from the mirrored assignment, and on seed 24 in 1 784 and 1 779 s. H-33's four held their reading by H-28's rules, pinned from the calibration.
+- **The shards**, dealt by the table before this round, which did not know the four arms and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 67.1 min | H-34, seed 22 from the assignment 3 554; H-20 from the assignment 1 683 | 8 | 7 813 | 3 949 s, 55 % |
+  | 1 | 42.9 min | H-34, seed 23 from the mirrored 2 165; H-21 from the assignment 1 071 | 9 | 5 002 | 2 516 s, 35 % |
+  | 2 | 71.4 min | H-34, seed 23 from the assignment 2 427; **H-36, seed 23 from the mirrored 1 827** | 9 | 6 981 | 4 206 s, 58 % |
+  | 3 | 82.1 min | H-34, seed 22 from the mirrored 3 069; H-32 from the assignment 1 785 | 10 | 8 956 | 4 846 s, 67 % |
+  | 4 | 59.7 min | brief 060's control from the assignment 1 808; H-29 from the assignment 1 388 | 10 | 6 478 | 3 503 s, 49 % |
+  | 5 | 48.2 min | H-33, seed 24 from the mirrored 1 415; H-20 from the mirrored 1 342 | 9 | 5 629 | 2 831 s, 39 % |
+  | 6 | 40.7 min | H-33, seed 23 from the assignment 1 149; H-28 from the mirrored 1 001 | 11 | 4 613 | 2 386 s, 33 % |
+  | 7 | 57.3 min | H-33, seed 24 from the assignment 1 431; H-32 from the mirrored 1 385 | 9 | 6 306 | 3 373 s, 47 % |
+  | 8 | 69.6 min | H-33, seed 23 from the mirrored 1 802; H-27 from the mirrored 1 775 | 10 | 7 938 | 4 100 s, 57 % |
+  | 9 | 52.5 min | H-31 from the assignment 1 703; H-29 from the mirrored 1 315 | 9 | 6 136 | 3 091 s, 43 % |
+  | 10 | 74.2 min | H-31 from the mirrored 2 112; **H-36, seed 24 from the assignment 1 784** | 10 | 8 384 | 4 372 s, 61 % |
+  | 11 | 64.7 min | **H-36, seed 24 from the mirrored 1 779**; H-30 from the mirrored 1 751 | 10 | 7 549 | 3 797 s, 53 % |
+
+  The percentages are of the job's bound, 120 minutes; each shard ran its tests two at a time, at 1.66 to 1.99 of their summed seconds over the wall. The twelve started within five seconds of the dispatch, no sweep and no other run holding a place, and the last ended at 22:21:06Z, 1 h 22 min after it.
+
+  **Two shards of this run passed 60 per cent of their bound.** The fourth read 67: it holds one of H-34's arms, 3 069 s on this run's runner, which brief 070's directive excepts and reports with the arm's seconds. The eleventh read 61: it drew one of this round's arms, costed at 900 s and running 1 784, beside H-31's at 2 112. The other three shards that drew an arm of this round, the third, the tenth and the twelfth, read 58, 43 and 53; the tenth's, H-36's on seed 23 from the assignment, ran 1 245 s and is its third heaviest.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 38307712843`): 114 lines, 81 785 s, where it held 110 and 83 129. ADR-0092's deal plans each of the twelve shards at 6 814 to 6 817 s summed, about 3 430 to 4 110 s of wall time at this run's ratios, **48 to 57 per cent of the bound**. No shard is planned past 60.
+
+  **The table is one run's, and this run's runners were fast.** The 110 tests before this round summed to 75 150 s here where the last run read them at 83 129, a tenth less: H-33's four arms read 1 149 to 1 802 s where they read 1 871 to 1 892. At the last run's seconds for those 110 with this round's four, 89 760 s, the deal would plan 7 480 s a shard, 52 to 63 per cent at these ratios, near what ADR-0173 reckoned. So the plan holds under 60 on this run's table and not on the last one's, and the workflow's decision ADR-0168 named stays due before the round after this one.
+- **The schedule's sweep, written down here** as [ADR-0158](0158-the-sweep-off-the-next-decisions-path.md) asks of the first ADR that merges after a sweep has ended. Run [38234325824](https://github.com/DescentVTT/VirtualCortex/actions/runs/38234325824), the schedule's weekly on `main` at `d090b30`, the tree before ADR-0171's feedback: its sweep ended at 15:00:53Z on 2026-10-12, green in all thirteen jobs, after ADR-0173 had merged and before this ADR.
+  - **3 849 mutants over the tree, 3 671 caught and none missed**: 2 404 caught in the state crates and 1 267 in the runtime, 154 unviable and 24 timeouts. It is the count the sweep of run 38111246283 read: no file under `crates/` or the runtime's `src/` differs between the two commits.
+  - **In `runtime/cortex-runtime/src/task.rs`**: 208 caught and 10 unviable, none missed and none timed out.
+  - **Twenty-two of the timeouts** are in the places [ADR-0062](0062-the-first-complete-sweeps-list.md) reads as inherent: `cortex-core`'s three chain iterators, six; the injector, twelve; the barrier's wait, one; the workers' stop and run, three.
+  - **The other two are of F-42's kind**, by [ADR-0063](0063-the-sweep-reads-its-own-timeouts.md)'s evidence, each a mutant of `Image::decode` starved by a hung mutant of the injector in its shard's other slot:
+    - `image.rs:1045:24: delete ! in Image::decode`, F-42's own mutant, in `runtime-11`: 1 354 s against a bound of 1 332, 1 273 of them beside the hung mutant. The sweep of run 38228081172 timed it out too, as ADR-0173 records, and the one of run 38111246283 caught it.
+    - `image.rs:1053:24: delete ! in Image::decode`, in `runtime-0`: 1 716 s against a bound of 1 698, 1 624 of them beside the hung mutant. The sweep of run 38228081172 caught it, in `runtime-0`.
+
+    Each log ends in `learning` with a test reported after the last long-running warning: the run was still finishing tests, with no test of the mutant's own module hung, which the job's evidence names as F-42's kind. A timeout is a detection and not a survivor, and F-42 stands as it is written.
+  - **Its twelve shards over the runtime took 54 m to 2 h 18 m each.** The thirteen jobs started from 27 s to 1 h 25 m after its last whole-domain shard ended, the sweep of brief 069's dispatch holding places beside them, and the sweep ended 4 h 53 m after the run began.
+  - There is no survivor, so it leaves no finding. **No sweep that has ended is without its record**, and this round dispatches none: its scope is `exhaustive`.
+- **The pull request's gate** on `34e975c` and on `f3f73a3` is green in every job, the determinism pin on AArch64 and the MSRV among them. The mutation gate on the changed lines found no mutant to make, in each: no line under `src/` changed. The gate on `a3b223c` was cancelled by the push of `f3f73a3`, whose tests are its.
+- **On the developer machine**, at `a3b223c`: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 738 passed and 154 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; 114 whole-domain tests are listed; and `cargo mutants --in-diff` over the round's diff found no mutant to make.
+
 ### The step of the stopping rule reached
 
 **Step 5** (`OTHERS_STEP_1024`): a no on clause 1 on seed 24, with clause 3 held on both networks. Seed 23 reads yes and has no split. **Seed 24 reads *not revised***, by H-35's rule: clause 2 holds in both arms and the first mapping is learned in both, but one of its six reversals, the third from the assignment, has no block with 40 of its 64 trials correct inside its 32.
@@ -322,7 +363,7 @@ Steps 3, 4 and 6 did not arise; step 7 is kept.
 - Bad: the verdict on seed 24 turns on nine and four trials of two mappings, and the branch on one trial of one block.
 - Bad: the readings by kind do not order the candidates. The arm that lost most to misleading punishments failed and the next learned every mapping; the learning signal does not tell a mapping that failed from one that held; and the one reading that does stand apart in the mappings that failed, the wrong side's move, may be their effect.
 - Bad: twelve arms of earlier rounds run through a body that is not the one they were pinned from. What holds them is their pins, in the calibration and in every weekly run.
-- Bad: four more arms in the weekly job, each about 1 880 s.
+- Bad: four more arms in the weekly job, 1 245 to 1 827 s each in the dispatch. The regenerated table, 114 tests and 81 785 s, plans each shard at 48 to 57 per cent of its bound; on the last run's seconds for the same tests it would plan 52 to 63, and two shards of this run read 61 and 67.
 - Neutral: a predicted reading missed. What misleading punishments take back is not the share's alone: 42 to 53 per cent over six arms.
 
 ## Alternatives considered and why rejected
