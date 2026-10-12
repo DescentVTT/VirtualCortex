@@ -62,6 +62,12 @@ standing changes.
   couplings bounded and the critic holding the expected reward: H-35 read no
   ([ADR-0172](docs/adr/0172-a-reward-right-three-times-in-four-measured.md)). The boundary lies
   between that share and seven in eight.
+  Under the same share on the two other networks of the size, seeds 23 and 24, each with its
+  constants derived by their rules, the first learns all eight mappings and the second six, one
+  reversal of twelve not made inside the schedule; over the three networks twenty-one mappings of
+  twenty-four are learned: H-36 read no
+  ([ADR-0174](docs/adr/0174-three-in-four-on-the-other-networks-measured.md)). The no at three in
+  four is not one network's.
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
