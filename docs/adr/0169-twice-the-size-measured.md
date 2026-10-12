@@ -188,7 +188,7 @@ Each network's derivation ran once, the two side by side from 22:23:13Z, in 426 
 | — its calibration block's trials seen, of 64 | 62 | 63 | 62 | 63 | 63 |
 | The settled network, at window | 96 | 106 | 99 | **100** | **105** |
 | — the excitatory sum settled, of the prior's | 0.925 | 0.920 | 0.925 | 0.922 | 0.919 |
-| — the inhibitory sum settled, of the prior's | 0.776 | 0.752 | 0.767 | 0.764 | 0.754 |
+| — the inhibitory sum settled, of the prior's | 0.775 | 0.751 | 0.767 | 0.764 | 0.754 |
 | — the quiet run, ticks | 2 500 | 2 519 | 2 424 | 2 538 | 2 489 |
 | The cancel's span, ticks | 9 | 8 | 12 | **10** | **21** |
 | The least messages at rest, and at the extreme standing | 3, 6 | 3, 6 | 3, 6 | **3, 6** | **3, 6** |
@@ -204,7 +204,7 @@ Each network's derivation ran once, the two side by side from 22:23:13Z, in 426 
 
 - **Four constants came back as at 1 024 units on both networks**: the rotation, the gain, the cancel's messages and the critic's window. **The critic's constants are the extension's**, 9 and 3 for a stimulus of 102 units, as ADR-0168's table gives them. The three that differed among the networks at 1 024 units differ here too, inside or beside the range read there: the window the network settles at, the cancel's span and the target period.
 - **The two rules ADR-0168 named as least known returned what they returned at 1 024 units.** The rotation's scan stopped at its first rotation, the census's four couplings within 3.8 and 2.1 per cent of one another. The gain's first candidate, 1.75, was calibrated, the stimulus seen in 63 trials of 64 on each network. Neither rule was read returning another value.
-- **The settled network is the same network a unit.** The excitatory and the inhibitory sums settle at the same fractions of the prior's, the quiet run takes as long, and a unit fires 17.6 and 17.7 times over the target's lead-in where it fired 17.6 to 18.0, so the target period lies among the three read at 1 024.
+- **The settled network is the same network a unit.** The excitatory and the inhibitory sums settle at the same fractions of the prior's (the two inhibitory fractions at 1 024 units are read here from the pinned sums, 0.7755 and 0.7515; ADR-0167's table gives them a thousandth higher), the quiet run takes as long, and a unit fires 17.6 and 17.7 times over the target's lead-in where it fired 17.6 to 18.0, so the target period lies among the three read at 1 024.
 - **The cancel's span is 21 ticks on seed 23**, the longest read: the volley's spikes fall on ticks 1 to 8 but for two units once each on ticks 10 and 11 and one unit once on tick 21, of 6 514 volley spikes. On seed 22 it is 10, ticks 1 to 7 and one unit each on 9 and 10. Over 10 or 21 ticks the oracle's least counts are the same, 3 and 6.
 - **The pick took the second candidate on both**, for the reason it did at 1 024: under the first the stimulus fires again after the opening, 5 461 and 5 438 spikes over the block where a tenth of a spike a unit a presentation allows 652. The widest cancel tried was 6 messages into each of 102 units before a tick, 612 messages and the drive's 16, of the ring's 8 192; the 4 096 every run had would have held it.
 - **The synapses a rewarded run holds**, from each stimulus onto each readout: 1 549, 1 621, 1 600 and 1 581 on seed 22; 1 595, 1 577, 1 613 and 1 576 on seed 23; twice the 767 to 824 read at 1 024.
@@ -227,7 +227,7 @@ Each network's derivation ran once, the two side by side from 22:23:13Z, in 426 
 
 - **The readouts fire twice the spikes**, 40 to 45 a trial where they fired 19 to 24, as twice the units do.
 - **The margin grows less than the counts**: 4.3 to 5.8 spikes a trial where it was 3.1 to 4.3, so it is 0.11 to 0.14 of the two counts where it was 0.16 to 0.20. A selection is read on twice the spikes and stands further from a tie in spikes, and **the ties fall** from 2 to 5 of a stimulus's trials to 0 to 3.
-- **The frozen networks lean, as at 1 024.** Seed 22's selects readout 1 a little more for both stimuli, as at 1 024 units. Seed 23's selects readout 0 for both, A in 25 of its 34 trials; at 1 024 it leant to the mirrored assignment.
+- **The frozen networks lean, as at 1 024.** Seed 22's selects readout 1 more for both stimuli, by one trial for A and in 19 trials to 9 for B; at 1 024 units it leant to readout 1 for both too. Seed 23's selects readout 0 for both, A in 25 of its 34 trials; at 1 024 it leant to the mirrored assignment.
 - **The sign, which seed 22's settled network failed at 53 at 1 024 units, reads 62 and 64.** It is no measure of clause 0.
 
 ### H-34's verdict: yes, on both networks
