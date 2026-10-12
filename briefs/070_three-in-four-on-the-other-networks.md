@@ -63,7 +63,7 @@ When the round is done, the tree holds:
   [ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the arms run once, the dispatch's scope
   follows the diff, the merge waits for the whole-domain shards, the ADR cites the pull request's commits, the commit
   that asks for the merge sets it to `accepted`, and **a sweep that has ended and that no ADR has recorded is recorded
-  by this round's**. Two are named in the Context.
+  by this round's**. One is named in the Context.
 - **The pull request leaves draft with the commit that asks for the merge.**
 - **The weekly job's cost is reported.** The regenerated deal is planned against 60 per cent of a shard's bound; a
   shard that holds one of H-34's arms, half of the bound by itself, is reported with the arm's seconds. Where the
@@ -104,11 +104,12 @@ symbols and the quoted sentences are what to re-derive.
    tests and 83 129 s; H-33's four arms read 1 871 to 1 892 s in the last run and H-35's two 1 807 and 1 827.
 9. **The dispatch's scope** ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
    for a round that changes no file under `src/`.
-10. **Two sweeps to look for.** Neither had ended when ADR-0173 was written: the one of brief 069's dispatch, run
-    38228081172, and the schedule's weekly on `main`, run 38234325824. Each that has ended when this round's ADR is
-    written is recorded there: the artifacts `mutants-out-crates` and `mutants-out-runtime-0` to `-11`, each
-    `caught.txt`, `missed.txt`, `timeout.txt` and `unviable.txt` counted by its lines, the timeouts read against
-    ADR-0062's list, and a survivor, if there is one, a finding.
+10. **A sweep to look for.** The sweep of brief 069's dispatch, run 38228081172, is recorded in ADR-0173: 3 857
+    mutants, 3 680 caught, none missed. The schedule's weekly on `main`, run 38234325824, had not ended its sweep
+    when ADR-0173 was written. If it has ended when this round's ADR is written, it is recorded there: the
+    artifacts `mutants-out-crates` and `mutants-out-runtime-0` to `-11`, each `caught.txt`, `missed.txt`,
+    `timeout.txt` and `unviable.txt` counted by its lines, the timeouts read against ADR-0062's list with
+    `timeout-evidence.txt` beside them, and a survivor, if there is one, a finding.
 
 ## Deliverables
 
@@ -153,8 +154,8 @@ symbols and the quoted sentences are what to re-derive.
   `scope=exhaustive`. Its twelve whole-domain shards are green and reproduce every pinned number. The cost table is
   regenerated from their artifacts. The ADR names the dispatch, each shard's wall time against its bound, and what
   the regenerated deal plans.
-- [ ] **The sweeps recorded**: each of the two named in the Context that has ended, in this round's ADR; one that has
-  not, said so.
+- [ ] **The sweep recorded**: the one named in the Context, in this round's ADR if it has ended; said so if it has
+  not.
 - [ ] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-36 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
@@ -237,6 +238,6 @@ The closing message states:
 - the step of the stopping rule reached and the next decision it names, not taken;
 - that no pinned number moved and no file under `src/` changed;
 - the scope ADR-0075 gave the diff, each shard's time against its bound and what the regenerated deal plans;
-- each of the two sweeps: recorded, or not yet ended;
+- the schedule's sweep: recorded, or not yet ended;
 - that the pull request is ready for review;
 - what was not done and why.
