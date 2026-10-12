@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-12
 depends-on: ADR-0168
 decision-makers: VirtualCortex maintainers
@@ -280,7 +280,7 @@ The four arms ran once each, side by side from 22:32:56Z to 23:36:03Z, in 3 761 
 **The capacities were not reached.**
 - *The injector ring*: every injection's result was taken, and none was refused in any run. The widest cancel tried carried 6 messages a unit, 628 messages before a tick with the drive's, of the ring's 8 192.
 - *The train*: every reading asserted its window held. The most spikes one trial's ticks put in the train were 857 to 888 over the four arms, of the train's 671 744; at 1 024 units, 447 to 471 of 335 872.
-- *A worker's trace*: each arm's test reaches the shutdown of its executor only when every table holds, which the first run's did not; the dispatched run does, and holds every worker's report to no entry dropped.
+- *A worker's trace*: each arm's test reaches the shutdown of its executor only when every table holds, which the first run's did not; the dispatched run's four arms did, and each held every worker's report to no entry dropped, as H-33's four at 1 024 units did in the calibration.
 - *A worker's nodes and a wheel slot*: no test's process aborted.
 
 ### What is read from the tables and not measured
@@ -296,6 +296,35 @@ The four arms ran once each, side by side from 22:32:56Z to 23:36:03Z, in 3 761 
 
 **The next decision is an ADR choosing among a larger size still, which needs the weekly job's bound decided first, the operating regime, a reward delayed past a trial and a less reliable reward.** It is named and not taken. Steps 4 to 7 did not arise, and step 8 is kept: no constant moved after a rule was run at the new size, there was no second attempt, and no other seed and no other size was run.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes no file under `src/`, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 068 asks: run [38185502052](https://github.com/DescentVTT/VirtualCortex/actions/runs/38185502052) at `352e4d1`, the pins, at 23:45:52Z on 2026-10-11. It ran the twelve whole-domain shards and no sweep, so no sweep's outcome is owed for it.
+- **Every whole-domain shard is green**, 23:45:56Z on 2026-10-11 to 01:16:51Z on 2026-10-12. All 108 `exhaustive` tests passed, each exit 0 with one test reported. The 102 before this round reproduced their pinned numbers on the hosted runners through the derivation given its size, the sites and the ring sized by the units; the rules on seed 22 at 1 024 units returned the tree's constants there, in 236 s, and H-33's two derivations and four arms reproduced their tables, the critic's reading among them. **The two derivations at 2 048 units reproduced their tables**, in 476 and 489 s. **The four arms reproduced theirs**, each deriving its network again first, and each held every worker's report to no entry dropped at its end: 2 151 and 3 333 s on seed 22, from the assignment and from the mirrored assignment, and 3 580 and 2 879 s on seed 23.
+- **An arm's seconds beside twice an arm's at 1 024.** In the same run the six arms of H-25 and H-33 at 1 024 units took 1 462 to 1 886 s, 1 714 on average, and twice that is 3 428. The four at 2 048 took 2 151 to 3 580 s, 2 986 on average: 1.74 times, under ADR-0168's expectation of twice. The hosted runners differ by 29 per cent between like arms at 1 024 units, 1 462 s against 1 886, which is wider than that difference; on the developer machine, four arms side by side, the ratio read 1.96. **The longest arm is 50 per cent of a shard's bound by itself**, and the shortest 30.
+- **The shards**, dealt by the table before this round, which did not know the six tests and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 37.3 min | H-31 from the assignment 1 924; H-29 from the mirrored 1 418 | 8 | 4 285 | 2 158 s, 30 % |
+  | 1 | 66.0 min | H-31 from the mirrored 2 043; H-25 from the assignment 1 825 | 9 | 7 121 | 3 868 s, 54 % |
+  | 2 | 59.4 min | H-22 from the assignment 1 644; H-22 from the mirrored 1 633 | 8 | 6 369 | 3 469 s, 48 % |
+  | 3 | 72.7 min | **H-34 on seed 22 from the mirrored 3 333**; H-30 from the mirrored 1 698 | 10 | 8 133 | 4 262 s, 59 % |
+  | 4 | 62.3 min | H-33 on seed 23 from the mirrored 1 886; H-24 from the mirrored 1 830 | 9 | 7 196 | 3 641 s, 51 % |
+  | 5 | 56.1 min | H-25 from the mirrored 1 823; H-21 from the mirrored 1 796 | 9 | 6 017 | 3 271 s, 45 % |
+  | 6 | 54.5 min | H-33 on seed 24 from the assignment 1 815; H-20 from the mirrored 1 358 | 9 | 5 679 | 3 173 s, 44 % |
+  | 7 | 43.5 min | **H-34 on seed 22 from the assignment 2 151**; H-26 from the assignment 1 079 | 9 | 5 069 | 2 542 s, 35 % |
+  | 8 | 61.3 min | **H-34 on seed 23 from the mirrored 2 879**; H-30 from the assignment 1 423 | 9 | 6 909 | 3 594 s, 50 % |
+  | 9 | 56.5 min | H-28 from the mirrored 1 823; H-28 from the assignment 1 822 | 10 | 6 083 | 3 295 s, 46 % |
+  | 10 | 90.9 min | **H-34 on seed 23 from the assignment 3 580**; H-27 from the assignment 1 873 | 10 | 10 409 | **5 368 s, 75 %** |
+  | 11 | 56.5 min | H-32 from the mirrored 1 816; H-23 from the mirrored 1 802 | 8 | 6 220 | 3 295 s, 46 % |
+
+  The percentages are of the job's bound, 120 minutes; every shard ran its tests two at a time, at 1.79 to 1.99 of their summed seconds over the wall. **One shard passed 60 per cent of its bound: shard 10, at 75**, 5 368 s of 7 200. The arm that put it there is H-34's on seed 23 from the assignment, 3 580 s, which the deal had costed at 900 s and set beside nine other tests; the shard's ten summed 10 409 s. Shard 3, with the arm of 3 333 s, read 59. As brief 068 directs, the round reports it and goes on: a shard's bound against its longest test is the workflow's next decision, which ADR-0168 names.
+- **The shards started at once.** All twelve started four seconds after the dispatch, and the last ended 1 h 31 m after it.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 38185502052`): 108 lines, 79 490 s, where the table before it held 102 and 66 471; ADR-0168 expected about 82 000. ADR-0092's deal plans each of the twelve shards at 6 623 to 6 627 s summed, about 3 330 to 3 700 s of wall time at the run's ratios, **46 to 51 per cent of the bound**, inside the brief's 60. A shard that holds the longest arm cannot read under its 50.
+- **The pull request's gate** ([200](https://github.com/DescentVTT/VirtualCortex/pull/200)) is green in every job on `fd0f025`, the protocol, and on `6bf744d`, the readings, which holds the Rust sources of `352e4d1`; the determinism pin on AArch64 and the MSRV are among them. The gate's run on `352e4d1` itself was cancelled by the push of `6bf744d` seven minutes after it. **The mutation gate on the changed lines** had nothing to mutate, no line under `src/` being changed, and said so: `No mutants to filter`.
+- **On the developer machine**, at `352e4d1`: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 732 passed and 148 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; 108 whole-domain tests are listed; and `cargo mutants --in-diff` listed no mutant. Before any rule ran at 2 048 units, the tree's 102 other whole-domain tests passed there at `fd0f025`, 18:30:13Z to 22:22:43Z on 2026-10-11. The two derivations then ran once from 22:23:13Z, and the four arms once, 22:32:56Z to 23:36:03Z.
+- **The commits**, by the hashes the branch holds, in pull request 200: `fd0f025`, the protocol, the derivation given its size and the critic's rule; `352e4d1`, the derivations' and the arms' tables and the gate's checks over them; `6bf744d`, these readings.
+
 ## Consequences
 
 - Good: the second thing the line's results were scoped by, the size, is read at one step: at twice the units, on two networks, the rules derived the configuration and it learned and revised as at the first size.
@@ -306,7 +335,7 @@ The four arms ran once each, side by side from 22:32:56Z to 23:36:03Z, in 3 761 
 - Bad: the two rules ADR-0168 named as least known, the rotation's and the gain's, returned what they returned at 1 024 units. A rule that would have to return another value at a size has still not been read doing so.
 - Bad: the injector ring was sized for a cancel no run tried. The widest carried 628 messages before a tick, which the ring every run had would have held; the sizing covers the rule's range and was not needed by these two networks.
 - Bad: two networks, one step in size, one generator and one drive. That the reversals are sooner and the couplings move less is read on them and its cause is not.
-- Bad: each arm derives its network before its first trial, about a seventh of an arm again, at twice the cost; and an arm alone is about half of a weekly shard's bound.
+- Bad: each arm derives its network before its first trial, about a seventh of an arm again, at twice the cost. An arm alone read 30 to 50 per cent of a weekly shard's bound in the dispatch, and the shard dealt the longest beside nine other tests read 75. The regenerated table plans each shard at 46 to 51; a shard's bound against its longest test stays the workflow's next decision.
 - Bad: the harness could not be run at 2 048 units before the protocol was committed, so that it held there rested on its holding at 1 024 and on a reading of its code. It held.
 - Neutral: six weekly tests, four of them arms, and one test in the gate.
 - Neutral: the frozen networks lean at this size too, and the first mapping follows the lean where there is one.

@@ -1,7 +1,53 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-12
 ---
+
+> **Executed 2026-10-11 and 2026-10-12 (UTC) in pull request #200.** Writes ADR-0169 (twice the size, measured);
+> opens no finding. No file under `src/` changed, and no pinned number moved but the one assertion ADR-0168 names,
+> a stimulus of 65 units in H-33's gate. The derivation was given its size: `derive_at(units, seed, name)`, which
+> `derive` calls with 1 024. The critic's rule was written as ADR-0168 gives it, the shift the lesser of the sum less
+> ADR-0132's scale and 9 and the scale the rest. The size, the seeds, the range each rule scans and H-34's constants
+> were committed and pushed before any rule ran at 2 048 units; the tree's 102 other whole-domain tests then passed,
+> the rules at 1 024 units returning the constants the tree holds on seeds 22, 23 and 24 among them.
+>
+> **H-34 is yes, on both networks, in both arms and in all five clauses, and its stopping rule reached step 3: the
+> learning configuration is its rules' at twice the size as at the first.** On seeds 22 and 23 at 2 048 units every
+> rule gave a value: the rotation 0, the gain 1.75, the cancel's 6 messages and the critic's window of 100 ticks as
+> on all three networks at 1 024; the critic's shift and scale 9 and 3, the extension's for a stimulus of 102 units;
+> the settling at the 100th and the 105th window; the cancel's span 10 and 21 ticks; the target period 59 599 and
+> 59 119 ticks. The frozen block fired each stimulus unit once and saw the stimulus in 64 trials of 64 on each.
+> H-25's two arms learned every mapping, 121, 122, 123 and 125, and 124, 125, 127 and 123 of each mapping's last 128
+> on seed 22, and 126, 127, 126 and 125, and 121, 120, 127 and 126 on seed 23, with no coupling past 1.30 of its
+> image's, the highest 1.169 and 1.151, every reversal within 9 to 15 blocks of its flip where the bound is 23, and
+> the network outside the couplings within two parts in ten thousand of the image's. The critic's constants gave
+> the step ADR-0132's gave, 253 to 255 parts in ten thousand of the error a presentation. The rotation's rule and
+> the gain's returned what they returned at 1 024 units, so they are still not read returning another value. The
+> next decision, an ADR choosing among a larger size still, which needs the weekly job's bound decided first, the
+> operating regime, a reward delayed past a trial and a less reliable reward, is named and not taken.
+>
+> Every deliverable below is done and its box ticked. Seven things differ from the brief's letter or add to it, each
+> by its empowerment clause or by its directive that the rules are the code, and each recorded in ADR-0169:
+> - four functions beneath `derive` wrote the size too, which the Context does not list: `target_lead_in` and
+>   `fed_run_on` gained forms given it, `probe_task_on` builds its probe at the prior's own size, and the assertion
+>   that a rewarded run is at 1 024 units moved from `earned_run_held_on` to `earned_run_held`, which passes the
+>   constants pinned at that size;
+> - **the injector ring is sized by the units**, 8 192 entries at 2 048 where every run had 4 096, decided before any
+>   run from the rules' ranges: the widest cancel the pick can try is 6 544 messages before one tick there. No run
+>   needed it; the widest tried was 628;
+> - a network is a `Site`, and H-33's six tests at 1 024 units run through the same `site_derivation` and
+>   `site_arm` as H-34's at 2 048;
+> - the critic's step is read beside every arm's run and held to the engine's own value at every trial, and it is
+>   read and pinned on H-33's four arms at 1 024 units too (`SEEDED_CRITIC`), a table added and none moved;
+> - the calibration ran H-33's six tests each in a process of its own beside the other ninety-six under cargo, so
+>   that their dumps were kept;
+> - with the pins, `config` gained an assertion that its ring holds the widest injection at its size and the gate
+>   holds `TWICE_PREDICTED` at run time, for the MSRV toolchain's reading of a use inside a compile-time assertion;
+> - H-34's tables are named `TWICE_*`: `SIZED_*` is H-31's.
+>
+> Relative links gained one `../` so that they resolve from `archive/`; no word, claim or figure changed.
+>
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 068: Twice the size — ADR-0168's question: ADR-0044's generator at 2 048 units from seeds 22 and 23, every constant of the learning configuration derived by its rule at that size, the critic's rule extended as ADR-0168 writes it, then H-25's two arms on each network; nothing under `src/` changed; H-34 run once
 
@@ -9,7 +55,7 @@ date: 2026-10-12
 
 **This brief builds nothing in the engine and runs one hypothesis once.** Every learning result of H-25's
 configuration was read at 1 024 units, on three networks.
-[ADR-0168](../docs/adr/0168-twice-the-size.md) asks whether the configuration is its rules' at another size: on
+[ADR-0168](../../docs/adr/0168-twice-the-size.md) asks whether the configuration is its rules' at another size: on
 ADR-0044's generator at 2 048 units from seeds 22 and 23, each constant is derived by its rule with the size given
 where 1 024 was written, and H-25's two arms are run.
 
@@ -54,15 +100,15 @@ When the round is done, the tree holds:
 - **No capacity of a run's configuration is reached silently.** At the new size the round shows that no injection was
   refused, no worker dropped a spike and the train held every window read from it.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
   mutate, and says so.
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says**
-  ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md),
-  [ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the arms run once, the dispatch's scope
+  ([ADR-0150](../../docs/adr/0150-a-round-waits-for-what-it-checks.md),
+  [ADR-0158](../../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the arms run once, the dispatch's scope
   follows the diff, the merge waits for the whole-domain shards, the ADR cites the pull request's commits, the commit
   that asks for the merge sets it to `accepted`, and a sweep that has ended and that no ADR has recorded is recorded by
   this round's.
@@ -117,7 +163,7 @@ quoted sentences are what to re-derive.
 7. **The drive** (`drive(units)`): `units / 128` messages a tick, seed 3. The task's `SEED` is 27.
 8. **What has run at another size**: `tests/reference.rs` runs the prior under the drive at 256, 1 024 and 4 096
    units. The task has run at 256 and 1 024, and H-25's configuration at 1 024 only.
-9. **H-33** ([ADR-0167](../docs/adr/0167-another-network-of-the-same-size-measured.md)): `SEEDS`, `SEEDED_ARMS`,
+9. **H-33** ([ADR-0167](../../docs/adr/0167-another-network-of-the-same-size-measured.md)): `SEEDS`, `SEEDED_ARMS`,
    `fed_run_on`, `drawn_of`, `SEEDED_1024`. Its twelve reversals took 12 to 21 blocks where the bound is 23, its
    highest couplings stood at 1.182 to 1.195 of their image's, and each mapping read 115 to 126 of its last 128.
 10. **The weekly job**: twelve shards of 120 minutes, each running its tests two at a time. The cost table holds 102
@@ -128,20 +174,20 @@ quoted sentences are what to re-derive.
     measurement; the dispatch's seconds are.
 12. **The engine is deterministic**, so the four arms read the same tables whether they are run one after another or
     side by side; only the seconds differ.
-13. **The dispatch's scope** ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
+13. **The dispatch's scope** ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
     for a round that changes no file under `src/`.
 
 ## Deliverables
 
-- [ ] **The derivation given its size, in the tests.**
+- [x] **The derivation given its size, in the tests.**
   - `derive` and what it calls take the size where they wrote 1 024.
   - At 1 024 units, on seeds 22, 23 and 24, each rule returns what the tree pins and every pinned table holds.
-- [ ] **The critic's rule as ADR-0168 writes it.**
+- [x] **The critic's rule as ADR-0168 writes it.**
   - The rule's values at its edges in the gate: 4, 32, 33, 51 and 64 units as they were; 65, 102 and 128 units as 9
     and 3; 129 units as 9 and 4; no unit as nothing; and the least stimulus at which the loader's bound returns
     nothing.
   - The one pinned assertion that moves is the one ADR-0168 names.
-- [ ] **H-34's protocol, in a new ADR at the next free number (`ls docs/adr`), before any rule is run at the new
+- [x] **H-34's protocol, in a new ADR at the next free number (`ls docs/adr`), before any rule is run at the new
   size.**
   - The size, the seeds, 22 and 23, and the order of the derivations, ADR-0165's.
   - For each rule, the range it scans at the new size and what it returns when nothing in the range passes.
@@ -151,33 +197,33 @@ quoted sentences are what to re-derive.
   - H-34's clauses and constants, restated from ADR-0168 and pinned in the tests: clause 0, and H-25's four by H-25's
     rules.
   - The readings, no clause, as ADR-0168 lists them.
-- [ ] **The calibration**, before any rule is run at the new size: every pinned number of the tree holds, and at
+- [x] **The calibration**, before any rule is run at the new size: every pinned number of the tree holds, and at
   1 024 units the rules return the constants the tree holds on all three seeds.
-- [ ] **The derivations on each network at 2 048 units**, each a test: what each rule returned, or that it returned
+- [x] **The derivations on each network at 2 048 units**, each a test: what each rule returned, or that it returned
   nothing, and the frozen block's two measures.
-- [ ] **The runs**: on each network whose clause 0 holds, H-25's two arms, each a weekly `exhaustive` test, run once,
+- [x] **The runs**: on each network whose clause 0 holds, H-25's two arms, each a weekly `exhaustive` test, run once,
   their tables pinned per block.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - H-34's verdict per network, arm and clause.
   - Each derived constant on each network beside the three networks' at 1 024.
   - The readings ADR-0168 lists, among them the critic's: the value beside $2p - 1$, what a presentation moves it by,
     and the units the critic counts a trial beside the volley's.
   - An arm's seconds in the dispatch beside twice an arm's at 1 024.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** At most one runtime test: the critic's rule at its edges, H-34's clauses at their edges and the
+- [x] **The gate.** At most one runtime test: the critic's rule at its edges, H-34's clauses at their edges and the
   readings' rules over tables written by hand.
-- [ ] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
+- [x] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
   `scope=exhaustive`. Its twelve whole-domain shards are green and reproduce every pinned number. The cost table is
   regenerated from their artifacts. The ADR names the dispatch, each shard's wall time against its bound, and any
   shard past 60 per cent with the arm that put it there.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-34 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` only where the standing changes (ADR-0150); `README.md` and `docs/zh-TW`'s reader's guide as the
     result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADR set to
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, and the round's ADR set to
   `accepted` by the commit that asks for the merge.
 
 ## Not empowered
