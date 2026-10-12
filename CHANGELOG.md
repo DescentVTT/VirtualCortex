@@ -8,6 +8,15 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **Brief 069: H-35's protocol, written before any rewarded run ([ADR-0172](docs/adr/0172-a-reward-right-three-times-in-four-measured.md)); H-28's harness given the share as a value; whitepaper 4.109.0; no pinned number changed.** In `runtime/cortex-runtime/tests/inhibition.rs`:
+  - **the share** (`Share`, `MisledPins`, `seven_in_eight`, `three_in_four`): everything H-28's harness wrote as a constant of seven in eight — the feedback, the coin, the reliability's part in an expected reward, the coin's bounds and count, the arm's pinned tables — given as a value; H-28's is built from the constants H-28 was written with;
+  - **the forms**: `holds_expected_reward_at`, `misled_at`, `beside_expected_at` and `nearer_expected_at` take the reliability's part, `coin_of_by` the oracle's rule and `coin_within_of` the bounds; each rule that stood calls its form with H-28's constant;
+  - **the arm** (`misled_arm_at`): `misled_arm`'s body at the share given, which `misled_arm` calls with H-28's; beside H-28's calibration the coin is held nested in seven in eight's;
+  - **the gate's checks over pinned tables** (`misled_tables`): the loop of H-28's gate's test taken out and given the share;
+  - **the coin over the schedule**: misleading in 363, 514, 515 and 521 trials by mapping, 1 913 of 7 680, held to 1 760 to 2 080; H-28's 949 all among them, and the 964 beside them, 182, 252, 265 and 265 by mapping, the trials whose bit 50 is set;
+  - **H-35's rules**: clause 4 at a half; the step and step 5's split (`in_four_step`, `Split`); the three predicted readings (`in_four_predicted`, `ratios`, `counted`); the readings beside H-28's and H-25's (`BesideRead`, `beside_accounts`, `first_apart`, `nested_blocks`, `errors_against`, `taken_back`);
+  - **two weekly tests**, `a_reward_right_three_times_in_four_from_the_{assignment, mirrored_assignment}_at_1024_units_exhaustive`, their tables empty until their one run;
+  - **the gate**: one test, `the_clauses_of_h_35_the_coin_s_count_the_predicted_readings_and_the_split`.
 - **Brief 069: a reward right three times in four, built ([ADR-0171](docs/adr/0171-a-reward-right-three-times-in-four-built.md)); `Feedback::ThreeInFour`; no rule of the engine, no record and nothing of the image changed, and under the four feedbacks before it a trial is the trial it was.** In `runtime/cortex-runtime/src/task.rs`:
   - **the feedback**: `Feedback::ThreeInFour`, a variant of its own beside the four; the reward's sign is `correct != misleading_in_four_at(trial)`;
   - **the coin**: `MISLEADING_IN_FOUR_BITS`, bits 48 and 49 of the trial's draw, and `Task::misleading_in_four_at`; a compile-time assertion holds the mask to two bits, to be among `MISLEADING_BITS` with bit 50 the one left out, and to be no bit the stimulus, the shuffled control or the exploration reads;
