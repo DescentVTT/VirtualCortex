@@ -57,6 +57,11 @@ standing changes.
   its rule and the critic's rule extended first past 64 units a stimulus (ADR-0168), it learns and
   revises the task as at 1 024: H-34 read yes
   ([ADR-0169](docs/adr/0169-twice-the-size-measured.md)).
+  Under a reward right three times in four on the first network, seven mappings of eight are
+  learned and one reversal of six is not made inside the schedule, by one stimulus of two, with the
+  couplings bounded and the critic holding the expected reward: H-35 read no
+  ([ADR-0172](docs/adr/0172-a-reward-right-three-times-in-four-measured.md)). The boundary lies
+  between that share and seven in eight.
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
