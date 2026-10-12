@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-12
 depends-on: ADR-0171
 decision-makers: VirtualCortex maintainers
@@ -25,7 +25,7 @@ What was read before anything was written (principle 2, and brief 069's directiv
 5. **H-25's six reversals** (`CROSSINGS_DRAWN_1024`): 19, 21 and 16 blocks from the assignment and 20, 15 and 14 from the mirrored assignment. H-28's: 19, 19 and 20, and 24, 14 and 21.
 6. **The step of H-28's stopping rule** (`misled_step`) is the rule ADR-0170 writes for H-35 in its steps 3 to 6, but for step 5's split.
 
-**The sweep ADR-0170 names.** The schedule's weekly run on `main` of 2026-10-12 had not started when this protocol was written, at 05:04Z; no run of the schedule's event is listed after the one of 2026-10-05. Looked for again at 09:13Z, when the readings were written, it had still not started.
+**The sweep ADR-0170 names.** The schedule's weekly run on `main` of 2026-10-12 had not started when this protocol was written, at 05:04Z; no run of the schedule's event is listed after the one of 2026-10-05. Looked for again at 09:13Z, when the readings were written, it had still not started. It started at 10:07:28Z, run 38234325824; its sweep had not started when this round asked for its merge, and the first ADR merged after it ends records it.
 
 ## Decision Drivers
 
@@ -280,6 +280,35 @@ ADR-0149 handed on that *"each true reward teaches more"* as the reliability fal
 
 **The oracles held** at every one of the 15 360 trials: the drawn sources to the units the harness's critic oracle counted from the train, the targets to the selected readout's units, the engine's value, error and weights to the harness's critic, the reward to the coin, and the composer's and the network's traces and weights to the record.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes a file under `src/` — the task, ADR-0171's feedback — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**, as brief 069 asks: run [38228081172](https://github.com/DescentVTT/VirtualCortex/actions/runs/38228081172) at `1488edb`, the pins' commit. The round's commits, in pull request #202: `a2f33b8` the build; `4254054` the protocol, before any rewarded run at three in four; `1488edb` the arms' tables and the gate's checks over them; `b62d4e9` the readings and the documents; and the commit that carries this section, the cost table and the brief's archive.
+- **Every whole-domain shard is green.** All 110 `exhaustive` tests passed on the hosted runners, each exit 0 with one test reported, 83 129 s summed. The 108 before this round reproduced their pinned numbers, H-28's two arms through the harness given the share among them, in 1 805 and 1 830 s. **H-35's two arms reproduced their tables there, in 1 807 s from the assignment and 1 827 s from the mirrored assignment.** H-25's arms took 1 108 and 1 834 s in the same run.
+- **The shards**, dealt by the table before this round, which did not know the two arms and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 61.6 min | H-34, seed 23 from the assignment 3 570; H-22 from the mirrored 1 836 | 8 | 7 011 | 3 603 s, 50 % |
+  | 1 | 65.5 min | H-34, seed 22 from the mirrored 2 250; H-22 from the assignment 1 852 | 8 | 5 973 | 3 833 s, 53 % |
+  | 2 | 66.4 min | H-34, seed 23 from the mirrored 3 706; H-30 from the mirrored 1 842 | 10 | 7 739 | 3 888 s, 54 % |
+  | 3 | 79.8 min | H-34, seed 22 from the assignment 3 730; H-29 from the assignment 2 119 | 8 | 9 383 | 4 692 s, 65 % |
+  | 4 | 56.6 min | H-31 from the mirrored 1 723; H-27 from the mirrored 1 456 | 9 | 6 357 | 3 316 s, 46 % |
+  | 5 | 55.6 min | H-31 from the assignment 1 869; H-20 from the mirrored 1 410 | 9 | 6 281 | 3 257 s, 45 % |
+  | 6 | 66.9 min | H-33, seed 23 from the mirrored 1 871; H-32 from the assignment 1 813 | 10 | 7 309 | 3 922 s, 54 % |
+  | 7 | 38.9 min | H-20 from the assignment 1 247; H-27 from the assignment 1 033 | 10 | 4 535 | 2 271 s, 32 % |
+  | 8 | 71.0 min | H-33, seed 23 from the assignment 1 890; H-33, seed 24 from the assignment 1 882 | 8 | 8 233 | 4 173 s, 58 % |
+  | 9 | 38.4 min | H-25 from the assignment 1 108; H-32 from the mirrored 1 101 | 9 | 4 439 | 2 230 s, 31 % |
+  | 10 | 70.3 min | H-33, seed 24 from the mirrored 1 892; H-24 from the assignment 1 842 | 11 | 7 985 | 4 126 s, 57 % |
+  | 11 | 68.0 min | H-25 from the mirrored 1 834; H-30 from the assignment 1 832 | 10 | 7 884 | 3 990 s, 55 % |
+
+  The percentages are of the job's bound, 120 minutes; each shard ran its tests two at a time, at 1.56 to 2.00 of their summed seconds over the wall. The twelve started from 25 seconds to 10 minutes after the dispatch, the later ones behind the pull request's own gate, and the last ended at 10:31:25Z, 1 h 22 min after it.
+
+  **One shard of this run passed 60 per cent of its bound**, the fourth at 65. It holds one of H-34's arms, which read 3 730 s on this run's runner where the table held 2 151, beside H-29's arm at 2 119; brief 069's directive excepts a shard that holds one of H-34's arms and is on the regenerated deal, below. The two shards that drew this round's arms, the ninth and the eleventh, each with an arm costed at 900 s and running 1 827 and 1 807, read 58 and 57 per cent.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 38228081172`): 110 lines, 83 129 s, where it held 108 and 79 490. ADR-0092's deal plans each of the twelve shards at 6 926 to 6 930 s summed, about 3 460 to 3 730 s of wall time at this run's ratios, **48 to 52 per cent of the bound**. No shard is planned past 60, those that hold H-34's arms among them. An arm at 2 048 units read 2 250 to 3 730 s in this run and 2 151 to 3 580 in the last: its seconds on a hosted runner are a range, and a shard's bound against its longest test stays the workflow's decision that ADR-0168 names.
+- **The sweep.** Its thirteen jobs start when the shards have ended ([ADR-0166](0166-the-sweep-after-the-shards.md)): they were queued at 10:31:25Z and **had not started when this was written**, at 10:35Z. By [ADR-0158](0158-the-sweep-off-the-next-decisions-path.md) the first ADR merged after it ends records its outcome. The schedule's weekly run on `main`, which ADR-0170 names, started at 10:07:28Z as run 38234325824, at `d090b30`; its shards were running and its sweep had not started. No sweep that has ended is without its record: the last before these, of run 38111246283, is in [ADR-0165](0165-another-network-of-the-same-size.md).
+- **The pull request's gate** on `4254054` and on `b62d4e9` is green in every job, the determinism pin on AArch64 and the MSRV among them. The mutation gate on the changed lines found 12 mutants in each, 8 caught and 4 unviable, none missed: `Task::misleading_in_four_at`'s seven and the feedback's one in `Task::trial` caught; the four unviable are the tool's synthesized returns for `Task::trial`, whose `Outcome` has no default. The same run on the developer machine read 5 caught and 7 unviable, three of them the Windows linker's refusal to overwrite a test binary and not the mutant's; each of those three, applied by hand, fails the task's unit tests. The gate on `1488edb` was cancelled by the push of `b62d4e9`, whose tests are its.
+- **On the developer machine**, at `1488edb`: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 737 passed and 150 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; 110 whole-domain tests are listed.
+
 ### The step of the stopping rule reached
 
 **Step 5, branch (b)** (`IN_FOUR_STEP_1024`): a no on clause 1 with clause 3 held, and by the rule that splits it, written before the run, **not revised**. Clause 2 holds in both arms and the first mapping is learned in both, but one of the six reversals, the third from the assignment, has no block with 40 of its 64 trials correct inside its 32.
@@ -310,7 +339,7 @@ Steps 3, 4 and 6 did not arise; step 7 is kept.
 - Bad: one share, one network and one schedule. The boundary lies between this share and seven in eight and is not located.
 - Bad: the verdict turns on five trials of one mapping and the branch on two trials of one block. A second network or seed could read either the other way; none was run.
 - Bad: the clamp's part is read from what the run did, not from a run without it.
-- Bad: two more arms in the weekly job, each about H-28's cost.
+- Bad: two more arms in the weekly job, each about H-28's cost, 1 807 and 1 827 s in the dispatch. The regenerated table, 110 tests and 83 129 s, plans each shard at 48 to 52 per cent of its bound.
 - Neutral: a predicted reading missed in a cell ADR-0170's own text called undecidable; the miss is recorded as one.
 
 ## Alternatives considered and why rejected
