@@ -227,12 +227,16 @@ jobs:
     # runners about a fifth slower, planned 57 per cent at five. Twelve since ADR-0150: a round's
     # merge waits for these shards, six read up to 84 minutes, and the floor is the longest
     # test, 1 979 s in ADR-0149's table; with the sweep's seven jobs a dispatch is nineteen.
+    # A bound of 180 minutes since ADR-0176, where it was 120: an arm at 2 048 units read up to
+    # 3 730 s, half of 120 minutes by itself, which no deal moves. The bound is the least
+    # multiple of thirty minutes that holds the longest test two and a half times over, the
+    # slowest runner ADR-0088 read; it moves again when a test of 4 320 s and more is added.
     name: Weekly (exhaustive tests ${{ matrix.shard }}/12, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
     if: github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'exhaustive'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     strategy:
       # One shard that fails must not hide what the others found.
       fail-fast: false
