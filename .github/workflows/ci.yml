@@ -228,9 +228,10 @@ jobs:
     # merge waits for these shards, six read up to 84 minutes, and the floor is the longest
     # test, 1 979 s in ADR-0149's table; with the sweep's seven jobs a dispatch is nineteen.
     # A bound of 180 minutes since ADR-0176, where it was 120: an arm at 2 048 units read up to
-    # 3 730 s, half of 120 minutes by itself, which no deal moves. The bound is the least
-    # multiple of thirty minutes that holds the longest test two and a half times over, the
-    # slowest runner ADR-0088 read; it moves again when a test of 4 320 s and more is added.
+    # 3 730 s, half of 120 minutes by itself, which no deal moves. Its rule is ADR-0179's
+    # (F-68): the least multiple of thirty minutes of which the slowest shard's job read is at
+    # most 60 per cent, 90.9 minutes over five dispatches; it moves when a shard's job reads
+    # past 108 minutes under a deal made from a table that knew its tests.
     name: Weekly (exhaustive tests ${{ matrix.shard }}/12, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
