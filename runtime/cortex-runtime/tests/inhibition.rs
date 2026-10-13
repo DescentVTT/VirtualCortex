@@ -197424,14 +197424,19 @@ fn derive_at(units: u32, seed: u64, name: &str) -> Derivation {
     derive_under(units, seed, &GAIN_HELD, name)
 }
 
-/// How a derivation settles its network (ADR-0177, brief 071): the controller's step its lead-in
-/// runs under and its image carries; whether the settled network's rule reads the gains beside
-/// the excitatory sums; and the lead-in's bound in windows.
+/// How a derivation settles its network (ADR-0177, brief 071; ADR-0181, brief 072): the
+/// controller's step its lead-in runs under and its image carries; whether the settled network's
+/// rule reads the gains beside the excitatory sums; the lead-in's bound in windows; the rate's
+/// target, a period in ticks, its lead-in runs under and its image carries, zero while unset
+/// (ADR-0180); and whether the rule reads, beside the sums, the gain's mean over sixteen windows
+/// in each window's gain's place (ADR-0178).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Settling {
     step: u16,
     gains: bool,
     bound: u64,
+    target: u32,
+    mean: bool,
 }
 
 /// The gain held, every derivation's settling to brief 070: the step zero, ADR-0077's rule over
@@ -197440,6 +197445,8 @@ const GAIN_HELD: Settling = Settling {
     step: BACKGROUNDS[SETTLED],
     gains: false,
     bound: LEAD_IN_EXTENDED,
+    target: 0,
+    mean: false,
 };
 
 /// ADR-0077's second candidate as a settling: the controller at its step of an eighth, the
@@ -197448,6 +197455,8 @@ const AT_AN_EIGHTH: Settling = Settling {
     step: CONTROL_STEP_EIGHTH,
     gains: false,
     bound: LEAD_IN_EXTENDED,
+    target: 0,
+    mean: false,
 };
 
 /// The settled network's rule under a controller's step (ADR-0175, ADR-0177): the first window at
@@ -197467,11 +197476,14 @@ fn lead_in_gains(table: &[LeadInWindow]) -> Vec<i64> {
 
 impl Settling {
     /// The settled network's rule over a lead-in's table, `prior` the excitatory sum and `gain`
-    /// the gain before the first window: `settled_within` over the sums, or, where the rule
-    /// reads the gains, `settled_in_both`.
+    /// the gain before the first window: `settled_within` over the sums; or, where the rule
+    /// reads the gains, `settled_in_both`; or, where it reads the gain's mean,
+    /// `settled_in_mean`.
     fn settled(&self, prior: i64, gain: u32, table: &[LeadInWindow]) -> Option<usize> {
         let sums = lead_in_sums(table);
-        if self.gains {
+        if self.mean {
+            settled_in_mean(prior, &sums, &lead_in_gains(table))
+        } else if self.gains {
             settled_in_both((prior, i64::from(gain)), &sums, &lead_in_gains(table))
         } else {
             settled_within(prior, &sums)
@@ -197488,10 +197500,36 @@ fn undropped(exec: Engine, name: &str) {
     );
 }
 
+/// The candidate's executor under a settling (ADR-0181): `candidate_from` at the settling's step,
+/// with the settling's rate's target in its configuration, which `at_gain` writes into the image
+/// it reloads from, so the engine carries it. With the target unset the configuration is
+/// `candidate_from`'s field for field.
+fn candidate_under(p: &Prior, units: u32, gain: u32, settling: &Settling) -> Engine {
+    let cfg = Config {
+        control_step_q0_16: settling.step,
+        rate_target_period_ticks: settling.target,
+        ..config(units, 2, BASELINE_Q16)
+    };
+    let exec = at_gain(p, cfg, gain);
+    assert_eq!(
+        (
+            exec.homeostasis().synaptic_gain_q16,
+            exec.homeostasis().control_step_q0_16,
+            exec.rate_target_period_ticks(),
+            exec.modulation_baseline_q16()
+        ),
+        (gain, settling.step, settling.target, BASELINE_Q16),
+        "the candidate carries the gain, the step, the rate's target and the baseline"
+    );
+    exec
+}
+
 /// `derive_at` under a settling (ADR-0177, brief 071): the same rules in the same order, with the
 /// controller's step where `derive_at` wrote `BACKGROUNDS[SETTLED]` — in the candidate's record
 /// and in the image, which carries it through the frozen block, the target's lead-in and every
-/// image written from it — and the settled network's rule and bound the settling's. The rules
+/// image written from it — and the settled network's rule and bound the settling's. Since
+/// ADR-0181 the settling's rate's target is carried the same way, by the same images; with it
+/// unset the candidate is the one it was. The rules
 /// before the settled network do not read the step, and the cancel is derived on the prior's
 /// network at the gain's rule's gain, as it is. The gain the image carries is the one the
 /// lead-in's regulation left; with the step at zero it is asserted the gain's rule's. `derive_at`
@@ -197533,7 +197571,7 @@ fn derive_under(units: u32, seed: u64, settling: &Settling, name: &str) -> Deriv
     };
     d.census = census_of(&census_ticks);
     // 3. The settled network and its image.
-    let mut exec = candidate_from(&p, units, gain, settling.step);
+    let mut exec = candidate_under(&p, units, gain, settling);
     assert_eq!(
         weights_by_polarity(&exec),
         d.prior_sums,
@@ -197576,10 +197614,11 @@ fn derive_under(units: u32, seed: u64, settling: &Settling, name: &str) -> Deriv
                 weights_by_polarity(&frozen),
                 frozen.homeostasis().synaptic_gain_q16,
                 frozen.homeostasis().control_step_q0_16,
+                frozen.rate_target_period_ticks(),
                 frozen.ticks()
             ),
-            (sums, carried, settling.step, exec.ticks()),
-            "{name}: the image carries the weights, the gain, the step and the clock"
+            (sums, carried, settling.step, settling.target, exec.ticks()),
+            "{name}: the image carries the weights, the gain, the step, the rate's target and the clock"
         );
     }
     undropped(exec, name);
@@ -246901,11 +246940,13 @@ const IN_FOUR_READINGS_READ_1024: [bool; 3] = [true, true, false];
 /// The network an arm runs on (ADR-0174): the instrument's own — seed 22 at 1 024 units, whose
 /// images H-25's, H-28's and H-35's arms hold by their CRCs — or a `Site`, a network of another
 /// seed or size, whose configuration H-33's and H-34's arms derive by the rules and hold to its
-/// pinned derivation.
+/// pinned derivation; or, since ADR-0181, a `RuledSite`, the instrument's prior derived under
+/// the rate's rule at a step of H-38's scan.
 #[derive(Clone, Copy)]
 enum Ground<'a> {
     Instrument,
     Site(&'a Site),
+    Ruled(&'a RuledSite),
 }
 
 /// The reliability's part in an expected reward under the true reward: $2q - 1$ at $q = 1$, one.
@@ -247039,6 +247080,7 @@ impl Ground<'_> {
         match self {
             Ground::Instrument => 1024,
             Ground::Site(site) => site.units,
+            Ground::Ruled(_) => SCAN_UNITS,
         }
     }
 
@@ -247046,6 +247088,18 @@ impl Ground<'_> {
         match self {
             Ground::Instrument => instrument_stand(),
             Ground::Site(site) => site_stand(site),
+            Ground::Ruled(site) => ruled_stand(site),
+        }
+    }
+
+    /// The pinned tables of the ground's own arm of index `k` under the true reward: a
+    /// `Site`'s, or a `RuledSite`'s; none on the instrument's network, whose own arm is
+    /// `drawn_arm`'s.
+    fn arm_pins(&self, k: usize) -> Option<&ArmPins> {
+        match self {
+            Ground::Instrument => None,
+            Ground::Site(site) => site.arms.get(k),
+            Ground::Ruled(site) => site.arms.get(k),
         }
     }
 }
@@ -247236,9 +247290,14 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
         .iter()
         .position(|&a| a == arm)
         .expect("an arm of H-25's two");
+    assert!(
+        share.is_none() || !matches!(ground, Ground::Ruled(_)),
+        "H-38's arms run under the true reward"
+    );
     let name = match (ground, share) {
         (_, Some(share)) => format!("{} {arm:?}", share.name),
         (Ground::Site(site), None) => format!("{} {arm:?}", site.name),
+        (Ground::Ruled(site), None) => format!("{} {arm:?}", site.name),
         (Ground::Instrument, None) => {
             panic!("H-25's own arm on the instrument's network is `drawn_arm`'s")
         }
@@ -247313,6 +247372,7 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
     let made = match ground {
         Ground::Instrument => instrument_made(&name, arm),
         Ground::Site(site) => site_made(site, &site.arms[k], arm, &name),
+        Ground::Ruled(site) => ruled_made(site, &name),
     };
     let sets = geometry(units, made.derived.rotation);
     let len = sets[0].len();
@@ -247383,6 +247443,13 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
     let mut opened = exec.ticks();
     let mut weights: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
     let mut stepped: Vec<Stepped> = Vec::with_capacity(SCHEDULE_TRIALS);
+    // The controller beside the run (ADR-0181): the gain at every trial's end and each window's
+    // spikes, on every ground. With the gain held it reads one gain throughout.
+    let controller = (
+        exec.homeostasis().control_step_q0_16,
+        exec.rate_target_per_window(),
+    );
+    let mut watch = GainWatch::new(&exec);
     let ((run, moves, values, watched, beside), along) = fed_run_at(
         units,
         &made.derived,
@@ -247409,6 +247476,7 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
                 }
                 if tick >= start {
                     in_trial = in_trial.saturating_add(1);
+                    watch.spike(tick);
                 }
                 if tick.checked_sub(opened).is_some_and(|d| d < window) {
                     if let Some(count) = counts.get_mut(unit as usize) {
@@ -247428,6 +247496,7 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
                 counts.iter().fold(0u32, |sum, &c| sum.saturating_add(c)),
                 in_trial,
             ));
+            watch.trial(exec);
             weights = after;
             opened = end;
         },
@@ -247532,6 +247601,25 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
     eprintln!("DUMP {name} PIN kind moves {kind_moves:?}");
     eprintln!("DUMP {name} PIN kind errors {kind_errors:?}");
     eprintln!("DUMP {name} PIN beyond {beyond:?}");
+    // The controller beside the run: each window's spikes and the gain its regulation left, by
+    // block, and its reading; the step and the target the engine carried.
+    let gain_windows = watch.windows();
+    let gain_by_block = gain_blocks(&gain_windows);
+    let gain_read = gain_read(&gain_windows, watch.loaded, controller.0, controller.1);
+    eprintln!("DUMP {name} gain windows {gain_windows:?}");
+    eprintln!("DUMP {name} PIN gain blocks {gain_by_block:?}");
+    eprintln!("DUMP {name} PIN gain read {gain_read:?}");
+    eprintln!(
+        "DUMP {name} the controller: step {:#06x}, target {:?} spikes a window, the image's gain {}, {} trials whose open window's count is not the record's; predicted readings 3 and 4 over this arm {:?}",
+        controller.0,
+        controller.1,
+        watch.loaded,
+        watch.apart,
+        (
+            gains_within(&window_gains(&gain_windows)),
+            mean_below(&window_gains(&gain_windows), watch.loaded)
+        )
+    );
     // Everything read and dumped, and the clauses and the readings computed, before anything
     // else is held.
     dump_earned(&name, &run, &earned);
@@ -247802,6 +247890,33 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
         critic_read.most <= exec.train_capacity() as u64,
         "{name}: a trial's spikes fit the train"
     );
+    // The controller, on every ground: the train's count of the open window is the record's at
+    // every trial's end, a block of trials is eight windows, and every window's gain is the
+    // rule's from the gain before it — the rate's rule from the window's spikes where the engine
+    // carries a target, and otherwise the gain it was, the step being zero.
+    assert_eq!(
+        watch.apart, 0,
+        "{name}: each window's spikes are the record's"
+    );
+    assert_eq!(
+        (gain_windows.len(), gain_by_block.len()),
+        (
+            SCHEDULE_BLOCKS.saturating_mul(BLOCK_WINDOWS),
+            SCHEDULE_BLOCKS
+        ),
+        "{name}: eight windows end in every block"
+    );
+    assert_eq!(
+        gain_read.unruled, 0,
+        "{name}: every window's gain is the controller's rule's"
+    );
+    if controller.1.is_none() {
+        assert_eq!(
+            (controller.0, gain_read.band),
+            (0, Some((made.gain, made.gain))),
+            "{name}: with no target the step is zero and the gain is held"
+        );
+    }
     // The pinned tables of the whole run, and the readings as the constants state: the share's
     // under a share, the site's under the true reward.
     assert_ne!(*trace, 0, "{name}: a sequence");
@@ -247914,8 +248029,10 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
                 );
             }
         }
-        (Ground::Site(site), None) => {
-            let pins = &site.arms[k];
+        (ground, None) => {
+            let pins = ground
+                .arm_pins(k)
+                .expect("refused before the run on the instrument's network");
             pinned(
                 &format!("{name} sight"),
                 blocks,
@@ -247967,8 +248084,20 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
                     "{name}: the arm's reading by H-28's rules, and brief 070's beside it"
                 );
             }
+            // Under the rate's rule, the gain's course by block and its reading (ADR-0181).
+            if let Ground::Ruled(site) = ground {
+                assert_eq!(
+                    gain_by_block.as_slice(),
+                    site.gains[k].blocks,
+                    "{name}: the gain's course by block"
+                );
+                assert_eq!(
+                    Some(gain_read),
+                    site.gains[k].read,
+                    "{name}: the gain's reading"
+                );
+            }
         }
-        (Ground::Instrument, None) => unreachable!("refused before the run"),
     }
     assert_eq!(
         blocks.last().map(|b| (b.7, b.8)),
@@ -290754,6 +290883,8 @@ const fn under_step(step: u16) -> Settling {
         step,
         gains: true,
         bound: SCAN_BOUND,
+        target: 0,
+        mean: false,
     }
 }
 
@@ -291353,7 +291484,9 @@ fn the_settled_network_s_rule_under_a_step_clause_0_of_h_37_and_the_predicted_re
             Settling {
                 step,
                 gains: true,
-                bound: 320
+                bound: 320,
+                target: 0,
+                mean: false
             }
         );
     }
@@ -291363,12 +291496,16 @@ fn the_settled_network_s_rule_under_a_step_clause_0_of_h_37_and_the_predicted_re
             Settling {
                 step: 0,
                 gains: false,
-                bound: 160
+                bound: 160,
+                target: 0,
+                mean: false
             },
             Settling {
                 step: 0x2000,
                 gains: false,
-                bound: 160
+                bound: 160,
+                target: 0,
+                mean: false
             }
         ),
         "the gain held and ADR-0077's second candidate, each held to the sums alone"
@@ -299483,3 +299620,1628 @@ const SCAN_READ: [Option<StepRead>; 5] = [
         sums: [9999, 4504],
     }),
 ];
+
+// =================================================================================== H-38
+
+// -------------------------------------------- written before the run (ADR-0178, ADR-0181)
+
+/// The steps of H-38's scan (ADR-0178), Q0.16, in the order run and no other: an eighth, the
+/// controller's own as built, and H-37's five, each the half of the one before.
+const RATE_STEPS: [u16; 6] = [0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100];
+const _: () = assert!(
+    RATE_STEPS[0] == CONTROL_STEP_EIGHTH
+        && RATE_STEPS[1] == SCAN_STEPS[0]
+        && RATE_STEPS[2] == SCAN_STEPS[1]
+        && RATE_STEPS[3] == SCAN_STEPS[2]
+        && RATE_STEPS[4] == SCAN_STEPS[3]
+        && RATE_STEPS[5] == SCAN_STEPS[4]
+);
+
+/// The names the scan's dumps carry, in the steps' order.
+const RATE_NAMES: [&str; 6] = ["eighth", "sixteenth", "in32", "in64", "in128", "in256"];
+
+/// The step ADR-0178's first predicted reading names: a sixteenth, the scan's second.
+const RATE_SIXTEENTH: usize = 1;
+const _: () = assert!(RATE_STEPS[RATE_SIXTEENTH] as u32 * 16 == 1 << 16);
+
+/// The rate's target of H-38 (ADR-0178): the period H-25's derivation returns with the gain
+/// held, the settled network's own rate by ADR-0128's rule, 58 201 ticks on seed 22. No other
+/// target is run.
+const RATE_TARGET_PERIOD: u32 = TARGET_PERIOD_1024;
+
+/// That period as a window's count at 1 024 units (ADR-0180's rule): 1 024 units times a
+/// window's 131 072 ticks over 58 201 are 2 306.107 spikes, 2 306 to nearest.
+const RATE_TARGET_COUNT: u32 = 2_306;
+const _: () = assert!(
+    RATE_TARGET_PERIOD == 58_201
+        && SCAN_UNITS as u64 * WINDOW_TICKS == 134_217_728
+        && (134_217_728 + 58_201 / 2) / 58_201 == RATE_TARGET_COUNT as u64
+);
+
+/// The lead-in's bound under the rate's rule (ADR-0178): 320 windows, H-37's.
+const RATE_BOUND: u64 = SCAN_BOUND;
+
+/// The windows of each of the two means the settled network's rule holds the gain by
+/// (ADR-0178): sixteen, ADR-0055's.
+const MEAN_WINDOWS: usize = SETTLED_WINDOWS;
+
+/// The settling of a step of H-38's scan (ADR-0178): the controller on at `step` and the rate's
+/// rule on at `RATE_TARGET_PERIOD` from the lead-in's first window, the settled network's rule
+/// over the excitatory sums and the gain's mean, within `RATE_BOUND` windows.
+const fn under_rate(step: u16) -> Settling {
+    Settling {
+        step,
+        gains: false,
+        bound: RATE_BOUND,
+        target: RATE_TARGET_PERIOD,
+        mean: true,
+    }
+}
+
+/// ADR-0178's prediction for H-38, written before any run: yes.
+const RULED_PREDICTED: bool = true;
+
+/// ADR-0178's four predicted readings, in its order, each predicted to hold: a step of a
+/// sixteenth holds; no window of any lead-in under the rule holds the saturation rule's count;
+/// through each arm the gain after every window within five per cent of 1.75; each arm's mean
+/// gain below the gain its image carries.
+const RATE_READINGS_PREDICTED: [bool; 4] = [true; 4];
+
+/// Predicted reading 3's band (ADR-0178): a gain is within five per cent of the gain's rule's
+/// 1.75 when twenty times its distance from it is at most it, 1.6625 to 1.8375, both counted.
+const GAIN_BAND_DIVISOR: u64 = 20;
+const _: () = assert!(GAIN_1024 == 0x0001_C000 && GAIN_1024 as u64 / GAIN_BAND_DIVISOR == 5_734);
+
+/// A block of trials is eight windows of ticks, so eight windows end in every block of an arm.
+const BLOCK_WINDOWS: usize = 8;
+const _: () = assert!(BLOCK as u64 * TRIAL_TICKS as u64 == BLOCK_WINDOWS as u64 * WINDOW_TICKS);
+
+/// The window's ticks as a shift.
+const WINDOW_SHIFT: u32 = ACTIVITY_BIN_SHIFT + ACTIVITY_WINDOW_SHIFT;
+const _: () = assert!(1u64 << WINDOW_SHIFT == WINDOW_TICKS);
+
+// ---------------------------------------------------------------- the rules (ADR-0181)
+
+/// The rate's rule as an oracle (ADR-0180; `HomeostaticDrivePool::regulate_rate` in
+/// `cortex-homeostasis`): the gain a window's regulation leaves from the gain before it, the
+/// window's spikes, the target's count and the step — $g\,(1 - \kappa\,\operatorname{clamp}(c /
+/// c^{*} - 1, -1, 1))$, the quotient, the step's product and the gain's each to nearest with a
+/// half going up, written by doubling in wider integers and not by the record's shifts; the gain
+/// clamped to its bounds. A target of no spike moves nothing.
+fn rate_regulated(gain: u32, spikes: u64, target: u32, step: u16) -> u32 {
+    if target == 0 {
+        return gain;
+    }
+    let one = 1i128 << 16;
+    let two = one.saturating_mul(2);
+    let target = i128::from(target);
+    let ratio = i128::from(spikes)
+        .saturating_mul(two)
+        .saturating_add(target)
+        .div_euclid(target.saturating_mul(2));
+    let error = ratio.saturating_sub(one).clamp(one.saturating_neg(), one);
+    let moved = i128::from(step)
+        .saturating_mul(error)
+        .saturating_mul(2)
+        .saturating_add(one)
+        .div_euclid(two);
+    let after = i128::from(gain)
+        .saturating_mul(one.saturating_sub(moved))
+        .saturating_mul(2)
+        .saturating_add(one)
+        .div_euclid(two);
+    after.clamp(i128::from(GAIN_MIN_Q16), i128::from(GAIN_MAX_Q16)) as u32
+}
+
+/// The gain's mean's criterion at one window of a series of gains (ADR-0178), each gain as its
+/// window's regulation left it and windows counted from one: true when the gains of the
+/// `MEAN_WINDOWS` windows up to and including `window`, summed, are within `SETTLED_PER_MYRIAD`
+/// per ten thousand of the gains of the `MEAN_WINDOWS` windows before those, summed — the two
+/// means over one count of windows, so the sums stand for them. Both blocks are whole windows of
+/// the lead-in, so it is false below the thirty-second window, and past the series. Integers
+/// throughout and strict, as ADR-0055's is: `10 000 |a − b| < 75 b`.
+fn mean_settled_in(gains: &[i64], window: usize) -> bool {
+    let Some(middle) = window.checked_sub(MEAN_WINDOWS) else {
+        return false;
+    };
+    let Some(first) = middle.checked_sub(MEAN_WINDOWS) else {
+        return false;
+    };
+    let (Some(before), Some(those)) = (gains.get(first..middle), gains.get(middle..window)) else {
+        return false;
+    };
+    let sum = |block: &[i64]| block.iter().fold(0i64, |sum, &g| sum.saturating_add(g));
+    let reference = sum(before);
+    sum(those).abs_diff(reference).saturating_mul(10_000)
+        < u64::try_from(reference)
+            .unwrap_or(0)
+            .saturating_mul(SETTLED_PER_MYRIAD)
+}
+
+/// The first window at which the gain's mean's criterion holds; none when no window of the
+/// series is.
+fn mean_settled_within(gains: &[i64]) -> Option<usize> {
+    (0..=gains.len()).find(|&window| mean_settled_in(gains, window))
+}
+
+/// The settled network's rule under the rate's rule (ADR-0178): the first window at which
+/// ADR-0055's criterion holds over the excitatory sums and the gain's mean's criterion holds over
+/// the gains, both at that window; none when no window of the two series is. `prior` is the
+/// excitatory sum before the first window.
+fn settled_in_mean(prior: i64, sums: &[i64], gains: &[i64]) -> Option<usize> {
+    (0..=sums.len().min(gains.len()))
+        .find(|&window| settled_in(prior, sums, window) && mean_settled_in(gains, window))
+}
+
+/// The steepness of the rate in the gain over a lead-in, as its table gives it (ADR-0178's
+/// reading): each window's spikes against the gain it ran under — the gain the window before
+/// left, `gain` for the first — by the least-squares slope at the two means, as the per cent of
+/// rate one per cent of gain moves, in hundredths: $100\,(n \sum xy - \sum x \sum y) \sum x /
+/// ((n \sum x^2 - (\sum x)^2) \sum y)$, truncated. None where the gain never moved or no window
+/// held a spike. The lead-in's weights move under it, and the gain answers the count of the
+/// window before: it is the table's slope, not the network's alone.
+fn steepness(gain: u32, table: &[LeadInWindow]) -> Option<i64> {
+    let n = i128::try_from(table.len()).ok()?;
+    let (mut sx, mut sy, mut sxx, mut sxy) = (0i128, 0i128, 0i128, 0i128);
+    let mut under = i128::from(gain);
+    for window in table {
+        let y = i128::from(window.0);
+        sx = sx.saturating_add(under);
+        sy = sy.saturating_add(y);
+        sxx = sxx.saturating_add(under.saturating_mul(under));
+        sxy = sxy.saturating_add(under.saturating_mul(y));
+        under = i128::from(window.5);
+    }
+    let above = n
+        .saturating_mul(sxy)
+        .saturating_sub(sx.saturating_mul(sy))
+        .saturating_mul(sx)
+        .saturating_mul(100);
+    let below = n
+        .saturating_mul(sxx)
+        .saturating_sub(sx.saturating_mul(sx))
+        .saturating_mul(sy);
+    above
+        .checked_div(below)
+        .map(|hundredths| hundredths.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64)
+}
+
+/// What a lead-in under the rate's rule reads of the controller (ADR-0178's readings, no
+/// clause), each an integer rule over its table; windows are counted from one.
+/// - `windows`: the lead-in's length.
+/// - `settled`: the window ADR-0055's criterion first holds at over the excitatory sums alone,
+///   the gain's mean's criterion over the gains alone, and both at one window, which is the
+///   settled network's rule.
+/// - `band`: the least and the greatest gain a window's regulation left; `late`, the same over
+///   the last `MEAN_WINDOWS` windows.
+/// - `counts`: the least and the greatest spikes of a window; `sixteen`, the spikes of the last
+///   `MEAN_WINDOWS` windows summed, to read beside sixteen targets.
+/// - `above`: the windows holding more spikes than the target's count.
+/// - `saturated`: the windows holding the saturation rule's count or more.
+/// - `unruled`: the windows whose gain is not the rate's rule's (`rate_regulated`) from the gain
+///   before, the window's spikes, the target's count and the step.
+/// - `last`: the last window's spikes, its two readout sets' spikes summed, its gain and its
+///   estimate.
+/// - `sums`: the inhibitory and the excitatory sum after the last window, in parts per ten
+///   thousand of the prior's.
+/// - `steepness`: `steepness` over the table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RateRead {
+    windows: usize,
+    settled: [Option<usize>; 3],
+    band: Option<(u32, u32)>,
+    late: Option<(u32, u32)>,
+    counts: Option<(u64, u64)>,
+    sixteen: Option<u64>,
+    above: u32,
+    saturated: u32,
+    unruled: u32,
+    last: (u64, u64, u32, u32),
+    sums: [i64; 2],
+    steepness: Option<i64>,
+}
+
+/// `RateRead` over a lead-in's table at `units` under `step` and a target of `target` spikes a
+/// window: `priors` the prior's sums by polarity `(inhibitory, excitatory)` and `gain` the gain
+/// before the first window.
+fn rate_read(
+    units: u32,
+    step: u16,
+    target: u32,
+    priors: (i64, i64),
+    gain: u32,
+    table: &[LeadInWindow],
+) -> RateRead {
+    let sums = lead_in_sums(table);
+    let gains = lead_in_gains(table);
+    let before = |k: usize| {
+        k.checked_sub(1)
+            .and_then(|k| table.get(k))
+            .map_or(gain, |w| w.5)
+    };
+    let last_windows = table
+        .len()
+        .checked_sub(MEAN_WINDOWS)
+        .and_then(|from| table.get(from..));
+    let band_of = |windows: &[LeadInWindow]| {
+        windows
+            .iter()
+            .map(|w| w.5)
+            .min()
+            .zip(windows.iter().map(|w| w.5).max())
+    };
+    let saturation = saturation_count(units);
+    RateRead {
+        windows: table.len(),
+        settled: [
+            settled_within(priors.1, &sums),
+            mean_settled_within(&gains),
+            settled_in_mean(priors.1, &sums, &gains),
+        ],
+        band: band_of(table),
+        late: last_windows.and_then(band_of),
+        counts: table
+            .iter()
+            .map(|w| w.0)
+            .min()
+            .zip(table.iter().map(|w| w.0).max()),
+        sixteen: last_windows
+            .map(|windows| windows.iter().fold(0u64, |sum, w| sum.saturating_add(w.0))),
+        above: table.iter().filter(|w| w.0 > u64::from(target)).count() as u32,
+        saturated: table.iter().filter(|w| w.0 >= saturation).count() as u32,
+        unruled: table
+            .iter()
+            .enumerate()
+            .filter(|&(k, w)| w.5 != rate_regulated(before(k), w.0, target, step))
+            .count() as u32,
+        last: table.last().map_or((0, 0, gain, 0), |w| {
+            (w.0, w.1[0].saturating_add(w.1[1]), w.5, w.6)
+        }),
+        sums: table.last().map_or([10_000; 2], |w| {
+            [per_myriad(w.2, priors.0), per_myriad(w.3, priors.1)]
+        }),
+        steepness: steepness(gain, table),
+    }
+}
+
+// ------------------------------------------------------- the controller beside an arm
+
+/// The controller beside an arm's run (ADR-0181), read at every trial's end and writing nothing
+/// to the engine: the gain; each window's spikes as the train gives them, the window open at the
+/// load beginning with what the image's record already held of it; and the trials at whose end
+/// the open window's count was not the record's own, which is none where the train's stamps and
+/// the tally agree.
+struct GainWatch {
+    first: u64,
+    counts: Vec<u64>,
+    ends: Vec<u64>,
+    gains: Vec<u32>,
+    apart: u32,
+    loaded: u32,
+}
+
+/// The spikes a record holds of its open window: the closed bins' and the open bin's.
+fn open_window_spikes(exec: &Engine) -> u64 {
+    let h = exec.homeostasis();
+    h.window_spikes().saturating_add(u64::from(h.bin_activity))
+}
+
+impl GainWatch {
+    /// At the load, before the first trial.
+    fn new(exec: &Engine) -> Self {
+        Self {
+            first: exec.ticks() >> WINDOW_SHIFT,
+            counts: vec![open_window_spikes(exec)],
+            ends: Vec::new(),
+            gains: Vec::new(),
+            apart: 0,
+            loaded: exec.homeostasis().synaptic_gain_q16,
+        }
+    }
+
+    /// A spike of a trial at `tick`, into its window's count.
+    fn spike(&mut self, tick: u64) {
+        let Some(at) = (tick >> WINDOW_SHIFT).checked_sub(self.first) else {
+            return;
+        };
+        let at = at as usize;
+        if self.counts.len() <= at {
+            self.counts.resize(at.saturating_add(1), 0);
+        }
+        if let Some(count) = self.counts.get_mut(at) {
+            *count = count.saturating_add(1);
+        }
+    }
+
+    /// At a trial's end, after its spikes: the gain, and the open window's count beside the
+    /// record's.
+    fn trial(&mut self, exec: &Engine) {
+        let end = exec.ticks();
+        let mine = (end >> WINDOW_SHIFT)
+            .checked_sub(self.first)
+            .and_then(|at| self.counts.get(at as usize).copied())
+            .unwrap_or(0);
+        if mine != open_window_spikes(exec) {
+            self.apart = self.apart.saturating_add(1);
+        }
+        self.ends.push(end);
+        self.gains.push(exec.homeostasis().synaptic_gain_q16);
+    }
+
+    /// The windows that ended inside the run, in order: each one's spikes and the gain its
+    /// regulation left — the gain at the end of the first trial that ended at or after the
+    /// window's end, a window being longer than a trial. The window open at the run's end is
+    /// left out.
+    fn windows(&self) -> Vec<(u64, u32)> {
+        windows_of(self.first, &self.counts, &self.ends, &self.gains)
+    }
+}
+
+/// `GainWatch::windows` over its tables: `first` the index of the window open at the load,
+/// `counts` the spikes by window from it, and `ends` and `gains` the tick and the gain at every
+/// trial's end.
+fn windows_of(first: u64, counts: &[u64], ends: &[u64], gains: &[u32]) -> Vec<(u64, u32)> {
+    let mut out = Vec::new();
+    let mut trial = 0usize;
+    for (w, &count) in counts.iter().enumerate() {
+        let end = first
+            .saturating_add(w as u64)
+            .saturating_add(1)
+            .saturating_mul(WINDOW_TICKS);
+        let Some(after) = ends.iter().skip(trial).position(|&at| at >= end) else {
+            break;
+        };
+        trial = trial.saturating_add(after);
+        let Some(&gain) = gains.get(trial) else {
+            break;
+        };
+        out.push((count, gain));
+    }
+    out
+}
+
+/// The gains of an arm's windows, each as its window's regulation left it.
+fn window_gains(windows: &[(u64, u32)]) -> Vec<u32> {
+    windows.iter().map(|&(_, gain)| gain).collect()
+}
+
+/// A block of an arm's gain course: over the eight windows that ended in it, the lowest and the
+/// highest gain a regulation left, the last, and the windows' spikes summed.
+type GainBlock = (u32, u32, u32, u64);
+
+/// An arm's windows by block, eight to a block; windows short of a whole block are left out.
+fn gain_blocks(windows: &[(u64, u32)]) -> Vec<GainBlock> {
+    windows
+        .chunks_exact(BLOCK_WINDOWS)
+        .map(|block| {
+            let gains = || block.iter().map(|&(_, gain)| gain);
+            (
+                gains().min().unwrap_or(0),
+                gains().max().unwrap_or(0),
+                block.last().map_or(0, |&(_, gain)| gain),
+                block
+                    .iter()
+                    .fold(0u64, |sum, &(spikes, _)| sum.saturating_add(spikes)),
+            )
+        })
+        .collect()
+}
+
+/// Whether a gain is within predicted reading 3's band (ADR-0178), five per cent of 1.75 either
+/// way, both ends counted.
+fn gain_within(gain: u32) -> bool {
+    u64::from(gain.abs_diff(GAIN_1024)).saturating_mul(GAIN_BAND_DIVISOR) <= u64::from(GAIN_1024)
+}
+
+/// Predicted reading 3 over an arm's gains (ADR-0178): every one within the band. An arm with
+/// no window read nothing, and does not hold it.
+fn gains_within(gains: &[u32]) -> bool {
+    !gains.is_empty() && gains.iter().all(|&gain| gain_within(gain))
+}
+
+/// Predicted reading 4 over an arm's gains (ADR-0178): their mean below the gain the image
+/// carries, `carried` — the gains summed below as many times it, strictly. An arm with no window
+/// does not hold it.
+fn mean_below(gains: &[u32], carried: u32) -> bool {
+    let sum = gains
+        .iter()
+        .fold(0u64, |sum, &gain| sum.saturating_add(u64::from(gain)));
+    !gains.is_empty() && sum < (gains.len() as u64).saturating_mul(u64::from(carried))
+}
+
+/// What an arm reads of the controller (ADR-0178's readings through each arm), each an integer
+/// rule over its windows; windows are counted from one.
+/// - `windows`: the windows that ended inside the arm.
+/// - `band`: the least and the greatest gain a window's regulation left.
+/// - `outside`: the first window whose gain is outside predicted reading 3's band, and the gain.
+/// - `mean`: the gains summed, and as many times the gain the image carried; predicted reading 4
+///   is the first below the second.
+/// - `counts`: the least, the greatest and the summed spikes of a window; `target`, as many
+///   times the target's count, none while the engine carried no target; `above`, the windows
+///   holding more than it.
+/// - `unruled`: the windows whose gain is not the rule's from the gain before — the rate's rule
+///   from the window's spikes where the engine carried a target, and otherwise the gain before.
+/// - `reversals`: per flip, the gain the last window before the flip's block left, and the
+///   lowest and the highest over the windows of the `REVERSAL_BLOCKS_MAX` blocks from it.
+/// - `hash`: every window's spikes and gain in one number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GainRead {
+    windows: usize,
+    band: Option<(u32, u32)>,
+    outside: Option<(usize, u32)>,
+    mean: (u64, u64),
+    counts: Option<(u64, u64, u64)>,
+    target: Option<u64>,
+    above: u32,
+    unruled: u32,
+    reversals: [Option<(u32, u32, u32)>; 3],
+    hash: u64,
+}
+
+/// `GainRead` over an arm's windows: `loaded` the gain the image carried, `step` the controller's
+/// step and `target` the target's count the engine carried, none while unset.
+fn gain_read(windows: &[(u64, u32)], loaded: u32, step: u16, target: Option<u32>) -> GainRead {
+    let gains = window_gains(windows);
+    let before = |k: usize| {
+        k.checked_sub(1)
+            .and_then(|k| gains.get(k).copied())
+            .unwrap_or(loaded)
+    };
+    let spikes = || windows.iter().map(|&(spikes, _)| spikes);
+    let summed = spikes().fold(0u64, |sum, c| sum.saturating_add(c));
+    let words: Vec<i32> = windows
+        .iter()
+        .flat_map(|&(spikes, gain)| [spikes as i32, gain as i32])
+        .collect();
+    GainRead {
+        windows: windows.len(),
+        band: gains.iter().copied().min().zip(gains.iter().copied().max()),
+        outside: gains
+            .iter()
+            .enumerate()
+            .find(|&(_, &gain)| !gain_within(gain))
+            .map(|(k, &gain)| (k.saturating_add(1), gain)),
+        mean: (
+            gains
+                .iter()
+                .fold(0u64, |sum, &gain| sum.saturating_add(u64::from(gain))),
+            (gains.len() as u64).saturating_mul(u64::from(loaded)),
+        ),
+        counts: spikes()
+            .min()
+            .zip(spikes().max())
+            .map(|(least, greatest)| (least, greatest, summed)),
+        target: target.map(|count| (windows.len() as u64).saturating_mul(u64::from(count))),
+        above: target.map_or(0, |count| {
+            spikes().filter(|&c| c > u64::from(count)).count() as u32
+        }),
+        unruled: windows
+            .iter()
+            .enumerate()
+            .filter(|&(k, &(spikes, gain))| {
+                gain != rate_regulated(before(k), spikes, target.unwrap_or(0), step)
+            })
+            .count() as u32,
+        reversals: SCHEDULE_FLIPS.map(|flip| {
+            let from = flip
+                .checked_div(BLOCK)
+                .unwrap_or(0)
+                .saturating_mul(BLOCK_WINDOWS);
+            let over = gains
+                .iter()
+                .skip(from)
+                .take(REVERSAL_BLOCKS_MAX.saturating_mul(BLOCK_WINDOWS));
+            let at = from.checked_sub(1).and_then(|k| gains.get(k).copied())?;
+            Some((at, over.clone().copied().min()?, over.copied().max()?))
+        }),
+        hash: fnv1a_64(&words),
+    }
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0178)
+
+/// H-38's verdict (ADR-0178): clause 0 by step, in the scan's order — every rule of the
+/// derivation under the rate's rule at the step gave a value and the frozen block passed both
+/// measures (`Rules::hold`); the step taken, the largest that holds, which is the first in that
+/// order; and, where one is taken and its arms ran, clauses 1 to 4, H-25's four by H-25's rules
+/// (`drawn_of`) against the image the step's derivation wrote. `yes` is a step taken with all
+/// four in both arms; a no names the clause, and for clause 0 what each step returned. A step
+/// taken whose arms are not given is not a yes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ruled {
+    held: [bool; 6],
+    taken: Option<usize>,
+    arms: Option<Drawn>,
+    yes: bool,
+}
+
+fn ruled(rules: &[Rules; 6], arms: Option<SeededArms<'_>>) -> Ruled {
+    let held = rules.each_ref().map(Rules::hold);
+    let taken = held.iter().position(|&h| h);
+    let arms = arms
+        .filter(|_| taken.is_some())
+        .map(|(couplings, outside, blocks)| drawn_of(couplings, outside, blocks));
+    Ruled {
+        held,
+        taken,
+        arms,
+        yes: taken.is_some() && arms.is_some_and(|verdict| verdict.yes),
+    }
+}
+
+/// The step of ADR-0178's stopping rule a verdict reaches: 3, yes; 5, no step holds; otherwise
+/// 4, a step holds and one of clauses 1 to 4 fails.
+fn ruled_step(verdict: &Ruled) -> u8 {
+    if verdict.yes {
+        3
+    } else if verdict.taken.is_none() {
+        5
+    } else {
+        4
+    }
+}
+
+/// An arm's gains and the gain its image carried, for predicted readings 3 and 4.
+type ArmGains<'a> = (&'a [u32], u32);
+
+/// ADR-0178's four predicted readings as rules over the tables, in its order: the step of a
+/// sixteenth holds; no window of any of the lead-ins given holds the saturation rule's count or
+/// more, where every one of them holds a window; and, over the two arms' gains, every gain
+/// within the band, and each arm's mean below the gain its image carried. The last two are read
+/// where arms ran and are none where none did.
+fn rate_predicted(
+    held: &[bool; 6],
+    units: u32,
+    lead_ins: &[&[LeadInWindow]],
+    arms: Option<[ArmGains<'_>; 2]>,
+) -> [Option<bool>; 4] {
+    let saturation = saturation_count(units);
+    [
+        held.get(RATE_SIXTEENTH).copied(),
+        Some(
+            lead_ins
+                .iter()
+                .all(|table| !table.is_empty() && table.iter().all(|w| w.0 < saturation)),
+        ),
+        arms.map(|arms| arms.iter().all(|&(gains, _)| gains_within(gains))),
+        arms.map(|arms| {
+            arms.iter()
+                .all(|&(gains, carried)| mean_below(gains, carried))
+        }),
+    ]
+}
+
+// ------------------------------------------------------------------ the run (brief 072)
+
+/// The tables a step of H-38's scan is held to, pinned from its one run: what each rule
+/// returned; the lead-in by window; the quiet run, the gain and the estimate the image carries,
+/// the frozen block with its counts and its census and the gain and the estimate after it, the
+/// target's lead-in, the images and the image's couplings, each where the derivation reached it;
+/// and the lead-in's reading. What the derivation makes before the settled network and its
+/// cancel are seed 22's, held by `before_the_settling_held` and `cancel_held`.
+#[derive(Clone, Copy)]
+struct RatePins {
+    rules: Option<Rules>,
+    lead_in: &'static [LeadInWindow],
+    quiet: Option<(u64, (i64, i64))>,
+    carried: Option<(u32, u32)>,
+    frozen: Option<(Block, u64, Composition)>,
+    counted: &'static [Counted],
+    frozen_census: &'static [(u32, u64)],
+    after_frozen: Option<(u32, u32)>,
+    target_lead_in: &'static [u64],
+    crcs: Option<[u64; 6]>,
+    couplings: Option<[[i64; 2]; 2]>,
+    read: Option<RateRead>,
+}
+
+fn rate_pins(k: usize) -> RatePins {
+    RatePins {
+        rules: RATE_RULES[k],
+        lead_in: RATE_LEAD_IN[k],
+        quiet: RATE_QUIET[k],
+        carried: RATE_CARRIED[k],
+        frozen: RATE_FROZEN[k],
+        counted: RATE_COUNTED[k],
+        frozen_census: RATE_FROZEN_CENSUS[k],
+        after_frozen: RATE_AFTER_FROZEN[k],
+        target_lead_in: RATE_TARGET_LEAD_IN[k],
+        crcs: RATE_CRCS[k],
+        couplings: RATE_COUPLINGS[k],
+        read: RATE_READ[k],
+    }
+}
+
+/// The derivation of a step of H-38's scan, run and dumped whole before anything of it is held:
+/// on the instrument's prior under the rate's rule at the step — the controller's step and the
+/// target carried from the lead-in's first window, the settled network's rule over the sums and
+/// the gain's mean within `RATE_BOUND` windows, and, where that rule gives a window, H-25's
+/// rules after it with the step and the target carried in the image. A rule that returns
+/// nothing stops the derivation there, which is a reading of clause 0 and is not repaired.
+fn rate_derivation(k: usize, name: &str) -> (Derivation, RateRead) {
+    let step = RATE_STEPS[k];
+    let d = derive_under(SCAN_UNITS, PRIOR_SEED, &under_rate(step), name);
+    dump_derivation(name, &d);
+    eprintln!("DUMP {name} PIN carried {:?}", d.carried);
+    eprintln!("DUMP {name} PIN after frozen {:?}", d.after_frozen);
+    let read = rate_read(
+        SCAN_UNITS,
+        step,
+        RATE_TARGET_COUNT,
+        d.prior_sums,
+        GAIN_1024,
+        &d.lead_in,
+    );
+    eprintln!("DUMP {name} PIN read {read:?}");
+    eprintln!(
+        "DUMP {name} the estimate by the rate of its window {:?}",
+        estimate_by_rate(SCAN_UNITS, &[&d.lead_in])
+    );
+    eprintln!(
+        "DUMP {name} step {step:#06x}, target {RATE_TARGET_COUNT} spikes a window: clause 0 {}; no window at the saturation rule's count {:?}; the greatest window {:?} spikes of the {} the train holds; beside the gain held {HELD_RATE_READ:?}",
+        d.rules.hold(),
+        rate_predicted(&[false; 6], SCAN_UNITS, &[&d.lead_in], None)[1],
+        read.counts.map(|(_, greatest)| greatest),
+        config(SCAN_UNITS, 2, BASELINE_Q16).train_capacity
+    );
+    (d, read)
+}
+
+/// A step's derivation held (ADR-0181), after it is dumped:
+/// - what the derivation makes before the settled network, and its cancel where it was reached,
+///   are seed 22's constants, neither reading the step or the target;
+/// - the lead-in's first window is the gain held's in everything but the gain its regulation
+///   left, the rule having moved nothing before its end, and that gain is the rate's rule's;
+/// - every window's gain is the rate's rule's from the gain before it, the window's spikes, the
+///   target's count and the step;
+/// - no window of the lead-in holds more spikes than the train's capacity, which
+///   `lead_in_window` asserts window by window, no injection is refused (`run_driven` fails the
+///   test on one) and no worker's report carries an entry dropped (`undropped`);
+/// - the tables pinned from the step's one run.
+fn rate_derivation_held(k: usize, name: &str, d: &Derivation, read: &RateRead) {
+    let step = RATE_STEPS[k];
+    before_the_settling_held(name, d);
+    if d.rules.span.is_some() {
+        cancel_held(name, d);
+    }
+    let first = d.lead_in.first().expect("a window of the lead-in");
+    let held = BACKGROUND_LEAD_IN_1024[SETTLED]
+        .first()
+        .expect("a window of the gain held's lead-in");
+    assert_eq!(
+        (first.0, first.1, first.2, first.3, first.4, first.6),
+        (held.0, held.1, held.2, held.3, held.4, held.6),
+        "{name}: the first window is the gain held's, the gain moving at its end"
+    );
+    assert_eq!(
+        first.5,
+        rate_regulated(GAIN_1024, first.0, RATE_TARGET_COUNT, step),
+        "{name}: and the gain after it the rate's rule's"
+    );
+    assert_eq!(
+        read.unruled, 0,
+        "{name}: every window's gain is the rate's rule's"
+    );
+    let capacity = config(SCAN_UNITS, 2, BASELINE_Q16).train_capacity as u64;
+    assert!(
+        read.counts
+            .is_some_and(|(_, greatest)| greatest <= capacity),
+        "{name}: the train held every window read from it"
+    );
+    let pins = rate_pins(k);
+    assert_eq!(Some(d.rules), pins.rules, "{name}: what each rule returned");
+    assert_eq!(d.lead_in.as_slice(), pins.lead_in, "{name}: the lead-in");
+    assert_eq!(d.quiet, pins.quiet, "{name}: the quiet run");
+    assert_eq!(d.carried, pins.carried, "{name}: what the image carries");
+    assert_eq!(d.frozen, pins.frozen, "{name}: the frozen block");
+    assert_eq!(
+        d.counted.as_slice(),
+        pins.counted,
+        "{name}: the frozen block's counts"
+    );
+    assert_eq!(
+        d.frozen_census.as_slice(),
+        pins.frozen_census,
+        "{name}: the frozen block's census"
+    );
+    assert_eq!(
+        d.after_frozen, pins.after_frozen,
+        "{name}: the gain and the estimate after the frozen block"
+    );
+    assert_eq!(
+        d.target_lead_in.as_slice(),
+        pins.target_lead_in,
+        "{name}: the target's lead-in"
+    );
+    assert_eq!(d.crcs, pins.crcs, "{name}: the images");
+    assert_eq!(d.couplings, pins.couplings, "{name}: the image's couplings");
+    assert_eq!(Some(*read), pins.read, "{name}: the lead-in's reading");
+}
+
+/// One step of H-38's scan (ADR-0178, brief 072), a test of its own: `rate_derivation`, then
+/// `rate_derivation_held`.
+fn rate_step(k: usize) {
+    let name = format!("rate {}", RATE_NAMES[k]);
+    let (d, read) = rate_derivation(k, &name);
+    rate_derivation_held(k, &name, &d, &read);
+}
+
+/// The gain's course an arm under the rate's rule is held to, pinned from its one run: by block,
+/// and its reading.
+#[derive(Clone, Copy)]
+struct GainPins {
+    blocks: &'static [GainBlock],
+    read: Option<GainRead>,
+}
+
+/// H-38's network for its arms (ADR-0181): the instrument's prior derived under the rate's rule
+/// at a step of the scan, `step` its index in `RATE_STEPS`; the name its dumps carry; and the
+/// tables its two arms pin, H-33's shape with the gain's course beside it.
+struct RuledSite {
+    step: usize,
+    name: String,
+    arms: [ArmPins; 2],
+    gains: [GainPins; 2],
+}
+
+/// The step H-38's arms run under: the largest step of the scan that holds, by the scan's
+/// pinned rules; none while no step is pinned as holding.
+fn ruled_taken() -> Option<usize> {
+    let rules = RATE_RULES.map(Option::unwrap_or_default);
+    ruled(&rules, None).taken
+}
+
+/// H-38's site at the step given, with the tables its arms' one run pinned.
+fn ruled_site(step: usize) -> RuledSite {
+    RuledSite {
+        step,
+        name: format!("ruled {}", RATE_NAMES[step]),
+        arms: [0usize, 1].map(|k| ArmPins {
+            blocks: RULED_BLOCKS[k],
+            trace: RULED_TRACES[k],
+            composed: RULED_COMPOSED[k],
+            earned: RULED_EARNED[k],
+            read: RULED_READ[k],
+            values: RULED_VALUES[k],
+            value_hash: RULED_VALUE_HASH[k],
+            sourced: RULED_SOURCED[k],
+            sources_hash: RULED_SOURCES_HASH[k],
+            readings: RULED_READINGS[k],
+            critic: RULED_CRITIC[k],
+            whole: RULED_WHOLE[k],
+        }),
+        gains: [0usize, 1].map(|k| GainPins {
+            blocks: RULED_GAIN_BLOCKS[k],
+            read: RULED_GAIN[k],
+        }),
+    }
+}
+
+/// A `RuledSite` as an arm's tables are read against it: the settled sums and the image's
+/// couplings its step's derivation pinned, and, as the arms its own are read beside, H-25's two
+/// with the gain held — so that what `arm_on` dumps *beside the network's own under the true
+/// reward* is, on this ground, beside H-25's, as ADR-0178's readings ask. A step whose
+/// derivation wrote no image has no stand.
+fn ruled_stand(site: &RuledSite) -> Stand {
+    let pins = rate_pins(site.step);
+    let (_, sums) = pins
+        .quiet
+        .expect("the settled image's sums, at a step that holds");
+    Stand {
+        len: geometry(SCAN_UNITS, ROTATION_1024)[0].len(),
+        sums,
+        couplings: pins
+            .couplings
+            .expect("the image's couplings, at a step that holds"),
+        own: instrument_stand().own,
+        apart: DRAWN_BLOCKS_1024,
+    }
+}
+
+/// A `RuledSite`'s calibration and what a rewarded run takes from it: the derivation under the
+/// rate's rule at the site's step, dumped and held to the step's pinned tables as the scan's own
+/// test holds it, and on a step whose clause 0 does not hold no arm.
+fn ruled_made(site: &RuledSite, name: &str) -> Made {
+    let (mut d, read) = rate_derivation(site.step, name);
+    rate_derivation_held(site.step, name, &d, &read);
+    assert!(
+        d.rules.hold(),
+        "{name}: clause 0 holds at this step, or it has no arm"
+    );
+    eprintln!(
+        "DUMP {name} calibration holds: the derivation under the rate's rule is the one pinned"
+    );
+    d.made
+        .take()
+        .expect("a derivation whose rules hold makes a configuration")
+}
+
+/// One arm of H-38 (ADR-0178, brief 072): H-25's arm on the instrument's prior from the image
+/// the largest step that holds wrote, the controller on and the rate's rule set through every
+/// trial. `arm_on` on the `RuledSite`, under the true reward. Where no step is pinned as
+/// holding there is no arm, and the test says so.
+fn ruled_arm(arm: Reversal) {
+    let step = ruled_taken().expect("a step of the scan pinned as holding: with none, no arm");
+    arm_on(Ground::Ruled(&ruled_site(step)), None, arm);
+}
+
+/// The scan's step of an eighth under the rate's rule (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_step_of_an_eighth_at_1024_units_exhaustive() {
+    rate_step(0);
+}
+
+/// The scan's step of a sixteenth under the rate's rule (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_step_of_a_sixteenth_at_1024_units_exhaustive() {
+    rate_step(1);
+}
+
+/// The scan's step of one in 32 under the rate's rule (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_step_of_one_in_32_at_1024_units_exhaustive() {
+    rate_step(2);
+}
+
+/// The scan's step of one in 64 under the rate's rule (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_step_of_one_in_64_at_1024_units_exhaustive() {
+    rate_step(3);
+}
+
+/// The scan's step of one in 128 under the rate's rule (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_step_of_one_in_128_at_1024_units_exhaustive() {
+    rate_step(4);
+}
+
+/// The scan's step of one in 256 under the rate's rule (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_step_of_one_in_256_at_1024_units_exhaustive() {
+    rate_step(5);
+}
+
+/// H-38's arm that starts from the assignment (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_address_drawn_under_the_rate_s_rule_from_the_assignment_at_1024_units_exhaustive() {
+    ruled_arm(Reversal::AssignmentFirst);
+}
+
+/// H-38's arm that starts from the mirrored assignment (ADR-0178, brief 072).
+#[test]
+#[ignore]
+fn the_address_drawn_under_the_rate_s_rule_from_the_mirrored_at_1024_units_exhaustive() {
+    ruled_arm(Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 072): H-38's steps, target, bound and settling; the
+/// rate's rule as an oracle at its edges and against the record's own; the gain's mean's
+/// criterion and the settled network's rule under the rate's rule at their edges, and what they
+/// read of the lead-ins the tree pins; clause 0, H-38's verdict and its stopping rule's steps
+/// over tables written by hand; the four predicted readings' rules at their edges; the lead-in's
+/// reading, the steepness, the controller's watch beside an arm, the gain by block and the arm's
+/// reading over tables written by hand; and the gain held's lead-in by the rate's reading, which
+/// the scan's stand beside. It runs no lead-in. Nothing else added to the gate.
+#[test]
+fn the_settled_network_s_rule_under_the_rate_s_rule_clause_0_of_h_38_and_the_predicted_readings_rules()
+ {
+    // The steps, the target, the bound, the network and the settling.
+    assert_eq!(RATE_STEPS, [0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100]);
+    assert!(
+        RATE_STEPS.windows(2).all(|pair| pair[0] > pair[1]),
+        "the largest step first, so the first that holds is the largest"
+    );
+    assert_eq!(
+        (
+            RATE_TARGET_PERIOD,
+            RATE_TARGET_COUNT,
+            RATE_BOUND,
+            MEAN_WINDOWS
+        ),
+        (58_201, 2_306, 320, 16)
+    );
+    assert_eq!((SCAN_UNITS, PRIOR_SEED, RATE_SIXTEENTH), (1024, 22, 1));
+    assert_eq!(
+        (RULED_PREDICTED, RATE_READINGS_PREDICTED),
+        (true, [true; 4])
+    );
+    for step in RATE_STEPS {
+        assert_eq!(
+            under_rate(step),
+            Settling {
+                step,
+                gains: false,
+                bound: 320,
+                target: 58_201,
+                mean: true
+            }
+        );
+    }
+    // The count the engine makes of the period at 1 024 units is the count the rules read by.
+    let engine = Executor::<8>::new(Config {
+        units: SCAN_UNITS as usize,
+        control_step_q0_16: RATE_STEPS[1],
+        rate_target_period_ticks: RATE_TARGET_PERIOD,
+        ..Config::default()
+    })
+    .expect("a configuration the engine takes");
+    assert_eq!(engine.rate_target_per_window(), Some(RATE_TARGET_COUNT));
+    assert_eq!(
+        (saturation_count(SCAN_UNITS), WINDOW_SHIFT, BLOCK_WINDOWS),
+        (32_768, 17, 8)
+    );
+    // The rate's rule as an oracle, at its edges, each number written by hand.
+    let gain = GAIN_1024;
+    let target = RATE_TARGET_COUNT;
+    for step in RATE_STEPS {
+        assert_eq!(
+            rate_regulated(gain, 2_306, target, step),
+            gain,
+            "at its target, still"
+        );
+    }
+    assert_eq!(
+        rate_regulated(gain, 0, target, 0x2000),
+        0x0001_F800,
+        "no spike: the gain rises by the step, 1.75 to 1.96875"
+    );
+    assert_eq!(
+        rate_regulated(gain, 4_612, target, 0x2000),
+        0x0001_8800,
+        "twice the target: it falls by the step, to 1.53125"
+    );
+    assert_eq!(
+        rate_regulated(gain, 32_768, target, 0x2000),
+        0x0001_8800,
+        "the error is clamped at one: the saturation rule's count moves it as twice does"
+    );
+    assert_eq!(
+        rate_regulated(gain, 1_153, target, 0x1000),
+        0x0001_CE00,
+        "half the target at a sixteenth: a thirty-second up"
+    );
+    assert_eq!(
+        rate_regulated(gain, 3_459, target, 0x1000),
+        0x0001_B200,
+        "half again as many at a sixteenth: a thirty-second down"
+    );
+    // The gain held's first window, 2 446 spikes, 6.07 per cent above the target: at an eighth
+    // the gain falls by 0.76 per cent, at one in 256 by 0.024.
+    assert_eq!(BACKGROUND_LEAD_IN_1024[SETTLED][0].0, 2_446);
+    assert_eq!(rate_regulated(gain, 2_446, target, 0x2000), 113_818);
+    assert_eq!(rate_regulated(gain, 2_446, target, 0x0100), 114_660);
+    assert_eq!(
+        rate_regulated(GAIN_MAX_Q16, 0, target, CONTROL_STEP_MAX_Q0_16),
+        GAIN_MAX_Q16
+    );
+    assert_eq!(
+        rate_regulated(GAIN_MIN_Q16, 32_768, target, CONTROL_STEP_MAX_Q0_16),
+        GAIN_MIN_Q16
+    );
+    for spikes in [0, 1_000, 2_306, 9_000, 40_000] {
+        assert_eq!(
+            rate_regulated(gain, spikes, target, 0),
+            gain,
+            "no step, no move"
+        );
+        assert_eq!(
+            rate_regulated(gain, spikes, 0, 0x2000),
+            gain,
+            "no target, no move"
+        );
+    }
+    // And against the record's own rule, fed the same windows bin by bin: the oracle is the
+    // rule `cortex-homeostasis` holds, whatever the gain, the step and the count.
+    let mut walk = 0x9E37_79B9u32;
+    let mut next = || {
+        walk = walk.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        walk >> 8
+    };
+    for round in 0..400u32 {
+        let step = RATE_STEPS[(round % 6) as usize];
+        let mut pool = HomeostaticDrivePool {
+            control_step_q0_16: step,
+            synaptic_gain_q16: GAIN_MIN_Q16.saturating_add(next() % 0x0003_C000),
+            ..HomeostaticDrivePool::new()
+        };
+        let before = pool.synaptic_gain_q16;
+        let mut spikes = 0u64;
+        for _ in 0..31 {
+            let bin = next() % 160;
+            pool.count_activity(bin);
+            assert!(pool.close_bin().is_some());
+            spikes = spikes.saturating_add(u64::from(bin));
+        }
+        let over = match round % 3 {
+            0 => target,
+            1 => u32::try_from(spikes).unwrap_or(u32::MAX).max(1),
+            _ => (next() % 5_000).saturating_add(1),
+        };
+        assert_eq!(
+            pool.regulate_rate(over),
+            Some(rate_regulated(before, spikes, over, step)),
+            "round {round}: {spikes} spikes over {over} at {step:#06x} from {before}"
+        );
+    }
+    // The gain's mean's criterion at its edges. Both blocks of sixteen are whole windows of the
+    // lead-in, so no window below the thirty-second holds it.
+    let g = i64::from(GAIN_1024);
+    let flat = vec![g; 48];
+    assert!((0..32).all(|window| !mean_settled_in(&flat, window)));
+    assert!(mean_settled_in(&flat, 32) && mean_settled_in(&flat, 48));
+    assert!(!mean_settled_in(&flat, 49), "past the series");
+    assert_eq!(mean_settled_within(&flat), Some(32));
+    assert_eq!(mean_settled_within(&flat[..31]), None);
+    assert_eq!(mean_settled_within(&[]), None);
+    // A gain that alternates about its mean, a step up and a step down, is settled in its mean
+    // where ADR-0055's criterion over each window's gain is not: ADR-0177's finding.
+    let swing: Vec<i64> = (0..48i64)
+        .map(|k| g.saturating_add((k & 1).saturating_mul(0x4000)))
+        .collect();
+    assert_eq!(mean_settled_within(&swing), Some(32));
+    assert_eq!(settled_within(g, &swing), None);
+    // Exactly 0.75 per cent off in the mean is not within; one part inside is. Sixteen gains of
+    // 40 000 sum to 640 000, of which 0.75 per cent is 4 800.
+    let mut off = vec![40_000i64; 32];
+    off[16] = 44_800;
+    assert!(!mean_settled_in(&off, 32), "exactly 0.75 per cent above");
+    off[16] = 44_799;
+    assert!(mean_settled_in(&off, 32));
+    off[16] = 35_200;
+    assert!(!mean_settled_in(&off, 32), "exactly 0.75 per cent below");
+    off[16] = 35_201;
+    assert!(mean_settled_in(&off, 32));
+    // The reference is the sixteen before: a rise in them is read against their own sum.
+    let mut risen = vec![40_000i64; 32];
+    risen[0] = 44_836;
+    assert!(
+        mean_settled_in(&risen, 32),
+        "4 836 below a reference of 644 836, whose 0.75 per cent is 4 836.27"
+    );
+    risen[0] = 44_837;
+    assert!(
+        !mean_settled_in(&risen, 32),
+        "4 837 is past 0.75 per cent of 644 837"
+    );
+    // A gain that rises by a hundredth a window through its twentieth window and is still from
+    // the twenty-first: its mean is settled at the forty-eighth, where the sixteen before hold
+    // four windows of the rise, ten hundredths short of the sixteen after in all.
+    let drifting: Vec<i64> = (0..64i64)
+        .map(|k| g.saturating_add(k.min(20).saturating_mul(g / 100)))
+        .collect();
+    assert_eq!(mean_settled_within(&drifting), Some(48));
+    // The settled network's rule under the rate's rule: both criteria at one window.
+    let sums = vec![10_000i64; 64];
+    assert_eq!(settled_in_mean(10_000, &sums, &flat), Some(32));
+    assert_eq!(settled_in_mean(10_000, &sums, &swing), Some(32));
+    assert_eq!(settled_in_mean(10_000, &sums, &drifting), Some(48));
+    assert_eq!(
+        settled_in_mean(10_000, &sums[..31], &flat),
+        None,
+        "the shorter series bounds the rule"
+    );
+    assert_eq!(settled_in_mean(10_000, &sums, &flat[..31]), None);
+    // The sums settling later than the gain's mean: the rule waits for the sums.
+    let mut late = vec![9_000i64; 64];
+    for sum in late.iter_mut().take(30) {
+        *sum = 10_000;
+    }
+    assert_eq!(settled_within(10_000, &late), Some(16));
+    assert_eq!(
+        settled_in_mean(10_000, &late, &flat),
+        Some(47),
+        "the sums hold to the thirtieth window and again from the forty-seventh"
+    );
+    // The settlings' rule over a table.
+    let window = |spikes: u64, gain: u32, estimate: u32| -> LeadInWindow {
+        (spikes, [3, 4], 500, 10_000, 0, gain, estimate)
+    };
+    let swinging: Vec<LeadInWindow> = (0..48u32)
+        .map(|k| {
+            window(
+                2_306,
+                GAIN_1024.saturating_add((k & 1).saturating_mul(0x4000)),
+                0,
+            )
+        })
+        .collect();
+    assert_eq!(
+        (
+            under_rate(RATE_STEPS[0]).settled(10_000, GAIN_1024, &swinging),
+            under_step(RATE_STEPS[1]).settled(10_000, GAIN_1024, &swinging),
+            GAIN_HELD.settled(10_000, GAIN_1024, &swinging)
+        ),
+        (Some(32), None, Some(16)),
+        "the mean reads a swing as settled, each window's gain does not, and the sums alone do not read it"
+    );
+    assert_eq!(
+        under_rate(RATE_STEPS[0]).settled(10_000, GAIN_1024, &swinging[..31]),
+        None
+    );
+    // What the two criteria read of the lead-ins the tree pins, beside the rule each was run
+    // under: the gain held's, ADR-0077's at an eighth and H-37's five.
+    let held_table = BACKGROUND_LEAD_IN_1024[SETTLED];
+    let beside: Vec<Option<usize>> = [held_table, BACKGROUND_LEAD_IN_1024[1]]
+        .into_iter()
+        .chain(SCAN_LEAD_IN)
+        .map(|table| {
+            settled_in_mean(
+                PRIOR_SUMS_1024.1,
+                &lead_in_sums(table),
+                &lead_in_gains(table),
+            )
+        })
+        .collect();
+    eprintln!(
+        "DUMP beside PIN the settled network's rule under the rate's rule over the pinned lead-ins [held, eighth, H-37's five] {beside:?}"
+    );
+    assert_eq!(
+        beside, RATE_BESIDE_SETTLED,
+        "the pinned lead-ins by the mean's rule"
+    );
+    // Clause 0, H-38's verdict and its stopping rule's steps, over tables written by hand
+    // against an image written by hand.
+    let image: [[i64; 2]; 2] = [[1_000, 2_000], [3_000, 4_000]];
+    let outside = 90_000i64;
+    let block = |correct: u32| -> Block {
+        let excitatory = image
+            .iter()
+            .flatten()
+            .fold(outside, |sum, &c| sum.saturating_add(c));
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            0,
+            excitatory,
+            0,
+            image,
+            0,
+        )
+    };
+    let full = vec![block(BLOCK as u32); SCHEDULE_BLOCKS];
+    let mut unlearned = full.clone();
+    for at in [
+        MAPPINGS[2].1.saturating_sub(1),
+        MAPPINGS[2].1.saturating_sub(2),
+    ] {
+        unlearned[at].0 = 0;
+    }
+    let unsettled = Rules {
+        settled: None,
+        ..RULES_1024
+    };
+    let blind = Rules {
+        frozen: Some([true, false]),
+        ..RULES_1024
+    };
+    let short = Rules {
+        frozen: Some([false, true]),
+        ..RULES_1024
+    };
+    let arms = Some((&image, outside, [full.as_slice(), full.as_slice()]));
+    let yes = ruled(&[RULES_1024; 6], arms);
+    assert_eq!(
+        (yes.held, yes.taken, yes.yes, ruled_step(&yes)),
+        ([true; 6], Some(0), true, 3)
+    );
+    assert_eq!(yes.yes, RULED_PREDICTED, "the prediction is a yes");
+    let none = ruled(&[unsettled, blind, short, unsettled, blind, short], arms);
+    assert_eq!(
+        (
+            none.held,
+            none.taken,
+            none.arms,
+            none.yes,
+            ruled_step(&none)
+        ),
+        ([false; 6], None, None, false, 5),
+        "no step holds: no arm is read"
+    );
+    let second = ruled(
+        &[unsettled, RULES_1024, blind, RULES_1024, short, RULES_1024],
+        arms,
+    );
+    assert_eq!(
+        (second.held, second.taken, second.yes),
+        ([false, true, false, true, false, true], Some(1), true),
+        "the step taken is the largest that holds, the first in the scan's order"
+    );
+    let last = ruled(
+        &[
+            unsettled, unsettled, unsettled, unsettled, unsettled, RULES_1024,
+        ],
+        arms,
+    );
+    assert_eq!((last.taken, ruled_step(&last)), (Some(5), 3));
+    let not_learned = ruled(
+        &[RULES_1024; 6],
+        Some((&image, outside, [full.as_slice(), unlearned.as_slice()])),
+    );
+    assert_eq!(
+        not_learned.arms.map(|verdict| verdict.learning.learned[1]),
+        Some([true, true, false, true]),
+        "clause 1 fails in the second arm's third mapping"
+    );
+    assert_eq!(
+        (not_learned.taken, not_learned.yes, ruled_step(&not_learned)),
+        (Some(0), false, 4),
+        "a step holds and the learning does not"
+    );
+    let unread = ruled(&[RULES_1024; 6], None);
+    assert_eq!(
+        (unread.taken, unread.arms, unread.yes, ruled_step(&unread)),
+        (Some(0), None, false, 4),
+        "a step taken whose arms did not run is no yes"
+    );
+    // The four predicted readings' rules at their edges.
+    for (gain, within) in [
+        (108_953, false),
+        (108_954, true),
+        (GAIN_1024, true),
+        (120_422, true),
+        (120_423, false),
+        (GAIN_MIN_Q16, false),
+        (GAIN_MAX_Q16, false),
+    ] {
+        assert_eq!(gain_within(gain), within, "a gain of {gain}");
+    }
+    assert!(gains_within(&[108_954, GAIN_1024, 120_422]));
+    assert!(!gains_within(&[GAIN_1024, 120_423, GAIN_1024]));
+    assert!(!gains_within(&[]), "an arm with no window read nothing");
+    assert!(mean_below(&[GAIN_1024 - 1, GAIN_1024], GAIN_1024));
+    assert!(
+        !mean_below(&[GAIN_1024 - 1, GAIN_1024 + 1], GAIN_1024),
+        "a mean at the carried gain is not below it"
+    );
+    assert!(!mean_below(&[GAIN_1024 + 1], GAIN_1024) && !mean_below(&[], GAIN_1024));
+    let quiet = [window(2_000, gain, 0), window(32_767, gain, 0)];
+    let loud = [window(2_000, gain, 0), window(32_768, gain, 0)];
+    let mut held = [false; 6];
+    held[RATE_SIXTEENTH] = true;
+    let low = [GAIN_1024 - 5, GAIN_1024 - 7];
+    let high = [GAIN_1024 + 5, GAIN_1024 - 7, 120_423];
+    assert_eq!(
+        rate_predicted(
+            &held,
+            1024,
+            &[&quiet, &quiet],
+            Some([(&low, GAIN_1024), (&low, GAIN_1024)])
+        ),
+        [Some(true); 4]
+    );
+    assert_eq!(
+        rate_predicted(
+            &[true, false, true, true, true, true],
+            1024,
+            &[&quiet, &loud],
+            None
+        ),
+        [Some(false), Some(false), None, None],
+        "a sixteenth alone is the first reading; one window at the saturation rule's count misses the second; no arm, no third or fourth"
+    );
+    assert_eq!(
+        rate_predicted(
+            &held,
+            1024,
+            &[&quiet, &[]],
+            Some([(&low, GAIN_1024), (&high, GAIN_1024)])
+        ),
+        [Some(true), Some(false), Some(false), Some(false)],
+        "a lead-in with no window read nothing; one arm outside the band and not below misses for both"
+    );
+    assert_eq!(
+        rate_predicted(
+            &held,
+            1024,
+            &[],
+            Some([(&low, GAIN_1024 - 7), (&low, GAIN_1024)])
+        ),
+        [Some(true), Some(true), Some(true), Some(false)],
+        "each arm's mean against the gain its own image carried"
+    );
+    // The lead-in's reading at its edges, over a table written by hand under a step of an
+    // eighth: the first two windows by the rule, above and below the target, the third at the
+    // saturation rule's count, the fourth's gain not the rule's.
+    let after_one = rate_regulated(gain, 2_446, target, 0x2000);
+    let after_two = rate_regulated(after_one, 2_000, target, 0x2000);
+    let after_three = rate_regulated(after_two, 32_768, target, 0x2000);
+    let hand = [
+        (2_446, [3, 4], 900, 9_000, 0, after_one, 0x4000),
+        (2_000, [30, 40], 800, 8_000, 0, after_two, 0),
+        (32_768, [300, 400], 700, 7_000, 0, after_three, 0x0001_0000),
+        (
+            2_306,
+            [200, 100],
+            500,
+            6_000,
+            0,
+            after_three.saturating_add(1),
+            0x8000,
+        ),
+    ];
+    let read = rate_read(1024, 0x2000, target, (1_000, 10_000), gain, &hand);
+    assert_eq!(
+        read,
+        RateRead {
+            windows: 4,
+            settled: [None; 3],
+            band: Some((after_three, after_two)),
+            late: None,
+            counts: Some((2_000, 32_768)),
+            sixteen: None,
+            above: 2,
+            saturated: 1,
+            unruled: 1,
+            last: (2_306, 300, after_three.saturating_add(1), 0x8000),
+            sums: [5_000, 6_000],
+            steepness: read.steepness,
+        }
+    );
+    assert!(after_one < gain && after_two > after_one && after_three < after_two);
+    let empty = rate_read(1024, 0x2000, target, (1_000, 10_000), gain, &[]);
+    assert_eq!(
+        (
+            empty.windows,
+            empty.band,
+            empty.counts,
+            empty.steepness,
+            empty.last
+        ),
+        (0, None, None, None, (0, 0, gain, 0))
+    );
+    // The steepness: a table whose spikes are in proportion to the gain they ran under has a
+    // steepness of one, in hundredths; in proportion to its square about two near the mean; a
+    // gain that never moved, none.
+    let proportional: Vec<LeadInWindow> = [100_000u32, 110_000, 120_000, 130_000, 100_000]
+        .windows(2)
+        .map(|pair| window(u64::from(pair[0]) / 50, pair[1], 0))
+        .collect();
+    assert_eq!(steepness(100_000, &proportional), Some(100));
+    assert_eq!(
+        steepness(
+            GAIN_1024,
+            &[window(9, GAIN_1024, 0), window(11, GAIN_1024, 0)]
+        ),
+        None,
+        "no gain moved: no slope"
+    );
+    assert_eq!(steepness(GAIN_1024, &[]), None);
+    let steep: Vec<LeadInWindow> = [100_000u32, 101_000, 102_000, 103_000, 100_000]
+        .windows(2)
+        .map(|pair| {
+            window(
+                u64::from(pair[0])
+                    .saturating_mul(14)
+                    .saturating_sub(1_218_000),
+                pair[1],
+                0,
+            )
+        })
+        .collect();
+    assert_eq!(
+        steepness(100_000, &steep),
+        Some(700),
+        "fourteen times the gain less a constant: seven per cent of rate a per cent of gain at these means"
+    );
+    // The controller's watch beside an arm: the windows that ended inside the run, each with
+    // the gain at the first trial's end at or after its own. The load is 1 000 ticks into the
+    // window of index 3; trials of 16 384 ticks.
+    let first = 3u64;
+    let load = first.saturating_mul(WINDOW_TICKS).saturating_add(1_000);
+    let ends: Vec<u64> = (1..=17u64)
+        .map(|t| load.saturating_add(t.saturating_mul(u64::from(TRIAL_TICKS))))
+        .collect();
+    let trial_gains: Vec<u32> = (0..17u32).map(|t| 100u32.saturating_add(t)).collect();
+    assert_eq!(
+        windows_of(first, &[7, 8, 9], &ends, &trial_gains),
+        vec![(7, 107), (8, 115)],
+        "the window open at the load ends in the eighth trial, the next in the sixteenth, and the third is open at the run's end"
+    );
+    assert_eq!(
+        windows_of(first, &[7, 8, 9], &ends[..7], &trial_gains[..7]),
+        vec![]
+    );
+    assert_eq!(windows_of(first, &[], &ends, &trial_gains), vec![]);
+    // A trial that ends exactly at a window's end holds that window's regulation.
+    let aligned: Vec<u64> = (1..=8u64)
+        .map(|t| {
+            first
+                .saturating_mul(WINDOW_TICKS)
+                .saturating_add(t.saturating_mul(u64::from(TRIAL_TICKS)))
+        })
+        .collect();
+    assert_eq!(
+        windows_of(first, &[5, 6], &aligned, &trial_gains[..8]),
+        vec![(5, 107)]
+    );
+    // The gain by block, eight windows to a block, and the arm's reading.
+    let course: Vec<(u64, u32)> = (0..20u32)
+        .map(|w| {
+            (
+                2_000u64.saturating_add(u64::from(w)),
+                114_000u32.saturating_add(w.saturating_mul(10)),
+            )
+        })
+        .collect();
+    assert_eq!(
+        gain_blocks(&course),
+        vec![
+            (114_000, 114_070, 114_070, 16_028),
+            (114_080, 114_150, 114_150, 16_092)
+        ],
+        "twenty windows are two blocks and four left out"
+    );
+    assert_eq!(gain_blocks(&course[..7]), vec![]);
+    assert_eq!(window_gains(&course[..3]), [114_000, 114_010, 114_020]);
+    // An arm's reading over a course the rule made: from 1.75 under a sixteenth, the count a
+    // hundredth above its target in every window, so the gain falls a little in each.
+    let mut ruled_course: Vec<(u64, u32)> = Vec::new();
+    let mut at = GAIN_1024;
+    for _ in 0..(SCHEDULE_BLOCKS.saturating_mul(BLOCK_WINDOWS)) {
+        at = rate_regulated(at, 2_329, target, 0x1000);
+        ruled_course.push((2_329, at));
+    }
+    let by_rule = gain_read(&ruled_course, GAIN_1024, 0x1000, Some(target));
+    assert_eq!(
+        (by_rule.windows, by_rule.unruled, by_rule.above),
+        (960, 0, 960)
+    );
+    assert_eq!(by_rule.target, Some(960 * 2_306));
+    assert_eq!(by_rule.counts, Some((2_329, 2_329, 960 * 2_329)));
+    assert_eq!(
+        by_rule.band,
+        ruled_course
+            .last()
+            .map(|&(_, low)| (low, ruled_course[0].1)),
+        "a gain that only falls: its first is its highest and its last its lowest"
+    );
+    assert!(
+        by_rule
+            .outside
+            .is_some_and(|(window, gain)| !gain_within(gain)
+                && ruled_course
+                    .get(window.saturating_sub(2))
+                    .is_some_and(|&(_, before)| gain_within(before))),
+        "the first window outside the band, the one before it inside"
+    );
+    assert!(
+        by_rule.mean.0 < by_rule.mean.1,
+        "the mean below the gain carried"
+    );
+    assert_eq!(
+        by_rule
+            .reversals
+            .map(|r| r.map(|(at, low, high)| at > high && high > low)),
+        [Some(true); 3],
+        "through each reversal the gain at the flip, then the lowest and the highest of its twenty-three blocks"
+    );
+    // The same course read under another step is not the rule's; with the gain held, a course of
+    // one gain is the rule's and one that moves is not.
+    assert!(gain_read(&ruled_course, GAIN_1024, 0x2000, Some(target)).unruled > 0);
+    let held_course = vec![(2_300u64, GAIN_1024); 16];
+    let by_hold = gain_read(&held_course, GAIN_1024, 0, None);
+    assert_eq!(
+        (
+            by_hold.unruled,
+            by_hold.band,
+            by_hold.outside,
+            by_hold.target,
+            by_hold.above,
+            by_hold.reversals
+        ),
+        (0, Some((GAIN_1024, GAIN_1024)), None, None, 0, [None; 3])
+    );
+    let sixteen_gains = u64::from(GAIN_1024).saturating_mul(16);
+    assert_eq!(by_hold.mean, (sixteen_gains, sixteen_gains));
+    assert_eq!(
+        gain_read(&ruled_course[..16], GAIN_1024, 0, None).unruled,
+        16,
+        "with no target a gain that moves is no rule's"
+    );
+    assert_ne!(by_hold.hash, by_rule.hash);
+    let no_windows = gain_read(&[], GAIN_1024, 0x1000, Some(target));
+    assert_eq!(
+        (
+            no_windows.windows,
+            no_windows.band,
+            no_windows.counts,
+            no_windows.mean
+        ),
+        (0, None, None, (0, 0))
+    );
+    // The gain held's lead-in by the rate's reading, which the scan's stand beside: read under
+    // no step, so every window's gain is the rule's, and against H-38's target.
+    let held_read = rate_read(1024, 0, target, PRIOR_SUMS_1024, GAIN_1024, held_table);
+    eprintln!("DUMP beside PIN held rate read {held_read:?}");
+    assert_eq!(
+        held_read, HELD_RATE_READ,
+        "the gain held's lead-in, as read"
+    );
+    assert_eq!(
+        (held_read.unruled, held_read.saturated, held_read.steepness),
+        (0, 0, None)
+    );
+}
+
+// ------------------------------------------- the tables the gate reads beside (ADR-0181)
+
+/// The settled network's rule under the rate's rule over the lead-ins the tree pinned before
+/// H-38, `[the gain held's, ADR-0077's at an eighth, H-37's five]`: a function of pinned tables,
+/// read before any lead-in under the rate's rule.
+const RATE_BESIDE_SETTLED: [Option<usize>; 7] =
+    [Some(96), Some(35), Some(45), Some(44), Some(56), None, None];
+
+/// The gain held's lead-in by the rate's reading, against H-38's target: a function of a pinned
+/// table, read before any lead-in under the rate's rule.
+const HELD_RATE_READ: RateRead = RateRead {
+    windows: 96,
+    settled: [Some(96), Some(32), Some(96)],
+    band: Some((114688, 114688)),
+    late: Some((114688, 114688)),
+    counts: Some((2132, 2462)),
+    sixteen: Some(35897),
+    above: 32,
+    saturated: 0,
+    unruled: 0,
+    last: (2308, 2076, 114688, 19823),
+    sums: [7754, 9254],
+    steepness: None,
+};
+
+// ------------------------------------------------ pinned from the one run (brief 072)
+
+/// What each rule returned at each step of H-38's scan, in the steps' order; none before the
+/// step's one run.
+const RATE_RULES: [Option<Rules>; 6] = [None; 6];
+/// Each step's lead-in by window.
+const RATE_LEAD_IN: [&[LeadInWindow]; 6] = [&[]; 6];
+/// Each step's quiet run, where the settled network's rule gave a window.
+const RATE_QUIET: [Option<(u64, (i64, i64))>; 6] = [None; 6];
+/// The gain and the estimate each step's image carries.
+const RATE_CARRIED: [Option<(u32, u32)>; 6] = [None; 6];
+/// Each step's frozen block, with its trace and its composition.
+const RATE_FROZEN: [Option<(Block, u64, Composition)>; 6] = [None; 6];
+/// Each step's frozen block's counts, trial by trial.
+const RATE_COUNTED: [&[Counted]; 6] = [&[]; 6];
+/// Each step's frozen block's census.
+const RATE_FROZEN_CENSUS: [&[(u32, u64)]; 6] = [&[]; 6];
+/// The gain and the estimate after each step's frozen block.
+const RATE_AFTER_FROZEN: [Option<(u32, u32)>; 6] = [None; 6];
+/// Each step's settled image's spikes by window of the target's lead-in.
+const RATE_TARGET_LEAD_IN: [&[u64]; 6] = [&[]; 6];
+/// The CRC-64 of the six images of each step that holds, at format 22.
+const RATE_CRCS: [Option<[u64; 6]>; 6] = [None; 6];
+/// Each step's image's four couplings.
+const RATE_COUPLINGS: [Option<[[i64; 2]; 2]>; 6] = [None; 6];
+/// Each step's lead-in's reading.
+const RATE_READ: [Option<RateRead>; 6] = [None; 6];
+
+/// The arms' blocks under the largest step that holds, `[assignment first, mirrored first]`,
+/// pinned from the one run of each; empty before it, and where no step holds.
+const RULED_BLOCKS: [&[Block]; 2] = [&[], &[]];
+const RULED_TRACES: [u64; 2] = [0; 2];
+const RULED_COMPOSED: [u64; 2] = [0; 2];
+const RULED_EARNED: [&[EarnedBlock]; 2] = [&[], &[]];
+const RULED_READ: [u64; 2] = [0; 2];
+const RULED_VALUES: [&[ValueBlock]; 2] = [&[], &[]];
+const RULED_VALUE_HASH: [u64; 2] = [0; 2];
+const RULED_SOURCED: [&[Sourced]; 2] = [&[], &[]];
+const RULED_SOURCES_HASH: [u64; 2] = [0; 2];
+const RULED_READINGS: [Option<SeededRead>; 2] = [None; 2];
+const RULED_CRITIC: [Option<CriticRead>; 2] = [None; 2];
+const RULED_WHOLE: [Option<ArmRead>; 2] = [None; 2];
+/// The gain's course through each arm by block, and its reading.
+const RULED_GAIN_BLOCKS: [&[GainBlock]; 2] = [&[], &[]];
+const RULED_GAIN: [Option<GainRead>; 2] = [None; 2];
