@@ -6256,23 +6256,32 @@ pub(crate) type LeadInWindow = (u64, [u64; 2], i64, i64, u32, u32, u32);
 /// sixteenth); none when no window of the table is. Integers throughout: a sum `s` is within
 /// `p` per myriad of a reference `r` when `10 000 |s − r| < p r`, strict either way.
 pub(crate) fn settled_within(prior: i64, sums: &[i64]) -> Option<usize> {
-    let sum_after = |window: usize| -> Option<i64> {
+    (SETTLED_WINDOWS..=sums.len()).find(|&window| settled_in(prior, sums, window))
+}
+
+/// ADR-0055's criterion at one window of a series (ADR-0177), `prior` the value before the first
+/// window: true when each of the `SETTLED_WINDOWS` windows up to and including `window`, counted
+/// from one, is within `SETTLED_PER_MYRIAD` per ten thousand of the value after the window
+/// `SETTLED_WINDOWS` before it, the prior's for the sixteenth; false below the sixteenth window
+/// and past the series. `settled_within` is the first window at which it holds, as it was.
+pub(crate) fn settled_in(prior: i64, series: &[i64], window: usize) -> bool {
+    let value_after = |window: usize| -> Option<i64> {
         window
             .checked_sub(1)
-            .map_or(Some(prior), |k| sums.get(k).copied())
+            .map_or(Some(prior), |k| series.get(k).copied())
     };
-    (SETTLED_WINDOWS..=sums.len()).find(|&window| {
-        let first = window.wrapping_sub(SETTLED_WINDOWS);
-        let Some(reference) = sum_after(first) else {
-            return false;
-        };
-        let bound = u64::try_from(reference)
-            .unwrap_or(0)
-            .saturating_mul(SETTLED_PER_MYRIAD);
-        (first.wrapping_add(1)..=window).all(|k| match sum_after(k) {
-            Some(sum) => sum.abs_diff(reference).saturating_mul(10_000) < bound,
-            None => false,
-        })
+    let Some(first) = window.checked_sub(SETTLED_WINDOWS) else {
+        return false;
+    };
+    let Some(reference) = value_after(first) else {
+        return false;
+    };
+    let bound = u64::try_from(reference)
+        .unwrap_or(0)
+        .saturating_mul(SETTLED_PER_MYRIAD);
+    (first.wrapping_add(1)..=window).all(|k| match value_after(k) {
+        Some(value) => value.abs_diff(reference).saturating_mul(10_000) < bound,
+        None => false,
     })
 }
 
@@ -6378,12 +6387,28 @@ pub(crate) fn lead_in_until_settled_over(
     prior: i64,
     bound: u64,
 ) -> Vec<LeadInWindow> {
+    lead_in_until(readouts, exec, units, bound, &|table| {
+        settled_within(prior, &lead_in_sums(table)).is_some()
+    })
+}
+
+/// A lead-in under the drive alone, read per window, until `settled` holds over the table so far
+/// or `bound` windows have run (ADR-0177): `lead_in_until_settled_over` with the rule given. It
+/// calls this with ADR-0055's criterion over the excitatory sums, so its lead-in is the one it
+/// was. A `for` over the bound, left when the rule holds: it ends by construction.
+pub(crate) fn lead_in_until(
+    readouts: [Set; 2],
+    exec: &mut Engine,
+    units: u32,
+    bound: u64,
+    settled: &dyn Fn(&[LeadInWindow]) -> bool,
+) -> Vec<LeadInWindow> {
     let drive = drive(units);
     let [r0, r1] = readouts;
     let mut table = Vec::new();
     for _ in 0..bound {
         table.push(lead_in_window(exec, &drive, [r0, r1]));
-        if settled_within(prior, &lead_in_sums(&table)).is_some() {
+        if settled(&table) {
             break;
         }
     }
