@@ -1207,7 +1207,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(20)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(21)))
         ),
         "the previous format's header fails closed, as every foreign version does"
     );
@@ -1312,7 +1312,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "byte {at} is reserved"
         );
     }
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 15;
@@ -1512,7 +1512,7 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
         Err(ImageError::MarkWithoutClass(0))
     ));
     // A header stamped with format 16, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 16;
@@ -1778,7 +1778,7 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
         "a slow potential without the mark"
     );
     // A header stamped with format 17, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 17;
@@ -1965,7 +1965,7 @@ fn the_critic_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads
         None
     );
     // A header stamped with format 18, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 18;
@@ -2187,7 +2187,7 @@ fn the_critic_s_window_is_written_to_and_read_from_the_image_and_is_the_shortest
         );
     }
     // A header stamped with format 19, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 19;
@@ -2357,7 +2357,7 @@ fn the_whole_punishment_is_written_to_and_read_from_the_image_and_refused_withou
         );
     }
     // A header stamped with format 20, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 21);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
     let mut older = unset.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 20;
@@ -2480,4 +2480,198 @@ fn with_the_critic_set_a_unit_with_spikes_pending_stays_and_evict_spike_rehydrat
     exec.reward(0x1_0000);
     assert_eq!(exec.sweep(0, 96).unwrap(), 1, "after the reward it goes");
     assert!(exec.is_evicted(5));
+}
+
+/// The rate's target in the modulator section (ADR-0180; format 22): a period in ticks at
+/// `[56..60)`, a `u32`. Unset, it is zero — the bytes a format-21 writer left there — and the
+/// image is, but for its header's version and seal, the image that writer produced; it reads as
+/// unset whatever the configuration says. Set, it is written there and nowhere else and read back
+/// whatever the configuration says, and the engine holds the window's count of it for the
+/// image's units. Refused: a period whose count for the image's units is no spike a window, or
+/// more than a window's bins count, as the configuration's is; the bytes that stay reserved,
+/// which the writer never produces; and a header stamped with the previous version, as every
+/// foreign version is.
+#[test]
+fn the_rate_s_target_is_written_to_and_read_from_the_image_and_refused_where_no_window_holds_it() {
+    // 192 units: 25 165 824 unit-ticks a window, so that a period of four bytes is a count.
+    let with = |period: u32| Config {
+        units: 192,
+        blocks: 1,
+        rate_target_period_ticks: period,
+        ..Config::default()
+    };
+    let image = |period: u32| Image::encode(&Executor::<8>::new(with(period)).unwrap()).unwrap();
+    // Unset: zero, and the image's unset outranks the configuration's set.
+    let unset = image(0);
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(
+        &section[54..64],
+        &[0u8; 10],
+        "the bytes a format-21 writer left"
+    );
+    let loaded = Image::decode::<8>(&unset, with(1_000)).unwrap();
+    assert_eq!(
+        (
+            loaded.rate_target_period_ticks(),
+            loaded.rate_target_per_window()
+        ),
+        (0, None),
+        "the image's unset outranks the configuration's set"
+    );
+    assert_eq!(Image::encode(&loaded).unwrap(), unset, "one image, twice");
+    // Set: written at `[56..60)`, little-endian, and nowhere else in the section; elsewhere the
+    // image differs in that section's seal alone.
+    let set = image(0x0102_0304);
+    let section_set = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(&section_set[56..60], &[0x04, 0x03, 0x02, 0x01]);
+    for (at, (a, b)) in section.iter().zip(&section_set).enumerate() {
+        assert_eq!(
+            a == b,
+            !(56..60).contains(&at),
+            "byte {at}: the period's four bytes and no other"
+        );
+    }
+    let mut resealed = unset.clone();
+    patch_section(&mut resealed, SECTION_MODULATOR, |s| {
+        s[56..60].copy_from_slice(&0x0102_0304u32.to_le_bytes())
+    });
+    assert_eq!(resealed, set, "the unset image with the period written");
+    let loaded = Image::decode::<8>(&set, with(0)).unwrap();
+    assert_eq!(
+        loaded.rate_target_period_ticks(),
+        0x0102_0304,
+        "the image's set outranks the configuration's unset"
+    );
+    assert_eq!(Image::encode(&loaded).unwrap(), set, "one image, twice");
+    // The engine holds the window's count of the period for the image's units: 192 units
+    // over 1 000 ticks are 25 165.8 spikes a window, over 16 777 216 one and a half, which is
+    // two, and over twice the window's unit-ticks a half, which is one.
+    for (period, count) in [
+        (1_000, 25_166),
+        (0x0102_0304, 1),
+        (16_777_216, 2),
+        (50_331_648, 1),
+        (1, 25_165_824),
+    ] {
+        let loaded = Image::decode::<8>(&image(period), with(0)).unwrap();
+        assert_eq!(
+            (
+                loaded.rate_target_period_ticks(),
+                loaded.rate_target_per_window()
+            ),
+            (period, Some(count)),
+            "a period of {period} ticks"
+        );
+    }
+    // A period no window of 192 units can be held to: half a spike a window is one, by the
+    // rounding, and a tick longer is none.
+    let with_period = |period: u32| {
+        let mut img = unset.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[56..60].copy_from_slice(&period.to_le_bytes())
+        });
+        img
+    };
+    assert_eq!(
+        Image::decode::<8>(&with_period(50_331_648), with(0))
+            .unwrap()
+            .rate_target_per_window(),
+        Some(1)
+    );
+    for period in [50_331_649, 100_000_000, u32::MAX] {
+        for config in [with(0), with(1_000)] {
+            assert!(
+                matches!(
+                    Image::decode::<8>(&with_period(period), config),
+                    Err(ImageError::Config(ConfigError::RateTargetOutOfRange))
+                ),
+                "{period}: no spike a window"
+            );
+        }
+    }
+    assert!(
+        matches!(
+            Executor::<8>::new(with(50_331_649)),
+            Err(ConfigError::RateTargetOutOfRange)
+        ),
+        "as the configuration's is"
+    );
+    // The same period on an image of more units is a count: the count is the image's units'.
+    let wider = Image::encode(
+        &Executor::<8>::new(Config {
+            units: 384,
+            ..with(50_331_649)
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        Image::decode::<8>(&wider, with(0))
+            .unwrap()
+            .rate_target_per_window(),
+        Some(1),
+        "384 units over 50 331 649 ticks are a spike a window, less two parts in a hundred million"
+    );
+    // The bytes that stay reserved, on either side of the period.
+    for at in [26, 27, 39, 54, 55, 60, 61, 62, 63] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert!(
+            matches!(
+                Image::decode::<8>(&img, with(0)),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "byte {at} is reserved"
+        );
+    }
+    // The period's own bytes are not: each alone is a period.
+    for (at, period) in [
+        (56usize, 1u32),
+        (57, 0x100),
+        (58, 0x1_0000),
+        (59, 0x100_0000),
+    ] {
+        let mut img = unset.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert_eq!(
+            Image::decode::<8>(&img, with(0))
+                .unwrap()
+                .rate_target_period_ticks(),
+            period,
+            "byte {at}"
+        );
+    }
+    // Unset, the image is the image a format-21 writer produced but for the header's version
+    // and seal; and a header stamped with format 21 fails closed, as every foreign version
+    // does (L-6).
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    let mut older = unset.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 21;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    let apart: Vec<usize> = older
+        .iter()
+        .zip(unset.iter())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(k, _)| k)
+        .collect();
+    assert!(
+        !apart.is_empty()
+            && apart
+                .iter()
+                .all(|&k| (8..12).contains(&k) || (48..56).contains(&k)),
+        "only the version and the seal: {apart:?}"
+    );
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, with(0)),
+            Err(ImageError::Header(HeaderError::ForeignVersion(21)))
+        ),
+        "a format-21 header fails closed, as every foreign version does (L-6)"
+    );
 }

@@ -64,8 +64,9 @@ use cortex_executive::{
 };
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX, RIPPLE_SHIFT};
 use cortex_homeostasis::{
-    ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16, GAIN_ONE_Q16,
-    HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_AWAKE, STAGE_REM, STAGE_SWS,
+    ACTIVITY_BIN_SHIFT, ACTIVITY_COUNT_MAX, ACTIVITY_WINDOW_BINS, ACTIVITY_WINDOW_SHIFT,
+    CONTROL_STEP_MAX_Q0_16, GAIN_ONE_Q16, HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_AWAKE,
+    STAGE_REM, STAGE_SWS,
 };
 use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState, ValueCritic};
 use cortex_reasoning::{Compaction, InductionState, SEARCH_SHIFT_MAX, TermNode};
@@ -215,6 +216,17 @@ pub struct Config {
     /// image, the image's outranks this one: it changes what the run does, so it is part of the
     /// image (§8.3).
     pub whole_punishment: bool,
+    /// The rate's target (ADR-0178, ADR-0180), a period in ticks: a unit's mean interval at the
+    /// rate the controller holds the population to. While it is not zero the gain moves once a
+    /// window by the window's count over the target's — the units times the window's ticks over
+    /// this period, to nearest ([`Executor::rate_target_per_window`]) — in the estimate's place
+    /// (`HomeostaticDrivePool::regulate_rate`): the saturation rule is not consulted, and the
+    /// estimate is kept as a reading. Zero (the default) is unset: the controller is ADR-0036's,
+    /// bit for bit. Refused when the count is no spike a window or more than a window's bins
+    /// count. The step is `control_step_q0_16`, for either rule. For an engine built from an
+    /// image, the image's outranks this one: it changes what the run does, so it is part of the
+    /// image (§8.3).
+    pub rate_target_period_ticks: u32,
 }
 
 impl Default for Config {
@@ -246,6 +258,7 @@ impl Default for Config {
             critic: None,
             critic_window_ticks: 0,
             whole_punishment: false,
+            rate_target_period_ticks: 0,
         }
     }
 }
@@ -377,6 +390,9 @@ pub enum ConfigError {
     /// `whole_punishment` is set while `critic` is not: it is a rule of what the modulator
     /// receives at the critic's reading and of nothing else (ADR-0155).
     WholePunishmentWithoutCritic,
+    /// `rate_target_period_ticks` is set to a period whose count for a window of this many
+    /// units is zero, a target of no spike, or above what a window's bins count (ADR-0180).
+    RateTargetOutOfRange,
 }
 
 /// What the critic read at a reward (ADR-0131): the value, the error the weights moved by, and
@@ -601,6 +617,33 @@ const _: () = assert!(REPLAY_DRIVE_Q16 * REPLAY_MESSAGES as i32 == THRESHOLD_BAS
 /// depression keeps a network well below it in every run of the exit test.
 fn saturation_ceiling(units: usize) -> u32 {
     units.max(1).min(u32::MAX as usize) as u32
+}
+
+/// The most spikes a window's bins count: thirty-two bins at the cap, 536 870 880. A literal,
+/// so that the bound is nothing a mutant can touch; the assertion ties it to the record's
+/// constants.
+const RATE_TARGET_MAX: u32 = 536_870_880;
+const _: () = assert!(RATE_TARGET_MAX == ACTIVITY_WINDOW_BINS as u32 * ACTIVITY_COUNT_MAX);
+
+/// The rate's target as a window's count (ADR-0180): none while the period is zero, which is
+/// unset; otherwise the spikes `units` units firing once a period make in a window, the units
+/// times the window's ticks over the period, rounded to nearest from the exact quotient, a half
+/// up. Refused where that is no spike — a period longer than twice the units times the window
+/// names no rate the window can be held to — and where it is more than a window's bins count.
+fn rate_target_of(units: usize, period_ticks: u32) -> Result<Option<u32>, ConfigError> {
+    if period_ticks == 0 {
+        return Ok(None);
+    }
+    let period = u64::from(period_ticks);
+    let count = (units as u64)
+        .saturating_mul(WINDOW_CADENCE.period())
+        .saturating_add(period >> 1)
+        .checked_div(period)
+        .unwrap_or(0);
+    match u32::try_from(count) {
+        Ok(count @ 1..=RATE_TARGET_MAX) => Ok(Some(count)),
+        _ => Err(ConfigError::RateTargetOutOfRange),
+    }
 }
 
 /// The two compartment sums under the tick's gain: `sum × gain`, Q16.16, rounded to nearest
@@ -902,6 +945,12 @@ pub struct Executor<const CAP: usize> {
     window_opened: u64,
     /// The whole punishment (ADR-0155): the configuration's, or the image's.
     whole_punishment: bool,
+    /// The rate's target (ADR-0180), a period in ticks: the configuration's, or the image's;
+    /// zero while unset.
+    rate_target_period_ticks: u32,
+    /// The window's count of that period for this engine's units; none while unset, where the
+    /// controller regulates by its estimate.
+    rate_target: Option<u32>,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -1016,6 +1065,7 @@ impl<const CAP: usize> Executor<CAP> {
         if config.critic.is_none() && config.whole_punishment {
             return Err(ConfigError::WholePunishmentWithoutCritic);
         }
+        let rate_target = rate_target_of(config.units, config.rate_target_period_ticks)?;
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -1133,6 +1183,8 @@ impl<const CAP: usize> Executor<CAP> {
             critic_window_ticks: config.critic_window_ticks,
             window_opened: 0,
             whole_punishment: config.whole_punishment,
+            rate_target_period_ticks: config.rate_target_period_ticks,
+            rate_target,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1265,6 +1317,19 @@ impl<const CAP: usize> Executor<CAP> {
     /// modulator receives the critic's error at every reward, as before ADR-0155.
     pub fn whole_punishment(&self) -> bool {
         self.whole_punishment
+    }
+
+    /// The rate's target (ADR-0180), a period in ticks, from the configuration or the image:
+    /// while it is not zero the controller holds the population's count to it; zero while
+    /// unset, where the controller regulates by its estimate, as before ADR-0180.
+    pub fn rate_target_period_ticks(&self) -> u32 {
+        self.rate_target_period_ticks
+    }
+
+    /// The spikes a window holds at the rate's target (ADR-0180): this engine's units times
+    /// the window's ticks over the target's period, to nearest; none while the target is unset.
+    pub fn rate_target_per_window(&self) -> Option<u32> {
+        self.rate_target
     }
 
     /// A reward into the dopamine signal, between ticks (ADR-0032): an input, like an
@@ -1948,7 +2013,9 @@ impl<const CAP: usize> Executor<CAP> {
     /// After a tick, between ticks (ADR-0036, ADR-0037): the workers' spike counts into the
     /// open bin; on the bin's cadence the bin closes into the window; on the window's cadence
     /// the gain is regulated, the window cleared and the sleep stage stepped. The cadences
-    /// are masks on the tick, so a loaded engine continues the window it was written in.
+    /// are masks on the tick, so a loaded engine continues the window it was written in. The
+    /// gain is regulated by the window's count over the rate's target while one is set
+    /// (ADR-0180), and by the estimate under the saturation rule while none is.
     fn tally(&mut self) {
         let spikes = self
             .shared
@@ -1967,8 +2034,12 @@ impl<const CAP: usize> Executor<CAP> {
                 abort("the homeostasis window was full before its cadence regulated it");
             }
             if WINDOW_CADENCE.is_due(self.tick) {
-                self.homeostasis
-                    .regulate(saturation_ceiling(self.shared.units.len()));
+                match self.rate_target {
+                    Some(target) => self.homeostasis.regulate_rate(target),
+                    None => self
+                        .homeostasis
+                        .regulate(saturation_ceiling(self.shared.units.len())),
+                };
                 let before = self.homeostasis.sleep_stage;
                 self.homeostasis.step_sleep();
                 // The slow-wave onset (ADR-0056): the arena's garbage is reclaimed once per
@@ -4151,6 +4222,119 @@ mod tests {
                 Err(ConfigError::WholePunishmentWithoutCritic)
             ),
             "refused without the critic"
+        );
+    }
+
+    /// The rate's target as a window's count (ADR-0180): unset at a period of zero; the units
+    /// times the window's 131 072 ticks over the period, a half going up; refused at no spike
+    /// and above what a window's bins count. H-38's period, 58 201 ticks, at the three sizes
+    /// the tree runs, and the other networks' periods at theirs.
+    #[test]
+    fn the_rate_s_target_is_a_window_s_count_of_its_period_and_refused_outside_what_a_window_counts()
+     {
+        assert_eq!(WINDOW_CADENCE.period(), 131_072);
+        assert_eq!(RATE_TARGET_MAX, 32 * 0x00FF_FFFF);
+        for units in [1, 64, 1024, usize::MAX] {
+            assert_eq!(rate_target_of(units, 0), Ok(None), "{units}: unset");
+        }
+        // 256 x 131 072 / 58 201 is 576.53, 1 024 times it 2 306.11 and 2 048 times it 4 612.21.
+        assert_eq!(rate_target_of(256, 58_201), Ok(Some(577)));
+        assert_eq!(rate_target_of(1024, 58_201), Ok(Some(2_306)));
+        assert_eq!(rate_target_of(2048, 58_201), Ok(Some(4_612)));
+        // Seeds 23 and 24 at 1 024 units, and seeds 22 and 23 at 2 048 (ADR-0167, ADR-0169).
+        assert_eq!(rate_target_of(1024, 59_510), Ok(Some(2_255)));
+        assert_eq!(rate_target_of(1024, 59_179), Ok(Some(2_268)));
+        assert_eq!(rate_target_of(2048, 59_599), Ok(Some(4_504)));
+        assert_eq!(rate_target_of(2048, 59_119), Ok(Some(4_541)));
+        // A unit a tick is the window's ticks; a unit a window is one.
+        assert_eq!(rate_target_of(1, 1), Ok(Some(131_072)));
+        assert_eq!(rate_target_of(1, 131_072), Ok(Some(1)));
+        assert_eq!(rate_target_of(3, 131_072), Ok(Some(3)));
+        // A half goes up: one unit over two windows is half a spike, which is one; a tick
+        // longer is no spike, and refused. Three units over two windows are one and a half.
+        assert_eq!(rate_target_of(1, 262_144), Ok(Some(1)));
+        assert_eq!(
+            rate_target_of(1, 262_145),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        assert_eq!(rate_target_of(3, 262_144), Ok(Some(2)));
+        assert_eq!(rate_target_of(1, 196_608), Ok(Some(1)), "two thirds");
+        assert_eq!(rate_target_of(4, 196_608), Ok(Some(3)), "2.67");
+        assert_eq!(
+            rate_target_of(1, u32::MAX),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        assert_eq!(
+            rate_target_of(16_384, u32::MAX),
+            Ok(Some(1)),
+            "exactly a half"
+        );
+        assert_eq!(
+            rate_target_of(16_383, u32::MAX),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        // What a window's bins count: 4 095 units a tick fit it, 4 096 do not.
+        assert_eq!(rate_target_of(4_095, 1), Ok(Some(536_739_840)));
+        assert_eq!(
+            rate_target_of(4_096, 1),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        assert_eq!(rate_target_of(8_191, 2), Ok(Some(536_805_376)));
+        assert_eq!(
+            rate_target_of(8_192, 2),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        // A count the width does not hold, and one the product saturates at.
+        assert_eq!(
+            rate_target_of(1 << 20, 1),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        assert_eq!(
+            rate_target_of(usize::MAX, 1),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+    }
+
+    /// The rate's target in the configuration (ADR-0180): unset by default, where the engine
+    /// holds no count; set, the engine holds the period and the window's count of it for its
+    /// units; refused where the count is no spike or more than a window counts.
+    #[test]
+    fn the_rate_s_target_is_unset_by_default_and_the_engine_holds_its_count() {
+        assert_eq!(Config::default().rate_target_period_ticks, 0);
+        let with = |units, period| {
+            Executor::<8>::new(Config {
+                units,
+                rate_target_period_ticks: period,
+                ..Config::default()
+            })
+        };
+        let unset = with(3, 0).unwrap();
+        assert_eq!(
+            (
+                unset.rate_target_period_ticks(),
+                unset.rate_target_per_window()
+            ),
+            (0, None)
+        );
+        let set = with(3, 1_000).unwrap();
+        assert_eq!(
+            (set.rate_target_period_ticks(), set.rate_target_per_window()),
+            (1_000, Some(393)),
+            "3 x 131 072 / 1 000 is 393.2"
+        );
+        let one = with(1, 262_144).unwrap();
+        assert_eq!(one.rate_target_per_window(), Some(1));
+        assert!(matches!(
+            with(1, 262_145),
+            Err(ConfigError::RateTargetOutOfRange)
+        ));
+        assert!(matches!(
+            with(4_096, 1),
+            Err(ConfigError::RateTargetOutOfRange)
+        ));
+        assert_eq!(
+            with(4_095, 1).unwrap().rate_target_per_window(),
+            Some(536_739_840)
         );
     }
 

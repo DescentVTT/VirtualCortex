@@ -133,11 +133,23 @@ fn drive_window(exec: &mut Executor<64>, drive_every: u64, next_unit: &mut u32) 
 /// One window of designed activity on a network without synapses: bin `b` gets `counts[b]`
 /// kicks to distinct units early in the bin, so that exactly that many units fire in it (an
 /// isolated kick is one spike); the oracle record is fed the same counts. Both regulate at
-/// the window's end.
+/// the window's end, by the estimate under the saturation rule.
 fn designed_window(
     exec: &mut Executor<64>,
     oracle: &mut HomeostaticDrivePool,
     counts: &[u32; ACTIVITY_WINDOW_BINS as usize],
+) {
+    designed_window_under(exec, oracle, counts, None);
+}
+
+/// `designed_window` with the rule the oracle regulates by named (ADR-0180): the count over
+/// `target` where one is given, the rate's rule; the estimate under the saturation rule where
+/// none is, as `designed_window` calls it.
+fn designed_window_under(
+    exec: &mut Executor<64>,
+    oracle: &mut HomeostaticDrivePool,
+    counts: &[u32; ACTIVITY_WINDOW_BINS as usize],
+    target: Option<u32>,
 ) {
     let inject = exec.injector();
     assert_eq!(exec.ticks() % WINDOW, 0, "at a window boundary");
@@ -172,7 +184,10 @@ fn designed_window(
         oracle.count_activity(count);
         assert!(oracle.close_bin().is_some());
     }
-    oracle.regulate(UNITS as u32);
+    match target {
+        Some(target) => oracle.regulate_rate(target),
+        None => oracle.regulate(UNITS as u32),
+    };
     // The window's cadence also steps the sleep stage (ADR-0037): with the shift at 0 only
     // the circadian phase moves.
     oracle.step_sleep();
@@ -468,4 +483,249 @@ fn the_control_step_is_refused_above_its_bound_and_the_default_is_zero() {
     .unwrap();
     assert_eq!(exec.homeostasis(), &HomeostaticDrivePool::new());
     assert_eq!(Config::default().control_step_q0_16, 0);
+}
+
+/// The period whose count for `UNITS` units is `RATE_TARGET` spikes a window: 64 units times
+/// 131 072 ticks over 26 214 are 320.005.
+const RATE_PERIOD: u32 = 26_214;
+/// Ten spikes a bin.
+const RATE_TARGET: u32 = 320;
+
+fn rate_config(workers: usize, blocks: usize, step: u16) -> Config {
+    Config {
+        rate_target_period_ticks: RATE_PERIOD,
+        ..config(workers, blocks, step)
+    }
+}
+
+/// The rate's rule as the executor composes it (ADR-0180): with a target set, the executor
+/// regulates each window by its count over the target's, exactly as the record's rule says when
+/// fed the same counts, and the saturation rule and the estimate move nothing. Beside the
+/// engine, a record fed the same counts and regulated by the estimate under the saturation rule,
+/// which is what the executor does with no target
+/// (`the_executor_tallies_every_spike_and_regulates_exactly_as_the_record_s_rule_says`): a
+/// decaying window above its target lowers the gain where the estimate's rule raises it, a
+/// growing one below it raises the gain where the estimate's rule lowers it, and a window at
+/// one spike a unit a bin leaves the estimate it had. Each gain is the hand rule's. The windows
+/// are ordered so that the engine's gain is at most 1.0 in each: above it a kick fires its unit
+/// twice, and a designed window would not hold its counts.
+#[test]
+fn under_a_rate_s_target_the_executor_regulates_by_the_window_s_count_exactly_as_the_rule_says() {
+    let mut exec = Executor::<64>::new(rate_config(2, 0, STEP)).unwrap();
+    arm(&mut exec);
+    assert_eq!(
+        (
+            exec.rate_target_period_ticks(),
+            exec.rate_target_per_window()
+        ),
+        (RATE_PERIOD, Some(RATE_TARGET))
+    );
+    let mut oracle = HomeostaticDrivePool {
+        control_step_q0_16: STEP,
+        ..HomeostaticDrivePool::new()
+    };
+    assert_eq!(*exec.homeostasis(), oracle, "at rest, with the step");
+    let mut by_estimate = oracle;
+    // One window on the engine and on the two records; returns the gain under each rule.
+    let mut window = |counts: &[u32; ACTIVITY_WINDOW_BINS as usize], what: &str| {
+        designed_window_under(&mut exec, &mut oracle, counts, Some(RATE_TARGET));
+        assert_eq!(*exec.homeostasis(), oracle, "{what}: the rate's rule");
+        for &count in counts {
+            by_estimate.count_activity(count);
+            assert!(by_estimate.close_bin().is_some());
+        }
+        by_estimate.regulate(UNITS as u32);
+        by_estimate.step_sleep();
+        (
+            exec.homeostasis().synaptic_gain_q16,
+            exec.homeostasis().branching_ratio_q16,
+            by_estimate.synaptic_gain_q16,
+            by_estimate.branching_ratio_q16,
+        )
+    };
+
+    // At its target, ten spikes in every bin: the gain stays. A constant window has no slope,
+    // so the estimate's rule moves nothing either.
+    let at_target = [10u32; ACTIVITY_WINDOW_BINS as usize];
+    assert_eq!(at_target.iter().sum::<u32>(), RATE_TARGET);
+    assert_eq!(
+        window(&at_target, "at the target"),
+        (GAIN_ONE_Q16, 0, GAIN_ONE_Q16, 0)
+    );
+
+    // Decay by a tenth a bin from forty spikes, 373 spikes: the slope reads below one and the
+    // count above its target. The rate's rule lowers the gain, by an eighth of 373 over 320
+    // less one; the estimate's raises it.
+    let mut decay = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    let mut x = 40_000u64;
+    for c in decay.iter_mut() {
+        *c = (x / 1_000) as u32;
+        x = x.wrapping_mul(9) / 10;
+    }
+    assert_eq!(decay.iter().sum::<u32>(), 373);
+    let (gain, slope, other, other_slope) = window(&decay, "decay above the target");
+    assert_eq!(gain, 64_179, "1 - (76 390 - 65 536) / 8, to nearest");
+    assert!(slope < GAIN_ONE_Q16 && slope == other_slope, "{slope:#x}");
+    assert!(other > GAIN_ONE_Q16, "the estimate's rule raises it");
+
+    // One spike a unit a bin, the saturation rule's count, 6.4 times the target: both rules
+    // take an eighth off. The estimate's rule stores its ceiling; the rate's rule does not
+    // consult the saturation rule, and a constant window has no slope, so the record keeps the
+    // estimate the decay left.
+    let saturated = [UNITS as u32; ACTIVITY_WINDOW_BINS as usize];
+    let (gain, kept, after, ceiling) = window(&saturated, "at the saturation rule's count");
+    assert_eq!(gain, 56_157, "seven eighths of 64 179, to nearest");
+    assert_eq!(after, ((other as u64 * 7 + 4) / 8) as u32);
+    assert_eq!((kept, ceiling), (slope, SIGMA_MAX_Q16));
+
+    // Growth by a tenth a bin from one spike, 240 spikes, three quarters of the target: the
+    // slope reads above one and the count below its target. The rate's rule raises the gain, by
+    // a quarter of an eighth; the estimate's lowers it.
+    let mut growth = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    let mut x = 1_265u64;
+    for c in growth.iter_mut() {
+        *c = (x / 1_000) as u32;
+        x = x.wrapping_mul(11) / 10;
+    }
+    assert_eq!(growth.iter().sum::<u32>(), 240);
+    let before = after;
+    let (gain, slope, other, other_slope) = window(&growth, "growth below the target");
+    assert_eq!(gain, 57_912, "56 157 and a thirty-second of it, to nearest");
+    assert!(slope > GAIN_ONE_Q16 && slope == other_slope, "{slope:#x}");
+    assert!(other < before, "the estimate's rule lowers it");
+
+    // No spike: an eighth up under either rule, and the estimate reads no descendants.
+    let silent = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    let (gain, slope, after, other_slope) = window(&silent, "silent");
+    assert_eq!(gain, 65_151, "nine eighths of 57 912");
+    assert_eq!(after, ((other as u64 * 9 + 4) / 8) as u32);
+    assert_eq!((slope, other_slope), (0, 0));
+    assert_eq!(exec.ticks(), 5 * WINDOW);
+}
+
+/// The target's count is made of the period and the engine's units (ADR-0180): H-38's period,
+/// 58 201 ticks, at the three sizes the tree runs networks at.
+#[test]
+fn the_rate_s_target_s_count_is_made_of_the_period_at_256_1024_and_2048_units() {
+    for (units, count) in [(256usize, 577u32), (1024, 2_306), (2048, 4_612)] {
+        let exec = Executor::<64>::new(Config {
+            units,
+            control_step_q0_16: STEP,
+            rate_target_period_ticks: 58_201,
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(
+            (
+                exec.rate_target_period_ticks(),
+                exec.rate_target_per_window()
+            ),
+            (58_201, Some(count)),
+            "{units} units"
+        );
+    }
+}
+
+/// Under the rate's rule a silent engine's gain climbs as under the estimate's, a step up a
+/// window to the ceiling; a step of zero moves nothing whatever the count; and the loop is
+/// bit-identical on one and four workers.
+#[test]
+fn under_a_rate_s_target_a_silent_engine_climbs_a_step_of_zero_moves_nothing_and_workers_agree() {
+    let mut exec = Executor::<64>::new(rate_config(1, 0, CONTROL_STEP_MAX_Q0_16)).unwrap();
+    let mut gains = Vec::new();
+    for _ in 0..5 {
+        exec.run(WINDOW);
+        gains.push(exec.homeostasis().synaptic_gain_q16);
+    }
+    assert_eq!(
+        gains,
+        vec![
+            0x0001_8000,
+            0x0002_4000,
+            0x0003_6000,
+            GAIN_MAX_Q16,
+            GAIN_MAX_Q16
+        ],
+        "half more per window, then the ceiling"
+    );
+    // A step of zero: a driven network far from its target, and the gain stays at 1.0.
+    let mut held = Executor::<64>::new(rate_config(1, 2 * UNITS, 0)).unwrap();
+    wire_recurrent(&mut held);
+    let mut unit = 0u32;
+    for _ in 0..2 {
+        let (kicks, spikes) = drive_window(&mut held, 6_000, &mut unit);
+        assert!(spikes >= kicks && spikes < u64::from(RATE_TARGET) / 4);
+        assert_eq!(held.homeostasis().synaptic_gain_q16, GAIN_ONE_Q16);
+    }
+    // One and four workers: the tally is a sum, whichever rule reads it.
+    let outcome = |workers: usize| {
+        let mut exec = Executor::<64>::new(rate_config(workers, 2 * UNITS, STEP)).unwrap();
+        wire_recurrent(&mut exec);
+        let mut unit = 0u32;
+        let mut rows = Vec::new();
+        for _ in 0..4 {
+            let (_, spikes) = drive_window(&mut exec, 6_000, &mut unit);
+            rows.push((spikes, exec.homeostasis().synaptic_gain_q16));
+        }
+        let pool = *exec.homeostasis();
+        let units: Vec<[u8; 64]> = exec.units().iter().map(|u| u.encode()).collect();
+        (rows, pool, units)
+    };
+    let one = outcome(1);
+    assert_eq!(one, outcome(4));
+    assert!(
+        one.0.windows(2).all(|pair| pair[1].1 > pair[0].1) && one.0[0].1 > GAIN_ONE_Q16,
+        "below its target in every window, the gain rises in every window: {:?}",
+        one.0
+    );
+}
+
+/// The rate's target round-trips through the image mid-window (ADR-0180): a loaded engine holds
+/// the image's period, whatever its configuration says, and regulates the window it was written
+/// in and the next as the engine that wrote it does.
+#[test]
+fn the_rate_s_target_round_trips_mid_window_and_a_loaded_engine_regulates_alike() {
+    let mut exec = Executor::<64>::new(rate_config(2, 2 * UNITS, STEP)).unwrap();
+    wire_recurrent(&mut exec);
+    let mut unit = 0u32;
+    for _ in 0..2 {
+        drive_window(&mut exec, 6_000, &mut unit);
+    }
+    let inject = exec.injector();
+    for _ in 0..5 {
+        exec.run(3_000);
+        kick(&inject, unit);
+        unit = unit.wrapping_add(1);
+    }
+    let mut waited = 0u64;
+    while !exec.is_quiescent() {
+        exec.tick();
+        waited = waited.wrapping_add(1);
+        assert!(waited < 40_000, "the network falls quiet");
+    }
+    let written = *exec.homeostasis();
+    assert!(written.window_bins > 0 && written.synaptic_gain_q16 != GAIN_ONE_Q16);
+    let image = Image::encode(&exec).unwrap();
+    let mut loaded = Image::decode::<64>(&image, config(2, 0, 0)).unwrap();
+    assert_eq!(*loaded.homeostasis(), written, "read back whole");
+    assert_eq!(
+        (
+            loaded.rate_target_period_ticks(),
+            loaded.rate_target_per_window()
+        ),
+        (RATE_PERIOD, Some(RATE_TARGET)),
+        "the image's target outranks the configuration's none"
+    );
+    // Both finish the window with the same kicks, then run another: the same regulation.
+    let mut unit_copy = unit;
+    for _ in 0..2 {
+        drive_window(&mut exec, 6_000, &mut unit);
+        drive_window(&mut loaded, 6_000, &mut unit_copy);
+        assert_eq!(loaded.homeostasis(), exec.homeostasis());
+    }
+    assert_ne!(
+        exec.homeostasis().synaptic_gain_q16,
+        written.synaptic_gain_q16,
+        "the loop went on"
+    );
 }
