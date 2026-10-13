@@ -15,6 +15,13 @@
 //! [`regression`]'s (ADR-0047): what the record's window cannot hold, a caller that holds
 //! the train can read.
 //!
+//! The controller has a second rule (ADR-0178, ADR-0180), ADR-0036's option 2: the same move
+//! with the window's count over a target count in the estimate's place,
+//! $g \leftarrow g\,(1 - \kappa\,\operatorname{clamp}(c / c^{*} - 1, -1, 1))$
+//! ([`HomeostaticDrivePool::regulate_rate`]). The caller names the target, as it names the
+//! saturation ceiling; the executor's is a period of the image, and with none it regulates by
+//! the estimate, as before.
+//!
 //! Sleep (ADR-0037) is a state machine stepped once per window on the same cadence: a sleep
 //! pressure $S$ that rises while awake and falls while asleep (process S of Borbély's
 //! two-process model), a circadian phase advanced by one per window so that its sixteen bits
@@ -339,8 +346,62 @@ impl HomeostaticDrivePool {
         if self.window_bins == 0 {
             return false;
         }
-        let total = self.sum_prev.saturating_add(self.last_activity as u64);
-        total >= (saturation_per_bin as u64).saturating_mul(self.window_bins as u64)
+        self.window_spikes() >= (saturation_per_bin as u64).saturating_mul(self.window_bins as u64)
+    }
+
+    /// The spikes of the open window's closed bins: the pairs' first members and the last
+    /// bin, which are every bin once.
+    pub fn window_spikes(&self) -> u64 {
+        self.sum_prev.saturating_add(self.last_activity as u64)
+    }
+
+    /// The open window's count over `target_per_window`, Q16.16, rounded to nearest: 1.0 for
+    /// a window that holds its target exactly (ADR-0180). `None` for a window with no bin,
+    /// which counted nothing, and for a target of no spike, which names no rate.
+    pub fn rate_over_target_q16(&self, target_per_window: u32) -> Option<u64> {
+        if self.window_bins == 0 {
+            return None;
+        }
+        let target = u64::from(target_per_window);
+        // A well-formed window holds fewer than 2^29 spikes, so the product is below 2^45;
+        // it saturates by name for a record that is not.
+        self.window_spikes()
+            .saturating_mul(Q16_ONE as u64)
+            .saturating_add(target >> 1)
+            .checked_div(target)
+    }
+
+    /// The controller's move (ADR-0036), with `reading_q16` the quantity it holds at 1.0, the
+    /// estimate or the count over its target:
+    /// $g \leftarrow g\,(1 - \kappa\,\operatorname{clamp}(x - 1, -1, 1))$, $\kappa$ times the
+    /// error rounded to nearest, the product rounded to nearest and clamped to
+    /// $[$[`GAIN_MIN_Q16`]$, $[`GAIN_MAX_Q16`]$]$.
+    fn move_gain(&mut self, reading_q16: u64) {
+        let error = i64::try_from(reading_q16)
+            .unwrap_or(i64::MAX)
+            .saturating_sub(Q16_ONE)
+            .clamp(-Q16_ONE, Q16_ONE);
+        // kappa (Q0.16) times the error (Q16.16), rounded to nearest, is Q16.16.
+        let step = (self.control_step_q0_16 as i64)
+            .saturating_mul(error)
+            .saturating_add(0x8000)
+            >> 16;
+        let factor = Q16_ONE.saturating_sub(step);
+        let gain = (self.synaptic_gain_q16 as i64)
+            .saturating_mul(factor)
+            .saturating_add(0x8000)
+            >> 16;
+        self.synaptic_gain_q16 = gain.clamp(GAIN_MIN_Q16 as i64, GAIN_MAX_Q16 as i64) as u32;
+    }
+
+    /// The window's pairs cleared for the next window; the open bin is the next window's.
+    fn clear_window(&mut self) {
+        self.sum_prev = 0;
+        self.sum_prev_sq = 0;
+        self.sum_pair = 0;
+        self.first_activity = 0;
+        self.last_activity = 0;
+        self.window_bins = 0;
     }
 
     /// Once per window: with an estimate (the window's slope, or [`SIGMA_MAX_Q16`] for a window
@@ -358,28 +419,34 @@ impl HomeostaticDrivePool {
         };
         if let Some(sigma) = estimate {
             self.branching_ratio_q16 = sigma;
-            let error = (sigma as i64)
-                .saturating_sub(Q16_ONE)
-                .clamp(-Q16_ONE, Q16_ONE);
-            // kappa (Q0.16) times the error (Q16.16), rounded to nearest, is Q16.16.
-            let step = (self.control_step_q0_16 as i64)
-                .saturating_mul(error)
-                .saturating_add(0x8000)
-                >> 16;
-            let factor = Q16_ONE.saturating_sub(step);
-            let gain = (self.synaptic_gain_q16 as i64)
-                .saturating_mul(factor)
-                .saturating_add(0x8000)
-                >> 16;
-            self.synaptic_gain_q16 = gain.clamp(GAIN_MIN_Q16 as i64, GAIN_MAX_Q16 as i64) as u32;
+            self.move_gain(u64::from(sigma));
         }
-        self.sum_prev = 0;
-        self.sum_prev_sq = 0;
-        self.sum_pair = 0;
-        self.first_activity = 0;
-        self.last_activity = 0;
-        self.window_bins = 0;
+        self.clear_window();
         estimate.map(|_| self.synaptic_gain_q16)
+    }
+
+    /// Once per window, the rate's rule (ADR-0178, ADR-0180): [`regulate`](Self::regulate)
+    /// with the window's count over `target_per_window` in the estimate's place, so the gain
+    /// moves by $g \leftarrow g\,(1 - \kappa\,\operatorname{clamp}(c / c^{*} - 1, -1, 1))$,
+    /// $c$ the window's spikes and $c^{*}$ the target, the quotient rounded to nearest, with
+    /// the step, the clamp, the rounding and the bounds `regulate` has. A window at its target
+    /// leaves the gain, one at twice it or more lowers it by $\kappa$ whole, a silent one
+    /// raises it by $\kappa$ whole. The saturation rule is not consulted. The estimate is
+    /// still read, by the slope alone, and stored as `branching_ratio_q16` when there is one:
+    /// a reading, which moves nothing here. A window with no bin, or a target of no spike,
+    /// leaves the gain. Either way the window's pairs are cleared for the next window. Returns
+    /// the gain when the count moved it (or left it, at $\kappa = 0$ or at its target), `None`
+    /// when there was no count to hold to a target.
+    pub fn regulate_rate(&mut self, target_per_window: u32) -> Option<u32> {
+        if let Some(sigma) = self.estimate_branching_ratio() {
+            self.branching_ratio_q16 = sigma;
+        }
+        let reading = self.rate_over_target_q16(target_per_window);
+        if let Some(ratio) = reading {
+            self.move_gain(ratio);
+        }
+        self.clear_window();
+        reading.map(|_| self.synaptic_gain_q16)
     }
 
     /// True for a record within the bounds and the consistency the rules keep between
@@ -1164,6 +1231,219 @@ mod tests {
         assert_eq!(p.first_activity, 6);
     }
 
+    /// A fresh record's window of these counts, at this gain and this step.
+    fn rated(counts: &[u32], gain: u32, step: u16) -> HomeostaticDrivePool {
+        let mut p = window(counts);
+        p.synaptic_gain_q16 = gain;
+        p.control_step_q0_16 = step;
+        p
+    }
+
+    #[test]
+    fn a_window_s_count_over_its_target_is_rounded_to_nearest_and_none_without_a_bin_or_a_target() {
+        // Every bin once: the pairs' first members and the last bin.
+        assert_eq!(HomeostaticDrivePool::new().window_spikes(), 0);
+        assert_eq!(window(&[7]).window_spikes(), 7);
+        assert_eq!(window(&[7, 5]).window_spikes(), 12);
+        assert_eq!(window(&[1, 2, 4, 8]).window_spikes(), 15);
+        let mut open = window(&[1, 2, 4, 8]);
+        open.count_activity(100);
+        assert_eq!(
+            open.window_spikes(),
+            15,
+            "the open bin is the next window's"
+        );
+        // The quotient in Q16.16.
+        assert_eq!(window(&[10, 5]).rate_over_target_q16(15), Some(0x0001_0000));
+        assert_eq!(window(&[10, 5]).rate_over_target_q16(30), Some(0x8000));
+        assert_eq!(window(&[10, 5]).rate_over_target_q16(5), Some(0x0003_0000));
+        assert_eq!(window(&[0, 0]).rate_over_target_q16(5), Some(0));
+        // Rounded to nearest: a third is 21 845.33, two thirds 43 690.67, and a half of one
+        // LSB goes up.
+        assert_eq!(window(&[1]).rate_over_target_q16(3), Some(21_845));
+        assert_eq!(window(&[2]).rate_over_target_q16(3), Some(43_691));
+        assert_eq!(window(&[1]).rate_over_target_q16(0x0002_0000), Some(1));
+        assert_eq!(window(&[1]).rate_over_target_q16(0x0002_0001), Some(0));
+        assert_eq!(window(&[3]).rate_over_target_q16(0x0002_0000), Some(2));
+        // One above and one below a target of 65 536 are one LSB above and below 1.0.
+        assert_eq!(
+            window(&[0x0001_0001]).rate_over_target_q16(0x0001_0000),
+            Some(0x0001_0001)
+        );
+        assert_eq!(
+            window(&[0xFFFF]).rate_over_target_q16(0x0001_0000),
+            Some(0xFFFF)
+        );
+        // The widest window over the least target and over the widest.
+        let cap = ACTIVITY_COUNT_MAX;
+        let widest = window(&[cap; 31]);
+        assert_eq!(widest.window_spikes(), 31 * cap as u64);
+        assert_eq!(
+            widest.rate_over_target_q16(1),
+            Some((31 * cap as u64) << 16)
+        );
+        assert_eq!(widest.rate_over_target_q16(u32::MAX), Some(7_936));
+        // No bin counted nothing; no target names no rate.
+        assert_eq!(HomeostaticDrivePool::new().rate_over_target_q16(5), None);
+        assert_eq!(window(&[10, 5]).rate_over_target_q16(0), None);
+        assert_eq!(window(&[0]).rate_over_target_q16(0), None);
+        // A record no rule produced saturates by name and still answers.
+        let mut odd = window(&[1, 1]);
+        odd.sum_prev = u64::MAX;
+        assert_eq!(odd.window_spikes(), u64::MAX);
+        assert_eq!(odd.rate_over_target_q16(1), Some(u64::MAX));
+    }
+
+    #[test]
+    fn the_rate_s_rule_moves_the_gain_by_the_count_over_its_target_and_clears_the_window() {
+        let max = CONTROL_STEP_MAX_Q0_16;
+        // At its target: the gain stays, at any step.
+        for step in [0, 1, 0x2000, max] {
+            let mut p = rated(&[10, 5], 0x0001_2345, step);
+            assert_eq!(p.regulate_rate(15), Some(0x0001_2345), "step {step:#x}");
+            assert_eq!(p.synaptic_gain_q16, 0x0001_2345);
+        }
+        // At twice its target and at more: the error clamps to 1, the factor is 1 - kappa.
+        for counts in [
+            &[20u32, 10][..],
+            &[200, 10][..],
+            &[cap_bin(), cap_bin()][..],
+        ] {
+            let mut p = rated(counts, ONE, max);
+            assert_eq!(p.regulate_rate(15), Some(0x8000), "{counts:?}: halved");
+            let mut p = rated(counts, ONE, 0x2000);
+            assert_eq!(
+                p.regulate_rate(15),
+                Some(0xE000),
+                "{counts:?}: an eighth off"
+            );
+        }
+        // One short of twice the target is not yet the clamp: 29 over 15 is 1.9333.
+        let mut p = rated(&[20, 9], ONE, max);
+        assert_eq!(p.regulate_rate(15), Some(0x8888));
+        // No spike: the error is -1, the factor 1 + kappa.
+        let mut p = rated(&[0, 0], ONE, max);
+        assert_eq!(p.regulate_rate(15), Some(0x0001_8000));
+        let mut p = rated(&[0], ONE, 0x1000);
+        assert_eq!(p.regulate_rate(1), Some(0x0001_1000), "a sixteenth up");
+        // Half the target at kappa 0.25: a step of -1/8, the gain 1.125; half again as many
+        // as the target: a step of 1/8, the gain 0.875.
+        let mut p = rated(&[4, 4], ONE, 0x4000);
+        assert_eq!(p.regulate_rate(16), Some(0x0001_2000));
+        let mut p = rated(&[16, 8], ONE, 0x4000);
+        assert_eq!(p.regulate_rate(16), Some(0xE000));
+        // One above the target, at a target of 65 536: an error of one LSB, which the largest
+        // step rounds to a move of one LSB; one below: half an LSB down rounds to no move.
+        let mut p = rated(&[0x0001_0001], ONE, max);
+        assert_eq!(p.regulate_rate(0x0001_0000), Some(ONE - 1));
+        let mut p = rated(&[0xFFFF], ONE, max);
+        assert_eq!(p.regulate_rate(0x0001_0000), Some(ONE));
+        let mut p = rated(&[0xFFFE], ONE, max);
+        assert_eq!(p.regulate_rate(0x0001_0000), Some(ONE + 1), "two below");
+        // The quotient's rounding reaches the gain: a third of the target at the largest step.
+        let mut p = rated(&[1], ONE, max);
+        assert_eq!(
+            p.regulate_rate(3),
+            Some(87_381),
+            "1 + 0.5 x (1 - 21 845 / 65 536)"
+        );
+        // A step of zero: whatever the count, the gain is bit for bit the same.
+        for (counts, target) in [(&[0u32, 0][..], 15), (&[10, 5][..], 15), (&[90, 5][..], 15)] {
+            let mut p = rated(counts, 0x0001_2345, 0);
+            assert_eq!(p.regulate_rate(target), Some(0x0001_2345));
+            assert_eq!(p.synaptic_gain_q16, 0x0001_2345);
+        }
+        // The rails: at the ceiling a silent window leaves it there, at the floor one at twice
+        // its target leaves it there; one step short of each moves onto the rail.
+        for (gain, counts, after) in [
+            (GAIN_MAX_Q16, &[0u32, 0][..], GAIN_MAX_Q16),
+            (GAIN_MAX_Q16 - 1, &[0, 0][..], GAIN_MAX_Q16),
+            (GAIN_MIN_Q16, &[20, 10][..], GAIN_MIN_Q16),
+            (GAIN_MIN_Q16 + 1, &[20, 10][..], GAIN_MIN_Q16),
+        ] {
+            let mut p = rated(counts, gain, max);
+            assert_eq!(p.regulate_rate(15), Some(after), "from {gain:#x}");
+        }
+        // The window is cleared and the open bin survives, as under the estimate's rule.
+        let mut p = rated(&[1, 2, 4, 8], ONE, max);
+        p.count_activity(6);
+        assert_eq!(p.regulate_rate(15), Some(ONE));
+        assert_eq!(
+            (
+                p.window_bins,
+                p.sum_prev,
+                p.sum_prev_sq,
+                p.sum_pair,
+                p.first_activity,
+                p.last_activity,
+                p.bin_activity
+            ),
+            (0, 0, 0, 0, 0, 0, 6)
+        );
+        assert_eq!(p.close_bin(), Some(1));
+        assert_eq!(p.first_activity, 6);
+        assert!(p.is_well_formed());
+    }
+
+    /// A bin at the cap.
+    fn cap_bin() -> u32 {
+        ACTIVITY_COUNT_MAX
+    }
+
+    #[test]
+    fn under_the_rate_s_rule_the_estimate_is_a_reading_and_the_saturation_rule_is_not_consulted() {
+        let max = CONTROL_STEP_MAX_Q0_16;
+        // A doubling window at its target: the slope is stored, two, and moves nothing; the
+        // estimate's rule would have halved the gain.
+        let mut p = rated(&[1, 2, 4, 8], ONE, max);
+        assert_eq!(p.regulate_rate(15), Some(ONE));
+        assert_eq!(p.branching_ratio_q16, 0x0002_0000, "the estimate is kept");
+        let mut by_estimate = rated(&[1, 2, 4, 8], ONE, max);
+        assert_eq!(by_estimate.regulate(u32::MAX), Some(0x8000));
+        // A halving window above its target: the slope reads a half and the gain still falls.
+        let mut p = rated(&[64, 32, 16, 8], ONE, max);
+        assert_eq!(p.regulate_rate(60), Some(0x8000));
+        assert_eq!(p.branching_ratio_q16, 0x8000);
+        // A window the saturation rule reads as saturated: under the rate's rule its estimate
+        // is its slope, none for a constant window, so the record keeps the estimate it had,
+        // and the gain moves by the count alone.
+        let mut p = rated(&[100, 100, 100], ONE, max);
+        p.branching_ratio_q16 = 0x1234;
+        assert!(p.is_saturated(100));
+        assert_eq!(p.regulate_rate(300), Some(ONE), "at its target");
+        assert_eq!(p.branching_ratio_q16, 0x1234, "not the ceiling's sixteen");
+        let mut p = rated(&[100, 100, 100], ONE, max);
+        assert_eq!(
+            p.regulate_rate(1_000),
+            Some(0x0001_5999),
+            "below its target, up"
+        );
+        assert_ne!(p.branching_ratio_q16, SIGMA_MAX_Q16);
+        // No bin: nothing counted, nothing moved, nothing stored; and no target: the gain
+        // stays, the estimate is still read and the window is cleared.
+        let mut p = rated(&[], 0x0001_2345, max);
+        p.branching_ratio_q16 = 0x1234;
+        assert_eq!(p.regulate_rate(15), None);
+        assert_eq!(
+            (p.synaptic_gain_q16, p.branching_ratio_q16),
+            (0x0001_2345, 0x1234)
+        );
+        let mut p = rated(&[1, 2, 4, 8], 0x0001_2345, max);
+        assert_eq!(p.regulate_rate(0), None);
+        assert_eq!(
+            (p.synaptic_gain_q16, p.branching_ratio_q16, p.window_bins),
+            (0x0001_2345, 0x0002_0000, 0)
+        );
+        // A step above its bound is clamped nowhere here, as under the estimate's rule: the
+        // loader and the executor refuse it.
+        let mut p = rated(&[20, 10], ONE, u16::MAX);
+        assert_eq!(
+            p.regulate_rate(15),
+            Some(GAIN_MIN_Q16),
+            "clamped to the floor"
+        );
+    }
+
     #[test]
     fn well_formed_fails_on_each_clause_alone() {
         let ok = window(&[3, 4]);
@@ -1408,6 +1688,218 @@ mod prop {
             }
             assert!(windows > 0);
         }
+    }
+
+    /// The estimate's rule as it stood before the rate's rule was placed beside it (ADR-0180),
+    /// kept word for word: `regulate` before its move and its clearing became functions the
+    /// two rules share.
+    fn regulate_as_built(p: &mut HomeostaticDrivePool, saturation_per_bin: u32) -> Option<u32> {
+        let estimate = if p.is_saturated(saturation_per_bin) {
+            Some(SIGMA_MAX_Q16)
+        } else {
+            p.estimate_branching_ratio()
+        };
+        if let Some(sigma) = estimate {
+            p.branching_ratio_q16 = sigma;
+            let error = (sigma as i64)
+                .saturating_sub(Q16_ONE)
+                .clamp(-Q16_ONE, Q16_ONE);
+            let step = (p.control_step_q0_16 as i64)
+                .saturating_mul(error)
+                .saturating_add(0x8000)
+                >> 16;
+            let factor = Q16_ONE.saturating_sub(step);
+            let gain = (p.synaptic_gain_q16 as i64)
+                .saturating_mul(factor)
+                .saturating_add(0x8000)
+                >> 16;
+            p.synaptic_gain_q16 = gain.clamp(GAIN_MIN_Q16 as i64, GAIN_MAX_Q16 as i64) as u32;
+        }
+        p.sum_prev = 0;
+        p.sum_prev_sq = 0;
+        p.sum_pair = 0;
+        p.first_activity = 0;
+        p.last_activity = 0;
+        p.window_bins = 0;
+        estimate.map(|_| p.synaptic_gain_q16)
+    }
+
+    /// The rate's rule in wider integers, written from ADR-0180's text and not from the
+    /// record's code: the count over its target to nearest, the error clamped to one either
+    /// way, the step times the error to nearest, the gain times one less that to nearest, a
+    /// half going up each time, and the gain's bounds. None for no bin or no target.
+    fn rate_by_hand(gain: u32, step: u16, spikes: u64, bins: u8, target: u32) -> Option<u32> {
+        if bins == 0 || target == 0 {
+            return None;
+        }
+        let one = 1i128 << 16;
+        let two = one.saturating_mul(2);
+        let target = i128::from(target);
+        let ratio = i128::from(spikes)
+            .saturating_mul(two)
+            .saturating_add(target)
+            .div_euclid(target.saturating_mul(2));
+        let error = ratio.saturating_sub(one).clamp(one.saturating_neg(), one);
+        let moved = i128::from(step)
+            .saturating_mul(error)
+            .saturating_mul(2)
+            .saturating_add(one)
+            .div_euclid(two);
+        let after = i128::from(gain)
+            .saturating_mul(one.saturating_sub(moved))
+            .saturating_mul(2)
+            .saturating_add(one)
+            .div_euclid(two);
+        Some(after.clamp(i128::from(GAIN_MIN_Q16), i128::from(GAIN_MAX_Q16)) as u32)
+    }
+
+    /// A window of up to thirty-one bins drawn over the lattice, at a gain and a step drawn
+    /// within their bounds, with its spikes as the bins were counted.
+    fn drawn_window(rng: &mut Lcg, round: u32) -> (HomeostaticDrivePool, u64) {
+        let mut p = HomeostaticDrivePool::new();
+        p.control_step_q0_16 = match round % 5 {
+            0 => 0,
+            1 => CONTROL_STEP_MAX_Q0_16,
+            2 => rng.pick(&[1u16, 0x0100, 0x1000, 0x2000]),
+            _ => (rng.next_u32() as u16).min(CONTROL_STEP_MAX_Q0_16),
+        };
+        p.synaptic_gain_q16 = match round % 7 {
+            0 => GAIN_MIN_Q16,
+            1 => GAIN_MAX_Q16,
+            2 => GAIN_ONE_Q16,
+            3 => rng.pick(&[
+                GAIN_MIN_Q16.wrapping_add(1),
+                GAIN_MAX_Q16.wrapping_sub(1),
+                0x0001_C000,
+            ]),
+            _ => GAIN_MIN_Q16.wrapping_add(rng.below(GAIN_MAX_Q16.wrapping_sub(GAIN_MIN_Q16))),
+        };
+        p.branching_ratio_q16 = rng.below(SIGMA_MAX_Q16);
+        let bins = rng.below(u32::from(ACTIVITY_WINDOW_BINS));
+        let mut spikes = 0u64;
+        for _ in 0..bins {
+            let count = match rng.below(8) {
+                0 => rng.pick(&U32_LATTICE),
+                1 => 0,
+                2 => rng.below(1 << 20),
+                _ => rng.below(1 << 8),
+            };
+            p.count_activity(count);
+            spikes = spikes.wrapping_add(u64::from(count.min(ACTIVITY_COUNT_MAX)));
+            assert!(p.close_bin().is_some());
+        }
+        p.count_activity(rng.below(1 << 8));
+        assert!(p.is_well_formed());
+        (p, spikes)
+    }
+
+    #[test]
+    fn the_estimate_s_rule_regulates_every_window_as_it_did_before_the_rate_s_rule() {
+        let mut rng = Lcg::new(37);
+        let mut moved = 0u32;
+        for round in 0..20_000u32 {
+            let (drawn, spikes) = drawn_window(&mut rng, round);
+            let ceiling = match round % 4 {
+                0 => u32::MAX,
+                1 => rng.pick(&U32_LATTICE),
+                // About the window's own mean a bin, so that both sides of the saturation
+                // rule are met.
+                2 => (spikes
+                    .checked_div(u64::from(drawn.window_bins))
+                    .unwrap_or(0) as u32)
+                    .wrapping_add(rng.below(3))
+                    .wrapping_sub(1),
+                _ => rng.below(1 << 9),
+            };
+            let (mut now, mut then) = (drawn, drawn);
+            assert_eq!(
+                now.regulate(ceiling),
+                regulate_as_built(&mut then, ceiling),
+                "round {round}: {drawn:?} under {ceiling}"
+            );
+            assert_eq!(now, then, "round {round}: the record, every field");
+            if now.synaptic_gain_q16 != drawn.synaptic_gain_q16 {
+                moved = moved.wrapping_add(1);
+            }
+        }
+        assert!(
+            moved > 1_000,
+            "the walk met windows that move the gain: {moved}"
+        );
+    }
+
+    #[test]
+    fn the_rate_s_rule_equals_a_hand_rule_in_wider_integers_over_the_lattice() {
+        let mut rng = Lcg::new(41);
+        let (mut up, mut down, mut held, mut none) = (0u32, 0u32, 0u32, 0u32);
+        for round in 0..40_000u32 {
+            let (drawn, spikes) = drawn_window(&mut rng, round);
+            assert_eq!(
+                drawn.window_spikes(),
+                spikes,
+                "round {round}: every bin once"
+            );
+            let near = spikes.min(u64::from(u32::MAX)) as u32;
+            let target = match round % 6 {
+                0 => rng.pick(&U32_LATTICE),
+                // At the count, one either side of it, at half of it and at twice it.
+                1 => near,
+                2 => near.wrapping_add(rng.below(3)).wrapping_sub(1),
+                3 => rng.pick(&[near >> 1, near.saturating_mul(2)]),
+                4 => rng.below(1 << 12),
+                _ => rng.next_u32(),
+            };
+            let expected = rate_by_hand(
+                drawn.synaptic_gain_q16,
+                drawn.control_step_q0_16,
+                spikes,
+                drawn.window_bins,
+                target,
+            );
+            let slope = drawn.estimate_branching_ratio();
+            let mut p = drawn;
+            assert_eq!(
+                p.regulate_rate(target),
+                expected,
+                "round {round}: {drawn:?} over {target}"
+            );
+            assert_eq!(
+                p.synaptic_gain_q16,
+                expected.unwrap_or(drawn.synaptic_gain_q16),
+                "round {round}: no count to hold moves nothing"
+            );
+            assert_eq!(
+                p.branching_ratio_q16,
+                slope.unwrap_or(drawn.branching_ratio_q16),
+                "round {round}: the estimate is the slope's, or the one it had"
+            );
+            assert!((GAIN_MIN_Q16..=GAIN_MAX_Q16).contains(&p.synaptic_gain_q16));
+            assert_eq!(
+                (p.window_bins, p.bin_activity),
+                (0, drawn.bin_activity),
+                "round {round}: the window cleared, the open bin kept"
+            );
+            assert!(p.is_well_formed(), "round {round}: {p:?}");
+            assert_eq!(HomeostaticDrivePool::decode(&p.encode()), p);
+            if drawn.control_step_q0_16 == 0 {
+                assert_eq!(
+                    p.synaptic_gain_q16, drawn.synaptic_gain_q16,
+                    "a step of zero"
+                );
+            }
+            match p.synaptic_gain_q16.cmp(&drawn.synaptic_gain_q16) {
+                core::cmp::Ordering::Greater => up = up.wrapping_add(1),
+                core::cmp::Ordering::Less => down = down.wrapping_add(1),
+                core::cmp::Ordering::Equal => held = held.wrapping_add(1),
+            }
+            if expected.is_none() {
+                none = none.wrapping_add(1);
+            }
+        }
+        assert!(
+            up > 1_000 && down > 1_000 && held > 1_000 && none > 100,
+            "the walk met every outcome: up {up}, down {down}, held {held}, none {none}"
+        );
     }
 
     #[test]
