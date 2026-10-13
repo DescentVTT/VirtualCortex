@@ -5,7 +5,7 @@ depends-on: ADR-0175
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0177: The controller's step, measured — H-37's protocol, written before any lead-in is run under a step of the scan: the derivation given how it settles its network (`derive_under`, a `Settling`), every derivation of the tree the call it was; the settled network's rule under a step, ADR-0055's criterion over the excitatory sums and over the gains at one window, within 320; the calibration at zero and at an eighth, the second reaching ADR-0077's tables under ADR-0077's own rule; clause 0, the verdict, the step of the stopping rule and the three predicted readings as integer rules; the estimate by the rate of its window by bands of an eighth of the saturation rule's count; the readings follow the run
+# ADR-0177: The controller's step, measured — H-37 is no, on clause 0 at every step, as ADR-0175 predicted: on seed 22 at 1 024 units with the criticality controller on from the lead-in's first window, at a sixteenth, one in 32 and one in 64 the gain alternates about the saturation rule's rate and the lead-in settles in its gain at no window of 320; at one in 128 and one in 256 it settles, at the seventy-first and the 114th window, and the frozen block fails both measures, the volley 48.5 and 48.7 units of 51 a presentation and the stimulus seen in 46 and 49 trials of 64; every step holds the network at 24.4 Hz a unit, a gain of 2.49 to 2.50 and an excitatory sum at 0.45 of the prior's, half its windows at the estimate's ceiling, and a smaller step narrows the gain's band, 2.295 to 2.654 down to 2.488 to 2.507, and does not lower it; the three predicted readings each held, the estimate reading 0 to 0.498 at every rate below the saturation rule's over 1 145 windows and near one in none; the derivation given how it settles its network (`derive_under`), every derivation of the tree the call it was; no arm run, no file under `src/` and no pinned number changed; its stopping rule reached step 5, the step is not the lever, and the next decision, an ADR on what the controller regulates, its estimate or a rate, is named and not taken
 
 ## Context and Problem Statement
 
@@ -170,15 +170,175 @@ Six tests, each `#[ignore]`d and named `exhaustive`: the calibration at an eight
 4. The arms, where a step holds.
 5. The tables pinned, the gate's checks over them, the dispatch.
 
+### The readings
+
+Everything below this heading was written after the scan. Nothing above it moved after the first lead-in under a step of the scan was run: the steps, the bound, the criterion, H-37's constants and the three predicted readings are the protocol's, at `93f7b5b`.
+
+**The calibration held.** From the build of `93f7b5b`, each test in a process of its own, eight at a time, from 02:03:53Z to 05:22:38Z on 2026-10-13: the 114 whole-domain tests of the tree before this round and the calibration at an eighth, 115 in all, each exit 0 with one test reported.
+- **Every pinned number of the tree holds through the form.** H-33's and H-34's four derivations and the twelve arms that derive their network first reproduced their tables through `derive_under` with the gain held.
+- **With the step at zero the derivation returns seed 22's constants**: each rule's return, every table and the CRC of every image on the way to H-25's.
+- **At an eighth it is ADR-0077's second candidate**: the lead-in window for window, settled in its sums at the thirty-fifth; the quiet run, 2 541 ticks; the frozen block, block, trace, composition, sixty-four trials' counts and the census; both measures failed. The image carries a gain of 2.472 and the frozen block leaves it at 2.306, the two gains ADR-0077's comment names.
+
+**The scan, each step run once**, side by side from the same build, from 05:23:19Z to 05:31:15Z. Each test ended at its first pin, its tables being empty, after everything was dumped; the tables are pinned from those dumps (`SCAN_*`) and the dispatch reproduces them.
+
+#### H-37's verdict: no, on clause 0, at every step
+
+| Step | The settled network's rule | The quiet run | The cancel | The frozen block: fires once, seen | Clause 0 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| A sixteenth | nothing in 320 windows | — | — | — | no |
+| One in 32 | nothing in 320 windows | — | — | — | no |
+| One in 64 | nothing in 320 windows | — | — | — | no |
+| One in 128 | the 71st window | 2 542 ticks | six messages, seed 22's | no, no | no |
+| One in 256 | the 114th window | 2 552 ticks | six messages, seed 22's | no, no | no |
+
+- **At the three larger steps the lead-in does not settle in its gain.** The criterion holds over the excitatory sums from the thirty-seventh, the forty-first and the fifty-first window, and at 283, 279 and 270 windows of the 320; over the gains it holds at none. The derivation stops there, as the rule written first says, and nothing after it is run.
+- **At the two smaller steps it settles**, at the first window at which the criterion holds over the gains, the sums having settled at the sixty-eighth and the 107th. The network falls quiet, the cancel's rules return seed 22's, and **the frozen block from each image fails both measures**: the volley short and the stimulus not seen. The derivation stops there and writes no configuration.
+- **No step holds, so none is taken and no arm is run** (`CONTROLLED_1024`, `SCAN_STOPPED_1024`). Clauses 1 to 4 are not read.
+
+**The prediction held** (`CONTROLLED_PREDICTED`): no, on clause 0, at every step. Its reason held too, as far as these tables read it: *"a smaller step narrows the swing about that rate and does not lower it."*
+
+**What ADR-0175 did not foresee**: that a step small enough would pass the settled network's rule. At one in 128 and one in 256 the gain's swing, two steps wide, fits inside the criterion's 0.75 per cent either side of its reference, so the rule reads a gain that alternates as settled. The frozen block then answers what the rule could not.
+
+#### The three predicted readings: each held
+
+| | Predicted | Read (`SCAN_READINGS_READ_1024`) |
+| :--- | :--- | :--- |
+| 1 | in every lead-in the estimate at its ceiling in one window at least | **held**: 149, 149, 144, 11 and 8 windows, in each lead-in exactly the windows that hold the saturation rule's count, 32 768 spikes or more |
+| 2 | no window of any lead-in with an estimate between a half and two | **held**: none of 1 145 windows |
+| 3 | every lead-in's last window above five times 2 308 spikes | **held**: 42 021, 33 267, 33 397, 33 002 and 33 204 |
+
+**The second held by 114 parts in 32 768.** The greatest estimate below the ceiling in the five lead-ins is 0.498 (32 654 in Q16.16, where a half is 32 768), in the third window at a sixteenth, at 5.7 Hz, while the gain is still rising. The next are 0.382, the third window at one in 32, and 0.343. The rule counts a half, and 0.498 is not a half; the reading is recorded as held and as near.
+
+#### Per step, beside the gain held and an eighth
+
+| | The gain held | An eighth | A sixteenth | One in 32 | One in 64 | One in 128 | One in 256 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Windows | 96 | 35 | 320 | 320 | 320 | 71 | 114 |
+| The criterion first holds over the sums | 96 | 35 | 37 | 41 | 51 | 68 | 107 |
+| over the gains | 16 | none | none | none | none | 71 | 114 |
+| The gain first falls at window | never | 6 | 8 | 15 | 26 | 51 | 100 |
+| Windows from it | — | 30 | 313 | 306 | 295 | 21 | 15 |
+| The gain's band from it | 1.750 | 2.210 to 2.805 | 2.295 to 2.654 | 2.419 to 2.581 | 2.458 to 2.540 | 2.483 to 2.515 | 2.488 to 2.507 |
+| Its width, in steps of the mean gain | — | 1.9 | 2.3 | 2.1 | 2.1 | 1.6 | 2.0 |
+| The mean gain from it | 1.750 | 2.485 | 2.492 | 2.497 | 2.498 | 2.498 | 2.499 |
+| A unit's rate from it, Hz | 1.6 to 1.8 | 12.2 to 40.5 | 17.1 to 32.5 | 20.5 to 28.6 | 22.4 to 26.4 | 23.7 to 25.3 | 23.8 to 24.9 |
+| The mean rate from it, Hz | 1.7 | 24.8 | 24.2 | 24.4 | 24.4 | 24.5 | 24.5 |
+| Windows at the ceiling | 0 | 14 | 149 | 149 | 144 | 11 | 8 |
+| of the windows from the first fall | — | 47 % | 48 % | 49 % | 49 % | 52 % | 53 % |
+| The estimate below the ceiling, from the first fall: zero in | — | 11 of 16 | 110 of 164 | 104 of 157 | 96 of 151 | 5 of 10 | 5 of 7 |
+| its mean | — | 0.038 | 0.033 | 0.031 | 0.039 | 0.056 | 0.005 |
+| The greatest estimate below the ceiling | 0.451 | 0.409 | 0.498 | 0.382 | 0.322 | 0.287 | 0.317 |
+| The most spikes of a window | 2 462 | 54 398 | 43 631 | 38 376 | 35 439 | 33 960 | 33 427 |
+| The last window's spikes | 2 308 | 19 757 | 42 021 | 33 267 | 33 397 | 33 002 | 33 204 |
+| Excitatory sum, of the prior's | 0.925 | 0.453 | 0.452 | 0.451 | 0.450 | 0.450 | 0.450 |
+| Inhibitory sum, of the prior's | 0.775 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+The rates are a window's spikes over 1 024 units and the window's 1.31072 s. The rows to the last window's spikes are `step_read`'s, pinned (`HELD_READ`, `EIGHTH_READ`, `SCAN_READ`), with the windows from the first fall, the means and the zeros read from the pinned lead-ins.
+
+- **Every step takes the network to one place**: the saturation rule's rate, 24.4 Hz a unit, at a gain of 2.49 to 2.50, with the excitatory sum at 0.450 to 0.452 of the prior's and the inhibitory sum at the prior's. It is where an eighth takes it, and the excitatory sum is the one [ADR-0055](0055-a-weight-that-settles.md) read under the controller after eighty windows, 0.452.
+- **The step sets how wide the gain swings there.** The band is about two steps of the mean gain wide at every step, 1.6 to 2.3: 0.360, 0.162, 0.083, 0.032 and 0.020 of gain.
+- **From its first fall the gain goes up a step and down a step in turn.** Half the windows are at the ceiling, 47 to 53 per cent, and the runs of windows on either side are one window long, 1.0 to 1.4 on average and never more than two. In a window below the saturation rule's count the estimate reads zero in two windows of three at the three larger steps and 0.06 at most on average at every step, so the gain rises by nearly the whole step; in a window at it the gain falls by the whole step.
+- **So the controller holds the network where its saturation rule fires, and that rule is what holds it.** Below that rate the estimate asks for more gain at every rate read, and nothing but the saturation rule ever asks for less.
+- **The step sets how long the rise takes**: the gain first falls at the 8th, 15th, 26th, 51st and 100th window, twice as late for half the step, from a gain of 2.45 to 2.54.
+- **The gain's course and the rate's**, after the window named:
+
+  | Window | A sixteenth | One in 32 | One in 64 | One in 128 | One in 256 |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | 1 | 1.828, 1.8 Hz | 1.789, 1.8 Hz | 1.770, 1.8 Hz | 1.760, 1.8 Hz | 1.755, 1.8 Hz |
+  | 4 | 2.097, 7.5 Hz | 1.928, 4.7 Hz | 1.839, 3.0 Hz | 1.796, 2.4 Hz | 1.771, 2.0 Hz |
+  | 8 | 2.295, 25.4 Hz | 2.158, 11.4 Hz | 1.943, 5.6 Hz | 1.845, 3.4 Hz | 1.798, 2.5 Hz |
+  | 16 | 2.538, 19.4 Hz | 2.536, 23.1 Hz | 2.187, 12.6 Hz | 1.954, 5.9 Hz | 1.851, 3.5 Hz |
+  | 32 | 2.438, 29.3 Hz | 2.479, 27.2 Hz | 2.540, 24.4 Hz | 2.197, 12.2 Hz | 1.960, 5.9 Hz |
+  | 64 | 2.525, 18.6 Hz | 2.433, 25.1 Hz | 2.515, 23.4 Hz | 2.505, 23.9 Hz | 2.202, 12.2 Hz |
+  | 96 | 2.579, 21.1 Hz | 2.499, 21.0 Hz | 2.462, 24.5 Hz | | 2.479, 23.1 Hz |
+  | 160 | 2.391, 26.9 Hz | 2.552, 23.2 Hz | 2.479, 25.3 Hz | | |
+  | 320 | 2.468, 31.3 Hz | 2.424, 24.8 Hz | 2.465, 24.9 Hz | | |
+
+- **The excitatory sum falls as the rate rises and is at 0.45 of the prior's once the gain has reached its band**: by the thirty-second window at a sixteenth, one in 32 and one in 64, the sixty-fourth at one in 128 and the ninety-sixth at one in 256. The inhibitory sum falls a little on the way, to 0.90 at one in 256, and is back at the prior's by then.
+- **In every window of the five lead-ins the gain is the controller's rule's** from the gain before and the window's estimate (`regulated`; `unruled` is zero in each).
+
+#### The estimate by the rate of its window, over the five lead-ins
+
+1 145 windows (`SCAN_BY_RATE_1024`), by bands of 4 096 spikes a window:
+
+| A unit's rate, Hz | Windows | At the ceiling | Between a half and two | The estimate below the ceiling |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 to 3.1 | 25 | 0 | 0 | 0 to 0.287 |
+| 3.1 to 6.1 | 39 | 0 | 0 | 0 to 0.498 |
+| 6.1 to 9.2 | 31 | 0 | 0 | 0 to 0.317 |
+| 9.2 to 12.2 | 28 | 0 | 0 | 0 to 0.222 |
+| 12.2 to 15.3 | 21 | 0 | 0 | 0 to 0.272 |
+| 15.3 to 18.3 | 48 | 0 | 0 | 0 to 0.261 |
+| 18.3 to 21.4 | 115 | 0 | 0 | 0 to 0.236 |
+| 21.4 to 24.4 | 377 | 0 | 0 | 0 to 0.343 |
+| 24.4 to 27.5 | 346 | 346 | 0 | — |
+| 27.5 to 30.5 | 84 | 84 | 0 | — |
+| 30.5 to 33.6 | 31 | 31 | 0 | — |
+
+- **It reads near one nowhere.** In the 684 windows below the saturation rule's count, in every band from 1.8 to 24.4 Hz, the estimate is under a half; in the 461 at or above it, it is the ceiling the rule gives. The gate holds both over the pinned tables.
+- **Its greatest values are in the rise**, where the gain and the rate climb inside the window: 0.498, 0.382 and 0.317 are each in a lead-in's first forty windows. From the first fall it reads at most 0.343.
+- **With the gain held it reads 0 to 0.451**, all ninety-six windows in the lowest band, and at an eighth 0 to 0.409 below the count and the ceiling in fourteen windows. Over these seven lead-ins on seed 22, 1 276 windows, no window reads between a half and two.
+
+#### The frozen block, where a step reached it
+
+| Of sixty-four trials | The gain held | An eighth | One in 128 | One in 256 |
+| :--- | ---: | ---: | ---: | ---: |
+| The gain the image carries | 1.750 | 2.472 | 2.483 | 2.497 |
+| The gain after the block | 1.750 | 2.306 | 2.483 | 2.497 |
+| The volley, units a presentation of 51, A and B | 50.8, 50.8 | 48.4, 48.6 | 49.0, 48.0 | 48.7, 48.7 |
+| The stimulus's spikes after the opening | 0 | 14 | 7 | 13 |
+| The readouts' spikes before the injection | 258, 256 | 4 034, 3 942 | 3 430, 3 489 | 3 541, 3 343 |
+| after the volley | 645, 637 | 4 312, 4 325 | 3 823, 3 704 | 3 823, 3 786 |
+| Trials in which the stimulus is seen, of 64 | 62 | 51 | 46 | 49 |
+| ADR-0072's sign, of 64 | 53 | 47 | 42 | 46 |
+| Fires once, seen | yes, yes | no, no | no, no | no, no |
+
+- **The instrument is drowned at the two smaller steps as at an eighth.** The readouts fire 13 times what they fire with the gain held before the stimulus arrives, and the volley adds a tenth to that where it adds one and a half times with the gain held.
+- **The volley is short by the same two or three units**: those the background had inside their refractory window at the injection, as ADR-0077 read it.
+- **Through the block the gain barely moves**, 2.4832 to 2.4826 and 2.4972 to 2.4970, where at an eighth it moves from 2.472 to 2.306.
+
+#### The capacities
+
+- **The train held every window read from it.** The most spikes of a window in the five lead-ins are 43 631, at a sixteenth, of the 335 872 the ring holds: 13 per cent. Each step's test holds its greatest window to the capacity, and `lead_in_window` asserted each of the 1 145.
+- **No injection was refused**, the drive's or the frozen blocks', and **no worker's report carries an entry dropped**.
+- **No capacity was sized**, and what the protocol wrote for a loud failure did not arise.
+
+#### What these readings do not say
+
+- **One network, one size, one generator**: seed 22 at 1 024 units.
+- **The two smaller steps' regime is read over 21 and 15 windows**, the lead-in ending at the rule's window. Their bands are narrower than a larger step's by the step's own arithmetic and by fewer windows read; the frozen block's eight windows moved the gain inside the same band.
+- **Whether the configuration learns with the controller on is not read.** No step holds, so no arm ran, and clauses 1 to 4 have no reading.
+- **Why the estimate reads zero in two windows of three at the saturation rule's rate** is not read. The rule returns zero for a slope at or below zero, and which it was is in no table.
+- **Nothing here says what the controller should regulate.** The readings are of the controller as built.
+
+### The step of the stopping rule reached
+
+**Step 5** (`CONTROLLED_STEP_1024`): no step holds, as predicted. Steps 1 and 2 were met: one round, no file under `src/` changed, the steps, the bound, the criterion and H-37's constants committed before any lead-in under a step of the scan, and a calibration in which no pinned number moved. Steps 3 and 4 did not arise. Step 6 was kept: no constant moved after a lead-in was run under a step of the scan, and there was no second attempt, no other step and no other network.
+
+ADR-0175's step 5: *"the step is not the lever. The next decision is an ADR on what the controller regulates, its estimate or a rate, with this round's readings of the estimate by rate and of the regime each step keeps. It is named and not taken."* **The next decision is that ADR. It is named here and not taken.**
+
+**What this round hands it**, by kind:
+
+- **The estimate by rate.** Over 1 276 windows on seed 22 — ninety-six with the gain held, thirty-five at an eighth and 1 145 at the five steps — the estimate reads 0 to 0.498 at every rate from 1.6 to 24.4 Hz and its ceiling at every rate from there up. So a controller that rests where its estimate reads one finds no such rate below the saturation rule's on this network. Above it the estimate is the rule's ceiling, and what the slope would read there is in no table.
+- **What does hold the network.** The saturation rule, at 24.4 Hz a unit: half the windows at the ceiling and half below, the gain a step up and a step down in turn, at every step from an eighth to one in 256.
+- **What the step is a lever on.** The width of the gain's swing there, about two steps, and the windows the rise takes. Not the rate.
+- **The regime that rate is.** A gain of 2.49 to 2.50, an excitatory sum at 0.45 of the prior's and an inhibitory sum at the prior's, where the gain held leaves 0.925 and 0.775. The readouts fire thirteen times what they fire with the gain held before a stimulus arrives, the volley is two or three units short of fifty-one, and the stimulus is seen in 46 to 51 trials of 64 where 56 are asked.
+- **Where the instrument reads.** At a gain held at 1.75 and 1.7 Hz a unit, the working point of every learning result, where the estimate reads 0 to 0.451.
+- **What the settled network's rule cannot tell.** At a step of one in 128 or less the gain's swing fits inside ADR-0055's tolerance, and the rule reads the network as settled. A rule for a network under a controller would need to tell a still gain from one that alternates.
+
 ## Consequences
 
 - Good: a derivation is one body at every step, and seed 22's, H-33's and H-34's run through the form every week.
 - Good: ADR-0077's second candidate is reproduced by the derivation, by ADR-0077's own rule, before any step of the scan is read.
 - Good: ADR-0175's sentences about the two pinned lead-ins are held by rules in the gate, and the controller's record by an oracle of its rule.
 - Good: each predicted reading and what would refute the prediction is a rule written before the tables exist.
+- Good: the prediction was written with its reason and with what would refute it, and each is read: the verdict as predicted, the three readings held, the second by 114 parts in 32 768.
+- Good: the decision on what the controller regulates has the estimate by rate over 1 276 windows and the regime the controller keeps at six steps.
+- Bad: the round's yield is its readings. Whether the configuration learns with the controller on is not read.
+- Bad: the settled network's rule passed two networks whose gain alternates inside its tolerance. The frozen block failed them, and the rule is as it was.
 - Bad: the settled network's rule has two forms in the tree, the sums alone and the sums with the gains, and which a derivation takes is a value it is given.
-- Bad: the arms' body under a step is designed and not built before the scan; where a step holds it is built before the arms run and after the scan's tables are known.
 - Bad: the train's capacity is held by an assertion and a pinned margin, not by construction.
+- Neutral: no step held, so the arms' body under a step is designed here and not built.
 - Neutral: `settled_within`'s body moved under `settled_in`; the rule is the one it was.
 
 ## Alternatives considered and why rejected
@@ -193,4 +353,4 @@ Six tests, each `#[ignore]`d and named `exhaustive`: the calibration at an eight
 
 ## Confirmation
 
-`runtime/cortex-runtime/tests/inhibition.rs` holds the form, the rules, the six weekly tests and the gate's test; `tests/instrument/harness.rs` holds `settled_in` and `lead_in_until`. `npm run spec` holds the links, the rows and the version. The readings, the verdict, the evidence and the dispatch follow the run.
+`runtime/cortex-runtime/tests/inhibition.rs` holds the form, the rules, the six weekly tests and the gate's test; `tests/instrument/harness.rs` holds `settled_in` and `lead_in_until`. `npm run spec` holds the links, the rows and the version. `SCAN_*` hold the five steps' tables, `CONTROLLED_1024` the verdict, `CONTROLLED_STEP_1024` the step reached, `SCAN_READINGS_READ_1024` the three readings and `SCAN_BY_RATE_1024` the estimate by rate; the gate's test holds each by its rule. Whitepaper §11.1 carries H-37's verdict and the step reached.
