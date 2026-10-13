@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-13
 depends-on: ADR-0175
 decision-makers: VirtualCortex maintainers
@@ -311,6 +311,36 @@ The rates are a window's spikes over 1 024 units and the window's 1.31072 s. The
 - **Why the estimate reads zero in two windows of three at the saturation rule's rate** is not read. The rule returns zero for a slope at or below zero, and which it was is in no table.
 - **Nothing here says what the controller should regulate.** The readings are of the controller as built.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes no file under `src/` — the runtime's tests, the documents and the cost table — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=exhaustive`**, as brief 071 asks: run [38352602613](https://github.com/DescentVTT/VirtualCortex/actions/runs/38352602613) at `6970bee`, the pins' commit. The round's commits, in pull request #206: `93f7b5b` the protocol, before any lead-in under a step of the scan; `86d5105` the index's row given its status; `6970bee` the five steps' tables and the gate's checks over them; `5bd4cd4` the readings and the documents; and the commit that carries this evidence, which changes no test.
+- **Every whole-domain shard is green.** All 120 `exhaustive` tests passed on the hosted runners, each exit 0 with one test reported, 93 020 s summed. The 114 before this round reproduced their pinned numbers through the form: seed 22's derivation in 233 s, H-33's two in 146 and 236 s, H-34's two in 458 and 474 s, and the twelve arms that derive their network first. **This round's six reproduced their tables there**: the calibration at an eighth in 125 s, and the steps of a sixteenth, one in 32, one in 64, one in 128 and one in 256 in 631, 704, 624, 116 and 267 s.
+- **The shards**, dealt by the table before this round, which did not know the six and costed each at 900 s:
+
+  | Shard | Job | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 86.5 min | H-34, seed 22 from the assignment 4 412; H-23 from the assignment 2 192 | 9 | 10 179 | 5 102 s, 47 % |
+  | 1 | 45.0 min | H-34, seed 22 from the mirrored 2 163; H-24 from the mirrored 1 082 | 9 | 5 157 | 2 639 s, 24 % |
+  | 2 | 80.5 min | H-34, seed 23 from the assignment 3 751; H-36, seed 23 from the assignment 1 919 | 10 | 9 190 | 4 747 s, 44 % |
+  | 3 | 83.5 min | H-34, seed 23 from the mirrored 3 242; H-31 from the assignment 2 041 | 11 | 9 829 | 4 935 s, 46 % |
+  | 4 | 81.2 min | H-31 from the mirrored 1 887; H-25 from the assignment 1 858 | 10 | 8 903 | 4 792 s, 44 % |
+  | 5 | 41.7 min | H-36, seed 23 from the mirrored 1 128; H-28 from the assignment 1 097 | 11 | 4 339 | 2 435 s, 23 % |
+  | 6 | 73.8 min | H-33, seed 23 from the assignment 1 924; H-22 from the mirrored 1 852 | 10 | 8 213 | 4 349 s, 40 % |
+  | 7 | 69.4 min | H-33, seed 23 from the mirrored 1 926; H-33, seed 24 from the assignment 1 913 | 9 | 8 165 | 4 086 s, 38 % |
+  | 8 | 75.1 min | H-33, seed 24 from the mirrored 1 890; H-30 from the mirrored 1 855 | 10 | 8 815 | 4 423 s, 41 % |
+  | 9 | 62.8 min | H-36, seed 24 from the assignment 1 906; H-32 from the mirrored 1 850 | 10 | 7 126 | 3 694 s, 34 % |
+  | 10 | 74.0 min | H-29 from the mirrored 1 872; H-35 from the assignment 1 845 | 10 | 8 409 | 4 351 s, 40 % |
+  | 11 | 43.4 min | H-36, seed 24 from the mirrored 1 113; H-30 from the assignment 1 071 | 11 | 4 695 | 2 540 s, 24 % |
+
+  The percentages are of the job's bound, 180 minutes ([ADR-0176](0176-a-shards-bound-by-its-longest-test.md)); each shard ran its tests two at a time, at 1.78 to 2.00 of their summed seconds over the wall. The twelve started within a second of each other, four seconds after the dispatch, no sweep and no other run holding a place, and the last ended at 07:07:01Z, 1 h 27 min after it. **No shard passed 60 per cent of its bound**: the most is 47, the shard that holds H-34's longest arm. This round's six stand in the second, third, eighth, ninth, tenth and eleventh shards, none among a shard's two heaviest.
+- **The longest test read past what ADR-0176's rule holds, and that is recorded as F-68.** ADR-0176 sets the bound as *"the least multiple of thirty minutes that holds the longest whole-domain test two and a half times over"*, from a longest reading of 3 730 s. Here H-34's arm on seed 22 from the assignment read 4 412 s. Two and a half times that is 184 minutes, so by the rule as written the bound would be 210. No test of that length was added: an arm the tree has held since brief 068 read slower on this run's runner. Brief 071 changes no workflow, and the bound is not moved here. It is the workflow's next decision, with this reading.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 38352602613`): 120 lines, 93 020 s, where it held 114 and 81 785. ADR-0092's deal plans each of the twelve shards at 7 750 to 7 755 s summed, 3 880 to 4 360 s of wall time at this run's ratios, and the shard that holds the longest arm at no less than that arm's 4 412: **36 to 41 per cent of the bound**. No shard is planned past 60.
+
+  **The table is one run's, and this run's runners were slow.** The 114 tests before this round summed to 90 553 s here where the last run read them at 81 785, a tenth more; the six of this round are 2 467 s of the rest.
+- **No sweep is owed and none was dispatched.** The scope is `exhaustive`; ADR-0174 records the last sweep that ended, the schedule's of run 38234325824, and no weekly run was scheduled or dispatched between it and this one.
+- **The pull request's gate** on `93f7b5b`, on `86d5105` and on `5bd4cd4` is green in every job, the determinism pin on AArch64 and the MSRV among them. The mutation gate on the changed lines found no mutant to make, in each: no line under `src/` changed. The gate on `6970bee` was cancelled by the push of `5bd4cd4`, which changes documents and whose tests are its.
+- **On the developer machine**, at `6970bee`: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 739 passed and 160 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; 120 whole-domain tests are listed; and `cargo mutants --in-diff` over the round's diff found no mutant to make. The five steps were not run a second time there: each ran once, and the dispatch is their reproduction.
+
 ### The step of the stopping rule reached
 
 **Step 5** (`CONTROLLED_STEP_1024`): no step holds, as predicted. Steps 1 and 2 were met: one round, no file under `src/` changed, the steps, the bound, the criterion and H-37's constants committed before any lead-in under a step of the scan, and a calibration in which no pinned number moved. Steps 3 and 4 did not arise. Step 6 was kept: no constant moved after a lead-in was run under a step of the scan, and there was no second attempt, no other step and no other network.
@@ -338,6 +368,7 @@ ADR-0175's step 5: *"the step is not the lever. The next decision is an ADR on w
 - Bad: the settled network's rule passed two networks whose gain alternates inside its tolerance. The frozen block failed them, and the rule is as it was.
 - Bad: the settled network's rule has two forms in the tree, the sums alone and the sums with the gains, and which a derivation takes is a value it is given.
 - Bad: the train's capacity is held by an assertion and a pinned margin, not by construction.
+- Bad: six more weekly tests, 2 467 s in the dispatched run; and in that run the longest test of the job read 4 412 s, past what ADR-0176's rule holds at 180 minutes (F-68).
 - Neutral: no step held, so the arms' body under a step is designed here and not built.
 - Neutral: `settled_within`'s body moved under `settled_in`; the rule is the one it was.
 
