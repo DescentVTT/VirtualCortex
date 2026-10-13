@@ -1,7 +1,52 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-13
 ---
+
+> **Executed 2026-10-13 (UTC) in pull request #206.** Writes ADR-0177 (the controller's step, measured); opens
+> F-68, on the dispatched run's longest test and ADR-0176's rule for a shard's bound, and changes no workflow for
+> it. No file under `src/` and no file of a state crate changed, and no pinned number of an earlier round moved.
+> The protocol — the derivation given how it settles its network, the settled network's rule under a step,
+> the steps, the bound, the criterion, H-37's clauses and constants and the three predicted readings' rules — was
+> committed and pushed before any lead-in was run under a step of the scan; the tree's 114 whole-domain tests and
+> the calibration at an eighth then passed, 115 of 115.
+>
+> **H-37 is no, on clause 0, at every step, as ADR-0175 predicted, and its stopping rule reached step 5.** At a
+> sixteenth, one in 32 and one in 64 the lead-in settles in its sums by the 37th, the 41st and the 51st window and
+> in its gain at none of 320. At one in 128 and one in 256 it settles, at the 71st and the 114th, and the frozen
+> block fails both measures: the volley 48.5 and 48.7 units of 51 a presentation, the stimulus seen in 46 and 49
+> trials of 64. Every step holds the network at the saturation rule's rate, 24.2 to 24.5 Hz a unit on average, at a
+> gain of 2.49 to 2.50 with the excitatory sum at 0.45 of the prior's; half its windows are at the estimate's
+> ceiling and the gain goes a step up and a step down in turn. The gain's band narrows with the step, 2.295 to
+> 2.654, 2.419 to 2.581, 2.458 to 2.540, 2.483 to 2.515 and 2.488 to 2.507, and does not move. The three predicted
+> readings each held: the ceiling in every lead-in; no window of 1 145 with an estimate between a half and two, the
+> greatest below the ceiling 0.498; every lead-in ending at 33 002 to 42 021 spikes. No step holds, so no arm was
+> run. The next decision, an ADR on what the controller regulates, its estimate or a rate, is named and not taken.
+>
+> Every deliverable below is done and its box ticked. The arms' box is ticked by its last sentence: no step holds,
+> no arm is run, and ADR-0177 says so. The weekly was dispatched at `scope=exhaustive`, run 38352602613; its twelve
+> whole-domain shards are green, none past 48 per cent of its bound, and it dispatched no sweep. No sweep was
+> owed. Seven things differ from the brief's letter or add to it, each by its empowerment clause, and each recorded in ADR-0177:
+> - **the derivation takes how it settles its network as one value** (`Settling`: the step, whether its rule reads
+>   the gains, and its bound) where the brief asked for its step. ADR-0077's second candidate was held to the sums
+>   alone within 160 windows and its gains settle at none of them, so under the scan's rule the calibration at an
+>   eighth would not have reached the frozen block the brief names; it runs under ADR-0077's own rule
+>   (`AT_AN_EIGHTH`);
+> - **the calibration at an eighth is a weekly test of its own**, a sixth whole-domain test beside the five steps;
+> - an estimate *between a half and two* counts both ends, read before the run as the reading least kind to the
+>   prediction;
+> - **no capacity of `config` was sized**: the train is asserted window by window and each step pins its greatest
+>   window, 43 631 spikes at most of the 335 872 the ring holds; what would follow a loud failure was written
+>   before the run and did not arise;
+> - **no arm was built**, before the scan or after it: where a step holds the body is designed in ADR-0177, and no
+>   step held;
+> - the lead-in's reading carries an oracle of the controller's rule (`regulated`), and every window's gain is held
+>   to it; ADR-0175's sentences about ADR-0077's two lead-ins are held by rule in the gate;
+> - H-37's names in the tests are `SCAN_*`, `scan_*` and `controlled*`.
+>
+> Relative links gained one `../` so that they resolve from `archive/`; no word, claim or figure changed.
+>
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 071: The controller's step — ADR-0175's question: with the criticality controller on, five steps from a sixteenth to one in 256 scanned on seed 22 at 1 024 units, each held to a lead-in settled in its sums and in its gain and to the frozen block's two measures; H-25's two arms under the largest step that holds; nothing under `src/` changed; H-37 run once
 
@@ -10,7 +55,7 @@ date: 2026-10-13
 **This brief builds nothing in the engine and runs one hypothesis once.** Every learning result was read with the gain
 held and the engine's criticality controller off. The tree already holds what the controller does at its step of an
 eighth: it raises the gain until its saturation rule fires, and the instrument is drowned
-([ADR-0077](../docs/adr/0077-the-background-side.md)). [ADR-0175](../docs/adr/0175-the-controllers-step.md) asks the
+([ADR-0077](../../docs/adr/0077-the-background-side.md)). [ADR-0175](../../docs/adr/0175-the-controllers-step.md) asks the
 one lever that needs no build, the step: is there a step at which the controller holds the network where the
 stimulus fires once and is seen, and does the learning configuration learn there with the controller on?
 
@@ -57,21 +102,21 @@ When the round is done, the tree holds:
   to twenty times the rate the runs were read at: the round shows that the train held every window read from it, that
   no injection was refused and that no worker dropped a spike.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)): a lead-in is a `for` over its bound.
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)): a lead-in is a `for` over its bound.
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
   mutate, and says so.
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says**
-  ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md),
-  [ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the runs run once, the dispatch's scope
+  ([ADR-0150](../../docs/adr/0150-a-round-waits-for-what-it-checks.md),
+  [ADR-0158](../../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the runs run once, the dispatch's scope
   follows the diff, the merge waits for the whole-domain shards, the ADR cites the pull request's commits, the commit
   that asks for the merge sets it to `accepted`, and a sweep that has ended and that no ADR has recorded is recorded by
   this round's.
 - **The pull request leaves draft with the commit that asks for the merge.**
 - **No shard of the weekly job passes 60 per cent of its bound** under the regenerated deal. The bound is 180 minutes
-  ([ADR-0176](../docs/adr/0176-a-shards-bound-by-its-longest-test.md)).
+  ([ADR-0176](../../docs/adr/0176-a-shards-bound-by-its-longest-test.md)).
 - No pinned number of an earlier round moves.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -111,16 +156,16 @@ quoted sentences are what to re-derive.
 7. **The saturation rule's rate at 1 024 units**: 1 024 spikes a bin, 32 768 a window, 24.4 Hz a unit.
 8. **The weekly job**: twelve shards of 180 minutes (ADR-0176, merged with this brief), each running its tests two at
    a time. The cost table holds 114 tests and 81 785 s.
-9. **The dispatch's scope** ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
+9. **The dispatch's scope** ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
    for a round that changes no file under `src/`.
 10. **No sweep is owed**: ADR-0174 records the schedule's weekly one, and brief 070's dispatch ran none.
 
 ## Deliverables
 
-- [ ] **The derivation given its step, in the tests.**
+- [x] **The derivation given its step, in the tests.**
   - `derive_at` and what it calls take the step where they read `BACKGROUNDS[SETTLED]`.
   - With the step at zero, on seed 22, each rule returns what the tree pins and every pinned table holds.
-- [ ] **H-37's protocol, in a new ADR at the next free number (`ls docs/adr`), before any lead-in is run under a step
+- [x] **H-37's protocol, in a new ADR at the next free number (`ls docs/adr`), before any lead-in is run under a step
   of the scan.**
   - The steps, in their order, and the network.
   - The settled network's rule under a step, as an integer rule: the first window at which ADR-0055's criterion holds
@@ -134,35 +179,35 @@ quoted sentences are what to re-derive.
     more than five times 2 308 spikes.
   - The readings, no clause, as ADR-0175 lists them; **the estimate by the rate of its window** over every window of
     every lead-in among them.
-- [ ] **The calibration**, before any such run: every pinned number of the tree holds; with the step at zero the
+- [x] **The calibration**, before any such run: every pinned number of the tree holds; with the step at zero the
   derivation returns seed 22's constants; at an eighth the lead-in the derivation runs is ADR-0077's second
   candidate's, window for window, and the frozen block from that candidate's thirty-fifth window reads the measures
   ADR-0077 pinned.
-- [ ] **The scan**: each of the five steps a weekly `exhaustive` test, run once: its lead-in pinned by window, what
+- [x] **The scan**: each of the five steps a weekly `exhaustive` test, run once: its lead-in pinned by window, what
   each rule returned or that it returned nothing, and the frozen block's readings where it was reached.
-- [ ] **The arms**, where a step holds: H-25's two under the largest step that holds, each a weekly `exhaustive`
+- [x] **The arms**, where a step holds: H-25's two under the largest step that holds, each a weekly `exhaustive`
   test, run once, their tables pinned per block, the gain's course through the arm among them. Where none holds, no
   arm is run and the ADR says so.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - H-37's verdict by clause, and for clause 0 what each step returned.
   - The prediction and each of the three predicted readings against what was read.
   - Per step, beside the gain held and beside an eighth: the gain's course and the band it keeps, the rate's course,
     the windows the saturation rule fires in, the sums' courses and the frozen block's readings.
   - The estimate by rate, over the five lead-ins: whether it reads near one anywhere.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** At most one runtime test: the settled network's rule over sums and gains at its edges, clause 0 and
+- [x] **The gate.** At most one runtime test: the settled network's rule over sums and gains at its edges, clause 0 and
   the predicted readings' rules over tables written by hand, and the steps and their bound.
-- [ ] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
+- [x] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
   `scope=exhaustive`. Its twelve whole-domain shards are green and reproduce every pinned number. The cost table is
   regenerated from their artifacts. The ADR names the dispatch and each shard's wall time against its bound.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-37 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` only where the standing changes (ADR-0150); `README.md` and `docs/zh-TW`'s reader's guide as the
     result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the round's ADR set to
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the round's ADR set to
   `accepted` by the commit that asks for the merge, and the pull request marked ready for review with it.
 
 ## Not empowered
