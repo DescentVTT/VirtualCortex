@@ -84,7 +84,7 @@ What was read first (principle 2), on 2026-10-13:
   - `tests/image.rs`: the period written at `[56..60)` and nowhere else, read back set and unset with the image's outranking the configuration's either way, the image written twice; the count of five periods on an image of 192 units; a period a tick past the last that is a count refused whatever the configuration says, and a count on an image of twice the units; nine reserved bytes refused, the period's four bytes each a period; unset, the image equal to the one with its version written back to 21 but for the version and the seal; a version-21 header refused.
   - `crates/cortex-connectome`: the version's assertion reads 22. `tests/differential.rs` and `tests/contention.rs` name the field as unset.
 - **Every pinned number unchanged with the target unset, but a whole-image pin with the format** (option 8(a)).
-  - At 1 024 units the prior's image is 590 656 bytes on each of the three seeds, and a run's images carry the sections it carries. Two formats' images of one length differ in the header's version and seal by one difference, and a CRC is linear, so one mask takes each image's CRC-64 from one format to the next. A probe on the prior's image, not kept in the tree, read `0xc3258910422b2d6e` from 21 to 22, and from 20 to 21 the mask ADR-0155 read from its runs, `0x411c870fc1e6e4da`. The six numbers below are the pins before under that mask; the calibration of the measurement's round is the run that reads them.
+  - At 1 024 units the prior's image is 590 656 bytes on each of the three seeds, and a run's images carry the sections it carries. Two formats' images of one length differ in the header's version and seal by one difference, and a CRC is linear, so one mask takes each image's CRC-64 from one format to the next. A probe on the prior's image, not kept in the tree, read `0xc3258910422b2d6e` from 21 to 22, and from 20 to 21 the mask ADR-0155 read from its runs, `0x411c870fc1e6e4da`. The six numbers below are the pins before under that mask. The calibration of the measurement's round then read them: five by the weekly tests that hold them, and the sixth by its paused test run to its reading ([ADR-0181](0181-a-rate-the-controller-holds-measured.md)).
   - **The six images that carry a pin written back** are re-pinned as they are now, by that mask. The check that holds every other byte of each is the one it had: the image with its header's version written back to the format its hypothesis read.
 
     | Image | At format 22 | At format 21, the pin before | Held to |
@@ -98,7 +98,7 @@ What was read first (principle 2), on 2026-10-13:
 
   - **The twenty-five read at format 21 alone keep their numbers.** H-30's image (`WHOLE_IMAGE_CRC_1024`) and the six images of each derivation of H-33 and H-34 (`CRCS_SEEDED`, `CRCS_TWICE`) are held through the image with its header's version written back to 21 and resealed (`with_version`; `WHOLE_READ_FORMAT`, `DERIVED_READ_FORMAT`). A derivation now reads both, the six CRCs as written (`Derivation::crcs`) and the six written back (`crcs_read`), and `derivation_held` holds the second to the round's pins. That is ADR-0095's check with the pin it protects as its only constant: every byte of the image but the version and the seal is the image the round read.
   - Re-pinning all thirty-one with a second constant each (option 8(b)) would move twenty-five numbers that a check can hold where they are.
-- **The mutation gate** ([ADR-0030](0030-verification-governance.md)): recorded with the measurement's evidence, in the ADR that reads H-38.
+- **The mutation gate** ([ADR-0030](0030-verification-governance.md)): on the pull request's run at `5caf9a2` `cargo-mutants` made 43 mutants in the changed lines; 39 were caught, 4 were unviable and none was missed. The measurement's ADR records the dispatched sweep's state with its evidence ([ADR-0181](0181-a-rate-the-controller-holds-measured.md)).
 
 ### Consequences
 
@@ -108,7 +108,7 @@ What was read first (principle 2), on 2026-10-13:
 - Good: the refusal is one function for the configuration and the loader, and reads the image's own units.
 - Neutral: the format is 22 for four bytes. A format-21 image is refused by its header, and its zeros read as unset under the new version.
 - Neutral: under the rate's rule `branching_ratio_q16` holds a window's slope, or the last window's that had one. It never holds the saturation rule's ceiling, so a reader of the field must know which rule is set. Nothing in the engine reads it.
-- Bad: one parameter more in the image and the configuration, and a rule that stays in the tree unset if H-38 reads no.
+- Bad: one parameter more in the image and the configuration. H-38 read yes; no configuration the tree carries by default sets it yet.
 - Bad: the target is a count for the engine's units at its construction. An engine whose arena grew would hold a stale count; no arena grows today.
 - Bad: the controller's parameters sit in two sections, the step in the homeostasis record and the target in the modulator section.
 

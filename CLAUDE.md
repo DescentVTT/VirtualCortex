@@ -72,8 +72,17 @@ standing changes.
   first network, no step holds the network where the stimulus fires once and is seen: every step
   takes it to the saturation rule's rate, 24.4 Hz a unit, a smaller step narrowing the gain's
   swing there and not lowering it, and the estimate reads near one at no rate: H-37 read no, as
-  predicted ([ADR-0177](docs/adr/0177-the-controllers-step-measured.md)). Every learning result
-  stands with the gain held and the controller off.
+  predicted ([ADR-0177](docs/adr/0177-the-controllers-step-measured.md)).
+  With the controller given a second rule, the gain moved by the window's count over a target
+  (ADR-0178, ADR-0180), and the target the settled network's own rate, every step from an eighth
+  to one in 256 holds the first network where the stimulus fires once and is seen; under an
+  eighth, the largest, the engine learns and revises the two-alternative task as with the gain
+  held, the count held at its target and the gain two per cent below its image's: H-38 read yes,
+  as predicted ([ADR-0181](docs/adr/0181-a-rate-the-controller-holds-measured.md)). The rate
+  changes fifteen per cent for one per cent of gain there, so an eighth is at that loop's edge
+  and a sixteenth inside it; no arm has run under a sixteenth, and what the engine carries by
+  default is not decided. Every learning result before H-38 stands with the gain held and the
+  controller off.
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
@@ -90,8 +99,9 @@ standing changes.
   ([ADR-0126](docs/adr/0126-the-gate-raised-measured.md)); the address's neural target side is closed
   with the hold and the released delivery (ADR-0146); the whole punishment is a parameter of the
   image no configuration sets (ADR-0155, ADR-0156); the exploration is an option of the task no
-  run's configuration sets (ADR-0163, ADR-0164); the controller's step is zero in every run that
-  learns (ADR-0077, ADR-0177); the speed line is closed with the sweep kept
+  run's configuration sets (ADR-0163, ADR-0164); the controller's step under its estimate is zero
+  in every run that learns (ADR-0077, ADR-0177), and the rate's rule is set in H-38's runs and in
+  no other (ADR-0181); the speed line is closed with the sweep kept
   and the lanes reverted ([ADR-0105](docs/adr/0105-the-speed-line-closed.md)).
 - **What does not exist.** Every subsystem's real dynamics beyond these rules; the lookahead
   ADR-0099 ordered and a lever on the rest of the turn; the real-time mode's reach measured on the
