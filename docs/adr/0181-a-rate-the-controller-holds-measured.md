@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-13
 depends-on: ADR-0180
 decision-makers: VirtualCortex maintainers
@@ -186,6 +186,33 @@ Everything below was read on the developer machine on 2026-10-13, from one run o
 - The watch now counts from the load. The two arms were run a second time for that reading, from 14:24:56Z to 14:50:32Z, the first having run from 13:49:57Z to 14:19:09Z: every table of the first run reproduced, and the first window read 2 882 and 2 876 spikes, the one count from which the oracle gives the engine's gain. Both checks hold in both arms.
 - So the arms ran twice, where the round's rule is once. The engine's run is one run: no parameter, constant or criterion moved between the two, and the second's tables are the first's but for the watch's count of that window.
 
+### The evidence
+
+- **The dispatch's scope.** The diff changes files under `src/` — `cortex-homeostasis`, `cortex-connectome` and the runtime's executor and loader — so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched on this round's branch at **`scope=both`**, as brief 072 asks: run [38417864748](https://github.com/DescentVTT/VirtualCortex/actions/runs/38417864748) at `384738c`, the pins' commit, at 14:57:33Z. The round's commits, in pull request #208: `0f08b1d` the rule built ([ADR-0180](0180-a-rate-the-controller-holds-built.md)); `5caf9a2` the protocol, before any lead-in under the rate's rule; `384738c` the six steps' and the two arms' tables, the watch counting from the load and the gate's checks over the tables; `af37240` the readings and the documents; and the commit that carries this evidence, which changes no test.
+- **Every whole-domain shard is green.** All 128 `exhaustive` tests passed on the hosted runners, each exit 0 with one test reported, 101 602 s summed. The 120 before this round reproduced their pinned numbers at format 22 with the target unset, H-37's five steps and the calibration at an eighth among them, and the sixteen arms `arm_on` runs each held their gain in all 960 windows and their windows' counts to the record. **This round's eight reproduced their tables there**: the steps of an eighth, a sixteenth, one in 32, one in 64, one in 128 and one in 256 in 185, 225, 230, 227, 232 and 279 s, and the two arms in 1 834 and 2 269 s, each after deriving its network again, with the watch's two checks holding in both.
+- **The shards**, dealt by the table before this round, which did not know the eight and costed each at 900 s:
+
+  | Shard | Job, of its bound | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time, of the bound |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 64.4 min, 36 % | `the_address_drawn_on_seed_22_from_the_assignment_at_2048_units` 3 782; `the_critic_from_the_assignment_at_1024_units` 1 161 | 10 | 7 450 | 3 782 s, 35 % |
+  | 1 | 76.6 min, 43 % | `the_address_drawn_on_seed_23_from_the_assignment_at_2048_units` 3 698; `a_critic_with_a_window_from_the_mirrored_assignment_at_1024_units` 1 803 | 11 | 8 839 | 4 505 s, 42 % |
+  | 2 | 55.7 min, 31 % | `the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_2048_units` 2 814; `the_release_alone_from_the_mirrored_assignment_at_1024_units` 1 371 | 10 | 6 433 | 3 270 s, 30 % |
+  | 3 | 73.6 min, 41 % | `a_reward_right_three_times_in_four_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 859; `three_answers_from_the_assignment_at_1024_units` 1 792 | 10 | 8 594 | 4 336 s, 40 % |
+  | 4 | 83.0 min, 46 % | `the_address_drawn_on_seed_22_from_the_mirrored_assignment_at_2048_units` 2 939; `a_reward_right_three_times_in_four_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 500 | 12 | 9 648 | 4 909 s, 45 % |
+  | 5 | 74.5 min, 41 % | `an_exploration_the_value_gates_from_the_mirrored_assignment_at_1024_units` 1 822; `a_reward_right_three_times_in_four_from_the_mirrored_assignment_at_1024_units` 1 820 | 10 | 8 035 | 4 396 s, 41 % |
+  | 6 | 77.5 min, 43 % | `the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 878; `a_target_the_network_fires_at_from_the_assignment_at_1024_units` 1 828 | 11 | 9 137 | 4 574 s, 42 % |
+  | 7 | 91.0 min, 51 % | `the_address_drawn_on_seed_23_from_the_assignment_at_1024_units` 1 885; `the_address_drawn_from_the_mirrored_assignment_at_1024_units` 1 815 | 11 | 10 319 | 5 373 s, 50 % |
+  | 8 | 87.7 min, 49 % | `a_reward_right_three_times_in_four_on_seed_23_from_the_assignment_at_1024_units` 2 317; `the_address_drawn_under_the_rate_s_rule_from_the_mirrored_at_1024_units` 2 269 | 12 | 10 311 | 5 173 s, 48 % |
+  | 9 | 72.1 min, 40 % | `the_address_drawn_on_seed_24_from_the_assignment_at_1024_units` 1 852; `the_address_drawn_under_the_rate_s_rule_from_the_assignment_at_1024_units` 1 834 | 9 | 8 465 | 4 239 s, 39 % |
+  | 10 | 42.7 min, 24 % | `a_reward_right_three_times_in_four_on_seed_24_from_the_assignment_at_1024_units` 1 094; `the_gate_s_output_delivered_from_the_assignment_at_1024_units` 1 091 | 11 | 4 612 | 2 508 s, 23 % |
+  | 11 | 85.0 min, 47 % | `the_span_a_choice_among_three_is_given_from_the_mirrored_assignment_at_1024_units` 2 394; `the_address_drawn_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 848 | 11 | 9 759 | 5 018 s, 46 % |
+
+  The percentages are of the job's bound, 180 minutes ([ADR-0179](0179-the-bounds-rule-restated.md)); each shard ran its tests two at a time, at 1.83 to 2.00 of their summed seconds over the wall. The twelve started within six seconds of each other, four seconds after the dispatch, and the last ended at 16:28:36Z, 1 h 31 min after it. **No shard's job passed 60 per cent of its bound**: the most is 91.0 minutes, 51 per cent. That is the slowest shard's job the tree has read, by a tenth of a minute past the 90.9 ADR-0179 took, and its rule gives the bound it has.
+- **The cost table is regenerated from this run** (`node scripts/exhaustive-costs.mjs from <artifacts> --run 38417864748`): 128 lines, 101 602 s, where it held 120 and 93 020. The 120 before this round summed to 96 121 s here, a thirtieth more than the last run read them at; this round's eight are 5 481 s of the rest. ADR-0092's deal plans each of the twelve shards at 8 466 to 8 468 s summed, about 4 460 s of wall time at this run's ratios: **41 per cent of the bound**. No shard is planned past 60.
+- **The sweep had not ended when the round asked for its merge** ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)). Its thirteen jobs, `crates` and `runtime-0` to `runtime-11`, started at 16:28:40Z, four seconds after the last shard ended ([ADR-0166](0166-the-sweep-after-the-shards.md)), and none had ended. The first ADR that merges after it ends records it. No sweep was owed: [ADR-0174](0174-three-in-four-on-the-other-networks-measured.md) records the schedule's last, and no weekly run was scheduled or dispatched with a sweep between it and this one.
+- **The pull request's gate** on `5caf9a2` and on `af37240` is green in every job, the determinism pin on AArch64 and the MSRV among them. **The mutation gate on the changed lines** made 43 mutants on each: 39 caught, 4 unviable, none missed. The gate on `384738c` was cancelled by the push of `af37240`, which changes documents and whose tests are its.
+- **On the developer machine**, at `384738c`: the workspace's tests passed in the debug profile, in the release profile and on the MSRV, 752 passed and 168 ignored in each; the check, the format, Clippy, the documentation, the benchmarks and `npm run spec` exited 0; and 128 whole-domain tests are listed. `cargo mutants --in-diff` over the round's diff made the same 43 mutants and exited 0: 27 caught and 16 unviable, twelve of the sixteen the Windows linker's lock (`LNK1104` in their logs) on mutants the hosted run caught, and none missed. The six steps were not run a second time there: each ran once, each arm's calibration ran its step's derivation again, and the dispatch is their reproduction. The arms ran twice, as the readings say.
+
 ### The step of the stopping rule reached
 
 **Step 3: yes.** The engine learns and revises with its controller on, the controller holding the settled network's rate.
@@ -207,7 +234,7 @@ Everything below was read on the developer machine on 2026-10-13, from one run o
 - Good: the prediction was written with its arithmetic, and the readings say where the arithmetic was short: the steepness is fifteen, not nine to fourteen.
 - Bad: the protocol's step is the largest that holds, and the largest is the one at its loop's edge. A yes at an eighth says less of a sixteenth's learning than an arm under a sixteenth would.
 - Bad: the watch the protocol's commit added missed 500 ticks of every arm, and the arms ran twice for it. A check of the watch on a network whose first 500 ticks hold a spike would have found it before the run; the calibration's sixteen arms held none there.
-- Neutral: the weekly job grows by eight tests, six derivations of about four minutes and two arms.
+- Neutral: the weekly job grows by eight tests, 5 481 s on the dispatched run: six derivations of three to five minutes and two arms of thirty and thirty-eight. The regenerated deal plans every shard at 41 per cent of its bound.
 
 ## Alternatives considered and why rejected
 
