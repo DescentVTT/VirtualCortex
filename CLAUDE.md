@@ -80,9 +80,14 @@ standing changes.
   held, the count held at its target and the gain two per cent below its image's: H-38 read yes,
   as predicted ([ADR-0181](docs/adr/0181-a-rate-the-controller-holds-measured.md)). The rate
   changes fifteen per cent for one per cent of gain there, so an eighth is at that loop's edge
-  and a sixteenth inside it; no arm has run under a sixteenth, and what the engine carries by
-  default is not decided. Every learning result before H-38 stands with the gain held and the
-  controller off.
+  and a sixteenth inside it.
+  Under a sixteenth, on that network and on seeds 23 and 24, each with the target its own
+  derivation with the gain held returns, the engine learns and revises the two-alternative task
+  on every network, the count held at its target with the gain held's scatter: H-39 read yes, as
+  predicted, and of its four predicted readings the alternation's missed, a sixteenth halving an
+  eighth's and not removing it ([ADR-0183](docs/adr/0183-a-sixteenth-on-three-networks-measured.md)).
+  What the engine carries by default is not decided. Every learning result before H-38 stands
+  with the gain held and the controller off.
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
@@ -100,8 +105,8 @@ standing changes.
   with the hold and the released delivery (ADR-0146); the whole punishment is a parameter of the
   image no configuration sets (ADR-0155, ADR-0156); the exploration is an option of the task no
   run's configuration sets (ADR-0163, ADR-0164); the controller's step under its estimate is zero
-  in every run that learns (ADR-0077, ADR-0177), and the rate's rule is set in H-38's runs and in
-  no other (ADR-0181); the speed line is closed with the sweep kept
+  in every run that learns (ADR-0077, ADR-0177), and the rate's rule is set in H-38's and H-39's
+  runs and in no other (ADR-0181, ADR-0183); the speed line is closed with the sweep kept
   and the lanes reverted ([ADR-0105](docs/adr/0105-the-speed-line-closed.md)).
 - **What does not exist.** Every subsystem's real dynamics beyond these rules; the lookahead
   ADR-0099 ordered and a lever on the rest of the turn; the real-time mode's reach measured on the
