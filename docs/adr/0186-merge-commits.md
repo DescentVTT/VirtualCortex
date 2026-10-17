@@ -43,11 +43,10 @@ decision-makers: VirtualCortex maintainers
 - **A branch is brought up to date by merging `main` into it**, or by the app's sync, which merges. **It is not rebased, and not force-pushed, once a run has been made on any of its commits or its pull request is open.** No ruleset holds a branch other than `main`, so this is a practice, and the reviewer checks it: every commit an ADR cites, and every commit a dispatch it cites ran on, is an ancestor of the pull request's head (`git merge-base --is-ancestor`).
 - **ADR-0150's item 5 becomes**: the ADR cites the round's commits by their hashes, which are `main`'s once it merges. No second pull request follows.
 - **Before a merge, the branch holds `main`.** Its merge state reads `CLEAN`, so the merge commit's tree is the tree the gate checked. The ruleset does not require it, since its strict status-check policy is off, and the reviewer checks it.
-- **Signed commits follow, as their own step.**
-  - A single SSH signing key, registered with GitHub, signs every commit made on the developer machine.
-  - The ruleset's required signatures are turned on once commits are signed.
-  - The key is the maintainer's to make and register. Until then, commits stay unsigned.
-  - A merge commit that GitHub makes is GitHub's.
+- **Signed commits.** A single SSH signing key, registered with GitHub as a signing key, signs every commit made on the developer machine; a merge commit GitHub makes is GitHub's.
+  - The maintainer made and registered the key on 2026-10-18. A test commit pushed to a branch of its own read `verified: true` (`valid`) on GitHub, and the branch was deleted.
+  - **The ruleset's required signatures are turned on after the pull requests whose commits predate the key have merged**: brief 073's (#210) and those of ADR-0184, ADR-0185 and this ADR.
+  - Turned on earlier, they would refuse those merges. Re-signing the commits would rewrite them, which the rule above forbids.
 
 ## Consequences
 
@@ -73,3 +72,4 @@ decision-makers: VirtualCortex maintainers
   - enforcement `active`, the bypass list as it was.
 - `briefs/README.md`'s "Evidencing a round", item 5; `CLAUDE.md`'s and `CONTRIBUTING.md`'s workflow; this decision's rows in §9 and the index.
 - The first merge commit on `main` is the merge of the first pull request after this change.
+- The signing key: a commit signed by it, pushed on 2026-10-18, verified by GitHub as `valid`. The ruleset's required signatures follow the four merges named above.
