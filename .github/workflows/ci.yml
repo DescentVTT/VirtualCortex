@@ -55,7 +55,8 @@ on:
   # round decides from the diff it has, not the brief. A scheduled run always does both.
   # A round's own runs go by hand alone (ADR-0184): `gh workflow run ci.yml --ref <branch>
   # -f scope=arms -f tests='<test> <test> ...'`, the names as `--list` prints them. The
-  # calibration before them is a dispatch at `exhaustive` on the same branch.
+  # calibration before them is a dispatch at `exhaustive` on the same branch, with the round's
+  # own tests named in `-f exclude='<test> ...'` so that none of them runs there.
   workflow_dispatch:
     inputs:
       scope:
@@ -69,6 +70,10 @@ on:
           - arms
       tests:
         description: "With scope=arms: the whole-domain tests to run, separated by spaces"
+        type: string
+        default: ""
+      exclude:
+        description: "With scope=exhaustive: the tests a round's calibration skips, separated by spaces"
         type: string
         default: ""
 
@@ -275,6 +280,9 @@ jobs:
           node-version: "22"
 
       - name: This shard of the whole-domain tests, in the release profile (ADR-0073)
+        env:
+          # Empty but on a dispatch that names them: a round's calibration (ADR-0184).
+          EXCLUDE: ${{ inputs.exclude }}
         run: bash scripts/exhaustive-shard.sh ${{ matrix.shard }} 12
 
       # Each test's seconds, longest first, and each binary's sum (ADR-0071, ADR-0092): the
@@ -289,6 +297,10 @@ jobs:
             echo
             echo "Wall clock over the tests: $(cat exhaustive-wall-${{ matrix.shard }}.txt 2>/dev/null || echo '?') s"
             echo
+            if [ -s excluded.txt ]; then
+              echo "Excluded by the dispatch (ADR-0184): $(wc -l < excluded.txt | tr -d ' ') test(s)"
+              echo
+            fi
             echo "| Binary | Test | Seconds | Exit | Passed |"
             echo "| :--- | :--- | ---: | ---: | ---: |"
             awk -F'\t' '{ print "| `" $2 "` | `" $3 "` | " $4 " | " $5 " | " $6 " |" }' "$f"
@@ -306,6 +318,7 @@ jobs:
             exhaustive-wall-${{ matrix.shard }}.txt
             mine.txt
             list.log
+            excluded.txt
           retention-days: 90
 
   arms-plan:
