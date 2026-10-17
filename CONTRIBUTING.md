@@ -14,6 +14,7 @@ Thank you for considering a contribution. This file is the map; the reasoning be
 2. Make the change, including its documentation, in the same pull request. A layout change without its whitepaper table and changelog entry is incomplete.
 3. Run the first block of the verification locally (below). The pull request's gate runs it and the rest ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)).
 4. Open a pull request. Describe what changed, which finding or milestone it addresses, and how you verified it.
+5. `main` takes it by a merge commit, the only method the ruleset allows. To bring the branch up to date, merge `main` into it; do not rebase or force-push it once its pull request is open, so that the commits it cites stay in the history ([ADR-0186](docs/adr/0186-merge-commits.md)).
 
 ### Commit messages
 

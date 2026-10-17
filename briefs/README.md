@@ -104,8 +104,11 @@ section is the rule.
    the dispatch and says the sweep had not ended.
 4. **The cost table** is regenerated from the reproduction's shards' artifacts, which the run gives
    as each shard uploads them.
-5. **The ADR cites the round's commits by the hashes its branch holds, with the pull request's
-   number.** They are not rewritten after the merge, and no second pull request follows.
+5. **The ADR cites the round's commits by their hashes, with the pull request's number**, and
+   they are `main`'s once it merges: `main` takes a pull request by a merge commit
+   ([ADR-0186](../docs/adr/0186-merge-commits.md)). A branch is brought up to date by merging `main` into it,
+   never by a rebase or a force-push once a run has been made on it or its pull request is open, so
+   every commit a dispatch ran on stays in the history. No second pull request follows.
 6. **The commit that asks for the merge sets the round's ADRs to `accepted`**, in their files and in
    the index.
 7. **The sweep's outcome is read when it ends and written down by the first ADR that merges after

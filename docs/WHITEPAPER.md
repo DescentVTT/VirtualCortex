@@ -1,8 +1,8 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.118.0
+version: 4.119.0
 status: active
-date: 2026-10-17
+date: 2026-10-18
 ---
 
 # VirtualCortex Architecture Whitepaper
@@ -11,9 +11,9 @@ date: 2026-10-17
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.118.0 |
+| Version | 4.119.0 |
 | Status | Active (living document; amended by ADR) |
-| Date | 2026-10-17 |
+| Date | 2026-10-18 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
@@ -2685,6 +2685,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0182](adr/0182-a-sixteenth-on-three-networks.md) | A sixteenth, on three networks: H-38's stopping rule taken at the step and the networks, the maintainers' choice — the protocol took the largest step that holds, an eighth, which is the one step at its loop's edge, the rate changing fifteen per cent for one of gain so that a deviation stands at −0.88 of itself a window later there and at 0.06 at a sixteenth; a sixteenth's lead-in is quiet, no arm has run under it, and the yes is seed 22's; so under the rate's rule at a step of a sixteenth, on seeds 22, 23 and 24 at 1 024 units, each with the target its own derivation returns with the gain held, 58 201, 59 510 and 59 179 ticks, H-25's two arms on each; clause 0 and H-25's four on each network; predicted yes, with what would refute it and four predicted readings, the inhibitory sum ending lower under the rule than with the gain held among them; the size left to the next decision; nothing under `src/` changed; H-39; brief 073 runs it once |
 | [ADR-0184](adr/0184-the-runs-off-the-developer-machine.md) | The runs off the developer machine: a round ran its calibration, three to four and a half hours of every whole-domain test eight at a time, and its arms and trials on the developer machine, its maintainer's laptop, and the weekly shards ran the same tests again to reproduce them; a round's runs now go by dispatch, the calibration at `scope=exhaustive` with the round's own tests excluded by name, the arms, lead-ins and trials at a new `scope=arms`, one job a test on AArch64 with its output kept, reproduced on x86-64 by the shards as before; before a push the developer machine runs the fast checks and the pull request's gate the rest; amends ADR-0150 |
 | [ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md) | The spec tools upgraded, and spec-brief admitted: spec-guard 0.11.0 to 0.26.0 and spec-graph 0.8.0 to 0.17.0 read the tree as before, but spec-graph reads an archived document as a record from 0.9.0, so an archived brief with an open box no longer fails; spec-brief 0.8.0 holds the briefs' contract from `.spec-brief.json`, archives a round in one command that refuses an open box and writes an integrity hash, and fails an archived brief changed since; the 71 archived briefs carry that hash, `scripts/check-archive.mjs` fails one without it, and `scripts/check-briefs.mjs` retires; `spec-guard prove` joins the gate; spec-harness is not adopted; the tools admitted as the project's own, which principle 4's test for a dependency they do not pass |
+| [ADR-0186](adr/0186-merge-commits.md) | Merge commits: `main` took every pull request by a rebase, which gives each commit a new hash and drops its signature, so the hashes an ADR cites and the commits a dispatch ran on were not `main`'s; `main` now takes a pull request by a merge commit, the ruleset allows that method alone and no longer requires a linear history, applied on 2026-10-18 by the maintainers before this ADR merged; a branch is brought up to date by merging `main` into it, never by a rebase once a run has been made on it or its pull request is open; signed commits follow; amends ADR-0150 |
 
 ---
 
