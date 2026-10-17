@@ -63,21 +63,37 @@ Numbers are three digits, allocated in order, never reused. Take the next free o
 ## Evidencing a round
 
 How a round that measures reaches its merge ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md)).
-A brief written before that ADR may ask for more waiting than this; where the two differ, this
+A brief written before that ADR, or before [ADR-0184](../docs/adr/0184-the-runs-off-the-developer-machine.md), may ask
+for more waiting than this or for a run on the developer machine; where the two differ, this
 section is the rule.
 
-1. **The arms run once** on the developer machine. Their tables are written from that run's dumps
-   and committed. The dispatch reproduces them; a table it does not reproduce stops the round as a
-   finding. Everything before the arms is unchanged: the protocol committed first, the calibration
-   before any rewarded run, and constants that do not move after one.
-2. **The dispatch's scope follows the diff**
+1. **No whole-domain test runs on the developer machine**
+   ([ADR-0184](../docs/adr/0184-the-runs-off-the-developer-machine.md)). A round's runs are dispatches on its branch:
+   - **The calibration**, before any rewarded run: `gh workflow run ci.yml --ref <branch> -f
+     scope=exhaustive -f exclude='<test> ...'`, naming every test of the round's own. A name the
+     listing lacks fails every shard before any test runs.
+   - **The arms run once**, and so do the round's lead-ins and any trial of its harness on an arm
+     the tree pins: `gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'`.
+     Each test runs in a job of its own on AArch64 with its output kept as the artifact
+     `arm-<n>`; read it with `gh run download <run> -n arm-<n>`.
+   - **The tables are written from those logs and committed.** The ADR names the run, the commit
+     it ran on, and the job each table came from. The run's commit holds the protocol.
+   - **The dispatch at `scope=exhaustive` after the tables are pinned reproduces them**, on x86-64.
+     A table it does not reproduce stops the round as a finding.
+   - Everything else before the arms is unchanged: the protocol committed first, the calibration
+     before any rewarded run, and constants that do not move after one.
+
+   Before a push the developer machine runs only the first block of `CLAUDE.md`'s commands, and
+   the pull request's gate runs the rest.
+2. **The reproduction's scope follows the diff**
    ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=both` when a file
-   under `src/` changed, `scope=exhaustive` otherwise.
-3. **The round asks for its merge when the dispatch's whole-domain shards are green** and the pull
-   request's gate is green on its last commit. It does not wait for the sweep. Its ADR names the
-   dispatch and says the sweep had not ended.
-4. **The cost table** is regenerated from the shards' artifacts, which the run gives as each shard
-   uploads them.
+   under `src/` changed, `scope=exhaustive` otherwise. The calibration is at `scope=exhaustive`
+   always.
+3. **The round asks for its merge when the reproduction's whole-domain shards are green** and the
+   pull request's gate is green on its last commit. It does not wait for the sweep. Its ADR names
+   the dispatch and says the sweep had not ended.
+4. **The cost table** is regenerated from the reproduction's shards' artifacts, which the run gives
+   as each shard uploads them.
 5. **The ADR cites the round's commits by the hashes its branch holds, with the pull request's
    number.** They are not rewritten after the merge, and no second pull request follows.
 6. **The commit that asks for the merge sets the round's ADRs to `accepted`**, in their files and in

@@ -204,30 +204,44 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
 
 ## Commands
 
-Run all of these before pushing. CI runs exactly the same set (plus the same tests on AArch64 and,
-weekly, the whole-tree mutation run, which have no local form); a check here and not in CI is a
-gate nobody enforces, and the reverse is a green local run and a red push.
+The checks run in three places ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)). Before a push the
+developer machine runs the first block, and the pull request's gate runs it again with the
+second. The whole-domain tests run only by dispatch, the third block, and none of them runs on
+the developer machine. Every line here runs in CI. A check run only on the developer machine would
+be enforced by nobody; one that only the gate runs is enforced, and can turn a push red.
 
 ```bash
+# 1. Before a push, on the developer machine; the pull request's gate runs these too
 cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
-cargo test --workspace --release --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
-cargo bench -p cortex-bench --bench hot_path --locked -- --test
-cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor; `rustup toolchain install 1.85` once
-cargo +1.85 test --workspace --locked
 npm ci
 npm run spec
-git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0
-cargo test --workspace --release --locked -- --ignored exhaustive   # before a release; the weekly job runs it in twelve shards, dealt by cost (ADR-0073, ADR-0092, ADR-0150)
+```
+
+```bash
+# 2. The pull request's gate alone, with the tests again on AArch64
+cargo test --workspace --release --locked
+cargo bench -p cortex-bench --bench hot_path --locked -- --test
+cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor
+cargo +1.85 test --workspace --locked
+git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # cargo-mutants 27.1.0
+```
+
+```bash
+# 3. By dispatch alone, never on the developer machine
+gh workflow run ci.yml --ref <branch> -f scope=exhaustive   # every whole-domain test, twelve shards; a calibration adds -f exclude='<the round's own tests>'
+gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'   # a round's arms, lead-ins and trials: one job a test on AArch64, its output kept
 ```
 
 The mutation line is the gate a pull request meets: every mutant `cargo-mutants` can make in the
 lines the change touches must be caught by a test ([ADR-0030](docs/adr/0030-verification-governance.md));
-a new rule carries a test over the lattice of `testkit/prop.rs`. `cargo test --workspace --release
---locked -- --ignored exhaustive` runs the whole-domain tests before a release.
+a new rule carries a test over the lattice of `testkit/prop.rs`. Before a release the whole-domain
+tests run by a dispatch at `scope=exhaustive`. A round's runs are dispatches too: its calibration at
+`scope=exhaustive` with its own tests excluded, and its arms at `scope=arms`, reproduced by the next
+dispatch at `scope=exhaustive` ([briefs/README.md](briefs/README.md#evidencing-a-round)).
 
 The `cargo bench ... -- --test` line executes each benchmark once and asserts no timing. A number
 becomes Measured only through the protocol in `docs/benchmarks/README.md`; a developer-machine

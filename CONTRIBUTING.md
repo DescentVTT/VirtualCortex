@@ -12,7 +12,7 @@ Thank you for considering a contribution. This file is the map; the reasoning be
 
 1. Fork and branch from `main`. Branch names are free-form; commit messages are not.
 2. Make the change, including its documentation, in the same pull request. A layout change without its whitepaper table and changelog entry is incomplete.
-3. Run the full verification locally (below). CI runs the same commands.
+3. Run the first block of the verification locally (below). The pull request's gate runs it and the rest ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)).
 4. Open a pull request. Describe what changed, which finding or milestone it addresses, and how you verified it.
 
 ### Commit messages
@@ -78,22 +78,32 @@ Rounds of work are written as numbered, self-contained prompts in [`briefs/`](br
 
 ## Verification
 
-All of these must pass before a change is called done.
+All of these must pass before a change is called done. They run in three places ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)): the first block on your machine before a push and again in the pull request's gate, the second in the gate alone, and the third, the whole-domain tests, only by dispatch. A round's calibration and arms are dispatches ([briefs/README.md](briefs/README.md#evidencing-a-round)).
 
 ```bash
+# 1. Before a push, on the developer machine; the pull request's gate runs these too
 cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
-cargo test --workspace --release --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
-cargo bench -p cortex-bench --bench hot_path --locked -- --test   # benchmarks execute; no timing asserted
-cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor (ADR-0009); rustup toolchain install 1.85 once
-cargo +1.85 test --workspace --locked
 npm ci
-npm run spec                        # spec-guard + spec-graph + check-briefs + check-decisions + check-deps
-git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # once: cargo install cargo-mutants --locked --version 27.1.0
-cargo test --workspace --release --locked -- --ignored exhaustive   # before a release: the whole-domain tests
+npm run spec
+```
+
+```bash
+# 2. The pull request's gate alone, with the tests again on AArch64
+cargo test --workspace --release --locked
+cargo bench -p cortex-bench --bench hot_path --locked -- --test
+cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor
+cargo +1.85 test --workspace --locked
+git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # cargo-mutants 27.1.0
+```
+
+```bash
+# 3. By dispatch alone, never on the developer machine
+gh workflow run ci.yml --ref <branch> -f scope=exhaustive   # every whole-domain test, twelve shards; a calibration adds -f exclude='<the round's own tests>'
+gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'   # a round's arms, lead-ins and trials: one job a test on AArch64, its output kept
 ```
 
 `npm run spec` is the whole documentation gate and is the single step CI runs, so a check added to it is enforced and a check outside it is enforced nowhere (F-44). The parts run alone: `npm run spec:guard` the executable assertions; `npm run spec:graph` the cross-document checks; `npm run spec:briefs` the live briefs; `npm run spec:decisions` that every ADR has its row in whitepaper §9 and in `docs/adr/README.md` (F-41); `npm run spec:version` the whitepaper's two version declarations (F-43); `npm run spec:deps` the manifests (TC-2); `npm run spec:costs` that every line of the whole-domain tests' cost table names a test in the tree ([ADR-0092](docs/adr/0092-the-shards-dealt-by-cost.md)). All exit non-zero with a file and line number when something is wrong. `npm run mutants:timeouts <mutants.out>` is not part of the gate: it reads a weekly sweep's own output and says what each of its timeouts was doing when the bound cut it ([ADR-0063](docs/adr/0063-the-sweep-reads-its-own-timeouts.md)).
