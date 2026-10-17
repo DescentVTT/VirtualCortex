@@ -117,5 +117,11 @@ Before every push the round also ran `CLAUDE.md`'s block: the workspace built an
   - with nothing excluded, the deal is the one it was;
   - with two names given, spaces around them, 126 are left, and the deal's planned sum falls by their 185 and 1 834 s;
   - a name the listing lacks fails, with that name.
-- **The scope, tried by dispatch 39033819438 on `1378111`**, before this file was in the tree. Four tests were named: three the tree pins, H-38's step of an eighth and its two arms, and one no binary lists. TRIAL
+- **The scope, tried by dispatch 39033819438 on `1378111`**, before this file was in the tree. Four tests were named: three the tree pins, H-38's step of an eighth and its two arms, and one no binary lists.
+  - **The three the tree pins passed on AArch64**, each in its own job, exit 0 with one test passed. An arm holds every table it pins once it has dumped it. So each table H-38's round wrote from a run on Windows, which the shards had reproduced on x86-64, was reproduced bit for bit on AArch64.
+  - The step of an eighth ran in 128 s, the arm from the assignment in 999 s and the arm from the mirrored in 1 041 s, with 27, 87 and 87 lines of dump in their artifacts. The jobs took 3, 17 and 18 minutes with the build. The shards read the same tests at 185, 1 834 and 2 269 s, two to a runner. None of these seconds is admissible.
+  - The name no binary lists failed its job before anything ran (*"the listing names this test in 0 binaries, where one is required"*), so the run reads as failed, as it should.
+- **The final form, tried by dispatches 39034670133 and 39034719490 on `e56e8b5`.** Three dispatches at `scope=arms` ran at once on one branch, and none was cancelled.
+  - A paused run, `an_assembly_of_16_units_at_four_weights_paused` ([ADR-0127](0127-the-paused-line-leaves-the-weekly.md)), was found by `--ignored --list` and passed in 97 s, its dump kept.
+  - The step of an eighth passed again, in 128 s.
 - `CLAUDE.md`'s Commands, `CONTRIBUTING.md`, Appendix B's block, its V-7 row and its directives, `briefs/README.md`, and this decision's rows in §9 and the index.
