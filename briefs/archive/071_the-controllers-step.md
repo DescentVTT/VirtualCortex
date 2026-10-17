@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-13
+integrity: sha256-8734d52eaa9f0ec0fed6a5f960711497e9fe5c018e0299fce2ff020a8290dafb
 ---
 
 > **Executed 2026-10-13 (UTC) in pull request #206.** Writes ADR-0177 (the controller's step, measured); opens

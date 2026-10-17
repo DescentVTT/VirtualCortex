@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-29
+integrity: sha256-ee3693f80999f564182bc6243794832680ebbb9d51365a2dd013c95c12e695b3
 ---
 
 > **Executed 2026-09-29 in pull request #161.** Writes ADR-0129 (a target the network fires at, measured), and opens and

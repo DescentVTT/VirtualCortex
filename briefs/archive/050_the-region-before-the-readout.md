@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-27
+integrity: sha256-0eb8a31f62fbdd98aed4b5b1b8f8f906467fc14efc4263c4bc131e2639617542
 ---
 
 > **Executed 2026-09-27 in pull request #146.** Writes ADR-0117 (the region measured); builds F-54's decision as the

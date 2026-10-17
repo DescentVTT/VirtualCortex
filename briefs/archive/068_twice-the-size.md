@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-12
+integrity: sha256-f118c0fa309c53c76d45b213dac6bc919654566df44610fa2a41f7cb32932f8e
 ---
 
 > **Executed 2026-10-11 and 2026-10-12 (UTC) in pull request #200.** Writes ADR-0169 (twice the size, measured);

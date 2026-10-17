@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-09
+integrity: sha256-8a7f824f8350b13ff9a1c352e42a7f4903b9a3171e53d3ed7b1d01584abb201b
 ---
 
 > **Executed 2026-10-09 (UTC) in pull request #193.** Writes ADR-0161 (the span a choice among three is given,

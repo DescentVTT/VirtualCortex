@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-842d97dc2a96da01457d25a898ce64e6c61e7e96f8f9d6075a104b4ad8d91456
 ---
 
 > **Executed 2026-09-10 in pull request #44.** Writes ADR-0032 (three-factor plasticity) and

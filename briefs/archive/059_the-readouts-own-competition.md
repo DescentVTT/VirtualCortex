@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-01
+integrity: sha256-8e7dca802581ab9ac5c0b185f36962773e4d897851c5fea16e1b78e58a4961c7
 ---
 
 > **Executed 2026-10-07 in pull request #177.** Writes ADR-0142 (the readouts' own competition, measured); opens and

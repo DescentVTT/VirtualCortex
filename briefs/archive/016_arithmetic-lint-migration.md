@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-398cd0622cfe6f1a04fe66586aabdc96c934b55781f2c7bf223e6f051eed1c21
 ---
 
 > **Executed 2026-09-10 in pull requests #40, #41 and #42.** Closes finding F-4: every crate of the

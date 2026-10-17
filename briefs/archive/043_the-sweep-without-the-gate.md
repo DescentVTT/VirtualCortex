@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-25
+integrity: sha256-eccec074a572f986f438dcd6d96181723495ec8a93c39c6115408e4866aa7b43
 ---
 
 > **Executed 2026-09-26 in pull request #124.** Writes ADR-0100 (the sweep without the gate, built and not kept) and

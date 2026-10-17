@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-11
+integrity: sha256-c02d8fa7246f2f9dd5dbc3836a46f034c32c6b8ad840b3c6b2cb314c666208c3
 ---
 
 > **Executed 2026-10-09 to 2026-10-11 (UTC) in pull request #196.** Writes ADR-0163 (an exploration the value gates,

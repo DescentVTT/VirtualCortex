@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-09
+integrity: sha256-44305ed2ed529786d7d679c6e22b0e4afa140625b1a0603ce81f2dcfdc29c90a
 ---
 
 > **Executed 2026-10-08 to 2026-10-09 in pull request #188.** Writes ADR-0152 (three answers, built) and ADR-0153

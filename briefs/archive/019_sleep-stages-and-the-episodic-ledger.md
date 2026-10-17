@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-12
+integrity: sha256-93ef307e3d459a882b0f03479ab9c22071b8a69727944b6adf8d91d3de8a68c2
 ---
 
 > **Executed 2026-09-12 in pull request #48.** Writes ADR-0037 (sleep regulation) and ADR-0038

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-21
+integrity: sha256-d16304859d5ab7a3a61a6abc18b280db1f6138289dae582c2229547b2efd1bcd
 ---
 
 > **Executed 2026-09-21 in pull request #88.** Writes ADR-0074 (a stimulus that fires each

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-27
+integrity: sha256-a7a2375a42caee8ce5ce1c5a58cc8617e8463b059ccf9b85cefabb689bfa9fa7
 ---
 
 > **Executed 2026-09-27 in pull request #143.** Writes ADR-0114 (the facilitating class built) and ADR-0115 (the

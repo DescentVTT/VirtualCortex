@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-30
+integrity: sha256-72ab27071420316b43d95c8b3e3a8deeb169fe0c8d19a031302ed3f5a38379ec
 ---
 
 > **Executed 2026-09-30 in pull request #168.** Writes ADR-0134 (the critic's window built) and ADR-0135 (the critic's

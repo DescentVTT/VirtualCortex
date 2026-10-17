@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-23
+integrity: sha256-2e31851c9c372a2b086c5b8d7eb0a3db30bb21b8efd5de36417cf1704854e636
 ---
 
 > **Executed 2026-09-23 in pull request #113.** Writes ADR-0090 (the old answer held from the trial after the

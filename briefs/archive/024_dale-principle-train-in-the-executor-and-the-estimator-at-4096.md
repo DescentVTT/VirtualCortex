@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-14
+integrity: sha256-d6b452e5e53a714905163605e21d31e71ba87b927af4d4acf4e4931152443345
 ---
 
 > **Executed 2026-09-14 in pull request #58.** Writes ADR-0049 (Dale's principle in plasticity),

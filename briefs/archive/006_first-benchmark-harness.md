@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-ca48ec971403a48d4cfccf5246e8cb2dfdd1d689112e295247a8ab6eaae1a28d
 ---
 
 > **Executed 2026-09-10 in pull request #10.** Narrows finding F-13; writes

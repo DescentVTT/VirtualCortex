@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-19
+integrity: sha256-25c9d55dbf0d5cbbf2cd2b723d33efd794ed72abfb5c42b4d2350be75229f301
 ---
 
 > **Executed 2026-09-20 in pull request #71.** Writes ADR-0062 (the triage rule that tells an

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-5aae2a4a2012b07b9435941e33a7501f7307ee4692fc6b1e121571f9ff532c75
 ---
 
 > **Executed 2026-09-10 in pull request #9.** Closes finding F-11; writes

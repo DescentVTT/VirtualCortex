@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-14
+integrity: sha256-f2c2654f5d3bd68ecb0cfe8388f5549350bad64fa8e831424571a03df00fdb11
 ---
 
 > **Executed 2026-09-14 in pull request #62.** Writes ADR-0055 (a weight that settles: the

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-d203c6916287e00c3ababbe5f74b73ab43223251d2b00af49f33ba199b7a0c5b
 ---
 
 > **Executed 2026-09-10 in pull request #11.** Closes finding F-14. No ADR was written: a

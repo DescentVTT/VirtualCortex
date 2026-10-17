@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-22
+integrity: sha256-415677c8221266562e7c3ba7ed2782ff8af9ff71e455ab062a16650164df55b9
 ---
 
 > **Executed 2026-09-22 in pull request #105.** Writes ADR-0083 (plasticity everywhere, measured:

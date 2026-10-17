@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-24
+integrity: sha256-6c18d59d707fe32779ab68b13ecd3cd1127dfa4aa5aa988b5f079b297a0f896b
 ---
 
 > **Executed 2026-09-24 in pull request #117.** Writes ADR-0094 (the signed gate built: the modulator

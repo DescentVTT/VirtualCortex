@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-25
+integrity: sha256-d6811fc0b8315883e266f530eb2ecce279bab67bb36d6f46cd98fbc90af662f1
 ---
 
 > **Executed 2026-09-25 in pull request #120.** Writes ADR-0097 (the active set, measured). The engine counts

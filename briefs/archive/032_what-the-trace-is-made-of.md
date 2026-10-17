@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-21
+integrity: sha256-a7285b795945541ad2894d738cdca33b6c4a39082779cdbc3dad1cc378613ad8
 ---
 
 > **Executed 2026-09-21 in pull request #83.** Writes ADR-0072 (what the trace is made of:

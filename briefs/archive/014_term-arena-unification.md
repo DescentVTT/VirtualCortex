@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-2dea37697212654a8682a1acf97f67986557d0f25250d7cde52351f5daec00c1
 ---
 
 > **Executed 2026-09-10 in pull request #30.** Writes

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-11
+integrity: sha256-347708876e4cc8ffbc6c19536dfccec3cd6e480af2dcc8b675324cdf3d8c90a4
 ---
 
 > **Executed 2026-10-11 (UTC) in pull request #198.** Writes ADR-0167 (another network of the same size, measured);

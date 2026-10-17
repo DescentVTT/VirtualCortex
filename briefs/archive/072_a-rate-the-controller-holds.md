@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-13
+integrity: sha256-471d317a4fd719c0994a9104b83a62ecbe537f4a7db21cae201509b6aa7512c7
 ---
 
 > **Executed 2026-10-13 (UTC) in pull request #208.** Writes ADR-0180 (a rate the controller holds, built) and

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-22
+integrity: sha256-02d17f739e4402e603912607b6180cf31c6f6ca00d7020e37fbb5c25e0747b0c
 ---
 
 > **Executed 2026-09-22 in pull request #102.** Writes ADR-0081 (the reinforced form,

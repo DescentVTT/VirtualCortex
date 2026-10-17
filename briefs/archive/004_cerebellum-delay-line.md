@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-ecfc86701069838d0b818d6ff5b6d9a84901a9db471a164995dcd178b0459fde
 ---
 
 > **Executed 2026-09-10 in pull request #8.** Closes finding F-8; bumps the image format to

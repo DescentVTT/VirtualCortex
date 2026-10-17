@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-26
+integrity: sha256-4f7409ab64f9499f458ec80e96522a80c7050f0b33bb4981e447b4d8d2bee7aa
 ---
 
 > **Executed 2026-09-26 in pull request #131.** Writes ADR-0104 (the membrane's rule in lanes, built and not kept);

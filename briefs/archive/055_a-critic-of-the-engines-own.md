@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-29
+integrity: sha256-ed236d79a2b03997327f859d1993ed068cb0e125469de2655c20b8bf9cf88ca7
 ---
 
 > **Executed 2026-09-29 in pull request #164.** Writes ADR-0131 (the critic built) and ADR-0132 (a critic of the

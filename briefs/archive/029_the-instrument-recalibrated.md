@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-20
+integrity: sha256-b82efb46ae5386e8a13e3007254540f52f78b7e5ac0adaaaf4295f71c4b274e2
 ---
 
 > **Executed 2026-09-20 in pull request #73.** Writes ADR-0065 (the instrument: a set as a
