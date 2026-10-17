@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# One whole-domain test, run by a dispatch at `scope=arms` (ADR-0184): `arm-run.sh <test>` runs
-# the test `--list` names <test>, with its output kept, so that a round's tables are written from
-# a run the repository's host recorded and not from one on the developer machine.
+# One `#[ignore]`d test, run by a dispatch at `scope=arms` (ADR-0184): `arm-run.sh <test>` runs
+# the test `--ignored --list` names <test>, whole-domain (`_exhaustive`) or paused (`_paused`,
+# ADR-0127), with its output kept, so that a round's tables are written from a run the
+# repository's host recorded and not from one on the developer machine.
 #
 # The test is found as the weekly shards find theirs: from `--list` at run time, never from a
 # path written here (ADR-0073, F-44, F-45). A name that no binary lists, or that two list, fails
@@ -23,7 +24,7 @@ name=${1:?usage: arm-run.sh <test>}
 
 echo "the test: $name"
 
-if ! cargo test --workspace --release --locked -- --ignored exhaustive --list 2>&1 | tee list.log; then
+if ! cargo test --workspace --release --locked -- --ignored --list 2>&1 | tee list.log; then
   echo "the listing failed, so the test cannot be found"
   exit 1
 fi

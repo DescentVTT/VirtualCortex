@@ -31,7 +31,7 @@
 #           per area, the runtime's in twelve shards, each deriving its per-mutant bound from its
 #           own suite timed on its runner and failing if it did not cover its slice (ADR-0058).
 #           Nothing is blocked; the survivors are the next round's list (ADR-0030).
-#   arms-plan, arms - by hand alone (`scope=arms`): what do the whole-domain tests a round
+#   arms-plan, arms - by hand alone (`scope=arms`): what do the `#[ignore]`d tests a round
 #           names print? One job a test, on AArch64, its output kept, so that a round's
 #           arms, lead-ins and trials run on the repository's host and none on the developer
 #           machine; the weekly shards on x86-64 are their reproduction (ADR-0184).
@@ -69,7 +69,7 @@ on:
           - mutants
           - arms
       tests:
-        description: "With scope=arms: the whole-domain tests to run, separated by spaces"
+        description: "With scope=arms: the #[ignore]d tests to run, whole-domain or paused, separated by spaces"
         type: string
         default: ""
       exclude:
@@ -84,7 +84,9 @@ concurrency:
   # The event is part of the group, so a push to main does not cancel a running weekly job;
   # and the scope, so a round's arms dispatched on its branch do not cancel its calibration
   # (ADR-0184). On a push or a pull request the scope is empty and the group is one per ref.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.scope }}-${{ github.ref }}
+  # A dispatch at `arms` is a run made once, so it is a group of its own: no later dispatch
+  # cancels it, and it cancels none.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.scope }}-${{ github.ref }}${{ inputs.scope == 'arms' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
