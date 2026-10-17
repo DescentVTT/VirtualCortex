@@ -246941,7 +246941,8 @@ const IN_FOUR_READINGS_READ_1024: [bool; 3] = [true, true, false];
 /// images H-25's, H-28's and H-35's arms hold by their CRCs — or a `Site`, a network of another
 /// seed or size, whose configuration H-33's and H-34's arms derive by the rules and hold to its
 /// pinned derivation; or, since ADR-0181, a `RuledSite`, the instrument's prior derived under
-/// the rate's rule at a step of H-38's scan.
+/// the rate's rule at a step of H-38's scan, and since ADR-0183 seed 23's or seed 24's derived
+/// under it at a sixteenth with its own target.
 #[derive(Clone, Copy)]
 enum Ground<'a> {
     Instrument,
@@ -247613,9 +247614,18 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
     let gain_windows = watch.windows();
     let gain_by_block = gain_blocks(&gain_windows);
     let gain_read = gain_read(&gain_windows, watch.loaded, controller.0, controller.1);
+    // Since ADR-0183, where the engine carries a target, the pairs of consecutive windows on
+    // opposite sides of it, which ADR-0181 read of an eighth's arms.
+    let opposite = controller
+        .1
+        .map(|target| opposite_pairs(&gain_windows, target));
     eprintln!("DUMP {name} gain windows {gain_windows:?}");
     eprintln!("DUMP {name} PIN gain blocks {gain_by_block:?}");
     eprintln!("DUMP {name} PIN gain read {gain_read:?}");
+    eprintln!(
+        "DUMP {name} PIN opposite {opposite:?} of {} pairs of consecutive windows",
+        gain_windows.len().saturating_sub(1)
+    );
     eprintln!(
         "DUMP {name} the controller: step {:#06x}, target {:?} spikes a window, the image's gain {}, {} trials whose open window's count is not the record's; predicted readings 3 and 4 over this arm {:?}",
         controller.0,
@@ -248103,6 +248113,13 @@ fn arm_on(ground: Ground<'_>, share: Option<&Share>, arm: Reversal) {
                     site.gains[k].read,
                     "{name}: the gain's reading"
                 );
+                if let Some(pinned) = site.gains[k].opposite {
+                    assert_eq!(
+                        opposite,
+                        Some(pinned),
+                        "{name}: the pairs of consecutive windows on opposite sides of the target"
+                    );
+                }
             }
         }
     }
@@ -300336,7 +300353,12 @@ fn rate_derivation_held(k: usize, name: &str, d: &Derivation, read: &RateRead) {
             .is_some_and(|(_, greatest)| greatest <= capacity),
         "{name}: the train held every window read from it"
     );
-    let pins = rate_pins(k);
+    rate_pins_held(name, &rate_pins(k), d, read);
+}
+
+/// A derivation under the rate's rule held to the tables pinned from its one run (ADR-0181;
+/// `rate_derivation_held`'s last step, since ADR-0183 also H-39's on seeds 23 and 24).
+fn rate_pins_held(name: &str, pins: &RatePins, d: &Derivation, read: &RateRead) {
     assert_eq!(Some(d.rules), pins.rules, "{name}: what each rule returned");
     assert_eq!(d.lead_in.as_slice(), pins.lead_in, "{name}: the lead-in");
     assert_eq!(d.quiet, pins.quiet, "{name}: the quiet run");
@@ -300375,18 +300397,24 @@ fn rate_step(k: usize) {
 }
 
 /// The gain's course an arm under the rate's rule is held to, pinned from its one run: by block,
-/// and its reading.
+/// and its reading; and since ADR-0183 the pairs of consecutive windows on opposite sides of the
+/// target (`opposite_pairs`), none where it is not pinned.
 #[derive(Clone, Copy)]
 struct GainPins {
     blocks: &'static [GainBlock],
     read: Option<GainRead>,
+    opposite: Option<u32>,
 }
 
 /// H-38's network for its arms (ADR-0181): the instrument's prior derived under the rate's rule
 /// at a step of the scan, `step` its index in `RATE_STEPS`; the name its dumps carry; and the
-/// tables its two arms pin, H-33's shape with the gain's course beside it.
+/// tables its two arms pin, H-33's shape with the gain's course beside it. Since ADR-0183 it is
+/// any of H-39's networks, `network` its index in `SIXTEENTH_SEEDS`: on the instrument's prior,
+/// index 0, any step of the scan; on seed 23 or seed 24 a sixteenth alone, under the network's
+/// own target.
 struct RuledSite {
     step: usize,
+    network: usize,
     name: String,
     arms: [ArmPins; 2],
     gains: [GainPins; 2],
@@ -300403,6 +300431,7 @@ fn ruled_taken() -> Option<usize> {
 fn ruled_site(step: usize) -> RuledSite {
     RuledSite {
         step,
+        network: 0,
         name: format!("ruled {}", RATE_NAMES[step]),
         arms: [0usize, 1].map(|k| ArmPins {
             blocks: RULED_BLOCKS[k],
@@ -300421,7 +300450,18 @@ fn ruled_site(step: usize) -> RuledSite {
         gains: [0usize, 1].map(|k| GainPins {
             blocks: RULED_GAIN_BLOCKS[k],
             read: RULED_GAIN[k],
+            opposite: RULED_OPPOSITE[k],
         }),
+    }
+}
+
+/// The tables a `RuledSite`'s derivation is held to: on the instrument's prior its step's of
+/// H-38's scan, and on seed 23 or seed 24 H-39's of that network (`sixteenth_pins`).
+fn ruled_pins(site: &RuledSite) -> RatePins {
+    if site.network == 0 {
+        rate_pins(site.step)
+    } else {
+        sixteenth_pins(site.network)
     }
 }
 
@@ -300429,29 +300469,60 @@ fn ruled_site(step: usize) -> RuledSite {
 /// couplings its step's derivation pinned, and, as the arms its own are read beside, H-25's two
 /// with the gain held — so that what `arm_on` dumps *beside the network's own under the true
 /// reward* is, on this ground, beside H-25's, as ADR-0178's readings ask. A step whose
-/// derivation wrote no image has no stand.
+/// derivation wrote no image has no stand. On seed 23 or seed 24 (ADR-0183) the arms its own are
+/// read beside are that network's two with the gain held, H-33's, as `site_stand` gives them.
 fn ruled_stand(site: &RuledSite) -> Stand {
-    let pins = rate_pins(site.step);
+    let pins = ruled_pins(site);
     let (_, sums) = pins
         .quiet
         .expect("the settled image's sums, at a step that holds");
-    Stand {
-        len: geometry(SCAN_UNITS, ROTATION_1024)[0].len(),
-        sums,
-        couplings: pins
-            .couplings
-            .expect("the image's couplings, at a step that holds"),
-        own: instrument_stand().own,
-        apart: DRAWN_BLOCKS_1024,
+    let couplings = pins
+        .couplings
+        .expect("the image's couplings, at a step that holds");
+    match site.network.checked_sub(1) {
+        None => Stand {
+            len: geometry(SCAN_UNITS, ROTATION_1024)[0].len(),
+            sums,
+            couplings,
+            own: instrument_stand().own,
+            apart: DRAWN_BLOCKS_1024,
+        },
+        Some(m) => {
+            let rotation = pins
+                .rules
+                .and_then(|rules| rules.rotation)
+                .expect("the rotation, at a step that holds");
+            let held = site_stand(&seeded_site(m));
+            Stand {
+                len: geometry(SCAN_UNITS, rotation)[0].len(),
+                sums,
+                couplings,
+                own: held.own,
+                apart: held.apart,
+            }
+        }
     }
 }
 
 /// A `RuledSite`'s calibration and what a rewarded run takes from it: the derivation under the
 /// rate's rule at the site's step, dumped and held to the step's pinned tables as the scan's own
-/// test holds it, and on a step whose clause 0 does not hold no arm.
+/// test holds it, and on a step whose clause 0 does not hold no arm. On seed 23 or seed 24
+/// (ADR-0183) it is H-39's derivation on that network, held as its own test holds it.
 fn ruled_made(site: &RuledSite, name: &str) -> Made {
-    let (mut d, read) = rate_derivation(site.step, name);
-    rate_derivation_held(site.step, name, &d, &read);
+    let (mut d, read) = if site.network == 0 {
+        rate_derivation(site.step, name)
+    } else {
+        assert_eq!(
+            site.step, RATE_SIXTEENTH,
+            "{name}: another network runs at a sixteenth alone"
+        );
+        sixteenth_derivation(site.network, name)
+    };
+    if site.network == 0 {
+        rate_derivation_held(site.step, name, &d, &read);
+    } else {
+        sixteenth_derivation_held(site.network, name, &d, &read);
+    }
     assert!(
         d.rules.hold(),
         "{name}: clause 0 holds at this step, or it has no arm"
@@ -311413,3 +311484,1280 @@ const RULED_GAIN: [Option<GainRead>; 2] = [
         hash: 17254194615429618447,
     }),
 ];
+
+// =================================================================================== H-39
+
+// --------------------------------------------- written before the run (ADR-0182, ADR-0183)
+
+/// The networks of H-39 (ADR-0182), in their order: ADR-0044's generator at 1 024 units from
+/// seed 22, the instrument's prior, and from H-33's seeds 23 and 24. No other network and no
+/// other size is run.
+const SIXTEENTH_SEEDS: [u64; 3] = [PRIOR_SEED, SEEDS[0], SEEDS[1]];
+
+/// The step of H-39 (ADR-0182), Q0.16, on every network: a sixteenth, the second of H-38's scan.
+const SIXTEENTH_STEP: u16 = RATE_STEPS[RATE_SIXTEENTH];
+const _: () = assert!(SIXTEENTH_STEP == 0x1000);
+
+/// Each network's target (ADR-0182): the period its own derivation returns with the gain held,
+/// the settled network's rate by ADR-0128's rule — H-25's 58 201 ticks on seed 22, and the 59 510
+/// and 59 179 H-33's derivations returned on seeds 23 and 24 (`RULES_SEEDED`). None is carried
+/// from another network.
+const SIXTEENTH_TARGETS: [u32; 3] = [TARGET_PERIOD_1024, 59_510, 59_179];
+
+/// Those periods as a window's counts at 1 024 units (ADR-0180's rule): 134 217 728 over each,
+/// to nearest — 2 306.107, 2 255.381 and 2 268.033 spikes.
+const SIXTEENTH_COUNTS: [u32; 3] = [RATE_TARGET_COUNT, 2_255, 2_268];
+const _: () = assert!(
+    SIXTEENTH_TARGETS[0] == RATE_TARGET_PERIOD
+        && (134_217_728 + 59_510 / 2) / 59_510 == SIXTEENTH_COUNTS[1] as u64
+        && (134_217_728 + 59_179 / 2) / 59_179 == SIXTEENTH_COUNTS[2] as u64
+);
+
+/// The names H-39's dumps carry, per network: a derivation's `rate {name}` and an arm's
+/// `ruled {name}`. Seed 22's is the name of H-38's step of a sixteenth, whose derivation brief 072
+/// pinned and whose own test runs it.
+const SIXTEENTH_NAMES: [&str; 3] = ["sixteenth", "sixteenth23", "sixteenth24"];
+
+/// H-39's settling on a network whose target is `target` ticks (ADR-0182): H-38's at a
+/// sixteenth with the network's own target — the controller on at a sixteenth and the rate's
+/// rule on from the lead-in's first window, the settled network's rule over the excitatory sums
+/// and the gain's mean, within `RATE_BOUND` windows. On seed 22 it is `under_rate`'s.
+const fn at_a_sixteenth(target: u32) -> Settling {
+    Settling {
+        step: SIXTEENTH_STEP,
+        gains: false,
+        bound: RATE_BOUND,
+        target,
+        mean: true,
+    }
+}
+
+/// The arms of H-39 (ADR-0182): H-25's two on each network, in their order, each its own weekly
+/// test.
+const SIXTEENTH_ARMS: [Reversal; 2] = DRAWN_ARMS;
+
+/// ADR-0182's prediction for H-39, written before any run: yes.
+const SIXTEENTH_PREDICTED: bool = true;
+
+/// ADR-0182's four predicted readings, in its order, each predicted to hold: the step holds on
+/// seeds 23 and 24; through each of the six arms the gain after every window within five per
+/// cent of 1.75 (`gain_within`); in each arm fewer than `OPPOSITE_BELOW` pairs of consecutive
+/// windows on opposite sides of the target; in each arm the inhibitory sum ending lower, as a
+/// fraction of its image's, than in the same network's arm with the gain held. A miss is
+/// recorded as one.
+const SIXTEENTH_READINGS_PREDICTED: [bool; 4] = [true; 4];
+
+/// Predicted reading 3's mark (ADR-0182): fewer than 600 of the 959 pairs an arm's 960 windows
+/// make, where an eighth's arms read 750 and 758 (`RULED_OPPOSITE`).
+const OPPOSITE_BELOW: u32 = 600;
+
+// ---------------------------------------------------------------- the rules (ADR-0183)
+
+/// The pairs of consecutive windows on opposite sides of the target (ADR-0181's reading of an
+/// eighth's arms, ADR-0182's predicted reading 3): of each window after the first, whether one of
+/// it and the window before it holds more spikes than `target` and the other does not. A window
+/// at the target is not above it.
+fn opposite_pairs(windows: &[(u64, u32)], target: u32) -> u32 {
+    let above = |window: &(u64, u32)| window.0 > u64::from(target);
+    windows
+        .windows(2)
+        .filter(|pair| above(&pair[0]) != above(&pair[1]))
+        .count() as u32
+}
+
+/// An arm's inhibitory sum at its end beside its image's, `(the last block's, the image's)`; none
+/// for an arm of no block.
+fn inhibitory_end(image: i64, blocks: &[Block]) -> Option<(i64, i64)> {
+    blocks.last().map(|block| (block.7, image))
+}
+
+/// Predicted reading 4's rule (ADR-0182): an arm's inhibitory sum ends lower, as a fraction of its
+/// image's, than another arm's — `ended.0 / ended.1 < held.0 / held.1`, by the two products in
+/// wider integers and strictly; not where either image's sum is not above zero.
+fn ends_lower(ended: (i64, i64), held: (i64, i64)) -> bool {
+    ended.1 > 0
+        && held.1 > 0
+        && i128::from(ended.0).saturating_mul(i128::from(held.1))
+            < i128::from(held.0).saturating_mul(i128::from(ended.1))
+}
+
+/// What predicted readings 2 to 4 read of one arm under the rule (ADR-0183): whether the gain
+/// after every window was within the band; the pairs of consecutive windows on opposite sides of
+/// the target; the inhibitory sum at the arm's end beside its image's; and the same at the end of
+/// the same network's arm with the gain held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SixteenthArm {
+    within: bool,
+    opposite: u32,
+    ended: (i64, i64),
+    held: (i64, i64),
+}
+
+/// ADR-0182's four predicted readings as rules, in its order: the step holds on seeds 23 and 24,
+/// clause 0 of the second and the third network; and over the arms given, every arm's gain
+/// within the band, every arm's opposite pairs below `OPPOSITE_BELOW`, and every arm's
+/// inhibitory sum ending lower than its network's arm's with the gain held (`ends_lower`). The
+/// last three are read over the arms that ran and are none where none did.
+fn sixteenth_predicted(held: &[bool; 3], arms: &[SixteenthArm]) -> [Option<bool>; 4] {
+    let over = |rule: fn(&SixteenthArm) -> bool| (!arms.is_empty()).then(|| arms.iter().all(rule));
+    [
+        Some(held[1] && held[2]),
+        over(|arm| arm.within),
+        over(|arm| arm.opposite < OPPOSITE_BELOW),
+        over(|arm| ends_lower(arm.ended, arm.held)),
+    ]
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0182)
+
+/// H-39's verdict (ADR-0182): per network, in `SIXTEENTH_SEEDS`'s order, clause 0 — every rule
+/// of the derivation under the rate's rule at a sixteenth gave a value and the frozen block
+/// passed both measures — and, where it holds and the arms ran, clauses 1 to 4, H-25's four by
+/// H-25's rules against the image that network's derivation wrote: `seeded`, H-33's verdict on a
+/// network, which is those. `yes` when all five hold in both arms on all three networks; a no
+/// names the network, and in it the clause and the arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Sixteenth {
+    networks: [Seeded; 3],
+    yes: bool,
+}
+
+fn sixteenth(rules: &[Rules; 3], arms: [Option<SeededArms<'_>>; 3]) -> Sixteenth {
+    let networks = [0usize, 1, 2].map(|n| seeded(&rules[n], arms[n]));
+    Sixteenth {
+        networks,
+        yes: networks.iter().all(|network| network.yes),
+    }
+}
+
+/// The step of ADR-0182's stopping rule a verdict reaches: 3, yes; 4, a no on clause 0 on a
+/// network; otherwise 5, a no on seed 22; otherwise 6, a no on seed 23 or seed 24 alone.
+fn sixteenth_step(verdict: &Sixteenth) -> u8 {
+    if verdict.yes {
+        3
+    } else if verdict.networks.iter().any(|network| !network.derived) {
+        4
+    } else if !verdict.networks[0].yes {
+        5
+    } else {
+        6
+    }
+}
+
+// ------------------------------------------------------------------ the run (brief 073)
+
+/// What a derivation on a network makes before its settled network, and its cancel, beside that
+/// network's derivation with the gain held (ADR-0183): neither reads the step or the target, so
+/// each is the gain held's. The names of what differs, none where all agree — the rotation and
+/// the gain as their rules returned them, the couplings at each rotation scanned, the prior's
+/// sums, the calibration's blocks, the volley's census and the synapses; and, where the
+/// derivation reached its cancel, the cancel's rules — the span, the two least counts and the
+/// pick — the candidates' frozen blocks and their probes.
+fn settling_apart(pins: &DerivationPins, d: &Derivation) -> Vec<&'static str> {
+    let held = pins.rules.unwrap_or_default();
+    let mut apart = Vec::new();
+    for (what, same) in [
+        ("rotation", d.rules.rotation == held.rotation),
+        ("gain", d.rules.gain == held.gain),
+        ("scanned", d.scanned.as_slice() == pins.scanned),
+        ("prior sums", d.prior_sums == pins.prior_sums),
+        (
+            "calibrations",
+            d.calibrations.as_slice() == pins.calibrations,
+        ),
+        ("census", d.census.as_slice() == pins.census),
+        ("synapses", d.synapses == pins.synapses),
+    ] {
+        if !same {
+            apart.push(what);
+        }
+    }
+    if d.rules.span.is_some() {
+        for (what, same) in [
+            (
+                "cancel's rules",
+                (d.rules.span, d.rules.least, d.rules.cancel)
+                    == (held.span, held.least, held.cancel),
+            ),
+            ("cancelled", d.cancelled.as_slice() == pins.cancelled),
+            (
+                "probes",
+                d.probes
+                    .iter()
+                    .map(Vec::as_slice)
+                    .eq(pins.probes.iter().copied()),
+            ),
+        ] {
+            if !same {
+                apart.push(what);
+            }
+        }
+    }
+    apart
+}
+
+/// Whether a lead-in's first window under the rate's rule is the gain held's first window in
+/// everything but the gain its regulation left — the rule moves nothing before a window's end —
+/// and that gain is the rate's rule's from `gain`, the window's spikes, the target's count and
+/// the step.
+fn first_ruled(
+    held: &LeadInWindow,
+    first: &LeadInWindow,
+    gain: u32,
+    count: u32,
+    step: u16,
+) -> bool {
+    (first.0, first.1, first.2, first.3, first.4, first.6)
+        == (held.0, held.1, held.2, held.3, held.4, held.6)
+        && first.5 == rate_regulated(gain, first.0, count, step)
+}
+
+/// The tables H-39's derivation on network `n` is held to: on seed 22 H-38's step of a
+/// sixteenth's, which brief 072 pinned; on seeds 23 and 24 their own, pinned from their one run.
+fn sixteenth_pins(n: usize) -> RatePins {
+    let Some(m) = n.checked_sub(1) else {
+        return rate_pins(RATE_SIXTEENTH);
+    };
+    RatePins {
+        rules: SEEDED_RATE_RULES[m],
+        lead_in: SEEDED_RATE_LEAD_IN[m],
+        quiet: SEEDED_RATE_QUIET[m],
+        carried: SEEDED_RATE_CARRIED[m],
+        frozen: SEEDED_RATE_FROZEN[m],
+        counted: SEEDED_RATE_COUNTED[m],
+        frozen_census: SEEDED_RATE_FROZEN_CENSUS[m],
+        after_frozen: SEEDED_RATE_AFTER_FROZEN[m],
+        target_lead_in: SEEDED_RATE_TARGET_LEAD_IN[m],
+        crcs: SEEDED_RATE_CRCS[m],
+        couplings: SEEDED_RATE_COUPLINGS[m],
+        read: SEEDED_RATE_READ[m],
+    }
+}
+
+/// H-39's derivation on network `n` of `SIXTEENTH_SEEDS` past the first, run and dumped whole
+/// before anything of it is held: `derive_under` on the network's prior at a sixteenth under its
+/// own target (`at_a_sixteenth`), as `rate_derivation` runs H-38's on seed 22, and the lead-in's
+/// reading against the network's count from the gain the gain's rule returned. A rule that
+/// returns nothing stops the derivation there, which is a reading of clause 0 and is not
+/// repaired.
+fn sixteenth_derivation(n: usize, name: &str) -> (Derivation, RateRead) {
+    let m = n.checked_sub(1).expect("seed 23 or seed 24");
+    let d = derive_under(
+        SCAN_UNITS,
+        SIXTEENTH_SEEDS[n],
+        &at_a_sixteenth(SIXTEENTH_TARGETS[n]),
+        name,
+    );
+    dump_derivation(name, &d);
+    eprintln!("DUMP {name} PIN carried {:?}", d.carried);
+    eprintln!("DUMP {name} PIN after frozen {:?}", d.after_frozen);
+    let read = rate_read(
+        SCAN_UNITS,
+        SIXTEENTH_STEP,
+        SIXTEENTH_COUNTS[n],
+        d.prior_sums,
+        d.rules.gain.unwrap_or(GAIN_1024),
+        &d.lead_in,
+    );
+    eprintln!("DUMP {name} PIN read {read:?}");
+    eprintln!(
+        "DUMP {name} the estimate by the rate of its window {:?}",
+        estimate_by_rate(SCAN_UNITS, &[&d.lead_in])
+    );
+    eprintln!(
+        "DUMP {name} step {SIXTEENTH_STEP:#06x}, target {} ticks, {} spikes a window: clause 0 {}; no window at the saturation rule's count {:?}; the greatest window {:?} spikes of the {} the train holds; beside the gain held on this network {:?}, and seed 22 at a sixteenth {:?}",
+        SIXTEENTH_TARGETS[n],
+        SIXTEENTH_COUNTS[n],
+        d.rules.hold(),
+        rate_predicted(&[false; 6], SCAN_UNITS, &[&d.lead_in], None)[1],
+        read.counts.map(|(_, greatest)| greatest),
+        config(SCAN_UNITS, 2, BASELINE_Q16).train_capacity,
+        SEEDED_HELD_RATE_READ[m],
+        RATE_READ[RATE_SIXTEENTH]
+    );
+    (d, read)
+}
+
+/// H-39's derivation on seed 23 or seed 24 held (ADR-0183), after it is dumped, as
+/// `rate_derivation_held` holds H-38's on seed 22, with the network's derivation with the gain
+/// held, H-33's (`seeded_site`), where that holds seed 22's constants:
+/// - what the derivation makes before the settled network, and its cancel where it was reached,
+///   are the gain held's (`settling_apart`);
+/// - the lead-in's first window is the gain held's in everything but the gain its regulation
+///   left, and that gain is the rate's rule's from the gain's rule's gain (`first_ruled`);
+/// - every window's gain is the rate's rule's from the gain before it, the window's spikes, the
+///   network's count and the step;
+/// - no window of the lead-in holds more spikes than the train's capacity, which
+///   `lead_in_window` asserts window by window, and no worker's report carries an entry dropped
+///   (`undropped`);
+/// - the tables pinned from the derivation's one run (`rate_pins_held`).
+fn sixteenth_derivation_held(n: usize, name: &str, d: &Derivation, read: &RateRead) {
+    let m = n.checked_sub(1).expect("seed 23 or seed 24");
+    let held = seeded_site(m).derivation;
+    assert_eq!(
+        settling_apart(&held, d),
+        Vec::<&str>::new(),
+        "{name}: what the derivation makes before the settled network, and its cancel, are the gain held's"
+    );
+    let gain = held
+        .rules
+        .and_then(|rules| rules.gain)
+        .expect("the gain held's gain");
+    let first = d.lead_in.first().expect("a window of the lead-in");
+    let held_first = held
+        .lead_in
+        .first()
+        .expect("a window of the gain held's lead-in");
+    assert!(
+        first_ruled(held_first, first, gain, SIXTEENTH_COUNTS[n], SIXTEENTH_STEP),
+        "{name}: the first window is the gain held's, the gain moved at its end by the rule"
+    );
+    assert_eq!(
+        read.unruled, 0,
+        "{name}: every window's gain is the rate's rule's"
+    );
+    let capacity = config(SCAN_UNITS, 2, BASELINE_Q16).train_capacity as u64;
+    assert!(
+        read.counts
+            .is_some_and(|(_, greatest)| greatest <= capacity),
+        "{name}: the train held every window read from it"
+    );
+    rate_pins_held(name, &sixteenth_pins(n), d, read);
+}
+
+/// H-39's derivation on network `n` past the first (brief 073), a test of its own:
+/// `sixteenth_derivation`, then `sixteenth_derivation_held`.
+fn sixteenth_derived(n: usize) {
+    let name = format!("rate {}", SIXTEENTH_NAMES[n]);
+    let (d, read) = sixteenth_derivation(n, &name);
+    sixteenth_derivation_held(n, &name, &d, &read);
+}
+
+/// H-39's network of index `n` in `SIXTEENTH_SEEDS` for its arms, at a sixteenth, with the
+/// tables its arms' one run pinned.
+fn sixteenth_site(n: usize) -> RuledSite {
+    RuledSite {
+        step: RATE_SIXTEENTH,
+        network: n,
+        name: format!("ruled {}", SIXTEENTH_NAMES[n]),
+        arms: [0usize, 1].map(|k| ArmPins {
+            blocks: SIXTEENTH_BLOCKS[n][k],
+            trace: SIXTEENTH_TRACES[n][k],
+            composed: SIXTEENTH_COMPOSED[n][k],
+            earned: SIXTEENTH_EARNED[n][k],
+            read: SIXTEENTH_READ[n][k],
+            values: SIXTEENTH_VALUES[n][k],
+            value_hash: SIXTEENTH_VALUE_HASH[n][k],
+            sourced: SIXTEENTH_SOURCED[n][k],
+            sources_hash: SIXTEENTH_SOURCES_HASH[n][k],
+            readings: SIXTEENTH_READINGS[n][k],
+            critic: SIXTEENTH_CRITIC[n][k],
+            whole: SIXTEENTH_WHOLE[n][k],
+        }),
+        gains: [0usize, 1].map(|k| GainPins {
+            blocks: SIXTEENTH_GAIN_BLOCKS[n][k],
+            read: SIXTEENTH_GAIN[n][k],
+            opposite: SIXTEENTH_OPPOSITE[n][k],
+        }),
+    }
+}
+
+/// One arm of H-39 (ADR-0182, brief 073): H-25's arm on network `n` from the image its derivation
+/// under the rate's rule at a sixteenth wrote, the step and the network's target carried through
+/// every trial — `arm_on` on its `RuledSite`, under the true reward. Its calibration is the
+/// network's derivation run again and held as its own test holds it; on a network whose clause 0
+/// does not hold there is no arm.
+fn sixteenth_arm(n: usize, arm: Reversal) {
+    arm_on(Ground::Ruled(&sixteenth_site(n)), None, arm);
+}
+
+/// The inhibitory sum at the end of arm `k` of network `n` with the gain held, beside its image's:
+/// H-25's on seed 22 and H-33's on seeds 23 and 24, as the tree pins them.
+fn held_end(n: usize, k: usize) -> Option<(i64, i64)> {
+    match n.checked_sub(1) {
+        None => inhibitory_end(QUIET_1024[SETTLED].1.0, DRAWN_BLOCKS_1024[k]),
+        Some(m) => inhibitory_end(QUIET_SEEDED[m]?.1.0, SEEDED_BLOCKS[m][k]),
+    }
+}
+
+/// What predicted readings 2 to 4 read of arm `k` of network `n` from its pinned tables (ADR-0183):
+/// its gain within the band by its pinned reading (`gain_readings`), its opposite pairs as
+/// pinned, and its inhibitory sum's end against the image its network's derivation wrote beside
+/// the network's arm's with the gain held. None before its one run.
+fn sixteenth_arm_read(n: usize, k: usize) -> Option<SixteenthArm> {
+    let read = SIXTEENTH_GAIN[n][k]?;
+    let (_, sums) = sixteenth_pins(n).quiet?;
+    Some(SixteenthArm {
+        within: gain_readings(&read).0,
+        opposite: SIXTEENTH_OPPOSITE[n][k]?,
+        ended: inhibitory_end(sums.0, SIXTEENTH_BLOCKS[n][k])?,
+        held: held_end(n, k)?,
+    })
+}
+
+/// H-39's derivation on the prior of seed 23 (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_sixteenth_on_seed_23_at_1024_units_exhaustive() {
+    sixteenth_derived(1);
+}
+
+/// H-39's derivation on the prior of seed 24 (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_rate_s_rule_at_a_sixteenth_on_seed_24_at_1024_units_exhaustive() {
+    sixteenth_derived(2);
+}
+
+/// H-39's arm on seed 22 that starts from the assignment (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_address_drawn_at_a_sixteenth_on_seed_22_from_the_assignment_at_1024_units_exhaustive() {
+    sixteenth_arm(0, Reversal::AssignmentFirst);
+}
+
+/// H-39's arm on seed 22 that starts from the mirrored assignment (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_address_drawn_at_a_sixteenth_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    sixteenth_arm(0, Reversal::MirroredFirst);
+}
+
+/// H-39's arm on seed 23 that starts from the assignment (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_address_drawn_at_a_sixteenth_on_seed_23_from_the_assignment_at_1024_units_exhaustive() {
+    sixteenth_arm(1, Reversal::AssignmentFirst);
+}
+
+/// H-39's arm on seed 23 that starts from the mirrored assignment (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_address_drawn_at_a_sixteenth_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    sixteenth_arm(1, Reversal::MirroredFirst);
+}
+
+/// H-39's arm on seed 24 that starts from the assignment (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_address_drawn_at_a_sixteenth_on_seed_24_from_the_assignment_at_1024_units_exhaustive() {
+    sixteenth_arm(2, Reversal::AssignmentFirst);
+}
+
+/// H-39's arm on seed 24 that starts from the mirrored assignment (ADR-0182, brief 073).
+#[test]
+#[ignore]
+fn the_address_drawn_at_a_sixteenth_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    sixteenth_arm(2, Reversal::MirroredFirst);
+}
+
+/// A derivation with the gain held given back from its pinned tables (ADR-0183), so that the gate
+/// tries a derivation's checks before any run: what each rule returned and every table it was
+/// read from; the images, which the pins hold by their CRCs, are not.
+fn pinned_derivation(pins: &DerivationPins) -> Derivation {
+    Derivation {
+        rules: pins.rules.unwrap_or_default(),
+        scanned: pins.scanned.to_vec(),
+        prior_sums: pins.prior_sums,
+        calibrations: pins.calibrations.to_vec(),
+        census: pins.census.to_vec(),
+        synapses: pins.synapses,
+        probes: pins.probes.iter().map(|probe| probe.to_vec()).collect(),
+        cancelled: pins.cancelled.to_vec(),
+        lead_in: pins.lead_in.to_vec(),
+        quiet: pins.quiet,
+        frozen: pins.frozen,
+        counted: pins.counted.to_vec(),
+        frozen_census: pins.frozen_census.to_vec(),
+        target_lead_in: pins.target_lead_in.to_vec(),
+        crcs_read: pins.crcs,
+        couplings: pins.couplings,
+        ..Derivation::default()
+    }
+}
+
+/// The gate's test (ADR-0061's class; brief 073): H-39's networks, targets, counts, step,
+/// settling, arms and prediction; the opposite pairs' rule and the inhibitory sum's at their
+/// edges; H-39's verdict and its stopping rule's steps over tables written by hand; the four
+/// predicted readings' rules at their edges; the checks a derivation on seed 23 or seed 24 is
+/// held by, tried before any such run over the tables the tree pins — what a derivation makes
+/// before its settled network and its cancel against each network's derivation with the gain
+/// held, and a first window under the rule against seed 22's at a sixteenth and at an eighth;
+/// the tables read before the run — each network's gain held's lead-in by the rate's reading,
+/// the inhibitory sum's end in each arm with the gain held, and H-38's arms' opposite pairs and
+/// inhibitory ends; and, over H-39's pinned tables, each network's derivation by its rules, each
+/// arm's gain by block against its reading, and the verdict, its step and the four predicted
+/// readings as written (`sixteenth_tables`). It runs no lead-in. Nothing else added to the gate.
+#[test]
+fn the_networks_of_h_39_its_clauses_and_its_predicted_readings_rules() {
+    // The networks, the targets, the counts, the step, the settling, the arms and the
+    // prediction.
+    assert_eq!(SIXTEENTH_SEEDS, [22, 23, 24]);
+    assert_eq!(SIXTEENTH_TARGETS, [58_201, 59_510, 59_179]);
+    assert_eq!(
+        SIXTEENTH_TARGETS.map(Some),
+        [
+            Some(TARGET_PERIOD_1024),
+            RULES_SEEDED[0].and_then(|rules| rules.period),
+            RULES_SEEDED[1].and_then(|rules| rules.period)
+        ],
+        "each network's target is the period its own derivation returns with the gain held"
+    );
+    assert_eq!(SIXTEENTH_COUNTS, [2_306, 2_255, 2_268]);
+    for (n, &period) in SIXTEENTH_TARGETS.iter().enumerate() {
+        let engine = Executor::<8>::new(Config {
+            units: SCAN_UNITS as usize,
+            control_step_q0_16: SIXTEENTH_STEP,
+            rate_target_period_ticks: period,
+            ..Config::default()
+        })
+        .expect("a configuration the engine takes");
+        assert_eq!(
+            engine.rate_target_per_window(),
+            Some(SIXTEENTH_COUNTS[n]),
+            "network {n}: the count the engine makes of its target is the count the rules read by"
+        );
+    }
+    assert_eq!(
+        (
+            SIXTEENTH_STEP,
+            RATE_STEPS[RATE_SIXTEENTH],
+            RATE_BOUND,
+            SCAN_UNITS
+        ),
+        (0x1000, 0x1000, 320, 1024)
+    );
+    assert_eq!(
+        at_a_sixteenth(RATE_TARGET_PERIOD),
+        under_rate(SIXTEENTH_STEP),
+        "on seed 22 H-39's settling is H-38's at a sixteenth"
+    );
+    for &period in &SIXTEENTH_TARGETS {
+        assert_eq!(
+            at_a_sixteenth(period),
+            Settling {
+                step: 0x1000,
+                gains: false,
+                bound: 320,
+                target: period,
+                mean: true
+            }
+        );
+    }
+    assert_eq!(SIXTEENTH_NAMES[0], RATE_NAMES[RATE_SIXTEENTH]);
+    assert_eq!(
+        SIXTEENTH_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (
+            SIXTEENTH_PREDICTED,
+            SIXTEENTH_READINGS_PREDICTED,
+            OPPOSITE_BELOW
+        ),
+        (true, [true; 4], 600)
+    );
+    assert_eq!(
+        (
+            REWARDED_MIN,
+            BOUND_PER_CENT,
+            REVERSAL_BLOCKS_MAX,
+            CROSSING_MARK,
+            SCHEDULE_BLOCKS,
+            BAND_QUARTERS,
+            BAND_DIVISOR
+        ),
+        (80, 130, 23, 40, 120, (3, 5), 4),
+        "clauses 1 to 4 are H-25's"
+    );
+    // The opposite pairs' rule at its edges: a window at the target is not above it.
+    let win = |spikes: u64| (spikes, GAIN_1024);
+    assert_eq!(opposite_pairs(&[], 2_306), 0);
+    assert_eq!(opposite_pairs(&[win(9_999)], 2_306), 0);
+    assert_eq!(opposite_pairs(&[win(2_306), win(2_307)], 2_306), 1);
+    assert_eq!(
+        opposite_pairs(&[win(2_306), win(2_306), win(0)], 2_306),
+        0,
+        "a window at the target stands with those below it"
+    );
+    assert_eq!(
+        opposite_pairs(&[win(2_307), win(2_306), win(2_307)], 2_306),
+        2
+    );
+    let alternating: Vec<(u64, u32)> = (0..960u64)
+        .map(|w| win(if w & 1 == 0 { 2_400 } else { 2_200 }))
+        .collect();
+    assert_eq!(
+        opposite_pairs(&alternating, 2_306),
+        959,
+        "960 windows that alternate: every pair"
+    );
+    assert_eq!(opposite_pairs(&alternating, 2_400), 0);
+    let mut once = vec![win(2_200); 960];
+    once[480] = win(2_400);
+    assert_eq!(opposite_pairs(&once, 2_306), 2);
+    // The inhibitory sum's rule at its edges.
+    assert!(ends_lower((782, 1_000), (848, 1_000)));
+    assert!(
+        !ends_lower((848, 1_000), (848, 1_000)),
+        "at the same fraction it is not lower"
+    );
+    assert!(!ends_lower((1, 2), (2, 4)), "one fraction written two ways");
+    assert!(!ends_lower((849, 1_000), (848, 1_000)));
+    assert!(ends_lower((1_999_999, 4_000_000), (1, 2)));
+    assert!(
+        !ends_lower((1, 0), (2, 3)) && !ends_lower((1, 2), (2, 0)),
+        "against an image of no sum it reads nothing"
+    );
+    assert!(
+        ends_lower((i64::MAX.saturating_sub(1), i64::MAX), (i64::MAX, i64::MAX)),
+        "the products in wider integers"
+    );
+    // Clause 0, H-39's verdict and its stopping rule's steps, over tables written by hand
+    // against an image written by hand.
+    let image: [[i64; 2]; 2] = [[1_000, 2_000], [3_000, 4_000]];
+    let outside = 90_000i64;
+    let block = |correct: u32, inhibitory: i64| -> Block {
+        let excitatory = image
+            .iter()
+            .flatten()
+            .fold(outside, |sum, &c| sum.saturating_add(c));
+        (
+            correct,
+            0,
+            [[0; 2]; 2],
+            [0; 2],
+            [0; 2],
+            [0; 2],
+            0,
+            inhibitory,
+            excitatory,
+            0,
+            image,
+            0,
+        )
+    };
+    assert_eq!(inhibitory_end(5_000, &[]), None);
+    assert_eq!(
+        inhibitory_end(5_000, &[block(64, 4_000), block(64, 3_900)]),
+        Some((3_900, 5_000)),
+        "the last block's sum"
+    );
+    let full = vec![block(BLOCK as u32, 0); SCHEDULE_BLOCKS];
+    let mut unlearned = full.clone();
+    for at in [
+        MAPPINGS[2].1.saturating_sub(1),
+        MAPPINGS[2].1.saturating_sub(2),
+    ] {
+        unlearned[at].0 = 0;
+    }
+    let unsettled = Rules {
+        settled: None,
+        ..RULES_1024
+    };
+    let blind = Rules {
+        frozen: Some([true, false]),
+        ..RULES_1024
+    };
+    let arms = Some((&image, outside, [full.as_slice(), full.as_slice()]));
+    let unlearned_arms = Some((&image, outside, [full.as_slice(), unlearned.as_slice()]));
+    let yes = sixteenth(&[RULES_1024; 3], [arms; 3]);
+    assert_eq!((yes.yes, sixteenth_step(&yes)), (true, 3));
+    assert_eq!(yes.yes, SIXTEENTH_PREDICTED, "the prediction is a yes");
+    let underived = sixteenth(&[RULES_1024, RULES_1024, unsettled], [arms; 3]);
+    assert_eq!(
+        (
+            underived
+                .networks
+                .map(|network| (network.derived, network.arms.is_some())),
+            underived.yes,
+            sixteenth_step(&underived)
+        ),
+        ([(true, true), (true, true), (false, false)], false, 4),
+        "a no on clause 0 on seed 24: its arms are not read"
+    );
+    assert_eq!(
+        sixteenth_step(&sixteenth(&[blind, RULES_1024, RULES_1024], [arms; 3])),
+        4,
+        "a frozen block that fails a measure on seed 22"
+    );
+    assert_eq!(
+        sixteenth_step(&sixteenth(
+            &[RULES_1024, RULES_1024, unsettled],
+            [unlearned_arms, arms, arms]
+        )),
+        4,
+        "clause 0 is read first"
+    );
+    let on_22 = sixteenth(&[RULES_1024; 3], [unlearned_arms, arms, arms]);
+    assert_eq!(
+        (
+            on_22.networks[0]
+                .arms
+                .map(|verdict| verdict.learning.learned[1]),
+            on_22.networks[0].yes,
+            on_22.yes,
+            sixteenth_step(&on_22)
+        ),
+        (Some([true, true, false, true]), false, false, 5),
+        "clause 1 fails in seed 22's second arm's third mapping"
+    );
+    assert_eq!(
+        sixteenth_step(&sixteenth(
+            &[RULES_1024; 3],
+            [unlearned_arms, unlearned_arms, arms]
+        )),
+        5,
+        "a no on seed 22 is read before one on seed 23"
+    );
+    for (given, expected) in [
+        ([arms, unlearned_arms, arms], [true, false, true]),
+        ([arms, arms, unlearned_arms], [true, true, false]),
+    ] {
+        let verdict = sixteenth(&[RULES_1024; 3], given);
+        assert_eq!(
+            (
+                verdict.networks.map(|network| network.yes),
+                sixteenth_step(&verdict)
+            ),
+            (expected, 6),
+            "a no on seed 23 or seed 24 alone"
+        );
+    }
+    let unread = sixteenth(&[RULES_1024; 3], [arms, arms, None]);
+    assert_eq!(
+        (
+            unread.networks[2].derived,
+            unread.networks[2].arms,
+            unread.yes,
+            sixteenth_step(&unread)
+        ),
+        (true, None, false, 6),
+        "a network whose arms did not run is no yes"
+    );
+    // The four predicted readings' rules at their edges.
+    let arm = |within: bool, opposite: u32, ended: i64| SixteenthArm {
+        within,
+        opposite,
+        ended: (ended, 1_000),
+        held: (848, 1_000),
+    };
+    let good = arm(true, 599, 847);
+    assert_eq!(sixteenth_predicted(&[true; 3], &[good; 6]), [Some(true); 4]);
+    assert_eq!(
+        sixteenth_predicted(&[true, true, false], &[]),
+        [Some(false), None, None, None],
+        "seed 24's step does not hold; no arm, no second to fourth"
+    );
+    assert_eq!(
+        sixteenth_predicted(&[false, true, true], &[good]),
+        [Some(true); 4],
+        "the first reading is of seeds 23 and 24 alone"
+    );
+    for (odd, expected) in [
+        (
+            arm(false, 599, 847),
+            [Some(true), Some(false), Some(true), Some(true)],
+        ),
+        (
+            arm(true, 600, 847),
+            [Some(true), Some(true), Some(false), Some(true)],
+        ),
+        (
+            arm(true, 599, 848),
+            [Some(true), Some(true), Some(true), Some(false)],
+        ),
+    ] {
+        let mut six = vec![good; 5];
+        six.push(odd);
+        assert_eq!(
+            sixteenth_predicted(&[true; 3], &six),
+            expected,
+            "one arm of six misses: {odd:?}"
+        );
+    }
+    // The checks a derivation on seed 23 or seed 24 is held by, tried over the tables the tree
+    // pins before any such run. Each network's derivation with the gain held, given back from its
+    // pins, is its own in everything before its settled network and in its cancel; a table
+    // changed is named; a derivation that stopped before its cancel is not held to one; another
+    // network's is not this one's.
+    for (m, seed) in SEEDS.iter().enumerate() {
+        let pins = seeded_site(m).derivation;
+        assert_eq!(
+            settling_apart(&pins, &pinned_derivation(&pins)),
+            Vec::<&str>::new(),
+            "seed {seed}: the gain held's against its own pins"
+        );
+        let mut moved = pinned_derivation(&pins);
+        if let Some(first) = moved.census.first_mut() {
+            first.1 = first.1.saturating_add(1);
+        }
+        moved.probes.pop();
+        assert_eq!(settling_apart(&pins, &moved), vec!["census", "probes"]);
+        moved.rules.span = None;
+        assert_eq!(
+            settling_apart(&pins, &moved),
+            vec!["census"],
+            "a derivation that stopped before its cancel"
+        );
+        let other = pinned_derivation(&seeded_site(m ^ 1).derivation);
+        assert!(
+            settling_apart(&pins, &other).contains(&"prior sums"),
+            "seed {seed}: another network's is not this one's"
+        );
+    }
+    // A first window under the rule: seed 22's at a sixteenth and at an eighth against the gain
+    // held's, by the rule a derivation on seed 23 or seed 24 is held by; and each of those
+    // networks' gain held's first window against itself, under no step and under the gain moved
+    // at its end by the rule.
+    let held_first = &BACKGROUND_LEAD_IN_1024[SETTLED][0];
+    let sixteenth_first = &RATE_LEAD_IN[RATE_SIXTEENTH][0];
+    assert!(first_ruled(
+        held_first,
+        sixteenth_first,
+        GAIN_1024,
+        RATE_TARGET_COUNT,
+        SIXTEENTH_STEP
+    ));
+    assert!(first_ruled(
+        held_first,
+        &RATE_LEAD_IN[0][0],
+        GAIN_1024,
+        RATE_TARGET_COUNT,
+        RATE_STEPS[0]
+    ));
+    assert!(
+        !first_ruled(
+            held_first,
+            &RATE_LEAD_IN[0][0],
+            GAIN_1024,
+            RATE_TARGET_COUNT,
+            SIXTEENTH_STEP
+        ),
+        "an eighth's first window is not a sixteenth's"
+    );
+    assert!(
+        !first_ruled(
+            held_first,
+            sixteenth_first,
+            GAIN_1024,
+            SIXTEENTH_COUNTS[1],
+            SIXTEENTH_STEP
+        ),
+        "nor read against another network's count"
+    );
+    for (m, seed) in SEEDS.iter().enumerate() {
+        let first = LEAD_IN_SEEDED[m][0];
+        let count = SIXTEENTH_COUNTS[m.saturating_add(1)];
+        assert!(first_ruled(&first, &first, GAIN_1024, count, 0));
+        let mut moved = first;
+        moved.5 = rate_regulated(GAIN_1024, first.0, count, SIXTEENTH_STEP);
+        assert_ne!(moved.5, first.5, "seed {seed}: the rule moves the gain");
+        assert!(first_ruled(
+            &first,
+            &moved,
+            GAIN_1024,
+            count,
+            SIXTEENTH_STEP
+        ));
+        moved.2 = moved.2.saturating_add(1);
+        assert!(
+            !first_ruled(&first, &moved, GAIN_1024, count, SIXTEENTH_STEP),
+            "a window whose sums moved"
+        );
+    }
+    // The tables read before the run, functions of tables the tree pins: each of seeds 23's and
+    // 24's gain held's lead-ins by the rate's reading against its own count, under no step; the
+    // inhibitory sum at the end of each arm with the gain held beside its image's, per network;
+    // and H-38's arms' opposite pairs, as ADR-0181 read them, and their inhibitory ends.
+    let held_reads = [0usize, 1].map(|m| {
+        rate_read(
+            SCAN_UNITS,
+            0,
+            SIXTEENTH_COUNTS[m.saturating_add(1)],
+            PRIOR_SUMS_SEEDED[m],
+            GAIN_1024,
+            LEAD_IN_SEEDED[m],
+        )
+    });
+    let held_ends = [0usize, 1, 2].map(|n| [0usize, 1].map(|k| held_end(n, k)));
+    let ruled_ends = [0usize, 1]
+        .map(|k| inhibitory_end(RATE_QUIET[0].map_or(0, |(_, sums)| sums.0), RULED_BLOCKS[k]));
+    eprintln!("DUMP beside PIN seeded held rate read {held_reads:?}");
+    eprintln!("DUMP beside PIN held ends {held_ends:?}");
+    eprintln!("DUMP beside PIN ruled ends {ruled_ends:?}");
+    assert_eq!(
+        held_reads, SEEDED_HELD_RATE_READ,
+        "the gain held's lead-ins on seeds 23 and 24, as read"
+    );
+    assert!(
+        held_reads
+            .iter()
+            .all(|read| (read.unruled, read.saturated, read.steepness) == (0, 0, None)),
+        "under no step every window's gain is the rule's and the gain never moved"
+    );
+    assert_eq!(
+        held_ends,
+        HELD_ENDS.map(|network| network.map(Some)),
+        "the inhibitory sum's end in each arm with the gain held"
+    );
+    assert_eq!(ruled_ends, RULED_ENDS.map(Some));
+    for k in 0..2usize {
+        assert!(
+            ends_lower(RULED_ENDS[k], HELD_ENDS[0][k]),
+            "arm {k}: under an eighth the sum ended lower than with the gain held, as ADR-0181 read it"
+        );
+    }
+    assert_eq!(RULED_OPPOSITE, [Some(750), Some(758)]);
+    assert!(
+        RULED_OPPOSITE
+            .iter()
+            .all(|pairs| pairs.is_some_and(|pairs| pairs >= OPPOSITE_BELOW)),
+        "an eighth's arms would miss predicted reading 3"
+    );
+    // Over H-39's pinned tables, by the rules above.
+    sixteenth_tables();
+}
+
+/// An image a derivation under the rate's rule wrote, as the gate reads an arm against it: its
+/// four couplings, its sums by polarity and the gain it carries.
+type RuledImage = ([[i64; 2]; 2], (i64, i64), u32);
+
+/// The gate's checks over H-39's pinned tables (ADR-0183), by the rules committed before any of
+/// them was run, each where it is pinned. On each network whose derivation is pinned: the rules
+/// before the settled network are the gain held's; the lead-in is the first settled window under
+/// H-39's settling, or the bound, and what the derivation returned of that rule is the rule's
+/// over the table; its reading is `rate_read`'s against the network's count, with every window's
+/// gain the rate's rule's; its first window is the gain held's with the gain moved at its end by
+/// the rule; the frozen block's two measures, where it was reached, are the rule's over the
+/// block; a rule that returned nothing left nothing after it; and no window passed the train.
+/// Each pinned arm's gain by block against its reading, as `rate_tables` holds H-38's: 120 blocks,
+/// the band the blocks' lowest and highest, the count the blocks' summed, the mean against the
+/// gain its network's image carries, the target the network's, and its opposite pairs pinned
+/// with it. Then, where every derivation is pinned and every arm of each network whose clause 0
+/// holds, the verdict by `sixteenth`, its step and the four predicted readings by
+/// `sixteenth_predicted`, each as written; before that, none is.
+fn sixteenth_tables() {
+    let capacity = config(SCAN_UNITS, 2, BASELINE_Q16).train_capacity as u64;
+    let mut rules: [Option<Rules>; 3] = [None; 3];
+    let mut images: [Option<RuledImage>; 3] = [None; 3];
+    for n in 0..3usize {
+        let name = SIXTEENTH_NAMES[n];
+        let pins = sixteenth_pins(n);
+        let Some(pinned) = pins.rules else {
+            assert!(
+                pins.lead_in.is_empty()
+                    && pins.read.is_none()
+                    && SIXTEENTH_BLOCKS[n].iter().all(|blocks| blocks.is_empty()),
+                "{name}: a network whose derivation is not pinned has no table and no arm"
+            );
+            continue;
+        };
+        let (held_rules, held_first, priors) = match n.checked_sub(1) {
+            None => (
+                RULES_1024,
+                BACKGROUND_LEAD_IN_1024[SETTLED][0],
+                PRIOR_SUMS_1024,
+            ),
+            Some(m) => (
+                RULES_SEEDED[m].expect("H-33's derivation"),
+                LEAD_IN_SEEDED[m][0],
+                PRIOR_SUMS_SEEDED[m],
+            ),
+        };
+        assert_eq!(
+            (pinned.rotation, pinned.gain),
+            (held_rules.rotation, held_rules.gain),
+            "{name}: the rules before the settled network are the gain held's"
+        );
+        let gain = held_rules.gain.expect("the gain's rule's gain");
+        let table = pins.lead_in;
+        let settled = at_a_sixteenth(SIXTEENTH_TARGETS[n]).settled(priors.1, gain, table);
+        assert_eq!(
+            table.len() as u64,
+            settled.map_or(RATE_BOUND, |w| w as u64),
+            "{name}: the lead-in is the first settled window, or the bound"
+        );
+        assert_eq!(
+            pinned.settled,
+            settled.filter(|_| pins.quiet.is_some()),
+            "{name}: the settled network's rule, over a network that fell quiet"
+        );
+        let read = rate_read(
+            SCAN_UNITS,
+            SIXTEENTH_STEP,
+            SIXTEENTH_COUNTS[n],
+            priors,
+            gain,
+            table,
+        );
+        assert_eq!(Some(read), pins.read, "{name}: the lead-in's reading");
+        assert_eq!(
+            (read.settled[2], read.unruled),
+            (settled, 0),
+            "{name}: the rule's window, and every window's gain the rate's rule's"
+        );
+        assert!(
+            read.counts
+                .is_some_and(|(_, greatest)| greatest <= capacity),
+            "{name}: the train held every window read from it"
+        );
+        assert!(
+            table.first().is_some_and(|first| first_ruled(
+                &held_first,
+                first,
+                gain,
+                SIXTEENTH_COUNTS[n],
+                SIXTEENTH_STEP
+            )),
+            "{name}: the first window is the gain held's, the gain moved at its end by the rule"
+        );
+        let len = geometry(SCAN_UNITS, pinned.rotation.unwrap_or(0))[0].len();
+        assert_eq!(
+            pinned.frozen,
+            pins.frozen
+                .map(|(block, _, composed)| frozen_measures(len, &block, &composed)),
+            "{name}: the frozen block's two measures by their rule"
+        );
+        assert_eq!(
+            (
+                pins.quiet.is_some(),
+                pins.carried.is_some(),
+                pins.frozen.is_some(),
+                pins.after_frozen.is_some(),
+                pins.crcs.is_some(),
+                pins.couplings.is_some()
+            ),
+            (
+                pinned.settled.is_some(),
+                pinned.settled.is_some(),
+                pinned.frozen.is_some(),
+                pinned.frozen.is_some(),
+                pinned.critic.is_some(),
+                pinned.critic.is_some()
+            ),
+            "{name}: a rule that returned nothing left no table after it"
+        );
+        rules[n] = Some(pinned);
+        images[n] = pins
+            .couplings
+            .zip(pins.quiet)
+            .zip(pins.carried)
+            .map(|((couplings, (_, sums)), (gain, _))| (couplings, sums, gain));
+        eprintln!(
+            "DUMP sixteenth {name} target {} ticks, {} spikes a window: clause 0 {}; rules {pinned:?}; read {read:?}",
+            SIXTEENTH_TARGETS[n],
+            SIXTEENTH_COUNTS[n],
+            pinned.hold()
+        );
+    }
+    // Each pinned arm, against the image its network's derivation wrote.
+    let mut arm_reads: Vec<SixteenthArm> = Vec::new();
+    let mut arms_pinned = [false; 3];
+    for n in 0..3usize {
+        for k in 0..2usize {
+            let name = format!("{} {:?}", SIXTEENTH_NAMES[n], SIXTEENTH_ARMS[k]);
+            let blocks = SIXTEENTH_GAIN_BLOCKS[n][k];
+            let Some(read) = SIXTEENTH_GAIN[n][k] else {
+                assert!(
+                    blocks.is_empty()
+                        && SIXTEENTH_BLOCKS[n][k].is_empty()
+                        && SIXTEENTH_OPPOSITE[n][k].is_none(),
+                    "{name}: an arm with no reading is not pinned"
+                );
+                continue;
+            };
+            let carried = images[n]
+                .map(|(_, _, gain)| gain)
+                .expect("an arm of a network whose derivation wrote an image");
+            assert_eq!(
+                (
+                    blocks.len(),
+                    SIXTEENTH_BLOCKS[n][k].len(),
+                    read.windows,
+                    read.unruled
+                ),
+                (
+                    SCHEDULE_BLOCKS,
+                    SCHEDULE_BLOCKS,
+                    SCHEDULE_BLOCKS.saturating_mul(BLOCK_WINDOWS),
+                    0
+                ),
+                "{name}: 120 blocks of eight windows, every window's gain the rule's"
+            );
+            assert_eq!(
+                read.band,
+                blocks
+                    .iter()
+                    .map(|b| b.0)
+                    .min()
+                    .zip(blocks.iter().map(|b| b.1).max()),
+                "{name}: the band is the blocks' lowest and highest"
+            );
+            assert_eq!(
+                read.counts.map(|(_, _, summed)| summed),
+                Some(blocks.iter().fold(0u64, |sum, b| sum.saturating_add(b.3))),
+                "{name}: the count is the blocks' summed"
+            );
+            assert_eq!(
+                read.mean.1,
+                (read.windows as u64).saturating_mul(u64::from(carried)),
+                "{name}: the mean is read against the gain its network's image carries"
+            );
+            assert_eq!(
+                read.target,
+                Some((read.windows as u64).saturating_mul(u64::from(SIXTEENTH_COUNTS[n]))),
+                "{name}: the engine carried the network's target"
+            );
+            assert_eq!(
+                read.outside.is_none(),
+                blocks.iter().all(|b| gain_within(b.0) && gain_within(b.1)),
+                "{name}: no window outside the band is every block's lowest and highest within it"
+            );
+            let opposite =
+                SIXTEENTH_OPPOSITE[n][k].expect("an arm's opposite pairs, pinned with it");
+            assert!(
+                opposite < SCHEDULE_BLOCKS.saturating_mul(BLOCK_WINDOWS) as u32,
+                "{name}: of 959 pairs"
+            );
+            arm_reads.push(sixteenth_arm_read(n, k).expect("a pinned arm's reading"));
+        }
+        arms_pinned[n] = SIXTEENTH_GAIN[n].iter().all(Option::is_some);
+    }
+    let complete =
+        (0..3usize).all(|n| rules[n].is_some_and(|rules| !rules.hold() || arms_pinned[n]));
+    let verdict = complete.then(|| {
+        let arms = [0usize, 1, 2].map(|n| {
+            images[n]
+                .as_ref()
+                .filter(|_| arms_pinned[n])
+                .map(|(couplings, sums, _)| {
+                    (
+                        couplings,
+                        outside_image(couplings, sums.1),
+                        SIXTEENTH_BLOCKS[n],
+                    )
+                })
+        });
+        sixteenth(&rules.map(Option::unwrap_or_default), arms)
+    });
+    let readings = verdict.map(|verdict| {
+        sixteenth_predicted(&verdict.networks.map(|network| network.derived), &arm_reads)
+    });
+    eprintln!(
+        "DUMP sixteenth PIN verdict {verdict:?} step {:?} predicted readings {readings:?}; the arms' readings {arm_reads:?}",
+        verdict.map(|verdict| sixteenth_step(&verdict))
+    );
+    assert_eq!(verdict, SIXTEENTH_1024, "H-39's verdict as written");
+    assert_eq!(
+        verdict.map(|verdict| sixteenth_step(&verdict)),
+        SIXTEENTH_STEP_1024,
+        "the step of the stopping rule reached"
+    );
+    assert_eq!(
+        readings, SIXTEENTH_READINGS_READ_1024,
+        "ADR-0182's four predicted readings, as read"
+    );
+}
+
+// ------------------------------------------------ as read from the one run (ADR-0183)
+
+/// H-39's verdict, as read; none before the runs.
+const SIXTEENTH_1024: Option<Sixteenth> = None;
+/// The step of ADR-0182's stopping rule the verdict reaches; none before the runs.
+const SIXTEENTH_STEP_1024: Option<u8> = None;
+/// ADR-0182's four predicted readings, as read; none before the runs.
+const SIXTEENTH_READINGS_READ_1024: Option<[Option<bool>; 4]> = None;
+
+// ------------------------------------------- the tables the gate reads beside (ADR-0183)
+
+/// The gain held's lead-ins on seeds 23 and 24 by the rate's reading against each network's own
+/// count, under no step: functions of pinned tables, read before any lead-in under the rule on
+/// either network.
+const SEEDED_HELD_RATE_READ: [RateRead; 2] = [
+    RateRead {
+        windows: 106,
+        settled: [Some(106), Some(32), Some(106)],
+        band: Some((114688, 114688)),
+        late: Some((114688, 114688)),
+        counts: Some((2117, 2459)),
+        sixteen: Some(36249),
+        above: 53,
+        saturated: 0,
+        unruled: 0,
+        last: (2186, 1981, 114688, 18736),
+        sums: [7514, 9202],
+        steepness: None,
+    },
+    RateRead {
+        windows: 99,
+        settled: [Some(99), Some(32), Some(99)],
+        band: Some((114688, 114688)),
+        late: Some((114688, 114688)),
+        counts: Some((2103, 2487)),
+        sixteen: Some(36507),
+        above: 47,
+        saturated: 0,
+        unruled: 0,
+        last: (2349, 2132, 114688, 0),
+        sums: [7668, 9246],
+        steepness: None,
+    },
+];
+
+/// The inhibitory sum at the end of each arm with the gain held beside its image's, `[seed 22,
+/// seed 23, seed 24]` of `[from the assignment, from the mirrored]`: H-25's and H-33's, as the
+/// tree pins them, read before any arm at a sixteenth.
+const HELD_ENDS: [[(i64, i64); 2]; 3] = [
+    [(140653317, 165876268), (140974490, 165876268)],
+    [(145990674, 160740112), (146298915, 160740112)],
+    [(146939686, 164038322), (147113689, 164038322)],
+];
+
+/// The inhibitory sum at the end of each of H-38's arms under an eighth beside its image's, as the
+/// tree pins them.
+const RULED_ENDS: [(i64, i64); 2] = [(127319721, 162864171), (127452842, 162864171)];
+
+/// H-38's arms' pairs of consecutive windows on opposite sides of the target, of 959, as ADR-0181
+/// read them from the arms' dumps: pinned by brief 073 and held by every weekly run of those
+/// arms.
+const RULED_OPPOSITE: [Option<u32>; 2] = [Some(750), Some(758)];
+
+// ------------------------------------------------ pinned from the one run (brief 073)
+
+/// What each rule returned on seeds 23 and 24 under the rate's rule at a sixteenth, and every
+/// table it was read from, in `RatePins`'s shape; none before the derivation's one run.
+const SEEDED_RATE_RULES: [Option<Rules>; 2] = [None; 2];
+const SEEDED_RATE_LEAD_IN: [&[LeadInWindow]; 2] = [&[]; 2];
+const SEEDED_RATE_QUIET: [Option<(u64, (i64, i64))>; 2] = [None; 2];
+const SEEDED_RATE_CARRIED: [Option<(u32, u32)>; 2] = [None; 2];
+const SEEDED_RATE_FROZEN: [Option<(Block, u64, Composition)>; 2] = [None; 2];
+const SEEDED_RATE_COUNTED: [&[Counted]; 2] = [&[]; 2];
+const SEEDED_RATE_FROZEN_CENSUS: [&[(u32, u64)]; 2] = [&[]; 2];
+const SEEDED_RATE_AFTER_FROZEN: [Option<(u32, u32)>; 2] = [None; 2];
+const SEEDED_RATE_TARGET_LEAD_IN: [&[u64]; 2] = [&[]; 2];
+const SEEDED_RATE_CRCS: [Option<[u64; 6]>; 2] = [None; 2];
+const SEEDED_RATE_COUPLINGS: [Option<[[i64; 2]; 2]>; 2] = [None; 2];
+const SEEDED_RATE_READ: [Option<RateRead>; 2] = [None; 2];
+
+/// The tables each of H-39's six arms is held to, `[seed 22, seed 23, seed 24]` of `[from the
+/// assignment, from the mirrored]`, in `ArmPins`'s and `GainPins`'s shape; empty before the arm's
+/// one run.
+const SIXTEENTH_BLOCKS: [[&[Block]; 2]; 3] = [[&[], &[]]; 3];
+const SIXTEENTH_TRACES: [[u64; 2]; 3] = [[0; 2]; 3];
+const SIXTEENTH_COMPOSED: [[u64; 2]; 3] = [[0; 2]; 3];
+const SIXTEENTH_EARNED: [[&[EarnedBlock]; 2]; 3] = [[&[], &[]]; 3];
+const SIXTEENTH_READ: [[u64; 2]; 3] = [[0; 2]; 3];
+const SIXTEENTH_VALUES: [[&[ValueBlock]; 2]; 3] = [[&[], &[]]; 3];
+const SIXTEENTH_VALUE_HASH: [[u64; 2]; 3] = [[0; 2]; 3];
+const SIXTEENTH_SOURCED: [[&[Sourced]; 2]; 3] = [[&[], &[]]; 3];
+const SIXTEENTH_SOURCES_HASH: [[u64; 2]; 3] = [[0; 2]; 3];
+const SIXTEENTH_READINGS: [[Option<SeededRead>; 2]; 3] = [[None; 2]; 3];
+const SIXTEENTH_CRITIC: [[Option<CriticRead>; 2]; 3] = [[None; 2]; 3];
+static SIXTEENTH_WHOLE: [[Option<ArmRead>; 2]; 3] = [[None; 2]; 3];
+const SIXTEENTH_GAIN_BLOCKS: [[&[GainBlock]; 2]; 3] = [[&[], &[]]; 3];
+const SIXTEENTH_GAIN: [[Option<GainRead>; 2]; 3] = [[None; 2]; 3];
+const SIXTEENTH_OPPOSITE: [[Option<u32>; 2]; 3] = [[None; 2]; 3];
