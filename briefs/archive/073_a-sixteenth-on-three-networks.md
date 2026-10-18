@@ -1,7 +1,43 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-13
 ---
+
+> **Executed 2026-10-17 (UTC) in pull request #210.** Writes ADR-0183 (a sixteenth, on three networks,
+> measured); opens no finding. No file under `src/` changed. The protocol — the networks, the targets and their
+> counts, the step, H-39's clauses and constants, its stopping rule's steps and the four predicted readings' rules,
+> and the harness that gives an arm's ground its network — was committed and pushed before any lead-in was run
+> under the rule on seed 23 or seed 24 and before any arm was run at a sixteenth; the tree's 128 whole-domain tests
+> then passed, 128 of 128, H-38's six steps and two arms among them.
+>
+> **H-39 is yes, as ADR-0182 predicted, and its stopping rule reached step 3.** Clause 0 holds on every network:
+> seeds 23's and 24's lead-ins settle at windows 105 and 93, and the frozen block sees the stimulus in 64 trials
+> of 64. In all six arms H-25's four clauses hold: 119 to 126 of each mapping's last 128 correct, the eighteen
+> reversals passed in 11 to 19 blocks, fewer in all than with the gain held, the highest coupling 1.215 of its
+> image's, the outside sum at its image's. The controller holds each network's count at its target with the gain
+> held's scatter. Three of the four predicted readings held; the alternation's missed, consecutive windows on
+> opposite sides of the target in 597 to 619 pairs of 959 where fewer than 600 were predicted: a sixteenth halves
+> an eighth's alternation and does not remove it. The inhibitory sum ends 0.10 to 0.13 lower than with the gain
+> held on every network. The next decision, an ADR on what the engine carries by default — the rule, the step and
+> a target's rule for a network no derivation has settled — and on the other size, is named and not taken.
+>
+> Every deliverable below is done and its box ticked. The weekly was dispatched at `scope=exhaustive`, run 39054186063;
+> its twelve whole-domain shards are green and the cost table is regenerated from them. The sweep the Context
+> names, run 38417864748's, had ended and is recorded in ADR-0183: none missed. Four things differ from the
+> brief's letter or add to it, each by its empowerment clause or recorded as what it is, and each in ADR-0183:
+> - **the arms' ground is `RuledSite` given its network**, the derivation on seed 23 or 24 held, beside its first
+>   run's tables, to that network's derivation with the gain held in everything the settling does not reach;
+> - **the alternation is read beside every arm** and held on H-38's two at ADR-0181's 750 and 758, pinned by this
+>   round from ADR-0181's own dumps, so that the calibration tried the one check added to an arm on arms whose
+>   first ticks hold a spike;
+> - **predicted readings 2 to 4 are read over the arms that ran**, all six here;
+> - **the line `arm_on` dumps as the inhibitory course beside the network's own** reads, on a `RuledSite`, the gain
+>   held's blocks against this arm's image; predicted reading 4 reads each against its own, and the line was not
+>   changed after the runs.
+>
+> Relative links gained one `../` so that they resolve from `archive/`; no word, claim or figure changed.
+>
+> *The body below describes the tree before execution and is not maintained.*
 
 # Brief 073: A sixteenth, on three networks — ADR-0182's question: under the rate's rule at a step of a sixteenth, on seeds 22, 23 and 24 at 1 024 units, each with the target its own derivation returns with the gain held, H-25's two arms on each; nothing under `src/` changed; H-39 run once
 
@@ -9,9 +45,9 @@ date: 2026-10-13
 
 **This brief builds nothing in the engine and runs one hypothesis once.** H-38 read that the engine learns and
 revises with its controller holding the settled network's rate
-([ADR-0181](../docs/adr/0181-a-rate-the-controller-holds-measured.md)). Its protocol took the largest step that
+([ADR-0181](../../docs/adr/0181-a-rate-the-controller-holds-measured.md)). Its protocol took the largest step that
 holds, an eighth, which is the one step at its loop's edge; a sixteenth's lead-in is quiet and no arm has run under
-it; and the yes is seed 22's. [ADR-0182](../docs/adr/0182-a-sixteenth-on-three-networks.md) asks both at once: a
+it; and the yes is seed 22's. [ADR-0182](../../docs/adr/0182-a-sixteenth-on-three-networks.md) asks both at once: a
 sixteenth, on the three networks of the size.
 
 ADR-0182 wrote **H-39** before any run and **predicts yes**, with what would refute it and four predicted readings.
@@ -56,21 +92,21 @@ When the round is done, the tree holds:
   included.
 - **No capacity of a run's configuration is reached silently.**
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)).
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)).
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The mutation gate on the changed lines must pass
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)); with no line under `src/` changed it has nothing to
   mutate, and says so.
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says**
-  ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md),
-  [ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the runs run once, the dispatch's scope
+  ([ADR-0150](../../docs/adr/0150-a-round-waits-for-what-it-checks.md),
+  [ADR-0158](../../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)): the runs run once, the dispatch's scope
   follows the diff, the merge waits for the whole-domain shards, the ADR cites the pull request's commits, the commit
   that asks for the merge sets it to `accepted`, and **a sweep that has ended and that no ADR has recorded is recorded
   by this round's**. One is named in the Context.
 - **The pull request leaves draft with the commit that asks for the merge.**
 - **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, under the regenerated deal
-  ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md)); one that does is reported with its job's minutes.
+  ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md)); one that does is reported with its job's minutes.
 - No pinned number of an earlier round moves.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -115,7 +151,7 @@ symbols and the quoted sentences are what to re-derive.
    it. A check of the watch on a network whose first 500 ticks hold a spike would have found it before the run."*
 9. **The weekly job**: twelve shards of 180 minutes, each running its tests two at a time. The cost table holds 128
    tests and 101 602 s; the two arms under the rule read 1 834 and 2 269 s, a step's derivation 185 to 279 s.
-10. **The dispatch's scope** ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
+10. **The dispatch's scope** ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=exhaustive`
     for a round that changes no file under `src/`.
 11. **A sweep to look for.** The sweep of brief 072's dispatch, run 38417864748, had not ended when ADR-0182 was
     written. If it has ended when this round's ADR is written and no ADR has recorded it, it is recorded there: the
@@ -125,10 +161,10 @@ symbols and the quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **An arm of a network under the rule, in the tests**: H-25's arm on seeds 23 and 24 from the image the
+- [x] **An arm of a network under the rule, in the tests**: H-25's arm on seeds 23 and 24 from the image the
   derivation under the rule writes, with the oracles and the readings an arm under the rule holds on seed 22; and on
   seed 22 at a sixteenth. Through it every arm the tree pins reads what it pins.
-- [ ] **H-39's protocol, in a new ADR at the next free number (`ls docs/adr`), before any lead-in is run under the
+- [x] **H-39's protocol, in a new ADR at the next free number (`ls docs/adr`), before any lead-in is run under the
   rule on seed 23 or seed 24 and before any arm is run at a sixteenth.**
   - The networks, the targets and the step.
   - What holds a derivation under the rule on seeds 23 and 24, where seed 22's has pinned tables.
@@ -139,34 +175,34 @@ symbols and the quoted sentences are what to re-derive.
     gain held.
   - The readings, no clause, as ADR-0182 lists them.
   - How a check added to an arm was tried before the runs.
-- [ ] **The calibration**, before any such run: every pinned number of the tree holds, H-38's six steps and two arms
+- [x] **The calibration**, before any such run: every pinned number of the tree holds, H-38's six steps and two arms
   among them, and seed 22's derivation at a sixteenth is the one pinned.
-- [ ] **The derivations on seeds 23 and 24**, each a weekly `exhaustive` test, run once: its lead-in pinned by
+- [x] **The derivations on seeds 23 and 24**, each a weekly `exhaustive` test, run once: its lead-in pinned by
   window, what each rule returned or that it returned nothing, the frozen block's readings and the steepness.
-- [ ] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once, their
+- [x] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once, their
   tables pinned per block, the controller's reading among them.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - H-39's verdict per network, arm and clause.
   - The prediction and each of the four predicted readings against what was read.
   - Seed 22 at a sixteenth beside seed 22 at an eighth.
   - Each network beside its own arms with the gain held, the inhibitory sum's course among them.
   - Over the three networks: the mappings learned of twenty-four, the reversals' blocks, the steepness.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** At most one runtime test: H-39's clauses and its predicted readings' rules at their edges, over
+- [x] **The gate.** At most one runtime test: H-39's clauses and its predicted readings' rules at their edges, over
   tables written by hand.
-- [ ] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
+- [x] **The evidence**, as "Evidencing a round" says. A weekly dispatched on this round's branch at
   `scope=exhaustive`. Its twelve whole-domain shards are green and reproduce every pinned number. The cost table is
   regenerated from their artifacts. The ADR names the dispatch and each shard's job time against its bound.
-- [ ] **The sweep recorded**: the one named in the Context, in this round's ADR if it has ended and no ADR has
+- [x] **The sweep recorded**: the one named in the Context, in this round's ADR if it has ended and no ADR has
   recorded it; said so if it has not.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper §11.1's H-39 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` only where the standing changes (ADR-0150); `README.md` and `docs/zh-TW`'s reader's guide as the
     result requires.
   - The whitepaper's version in both declarations, with its date
-    ([ADR-0064](../docs/adr/0064-the-documentation-gate-and-the-version.md)).
-- [ ] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the round's ADR set to
+    ([ADR-0064](../../docs/adr/0064-the-documentation-gate-and-the-version.md)).
+- [x] **The brief archived** as `briefs/README.md` says, every deliverable dispositioned, the round's ADR set to
   `accepted` by the commit that asks for the merge, and the pull request marked ready for review with it.
 
 ## Not empowered
