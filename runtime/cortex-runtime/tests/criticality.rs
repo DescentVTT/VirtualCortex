@@ -23,7 +23,7 @@ use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_BINS, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16,
     GAIN_MAX_Q16, GAIN_ONE_Q16, HomeostaticDrivePool, SIGMA_MAX_Q16,
 };
-use cortex_runtime::{Config, ConfigError, Executor, Image, Inject};
+use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, Inject, TargetRead};
 
 const UNITS: usize = 64;
 const BIN: u64 = 1 << ACTIVITY_BIN_SHIFT;
@@ -151,6 +151,24 @@ fn designed_window_under(
     counts: &[u32; ACTIVITY_WINDOW_BINS as usize],
     target: Option<u32>,
 ) {
+    designed_window_then(exec, oracle, counts, |oracle| {
+        match target {
+            Some(target) => oracle.regulate_rate(target),
+            None => oracle.regulate(UNITS as u32),
+        };
+    });
+}
+
+/// `designed_window` with the oracle's regulation given (ADR-0189): the window's kicks and the
+/// oracle's counts as `designed_window_under` makes them, then `regulate` on the oracle, then
+/// its sleep step. `designed_window_under` calls it with either rule; the read's windows with the
+/// gain held (`HomeostaticDrivePool::hold`).
+fn designed_window_then(
+    exec: &mut Executor<64>,
+    oracle: &mut HomeostaticDrivePool,
+    counts: &[u32; ACTIVITY_WINDOW_BINS as usize],
+    regulate: impl FnOnce(&mut HomeostaticDrivePool),
+) {
     let inject = exec.injector();
     assert_eq!(exec.ticks() % WINDOW, 0, "at a window boundary");
     for &count in counts {
@@ -184,10 +202,7 @@ fn designed_window_under(
         oracle.count_activity(count);
         assert!(oracle.close_bin().is_some());
     }
-    match target {
-        Some(target) => oracle.regulate_rate(target),
-        None => oracle.regulate(UNITS as u32),
-    };
+    regulate(oracle);
     // The window's cadence also steps the sleep stage (ADR-0037): with the shift at 0 only
     // the circadian phase moves.
     oracle.step_sleep();
@@ -727,5 +742,275 @@ fn the_rate_s_target_round_trips_mid_window_and_a_loaded_engine_regulates_alike(
         exec.homeostasis().synaptic_gain_q16,
         written.synaptic_gain_q16,
         "the loop went on"
+    );
+}
+
+/// A read of the rate's target as the executor composes it (ADR-0188, ADR-0189), over designed
+/// windows on a network without synapses: through the read's seventeen windows the gain is held
+/// at an eighth's step — the first window grows by a tenth a bin, which the estimate's rule would
+/// answer by lowering it — the record is a record fed the same counts and held
+/// (`HomeostaticDrivePool::hold`) in every field, the estimate kept as a reading; the first window
+/// is not summed and the sixteen after it are, 15 x 320 + 327 = 5 127, whose mean is 320 by the
+/// rounding; at the read's last window the target is set, the period 64 x 131 072 / 320 to
+/// nearest, 26 214, and its count, 320; and from the next window the rate's rule moves the gain
+/// against it, a decaying window of 373 spikes lowering it to the hand rule's 64 179. An image
+/// written at the read's end loads as the configuration with that period set.
+#[test]
+fn under_a_read_the_gain_is_held_the_last_sixteen_summed_and_the_rule_runs_from_the_next_window() {
+    let mut exec = Executor::<64>::new(Config {
+        rate_read_windows: 17,
+        ..config(2, 0, STEP)
+    })
+    .unwrap();
+    arm(&mut exec);
+    assert_eq!(
+        exec.target_read(),
+        Some(TargetRead::Reading { left: 17, sum: 0 })
+    );
+    let mut oracle = HomeostaticDrivePool {
+        control_step_q0_16: STEP,
+        ..HomeostaticDrivePool::new()
+    };
+    assert_eq!(*exec.homeostasis(), oracle, "at rest, with the step");
+    // The first window, not summed: growth by a tenth a bin from three spikes.
+    let mut growth = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    let mut x = 3_000u64;
+    for c in growth.iter_mut() {
+        *c = (x / 1_000) as u32;
+        x = x.wrapping_mul(11) / 10;
+    }
+    designed_window_then(&mut exec, &mut oracle, &growth, |o| {
+        o.hold();
+    });
+    assert_eq!(*exec.homeostasis(), oracle, "the first window, held");
+    assert_eq!(exec.homeostasis().synaptic_gain_q16, GAIN_ONE_Q16);
+    assert!(
+        exec.homeostasis().branching_ratio_q16 > GAIN_ONE_Q16,
+        "the estimate read the growth and moved nothing"
+    );
+    assert_eq!(
+        exec.target_read(),
+        Some(TargetRead::Reading { left: 16, sum: 0 }),
+        "the first of seventeen is not summed"
+    );
+    // Sixteen windows summed: fifteen of ten spikes a bin, and one with seven bins of eleven.
+    let at_target = [RATE_TARGET / 32; ACTIVITY_WINDOW_BINS as usize];
+    let mut above = at_target;
+    for c in above.iter_mut().take(7) {
+        *c = c.wrapping_add(1);
+    }
+    assert_eq!(above.iter().sum::<u32>(), RATE_TARGET + 7);
+    let mut summed = 0u64;
+    for k in 0..16u8 {
+        let counts = if k == 15 { &above } else { &at_target };
+        designed_window_then(&mut exec, &mut oracle, counts, |o| {
+            o.hold();
+        });
+        summed = summed.wrapping_add(u64::from(counts.iter().sum::<u32>()));
+        assert_eq!(*exec.homeostasis(), oracle, "window {k} of the sixteen");
+        assert_eq!(exec.homeostasis().synaptic_gain_q16, GAIN_ONE_Q16);
+        let left = 15u8.wrapping_sub(k);
+        let expected = if left == 0 {
+            None
+        } else {
+            Some(TargetRead::Reading { left, sum: summed })
+        };
+        assert_eq!(exec.target_read(), expected, "window {k} of the sixteen");
+    }
+    assert_eq!(summed, 16 * u64::from(RATE_TARGET) + 7);
+    assert_eq!(
+        (
+            exec.rate_target_period_ticks(),
+            exec.rate_target_per_window()
+        ),
+        (RATE_PERIOD, Some(RATE_TARGET)),
+        "a mean of 320.44 is 320, whose period is 26 214"
+    );
+    // The image written at the read's end is the configuration with the period set.
+    let image = Image::encode(&exec).unwrap();
+    let mut loaded = Image::decode::<64>(&image, config(2, 0, 0)).unwrap();
+    assert_eq!(
+        (
+            loaded.target_read(),
+            loaded.rate_target_period_ticks(),
+            loaded.rate_target_per_window(),
+            *loaded.homeostasis()
+        ),
+        (None, RATE_PERIOD, Some(RATE_TARGET), oracle)
+    );
+    // The rule from the next window: a decaying window above the target lowers the gain.
+    let mut decay = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    let mut x = 40_000u64;
+    for c in decay.iter_mut() {
+        *c = (x / 1_000) as u32;
+        x = x.wrapping_mul(9) / 10;
+    }
+    let mut loaded_oracle = oracle;
+    designed_window_under(&mut exec, &mut oracle, &decay, Some(RATE_TARGET));
+    designed_window_under(&mut loaded, &mut loaded_oracle, &decay, Some(RATE_TARGET));
+    assert_eq!(*exec.homeostasis(), oracle, "the rate's rule's window");
+    assert_eq!(*loaded.homeostasis(), *exec.homeostasis(), "loaded alike");
+    assert_eq!(exec.homeostasis().synaptic_gain_q16, 64_179);
+    assert_eq!(exec.ticks(), 18 * WINDOW);
+}
+
+/// The gain held through a read of 128 windows at the largest step (ADR-0189): a silent engine,
+/// whose gain the estimate's rule and the rate's rule would each raise by half a window, holds
+/// it at 1.0 through every window of the read; the read sums no spike, so its mean is none and
+/// it ends refused, the gain held from there on; and the writer refuses its image with the
+/// error.
+#[test]
+fn a_read_holds_the_gain_through_its_128_windows_at_the_largest_step_and_a_silent_one_is_refused() {
+    let mut exec = Executor::<64>::new(Config {
+        units: 1,
+        rate_read_windows: 128,
+        control_step_q0_16: CONTROL_STEP_MAX_Q0_16,
+        ..Config::default()
+    })
+    .unwrap();
+    for k in 1..=128u8 {
+        exec.run(WINDOW);
+        assert_eq!(
+            exec.homeostasis().synaptic_gain_q16,
+            GAIN_ONE_Q16,
+            "window {k}"
+        );
+        let left = 128u8.wrapping_sub(k);
+        assert_eq!(
+            exec.target_read(),
+            Some(if left == 0 {
+                TargetRead::Refused
+            } else {
+                TargetRead::Reading { left, sum: 0 }
+            }),
+            "window {k}"
+        );
+    }
+    assert_eq!(exec.ticks(), 128 * WINDOW);
+    assert_eq!(
+        (
+            exec.rate_target_period_ticks(),
+            exec.rate_target_per_window()
+        ),
+        (0, None)
+    );
+    exec.run(2 * WINDOW);
+    assert_eq!(
+        (exec.homeostasis().synaptic_gain_q16, exec.target_read()),
+        (GAIN_ONE_Q16, Some(TargetRead::Refused)),
+        "refused, the gain held from there on"
+    );
+    assert!(matches!(
+        Image::encode(&exec),
+        Err(ImageError::Config(ConfigError::RateTargetOutOfRange))
+    ));
+    // The same engine unset: the estimate's rule climbs.
+    let mut unset = Executor::<64>::new(Config {
+        units: 1,
+        control_step_q0_16: CONTROL_STEP_MAX_Q0_16,
+        ..Config::default()
+    })
+    .unwrap();
+    unset.run(WINDOW);
+    assert_eq!(unset.homeostasis().synaptic_gain_q16, 0x0001_8000);
+}
+
+/// A read round-trips through the image mid-window (ADR-0189): an image written in its third
+/// window loads with the windows it has left and its sum, whatever its configuration says, and
+/// the loaded engine finishes the read and regulates after it as the engine that wrote it does,
+/// window for window; one and four workers read and regulate alike.
+#[test]
+fn a_read_round_trips_mid_window_and_a_loaded_engine_reads_and_regulates_alike() {
+    let reading = |workers: usize| Config {
+        rate_read_windows: 16,
+        ..config(workers, 2 * UNITS, STEP)
+    };
+    let mut exec = Executor::<64>::new(reading(2)).unwrap();
+    wire_recurrent(&mut exec);
+    let mut four = Executor::<64>::new(reading(4)).unwrap();
+    wire_recurrent(&mut four);
+    let mut unit = 0u32;
+    let mut unit_four = 0u32;
+    for _ in 0..2 {
+        drive_window(&mut exec, 6_000, &mut unit);
+        drive_window(&mut four, 6_000, &mut unit_four);
+    }
+    let inject = exec.injector();
+    let inject_four = four.injector();
+    for _ in 0..5 {
+        exec.run(3_000);
+        four.run(3_000);
+        kick(&inject, unit);
+        kick(&inject_four, unit_four);
+        unit = unit.wrapping_add(1);
+        unit_four = unit_four.wrapping_add(1);
+    }
+    let mut waited = 0u64;
+    while !exec.is_quiescent() {
+        exec.tick();
+        four.tick();
+        waited = waited.wrapping_add(1);
+        assert!(waited < 40_000, "the network falls quiet");
+    }
+    let written = exec.target_read();
+    assert!(
+        matches!(written, Some(TargetRead::Reading { left: 14, sum }) if sum > 0),
+        "two windows of sixteen read and summed: {written:?}"
+    );
+    assert!(exec.homeostasis().window_bins > 0, "mid-window");
+    let image = Image::encode(&exec).unwrap();
+    for config in [
+        config(2, 0, 0),
+        Config {
+            rate_read_windows: 128,
+            ..config(2, 0, 0)
+        },
+    ] {
+        let loaded = Image::decode::<64>(&image, config).unwrap();
+        assert_eq!(loaded.target_read(), written, "the image's read outranks");
+    }
+    let mut loaded = Image::decode::<64>(&image, config(2, 0, 0)).unwrap();
+    assert_eq!(*loaded.homeostasis(), *exec.homeostasis());
+    let mut unit_copy = unit;
+    let mut gains = Vec::new();
+    for window in 3..=18u32 {
+        drive_window(&mut exec, 6_000, &mut unit);
+        drive_window(&mut loaded, 6_000, &mut unit_copy);
+        drive_window(&mut four, 6_000, &mut unit_four);
+        assert_eq!(
+            (loaded.homeostasis(), loaded.target_read()),
+            (exec.homeostasis(), exec.target_read()),
+            "window {window}: loaded alike"
+        );
+        assert_eq!(
+            (four.homeostasis(), four.target_read()),
+            (exec.homeostasis(), exec.target_read()),
+            "window {window}: four workers alike"
+        );
+        gains.push(exec.homeostasis().synaptic_gain_q16);
+    }
+    assert_eq!(
+        exec.target_read(),
+        None,
+        "the read ended at its sixteenth window"
+    );
+    let target = exec.rate_target_per_window().expect("a target read");
+    assert_eq!(
+        (
+            loaded.rate_target_period_ticks(),
+            four.rate_target_period_ticks()
+        ),
+        (
+            exec.rate_target_period_ticks(),
+            exec.rate_target_period_ticks()
+        )
+    );
+    assert!(
+        gains[..14].iter().all(|&g| g == GAIN_ONE_Q16),
+        "held through the read: {gains:?}"
+    );
+    assert!(
+        gains[14..].iter().any(|&g| g != GAIN_ONE_Q16),
+        "the rule moved it after the read, against {target}: {gains:?}"
     );
 }

@@ -30,7 +30,7 @@ standing changes.
 
 - **The engine runs.** The records with their layout assertions, the update rules, synaptic fan-out
   with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena,
-  the `.cortex` image (format 22), the criticality controller, sleep with the episodic ledger and
+  the `.cortex` image (format 23), the criticality controller, sleep with the episodic ledger and
   its replay, and the symbolic layer (hypervectors, categorial reduction, induction, the discovery
   path) are Implemented.
 - **It learns.** On the reference network at 1 024 units the engine learns a two-alternative task,
@@ -86,6 +86,12 @@ standing changes.
   on every network, the count held at its target with the gain held's scatter: H-39 read yes, as
   predicted, and of its four predicted readings the alternation's missed, a sixteenth halving an
   eighth's and not removing it ([ADR-0183](docs/adr/0183-a-sixteenth-on-three-networks-measured.md)).
+  With the target the engine reads for itself (ADR-0189): its gain held for 128 windows, the mean
+  count of the last sixteen the target, then the rate's rule at a sixteenth. On those three
+  networks the engine learns and revises the two-alternative task as under a derived target, the
+  read targets 1.0 to 2.8 per cent above the derived ones and the count held at them: H-40 read
+  yes, as predicted, and of its three predicted readings the first missed, the live count still
+  rising through the read ([ADR-0190](docs/adr/0190-a-target-the-engine-reads-measured.md)).
   What the engine carries by default is not decided. Every learning result before H-38 stands
   with the gain held and the controller off.
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
@@ -105,8 +111,9 @@ standing changes.
   with the hold and the released delivery (ADR-0146); the whole punishment is a parameter of the
   image no configuration sets (ADR-0155, ADR-0156); the exploration is an option of the task no
   run's configuration sets (ADR-0163, ADR-0164); the controller's step under its estimate is zero
-  in every run that learns (ADR-0077, ADR-0177), and the rate's rule is set in H-38's and H-39's
-  runs and in no other (ADR-0181, ADR-0183); the speed line is closed with the sweep kept
+  in every run that learns (ADR-0077, ADR-0177), the rate's rule is set in H-38's, H-39's and
+  H-40's runs and in no other (ADR-0181, ADR-0183, ADR-0190), and the read of its target in
+  H-40's alone; the speed line is closed with the sweep kept
   and the lanes reverted ([ADR-0105](docs/adr/0105-the-speed-line-closed.md)).
 - **What does not exist.** Every subsystem's real dynamics beyond these rules; the lookahead
   ADR-0099 ordered and a lever on the rest of the turn; the real-time mode's reach measured on the

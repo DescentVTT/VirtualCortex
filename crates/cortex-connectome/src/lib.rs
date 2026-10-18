@@ -96,9 +96,10 @@ pub const SECTION_AMENDMENT: u32 = 41;
 /// `[37]` and `[38]` and its two voltages at `[40..48)` (ADR-0123), the critic's flag at
 /// `[48]` and its shift and scale at `[49]` and `[50]` (ADR-0131), the whole punishment's flag
 /// at `[51]` (ADR-0155), the critic's window at `[52..54)` (ADR-0134), the rate's target
-/// period at `[56..60)` (ADR-0180), and 9 reserved bytes that MUST be zero (`[26..28)`, `[39]`,
-/// `[54..56)` and `[60..64)`); always written and required, so that the modulation a run
-/// continues under is in the image.
+/// period at `[56..60)` (ADR-0180), the read of that target under way — its windows left at
+/// `[39]` and the sum of its last sixteen at `[60..64)` and `[54..56)` (ADR-0189) — and 2
+/// reserved bytes that MUST be zero (`[26..28)`); always written and required, so that the
+/// modulation a run continues under is in the image.
 pub const SECTION_MODULATOR: u32 = 42;
 /// The engine's homeostasis state (ADR-0036): one 64-byte record, `cortex-homeostasis`'s
 /// `HomeostaticDrivePool` with its synaptic gain, its control step and the open window of the
@@ -289,7 +290,17 @@ impl CortexFileHeader {
     ///   reserved. A version-21 image's zeros there read as unset, which is the rule before this
     ///   version bit for bit; the loader still refuses a version-21 header, as it refuses every
     ///   foreign version.
-    pub const FORMAT_VERSION: u32 = 22;
+    /// - 23: the modulator section's `[39]`, `[54..56)` and `[60..64)` are the read of the rate's
+    ///   target under way: `[39]` the windows it has left, a `u8`, and the sum of its last
+    ///   sixteen windows' counts so far, a 48-bit count, its low thirty-two bits at `[60..64)` and
+    ///   its high sixteen at `[54..56)`; every byte zero while none is. Under way, the gain is held
+    ///   at each window's end, and at the read's last the mean of its last sixteen becomes the
+    ///   rate's target at `[56..60)`; the loader refuses a read beside a period and a sum its
+    ///   windows could not have counted (ADR-0188, ADR-0189). `[26..28)` stay reserved. A
+    ///   version-22 image's zeros there read as no read, which is the rule before this version
+    ///   bit for bit; the loader still refuses a version-22 header, as it refuses every foreign
+    ///   version.
+    pub const FORMAT_VERSION: u32 = 23;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -473,7 +484,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     }
 
     #[test]
@@ -519,8 +530,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            22,
-            "ADR-0180: the rate's target period in the modulator section"
+            23,
+            "ADR-0189: the read of the rate's target in the modulator section"
         );
     }
 

@@ -1,7 +1,12 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-18
+integrity: sha256-d7aed212129343abd23ab60bb23528aa440f733c53a37b01609c3eab0a694dd7
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-18 (UTC) in pull request [#216](https://github.com/DescentVTT/VirtualCortex/pull/216).** Writes ADR-0189 (the read built, the image at format 23) and ADR-0190 (H-40 measured); opens no finding. H-40 is yes, as ADR-0188 predicted, at step 3 of its stopping rule: on seeds 22, 23 and 24 at 1 024 units, at a sixteenth, the engine's read makes a target on every network, 1.0 to 2.8 per cent above the derived one, each lead-in settles at window 160, and H-25's two arms on each network hold H-25's four clauses; two of the three predicted readings held and the first missed, seed 22's read target above its derived one, the live count still rising through the read. Every run was a dispatch and none ran on the developer machine: the calibration 39120143892, the trial 39120156976, the derivations 39127001541, the arms 39128573344, and the reproduction 39131009704 at scope=both, its twelve whole-domain shards green, two jobs past 60 per cent of their bound under the old deal by the runners' spread; the cost table is regenerated from it. The next decision, the engine's default for an image no derivation has settled, is named and not taken. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 074: A target the engine reads — ADR-0188's question: with the engine holding its gain for 128 windows and taking the mean count of the last sixteen as its target, then running the rate's rule at a sixteenth, on seeds 22, 23 and 24 at 1 024 units, H-25's two arms on each; the read built in the engine at format 23; H-40 run once, its runs dispatched
 
@@ -9,9 +14,9 @@ date: 2026-10-18
 
 **This brief builds one thing in the engine and runs one hypothesis once.** H-39 read that the engine learns and
 revises under the rate's rule at a sixteenth on three networks, each under the target its own derivation returns
-([ADR-0183](../docs/adr/0183-a-sixteenth-on-three-networks-measured.md)). That target was derived offline, from a
+([ADR-0183](../../docs/adr/0183-a-sixteenth-on-three-networks-measured.md)). That target was derived offline, from a
 frozen copy of a network settled by a criterion the engine does not hold. An image no derivation has settled has
-none. [ADR-0188](../docs/adr/0188-a-target-the-engine-reads.md) gives the engine a read: its gain held for 128
+none. [ADR-0188](../../docs/adr/0188-a-target-the-engine-reads.md) gives the engine a read: its gain held for 128
 windows from its first, the mean count of the last sixteen as its target, the rule from the next window.
 
 ADR-0188 wrote **H-40** before any run and **predicts yes**, with what would refute it and three predicted readings.
@@ -23,9 +28,9 @@ When the round is done, the tree holds:
 - H-40's verdict per network, arm and clause, and **the step of its stopping rule reached**, with the next decision
   it names and does not take.
 
-**This is the first round under [ADR-0184](../docs/adr/0184-the-runs-off-the-developer-machine.md),
-[ADR-0185](../docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md) and
-[ADR-0186](../docs/adr/0186-merge-commits.md).** No whole-domain test runs on the developer machine. The brief is
+**This is the first round under [ADR-0184](../../docs/adr/0184-the-runs-off-the-developer-machine.md),
+[ADR-0185](../../docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md) and
+[ADR-0186](../../docs/adr/0186-merge-commits.md).** No whole-domain test runs on the developer machine. The brief is
 archived with `spec-brief`. Commits are signed and the branch is never rebased. `briefs/README.md`'s "Evidencing a
 round" and "Archiving one" are the rule where this brief is silent.
 
@@ -35,7 +40,7 @@ round" and "Archiving one" are the rule where this brief is silent.
 
 ## Standing directives
 
-- **Latest ≠ Newest** (whitepaper §2.1, `CLAUDE.md` principle 4, as [ADR-0187](../docs/adr/0187-the-upgrade-suite-planned.md)
+- **Latest ≠ Newest** (whitepaper §2.1, `CLAUDE.md` principle 4, as [ADR-0187](../../docs/adr/0187-the-upgrade-suite-planned.md)
   scopes it). The round depends on nothing new: no crate, no tool and no version bump. A window's count read and then
   held by a rule is decades old, and the read is the engine's own code.
 - **The read is ADR-0188's.**
@@ -68,21 +73,21 @@ round" and "Archiving one" are the rule where this brief is silent.
   included.
 - **No capacity of a run's configuration is reached silently.**
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
 - A change to a record's or a section's bytes bumps the image's version, updates its table in whitepaper §5.2, and
   gets a changelog entry, in the same pull request.
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of
   `testkit/prop.rs`, and the pull request's mutation gate catches every mutant in the lines it changes
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The round is evidenced as `briefs/README.md`'s "Evidencing a round" says.** The runs are dispatches; the
   reproduction's scope follows the diff, which here is `both`; the merge waits for the reproduction's whole-domain
   shards and not the sweep; the ADRs cite the round's commits, which a merge commit keeps; and the commit that asks for
   the merge sets them `accepted`.
 - **The pull request leaves draft with the commit that asks for the merge.**
 - **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, under the regenerated deal
-  ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md)). One that does is reported with its job's minutes.
+  ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md)). One that does is reported with its job's minutes.
 - No pinned number of an earlier round moves, but the whole-image pins by the format's mask.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -137,7 +142,7 @@ symbols and the quoted sentences are what to re-derive.
 8. **The weekly job**: twelve shards of 180 minutes, each running its tests two at a time. The cost table holds 136
    tests and 107 093 s, and the slowest shard read 94.1 minutes, 52 per cent (ADR-0183). This round adds three
    derivations and six arms, about 11 500 s.
-9. **The dispatch's scope** ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a file under `src/`
+9. **The dispatch's scope** ([ADR-0075](../../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): a file under `src/`
    changes, so the reproduction is `scope=both`. With the sweep's thirteen jobs that is twenty-five against the
    account's twenty at once.
 10. **No sweep is unrecorded**: the last, run 38417864748's, ADR-0183 recorded. This round's own sweep is read when it
@@ -148,7 +153,7 @@ symbols and the quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The read, built in the engine, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The read, built in the engine, in a new ADR at the next free number (`ls docs/adr`).**
   - ADR-0188's read: the gain held for 128 windows from the first, windows 113 to 128 summed, their mean the target's
     count, the period set, the rule from the 129th.
   - Its span and progress in the modulator section's reserved bytes; the image at format 23, its table in §5.2.
@@ -160,7 +165,7 @@ symbols and the quoted sentences are what to re-derive.
     - an image written during the read reading back to the same run;
     - the gain held through the read whatever the step.
   - The whole-image pins moved by the format's mask alone.
-- [ ] **H-40's protocol, in a new ADR at the next free number, before any lead-in is run with the read set.**
+- [x] **H-40's protocol, in a new ADR at the next free number, before any lead-in is run with the read set.**
   - The networks, the span and the step.
   - What holds a derivation under the read, where none has a pin.
   - H-40's clauses and constants, restated from ADR-0188 and pinned in the tests.
@@ -170,26 +175,26 @@ symbols and the quoted sentences are what to re-derive.
     - through each arm the gain after every window within 1.6625 and 1.8375.
   - The readings, no clause, as ADR-0188 lists them.
   - How a check added to an arm was tried, by dispatch, before the runs.
-- [ ] **The calibration**, before any such run, by a dispatch at `scope=exhaustive` that excludes this round's own
+- [x] **The calibration**, before any such run, by a dispatch at `scope=exhaustive` that excludes this round's own
   tests. Every pinned number of the tree holds at format 23 with the read unset, H-39's derivations and six arms among
   them.
-- [ ] **The derivations under the read on the three networks**, each a weekly `exhaustive` test, run once by a
+- [x] **The derivations under the read on the three networks**, each a weekly `exhaustive` test, run once by a
   dispatch at `scope=arms`. Pinned from that run:
   - the read's sixteen windows and the target;
   - the lead-in by window;
   - what each rule returned, or that it returned nothing;
   - the frozen block's readings.
-- [ ] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a
+- [x] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a
   dispatch at `scope=arms`, their tables pinned per block, the controller's reading among them.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - H-40's verdict per network, arm and clause.
   - The prediction and each of the three predicted readings against what was read.
   - Each network beside its own arms under H-39.
   - Over the three networks: the mappings learned of twenty-four, and the reversals' blocks beside H-39's.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
-- [ ] **The gate.** At most one runtime test: H-40's clauses and its predicted readings' rules at their edges, over
+- [x] **The gate.** At most one runtime test: H-40's clauses and its predicted readings' rules at their edges, over
   tables written by hand.
-- [ ] **The evidence**, as "Evidencing a round" says. The ADR names, each with its run id and commit:
+- [x] **The evidence**, as "Evidencing a round" says. The ADR names, each with its run id and commit:
   - the calibration's dispatch;
   - each dispatch of the round's runs;
   - the reproduction, a weekly dispatched on this round's branch at `scope=both` once the tables are pinned. Its twelve
@@ -197,18 +202,18 @@ symbols and the quoted sentences are what to re-derive.
     artifacts;
   - each shard's job time against its bound;
   - that the sweep had not ended, if it had not.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper: §5.2's modulator table at format 23, §11.1's H-40 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` where the standing changes: the image's format, and the result.
   - `README.md` and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive`, every deliverable dispositioned. The round's ADRs are set to
+- [x] **The brief archived** with `spec-brief archive`, every deliverable dispositioned. The round's ADRs are set to
   `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
-- **The round's scope**, which [ADR-0187](../docs/adr/0187-the-upgrade-suite-planned.md) puts here and not among the
+- **The round's scope**, which [ADR-0187](../../docs/adr/0187-the-upgrade-suite-planned.md) puts here and not among the
   standing directives:
   - the rate's rule is ADR-0180's, run as built, at a sixteenth;
   - the inhibitory rule's target stays the derivation's;
