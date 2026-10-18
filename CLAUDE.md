@@ -263,6 +263,9 @@ CI runs `npm run spec`, one step and the same command, so a check inside it is e
 
 - Never commit on `main`. Branch, then pull request; Conventional Commits with a real body
   ([CONTRIBUTING.md](CONTRIBUTING.md#commit-messages)).
+- `main` takes a pull request by a merge commit, the only method its ruleset allows. Bring a branch
+  up to date by merging `main` into it; never rebase or force-push one once a run has been made on
+  it or its pull request is open ([ADR-0186](docs/adr/0186-merge-commits.md)).
 - A change to a record and the change to its documentation travel in the same PR.
 - A rule change is an ADR first (`status: proposed`), accepted on merge.
 - To execute a brief: read `briefs/README.md`, then the brief, then the files it names. When done,

@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.119.0
+version: 4.120.0
 status: active
 date: 2026-10-18
 ---
@@ -11,7 +11,7 @@ date: 2026-10-18
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.119.0 |
+| Version | 4.120.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-18 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -2696,6 +2696,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0183](adr/0183-a-sixteenth-on-three-networks-measured.md) | A sixteenth, on three networks, measured: H-39 is yes, as ADR-0182 predicted — under the rate's rule at a sixteenth on seeds 22, 23 and 24 at 1 024 units, each network under its own target, clause 0 holds on every network and H-25's two arms on each hold H-25's four clauses, 119 to 126 of each mapping's last 128 correct and each reversal passed in 11 to 19 blocks, the eighteen in fewer blocks than with the gain held; the count held at each network's target with the gain held's scatter; three of the four predicted readings held and the alternation's missed, a sixteenth halving an eighth's and not removing it; the inhibitory sum ends 0.10 to 0.13 lower than with the gain held on every network; H-39's stopping rule reaches step 3, and the next decision, on what the engine carries by default, is named and not taken |
 | [ADR-0184](adr/0184-the-runs-off-the-developer-machine.md) | The runs off the developer machine: a round ran its calibration, three and a quarter to nearly five hours of every whole-domain test eight at a time, and its arms and trials on the developer machine, its maintainer's laptop, and the weekly shards ran the same tests again to reproduce them; a round's runs now go by dispatch, the calibration at `scope=exhaustive` with the round's own tests excluded by name, the arms, lead-ins and trials at a new `scope=arms`, one job a test on AArch64 with its output kept, reproduced on x86-64 by the shards as before; before a push the developer machine runs the fast checks and the pull request's gate the rest; amends ADR-0150 |
 | [ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md) | The spec tools upgraded, and spec-brief admitted: spec-guard 0.11.0 to 0.26.0 and spec-graph 0.8.0 to 0.17.0 read the tree as before, but spec-graph reads an archived document as a record from 0.9.0, so an archived brief with an open box no longer fails; spec-brief 0.8.0 holds the briefs' contract from `.spec-brief.json`, archives a round in one command that refuses an open box and writes an integrity hash, and fails an archived brief changed since; every archived brief carries that hash, `scripts/check-archive.mjs` fails one without it, and `scripts/check-briefs.mjs` retires; `spec-guard prove` joins the gate; spec-harness is not adopted; the tools admitted as the project's own, which principle 4's test for a dependency they do not pass |
+| [ADR-0186](adr/0186-merge-commits.md) | Merge commits: `main` took every pull request by a rebase, which gives each commit a new hash and drops its signature, so the hashes an ADR cites and the commits a dispatch ran on were not `main`'s; `main` now takes a pull request by a merge commit, the ruleset allows that method alone and no longer requires a linear history, applied on 2026-10-18 by the maintainers before this ADR merged; a branch is brought up to date by merging `main` into it, never by a rebase once a run has been made on it or its pull request is open; signed commits follow; amends ADR-0150 |
 
 ---
 
