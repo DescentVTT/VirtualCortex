@@ -24,6 +24,11 @@
 # completeness check fails a partial sweep; a listing that fails or names nothing fails it too
 # (F-48).
 #
+# A dispatch may exclude tests by name, in `EXCLUDE` (ADR-0184): a round's calibration skips the
+# round's own tests, which have not run yet and run once, by a dispatch at `scope=arms`. Each name
+# must be one the listing holds, or the shard fails before any test runs, since a name misspelt
+# would leave its test in the calibration. A scheduled run excludes nothing.
+#
 # Writes `exhaustive-tests-<k>.tsv` (the binary's path and stem, the test, its seconds, its exit
 # status, the tests it reported passing), `exhaustive-times-<k>.txt` (per binary: its tests in
 # this shard and the sum of their seconds, ADR-0071's table) and `exhaustive-wall-<k>.txt` (the
@@ -41,7 +46,29 @@ if ! cargo test --workspace --release --locked -- --ignored exhaustive --list 2>
   exit 1
 fi
 
-if ! node scripts/exhaustive-costs.mjs plan list.log scripts/exhaustive-costs.tsv "$k" "$n" > mine.txt; then
+listed=list.log
+: > excluded.txt
+if [ -n "${EXCLUDE:-}" ]; then
+  printf '%s' "$EXCLUDE" | tr -s ' ' '\n' | sed '/^$/d' | sort -u > excluded.txt
+  missing=$(awk '
+    NR == FNR { want[$0] = 1; next }
+    { sub(/\r$/, "") }
+    /: test$/ { t = $0; sub(/: test$/, "", t); if (t in want) seen[t] = 1 }
+    END { for (w in want) if (!(w in seen)) print w }
+  ' excluded.txt list.log)
+  if [ -n "$missing" ]; then
+    echo "the dispatch excludes tests the listing does not name, so the calibration would run what it was to skip:"
+    printf '%s\n' "$missing"
+    exit 1
+  fi
+  awk 'NR == FNR { ex[$0 ": test"] = 1; next } { l = $0; sub(/\r$/, "", l) } !(l in ex)' \
+    excluded.txt list.log > list-kept.log
+  listed=list-kept.log
+  echo "excluded by the dispatch, $(wc -l < excluded.txt | tr -d ' ') test(s):"
+  cat excluded.txt
+fi
+
+if ! node scripts/exhaustive-costs.mjs plan "$listed" scripts/exhaustive-costs.tsv "$k" "$n" > mine.txt; then
   echo "the deal failed, so this shard cannot know its slice"
   exit 1
 fi

@@ -1,6 +1,6 @@
 # CI for VirtualCortex.
 #
-# Seven jobs (one on pull requests only, two weekly or by hand), eight questions:
+# Nine jobs (one on pull requests only, two weekly or by hand, two by hand alone), nine questions:
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
 #           is it formatted and lint-clean (the workspace lints of ADR-0029 included),
 #           does rustdoc build without a warning, do the tests also hold in the release
@@ -31,6 +31,10 @@
 #           per area, the runtime's in twelve shards, each deriving its per-mutant bound from its
 #           own suite timed on its runner and failing if it did not cover its slice (ADR-0058).
 #           Nothing is blocked; the survivors are the next round's list (ADR-0030).
+#   arms-plan, arms - by hand alone (`scope=arms`): what do the `#[ignore]`d tests a round
+#           names print? One job a test, on AArch64, its output kept, so that a round's
+#           arms, lead-ins and trials run on the repository's host and none on the developer
+#           machine; the weekly shards on x86-64 are their reproduction (ADR-0184).
 #           Whitepaper Appendix B describes the levels.
 
 name: CI
@@ -49,6 +53,10 @@ on:
   # sweep runs, or changes `.cargo/mutants.toml` or the `mutants-weekly` job (ADR-0075, which
   # amends ADR-0067). Adding a test never qualifies: it can only catch more. The executing
   # round decides from the diff it has, not the brief. A scheduled run always does both.
+  # A round's own runs go by hand alone (ADR-0184): `gh workflow run ci.yml --ref <branch>
+  # -f scope=arms -f tests='<test> <test> ...'`, the names as `--list` prints them. The
+  # calibration before them is a dispatch at `exhaustive` on the same branch, with the round's
+  # own tests named in `-f exclude='<test> ...'` so that none of them runs there.
   workflow_dispatch:
     inputs:
       scope:
@@ -59,13 +67,26 @@ on:
           - both
           - exhaustive
           - mutants
+          - arms
+      tests:
+        description: "With scope=arms: the #[ignore]d tests to run, whole-domain or paused, separated by spaces"
+        type: string
+        default: ""
+      exclude:
+        description: "With scope=exhaustive: the tests a round's calibration skips, separated by spaces"
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  # The event is part of the group, so a push to main does not cancel a running weekly job.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # The event is part of the group, so a push to main does not cancel a running weekly job;
+  # and the scope, so a round's arms dispatched on its branch do not cancel its calibration
+  # (ADR-0184). On a push or a pull request the scope is empty and the group is one per ref.
+  # A dispatch at `arms` is a run made once, so it is a group of its own: no later dispatch
+  # cancels it, and it cancels none.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.scope }}-${{ github.ref }}${{ inputs.scope == 'arms' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -261,6 +282,9 @@ jobs:
           node-version: "22"
 
       - name: This shard of the whole-domain tests, in the release profile (ADR-0073)
+        env:
+          # Empty but on a dispatch that names them: a round's calibration (ADR-0184).
+          EXCLUDE: ${{ inputs.exclude }}
         run: bash scripts/exhaustive-shard.sh ${{ matrix.shard }} 12
 
       # Each test's seconds, longest first, and each binary's sum (ADR-0071, ADR-0092): the
@@ -275,6 +299,10 @@ jobs:
             echo
             echo "Wall clock over the tests: $(cat exhaustive-wall-${{ matrix.shard }}.txt 2>/dev/null || echo '?') s"
             echo
+            if [ -s excluded.txt ]; then
+              echo "Excluded by the dispatch (ADR-0184): $(wc -l < excluded.txt | tr -d ' ') test(s)"
+              echo
+            fi
             echo "| Binary | Test | Seconds | Exit | Passed |"
             echo "| :--- | :--- | ---: | ---: | ---: |"
             awk -F'\t' '{ print "| `" $2 "` | `" $3 "` | " $4 " | " $5 " | " $6 " |" }' "$f"
@@ -291,6 +319,88 @@ jobs:
             exhaustive-times-${{ matrix.shard }}.txt
             exhaustive-wall-${{ matrix.shard }}.txt
             mine.txt
+            list.log
+            excluded.txt
+          retention-days: 90
+
+  arms-plan:
+    # The tests a dispatch at `scope=arms` names, as the matrix of the job below (ADR-0184). The
+    # names come in through the environment, never into the script's text, and an empty list
+    # fails here rather than as a matrix with nothing in it.
+    name: Arms (the tests named, ADR-0184)
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'arms'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tests: ${{ steps.plan.outputs.tests }}
+    steps:
+      - id: plan
+        env:
+          TESTS: ${{ inputs.tests }}
+        run: |
+          tests=$(printf '%s' "$TESTS" | jq -R -c 'split(" ") | map(select(length > 0)) | unique')
+          if [ "$(printf '%s' "$tests" | jq 'length')" -eq 0 ]; then
+            echo "scope=arms names no test: dispatch it with -f tests='<test> <test> ...'"
+            exit 1
+          fi
+          echo "the tests: $tests"
+          echo "tests=$tests" >> "$GITHUB_OUTPUT"
+
+  arms:
+    # A round's runs (ADR-0184, amending ADR-0150). Its arms ran once on the developer machine
+    # and were reproduced by the weekly shards; they now run once here, each test in a job of its
+    # own, and the round's tables are written from the logs this job keeps. They run on AArch64
+    # so that the shards' reproduction, on x86-64, is a second architecture's, as the developer
+    # machine's Windows was a second system's (T-1, ADR-0030). The bound is the weekly shard's:
+    # the tests are the same tests, and ADR-0179's rule reads this job's minutes as it reads a
+    # shard's.
+    name: Arm ${{ matrix.test }} (ADR-0184)
+    needs: [arms-plan]
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'arms'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    strategy:
+      # One arm that fails must not stop the others.
+      fail-fast: false
+      matrix:
+        test: ${{ fromJSON(needs.arms-plan.outputs.tests) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: arms
+
+      - name: The test, in the release profile, its output kept (ADR-0184)
+        env:
+          TEST: ${{ matrix.test }}
+        run: bash scripts/arm-run.sh "$TEST"
+
+      - name: What the test took
+        if: always()
+        run: |
+          [ -s arm.tsv ] || { echo "the test recorded nothing"; exit 0; }
+          {
+            echo "### A round's run (ADR-0184), at $GITHUB_SHA"
+            echo
+            echo "| Binary | Test | Seconds | Exit | Passed |"
+            echo "| :--- | :--- | ---: | ---: | ---: |"
+            awk -F'\t' '{ print "| `" $2 "` | `" $3 "` | " $4 " | " $5 " | " $6 " |" }' arm.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the test's output for the round that reads it
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: arm-${{ strategy.job-index }}
+          path: |
+            arm.log
+            arm.tsv
             list.log
           retention-days: 90
 
