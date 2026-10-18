@@ -8,11 +8,11 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
-- **The spec tools upgraded, and spec-brief admitted ([ADR-0185](docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md)); whitepaper 4.118.0.**
+- **The spec tools upgraded, and spec-brief admitted ([ADR-0185](docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md)); whitepaper 4.119.0.**
   - **The pins**: spec-guard 0.26.0 and spec-graph 0.17.0, where they were 0.11.0 and 0.8.0, and spec-brief 0.8.0, each exact. On this tree spec-guard holds the same 578 assertions and spec-graph reads the corpus consistent.
   - **What spec-graph stopped doing**: from 0.9.0 it reads an archived brief as a record, and an open box there no longer fails it (tried: 0.8.0 exits 1, 0.17.0 exits 0). `briefs/README.md` said it did.
   - **spec-brief**: `.spec-brief.json` holds the briefs' contract (the eight sections in order, the deliverables a checklist, *"Latest ≠ Newest"* in the standing directives). `spec-brief archive` archives a round in one command that refuses an open box, writes the banner and an integrity hash, and rewrites the links; `spec-brief lint` fails an archived brief changed since.
-  - **The archive**: the 71 archived briefs carry the hash spec-brief's `integrityOf` computes, one front-matter line each. `scripts/check-archive.mjs` (nine `node:test` cases) fails an archived brief without one. `scripts/check-briefs.mjs` and its tests are removed.
+  - **The archive**: every archived brief carries the hash, brief 073's among them, spec-brief's `integrityOf` computes, one front-matter line each. `scripts/check-archive.mjs` (nine `node:test` cases) fails an archived brief without one. `scripts/check-briefs.mjs` and its tests are removed.
   - **`spec-guard prove`** joins `npm run spec`: each of the 578 assertions was seen to fail its own violation, in about a minute.
   - **Not adopted**: spec-harness 0.18.0, and spec-brief's `matrix` and `schedule`.
 - **The runs off the developer machine ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)): a round's calibration, arms, lead-ins and trials run by dispatch, none on the developer machine; whitepaper 4.118.0.**

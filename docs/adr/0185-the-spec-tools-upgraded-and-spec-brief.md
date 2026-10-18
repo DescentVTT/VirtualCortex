@@ -1,11 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 amends: ADR-0008
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0185: The spec tools upgraded, and spec-brief admitted — spec-guard 0.11.0 to 0.26.0 and spec-graph 0.8.0 to 0.17.0 read the tree as before, but spec-graph reads an archived document as a record from 0.9.0, so an archived brief with an open box no longer fails, as `briefs/README.md` said it did; spec-brief 0.8.0 holds the briefs' contract from `.spec-brief.json`, archives a round in one command that refuses an open box and writes an integrity hash, and fails an archived brief changed since; the 71 archived briefs carry that hash, `scripts/check-archive.mjs` fails one without it, and `scripts/check-briefs.mjs` retires; `spec-guard prove` joins the gate; spec-harness is not adopted
+# ADR-0185: The spec tools upgraded, and spec-brief admitted — spec-guard 0.11.0 to 0.26.0 and spec-graph 0.8.0 to 0.17.0 read the tree as before, but spec-graph reads an archived document as a record from 0.9.0, so an archived brief with an open box no longer fails, as `briefs/README.md` said it did; spec-brief 0.8.0 holds the briefs' contract from `.spec-brief.json`, archives a round in one command that refuses an open box and writes an integrity hash, and fails an archived brief changed since; every archived brief carries that hash, `scripts/check-archive.mjs` fails one without it, and `scripts/check-briefs.mjs` retires; `spec-guard prove` joins the gate; spec-harness is not adopted
 
 ## Context and Problem Statement
 
@@ -85,7 +85,7 @@ It also has limits of its own:
 - **A round archives its brief** with `npx --no-install @descent-vtt/spec-brief archive <id> --pr <n> --summary "<one paragraph>"`, after ticking or dispositioning every deliverable, and commits the result.
   - The command refuses an open box, moves the file, sets the status, writes the banner and the hash, and rewrites the links.
   - The banner is one paragraph; what more the round has to say is in its ADR.
-- **The 71 archived briefs carry the hash** that spec-brief's own `integrityOf` computes. Each gained one line in its front matter and nothing else, and `spec-brief lint` then read all 73 briefs with no finding.
+- **Every archived brief carries the hash** that spec-brief's own `integrityOf` computes. That covers the 71 archived when this was written, and brief 073's. Brief 073 was archived by its round under the steps before this ADR, and gained its hash when this branch took `main`. Each gained one line in its front matter and nothing else, and `spec-brief lint` then read every brief with no finding.
 - **`scripts/check-briefs.mjs` and its tests retire.**
   - The contract they checked is `.spec-brief.json`'s.
   - Their floor at brief 028 has no case left: every live brief is numbered past it, and numbers only grow.
@@ -116,7 +116,7 @@ It also has limits of its own:
 
 - `package.json` and `package-lock.json`: the three exact pins, and the scripts `spec:prove`, `spec:briefs`, `spec:archive` and `spec:archive:test` in `npm run spec`.
 - `.spec-brief.json`, `scripts/check-archive.mjs` and `scripts/check-archive.test.mjs`, nine tests. `scripts/check-briefs.mjs` and its tests are removed.
-- The 71 archived briefs, one front-matter line each.
+- The archived briefs, one front-matter line each: the 71, and brief 073's.
 - **Tried**:
   - the whole gate on this tree with the new pins;
   - an edit to an archived brief fails `archive-freeze`, and its restoration passes;
