@@ -12,12 +12,13 @@ verified and how it is reported. It repeats the standing directives rather than 
 preamble, because the session that reads it may have read nothing else.
 
 Every brief carries these sections, in this order. `npm run spec:briefs` fails when a live brief
-lacks one.
+lacks one or holds them out of order; the contract is `.spec-brief.json`'s
+([ADR-0185](../docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md)).
 
 | Section | What it holds |
 | :--- | :--- |
 | `## Mission` | One paragraph: the state of the tree when the brief is done. |
-| `## Standing directives` | The repository's always-on rules, restated. Latest ≠ Newest is always among them (`CLAUDE.md` principle 4), applied to what the round could be tempted to adopt; from brief 028 `npm run spec:briefs` fails a brief whose section does not name it. |
+| `## Standing directives` | The repository's always-on rules, restated. Latest ≠ Newest is always among them (`CLAUDE.md` principle 4), applied to what the round could be tempted to adopt; `npm run spec:briefs` fails a live brief whose section does not name it. |
 | `## Context` | Facts the brief rests on, each with a path, re-derived on the stated date. Line numbers move; symbol names and quoted sentences are what to re-derive. |
 | `## Deliverables` | A checkbox list. `spec-graph` reads each box as an obligation with real state. |
 | `## Not empowered` | The cheap wrong moves this round must not make. |
@@ -47,18 +48,27 @@ Numbers are three digits, allocated in order, never reused. Take the next free o
 
 ## Archiving one
 
-1. Move the file to `briefs/archive/`. Set `status: archived`.
-2. Prepend a frozen banner: execution date, pull request, findings closed, ADRs written, and the
-   sentence *"The body below describes the tree before execution and is not maintained."*
-3. Disposition every deliverable in place: `[x]` when done, or a `**Delegated to** ...`,
-   `**Accepted debt:** ...` or `**Rejected:** ...` note under the box. `spec-graph` reports an
-   archived brief with an open box as an orphaned obligation, and a delegation to a retired document
-   as a ghost handover; both fail CI.
-4. Remove the precondition directives, or leave them: `spec-guard` does not run on `archive/`.
-5. Relative links gain one `../` so that they still resolve from `archive/`; `spec-graph` checks
-   links in archived briefs. This changes no word, claim or figure, and the banner says it was
-   done.
-6. Do not edit the body otherwise. A frozen snapshot claims nothing about now and cannot drift.
+A round archives its brief with `spec-brief` ([ADR-0185](../docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md)):
+
+1. Disposition every deliverable in place: `[x]` when done, or a `**Delegated to** ...`,
+   `**Accepted debt:** ...` or `**Rejected:** ...` note under the box.
+2. Run `npx --no-install @descent-vtt/spec-brief archive <NNN> --pr <n> --summary "<one paragraph>"`.
+   The summary says what the round did in one paragraph: the ADRs written, the findings closed,
+   the verdict. Whatever more there is to say belongs in the ADR. The command:
+   - refuses an open box, naming each one;
+   - moves the file to `briefs/archive/` and sets `status: archived`;
+   - writes the frozen banner, which ends *"The body below describes the tree before execution and
+     is not maintained."*;
+   - gives every relative link one `../`, and rewrites the links other live briefs hold to it;
+   - writes an `integrity` hash into the front matter. It commits nothing.
+3. Commit the result with the round.
+
+**An archived brief does not change.** `npm run spec:briefs` fails one changed since its hash was
+written, and `npm run spec:archive` fails one that carries no hash. To reopen a round, run
+`spec-brief unarchive <NNN>`, which takes the banner and the hash off. `spec-guard` does not run on
+`archive/`, so a precondition directive left there runs nowhere. `spec-graph` still checks the links
+of archived briefs. Since 0.9.0 it reads an archived brief as a record, and an open box there no
+longer fails it, which is why the refusal and the hash are spec-brief's.
 
 ## Evidencing a round
 

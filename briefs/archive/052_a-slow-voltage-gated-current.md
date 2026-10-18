@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-28
+integrity: sha256-5713f525eb3369b30b2c030e4dccd6de666d8c1e4b8f8f5375ad08fb0601b703
 ---
 
 > **Executed 2026-09-28 in pull request #154.** Writes ADR-0123 (the slow current built) and ADR-0124 (the slow current

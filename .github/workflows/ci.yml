@@ -13,9 +13,11 @@
 #           manifest, so it lives in one place.
 #   specs - does the source tree still contain what the documents say it contains
 #           (spec-guard), are the documents consistent with one another
-#           (spec-graph), does every live brief carry its mandatory sections and, from
-#           brief 028, a Latest ≠ Newest standing directive (scripts/check-briefs.mjs, with
-#           its own node:test cases), and do the manifests keep TC-2, state crates
+#           (spec-graph), can each assertion fail (spec-guard prove), does every live brief
+#           carry its mandatory sections and a Latest ≠ Newest standing directive, and is
+#           every archived brief the brief it was archived as (spec-brief, with
+#           scripts/check-archive.mjs and its node:test cases; ADR-0185), and do the manifests
+#           keep TC-2, state crates
 #           without dependencies (scripts/check-deps.mjs)? All blocking. Actions are
 #           pinned to commits and the runner image to a release (ADR-0029).
 #   arm64 - do the tests hold on AArch64, and does the seeded network hash to the value

@@ -2,17 +2,19 @@
   "name": "virtualcortex-specs",
   "version": "0.0.0",
   "private": true,
-  "description": "Documentation verification for VirtualCortex: executable architecture assertions (spec-guard) and cross-document consistency (spec-graph). The engine itself is a Rust workspace; see Cargo.toml.",
+  "description": "Documentation verification for VirtualCortex: executable architecture assertions (spec-guard), cross-document consistency (spec-graph), and the briefs' contract and archive (spec-brief). The engine itself is a Rust workspace; see Cargo.toml.",
   "license": "(Apache-2.0 OR MIT)",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "spec": "npm run spec:guard && npm run spec:graph && npm run spec:briefs && npm run spec:briefs:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:version && npm run spec:version:test && npm run spec:scripts:test && npm run spec:deps && npm run spec:costs && npm run spec:costs:test && npm run mutants:timeouts:test",
+    "spec": "npm run spec:guard && npm run spec:prove && npm run spec:graph && npm run spec:briefs && npm run spec:archive && npm run spec:archive:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:version && npm run spec:version:test && npm run spec:scripts:test && npm run spec:deps && npm run spec:costs && npm run spec:costs:test && npm run mutants:timeouts:test",
     "spec:guard": "spec-guard \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --verbose --ignore-status",
+    "spec:prove": "spec-guard prove \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --ignore-status",
     "spec:graph": "spec-graph check",
-    "spec:briefs": "node scripts/check-briefs.mjs",
-    "spec:briefs:test": "node --test scripts/check-briefs.test.mjs",
+    "spec:briefs": "spec-brief lint",
+    "spec:archive": "node scripts/check-archive.mjs",
+    "spec:archive:test": "node --test scripts/check-archive.test.mjs",
     "spec:decisions": "node scripts/check-decisions.mjs",
     "spec:decisions:test": "node --test scripts/check-decisions.test.mjs",
     "spec:version": "node scripts/check-version.mjs",
@@ -25,7 +27,8 @@
     "mutants:timeouts:test": "node --test scripts/read-timeouts.test.mjs"
   },
   "devDependencies": {
-    "@descent-vtt/spec-graph": "0.8.0",
-    "@descent-vtt/spec-guard": "0.11.0"
+    "@descent-vtt/spec-brief": "0.8.0",
+    "@descent-vtt/spec-graph": "0.17.0",
+    "@descent-vtt/spec-guard": "0.26.0"
   }
 }

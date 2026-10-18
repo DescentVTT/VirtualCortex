@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-26
+integrity: sha256-77e830eb993d610d7dd860922e8a4c98527aa7c2d69e813014d2c2d8fc755ca2
 ---
 
 > **Executed 2026-09-26 in pull request #134.** Writes ADR-0107 (the critic built) and ADR-0108 (the reward-prediction

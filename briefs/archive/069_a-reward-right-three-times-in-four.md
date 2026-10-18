@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-12
+integrity: sha256-d4f6408cdeb20523aa36bfa34837fbe514b3cfc9ae9e3476758f6a9992f1fe16
 ---
 
 > **Executed 2026-10-12 (UTC) in pull request #202.** Writes ADR-0171 (a reward right three times in four, built)

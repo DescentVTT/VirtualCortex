@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-22
+integrity: sha256-d366b518d8891df453cc7d50a3642db53625c05c926bca9355f508f9e72ea71f
 ---
 
 > **Executed 2026-09-22 in pull request #99.** Writes ADR-0079 (the reward's direction, measured:

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-14
+integrity: sha256-814d956a77b54a67c832c0f1a4e341f4a4f6584ec784d01c16da020612ce4117
 ---
 
 > **Executed 2026-09-14 in pull request #60.** Writes ADR-0052 (the term arena in the image and

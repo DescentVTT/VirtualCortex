@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-26
+integrity: sha256-2e59950f0629af2ebd71d0de6d0fff17b1d93cf1ebdb51324a3ad6949a9bd5be
 ---
 
 > **Executed 2026-09-27 in pull request #137.** Writes ADR-0110 (a schedule of reversals, measured); opens no finding.

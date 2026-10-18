@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-13
+integrity: sha256-c63fb88c2cd685ff061a223532c94dc2d54436b4e02efba3000dccb674260354
 ---
 
 > **Executed 2026-09-13 in pull request #56.** Writes ADR-0046 (the lexicon), ADR-0047 (the

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-13
+integrity: sha256-a7c825e589c8023acc15f61bffa1751f14a1dc06d839e46b62c50114448b5718
 ---
 
 > **Executed 2026-10-17 (UTC) in pull request #210.** Writes ADR-0183 (a sixteenth, on three networks,

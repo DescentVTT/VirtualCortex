@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-20
+integrity: sha256-b515d56768711bee0bec12f506728f2ac0837fe2db4323ac1aaa669487dbbad5
 ---
 
 > **Executed 2026-09-20 in pull request #77.** Writes ADR-0068 (the reward addressed: the

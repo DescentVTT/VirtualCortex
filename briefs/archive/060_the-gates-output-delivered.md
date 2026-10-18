@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-07
+integrity: sha256-a18686fa89e4111d9a991614caedaafc715295114a603c434ed440e9293197c5
 ---
 
 > **Executed 2026-10-07 in pull request #180.** Writes ADR-0144 (the gate's output delivered, built) and ADR-0145 (the

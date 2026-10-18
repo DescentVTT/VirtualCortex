@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-9c474b9c00b793595de1c95c09c0f326056d4e62a8967573a95861d032f0f361
 ---
 
 > **Executed 2026-09-10 in pull request #17.** Resolves finding F-19; writes

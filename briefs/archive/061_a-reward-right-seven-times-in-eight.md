@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-07
+integrity: sha256-d3c171f1a396c3400ba3e0eeb52207290b8e4233e79a5902353b397223dcd7ad
 ---
 
 > **Executed 2026-10-07 in pull request #184.** Writes ADR-0148 (a reward right seven times in eight, built) and

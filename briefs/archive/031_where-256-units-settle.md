@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-20
+integrity: sha256-0f4b61d2a982f5607faab744d8dccd594f84b4f896e6dbbbe34346207f1189ca
 ---
 
 > **Executed 2026-09-21 in pull request #80.** Writes ADR-0070 (where 256 units settle:

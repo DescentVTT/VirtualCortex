@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-09
+integrity: sha256-d653fdbb7b63668aaa9d862fa69aca2b77bf868b536d90e70272c134e6f39773
 ---
 
 > **Executed 2026-10-08 to 2026-10-09 (UTC) in pull request #190.** Writes ADR-0155 (a punishment the value does not

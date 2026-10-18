@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-13
+integrity: sha256-5f22a7b8dd60d6c000de176869a9d3afb0500f64c1e84f8d1e548bc9458b918b
 ---
 
 > **Executed 2026-09-13 in pull request #52.** Writes ADR-0041 (induction on the term

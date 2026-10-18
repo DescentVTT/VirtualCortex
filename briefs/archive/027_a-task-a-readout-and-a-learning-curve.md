@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-18
+integrity: sha256-613ed015affa96778c93aaddc45c70de4bfaef4591326336ff19cd9d130e05ab
 ---
 
 > **Executed 2026-09-19 in pull request #68.** Writes ADR-0059 (a task, a readout and a reward:

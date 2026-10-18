@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-13
+integrity: sha256-3f4332453fe7a4389b39c43e8881bb3ca83d5f42cb0196564012c0cc304acef4
 ---
 
 > **Executed 2026-09-13 in pull request #54.** Writes ADR-0044 (the reference network) and

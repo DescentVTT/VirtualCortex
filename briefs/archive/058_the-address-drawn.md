@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-30
+integrity: sha256-58b35df1170384ba34a310f22c68662f2d77b4fef50f4fa6029f88fe062c5244
 ---
 
 > **Executed 2026-09-30 in pull request #174.** Writes ADR-0139 (the address drawn, built) and ADR-0140 (the address

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-10-12
+integrity: sha256-4dcd1f24f04403ecdd725917d9f31e426df15d693868c4d21f49ca1a4f23f9e8
 ---
 
 > **Executed 2026-10-12 (UTC) in pull request #204.** Writes ADR-0174 (three in four on the other networks,

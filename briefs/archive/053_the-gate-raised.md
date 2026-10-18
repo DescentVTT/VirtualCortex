@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-29
+integrity: sha256-8dbff8f74eff6c600cb7dde3415b7a87a532a671193d9907e12753cafa0702c3
 ---
 
 > **Executed 2026-09-29 in pull request #157.** Writes ADR-0126 (the gate raised, measured), and opens and resolves F-58

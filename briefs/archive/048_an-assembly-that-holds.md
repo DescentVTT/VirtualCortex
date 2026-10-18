@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-27
+integrity: sha256-4942dc9dc5fd899a65599f84ecc09691e160ac24169ba5add821927c3126c1f8
 ---
 
 > **Executed 2026-09-27 in pull request #140.** Writes ADR-0112 (an assembly that holds, measured); opens finding F-54.

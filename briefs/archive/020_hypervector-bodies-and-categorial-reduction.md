@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-13
+integrity: sha256-82ef1a022affe94a5d7b32bdb889b3fde70e23f361cf0d7c15ae8db8d8930600
 ---
 
 > **Executed 2026-09-13 in pull request #50.** Writes ADR-0039 (the hypervector body)

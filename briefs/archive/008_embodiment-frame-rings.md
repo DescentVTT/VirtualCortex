@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-fa087d21e38d3e2a76b6a75cc403d6fdf52c97a78ea7e7cb661937b417008d56
 ---
 
 > **Executed 2026-09-10 in pull request #12.** Narrows finding F-17 to the torque decoder, the

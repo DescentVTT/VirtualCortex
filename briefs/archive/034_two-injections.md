@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-21
+integrity: sha256-70247740c33bfdcd90956ed412f8051573e1e2507a9484eb7cbce2c3a6c58a4a
 ---
 
 > **Executed 2026-09-21 in pull request #93.** Writes ADR-0076 (two injections: F-46's drive

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-22
+integrity: sha256-bc6ec426eb3704244302541f682d2949f56c1c1ec7630aa95fd55c58a12e778e
 ---
 
 > **Executed 2026-09-22 in pull request #96.** Writes ADR-0077 (the background side, step 2 of

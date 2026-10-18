@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-26
+integrity: sha256-60d4848773f72529b8abfabd2fbc5d0500e7ff9d60f06feabb28ad462acf1271
 ---
 
 > **Executed 2026-09-26 in pull request #128.** Writes ADR-0102 (the sweep timed with no census, and kept); closes no

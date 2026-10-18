@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-30
+integrity: sha256-a4c074592579f228df847b100788d213c105a8d0b13ebe99dd975016213b814d
 ---
 
 > **Executed 2026-09-30 in pull request #171.** Writes ADR-0137 (the reward unaddressed, measured); opens and closes no

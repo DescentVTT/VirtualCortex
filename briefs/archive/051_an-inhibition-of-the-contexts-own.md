@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-27
+integrity: sha256-3d39375adc69922a8e262468784cfa16994e52d7588865ae592c72aa8b9e83da
 ---
 
 > **Executed 2026-09-28 in pull request #150.** Writes ADR-0120 (the context's own inhibition measured). No rule of the

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-22
+integrity: sha256-857c8aaafce48a8120cb9a1e4d10a69848fe2affbea0c99c27114fb103f029d4
 ---
 
 > **Executed 2026-09-23 in pull request #109.** Writes ADR-0086 (the inhibitory baseline built: ADR-0085's

@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-72c2b6fd87fe56c54904f0f5b45e90dc83dc1b94c7d6fe9da7ed7144879b0611
 ---
 
 > **Executed 2026-09-10 in pull request #5.** Closes findings F-6 and F-7; TC-6 becomes

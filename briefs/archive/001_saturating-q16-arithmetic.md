@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-10
+integrity: sha256-f7970617a215fead9d2002ffc7abe5c47cebdf62251b669f57a3af07889394f1
 ---
 
 > **Executed 2026-09-10 in pull request #4.** Closes finding F-4; narrows F-14 to

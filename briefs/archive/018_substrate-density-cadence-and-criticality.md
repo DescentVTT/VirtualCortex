@@ -1,6 +1,7 @@
 ---
 status: archived
 date: 2026-09-12
+integrity: sha256-0a1814d37993bbcbc1b84d2d728eb1c8f0e687cbe61ecd643c19690ac7e0b468
 ---
 
 > **Executed 2026-09-12 in pull request #46.** Writes ADR-0034 (synaptic density), ADR-0035
