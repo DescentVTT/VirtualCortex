@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-18
 amends: ADR-0150
 decision-makers: VirtualCortex maintainers
@@ -71,5 +71,5 @@ decision-makers: VirtualCortex maintainers
   - no `required_linear_history`;
   - enforcement `active`, the bypass list as it was.
 - `briefs/README.md`'s "Evidencing a round", item 5; `CLAUDE.md`'s and `CONTRIBUTING.md`'s workflow; this decision's rows in §9 and the index.
-- The first merge commit on `main` is the merge of the first pull request after this change.
+- **The first merge commits on `main`**, each with two parents, committed by GitHub and verified by it as `valid`: `ebb72cf` (#210, brief 073), `c9514ea` (#211, ADR-0184) and `97ac540` (#212, ADR-0185). Each branch took `main` by a merge and kept every commit it had, the ones ADR-0184's trials ran on among them.
 - The signing key: a commit signed by it, pushed on 2026-10-18, verified by GitHub as `valid`. The ruleset's required signatures follow the four merges named above.
