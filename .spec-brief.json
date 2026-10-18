@@ -1,12 +1,25 @@
 {
   "$schema": "./node_modules/@descent-vtt/spec-brief/schema.json",
   "files": "[0-9][0-9][0-9]_*.md",
-  "status": { "draft": null, "deferred": null, "active": "proposed", "archived": "archived" },
+  "status": {
+    "draft": null,
+    "deferred": null,
+    "active": "proposed",
+    "archived": "archived"
+  },
   "sections": [
     "Mission",
-    { "name": "Standing directives", "mustContain": ["Latest ≠ Newest"] },
+    {
+      "name": "Standing directives",
+      "mustContain": [
+        "Latest ≠ Newest"
+      ]
+    },
     "Context",
-    { "name": "Deliverables", "checklist": true },
+    {
+      "name": "Deliverables",
+      "checklist": true
+    },
     "Not empowered",
     "Architectural empowerment",
     "Verification",
@@ -15,8 +28,17 @@
   "sectionOrder": true,
   "types": {},
   "archiving": {
-    "tasks": ["Deliverables"],
-    "dispositions": ["**Delegated", "**Accepted debt", "**Rejected"],
-    "banner": ["**Executed {date} (UTC) in pull request {pr}.** {summary} The body below describes the tree before execution and is not maintained."]
+    "tasks": [
+      "Deliverables"
+    ],
+    "dispositions": [
+      "**Delegated",
+      "**Accepted debt",
+      "**Rejected"
+    ],
+    "banner": [
+      "**Executed {date} (UTC) in pull request {pr}.** {summary} The body below describes the tree before execution and is not maintained."
+    ],
+    "base": "origin/main"
   }
 }
