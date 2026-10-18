@@ -18,7 +18,7 @@ lacks one or holds them out of order; the contract is `.spec-brief.json`'s
 | Section | What it holds |
 | :--- | :--- |
 | `## Mission` | One paragraph: the state of the tree when the brief is done. |
-| `## Standing directives` | The repository's always-on rules, restated. Latest ≠ Newest is always among them (`CLAUDE.md` principle 4), applied to what the round could be tempted to adopt; `npm run spec:briefs` fails a live brief whose section does not name it. |
+| `## Standing directives` | The repository's always-on rules, restated. Latest ≠ Newest is always among them (`CLAUDE.md` principle 4), applied to what the round could be tempted to depend on; `npm run spec:briefs` fails a live brief whose section does not name it. What else the round does not take on, a mechanism or a change beside its own, is its scope, written in `## Not empowered`, not this directive ([ADR-0187](../docs/adr/0187-the-upgrade-suite-planned.md)). |
 | `## Context` | Facts the brief rests on, each with a path, re-derived on the stated date. Line numbers move; symbol names and quoted sentences are what to re-derive. |
 | `## Deliverables` | A checkbox list. `spec-graph` reads each box as an obligation with real state. |
 | `## Not empowered` | The cheap wrong moves this round must not make. |
