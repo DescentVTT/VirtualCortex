@@ -1,15 +1,15 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 amends: ADR-0150
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0184: The runs off the developer machine — a round ran its calibration, three to four and a half hours of every whole-domain test eight at a time, and its arms and trials, half an hour to an hour more, on the developer machine, a laptop its maintainer works at, and the weekly shards then ran the same tests again to reproduce them; a round's runs now go by dispatch: the calibration at `scope=exhaustive` with the round's own tests excluded by name, the arms and any trial at a new `scope=arms`, one job a test on AArch64 with its output kept, reproduced on x86-64 by the shards as before; before a push the developer machine runs the fast checks and the pull request's gate runs the rest
+# ADR-0184: The runs off the developer machine — a round ran its calibration, three and a quarter to nearly five hours of every whole-domain test eight at a time, and its arms and trials, half an hour to an hour more, on the developer machine, a laptop its maintainer works at, and the weekly shards then ran the same tests again to reproduce them; a round's runs now go by dispatch: the calibration at `scope=exhaustive` with the round's own tests excluded by name, the arms and any trial at a new `scope=arms`, one job a test on AArch64 with its output kept, reproduced on x86-64 by the shards as before; before a push the developer machine runs the fast checks and the pull request's gate runs the rest
 
 ## Context and Problem Statement
 
-**What a round runs on the developer machine**, read from the ADRs of the last five measuring rounds:
+**What a round runs on the developer machine**, read from the ADRs of the last six measuring rounds:
 
 | Round | The calibration, eight at a time | The arms, and trials of the harness |
 | :--- | :--- | :--- |
@@ -18,6 +18,7 @@ decision-makers: VirtualCortex maintainers
 | Brief 070 ([ADR-0174](0174-three-in-four-on-the-other-networks-measured.md)) | 110 tests, 4 h 24 m | seven pinned arms through a new body, 43 m; the arms, 31 m |
 | Brief 071 ([ADR-0177](0177-the-controllers-step-measured.md)) | 115 tests, 3 h 19 m | no arm |
 | Brief 072 ([ADR-0181](0181-a-rate-the-controller-holds-measured.md)) | 120 tests, 3 h 41 m | the arms, 29 m, and again, 26 m, for a check that had missed them |
+| Brief 073 ([ADR-0183](0183-a-sixteenth-on-three-networks-measured.md)) | 128 tests, 4 h 47 m | two derivations and six arms after it |
 
 Before every push the round also ran `CLAUDE.md`'s block: the workspace built and tested in debug, in release and on the MSRV, linted, documented, its benchmarks executed once, and the mutation gate on the lines it changed, each a build of the workspace.
 
@@ -34,7 +35,7 @@ Before every push the round also ran `CLAUDE.md`'s block: the workspace built an
 
 ## Decision Drivers
 
-- **The developer machine is its maintainer's to work at**, and a round took it for four to five and a half hours.
+- **The developer machine is its maintainer's to work at**, and a round's calibration alone took it for three and a quarter to nearly five hours.
 - **Nothing a run reads depends on where it runs** (V-7, and every reproduction since ADR-0150).
 - **A run the host records is better evidence than a run on the developer machine.** Its commit, its log and its time are kept and anyone can read them, and "the protocol committed before any run" can be read from the run's own commit.
 - **Two machines stay two**: the reproduction is on other hardware than the run (ADR-0150).
