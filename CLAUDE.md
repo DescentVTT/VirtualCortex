@@ -131,11 +131,15 @@ Each one is here because breaking it has already produced a defect in this repos
    ([ADR-0010](docs/adr/0010-measured-or-target.md)); otherwise it is a Target with a protocol.
    Never write "tested on". Never reintroduce the withdrawn figures (86 billion neurons,
    P99.99 < 35 ns, 100 ms cold boot).
-4. **Latest ≠ Newest.** A technology is admissible on the hot path only with a stable specification,
-   two years of third-party production use, documented failure modes, and a mechanical-sympathy
-   argument (whitepaper [§2.1](docs/WHITEPAPER.md#21-engineering-doctrine-latest--newest)). The
-   same test applies to documentation standards and to dependencies. Nightly features, sub-1.0
-   crates without a stability policy, and unreproduced performance claims fail it.
+4. **Latest ≠ Newest.** A technology or a dependency is admissible on the hot path or in the
+   engine's build only with a stable specification, two years of third-party production use,
+   documented failure modes, and a mechanical-sympathy argument (whitepaper
+   [§2.1](docs/WHITEPAPER.md#21-engineering-doctrine-latest--newest)). Documentation standards meet the
+   same test; the project's own documentation tools are admitted by ADR-0008 and ADR-0185 instead.
+   Nightly features, sub-1.0 crates without a stability policy, and unreproduced performance claims
+   fail it. It governs what the tree depends on, not what the engine does: a mechanism enters by an
+   ADR and a measured round ([ADR-0187](docs/adr/0187-the-upgrade-suite-planned.md)), and a brief's "nothing else is
+   adopted" is that round's scope, stated on its own, not this principle.
 5. **A structural boundary beats a reviewed one.** Compile-time assertion > test > executable
    documentation directive > review comment. When you add a rule, name where it is enforced; if
    nowhere, write it as a description, not a requirement.

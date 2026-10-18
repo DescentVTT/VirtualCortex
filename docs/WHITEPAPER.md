@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 4.120.0
+version: 4.121.0
 status: active
 date: 2026-10-18
 ---
@@ -11,7 +11,7 @@ date: 2026-10-18
 
 | Document control | |
 | :--- | :--- |
-| Version | 4.120.0 |
+| Version | 4.121.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-18 |
 | Supersedes | Whitepaper 3.0.0 (2026-09-10; eighteen crates), which superseded Specification 2.8.0 |
@@ -254,6 +254,11 @@ This rule is why the foundations below were chosen over their newer alternatives
 | arc42, C4, MADR, BCP 14 | 2005 / 2018 / 2018 / 1997 | Mature documentation standards with tooling and a reader base. |
 
 What the rule excludes: language features gated on nightly, crates below 1.0 without a documented stability policy, kernel interfaces younger than two LTS releases on the hot path, and any performance claim that has not been reproduced on the reference platform.
+
+What the rule does not govern ([ADR-0187](adr/0187-the-upgrade-suite-planned.md)):
+- **What the engine does.** A mechanism, such as a learning rule, a critic, a sleep phase or a lookahead, is not a technology. It enters by an ADR and a measured round, and the literature that suggests it is a prior, not a verdict.
+- **The project's own documentation tools.** They are admitted by [ADR-0008](adr/0008-documentation-governance.md) and [ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md): off the hot path and out of the engine's build, with a written pre-1.0 policy, no runtime dependency and exact pins. They do not pass the two-year test.
+- **A round's scope.** A brief's "nothing else is adopted" belongs to its `## Not empowered`. The rule's directive among a brief's standing directives speaks to what the round could be tempted to depend on.
 
 ### 2.2 Technical constraints
 
@@ -2697,6 +2702,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0184](adr/0184-the-runs-off-the-developer-machine.md) | The runs off the developer machine: a round ran its calibration, three and a quarter to nearly five hours of every whole-domain test eight at a time, and its arms and trials on the developer machine, its maintainer's laptop, and the weekly shards ran the same tests again to reproduce them; a round's runs now go by dispatch, the calibration at `scope=exhaustive` with the round's own tests excluded by name, the arms, lead-ins and trials at a new `scope=arms`, one job a test on AArch64 with its output kept, reproduced on x86-64 by the shards as before; before a push the developer machine runs the fast checks and the pull request's gate the rest; amends ADR-0150 |
 | [ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md) | The spec tools upgraded, and spec-brief admitted: spec-guard 0.11.0 to 0.26.0 and spec-graph 0.8.0 to 0.17.0 read the tree as before, but spec-graph reads an archived document as a record from 0.9.0, so an archived brief with an open box no longer fails; spec-brief 0.8.0 holds the briefs' contract from `.spec-brief.json`, archives a round in one command that refuses an open box and writes an integrity hash, and fails an archived brief changed since; every archived brief carries that hash, `scripts/check-archive.mjs` fails one without it, and `scripts/check-briefs.mjs` retires; `spec-guard prove` joins the gate; spec-harness is not adopted; the tools admitted as the project's own, which principle 4's test for a dependency they do not pass |
 | [ADR-0186](adr/0186-merge-commits.md) | Merge commits: `main` took every pull request by a rebase, which gives each commit a new hash and drops its signature, so the hashes an ADR cites and the commits a dispatch ran on were not `main`'s; `main` now takes a pull request by a merge commit, the ruleset allows that method alone and no longer requires a linear history, applied on 2026-10-18 by the maintainers before this ADR merged; a branch is brought up to date by merging `main` into it, never by a rebase once a run has been made on it or its pull request is open; signed commits follow; amends ADR-0150 |
+| [ADR-0187](adr/0187-the-upgrade-suite-planned.md) | The upgrade suite planned: an outside suite of twenty-nine proposals, UPG-01 to UPG-29 in seven phases, read against the tree: one already done, seven taken into the plan in an order as M10 to M15 and M8's remainder, each to enter by a decision of its own and a measured round, four after the tool broker, seventeen deferred with what would bring each, and what no round adopts named; Latest ≠ Newest kept, its scope stated: it governs what the tree depends on, not what the engine does; nothing is built |
 
 ---
 
@@ -3163,8 +3169,14 @@ Milestones follow the founding design note; each ends with an exit test.
 | M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1's two-architecture form runs in CI at 20 000 ticks ([ADR-0030](adr/0030-verification-governance.md)), the $10^6$-tick reference-image form not started; the idle tick on one, two and four workers is benchmarked ([ADR-0035](adr/0035-cadence-and-the-population-tally.md)), with no admissible run. |
 | M8 Digital embodiment, language and the brokered pipelines | Tool ring and broker; hypervector unbinding and the lexicon behind `cortex-linguistic`; the veto gate in the dispatch path; the relay table behind `cortex-thalamus`; the prover and document-engine services (R-10, R-11); a term arena for unification; second records for the crates of [ADR-0016](adr/0016-thirty-two-crate-architecture.md) that need one. | A tool call round trip through the broker under the veto gate, denied and permitted; a frame realised as tokens in both lexicon languages; a two-step refutation certified through the broker and consolidated; a document audit that re-computes a stated figure and flags a contradiction. | Frames, rules, the two categories' opcodes, the resolution step and certification done (ADR-0016); induction, the continued-fraction search and the discovery path's record side done (brief 021, [ADR-0041](adr/0041-induction-on-the-term-arena.md), [ADR-0042](adr/0042-continued-fractions.md), [ADR-0043](adr/0043-discovery-path.md)); broker, rings, stub and dispatch path open; unification done (brief 014, [ADR-0025](adr/0025-term-arena-and-unification.md)); the hypervector body and its algebra, categorial reduction, and the frame's round trip through both on ids done (brief 020, [ADR-0039](adr/0039-hypervector-body.md), [ADR-0040](adr/0040-categorial-reduction.md)); the clause search and a bounded proof search done (brief 022, [ADR-0045](adr/0045-clause-search.md)); the lexicon on ids in both directions done (brief 023, [ADR-0046](adr/0046-lexicon.md)); the words of a language the host's. |
 | M9 Self-amendment | A registry of the parameters the engine may amend; the amendment record and its gates; the trial in two forks of the image; the commit; persistence and replay; the amendment register behind the broker. | A proposal trialled in a fork, committed only with the forks' behaviour hashes equal, persisted, reloaded with the policy derived; a forged record refused by the loader. | Done for the sweep's two parameters ([ADR-0031](adr/0031-policy-amendment.md)): the exit test passes as `runtime/cortex-runtime/tests/amendment.rs`; the other rules' parameters join as the runtime composes them; the register open. |
+| M10 A reward past the trial | A decision and a measured round on a reward that arrives trials after the choice; candidate: options and a critic over several timescales (UPG-03). | A hypothesis written before any run reads yes. | Planned, first ([ADR-0187](adr/0187-the-upgrade-suite-planned.md)); after the default [ADR-0183](adr/0183-a-sixteenth-on-three-networks-measured.md) named. |
+| M11 Learning that sleep keeps | A learned mapping held through a sleep with replay, against one without; candidate: chained episodes compiled in sleep (UPG-04). | A hypothesis written before any run reads yes. | Planned, second (ADR-0187). |
+| M12 Couplings over long runs | The couplings and the inhibitory sum bounded over many schedules; candidate: a sliding threshold (UPG-02), its layout decided first, since the bytes it asked for are `v_slow`'s. | A hypothesis written before any run reads yes. | Planned, third (ADR-0187). |
+| M13 Lookahead | A choice made by an imagined rollout, against the reflexive one, on a task that needs it; candidate: a counterfactual rollout (UPG-08), the lookahead [ADR-0099](adr/0099-the-engines-speed.md) ordered. | A hypothesis written before any run reads yes. | Planned, fourth (ADR-0187). |
+| M14 Synthesis in sleep | A REM pass that proposes a term shortening the ledger's description; candidate: combinators under minimum description length (UPG-09). | A hypothesis written before any run reads yes. | Planned, fifth (ADR-0187); M8's remainder sixth. |
+| M15 Language that says what it does not know | A frame's confidence deciding whether an answer is given; candidates UPG-05 and UPG-06. | A hypothesis written before any run reads yes. | Planned, seventh (ADR-0187); after M8's lexicon and broker. |
 
-Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.
+The order of M10 to M15 is a plan, and each round's verdict may change it; each milestone enters by a decision ADR of its own. Longer-horizon directions (multi-node fabric, brain–computer-interface ingestion, custom silicon) are intentionally not scheduled; they depend on M1–M7 and on hypothesis H-1.
 
 Work is handed out as **briefs**: numbered, self-contained prompts in [`briefs/`](../briefs/README.md), each closing named findings or advancing a milestone, frozen into `briefs/archive/` when executed. A brief is an input; its outcome is recorded in the ADR it writes, in §11's dispositions and in the changelog, never in the brief itself.
 
