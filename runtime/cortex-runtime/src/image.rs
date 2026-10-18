@@ -249,9 +249,12 @@ const MODULATOR_RESERVED: core::ops::Range<usize> = 26..28;
 /// last sixteen windows closed so far can count (`read_sum_max`); a sum beside no window left,
 /// or above that, is a record the writer never produces.
 fn target_read_of(record: &[u8]) -> Result<Option<(u8, u64)>, ImageError> {
-    let low = u32::from_le_bytes(record[RATE_READ_SUM_LOW].try_into().unwrap_or([0; 4]));
-    let high = u16::from_le_bytes(record[RATE_READ_SUM_HIGH].try_into().unwrap_or([0; 2]));
-    let sum = u64::from(high) << 32 | u64::from(low);
+    // The sum's eight bytes, little-endian, its low four and its high two in place and the top
+    // two zero: bytes and no operator, so no mutant can join the halves another way that agrees.
+    let mut word = [0u8; 8];
+    word[..4].copy_from_slice(&record[RATE_READ_SUM_LOW]);
+    word[4..6].copy_from_slice(&record[RATE_READ_SUM_HIGH]);
+    let sum = u64::from_le_bytes(word);
     match record[RATE_READ_LEFT] {
         0 if sum == 0 => Ok(None),
         left @ 1.. if sum <= read_sum_max(left) => Ok(Some((left, sum))),
@@ -667,11 +670,11 @@ impl Image {
             None => {}
             Some(TargetRead::Reading { left, sum }) => {
                 modulator_bytes[RATE_READ_LEFT] = left;
-                // The sum's low thirty-two bits and its high sixteen, truncating each by name:
-                // a sum the read holds fits forty-eight bits (`read_sum_max`).
-                modulator_bytes[RATE_READ_SUM_LOW].copy_from_slice(&(sum as u32).to_le_bytes());
-                modulator_bytes[RATE_READ_SUM_HIGH]
-                    .copy_from_slice(&((sum >> 32) as u16).to_le_bytes());
+                // The sum's low four bytes and its next two, little-endian, as the loader reads
+                // them: a sum the read holds fits forty-eight bits (`read_sum_max`).
+                let word = sum.to_le_bytes();
+                modulator_bytes[RATE_READ_SUM_LOW].copy_from_slice(&word[..4]);
+                modulator_bytes[RATE_READ_SUM_HIGH].copy_from_slice(&word[4..6]);
             }
             Some(TargetRead::Refused) => {
                 return Err(ImageError::Config(ConfigError::RateTargetOutOfRange));
