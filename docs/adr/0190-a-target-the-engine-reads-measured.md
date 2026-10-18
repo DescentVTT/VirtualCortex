@@ -194,6 +194,42 @@ In every arm the outside sum stays within 0.9999 and 1.0001 of its image's, the 
 
 **Step 3**: a target the engine reads serves as a derived one did. **The next decision, named and not taken**: an ADR on the engine's default for an image no derivation has settled — the rule, the step, the read and its span, and the inhibitory rule's target by the same read — then M10, a reward past the trial ([ADR-0187](0187-the-upgrade-suite-planned.md)). Steps 4 and 5 did not arise. Step 6 kept: no constant moved after a lead-in with the read set, and no other span, step or network was run.
 
+### The evidence
+
+- **No whole-domain test ran on the developer machine.** Every run of this round is a dispatch on its branch, `claude/brief-074-a-target-the-engine-reads`, in pull request #216, and each table was written from the log the run's job kept:
+
+  | Dispatch | Scope | On | What ran | What it gave |
+  | :--- | :--- | :--- | :--- | :--- |
+  | [39120143892](https://github.com/DescentVTT/VirtualCortex/actions/runs/39120143892) | `exhaustive`, this round's ten excluded | `ddc7f2c` | the calibration: 136 tests in twelve shards | 136 of 136 passed |
+  | [39120156976](https://github.com/DescentVTT/VirtualCortex/actions/runs/39120156976) | `arms` | `ddc7f2c` | the trial of eight windows | passed, 7 s (`arm-0`) |
+  | [39127001541](https://github.com/DescentVTT/VirtualCortex/actions/runs/39127001541) | `arms` | `ddc7f2c` | the three derivations | passed, 177, 186 and 156 s (`arm-0` to `arm-2`); their tables at `297def6` |
+  | [39128573344](https://github.com/DescentVTT/VirtualCortex/actions/runs/39128573344) | `arms` | `297def6` | the six arms | passed, 1 071 to 1 120 s (`arm-0` to `arm-5`); their tables, the verdict and the readings at `8342095` |
+  | [39131009704](https://github.com/DescentVTT/VirtualCortex/actions/runs/39131009704) | `both` | `8342095` | the reproduction: 146 tests in twelve shards, and the sweep | 146 of 146 passed |
+
+- **The round's commits**: `356d10d` the read built (ADR-0189); `ddc7f2c` this protocol, before any lead-in with the read set; `9f97fab` the mutation gate's one survivor removed, which changes no run; `297def6` the derivations' tables; `8342095` the arms' tables, the verdict, its step and the readings as read, the last commit to change code; then the commits that carry these readings, the documents, this evidence and the brief's archive, which change no code. Every commit a dispatch ran on is an ancestor of the pull request's head.
+- **The reproduction's scope.** A file under `src/` changed, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched at **`scope=both`**, once the arms' tables were pinned, before these readings were written.
+- **Every whole-domain shard is green**, and every pinned number reproduced on x86-64: all 146 `exhaustive` tests passed, each exit 0 with one test reported, 114 511 s summed. This round's ten held their tables there, the derivations in 332, 286 and 436 s and the arms in 1 147 to 1 692 s, each arm after deriving its network again and holding the derivation to its tables. The 136 before this round reproduced theirs, H-38's six steps and two arms and H-39's three derivations and six arms among them.
+- **The shards**, dealt by the table before this round, which did not know the ten and costed each at 900 s:
+
+  | Shard | Job, of its bound | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time, of the bound |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 89.7 min, 50 % | `the_address_drawn_on_seed_22_from_the_assignment_at_2048_units` 3 674; `an_exploration_the_value_gates_from_the_assignment_at_1024_units` 1 916 | 12 | 9 742 | 5 292 s, 49 % |
+  | 1 | 90.3 min, 50 % | `the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_2048_units` 2 883; `the_address_drawn_under_the_target_read_on_seed_23_from_the_assignment_at_1024_units` 1 538 | 12 | 10 010 | 5 349 s, 50 % |
+  | 2 | 56.5 min, 31 % | `the_address_drawn_on_seed_22_from_the_mirrored_assignment_at_2048_units` 2 121; `the_address_drawn_under_the_target_read_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 147 | 14 | 6 630 | 3 326 s, 31 % |
+  | 3 | 69.3 min, 39 % | `the_address_drawn_on_seed_23_from_the_assignment_at_2048_units` 2 313; `the_address_drawn_under_the_target_read_on_seed_22_from_the_mirrored_assignment_at_1024_units` 1 304 | 13 | 8 179 | 4 094 s, 38 % |
+  | 4 | 74.7 min, 41 % | `the_span_a_choice_among_three_is_given_from_the_mirrored_assignment_at_1024_units` 1 567; `the_address_drawn_under_the_target_read_on_seed_22_from_the_assignment_at_1024_units` 1 541 | 13 | 7 945 | 4 396 s, 41 % |
+  | 5 | 83.5 min, 46 % | `the_address_drawn_under_the_target_read_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 692; `the_address_drawn_under_the_rate_s_rule_from_the_mirrored_at_1024_units` 1 610 | 13 | 9 824 | 4 931 s, 46 % |
+  | 6 | 89.0 min, 49 % | `the_address_drawn_at_a_sixteenth_on_seed_22_from_the_mirrored_assignment_at_1024_units` 1 847; `the_address_drawn_at_a_sixteenth_on_seed_24_from_the_assignment_at_1024_units` 1 840 | 11 | 9 981 | 5 260 s, 49 % |
+  | 7 | 80.8 min, 45 % | `the_address_drawn_on_seed_23_from_the_assignment_at_1024_units` 1 890; `a_reward_right_three_times_in_four_on_seed_24_from_the_assignment_at_1024_units` 1 861 | 11 | 9 497 | 4 757 s, 44 % |
+  | 8 | 60.3 min, 34 % | `a_reward_right_three_times_in_four_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 139; `a_reward_right_three_times_in_four_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 137 | 11 | 6 880 | 3 555 s, 33 % |
+  | 9 | 111.3 min, 62 % | `a_reward_right_three_times_in_four_on_seed_23_from_the_assignment_at_1024_units` 2 314; `three_answers_from_the_mirrored_assignment_at_1024_units` 2 216 | 12 | 12 543 | 6 595 s, 61 % |
+  | 10 | 108.1 min, 60 % | `the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_1024_units` 2 256; `the_address_drawn_at_a_sixteenth_on_seed_23_from_the_mirrored_assignment_at_1024_units` 2 247 | 13 | 12 204 | 6 402 s, 59 % |
+  | 11 | 93.7 min, 52 % | `the_address_drawn_on_seed_24_from_the_assignment_at_1024_units` 1 886; `the_gate_s_output_delivered_from_the_assignment_at_1024_units` 1 856 | 11 | 11 076 | 5 540 s, 51 % |
+
+  The percentages are of the job's bound, 180 minutes ([ADR-0179](0179-the-bounds-rule-restated.md)); each shard ran its tests two at a time, at 1.81 to 2.00 of their summed seconds over the wall. The twelve waited 16 to 31 minutes for runners after the dispatch and started from 13:24:50Z to 13:38:52Z; the last ended at 15:26:13Z, 2 h 18 min after it. **Two shards' jobs passed 60 per cent of their bound**: shard 9's took 111.3 minutes, 62 per cent, and shard 10's 108.1, 60 per cent. Neither held a test of this round. Dealt by the table before it at 9 674 and 9 676 s, they ran 12 543 and 12 204 s, 30 and 26 per cent above it, the same tests up to 58 per cent slower than the table read them — `three_answers_from_the_mirrored_assignment_at_1024_units` 1 399 s there and 2 216 here — where shards 2 and 8 ran 31 and 29 per cent below theirs. The runners' spread, not this round's tests, put the two past 60 per cent. Under the table regenerated from this run (`scripts/exhaustive-costs.tsv`, 146 lines, 114 511 s) every shard is planned at 9 541 to 9 544 s summed, about 4 770 s run two at a time, 44 per cent of the bound, so the deal that ran here is not the one the next run takes. By ADR-0179's rule a job past 60 per cent is reported, and the bound is the next workflow decision's to read again; this round does not change `ci.yml`.
+- **The sweep** of this dispatch had not ended when this evidence was written, at 15:35Z: two of its thirteen jobs were running and eleven queued, behind the shards (ADR-0166). It is recorded by the first ADR that merges after it ends ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)).
+- **The pull request's gate** on `8342095`, run 39131012880: the five required and advisory checks green; the mutation gate on the changed lines made 47 mutants, 39 caught, 8 unviable, none missed (ADR-0189).
+
 ### Consequences
 
 - Good: the settled network's rule under the read says that the rule holds the network, not that the read held it.
