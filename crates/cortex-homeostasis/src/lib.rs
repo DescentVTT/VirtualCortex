@@ -449,6 +449,23 @@ impl HomeostaticDrivePool {
         reading.map(|_| self.synaptic_gain_q16)
     }
 
+    /// Once per window with the gain held (ADR-0188, ADR-0189), where the engine reads its
+    /// rate's target: neither rule moves the gain, whatever the step. The estimate is kept as a
+    /// reading, by the slope alone, as [`regulate_rate`](Self::regulate_rate) keeps it — stored
+    /// where the window has one, the field left where it has none — and the window's pairs are
+    /// cleared for the next window, the open bin the next window's. Returns the window's spikes,
+    /// the closed bins' ([`window_spikes`](Self::window_spikes)), for the caller to read. It is
+    /// `regulate_rate` at a step of zero in every field, with the count returned in the gain's
+    /// place.
+    pub fn hold(&mut self) -> u64 {
+        if let Some(sigma) = self.estimate_branching_ratio() {
+            self.branching_ratio_q16 = sigma;
+        }
+        let spikes = self.window_spikes();
+        self.clear_window();
+        spikes
+    }
+
     /// True for a record within the bounds and the consistency the rules keep between
     /// windows: the gain within its bounds, the control step within its, fewer bins than a
     /// window holds (a full window is regulated in the step that fills it), every count at or
@@ -1391,6 +1408,68 @@ mod tests {
     }
 
     #[test]
+    fn with_the_gain_held_a_window_s_count_is_read_and_cleared_and_the_gain_moves_at_no_step() {
+        let max = CONTROL_STEP_MAX_Q0_16;
+        // At any step, whatever the count — none, a doubling window the estimate's rule would
+        // halve the gain at, a window at the cap the saturation rule would — the gain stays and
+        // the window's spikes are returned.
+        for step in [0, 1, 0x1000, max, u16::MAX] {
+            for (counts, spikes) in [
+                (&[0u32, 0][..], 0u64),
+                (&[1, 2, 4, 8][..], 15),
+                (&[cap_bin(), cap_bin()][..], 2 * cap_bin() as u64),
+            ] {
+                let mut p = rated(counts, 0x0001_C000, step);
+                assert_eq!(p.hold(), spikes, "step {step:#x}, {counts:?}");
+                assert_eq!(p.synaptic_gain_q16, 0x0001_C000, "step {step:#x}");
+            }
+        }
+        // At each rail the gain stays on it.
+        for gain in [GAIN_MIN_Q16, GAIN_MAX_Q16] {
+            let mut p = rated(&[0, 0], gain, max);
+            assert_eq!(p.hold(), 0);
+            assert_eq!(p.synaptic_gain_q16, gain);
+        }
+        // The estimate is a reading: the slope stored where there is one, two for a doubling
+        // window; kept where there is none, a constant window's; never the ceiling's.
+        let mut p = rated(&[1, 2, 4, 8], ONE, max);
+        p.branching_ratio_q16 = 0x1234;
+        assert_eq!(p.hold(), 15);
+        assert_eq!(p.branching_ratio_q16, 0x0002_0000);
+        let mut p = rated(&[100, 100, 100], ONE, max);
+        p.branching_ratio_q16 = 0x1234;
+        assert!(p.is_saturated(100));
+        assert_eq!(p.hold(), 300);
+        assert_eq!(p.branching_ratio_q16, 0x1234, "not the ceiling's sixteen");
+        // No bin: nothing counted, nothing stored, and the record as it was but the open bin.
+        let mut p = rated(&[], 0x0001_2345, max);
+        p.branching_ratio_q16 = 0x1234;
+        p.count_activity(3);
+        let before = p;
+        assert_eq!(p.hold(), 0);
+        assert_eq!(p, before, "an empty window is cleared to itself");
+        // The window is cleared and the open bin survives, as under either rule.
+        let mut p = rated(&[1, 2, 4, 8], ONE, max);
+        p.count_activity(6);
+        assert_eq!(p.hold(), 15);
+        assert_eq!(
+            (
+                p.window_bins,
+                p.sum_prev,
+                p.sum_prev_sq,
+                p.sum_pair,
+                p.first_activity,
+                p.last_activity,
+                p.bin_activity
+            ),
+            (0, 0, 0, 0, 0, 0, 6)
+        );
+        assert_eq!(p.close_bin(), Some(1));
+        assert_eq!(p.first_activity, 6);
+        assert!(p.is_well_formed());
+    }
+
+    #[test]
     fn under_the_rate_s_rule_the_estimate_is_a_reading_and_the_saturation_rule_is_not_consulted() {
         let max = CONTROL_STEP_MAX_Q0_16;
         // A doubling window at its target: the slope is stored, two, and moves nothing; the
@@ -1899,6 +1978,39 @@ mod prop {
         assert!(
             up > 1_000 && down > 1_000 && held > 1_000 && none > 100,
             "the walk met every outcome: up {up}, down {down}, held {held}, none {none}"
+        );
+    }
+
+    /// The gain held (ADR-0189) over the lattice: on every window `regulate_rate` is drawn on, at
+    /// every step, `hold` leaves the record as the rate's rule at a step of zero leaves it, field
+    /// for field, under any target, and returns the window's spikes, every bin once.
+    #[test]
+    fn with_the_gain_held_a_window_is_the_rate_s_rule_at_a_step_of_zero_over_the_lattice() {
+        let mut rng = Lcg::new(43);
+        let mut slopes = 0u32;
+        for round in 0..20_000u32 {
+            let (drawn, spikes) = drawn_window(&mut rng, round);
+            let target = match round % 3 {
+                0 => rng.pick(&U32_LATTICE),
+                1 => spikes.min(u64::from(u32::MAX)) as u32,
+                _ => rng.next_u32(),
+            };
+            let mut at_zero = drawn;
+            at_zero.control_step_q0_16 = 0;
+            at_zero.regulate_rate(target);
+            at_zero.control_step_q0_16 = drawn.control_step_q0_16;
+            let mut held = drawn;
+            assert_eq!(held.hold(), spikes, "round {round}: {drawn:?}");
+            assert_eq!(held, at_zero, "round {round}: every field");
+            assert_eq!(held.synaptic_gain_q16, drawn.synaptic_gain_q16);
+            assert!(held.is_well_formed(), "round {round}: {held:?}");
+            if held.branching_ratio_q16 != drawn.branching_ratio_q16 {
+                slopes = slopes.wrapping_add(1);
+            }
+        }
+        assert!(
+            slopes > 1_000,
+            "the walk met windows with a slope: {slopes}"
         );
     }
 

@@ -21,7 +21,7 @@ use cortex_homeostasis::{
     PRESSURE_MAX_Q16, REM_WINDOWS, SLEEP_SHIFT_MAX, STAGE_REM, STAGE_SWS, SWS_WINDOWS,
 };
 use cortex_neuromod::ValueCritic;
-use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, WriteAheadLog};
+use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, TargetRead, WriteAheadLog};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
@@ -1184,8 +1184,9 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
         "the flag and the value zero, as a format-14 writer left them, read as unset"
     );
     // `[32..36)` is the class of short-term plasticity's since ADR-0114, `[36..48)` but `[39]`
-    // the slow current's since ADR-0123, and `[48..51)` the critic's since ADR-0131.
-    for at in [26, 27, 39, 54, 63] {
+    // the slow current's since ADR-0123, `[48..51)` the critic's since ADR-0131, and `[39]` the
+    // read's since ADR-0189.
+    for at in [26, 27, 54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1207,7 +1208,7 @@ fn the_inhibitory_baseline_is_written_to_and_read_from_the_image_and_a_record_le
     assert!(
         matches!(
             Image::decode::<8>(&older, Config::default()),
-            Err(ImageError::Header(HeaderError::ForeignVersion(21)))
+            Err(ImageError::Header(HeaderError::ForeignVersion(22)))
         ),
         "the previous format's header fails closed, as every foreign version does"
     );
@@ -1297,8 +1298,9 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
         );
     }
     // `[32..36)` is the class of short-term plasticity's since ADR-0114, `[36..48)` but `[39]`
-    // the slow current's since ADR-0123, and `[48..51)` the critic's since ADR-0131.
-    for at in [26, 27, 39, 54, 63] {
+    // the slow current's since ADR-0123, `[48..51)` the critic's since ADR-0131, and `[39]` the
+    // read's since ADR-0189.
+    for at in [26, 27, 54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1312,7 +1314,7 @@ fn the_signed_gate_is_written_to_and_read_from_the_image_and_a_byte_left_zero_re
             "byte {at} is reserved"
         );
     }
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 15;
@@ -1465,9 +1467,9 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
             "{bytes:?}: bytes the writer never produces"
         );
     }
-    // `[36..48)` but `[39]` is the slow current's since ADR-0123, and `[48..51)` the critic's
-    // since ADR-0131.
-    for at in [26, 27, 39, 54, 63] {
+    // `[36..48)` but `[39]` is the slow current's since ADR-0123, `[48..51)` the critic's since
+    // ADR-0131, and `[39]` the read's since ADR-0189.
+    for at in [26, 27, 54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1512,7 +1514,7 @@ fn the_class_of_short_term_plasticity_is_written_to_and_read_from_the_image_and_
         Err(ImageError::MarkWithoutClass(0))
     ));
     // A header stamped with format 16, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 16;
@@ -1718,7 +1720,8 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
             );
         }
     }
-    for at in [39, 54, 63] {
+    // `[39]`, between the slow current's shifts and its voltages, is the read's since ADR-0189.
+    for at in [54, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -1778,7 +1781,7 @@ fn the_slow_current_is_written_to_and_read_from_the_image_and_a_record_left_zero
         "a slow potential without the mark"
     );
     // A header stamped with format 17, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 17;
@@ -1965,7 +1968,7 @@ fn the_critic_is_written_to_and_read_from_the_image_and_a_record_left_zero_reads
         None
     );
     // A header stamped with format 18, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 18;
@@ -2187,7 +2190,7 @@ fn the_critic_s_window_is_written_to_and_read_from_the_image_and_is_the_shortest
         );
     }
     // A header stamped with format 19, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     let mut older = set.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 19;
@@ -2341,8 +2344,8 @@ fn the_whole_punishment_is_written_to_and_read_from_the_image_and_refused_withou
         None,
         "with neither, the image loads unset"
     );
-    // The bytes that stay reserved.
-    for at in [26, 27, 39, 54, 55, 63] {
+    // The bytes that stay reserved; `[39]` is the read's since ADR-0189.
+    for at in [26, 27, 54, 55, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -2357,7 +2360,7 @@ fn the_whole_punishment_is_written_to_and_read_from_the_image_and_refused_withou
         );
     }
     // A header stamped with format 20, as every foreign version is (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     let mut older = unset.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 20;
@@ -2612,8 +2615,9 @@ fn the_rate_s_target_is_written_to_and_read_from_the_image_and_refused_where_no_
         Some(1),
         "384 units over 50 331 649 ticks are a spike a window, less two parts in a hundred million"
     );
-    // The bytes that stay reserved, on either side of the period.
-    for at in [26, 27, 39, 54, 55, 60, 61, 62, 63] {
+    // The bytes that stay reserved, and the read's sum beside no read under way (ADR-0189): a
+    // byte the writer never produces either way. The read's own byte is the next test's.
+    for at in [26, 27, 54, 55, 60, 61, 62, 63] {
         let mut img = set.clone();
         patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
         assert!(
@@ -2624,7 +2628,7 @@ fn the_rate_s_target_is_written_to_and_read_from_the_image_and_refused_where_no_
                     index: 0
                 })
             ),
-            "byte {at} is reserved"
+            "byte {at} is reserved, or a sum beside no read"
         );
     }
     // The period's own bytes are not: each alone is a period.
@@ -2647,7 +2651,7 @@ fn the_rate_s_target_is_written_to_and_read_from_the_image_and_refused_where_no_
     // Unset, the image is the image a format-21 writer produced but for the header's version
     // and seal; and a header stamped with format 21 fails closed, as every foreign version
     // does (L-6).
-    assert_eq!(CortexFileHeader::FORMAT_VERSION, 22);
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
     let mut older = unset.clone();
     let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
     header.version = 21;
@@ -2673,5 +2677,188 @@ fn the_rate_s_target_is_written_to_and_read_from_the_image_and_refused_where_no_
             Err(ImageError::Header(HeaderError::ForeignVersion(21)))
         ),
         "a format-21 header fails closed, as every foreign version does (L-6)"
+    );
+}
+
+/// The read of the rate's target under way in the modulator section (ADR-0189; format 23): the
+/// windows it has left at `[39]`, a `u8`, and the sum of its last sixteen windows so far, a
+/// 48-bit count, its low thirty-two bits at `[60..64)` and its high sixteen at `[54..56)`. None
+/// under way, every byte is zero — the bytes a format-22 writer left there — and the image is,
+/// but for its header's version and seal, the image that writer produced; the image's none
+/// outranks the configuration's read. Set, a read just begun is its span at `[39]` and nothing
+/// else, and a read under way with a sum is read back as written, whatever the configuration
+/// says, every byte of the sum its own. Refused: a sum beside no read, a sum above what the
+/// windows of its last sixteen already closed can count, and a read beside a period, which is
+/// another target; and a header stamped with the previous version, as every foreign version is.
+#[test]
+fn the_read_of_the_rate_s_target_is_written_to_and_read_from_the_image_and_refused_beside_a_period()
+{
+    // A window's count at the cap: thirty-two bins of 2^24 - 1 (`RATE_TARGET_MAX`).
+    const MOST: u64 = 536_870_880;
+    let with = |windows: u8, period: u32| Config {
+        units: 192,
+        blocks: 1,
+        rate_read_windows: windows,
+        rate_target_period_ticks: period,
+        ..Config::default()
+    };
+    let image =
+        |windows: u8| Image::encode(&Executor::<8>::new(with(windows, 0)).unwrap()).unwrap();
+    // None: zero at the read's seven bytes, and the image's none outranks the configuration's
+    // read.
+    let unset = image(0);
+    let section = section_bytes(&unset, SECTION_MODULATOR);
+    assert_eq!(
+        (section[39], &section[54..56], &section[60..64]),
+        (0, &[0u8; 2][..], &[0u8; 4][..]),
+        "the bytes a format-22 writer left"
+    );
+    let loaded = Image::decode::<8>(&unset, with(128, 0)).unwrap();
+    assert_eq!(
+        (loaded.target_read(), loaded.rate_target_period_ticks()),
+        (None, 0),
+        "the image's none outranks the configuration's read"
+    );
+    assert_eq!(Image::encode(&loaded).unwrap(), unset, "one image, twice");
+    // Begun: the span at `[39]` and nothing else in the section, and read back whatever the
+    // configuration says.
+    let set = image(128);
+    let section_set = section_bytes(&set, SECTION_MODULATOR);
+    assert_eq!(section_set[39], 128);
+    for (at, (a, b)) in section.iter().zip(&section_set).enumerate() {
+        assert_eq!(a == b, at != 39, "byte {at}: the windows left and no other");
+    }
+    for config in [with(0, 0), with(16, 0), with(0, 1_000)] {
+        let loaded = Image::decode::<8>(&set, config).unwrap();
+        assert_eq!(
+            (loaded.target_read(), loaded.rate_target_period_ticks()),
+            (Some(TargetRead::Reading { left: 128, sum: 0 }), 0),
+            "the image's read outranks the configuration's"
+        );
+        assert_eq!(Image::encode(&loaded).unwrap(), set, "one image, twice");
+    }
+    // Under way with a sum: the bytes as written, read back and written again the same.
+    let under_way = |left: u8, sum: u64| {
+        let mut img = unset.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[39] = left;
+            s[60..64].copy_from_slice(&((sum & 0xFFFF_FFFF) as u32).to_le_bytes());
+            s[54..56].copy_from_slice(&(((sum >> 32) & 0xFFFF) as u16).to_le_bytes());
+        });
+        img
+    };
+    for (left, sum) in [
+        (255u8, 0u64),
+        (17, 0),
+        (16, 0),
+        (15, 1),
+        (15, MOST),
+        (8, 8 * 2_306),
+        (2, 14 * MOST),
+        (1, 1 << 32),
+        (1, 15 * MOST),
+    ] {
+        let img = under_way(left, sum);
+        let loaded = Image::decode::<8>(&img, with(0, 0)).unwrap();
+        assert_eq!(
+            loaded.target_read(),
+            Some(TargetRead::Reading { left, sum }),
+            "{left} windows left, {sum} summed"
+        );
+        assert_eq!(Image::encode(&loaded).unwrap(), img, "one image, twice");
+    }
+    // Each byte of the sum alone is its own part of it, at the read's last window, where fifteen
+    // windows at the cap are 8 053 063 200: up to the sum's thirty-third bit; its forty-first is
+    // more than they count.
+    for (at, sum) in [
+        (60usize, 1u64),
+        (61, 0x100),
+        (62, 0x1_0000),
+        (63, 0x100_0000),
+        (54, 1 << 32),
+    ] {
+        let mut img = under_way(1, 0);
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        assert_eq!(
+            Image::decode::<8>(&img, with(0, 0)).unwrap().target_read(),
+            Some(TargetRead::Reading { left: 1, sum }),
+            "byte {at}"
+        );
+    }
+    let refused = |img: &[u8], what: &str| {
+        assert!(
+            matches!(
+                Image::decode::<8>(img, with(0, 0)),
+                Err(ImageError::ReservedNotZero {
+                    section: SECTION_MODULATOR,
+                    index: 0
+                })
+            ),
+            "{what}: a record the writer never produces"
+        );
+    };
+    let mut beyond = under_way(1, 0);
+    patch_section(&mut beyond, SECTION_MODULATOR, |s| s[55] = 1);
+    refused(&beyond, "the sum's forty-first bit at the last window");
+    // A sum beside no read, and one above what the windows closed so far count.
+    for at in [54usize, 55, 60, 61, 62, 63] {
+        let mut img = unset.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        refused(&img, &format!("byte {at} beside no read"));
+    }
+    for (left, sum) in [(255u8, 1u64), (16, 1), (15, MOST + 1), (1, 15 * MOST + 1)] {
+        refused(&under_way(left, sum), &format!("{left} left, {sum} summed"));
+    }
+    // A read beside a period: an image has one target, whatever the configuration says.
+    for left in [1u8, 128] {
+        let mut img = under_way(left, 0);
+        patch_section(&mut img, SECTION_MODULATOR, |s| {
+            s[56..60].copy_from_slice(&1_000u32.to_le_bytes())
+        });
+        for config in [with(0, 0), with(0, 1_000)] {
+            assert!(
+                matches!(
+                    Image::decode::<8>(&img, config),
+                    Err(ImageError::Config(ConfigError::RateReadBesideTarget))
+                ),
+                "{left} left beside a period of 1 000 ticks"
+            );
+        }
+    }
+    // The bytes that stay reserved.
+    for at in [26usize, 27] {
+        let mut img = set.clone();
+        patch_section(&mut img, SECTION_MODULATOR, |s| s[at] = 1);
+        refused(&img, &format!("byte {at} is reserved"));
+    }
+    // None under way, the image is the image a format-22 writer produced but for the header's
+    // version and seal; and a header stamped with format 22 fails closed, as every foreign
+    // version does (L-6).
+    assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
+    let mut older = unset.clone();
+    let mut header = CortexFileHeader::decode(older[0..64].try_into().unwrap());
+    header.version = 22;
+    header.crc64 = header.checksum();
+    older[0..64].copy_from_slice(&header.encode());
+    let apart: Vec<usize> = older
+        .iter()
+        .zip(unset.iter())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(k, _)| k)
+        .collect();
+    assert!(
+        !apart.is_empty()
+            && apart
+                .iter()
+                .all(|&k| (8..12).contains(&k) || (48..56).contains(&k)),
+        "only the version and the seal: {apart:?}"
+    );
+    assert!(
+        matches!(
+            Image::decode::<8>(&older, with(0, 0)),
+            Err(ImageError::Header(HeaderError::ForeignVersion(22)))
+        ),
+        "a format-22 header fails closed, as every foreign version does (L-6)"
     );
 }

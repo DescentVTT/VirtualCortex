@@ -227,6 +227,19 @@ pub struct Config {
     /// image, the image's outranks this one: it changes what the run does, so it is part of the
     /// image (§8.3).
     pub rate_target_period_ticks: u32,
+    /// The read of the rate's target (ADR-0188, ADR-0189), its span in windows: while it is not
+    /// zero the engine holds its gain for this many windows from the first it runs, neither rule
+    /// moving it whatever the step (`HomeostaticDrivePool::hold`), and sums the counts of the
+    /// last sixteen. At the span's last window their mean, to nearest, is the target: the period
+    /// becomes the units times the window's ticks over it, to nearest, and the rate's rule moves
+    /// the gain from the next window at `control_step_q0_16`, against that period's count, as
+    /// though the period had been `rate_target_period_ticks` (`Executor::target_read`). A mean
+    /// whose period the rate's target refuses ends the read with no target, the gain held from
+    /// there on. Zero (the default) is unset: the controller is the one before ADR-0189, bit for
+    /// bit. Refused below the sixteen windows it sums, and beside a period already set: an image
+    /// has one target. For an engine built from an image, the image's read, under way or none,
+    /// outranks this one: it changes what the run does, so it is part of the image (§8.3).
+    pub rate_read_windows: u8,
 }
 
 impl Default for Config {
@@ -259,6 +272,7 @@ impl Default for Config {
             critic_window_ticks: 0,
             whole_punishment: false,
             rate_target_period_ticks: 0,
+            rate_read_windows: 0,
         }
     }
 }
@@ -392,7 +406,27 @@ pub enum ConfigError {
     WholePunishmentWithoutCritic,
     /// `rate_target_period_ticks` is set to a period whose count for a window of this many
     /// units is zero, a target of no spike, or above what a window's bins count (ADR-0180).
+    /// Since ADR-0189 also what a read of the target that ended on such a count raises, at the
+    /// write of its image.
     RateTargetOutOfRange,
+    /// `rate_read_windows` is set below the sixteen windows the read sums (ADR-0189).
+    RateReadOutOfRange,
+    /// `rate_read_windows` is set beside a period already set in `rate_target_period_ticks`, or
+    /// an image carries a read under way beside a period: an image has one target (ADR-0188,
+    /// ADR-0189).
+    RateReadBesideTarget,
+}
+
+/// The read of the rate's target (ADR-0188, ADR-0189), between ticks: `Executor::target_read`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetRead {
+    /// Under way: `left` windows of the read still to close, at least one, the gain held through
+    /// each; `sum` the spikes of those of its last sixteen windows closed so far.
+    Reading { left: u8, sum: u64 },
+    /// Ended on a mean whose period the rate's target refuses: no target, and the gain held from
+    /// there on, as through the read. The writer refuses an image of the engine with
+    /// `ConfigError::RateTargetOutOfRange`, so no image carries it.
+    Refused,
 }
 
 /// What the critic read at a reward (ADR-0131): the value, the error the weights moved by, and
@@ -644,6 +678,76 @@ fn rate_target_of(units: usize, period_ticks: u32) -> Result<Option<u32>, Config
         Ok(count @ 1..=RATE_TARGET_MAX) => Ok(Some(count)),
         _ => Err(ConfigError::RateTargetOutOfRange),
     }
+}
+
+/// The windows at the end of a read whose counts are summed (ADR-0188): sixteen, ADR-0055's,
+/// as a shift so that their mean is the sum shifted.
+pub(crate) const READ_SUMMED_SHIFT: u32 = 4;
+pub(crate) const READ_SUMMED_WINDOWS: u8 = 1 << READ_SUMMED_SHIFT;
+const _: () = assert!(READ_SUMMED_WINDOWS == 16);
+
+/// The rate's target a read makes of its sum (ADR-0188, ADR-0189): the mean of its last sixteen
+/// windows' counts, the sum over sixteen to nearest with a half going up; the period, the units
+/// times the window's ticks over that mean, to nearest with a half going up, as `rate_target_of`
+/// rounds the inverse; and the window's count of that period, `rate_target_of`'s, which the rule
+/// then holds the windows to, so that the engine after the read is the engine its image loads.
+/// The two counts are one below the square root of the units times the window's ticks, 11 585 a
+/// window at 1 024 units. Refused at a mean of no spike, a period the width does not hold or one
+/// of no tick, and where `rate_target_of` refuses the period.
+fn read_target_of(units: usize, sum: u64) -> Result<(u32, u32), ConfigError> {
+    let mean = sum.saturating_add(u64::from(READ_SUMMED_WINDOWS >> 1)) >> READ_SUMMED_SHIFT;
+    let period = (units as u64)
+        .saturating_mul(WINDOW_CADENCE.period())
+        .saturating_add(mean >> 1)
+        .checked_div(mean);
+    match period.map(u32::try_from) {
+        Some(Ok(period @ 1..)) => match rate_target_of(units, period)? {
+            Some(count) => Ok((period, count)),
+            None => Err(ConfigError::RateTargetOutOfRange),
+        },
+        _ => Err(ConfigError::RateTargetOutOfRange),
+    }
+}
+
+/// A window's close under a read (ADR-0189): what follows a read with `left` windows still to
+/// close and `sum` of its last sixteen summed so far, the window having counted `spikes` with
+/// the gain held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReadStep {
+    /// The read goes on: one window fewer left, the count summed where the window was one of
+    /// the last sixteen.
+    Reading { left: u8, sum: u64 },
+    /// The window was the read's last: the period the target is set to, and its count.
+    Target { period: u32, count: u32 },
+    /// The window was the read's last, and its mean's period is refused.
+    Refused,
+}
+
+/// `ReadStep` of a window's close: the window's spikes summed when it is one of the read's last
+/// sixteen — the windows left, this one among them, at most sixteen — and, where it was the
+/// last, the target `read_target_of` makes of the sum for `units` units. A read always has a
+/// window left to close, so a `left` of zero is read as the last, as one is.
+fn read_step(left: u8, sum: u64, spikes: u64, units: usize) -> ReadStep {
+    let sum = if left <= READ_SUMMED_WINDOWS {
+        sum.saturating_add(spikes)
+    } else {
+        sum
+    };
+    match left.checked_sub(1) {
+        Some(left @ 1..) => ReadStep::Reading { left, sum },
+        _ => match read_target_of(units, sum) {
+            Ok((period, count)) => ReadStep::Target { period, count },
+            Err(_) => ReadStep::Refused,
+        },
+    }
+}
+
+/// The most a read's sum holds with `left` windows still to close (ADR-0189): a window's count
+/// at most `RATE_TARGET_MAX` for each of its last sixteen windows already closed, sixteen less
+/// `left` of them, none while sixteen or more are left. The loader refuses a sum above it, which
+/// is a record the writer never produces.
+pub(crate) fn read_sum_max(left: u8) -> u64 {
+    u64::from(READ_SUMMED_WINDOWS.saturating_sub(left)).saturating_mul(u64::from(RATE_TARGET_MAX))
 }
 
 /// The two compartment sums under the tick's gain: `sum × gain`, Q16.16, rounded to nearest
@@ -951,6 +1055,9 @@ pub struct Executor<const CAP: usize> {
     /// The window's count of that period for this engine's units; none while unset, where the
     /// controller regulates by its estimate.
     rate_target: Option<u32>,
+    /// The read of the rate's target (ADR-0189): under way from the configuration's span or the
+    /// image's progress, refused, or none — unset, or ended in the period above.
+    target_read: Option<TargetRead>,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -1066,6 +1173,14 @@ impl<const CAP: usize> Executor<CAP> {
             return Err(ConfigError::WholePunishmentWithoutCritic);
         }
         let rate_target = rate_target_of(config.units, config.rate_target_period_ticks)?;
+        // The read (ADR-0189): unset at zero; refused short of the windows it sums, and beside a
+        // period, which is another target.
+        let target_read = match (config.rate_read_windows, config.rate_target_period_ticks) {
+            (0, _) => None,
+            (1..READ_SUMMED_WINDOWS, _) => return Err(ConfigError::RateReadOutOfRange),
+            (left, 0) => Some(TargetRead::Reading { left, sum: 0 }),
+            _ => return Err(ConfigError::RateReadBesideTarget),
+        };
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -1185,6 +1300,7 @@ impl<const CAP: usize> Executor<CAP> {
             whole_punishment: config.whole_punishment,
             rate_target_period_ticks: config.rate_target_period_ticks,
             rate_target,
+            target_read,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1330,6 +1446,25 @@ impl<const CAP: usize> Executor<CAP> {
     /// the window's ticks over the target's period, to nearest; none while the target is unset.
     pub fn rate_target_per_window(&self) -> Option<u32> {
         self.rate_target
+    }
+
+    /// The read of the rate's target (ADR-0188, ADR-0189), between ticks: under way, with the
+    /// windows it has left and the sum of its last sixteen so far; refused; or none — unset, or
+    /// ended in a target, which `rate_target_period_ticks` and `rate_target_per_window` then hold
+    /// as though the configuration had set them.
+    pub fn target_read(&self) -> Option<TargetRead> {
+        self.target_read
+    }
+
+    /// The loader's: a read under way an image holds (ADR-0189), `left` windows still to close
+    /// and `sum` of its last sixteen so far, which outranks the configuration's (§8.3). Refused
+    /// beside a period, as `new` refuses the configuration's: an image has one target.
+    pub(crate) fn set_target_read(&mut self, left: u8, sum: u64) -> Result<(), ConfigError> {
+        if self.rate_target_period_ticks != 0 {
+            return Err(ConfigError::RateReadBesideTarget);
+        }
+        self.target_read = Some(TargetRead::Reading { left, sum });
+        Ok(())
     }
 
     /// A reward into the dopamine signal, between ticks (ADR-0032): an input, like an
@@ -2015,7 +2150,8 @@ impl<const CAP: usize> Executor<CAP> {
     /// the gain is regulated, the window cleared and the sleep stage stepped. The cadences
     /// are masks on the tick, so a loaded engine continues the window it was written in. The
     /// gain is regulated by the window's count over the rate's target while one is set
-    /// (ADR-0180), and by the estimate under the saturation rule while none is.
+    /// (ADR-0180), and by the estimate under the saturation rule while none is; while a read of
+    /// the target is under way or refused it is held (ADR-0189, `read_close`).
     fn tally(&mut self) {
         let spikes = self
             .shared
@@ -2034,12 +2170,16 @@ impl<const CAP: usize> Executor<CAP> {
                 abort("the homeostasis window was full before its cadence regulated it");
             }
             if WINDOW_CADENCE.is_due(self.tick) {
-                match self.rate_target {
-                    Some(target) => self.homeostasis.regulate_rate(target),
-                    None => self
-                        .homeostasis
-                        .regulate(saturation_ceiling(self.shared.units.len())),
-                };
+                if let Some(read) = self.target_read {
+                    self.read_close(read);
+                } else {
+                    match self.rate_target {
+                        Some(target) => self.homeostasis.regulate_rate(target),
+                        None => self
+                            .homeostasis
+                            .regulate(saturation_ceiling(self.shared.units.len())),
+                    };
+                }
                 let before = self.homeostasis.sleep_stage;
                 self.homeostasis.step_sleep();
                 // The slow-wave onset (ADR-0056): the arena's garbage is reclaimed once per
@@ -2049,6 +2189,27 @@ impl<const CAP: usize> Executor<CAP> {
                 }
             }
         }
+    }
+
+    /// A window's close under the read (ADR-0189): the gain held, the window's count read and
+    /// the window cleared (`HomeostaticDrivePool::hold`), the estimate kept as a reading; then
+    /// the read moved on by `read_step` — one window fewer, the count summed where it is one of
+    /// the last sixteen — and at its last window the target set, the period and its count, for the
+    /// next window's rule, or the read refused. A refused read holds the gain at every window.
+    fn read_close(&mut self, read: TargetRead) {
+        let spikes = self.homeostasis.hold();
+        let TargetRead::Reading { left, sum } = read else {
+            return;
+        };
+        self.target_read = match read_step(left, sum, spikes, self.shared.units.len()) {
+            ReadStep::Reading { left, sum } => Some(TargetRead::Reading { left, sum }),
+            ReadStep::Target { period, count } => {
+                self.rate_target_period_ticks = period;
+                self.rate_target = Some(count);
+                None
+            }
+            ReadStep::Refused => Some(TargetRead::Refused),
+        };
     }
 
     /// Worker threads, including the caller's.
@@ -4338,6 +4499,187 @@ mod tests {
         );
     }
 
+    /// The target a read makes of its sum (ADR-0189): the mean of sixteen windows, a half going
+    /// up; the period of that mean, a half going up; and the period's count. The three networks'
+    /// derived counts at 1 024 units, each sixteen times; the least sum that is a spike; the
+    /// period at the width's edge; the count of a period apart from its mean only past 11 601 a
+    /// window at 1 024 units, and at one unit past 374; refused at no spike and at a period of
+    /// no tick or past the width.
+    #[test]
+    fn a_read_s_target_is_its_mean_s_period_and_that_period_s_count() {
+        let n = 1024usize;
+        // 16 x 2 306: the period 134 217 728 / 2 306 = 58 203.70, and back to 2 306.
+        assert_eq!(read_target_of(n, 16 * 2_306), Ok((58_204, 2_306)));
+        assert_eq!(read_target_of(n, 16 * 2_255), Ok((59_520, 2_255)));
+        assert_eq!(read_target_of(n, 16 * 2_268), Ok((59_179, 2_268)));
+        // The mean to nearest, a half up: seven over sixteen is no spike, eight is one; 23 is
+        // one, 24 two.
+        assert_eq!(read_target_of(n, 0), Err(ConfigError::RateTargetOutOfRange));
+        assert_eq!(read_target_of(n, 7), Err(ConfigError::RateTargetOutOfRange));
+        assert_eq!(read_target_of(n, 8), Ok((134_217_728, 1)));
+        assert_eq!(read_target_of(n, 23), Ok((134_217_728, 1)));
+        assert_eq!(read_target_of(n, 24), Ok((67_108_864, 2)));
+        // At 64 units, the target of `tests/criticality.rs`: 5 127 is a mean of 320, 5 128 of
+        // 321, whose period is 26 133.
+        assert_eq!(read_target_of(64, 16 * 320), Ok((26_214, 320)));
+        assert_eq!(read_target_of(64, 16 * 320 + 7), Ok((26_214, 320)));
+        assert_eq!(read_target_of(64, 16 * 320 + 8), Ok((26_133, 321)));
+        // A spike a window's period on 32 767 units fits the width; on 32 768 it does not.
+        assert_eq!(read_target_of(32_767, 8), Ok((4_294_836_224, 1)));
+        assert_eq!(
+            read_target_of(32_768, 8),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        // The period's count is the mean's to 11 601 a window at 1 024 units, and from 11 602 one
+        // above it; at one unit, to 374, a mean of 375 a count of 374.
+        assert_eq!(read_target_of(n, 16 * 11_601).map(|t| t.1), Ok(11_601));
+        assert_eq!(read_target_of(n, 16 * 11_602), Ok((11_568, 11_603)));
+        assert_eq!(read_target_of(1, 16 * 374).map(|t| t.1), Ok(374));
+        assert_eq!(read_target_of(1, 16 * 375), Ok((350, 374)));
+        // A unit a tick is a period of one; twice that is a period of a half, one; past it no
+        // tick, refused.
+        assert_eq!(read_target_of(1, 16 * 131_072), Ok((1, 131_072)));
+        assert_eq!(read_target_of(1, 16 * 262_144 + 7), Ok((1, 131_072)));
+        assert_eq!(
+            read_target_of(1, 16 * 262_144 + 8),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+        // The widest sum a read holds, at the cap in all sixteen windows, saturates nothing.
+        assert_eq!(read_sum_max(0), 16 * u64::from(RATE_TARGET_MAX));
+        assert_eq!(
+            read_target_of(4_095, read_sum_max(0)),
+            Ok((1, 536_739_840)),
+            "a mean at the cap, a period of a tick, its count what 4 095 units make"
+        );
+        assert_eq!(
+            read_target_of(usize::MAX, 16),
+            Err(ConfigError::RateTargetOutOfRange)
+        );
+    }
+
+    /// A window's close under a read (ADR-0189): the windows left one fewer and the count summed
+    /// only where the window is one of the last sixteen — at sixteen left and under, not at
+    /// seventeen — and at the last window the target of the sum, this window's count among it,
+    /// or the refusal; a `left` of zero is the last. What a read holds is bounded by the windows
+    /// of its last sixteen already closed.
+    #[test]
+    fn a_read_sums_its_last_sixteen_windows_and_makes_its_target_at_its_last() {
+        let n = 1024usize;
+        assert_eq!(
+            read_step(128, 0, 2_000, n),
+            ReadStep::Reading { left: 127, sum: 0 }
+        );
+        assert_eq!(
+            read_step(17, 0, 2_000, n),
+            ReadStep::Reading { left: 16, sum: 0 }
+        );
+        assert_eq!(
+            read_step(16, 0, 2_000, n),
+            ReadStep::Reading {
+                left: 15,
+                sum: 2_000
+            }
+        );
+        assert_eq!(
+            read_step(2, 14 * 2_306, 2_306, n),
+            ReadStep::Reading {
+                left: 1,
+                sum: 15 * 2_306
+            }
+        );
+        assert_eq!(
+            read_step(1, 15 * 2_306, 2_306, n),
+            ReadStep::Target {
+                period: 58_204,
+                count: 2_306
+            }
+        );
+        assert_eq!(
+            read_step(1, 15 * 2_306, 2_306 + 7, n),
+            ReadStep::Target {
+                period: 58_204,
+                count: 2_306
+            },
+            "less than half a spike in the mean"
+        );
+        assert_eq!(
+            read_step(1, 15 * 2_306, 2_306 + 8, n),
+            ReadStep::Target {
+                period: 58_178,
+                count: 2_307
+            },
+            "a half goes up"
+        );
+        assert_eq!(read_step(1, 0, 7, n), ReadStep::Refused, "no spike");
+        assert_eq!(
+            read_step(0, 15 * 2_306, 2_306, n),
+            read_step(1, 15 * 2_306, 2_306, n)
+        );
+        // The bound the loader holds a read to.
+        assert_eq!(read_sum_max(255), 0);
+        assert_eq!(read_sum_max(17), 0);
+        assert_eq!(read_sum_max(16), 0);
+        assert_eq!(read_sum_max(15), u64::from(RATE_TARGET_MAX));
+        assert_eq!(read_sum_max(1), 15 * u64::from(RATE_TARGET_MAX));
+    }
+
+    /// The read in the configuration (ADR-0189): unset by default; set at sixteen windows and
+    /// above, the engine's read under way with the span and nothing summed; refused below
+    /// sixteen and beside a period, after the period's own refusal.
+    #[test]
+    fn the_read_is_unset_by_default_and_refused_short_of_sixteen_windows_and_beside_a_period() {
+        assert_eq!(Config::default().rate_read_windows, 0);
+        let with = |windows, period| {
+            Executor::<8>::new(Config {
+                units: 1024,
+                rate_read_windows: windows,
+                rate_target_period_ticks: period,
+                ..Config::default()
+            })
+        };
+        let unset = with(0, 0).unwrap();
+        assert_eq!(unset.target_read(), None);
+        let beside_none = with(0, 58_201).unwrap();
+        assert_eq!(beside_none.target_read(), None);
+        for windows in [16u8, 17, 128, u8::MAX] {
+            let set = with(windows, 0).unwrap();
+            assert_eq!(
+                (
+                    set.target_read(),
+                    set.rate_target_period_ticks(),
+                    set.rate_target_per_window()
+                ),
+                (
+                    Some(TargetRead::Reading {
+                        left: windows,
+                        sum: 0
+                    }),
+                    0,
+                    None
+                ),
+                "{windows} windows"
+            );
+        }
+        for windows in [1u8, 15] {
+            assert!(
+                matches!(with(windows, 0), Err(ConfigError::RateReadOutOfRange)),
+                "{windows}"
+            );
+        }
+        assert!(matches!(
+            with(128, 58_201),
+            Err(ConfigError::RateReadBesideTarget)
+        ));
+        assert!(matches!(
+            with(15, 58_201),
+            Err(ConfigError::RateReadOutOfRange)
+        ));
+        assert!(matches!(
+            with(128, u32::MAX),
+            Err(ConfigError::RateTargetOutOfRange)
+        ));
+    }
+
     /// The whole punishment's composition (ADR-0155), each number from an oracle written from
     /// ADR-0154's text: two engines of four armed units, one with the parameter unset and one
     /// with it set, given the same kicks, the same weights written by hand before each window
@@ -5049,6 +5391,120 @@ mod prop {
             ),
             (0x4000, 0x4000),
             "above zero, one number"
+        );
+    }
+}
+
+/// The lattice property (ADR-0030) of the read of the rate's target (ADR-0189): over spans,
+/// units and windows' counts drawn on and between their edges, a read stepped window by window
+/// by `read_step` from its configuration's span ends where an oracle written from ADR-0188's
+/// text ends it — the mean of the last sixteen counts, the period of that mean and the count of
+/// that period, each to nearest by doubling in wider integers, or the refusal — and holds, at
+/// every window between, the windows left and the sum of those of its last sixteen closed, each
+/// within the bound the loader holds a read to.
+#[cfg(test)]
+mod read_prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    /// ADR-0188's read in `i128`, from its text and not from the engine's code: none where any
+    /// rounding gives no spike, no tick, a period past the width, or a count past a window's.
+    fn read_by_hand(units: usize, counts: &[u64]) -> Option<(u32, u32)> {
+        let last = &counts[counts.len().checked_sub(16)?..];
+        let sum = last
+            .iter()
+            .fold(0i128, |s, &c| s.saturating_add(i128::from(c)));
+        let mean = sum.saturating_mul(2).saturating_add(16).div_euclid(32);
+        let ticks = i128::try_from(units)
+            .unwrap_or(i128::MAX)
+            .saturating_mul(131_072)
+            .min(i128::from(u64::MAX));
+        if mean == 0 {
+            return None;
+        }
+        let period = ticks
+            .saturating_mul(2)
+            .saturating_add(mean)
+            .div_euclid(mean.saturating_mul(2));
+        if period == 0 || period > i128::from(u32::MAX) {
+            return None;
+        }
+        let count = ticks
+            .saturating_mul(2)
+            .saturating_add(period)
+            .div_euclid(period.saturating_mul(2));
+        if count == 0 || count > 536_870_880 {
+            return None;
+        }
+        Some((period as u32, count as u32))
+    }
+
+    #[test]
+    fn a_read_stepped_window_by_window_ends_where_the_hand_rule_ends_it() {
+        let mut rng = Lcg::new(0x0189);
+        let (mut targets, mut refused) = (0u32, 0u32);
+        for round in 0..4_000u32 {
+            let span: u8 = match round % 4 {
+                0 => 16,
+                1 => 17,
+                2 => rng.pick(&[18u8, 31, 128, 255]),
+                _ => 16u8.saturating_add(rng.below(240) as u8),
+            };
+            let units: usize = match round % 5 {
+                0 => 1,
+                1 => 1024,
+                2 => rng.pick(&[64usize, 2048, 4_095, 32_767, 32_768]),
+                _ => 1usize.saturating_add(rng.below(1 << 16) as usize),
+            };
+            let around = rng.pick(&[0u64, 1, 7, 8, 2_306, 11_602, 1 << 20]);
+            let counts: Vec<u64> = (0..span)
+                .map(|_| match rng.below(6) {
+                    0 => u64::from(rng.pick(&U32_LATTICE)).min(u64::from(RATE_TARGET_MAX)),
+                    1 => 0,
+                    2 => u64::from(RATE_TARGET_MAX),
+                    3 => around.saturating_add(u64::from(rng.below(3))),
+                    _ => u64::from(rng.below(1 << 14)),
+                })
+                .collect();
+            let (mut left, mut sum) = (span, 0u64);
+            let mut end = None;
+            for (k, &count) in counts.iter().enumerate() {
+                match read_step(left, sum, count, units) {
+                    ReadStep::Reading { left: l, sum: s } => {
+                        assert_eq!(l, left.wrapping_sub(1), "round {round}, window {k}");
+                        let closed = k.wrapping_add(1);
+                        let first = usize::from(span).saturating_sub(16);
+                        let by_hand: u64 = counts[first.min(closed)..closed].iter().sum();
+                        assert_eq!(s, by_hand, "round {round}, window {k}: the last sixteen");
+                        assert!(s <= read_sum_max(l), "round {round}, window {k}");
+                        (left, sum) = (l, s);
+                    }
+                    step => {
+                        assert_eq!(k.wrapping_add(1), usize::from(span), "round {round}");
+                        end = Some(step);
+                    }
+                }
+            }
+            let expected = match read_by_hand(units, &counts) {
+                Some((period, count)) => ReadStep::Target { period, count },
+                None => ReadStep::Refused,
+            };
+            assert_eq!(
+                end,
+                Some(expected),
+                "round {round}: {units} units, {counts:?}"
+            );
+            match expected {
+                ReadStep::Target { .. } => targets = targets.wrapping_add(1),
+                _ => refused = refused.wrapping_add(1),
+            }
+        }
+        assert!(
+            targets > 1_000 && refused > 100,
+            "the walk met both ends: {targets} targets, {refused} refused"
         );
     }
 }

@@ -48,6 +48,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         critic_window_ticks: 0,
         whole_punishment: false,
         rate_target_period_ticks: 0,
+        rate_read_windows: 0,
     })
     .expect("a valid configuration");
     assert_eq!(

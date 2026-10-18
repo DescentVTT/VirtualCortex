@@ -25,9 +25,13 @@
 //! beside them, zero while unset and, when set, the shortest delay of any synapse the image
 //! carries; since ADR-0155 the whole punishment's flag sits between the critic and its window,
 //! set or unset; since ADR-0180 the rate's target, the period the controller holds the
-//! population's count to, sits after the window, zero while unset.
+//! population's count to, sits after the window, zero while unset; since ADR-0189 the read of
+//! that target under way, the windows it has left and the sum of its last sixteen so far, sits
+//! around it, zero while none is.
 
-use crate::executor::{AmendError, Config, ConfigError, Executor, InjectError};
+use crate::executor::{
+    AmendError, Config, ConfigError, Executor, InjectError, TargetRead, read_sum_max,
+};
 use cortex_affect::InteroceptiveState;
 use cortex_connectome::{
     CortexFileHeader, Crc64, HeaderError, SECTION_AFFECT, SECTION_AMENDMENT, SECTION_CLAUSE,
@@ -183,18 +187,19 @@ const STP_CLASS_SET: u8 = 1;
 
 /// The modulator section's slow current (ADR-0123; format 18): a flag byte at `[36]`,
 /// `SLOW_CURRENT_SET` while the constants are set and zero while they are not; the leak shift at
-/// `[37]` and the input shift at `[38]`; `[39]` reserved; $V_{lo}$ at `[40..44)` and
-/// $V_{hi}$ at `[44..48)`, `i32` in Q16.16; every byte zero while unset. `[48..64)` stay
-/// reserved and must be zero. A record a format-17 writer left zero there reads as unset, which
-/// is the rule before ADR-0123 bit for bit.
+/// `[37]` and the input shift at `[38]`; `[39]` reserved, and since ADR-0189 the read's;
+/// $V_{lo}$ at `[40..44)` and $V_{hi}$ at `[44..48)`, `i32` in Q16.16; every byte zero while
+/// unset. `[48..64)` stay reserved and must be zero. A record a format-17 writer left zero there
+/// reads as unset, which is the rule before ADR-0123 bit for bit.
 const SLOW_CURRENT_FLAG: usize = 36;
 const SLOW_CURRENT_LEAK: usize = 37;
 const SLOW_CURRENT_INPUT: usize = 38;
 const SLOW_CURRENT_V_LO: core::ops::Range<usize> = 40..44;
 const SLOW_CURRENT_V_HI: core::ops::Range<usize> = 44..48;
 const SLOW_CURRENT_SET: u8 = 1;
-/// The slow current's bytes after its flag, `[37..48)`, the reserved `[39]` among them.
-const SLOW_CURRENT_BYTES: core::ops::Range<usize> = 37..48;
+/// The slow current's bytes after its flag, `[37..39)` and `[40..48)`: `[39]` between them, reserved
+/// to format 22, is the read's since ADR-0189 and none of the slow current's.
+const SLOW_CURRENT_BYTES: [core::ops::Range<usize>; 2] = [37..39, 40..48];
 
 /// The modulator section's critic (ADR-0131; format 19): a flag byte at `[48]`, `CRITIC_SET`
 /// while the constants are set and zero while they are not; the step's shift at `[49]` and the
@@ -219,15 +224,43 @@ const WHOLE_PUNISHMENT_FLAG: usize = 51;
 const WHOLE_PUNISHMENT_SET: u8 = 1;
 
 /// The modulator section's rate's target (ADR-0180; format 22): its period in ticks at
-/// `[56..60)`, a `u32`, zero while unset. `[54..56)` and `[60..64)` stay reserved and must be
-/// zero. A record a format-21 writer left zero there reads as unset, which is the controller of
-/// ADR-0036 bit for bit.
+/// `[56..60)`, a `u32`, zero while unset; `[54..56)` and `[60..64)` stayed reserved until format
+/// 23 made them the read's. A record a format-21 writer left zero there reads as unset, which is
+/// the controller of ADR-0036 bit for bit.
 const RATE_TARGET: core::ops::Range<usize> = 56..60;
 
-/// The modulator record's reserved bytes: between the signed gate and the target period, the
-/// slow current's one, the two between the critic's window and the rate's target, and the tail
-/// after it.
-const MODULATOR_RESERVED: [core::ops::Range<usize>; 4] = [26..28, 39..40, 54..56, 60..64];
+/// The modulator section's read of the rate's target (ADR-0189; format 23), under way: the
+/// windows it has left at `[39]`, a `u8` from one up; and the sum of its last sixteen windows'
+/// counts so far, a 48-bit count, its low thirty-two bits at `[60..64)` and its high sixteen at
+/// `[54..56)`, at most sixteen windows at `RATE_TARGET_MAX`, which takes thirty-three. Every byte
+/// zero while no read is under way. `[26..28)` stay reserved and must be zero. A record a
+/// format-22 writer left zero there reads as no read, which is the controller of ADR-0180 bit for
+/// bit.
+const RATE_READ_LEFT: usize = 39;
+const RATE_READ_SUM_LOW: core::ops::Range<usize> = 60..64;
+const RATE_READ_SUM_HIGH: core::ops::Range<usize> = 54..56;
+
+/// The modulator record's reserved bytes: the two between the signed gate and the inhibitory
+/// baseline's value.
+const MODULATOR_RESERVED: core::ops::Range<usize> = 26..28;
+
+/// The read under way a modulator record carries (ADR-0189): none while its bytes are zero; the
+/// windows left and the sum while the windows left are not zero and the sum is at most what its
+/// last sixteen windows closed so far can count (`read_sum_max`); a sum beside no window left,
+/// or above that, is a record the writer never produces.
+fn target_read_of(record: &[u8]) -> Result<Option<(u8, u64)>, ImageError> {
+    let low = u32::from_le_bytes(record[RATE_READ_SUM_LOW].try_into().unwrap_or([0; 4]));
+    let high = u16::from_le_bytes(record[RATE_READ_SUM_HIGH].try_into().unwrap_or([0; 2]));
+    let sum = u64::from(high) << 32 | u64::from(low);
+    match record[RATE_READ_LEFT] {
+        0 if sum == 0 => Ok(None),
+        left @ 1.. if sum <= read_sum_max(left) => Ok(Some((left, sum))),
+        _ => Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0,
+        }),
+    }
+}
 
 /// The whole punishment a modulator record carries (ADR-0155): unset while its flag is zero,
 /// set while it is `WHOLE_PUNISHMENT_SET`, which `Executor::new` refuses without the critic as
@@ -292,9 +325,9 @@ fn critic_of(record: &[u8]) -> Result<Option<ValueCritic>, ImageError> {
 }
 
 /// The slow current a modulator record carries (ADR-0123): none while its flag and its bytes
-/// are zero; the constants while its flag is `SLOW_CURRENT_SET` and its reserved byte zero,
-/// which `Executor::new` refuses as it refuses the configuration's when the rule does not
-/// resolve them; any other flag, or a byte beside a zero flag, is one the writer never produces.
+/// are zero; the constants while its flag is `SLOW_CURRENT_SET`, which `Executor::new` refuses
+/// as it refuses the configuration's when the rule does not resolve them; any other flag, or a
+/// byte beside a zero flag, is one the writer never produces.
 fn slow_current_of(record: &[u8]) -> Result<Option<SlowCurrent>, ImageError> {
     let word =
         |at: core::ops::Range<usize>| i32::from_le_bytes(record[at].try_into().unwrap_or([0; 4]));
@@ -305,7 +338,12 @@ fn slow_current_of(record: &[u8]) -> Result<Option<SlowCurrent>, ImageError> {
         v_hi_q16: word(SLOW_CURRENT_V_HI),
     };
     match record[SLOW_CURRENT_FLAG] {
-        0 if record[SLOW_CURRENT_BYTES].iter().all(|&b| b == 0) => Ok(None),
+        0 if SLOW_CURRENT_BYTES
+            .iter()
+            .all(|r| record[r.clone()].iter().all(|&b| b == 0)) =>
+        {
+            Ok(None)
+        }
         SLOW_CURRENT_SET => Ok(Some(current)),
         _ => Err(ImageError::ReservedNotZero {
             section: SECTION_MODULATOR,
@@ -584,10 +622,12 @@ impl Image {
         // at `[40..48)` (ADR-0123; format 18), the critic's flag at `[48]` and its shift and
         // scale at `[49]` and `[50]` (ADR-0131; format 19), the whole punishment's flag at
         // `[51]` (ADR-0155; format 21), the critic's window at `[52..54)` (ADR-0134; format 20),
-        // the rate's target period at `[56..60)` (ADR-0180; format 22) and 9 reserved bytes.
-        // The baselines, the period, the gate, the class, the slow current, the critic, its
-        // window, the whole punishment and the rate's target change what a run does, so they
-        // are in the image, not in a configuration (§8.3).
+        // the rate's target period at `[56..60)` (ADR-0180; format 22), the read of the target
+        // under way at `[39]`, `[54..56)` and `[60..64)` (ADR-0189; format 23) and 2 reserved
+        // bytes. The baselines, the period, the gate, the class, the slow current, the critic,
+        // its window, the whole punishment, the rate's target and its read change what a run
+        // does, so they are in the image, not in a configuration (§8.3). A read that ended
+        // refused has no target to write, and its engine has no image.
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -623,6 +663,20 @@ impl Image {
         }
         modulator_bytes[RATE_TARGET]
             .copy_from_slice(&exec.rate_target_period_ticks().to_le_bytes());
+        match exec.target_read() {
+            None => {}
+            Some(TargetRead::Reading { left, sum }) => {
+                modulator_bytes[RATE_READ_LEFT] = left;
+                // The sum's low thirty-two bits and its high sixteen, truncating each by name:
+                // a sum the read holds fits forty-eight bits (`read_sum_max`).
+                modulator_bytes[RATE_READ_SUM_LOW].copy_from_slice(&(sum as u32).to_le_bytes());
+                modulator_bytes[RATE_READ_SUM_HIGH]
+                    .copy_from_slice(&((sum >> 32) as u16).to_le_bytes());
+            }
+            Some(TargetRead::Refused) => {
+                return Err(ImageError::Config(ConfigError::RateTargetOutOfRange));
+            }
+        }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
         // what a run does, so they are in the image (ADR-0036).
@@ -800,12 +854,13 @@ impl Image {
         let clauses = clause.map_or(0, |c| c.record_count() as usize);
         // The modulator's one record (ADR-0032), read here for the class of short-term
         // plasticity (ADR-0114), the slow current (ADR-0123), the critic (ADR-0131), its
-        // window (ADR-0134), the whole punishment (ADR-0155) and the rate's target (ADR-0180):
-        // each worker holds the first two from `Executor::new`, which sizes the critic's
-        // counts, refuses a window or a whole punishment without a critic and makes the
-        // target's count of the image's units, refusing a period no window can be held to, and
-        // a unit marked for either of the first two, or carrying a weight for the third, is
-        // refused below while there is none. The image's, set or unset, outrank the
+        // window (ADR-0134), the whole punishment (ADR-0155), the rate's target (ADR-0180) and
+        // its read under way (ADR-0189): each worker holds the first two from `Executor::new`,
+        // which sizes the critic's counts, refuses a window or a whole punishment without a
+        // critic and makes the target's count of the image's units, refusing a period no window
+        // can be held to, and a unit marked for either of the first two, or carrying a weight
+        // for the third, is refused below while there is none; the read is set on the engine
+        // `new` built, refused beside a period. The image's, set or unset, outrank the
         // configuration's (§8.3).
         if modulator.record_count() != 1 {
             return Err(ImageError::Directory(SECTION_MODULATOR));
@@ -816,6 +871,7 @@ impl Image {
         let critic_window_ticks = critic_window_of(section_of(bytes, &modulator)?);
         let whole_punishment = whole_punishment_of(section_of(bytes, &modulator)?)?;
         let rate_target_period_ticks = rate_target_of(section_of(bytes, &modulator)?);
+        let target_read = target_read_of(section_of(bytes, &modulator)?)?;
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
@@ -830,8 +886,15 @@ impl Image {
             critic_window_ticks,
             whole_punishment,
             rate_target_period_ticks,
+            // The image's read, under way or none, outranks the configuration's (ADR-0189): its
+            // progress is set below, refused beside the image's period.
+            rate_read_windows: 0,
             ..config
         })?;
+        if let Some((left, sum)) = target_read {
+            exec.set_target_read(left, sum)
+                .map_err(ImageError::Config)?;
+        }
         let horizon = WorkerWheel::horizon_ticks();
         {
             let arena = exec.blocks_mut();
@@ -955,18 +1018,16 @@ impl Image {
             // and its value at `[28..32)` (ADR-0086), the signed gate's flag at `[25]`
             // (ADR-0094), the class of short-term plasticity at `[32..36)`, the slow current at
             // `[36..48)`, the critic at `[48..51)`, the whole punishment's flag at `[51]`, the
-            // critic's window at `[52..54)` and the rate's target at `[56..60)`, read above
-            // (ADR-0114, ADR-0123, ADR-0131, ADR-0155, ADR-0134, ADR-0180), 9 reserved bytes; its
-            // count was held to one above.
+            // critic's window at `[52..54)`, the rate's target at `[56..60)` and its read under
+            // way at `[39]`, `[54..56)` and `[60..64)`, read above (ADR-0114, ADR-0123, ADR-0131,
+            // ADR-0155, ADR-0134, ADR-0180, ADR-0189), 2 reserved bytes; its count was held to
+            // one above.
             let record = section_of(bytes, &modulator)?;
             let reserved_not_zero = || ImageError::ReservedNotZero {
                 section: SECTION_MODULATOR,
                 index: 0,
             };
-            if MODULATOR_RESERVED
-                .iter()
-                .any(|r| record[r.clone()].iter().any(|&b| b != 0))
-            {
+            if record[MODULATOR_RESERVED].iter().any(|&b| b != 0) {
                 return Err(reserved_not_zero());
             }
             let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));
