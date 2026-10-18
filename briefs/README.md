@@ -41,10 +41,23 @@ whitepaper's §11 dispositions and in the code. Do not add a status file here.
 
 | Phase | Where | Front matter |
 | :--- | :--- | :--- |
-| Live | `briefs/NNN_title.md` | `status: proposed` |
+| Live | `briefs/NNN_title.md` | `status: proposed`; from brief 075, `affectedFiles` and `protectedFiles` |
 | Executed | `briefs/archive/NNN_title.md` | `status: archived` |
 
 Numbers are three digits, allocated in order, never reused. Take the next free one with `ls briefs briefs/archive`.
+
+**A brief's scope** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)). From brief 075 the front matter lists, in
+spec-brief's globs, what the round may write, `affectedFiles`, and what it may not, `protectedFiles`,
+each with at least one pattern:
+
+```yaml
+affectedFiles: [runtime/cortex-runtime/tests/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
+protectedFiles: [crates/**/src/**, runtime/cortex-runtime/src/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, rust-toolchain.toml]
+```
+
+A test-only round protects the sources, as above. Every round protects the workflow, the run
+scripts and the toolchain unless the brief is for them. `npm run spec:scope` fails a brief from 075
+without both lists, and one that protects less than its live copy on `origin/main`.
 
 ## Archiving one
 
@@ -52,16 +65,27 @@ A round archives its brief with `spec-brief` ([ADR-0185](../docs/adr/0185-the-sp
 
 1. Disposition every deliverable in place: `[x]` when done, or a `**Delegated to** ...`,
    `**Accepted debt:** ...` or `**Rejected:** ...` note under the box.
-2. Run `npx --no-install @descent-vtt/spec-brief archive <NNN> --pr <n> --summary "<one paragraph>"`.
+2. Run `npx --no-install @descent-vtt/spec-brief archive <NNN> --strict --pr <n> --summary "<one paragraph>"`.
    The summary says what the round did in one paragraph: the ADRs written, the findings closed,
    the verdict. Whatever more there is to say belongs in the ADR. The command:
    - refuses an open box, naming each one;
+   - from brief 075, measured from `origin/main` (`archiving.base`), refuses a protected file the
+     round changed and, being strict, a file outside `affectedFiles`;
    - moves the file to `briefs/archive/` and sets `status: archived`;
    - writes the frozen banner, which ends *"The body below describes the tree before execution and
      is not maintained."*;
    - gives every relative link one `../`, and rewrites the links other live briefs hold to it;
    - writes an `integrity` hash into the front matter. It commits nothing.
 3. Commit the result with the round.
+
+**A file the round must change and its scope does not hold** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)):
+1. within the brief's mission and its architectural empowerment, the round widens its brief's
+   `affectedFiles` in a commit of its own, the file and the reason in its message, and its ADR says
+   so; `npm run spec:scope` prints each widening for the review;
+2. protected, or past the empowerment, the round does not widen: it stops at that point and says
+   what it needs and why, for the next decision;
+3. allowed by the maintainers in the reviewing session, the allowance and its reason go into the
+   round's ADR, and the round then widens.
 
 **An archived brief does not change.** `npm run spec:briefs` fails one changed since its hash was
 written, and `npm run spec:archive` fails one that carries no hash. To reopen a round, run
@@ -88,8 +112,15 @@ section is the rule.
      `arm-<n>`; read it with `gh run download <run> -n arm-<n>`.
    - **The tables are written from those logs and committed.** The ADR names the run, the commit
      it ran on, and the job each table came from. The run's commit holds the protocol.
+   - **A change after the calibration** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): a change to a file
+     under `src/`, or to a test the calibration ran, made after the calibration's commit and before
+     a run, is calibrated again by a second dispatch, or the ADR says why it changes no run and the
+     reproduction is the check.
    - **The dispatch at `scope=exhaustive` after the tables are pinned reproduces them**, on x86-64.
-     A table it does not reproduce stops the round as a finding.
+     A table it does not reproduce stops the round as a finding. **It is dispatched as soon as the
+     tables are pinned and pushed**; the readings, the documents and the archive are written while
+     it runs, and after its commit no file under `runtime/`, `crates/` or `benches/` and no
+     `Cargo.toml` or `Cargo.lock` changes (ADR-0191).
    - Everything else before the arms is unchanged: the protocol committed first, the calibration
      before any rewarded run, and constants that do not move after one.
 
