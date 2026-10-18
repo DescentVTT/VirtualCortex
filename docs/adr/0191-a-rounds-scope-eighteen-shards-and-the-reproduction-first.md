@@ -41,7 +41,17 @@ Brief 074 was the first round under [ADR-0184](0184-the-runs-off-the-developer-m
 - ADR-0189 and ADR-0190 say it changes no run, and the reproduction, on the arms' commit, reproduced every pinned number.
 - Nothing said what a round does there, and ADR-0184 says the calibration is *"made on the commit the round's runs will be made from"*.
 
-**A sweep running.** The sweep of dispatch 39131009704 had not ended when this was written. The first ADR that merges after it ends records it ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)).
+**The sweep of brief 074's reproduction, recorded here** as [ADR-0158](0158-the-sweep-off-the-next-decisions-path.md) asks of the first ADR that merges after a sweep ends. Dispatch 39131009704's thirteen sweep jobs ended green.
+- **3 916 mutants, 3 735 caught and none missed**: 2 418 caught in the state crates and 1 317 in the runtime; 157 unviable; 24 timeouts. That is 33 more than the 3 883 [ADR-0183](0183-a-sixteenth-on-three-networks-measured.md) recorded, which is about the read ADR-0189 built.
+- **Twenty-two of the timeouts** are in the places [ADR-0062](0062-the-first-complete-sweeps-list.md) reads as inherent:
+  - `cortex-core`'s three chain iterators, six;
+  - the injector, twelve;
+  - the barrier's wait, one;
+  - the workers' stop and run, three.
+- **Two are of F-42's kind** by [ADR-0063](0063-the-sweep-reads-its-own-timeouts.md)'s evidence: `image.rs:1132:24` and `image.rs:1140:24`, `delete !` in `Image::decode`'s loading of the term arena and the clause store, code ADR-0052 wrote and not this round's.
+  - Each was still finishing tests when the bound cut it.
+  - Each ran beside a slot that held an injector mutant that timed out.
+- There is no survivor, so it leaves no finding.
 
 ## Decision Drivers
 
@@ -124,3 +134,9 @@ Brief 074 was the first round under [ADR-0184](0184-the-runs-off-the-developer-m
 - `briefs/README.md`: the brief's front matter, "Archiving one" and "Evidencing a round"; `CLAUDE.md`, `CONTRIBUTING.md` and Appendix B: the shards and `spec:scope`.
 - This decision's rows in §9 and the index.
 - The scope was tried on a scratch branch, as the Context says, and the deal at eighteen on the listing dispatch 39131009704 kept.
+- **Eighteen shards, tried by dispatch 39153149745** on `a849785`, this decision's commit:
+  - all 146 whole-domain tests passed, every pinned number reproduced;
+  - the shards' jobs read 34 to 78.4 minutes, the slowest 44 per cent of the bound;
+  - the last ended 88 minutes after the dispatch.
+
+  At twelve, brief 074's calibration read a slowest job of 99 minutes, its last 100 minutes after its dispatch; its reproduction read 111.2 and 127. A job's minutes are a runner's and not Measured ([ADR-0010](0010-measured-or-target.md)).
