@@ -81,7 +81,7 @@ What was read first (principle 2), on 2026-10-19, at `main` `417af36`:
 
   - **The eighteen H-40 read at format 23 keep their numbers** (`READ_CRCS`): a derivation now reads its six images written back to 23 as well (`Derivation::crcs_read_target`, `READ_TARGET_FORMAT`), and `read_pins_held` holds those to the round's pins, as `rate_pins_held` holds `crcs_ruled` to H-38's and H-39's. The forty-eight read at format 22 and the twenty-five at 21 keep theirs as ADR-0189 and ADR-0180 held them.
   - Re-pinning all ninety-seven (option 6(b)) would move ninety-one numbers a check can hold where they are.
-- **The mutation gate** ([ADR-0030](0030-verification-governance.md)) is read on the pull request's runs and recorded here when the round's last commit to change code has run.
+- **The mutation gate** ([ADR-0030](0030-verification-governance.md)). No file under `src/` changed after `c92ad6d`. The pull request's runs on `c92ad6d` and `9e86d1f` were cancelled by the pushes after them, before their mutation jobs ended. On the run at `36c9b09`, 39194365915, `cargo-mutants` made 21 mutants in the changed lines: 16 caught, 5 unviable, none missed; and the same on the run at `c1b8d55`, 39202120251, the last commit to change code. The measurement's ADR records the dispatched sweep's state with its evidence ([ADR-0195](0195-the-inhibitory-target-by-the-same-read-measured.md)).
 - **What brief 075 did not empower and this does not take**: the inhibitory rule's form, the rate's rule, the read's span and the estimate's rule do not change; no record of a state crate changes its layout; `Config`'s default leaves the flag unset.
 
 ### Consequences

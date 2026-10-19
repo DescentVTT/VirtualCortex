@@ -196,6 +196,50 @@ In every arm the outside sum stays within 0.9999 and 1.0001 of its image's, the 
 
 **Step 3**: the engine reads both of its network's targets for itself. **The next decision, named and not taken**: an ADR on the engine's default for an image no derivation has settled — the rate's rule at a sixteenth, the read of 128 windows, both targets by it — then M10, a reward past the trial ([ADR-0187](0187-the-upgrade-suite-planned.md)). Steps 4 and 5 did not arise. Step 6 kept: no constant moved after a lead-in with the flag set, and no other span, step or network was run.
 
+### The evidence
+
+- **No whole-domain test ran on the developer machine.** Every run of this round is a dispatch on its branch, `claude/brief-075-the-inhibitory-target-by-the-same-read`, in pull request #220, and each table was written from the log the run's job kept:
+
+  | Dispatch | Scope | On | What ran | What it gave |
+  | :--- | :--- | :--- | :--- | :--- |
+  | [39190412104](https://github.com/DescentVTT/VirtualCortex/actions/runs/39190412104) | `exhaustive`, this round's ten excluded | `9e86d1f` | the calibration: 146 tests in eighteen shards | 146 of 146 passed |
+  | [39190419222](https://github.com/DescentVTT/VirtualCortex/actions/runs/39190419222) | `arms` | `9e86d1f` | the trial of the read's 128 windows | failed at its table, on the harness's check (`arm-0`), 113 s |
+  | [39194363408](https://github.com/DescentVTT/VirtualCortex/actions/runs/39194363408) | `arms` | `36c9b09` | the trial, its check corrected | passed, 117 s (`arm-0`) |
+  | [39197018074](https://github.com/DescentVTT/VirtualCortex/actions/runs/39197018074) | `arms` | `36c9b09` | the three derivations | passed, 179, 180 and 179 s (`arm-0` to `arm-2`); their tables at `3b94bb8` |
+  | [39198215007](https://github.com/DescentVTT/VirtualCortex/actions/runs/39198215007) | `arms` | `3b94bb8` | the six arms | passed, 1 053 to 1 117 s (`arm-0` to `arm-5`); their tables, the verdict and the readings at `c1b8d55` |
+  | [39202114129](https://github.com/DescentVTT/VirtualCortex/actions/runs/39202114129) | `both` | `c1b8d55` | the reproduction: 156 tests in eighteen shards, and the sweep | 156 of 156 passed |
+
+- **The round's commits**: `c92ad6d` the flag built (ADR-0194); `9e86d1f` this protocol, before any lead-in with the flag set; `36c9b09` the twin's check corrected after the trial's first dispatch, which changes no clause, constant or reading and no test the calibration ran; `3b94bb8` the derivations' tables; `c1b8d55` the arms' tables, the verdict, its step and the readings as read, the last commit to change code; then the commits that carry these readings, the documents, this evidence and the brief's archive, which change no code. Every commit a dispatch ran on is an ancestor of the pull request's head.
+- **A change after the calibration** (ADR-0191): no file under `src/` changed after the calibration's commit, `9e86d1f`; `36c9b09`, `3b94bb8` and `c1b8d55` changed only this round's tests, which the calibration excluded, and the reproduction ran every one of them.
+- **The reproduction's scope.** A file under `src/` changed, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the weekly was dispatched at **`scope=both`**, as soon as the arms' tables were pinned and pushed, before these readings were written (ADR-0191).
+- **Every whole-domain shard is green**, and every pinned number reproduced on x86-64: all 156 `exhaustive` tests passed, each exit 0 with one test reported, 136 155 s summed. This round's ten held their tables there: the derivations in 282, 399 and 321 s, the arms in 1 406 to 1 890 s, each arm after deriving its network again and holding the derivation to its tables, and the trial in 252 s. The 146 before this round reproduced theirs, H-40's three derivations, six arms and trial among them.
+- **The shards**, dealt by the table before this round, which did not know the ten and costed each at 900 s:
+
+  | Shard | Job, of its bound | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time, of the bound |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 68.3 min, 38 % | `the_address_drawn_on_seed_22_from_the_assignment_at_2048_units` 3 998; `the_address_drawn_under_the_rate_s_rule_from_the_assignment_at_1024_units` 2 211 | 9 | 7 548 | 4 014 s, 37 % |
+  | 1 | 92.2 min, 51 % | `the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_2048_units` 4 434; `the_reward_unaddressed_from_the_mirrored_assignment_at_1024_units` 2 224 | 7 | 10 238 | 5 451 s, 50 % |
+  | 2 | 37.0 min, 21 % | `the_address_drawn_under_the_target_read_on_seed_23_from_the_assignment_at_1024_units` 1 122; `a_reward_right_three_times_in_four_on_seed_23_from_the_assignment_at_1024_units` 1 043 | 10 | 4 317 | 2 164 s, 20 % |
+  | 3 | 86.3 min, 48 % | `the_address_drawn_on_seed_23_from_the_assignment_at_2048_units` 3 381; `the_address_drawn_under_the_target_read_on_seed_22_from_the_assignment_at_1024_units` 1 862 | 10 | 9 855 | 5 102 s, 47 % |
+  | 4 | 89.8 min, 50 % | `the_span_a_choice_among_three_is_given_from_the_mirrored_assignment_at_1024_units` 2 767; `the_address_drawn_under_the_target_read_on_seed_23_from_the_mirrored_assignment_at_1024_units` 2 335 | 8 | 10 418 | 5 298 s, 49 % |
+  | 5 | 54.6 min, 30 % | `the_address_drawn_under_the_target_read_on_seed_24_from_the_assignment_at_1024_units` 1 500; `the_address_drawn_at_a_sixteenth_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 413 | 9 | 6 219 | 3 202 s, 30 % |
+  | 6 | 62.7 min, 35 % | `the_reward_unaddressed_from_the_assignment_at_1024_units` 1 737; `a_target_the_network_fires_at_from_the_mirrored_assignment_at_1024_units` 1 730 | 7 | 6 966 | 3 678 s, 34 % |
+  | 7 | 67.8 min, 38 % | `the_address_drawn_under_both_targets_read_on_seed_23_from_the_assignment_at_1024_units` 1 890; `a_reward_right_seven_times_in_eight_from_the_mirrored_assignment_at_1024_units` 1 755 | 10 | 7 742 | 3 986 s, 37 % |
+  | 8 | 65.5 min, 36 % | `the_schedule_of_reversals_from_the_assignment_at_1024_units` 1 728; `the_address_drawn_under_both_targets_read_on_seed_22_from_the_mirrored_assignment_at_1024_units` 1 682 | 10 | 7 662 | 3 848 s, 36 % |
+  | 9 | 61.0 min, 34 % | `a_reward_right_three_times_in_four_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 796; `the_address_drawn_under_the_target_read_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 748 | 8 | 6 553 | 3 573 s, 33 % |
+  | 10 | 83.5 min, 46 % | `the_address_drawn_on_seed_22_from_the_mirrored_assignment_at_2048_units` 3 523; `the_address_drawn_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 793 | 7 | 9 291 | 4 929 s, 46 % |
+  | 11 | 70.0 min, 39 % | `an_exploration_the_value_gates_from_the_assignment_at_1024_units` 2 202; `a_critic_of_the_engines_own_from_the_mirrored_assignment_at_1024_units` 2 181 | 9 | 7 742 | 4 118 s, 38 % |
+  | 12 | 68.8 min, 38 % | `the_address_drawn_under_both_targets_read_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 869; `the_release_alone_from_the_mirrored_assignment_at_1024_units` 1 740 | 9 | 8 027 | 4 036 s, 37 % |
+  | 13 | 64.3 min, 36 % | `the_address_drawn_under_both_targets_read_on_seed_24_from_the_assignment_at_1024_units` 1 880; `the_address_drawn_on_seed_23_from_the_assignment_at_1024_units` 1 817 | 10 | 7 457 | 3 774 s, 35 % |
+  | 14 | 64.7 min, 36 % | `the_address_drawn_on_seed_24_from_the_assignment_at_1024_units` 1 830; `the_address_drawn_at_a_sixteenth_on_seed_24_from_the_assignment_at_1024_units` 1 813 | 10 | 7 425 | 3 785 s, 35 % |
+  | 15 | 60.7 min, 34 % | `a_reward_right_three_times_in_four_on_seed_24_from_the_assignment_at_1024_units` 1 715; `the_address_drawn_at_a_sixteenth_on_seed_22_from_the_mirrored_assignment_at_1024_units` 1 670 | 8 | 7 104 | 3 556 s, 33 % |
+  | 16 | 40.8 min, 23 % | `the_address_drawn_at_a_sixteenth_on_seed_23_from_the_assignment_at_1024_units` 1 021; `the_address_drawn_at_a_sixteenth_on_seed_22_from_the_assignment_at_1024_units` 1 013 | 7 | 4 214 | 2 393 s, 22 % |
+  | 17 | 63.1 min, 35 % | `the_address_drawn_under_both_targets_read_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 880; `the_gate_s_output_delivered_from_the_mirrored_assignment_at_1024_units` 1 792 | 8 | 7 377 | 3 705 s, 34 % |
+
+  The percentages are of the job's bound, 180 minutes ([ADR-0179](0179-the-bounds-rule-restated.md)); each shard ran its tests two at a time, at 1.76 to 2.00 of their summed seconds over the wall. The eighteen waited 12 to 92 minutes for runners after the dispatch at 04:58:05Z and started from 05:09:38Z to 06:30:13Z; the last ended at 07:51:20Z, 2 h 53 min after it. **No shard's job passed 60 per cent of its bound**: the longest, shard 1's, took 92.2 minutes, 51 per cent. Under the table regenerated from this run (`scripts/exhaustive-costs.tsv`, 156 lines, 136 155 s) every shard is planned at 7 560 to 7 577 s summed, about 3 800 s run two at a time, 35 per cent of the bound.
+- **The sweep** of this dispatch had not ended when this evidence was written, at 08:00Z: ten of its thirteen jobs were running and three queued, behind the shards (ADR-0166). It is recorded by the first ADR that merges after it ends ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)).
+- **The pull request's gate** on `c1b8d55`, run 39202120251: the five required and advisory checks green; the mutation gate on the changed lines made 21 mutants, 16 caught, 5 unviable, none missed (ADR-0194).
+
 ## Confirmation
 
 - `runtime/cortex-runtime/tests/inhibition.rs`: `BOTH_SEEDS`, `BOTH_STEP`, `BOTH_SPAN`, `BOTH_BOUND`, `BOTH_NAMES`, `UNDER_BOTH_TARGETS`, `BOTH_ARMS`, `BOTH_PREDICTED`, `BOTH_READINGS_PREDICTED`, `BOTH_BESIDE_INHIBITION`; `Settling::inhibitory`, `candidate_under`, `derive_under`, `Derivation::istdp`, `target_lead_in_under`; `settled_inhibition`, `inhibition_above`, `twin_apart`, `both_predicted`, `both_verdict`, `both_stop`; `both_rate_pins`, `both_derivation`, `both_derivation_held`, `both_pins_held`, `both_derived`; `RuledSite::inhibitory`, `both_site`, `both_stand`, `both_made`, `both_arm`; the trial, the gate's test and `both_tables`; the three derivations' and the six arms' weekly tests.
