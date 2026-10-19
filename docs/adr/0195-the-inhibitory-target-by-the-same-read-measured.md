@@ -5,7 +5,7 @@ depends-on: ADR-0194
 decision-makers: VirtualCortex maintainers
 ---
 
-# ADR-0195: The inhibitory target by the same read, measured — H-41's protocol, written before any lead-in is run with the flag set: on seeds 22, 23 and 24 at 1 024 units, at a sixteenth, H-40's read of 128 windows with ADR-0194's flag set, so that at the read's last window the inhibitory rule's period becomes the rate's; H-40's settled network's rule over the windows after the read, within 320; a derivation with no pin held by its rules and by H-40's pinned derivation through the read's end, its twin; the frozen copy's period a reading beside the read's, which the image carries; each arm beside the same network's arm under H-40; three predicted readings as rules over the tables, the first against H-40's pinned inhibitory sums at window 160; a trial of the read's 128 windows on seed 22 dispatched beside the calibration; F-70
+# ADR-0195: The inhibitory target by the same read, measured — H-41 is yes, as ADR-0192 predicted — on seeds 22, 23 and 24 at 1 024 units, at a sixteenth, with ADR-0194's flag set the read makes H-40's periods and the engine holds them for both rules from the 129th window; the inhibitory sum then stops falling, each lead-in settling at window 160 with 13.4 to 14.0 per cent more inhibition than its twin under H-40, and H-25's two arms on each network hold H-25's four clauses, 120 to 128 of each mapping's last 128 correct and each reversal passed in 9 to 16 blocks, 227 in all against H-40's 220; all three predicted readings held; the harness's twin check, tried first by a dispatch, failed at the read's last window on a reading taken at the period that window's close set, and was corrected before any derivation; H-41's stopping rule reaches step 3, and the next decision, the engine's default for an image no derivation has settled, is named and not taken; F-70
 
 ## Context and Problem Statement
 
@@ -98,14 +98,105 @@ What was read first (principle 2), on 2026-10-19, against the build's commit `c9
 - **`arm_on` takes no new branch**: an H-41 arm before its run is H-40's case, `Ground::unpinned`, and every arm the tree pins is held to its tables as it was, which the calibration runs, H-40's six among them.
 - **The checks a derivation with the flag set is held by are tried before its run**: the twin's — H-40's 128 windows, its read and its target, the inhibitory period set at the 128th — by the trial's dispatch on seed 22; `settling_apart`, `before_the_settling_held` and `cancel_held` every week on H-40's derivations; the predicted readings' rules and the verdict's in the gate over tables by hand.
 - **The trial's first dispatch failed, and the check it failed was the harness's.** Dispatch [39190419222](https://github.com/DescentVTT/VirtualCortex/actions/runs/39190419222) on `9e86d1f` ran the trial in 113 s. Every check of the flag held, after each of the 128 windows: the flag set and the inhibitory period 20 000 through the 127th, and after the 128th the flag spent, the read ended in H-40's target, 57 604 ticks and 2 330 spikes a window, and both periods 57 604. Then it held its table to H-40's whole, and the 128th window parted in one field: the units at the target, 51 648 where H-40's read 25 664 (in parts of $2^{16}$). Every spike, both readouts, both sums, the gain and the estimate of that window, and every field of the 127 before it, are H-40's. The harness reads that field after the window's close at the engine's inhibitory period (`spikes_and_at_target`), and the close it follows is the one where the flag set the period to 57 604, so the 128th window's units at the target are read against the read's period where H-40's were read against 20 000. The protocol's check was wrong, not the network: a window's units at the target measure the network against a period, and the period moved at that window's end.
-  - **The correction** (`twin_apart`): the read's windows held to H-40's whole through the 127th and the 128th in every field but the units at the target, in the trial, in `both_derivation_held` and in the gate's `both_tables`, the rule tried at its edges in the gate over H-40's pinned lead-in. It changes no clause, no constant and no predicted reading: none of them reads that field. It changes no test the calibration ran, since the calibration excluded this round's ten and the correction touches only H-41's functions, so no second calibration is owed (ADR-0191). The trial was dispatched again on the correction's commit, before any derivation.
+  - **The correction** (`twin_apart`): the read's windows held to H-40's whole through the 127th and the 128th in every field but the units at the target, in the trial, in `both_derivation_held` and in the gate's `both_tables`, the rule tried at its edges in the gate over H-40's pinned lead-in. It changes no clause, no constant and no predicted reading: none of them reads that field. It changes no test the calibration ran, since the calibration excluded this round's ten and the correction touches only H-41's functions, so no second calibration is owed (ADR-0191). The trial was dispatched again on the correction's commit, `36c9b09`, as [39194363408](https://github.com/DescentVTT/VirtualCortex/actions/runs/39194363408), before any derivation, and passed.
 - **What cannot be tried before** is a derivation with the flag set past the read's end: its one run is its trial.
 
 ### F-70
 
 **ADR-0192's table heads a column *"Inhibitory sum at window 96"*** where two of its three figures, seed 23's 160.7 M and seed 24's 164.0 M, are at windows 106 and 99, where those networks' gain held's lead-ins settle; at window 96 they read 165.8 and 165.6 M (`READ_LEAD_IN`). Recorded in §11 as resolved by this record. ADR-0192 is accepted and is not edited. No clause, constant or predicted reading reads the column.
 
+### The readings
+
+Everything below was read from one run of each derivation and each arm, each a job of its own on the repository's host, `ubuntu-24.04-arm` (ADR-0184), after the protocol above was committed and pushed (`9e86d1f`) and its harness corrected (`36c9b09`). A job's seconds are not Measured figures ([ADR-0010](0010-measured-or-target.md)); the tables are integers of a deterministic engine, which the dispatched weekly reproduces on x86-64.
+
+**The calibration** (H-41's stopping rule, step 2). Dispatch [39190412104](https://github.com/DescentVTT/VirtualCortex/actions/runs/39190412104) at `scope=exhaustive` on `9e86d1f`, this round's ten tests excluded: the tree's other 146 whole-domain tests, each in a process of its own, 146 of 146 passed, the eighteen shards' jobs 34.8 to 82.4 minutes, at most 46 per cent of their bound. So every pinned number of the tree holds at format 24 with the flag unset — H-40's three derivations, its six arms and its trial among them — and every arm the tree pins took the branch of `arm_on` it took before.
+
+**The trial**, after its correction: dispatch [39194363408](https://github.com/DescentVTT/VirtualCortex/actions/runs/39194363408) on `36c9b09`, beside the calibration, passed in 117 s. Every window of the read on seed 22 is H-40's (`twin_apart`), the flag set and the inhibitory period 20 000 after each of the first 127, and after the 128th the read ended in 57 604 ticks and 2 330 spikes a window, both rules' period 57 604, the flag spent. It read nothing of H-41.
+
+**The derivations**, dispatch [39197018074](https://github.com/DescentVTT/VirtualCortex/actions/runs/39197018074) on `36c9b09`, once the calibration's shards were green and the trial passed: 179, 180 and 179 s, each job passing (`arm-0` to `arm-2`). Each held every check it is held by — what it makes before the settled network and its cancel the gain held's; the read's windows H-40's; the read's sixteen windows, its target and what the engine made of it H-40's; the inhibitory period after the lead-in the read's; every window after the read the rate's rule's; every window inside the train — and found its tables empty and said so after everything was dumped. Its tables were pinned from that run (`3b94bb8`). **Clause 0 holds on all three networks.**
+
+| Network | Read target, a window (period), H-40's | Settled at window, H-40's | Inhibitory sum: window 128 | At the settling | H-40's at its settling | Change, window 128 to 160 (H-40's) | Spikes a window after the read (H-40's mean) | Gain's band after the read | Carried gain | Frozen block: seen of 64 | Gain after it | The frozen copy's period, beside the read's (H-40's copy) |
+| :--- | :--- | ---: | ---: | ---: | ---: | :--- | :--- | :--- | :--- | ---: | :--- | :--- |
+| Seed 22 | 2 330 (57 604) | 160, 160 | 148.3 M | 148.1 M | 129.9 M | −0.16 % (−12.40 %) | 2 160 to 2 458, 2 329.9 (2 330.6) | 1.7432 to 1.7561 | 1.7500 | 64 | 1.7212 | 57 447, 57 604 (57 512) |
+| Seed 23 | 2 314 (58 002) | 160, 160 | 148.8 M | 148.5 M | 130.9 M | −0.21 % (−12.00 %) | 2 122 to 2 456, 2 313.4 (2 314.4) | 1.7424 to 1.7559 | 1.7507 | 64 | 1.7206 | 57 949, 58 002 (58 046) |
+| Seed 24 | 2 331 (57 579) | 160, 160 | 148.2 M | 147.9 M | 130.2 M | −0.21 % (−12.16 %) | 2 171 to 2 475, 2 333.3 (2 333.8) | 1.7411 to 1.7534 | 1.7464 | 64 | 1.7176 | 57 896, 57 579 (57 890) |
+
+- **Through the read the network is H-40's**, window for window, on every network: the same 128 windows, the same sixteen counts, the same target, 57 604, 58 002 and 57 579 ticks, which the inhibitory rule accepts and the engine then holds for both rules.
+- **From the 129th window the inhibitory sum stops falling.** Under H-40 it fell 12.0 to 12.4 per cent between the read's end and the settling; under both targets it moves 0.16 to 0.21 per cent. So each settled image carries 13.4 to 14.0 per cent more inhibition than its twin's: 148.1 M, 148.5 M and 147.9 M where H-40's carry 129.9 M, 130.9 M and 130.2 M. The excitatory sums at the settling are H-40's to a part in a thousand, 214.1 M, 213.7 M and 214.3 M.
+- **The count and the gain are H-40's, near enough.** Over windows 129 to 160 the count stands within a spike a window of its twin's mean, held at the read target by the rate's rule, and the gain moves within 1.7411 and 1.7561, each band H-40's to 0.0009. So the stimulus meets a network firing at the rate it fired at under H-40, with more inhibition.
+- **Each lead-in settles at window 160**, the earliest the rule allows, as H-40's did. **Every later rule gives a value**: the cancel is the gain held's on each network, and the frozen block sees the stimulus in 64 trials of 64 on all three.
+- **The frozen copy's period, a reading**, lies 0.27 and 0.09 per cent below the read's on seeds 22 and 23 and 0.55 per cent above it on seed 24. Each gives the inhibitory rule the depression the read's period gives, 23.
+
+**The arms**, dispatch [39198215007](https://github.com/DescentVTT/VirtualCortex/actions/runs/39198215007) on `3b94bb8`, the commit that pins their networks' derivations: 1 053 to 1 117 s, each job passing (`arm-0` to `arm-5`). Each first ran its network's derivation again and held it to the tables pinned for it, then ran once. It passed every check before its tables — the watch's count of the open window the record's at every trial, 960 windows, every window's gain the rule's from the network's read count, the critic's step the engine's, the train holding every trial — and was held by its rules alone, its tables unpinned (`Ground::unpinned`). Its tables were pinned from that run, with the verdict, its step and the readings as read (`c1b8d55`).
+
+Each network beside its own arms under H-40 ([ADR-0190](0190-a-target-the-engine-reads-measured.md)):
+
+| | Seed 22, from the assignment | Under H-40 | Seed 22, from the mirrored | Under H-40 |
+| :--- | :--- | :--- | :--- | :--- |
+| Correct of each mapping's last 128 | 122, 126, 121, 126 | 122, 127, 116, 125 | 124, 121, 120, 123 | 124, 119, 120, 123 |
+| First mapping passes 40 of 64 at block | 4 | 3 | 4 | 4 |
+| Reversals, blocks from the flip | 11, 16, 13 | 11, 15, 12 | 14, 14, 14 | 13, 14, 12 |
+| Highest coupling, of the image's | 1.215 | 1.232 | 1.212 | 1.239 |
+| Spikes a window: mean, least to greatest, deviation | 2 330.8, 2 134 to 2 829, 78 | 2 330.8, 2 139 to 2 853, 78 | 2 330.8, 2 147 to 2 828, 76 | 2 330.8, 2 133 to 2 849, 78 |
+| Gain: mean, band | 1.7158, 1.7038 to 1.7279 | 1.7151, 1.7031 to 1.7262 | 1.7164, 1.7039 to 1.7276 | 1.7154, 1.7034 to 1.7272 |
+| Pairs on opposite sides of the target, of 959 | 591 | 597 | 597 | 607 |
+| Inhibitory sum at the end, of its image's | 0.745 (110.4 M) | 0.779 (101.3 M) | 0.742 (109.8 M) | 0.778 (101.1 M) |
+
+| | Seed 23, from the assignment | Under H-40 | Seed 23, from the mirrored | Under H-40 | Seed 24, from the assignment | Under H-40 | Seed 24, from the mirrored | Under H-40 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Correct of each mapping's last 128 | 124, 124, 128, 127 | 125, 125, 126, 127 | 128, 123, 125, 128 | 128, 125, 126, 127 | 125, 126, 128, 126 | 125, 126, 125, 125 | 122, 126, 126, 123 | 122, 124, 125, 123 |
+| First mapping passes 40 of 64 at block | 4 | 4 | 2 | 2 | 1 | 1 | 6 | 6 |
+| Reversals, blocks from the flip | 12, 11, 12 | 13, 11, 12 | 10, 11, 11 | 10, 11, 11 | 13, 16, 9 | 13, 14, 10 | 12, 13, 15 | 12, 12, 14 |
+| Highest coupling, of the image's | 1.202 | 1.205 | 1.205 | 1.198 | 1.223 | 1.221 | 1.234 | 1.213 |
+| Spikes a window: mean, least to greatest, deviation | 2 314.8, 2 081 to 2 856, 77 | 2 314.8, 2 081 to 2 847, 78 | 2 314.8, 2 062 to 2 850, 78 | 2 314.7, 2 075 to 2 845, 78 | 2 331.7, 2 074 to 2 838, 82 | 2 331.7, 2 088 to 2 866, 81 | 2 331.7, 2 083 to 2 838, 81 | 2 331.7, 2 106 to 2 864, 80 |
+| Gain: mean, band | 1.7145, 1.7010 to 1.7251 | 1.7137, 1.7013 to 1.7240 | 1.7147, 1.7034 to 1.7254 | 1.7137, 1.7025 to 1.7241 | 1.7138, 1.7013 to 1.7261 | 1.7134, 1.7012 to 1.7257 | 1.7140, 1.6990 to 1.7258 | 1.7136, 1.7007 to 1.7251 |
+| Pairs on opposite sides of the target, of 959 | 599 | 604 | 611 | 601 | 621 | 621 | 623 | 619 |
+| Inhibitory sum at the end, of its image's | 0.745 (110.6 M) | 0.772 (101.1 M) | 0.743 (110.4 M) | 0.771 (101.0 M) | 0.749 (110.8 M) | 0.779 (101.4 M) | 0.745 (110.2 M) | 0.776 (101.0 M) |
+
+In every arm the outside sum stays within 0.9999 and 1.0001 of its image's, the stimulus fires once in each of the 120 blocks, and the value's troughs after the flips stand at $-0.51$ to $-0.83$ of a reward, where H-40's arms on the same networks read $-0.58$ to $-0.80$.
+
+**Through each arm:**
+- **The count is the read target's**, 0.03 to 0.04 per cent above it in every arm, as under H-40, with H-40's scatter: a deviation of 76 to 82 spikes where H-40's read 78 to 81.
+- **The gain stands 1.9 to 2.1 per cent below 1.75**: means 1.7138 to 1.7164, its band 1.6990 to 1.7279 over the six arms; under H-40, 1.7134 to 1.7154.
+- **The controller alternates as under H-40**: consecutive windows stand on opposite sides of the target in 591 to 623 pairs of 959, where H-40's stood in 597 to 621.
+- **The inhibitory sum falls again in the arms.** It ends at 0.742 to 0.749 of its image's, 109.8 M to 110.8 M, where H-40's arms end at 0.771 to 0.779, 101.0 M to 101.4 M. So it falls by a quarter through the task here and by 22 to 23 per cent under H-40, from an image that here carries 14 per cent more, and ends 8.6 to 9.4 per cent above its twin's. Under the same period the lead-in's sum held through its last 32 windows; the arms add the task, and what in the task moves it was not varied.
+- **Every window's gain is the oracle's**, and the train's count of the open window is the record's own at every trial's end.
+
+**Over the three networks**: every mapping of twenty-four learned, 120 to 128 of its last 128 correct, where H-40's read 116 to 128; every reversal of eighteen passed, in 9 to 16 blocks, the eighteen summing to 227 blocks where under H-40 they sum to 220 — 82 against 77 on seed 22, 67 against 68 on seed 23 and 78 against 75 on seed 24. Each first mapping passes 40 of 64 in the block its twin's does but on seed 22 from the assignment, a block later.
+
+### H-41's verdict
+
+**Yes.** By `both_verdict` over the three networks' pinned derivations and the six arms' pinned blocks, each against the image its network's derivation wrote:
+- **clause 0**, on every network: the read makes a period both rules accept, the lead-in settles after it in its sums and its gain's mean, every later rule gives a value and the frozen block passes both measures;
+- **clause 1**: every mapping learned, 120 to 128 of each mapping's last 128 where 80 are asked;
+- **clause 2**: no coupling past 1.30 of its image's, the highest 1.234;
+- **clause 3**: each reversal passes 40 of 64 within 23 blocks of its flip, in 9 to 16;
+- **clause 4**: the outside sum within 0.75 and 1.25 of its image's, at 0.9999 to 1.0001.
+
+**The prediction was yes, and it held. So did all three predicted readings:**
+
+| | Predicted | Read |
+| :--- | :--- | :--- |
+| 1. Each network's inhibitory sum at its lead-in's settling above H-40's | above 129.9, 130.9 and 130.2 M | **held**: 148.1, 148.5 and 147.9 M, 13.4 to 14.0 per cent above |
+| 2. Each arm's mean count a window within one per cent of its read target | within 1 % | **held**: 0.029 to 0.036 per cent above in all six |
+| 3. The gain within five per cent of 1.75 through each arm | 1.6625 to 1.8375 | **held**: 1.6990 to 1.7279 over 5 760 windows |
+
+**What ADR-0192 said would refute it, against what was read.**
+- *More inhibition left in the settled image, enough that the stimulus no longer reaches what the frozen block's measure asks*: 14 per cent more is left, and the frozen block sees the stimulus in 64 trials of 64 on every network.
+- *A lead-in whose inhibitory sums still move enough that it does not settle within the bound*: the inhibitory sum moves less than a quarter of a per cent after the read, and each lead-in settles at window 160 of 320.
+- *Learning slower from a more inhibited start, a reversal past twenty-three blocks*: the slowest reversal takes 16 blocks. The eighteen take seven blocks more in all than H-40's, on two networks of three; no clause is near its bound.
+
+**What the readings do not say.**
+- **Nothing of whether the inhibition the task removes matters**: in the arms the inhibitory sum falls by a quarter under both targets, as under H-40, and no arm ran with that fall held.
+- **Nothing of the read's span**: no other span was run, and the inhibitory rule's target is the rate's period the read made.
+- **Nothing of the other size**, of a longer run, or of a network the derivation's own rules do not settle.
+- **Nothing of what the engine should carry by default**: that is the decision this round names.
+
+### H-41's stopping rule, reached
+
+**Step 3**: the engine reads both of its network's targets for itself. **The next decision, named and not taken**: an ADR on the engine's default for an image no derivation has settled — the rate's rule at a sixteenth, the read of 128 windows, both targets by it — then M10, a reward past the trial ([ADR-0187](0187-the-upgrade-suite-planned.md)). Steps 4 and 5 did not arise. Step 6 kept: no constant moved after a lead-in with the flag set, and no other span, step or network was run.
+
 ## Confirmation
 
-- `runtime/cortex-runtime/tests/inhibition.rs`: `BOTH_SEEDS`, `BOTH_STEP`, `BOTH_SPAN`, `BOTH_BOUND`, `BOTH_NAMES`, `UNDER_BOTH_TARGETS`, `BOTH_ARMS`, `BOTH_PREDICTED`, `BOTH_READINGS_PREDICTED`, `BOTH_BESIDE_INHIBITION`; `Settling::inhibitory`, `candidate_under`, `derive_under`, `Derivation::istdp`, `target_lead_in_under`; `settled_inhibition`, `inhibition_above`, `both_predicted`, `both_verdict`, `both_stop`; `both_rate_pins`, `both_derivation`, `both_derivation_held`, `both_pins_held`, `both_derived`; `RuledSite::inhibitory`, `both_site`, `both_stand`, `both_made`, `both_arm`; the trial, the gate's test and `both_tables`; the three derivations' and the six arms' weekly tests.
+- `runtime/cortex-runtime/tests/inhibition.rs`: `BOTH_SEEDS`, `BOTH_STEP`, `BOTH_SPAN`, `BOTH_BOUND`, `BOTH_NAMES`, `UNDER_BOTH_TARGETS`, `BOTH_ARMS`, `BOTH_PREDICTED`, `BOTH_READINGS_PREDICTED`, `BOTH_BESIDE_INHIBITION`; `Settling::inhibitory`, `candidate_under`, `derive_under`, `Derivation::istdp`, `target_lead_in_under`; `settled_inhibition`, `inhibition_above`, `twin_apart`, `both_predicted`, `both_verdict`, `both_stop`; `both_rate_pins`, `both_derivation`, `both_derivation_held`, `both_pins_held`, `both_derived`; `RuledSite::inhibitory`, `both_site`, `both_stand`, `both_made`, `both_arm`; the trial, the gate's test and `both_tables`; the three derivations' and the six arms' weekly tests.
 - Whitepaper §11.1 (H-41), §11 (F-70) and §9; `CHANGELOG.md`; `docs/adr/README.md`.
