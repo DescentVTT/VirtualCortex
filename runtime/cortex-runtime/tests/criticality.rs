@@ -18,13 +18,15 @@
 
 #![deny(clippy::arithmetic_side_effects)]
 
-use cortex_connectome::{CortexFileHeader, SECTION_MODULATOR, SectionEntry, crc64};
+use cortex_connectome::{
+    CortexFileHeader, SECTION_HOMEOSTASIS, SECTION_MODULATOR, SectionEntry, crc64,
+};
 use cortex_core::{
     ISTDP_TARGET_PERIOD_TICKS, STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
 use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_BINS, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16,
-    GAIN_MAX_Q16, GAIN_ONE_Q16, HomeostaticDrivePool, SIGMA_MAX_Q16,
+    GAIN_MAX_Q16, GAIN_MIN_Q16, GAIN_ONE_Q16, HomeostaticDrivePool, SIGMA_MAX_Q16,
 };
 use cortex_runtime::{Config, ConfigError, Executor, Image, ImageError, Inject, TargetRead};
 
@@ -501,6 +503,99 @@ fn the_control_step_is_refused_above_its_bound_and_the_default_is_zero() {
     .unwrap();
     assert_eq!(exec.homeostasis(), &HomeostaticDrivePool::new());
     assert_eq!(Config::default().control_step_q0_16, 0);
+}
+
+/// The same image with the homeostasis record's gain written `gain` and the section resealed:
+/// how a harness lays a gain in an image (`at_gain`).
+fn with_homeostasis_gain(image: &[u8], gain: u32) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for entry_at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[entry_at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_HOMEOSTASIS {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            let mut pool = HomeostaticDrivePool::decode(img[offset..][..64].try_into().unwrap());
+            pool.synaptic_gain_q16 = gain;
+            img[offset..][..length].copy_from_slice(&pool.encode());
+            entry.crc64 = crc64(&img[offset..][..length]);
+            img[entry_at..][..64].copy_from_slice(&entry.encode());
+            return img;
+        }
+    }
+    panic!("the image holds a homeostasis section");
+}
+
+/// The gain an engine starts with (ADR-0196), beside the image's: on the recurrent network at the
+/// step of an eighth, an engine born at a gain of 1.5 by its configuration writes the image of
+/// one born at 1.0 with 1.5 laid in its homeostasis record, byte for byte; loaded under a
+/// configuration at 1.0 or at 1.75, that image's gain and step outrank the configuration's; the
+/// born engine and the loaded one run a window alike, the gain moving; and a configuration whose
+/// gain the controller's bounds refuse is refused at the load too, as a step past its bound is.
+#[test]
+fn a_born_engine_starts_at_the_configuration_s_gain_and_an_image_s_gain_outranks_it() {
+    const BORN: u32 = 0x0001_8000;
+    let at = |gain: u32| Config {
+        synaptic_gain_q16: gain,
+        ..config(2, 2 * UNITS, STEP)
+    };
+    let mut born = Executor::<64>::new(at(BORN)).unwrap();
+    wire_recurrent(&mut born);
+    assert_eq!(born.homeostasis().synaptic_gain_q16, BORN);
+    let image = Image::encode(&born).unwrap();
+    let mut at_one = Executor::<64>::new(at(GAIN_ONE_Q16)).unwrap();
+    wire_recurrent(&mut at_one);
+    assert!(
+        with_homeostasis_gain(&Image::encode(&at_one).unwrap(), BORN) == image,
+        "born at the gain, the image of one with the gain laid in it, byte for byte"
+    );
+    for configured in [GAIN_ONE_Q16, 0x0001_C000] {
+        let loaded = Image::decode::<64>(
+            &image,
+            Config {
+                synaptic_gain_q16: configured,
+                ..config(2, 0, 0)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            loaded.homeostasis(),
+            born.homeostasis(),
+            "the image's gain and step outrank the configuration's {configured:#x}"
+        );
+    }
+    let mut loaded = Image::decode::<64>(&image, config(2, 0, 0)).unwrap();
+    let (mut unit, mut unit_copy) = (0u32, 0u32);
+    drive_window(&mut born, 6_000, &mut unit);
+    drive_window(&mut loaded, 6_000, &mut unit_copy);
+    assert_eq!(loaded.homeostasis(), born.homeostasis());
+    assert_ne!(
+        born.homeostasis().synaptic_gain_q16,
+        BORN,
+        "the loop went on"
+    );
+    assert_eq!(
+        loaded
+            .units()
+            .iter()
+            .map(|u| u.encode())
+            .collect::<Vec<_>>(),
+        born.units().iter().map(|u| u.encode()).collect::<Vec<_>>()
+    );
+    for refused in [GAIN_MIN_Q16.wrapping_sub(1), GAIN_MAX_Q16.wrapping_add(1)] {
+        assert!(
+            matches!(
+                Image::decode::<64>(
+                    &image,
+                    Config {
+                        synaptic_gain_q16: refused,
+                        ..config(2, 0, 0)
+                    }
+                ),
+                Err(ImageError::Config(ConfigError::GainOutOfRange))
+            ),
+            "{refused:#x}"
+        );
+    }
 }
 
 /// The period whose count for `UNITS` units is `RATE_TARGET` spikes a window: 64 units times

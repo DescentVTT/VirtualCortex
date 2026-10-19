@@ -11,6 +11,7 @@ use cortex_core::{
     GateState, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, STP_MAX, STP_U, THRESHOLD_BASE,
     spike_message, synaptic_efficacy_q16,
 };
+use cortex_homeostasis::GAIN_ONE_Q16;
 use cortex_runtime::{Config, Executor, InjectError};
 use std::thread;
 
@@ -31,6 +32,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         amendments: 0,
         modulation_baseline_q16: MODULATION_ONE_Q16,
         control_step_q0_16: 0,
+        synaptic_gain_q16: GAIN_ONE_Q16,
         sleep_shift: 0,
         episodes: 0,
         train_capacity: 0,

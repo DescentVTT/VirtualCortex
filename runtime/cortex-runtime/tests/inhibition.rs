@@ -356000,6 +356000,68 @@ fn the_flag_sets_both_targets_at_the_read_s_end_on_seed_22_at_1024_units_exhaust
     undropped(exec, name);
 }
 
+/// The engine's default, H-41's candidate byte for byte (ADR-0196, brief 076): on each of H-41's
+/// networks, seeds 22, 23 and 24 at 1 024 units, an engine built by `Executor::new` from
+/// `Config::reads_its_targets()` with H-41's sizing — `config`'s at two workers, struct-updated
+/// onto the default — its arenas synthesized from the network's prior, writes the image H-41's
+/// candidate writes before its lead-in: `candidate_under` under both targets at the gain H-41's
+/// derivation calibrated on that network, 1.75 on each as pinned, the gain laid in the image it
+/// reloads from. The two configurations differ in the gain alone, which the candidate takes from
+/// its image and the default from its configuration. It runs no tick: the gate's one test of
+/// brief 076's (ADR-0061).
+#[test]
+fn the_engine_s_default_writes_h_41_s_candidate_byte_for_byte_on_its_three_networks() {
+    let sizing = config(SCAN_UNITS, 2, BASELINE_Q16);
+    let born = Config {
+        workers: sizing.workers,
+        units: sizing.units,
+        blocks: sizing.blocks,
+        nodes_per_worker: sizing.nodes_per_worker,
+        injector_capacity: sizing.injector_capacity,
+        train_capacity: sizing.train_capacity,
+        ..Config::reads_its_targets()
+    };
+    assert_eq!(
+        Config {
+            synaptic_gain_q16: Config::default().synaptic_gain_q16,
+            ..born.clone()
+        },
+        Config {
+            control_step_q0_16: UNDER_BOTH_TARGETS.step,
+            rate_target_period_ticks: UNDER_BOTH_TARGETS.target,
+            rate_read_windows: UNDER_BOTH_TARGETS.read,
+            istdp_target_read: UNDER_BOTH_TARGETS.inhibitory,
+            ..sizing
+        },
+        "the default at H-41's sizing is the candidate's configuration but for the gain"
+    );
+    for (n, &seed) in BOTH_SEEDS.iter().enumerate() {
+        let gain = BOTH_RULES[n]
+            .and_then(|rules| rules.gain)
+            .expect("H-41's derivation, pinned");
+        assert_eq!(gain, born.synaptic_gain_q16, "seed {seed}: 1.75 calibrated");
+        let p = prior_seeded(SCAN_UNITS, seed);
+        let candidate = Image::encode(&candidate_under(&p, SCAN_UNITS, gain, &UNDER_BOTH_TARGETS))
+            .expect("quiescent");
+        let mut exec = Engine::new(born.clone()).unwrap();
+        let (u, b) = exec.arenas_mut();
+        synthesize(u, b, &p).unwrap();
+        let image = Image::encode(&exec).expect("quiescent");
+        eprintln!(
+            "DUMP default seed {seed}: {} bytes, crc {:#018x}; the candidate's {} bytes, crc {:#018x}",
+            image.len(),
+            crc64(&image),
+            candidate.len(),
+            crc64(&candidate)
+        );
+        assert!(
+            image == candidate,
+            "seed {seed}: the default's image is the candidate's, byte for byte; they part first at byte {:?}",
+            image.iter().zip(&candidate).position(|(a, c)| a != c)
+        );
+    }
+}
+
 /// The gate's test (ADR-0061's class; brief 075): H-41's networks, step, span, bound, settling,
 /// arms, prediction and predicted readings' constants, the comparison of the first held to H-40's
 /// pinned lead-ins; the predicted readings' rules at their edges; H-41's verdict and its stopping

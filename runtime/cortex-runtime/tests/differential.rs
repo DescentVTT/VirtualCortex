@@ -11,6 +11,7 @@ use cortex_core::{
     DendriticSuperNeuron, GateState, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, STP_MAX, STP_U,
     SynapseBlock, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
 };
+use cortex_homeostasis::GAIN_ONE_Q16;
 use cortex_runtime::{Config, Executor};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -348,6 +349,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             amendments: 0,
             modulation_baseline_q16: MODULATION_ONE_Q16,
             control_step_q0_16: 0,
+            synaptic_gain_q16: GAIN_ONE_Q16,
             sleep_shift: 0,
             episodes: 0,
             train_capacity: 0,

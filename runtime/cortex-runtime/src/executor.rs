@@ -65,8 +65,8 @@ use cortex_executive::{
 use cortex_hippocampus::{Episode, HippocampalAttractorState, PATTERN_MAX, RIPPLE_SHIFT};
 use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_COUNT_MAX, ACTIVITY_WINDOW_BINS, ACTIVITY_WINDOW_SHIFT,
-    CONTROL_STEP_MAX_Q0_16, GAIN_ONE_Q16, HomeostaticDrivePool, SLEEP_SHIFT_MAX, STAGE_AWAKE,
-    STAGE_REM, STAGE_SWS,
+    CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, GAIN_ONE_Q16, HomeostaticDrivePool,
+    SLEEP_SHIFT_MAX, STAGE_AWAKE, STAGE_REM, STAGE_SWS,
 };
 use cortex_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState, ValueCritic};
 use cortex_reasoning::{Compaction, InductionState, SEARCH_SHIFT_MAX, TermNode};
@@ -113,9 +113,17 @@ pub struct Config {
     /// The control step $\kappa$ of criticality control (ADR-0036), Q0.16 at most
     /// `CONTROL_STEP_MAX_Q0_16` (0.5): once per window the synaptic gain moves by
     /// $1 - \kappa\,\operatorname{clamp}(\hat\sigma - 1, -1, 1)$. At 0 (the default) the gain
-    /// stays at 1.0 and the dynamics are the reference ones. For an engine built from an image,
+    /// stays where it started, 1.0 by default (`synaptic_gain_q16`), and at 1.0 the dynamics are
+    /// the reference ones. For an engine built from an image,
     /// the image's step and gain outrank this one: they change what the run does (§8.3).
     pub control_step_q0_16: u16,
+    /// The synaptic gain an engine starts with (ADR-0196), Q16.16 within the controller's own
+    /// bounds, `GAIN_MIN_Q16` to `GAIN_MAX_Q16` (0.25 to 4): [`Executor::new`] puts it in the
+    /// homeostasis record, whose gain every turn scales its sums by and the controller moves
+    /// while its step is not zero. At 1.0 (`GAIN_ONE_Q16`, the default) the engine is the one it
+    /// was before ADR-0196, bit for bit. Refused outside the bounds. For an engine built from an
+    /// image, the image's gain outranks this one, as its step does (§8.3).
+    pub synaptic_gain_q16: u32,
     /// The sleep shift $k$ of ADR-0037, at most `SLEEP_SHIFT_MAX` (15): the sleep pressure's
     /// time constant is $2^k$ windows awake and $2^{k-2}$ asleep. At 0 (the default) the
     /// pressure and the stage stay where they are: the engine never sleeps and the dynamics
@@ -266,6 +274,7 @@ impl Default for Config {
             amendments: 0,
             modulation_baseline_q16: MODULATION_ONE_Q16,
             control_step_q0_16: 0,
+            synaptic_gain_q16: GAIN_ONE_Q16,
             sleep_shift: 0,
             episodes: 0,
             train_capacity: 0,
@@ -285,6 +294,32 @@ impl Default for Config {
             rate_target_period_ticks: 0,
             rate_read_windows: 0,
             istdp_target_read: false,
+        }
+    }
+}
+
+impl Config {
+    /// The engine's default for an image no derivation has settled (ADR-0196): `Config::default()`
+    /// with five fields set, each what H-41 read of the network's own regime on three networks at
+    /// 1 024 units (ADR-0195), and no other:
+    /// - the modulation at rest 0.5, every rewarded run's lead-in's since brief 027;
+    /// - the gain 1.75, the calibration's first candidate, calibrated on every network derived;
+    /// - the controller's step a sixteenth (H-39, H-40, H-41);
+    /// - the read of the rate's target over 128 windows (H-40, H-41);
+    /// - the read's flag, so that its end sets the inhibitory rule's target too (H-41).
+    ///
+    /// An engine born under it holds its gain at 1.75 for 128 windows, sets both targets from
+    /// the mean count of the last sixteen and runs the rate's rule at a sixteenth from the 129th.
+    /// The sizing is the caller's, by struct update, and the learning configuration stays unset.
+    /// `Config::default()` stays the bare engine, every rule unset, that every pin runs.
+    pub fn reads_its_targets() -> Self {
+        Self {
+            modulation_baseline_q16: 0x8000,
+            synaptic_gain_q16: 0x0001_C000,
+            control_step_q0_16: 0x1000,
+            rate_read_windows: 128,
+            istdp_target_read: true,
+            ..Self::default()
         }
     }
 }
@@ -378,6 +413,9 @@ pub enum ConfigError {
     ModulationOutOfRange,
     /// `control_step_q0_16` is above `CONTROL_STEP_MAX_Q0_16` (ADR-0036).
     ControlStepOutOfRange,
+    /// `synaptic_gain_q16` is outside the controller's bounds, `GAIN_MIN_Q16` to `GAIN_MAX_Q16`
+    /// (ADR-0196).
+    GainOutOfRange,
     /// `sleep_shift` is above `SLEEP_SHIFT_MAX` (ADR-0037).
     SleepShiftOutOfRange,
     /// More episodes than a `u32` index can name (ADR-0038).
@@ -1151,6 +1189,9 @@ impl<const CAP: usize> Executor<CAP> {
         if config.control_step_q0_16 > CONTROL_STEP_MAX_Q0_16 {
             return Err(ConfigError::ControlStepOutOfRange);
         }
+        if !(GAIN_MIN_Q16..=GAIN_MAX_Q16).contains(&config.synaptic_gain_q16) {
+            return Err(ConfigError::GainOutOfRange);
+        }
         if config.sleep_shift > SLEEP_SHIFT_MAX {
             return Err(ConfigError::SleepShiftOutOfRange);
         }
@@ -1248,7 +1289,7 @@ impl<const CAP: usize> Executor<CAP> {
             modulation_inhibitory: AtomicI32::new(INHIBITORY_UNSET),
             sources: (0..config.units).map(|_| AtomicBool::new(true)).collect(),
             targets: (0..config.units).map(|_| AtomicBool::new(true)).collect(),
-            gain: AtomicU32::new(GAIN_ONE_Q16),
+            gain: AtomicU32::new(config.synaptic_gain_q16),
             spikes: (0..workers).map(|_| AtomicU32::new(0)).collect(),
             descendants: (0..workers).map(|_| AtomicU32::new(0)).collect(),
             istdp_alpha: AtomicI32::new(i32::from(istdp_alpha_q1_15(
@@ -1333,8 +1374,10 @@ impl<const CAP: usize> Executor<CAP> {
             rate_target,
             target_read,
             istdp_target_read: config.istdp_target_read,
+            // The gain the configuration starts the engine at (ADR-0196), 1.0 by default.
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
+                synaptic_gain_q16: config.synaptic_gain_q16,
                 sleep_shift: config.sleep_shift,
                 ..HomeostaticDrivePool::new()
             },
@@ -4852,6 +4895,184 @@ mod tests {
         ));
     }
 
+    /// The gain an engine starts with (ADR-0196): 1.0 by default, so that `Config::default()`
+    /// builds the engine it built, its homeostasis record `HomeostaticDrivePool::new()`'s and the
+    /// workers' gain 1.0; from either of the controller's bounds, 0.25 and 4, to the other, the
+    /// record's gain and the workers' the configuration's, the step and the sleep shift beside it
+    /// the configuration's; one LSB past either bound, zero and the width refused.
+    #[test]
+    fn the_gain_an_engine_starts_with_is_one_by_default_and_refused_outside_the_controller_s_bounds()
+     {
+        assert_eq!(Config::default().synaptic_gain_q16, 0x0001_0000);
+        let bare = Executor::<8>::new(Config {
+            units: 4,
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(bare.homeostasis(), &HomeostaticDrivePool::new());
+        assert_eq!(bare.shared.gain.load(Ordering::Relaxed), 0x0001_0000);
+        let with = |gain| {
+            Executor::<8>::new(Config {
+                units: 4,
+                synaptic_gain_q16: gain,
+                control_step_q0_16: 0x1000,
+                sleep_shift: 3,
+                ..Config::default()
+            })
+        };
+        for gain in [
+            0x4000u32,
+            0x4001,
+            0x0001_0000,
+            0x0001_C000,
+            0x0003_FFFF,
+            0x0004_0000,
+        ] {
+            let exec = with(gain).unwrap();
+            assert_eq!(
+                *exec.homeostasis(),
+                HomeostaticDrivePool {
+                    control_step_q0_16: 0x1000,
+                    synaptic_gain_q16: gain,
+                    sleep_shift: 3,
+                    ..HomeostaticDrivePool::new()
+                },
+                "{gain:#x}"
+            );
+            assert_eq!(exec.shared.gain.load(Ordering::Relaxed), gain, "{gain:#x}");
+        }
+        for gain in [0u32, 1, 0x3FFF, 0x0004_0001, u32::MAX] {
+            assert!(
+                matches!(with(gain), Err(ConfigError::GainOutOfRange)),
+                "{gain:#x}"
+            );
+        }
+    }
+
+    /// The engine's default (ADR-0196), field by field against `Config::default()`: the
+    /// modulation at rest 0.5, the gain 1.75, the step a sixteenth, the read 128 windows and its
+    /// flag set, each other than the bare engine's; and with those five put back, the bare engine,
+    /// so that every other field — the sizing, the rate's target, the inhibitory period and the
+    /// whole learning configuration — is `Config::default()`'s.
+    #[test]
+    fn reads_its_targets_is_the_default_with_adr_0196_s_five_values_and_no_other() {
+        let (default, bare) = (Config::reads_its_targets(), Config::default());
+        assert_eq!(
+            (
+                default.modulation_baseline_q16,
+                default.synaptic_gain_q16,
+                default.control_step_q0_16,
+                default.rate_read_windows,
+                default.istdp_target_read
+            ),
+            (0x8000, 0x0001_C000, 0x1000, 128, true),
+            "ADR-0196's five values"
+        );
+        assert_eq!(
+            (
+                bare.modulation_baseline_q16,
+                bare.synaptic_gain_q16,
+                bare.control_step_q0_16,
+                bare.rate_read_windows,
+                bare.istdp_target_read
+            ),
+            (0x0001_0000, 0x0001_0000, 0, 0, false),
+            "the bare engine's, each other than the default's"
+        );
+        assert_eq!(
+            Config {
+                modulation_baseline_q16: bare.modulation_baseline_q16,
+                synaptic_gain_q16: bare.synaptic_gain_q16,
+                control_step_q0_16: bare.control_step_q0_16,
+                rate_read_windows: bare.rate_read_windows,
+                istdp_target_read: bare.istdp_target_read,
+                ..default.clone()
+            },
+            bare,
+            "every other field the bare engine's"
+        );
+        assert_eq!(
+            (
+                default.rate_target_period_ticks,
+                default.istdp_target_period_ticks,
+                default.inhibitory_baseline_q16,
+                default.signed_gate,
+                default.critic,
+                default.critic_window_ticks,
+                default.whole_punishment
+            ),
+            (0, ISTDP_TARGET_PERIOD_TICKS, None, false, None, 0, false),
+            "no target set, the inhibitory period the default's, the learning configuration unset"
+        );
+    }
+
+    /// An engine born under the default (ADR-0196): reading, 128 windows left and nothing summed,
+    /// at the gain 1.75 and the step a sixteenth, its flag set, no target and the inhibitory
+    /// period the default's, at the modulation 0.5 with the learning configuration unset; its
+    /// image, decoded under the bare engine's configuration, is the same engine, read back whole
+    /// and written again byte for byte.
+    #[test]
+    fn an_engine_born_under_the_default_reads_at_1_75_with_its_flag_and_its_image_reads_back_alike()
+    {
+        type Readings = (
+            Option<TargetRead>,
+            bool,
+            u32,
+            Option<u32>,
+            u32,
+            i32,
+            HomeostaticDrivePool,
+        );
+        let readings = |exec: &Executor<8>| -> Readings {
+            (
+                exec.target_read(),
+                exec.istdp_target_read(),
+                exec.rate_target_period_ticks(),
+                exec.rate_target_per_window(),
+                exec.istdp_target_period_ticks(),
+                exec.modulation_baseline_q16(),
+                *exec.homeostasis(),
+            )
+        };
+        let born = Executor::<8>::new(Config {
+            units: 1024,
+            ..Config::reads_its_targets()
+        })
+        .unwrap();
+        let expected: Readings = (
+            Some(TargetRead::Reading { left: 128, sum: 0 }),
+            true,
+            0,
+            None,
+            ISTDP_TARGET_PERIOD_TICKS,
+            0x8000,
+            HomeostaticDrivePool {
+                control_step_q0_16: 0x1000,
+                synaptic_gain_q16: 0x0001_C000,
+                ..HomeostaticDrivePool::new()
+            },
+        );
+        assert_eq!(readings(&born), expected);
+        assert_eq!(
+            (
+                born.inhibitory_baseline_q16(),
+                born.signed_gate(),
+                born.critic(),
+                born.whole_punishment()
+            ),
+            (None, false, None, false),
+            "the learning configuration unset"
+        );
+        let image = crate::Image::encode(&born).unwrap();
+        let loaded = crate::Image::decode::<8>(&image, Config::default()).unwrap();
+        assert_eq!(readings(&loaded), expected, "read back whole");
+        assert_eq!(loaded.units().len(), 1024);
+        assert!(
+            crate::Image::encode(&loaded).unwrap() == image,
+            "written again byte for byte"
+        );
+    }
+
     /// The whole punishment's composition (ADR-0155), each number from an oracle written from
     /// ADR-0154's text: two engines of four armed units, one with the parameter unset and one
     /// with it set, given the same kicks, the same weights written by hand before each window
@@ -5563,6 +5784,66 @@ mod prop {
             ),
             (0x4000, 0x4000),
             "above zero, one number"
+        );
+    }
+}
+
+/// The lattice property (ADR-0030) of the gain an engine starts with (ADR-0196): over the
+/// lattice, both bounds and their neighbours, and a seeded walk inside the bounds and across the
+/// width, an engine is built exactly where an oracle written from ADR-0196's text accepts the
+/// gain, 0.25 to 4 inclusive, its homeostasis record's gain and the workers' the configuration's;
+/// everywhere else it is refused with `GainOutOfRange`.
+#[cfg(test)]
+mod gain_prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    #[test]
+    fn an_engine_is_built_at_a_gain_exactly_where_the_controller_s_bounds_hold_it() {
+        let mut rng = Lcg::new(0x0196);
+        let mut gains: Vec<u32> = U32_LATTICE.to_vec();
+        gains.extend([
+            0x3FFF,
+            0x4000,
+            0x4001,
+            0x0003_FFFF,
+            0x0004_0000,
+            0x0004_0001,
+        ]);
+        for round in 0..1_000u32 {
+            gains.push(match round % 3 {
+                0 => 0x4000u32.saturating_add(rng.below(0x0003_C001)),
+                1 => rng.u32_edge_biased(),
+                _ => rng.next_u32(),
+            });
+        }
+        let (mut built, mut refused) = (0u32, 0u32);
+        for &gain in &gains {
+            let by_hand = (0x4000..=0x0004_0000).contains(&gain);
+            match Executor::<8>::new(Config {
+                units: 2,
+                synaptic_gain_q16: gain,
+                ..Config::default()
+            }) {
+                Ok(exec) => {
+                    assert!(by_hand, "{gain:#x} built");
+                    assert_eq!(exec.homeostasis().synaptic_gain_q16, gain);
+                    assert_eq!(exec.shared.gain.load(Ordering::Relaxed), gain);
+                    built = built.wrapping_add(1);
+                }
+                Err(error) => {
+                    assert!(!by_hand, "{gain:#x} refused");
+                    assert_eq!(error, ConfigError::GainOutOfRange, "{gain:#x}");
+                    refused = refused.wrapping_add(1);
+                }
+            }
+        }
+        assert!(
+            built > 300 && refused > 300,
+            "the walk met both sides: {built} built, {refused} refused"
         );
     }
 }
