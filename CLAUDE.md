@@ -97,8 +97,13 @@ standing changes.
   lead-in, each settled image carrying 13.4 to 14.0 per cent more inhibition, and the engine learns
   and revises the two-alternative task as under H-40: H-41 read yes, as predicted, with all three
   of its predicted readings ([ADR-0195](docs/adr/0195-the-inhibitory-target-by-the-same-read-measured.md)).
-  What the engine carries by default is not decided. Every learning result before H-38 stands
-  with the gain held and the controller off.
+  What the engine carries by default for an image no derivation has settled is
+  `Config::reads_its_targets()` ([ADR-0196](docs/adr/0196-the-engines-default.md), built by
+  [ADR-0198](docs/adr/0198-the-engines-default-built.md)): `Config::default()` with what H-41 read
+  of the network's own regime — the modulation at rest 0.5, the gain 1.75, the rate's rule at a
+  sixteenth, the read of 128 windows and both targets by it. An engine born under it writes H-41's
+  candidate's image byte for byte on the three networks; `Config::default()` stays the bare engine
+  every pin runs. Every learning result before H-38 stands with the gain held and the controller off.
   The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
   ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
   - the excitatory synapses under the reward's gate, with the signed gate set;
@@ -118,12 +123,14 @@ standing changes.
   run's configuration sets (ADR-0163, ADR-0164); the controller's step under its estimate is zero
   in every run that learns (ADR-0077, ADR-0177), the rate's rule is set in H-38's to H-41's
   runs and in no other (ADR-0181, ADR-0183, ADR-0190, ADR-0195), the read of its target in H-40's
-  and H-41's, and the read's flag for the inhibitory target in H-41's alone; the speed line is closed with the sweep kept
+  and H-41's, and the read's flag for the inhibitory target in H-41's alone; all three are also
+  set in the default, under which no tick has run (ADR-0198); the speed line is closed with the sweep kept
   and the lanes reverted ([ADR-0105](docs/adr/0105-the-speed-line-closed.md)).
 - **What does not exist.** Every subsystem's real dynamics beyond these rules; the lookahead
   ADR-0099 ordered and a lever on the rest of the turn; the real-time mode's reach measured on the
   reference platform; the `mmap` path, the shared-memory mappings and core pinning; the tool broker;
-  standardising apart; a target rate chosen for the engine's default; the per-unit gain of §8.8.
+  standardising apart; the default run on a network, a size or a generator H-41 did not run; the
+  per-unit gain of §8.8.
 - **The next round** is the live brief in [briefs/](briefs/README.md), if there is one; the decision
   behind it is the newest ADR in the index.
 
