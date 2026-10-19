@@ -1,19 +1,24 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-19
 affectedFiles: [runtime/cortex-runtime/src/**, runtime/cortex-runtime/tests/**, crates/cortex-connectome/src/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
 protectedFiles: [crates/cortex-core/src/**, crates/cortex-homeostasis/src/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, scripts/check-archive.mjs, scripts/check-scope.mjs, scripts/check-explorations.mjs, .spec-brief.json, rust-toolchain.toml, Cargo.toml, Cargo.lock]
+integrity: sha256-2c0f8daca9a9fb0ce37ea11505e693787ae9b57e7dac1f78547373641227b782
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-19 (UTC) in pull request [#220](https://github.com/DescentVTT/VirtualCortex/pull/220).** Brief 075 built ADR-0192's flag and ran H-41 once. ADR-0194 builds it as Config::istdp_target_read at the modulator section's [26], the image at format 24, unset bit for bit: beside a read, the read's last window sets the inhibitory rule's period to the rate's. ADR-0195 writes H-41's protocol before any lead-in with the flag set, corrects the harness's twin check after a trial caught it, and reads H-41 yes, as predicted, with all three predicted readings: on seeds 22, 23 and 24 the inhibitory sum stops falling after the read, each settled image carrying 13.4 to 14.0 per cent more inhibition than its twin under H-40, and both arms on every network learn every mapping and pass every reversal in 9 to 16 blocks. The stopping rule reaches step 3; the engine's default for an image no derivation has settled is the next decision, named and not taken. F-70 records a mislabelled column in ADR-0192. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 075: The inhibitory target by the same read — ADR-0192's question: with a flag set, the engine's read sets the inhibitory rule's period beside the rate's at its end, and the rest of the lead-in settles under the network's own targets, on seeds 22, 23 and 24 at 1 024 units at a sixteenth, H-25's two arms on each; the flag built in the engine at format 24; H-41 run once, its runs dispatched
 
 ## Mission
 
 **This brief builds one thing in the engine and runs one hypothesis once.** H-40 read that the engine can read its
-own rate target ([ADR-0190](../docs/adr/0190-a-target-the-engine-reads-measured.md)). The inhibitory rule's
+own rate target ([ADR-0190](../../docs/adr/0190-a-target-the-engine-reads-measured.md)). The inhibitory rule's
 target is still the derivation's. The derivation settles every network under the rule's default, 20 000 ticks
 (5 Hz), and writes the network's own period only into the arms' images.
-[ADR-0192](../docs/adr/0192-the-inhibitory-target-by-the-same-read.md) gives the read a flag: set, the read sets the
+[ADR-0192](../../docs/adr/0192-the-inhibitory-target-by-the-same-read.md) gives the read a flag: set, the read sets the
 inhibitory rule's period beside the rate's at its end, so the rest of the lead-in settles under the network's own
 targets.
 
@@ -26,7 +31,7 @@ When the round is done, the tree holds:
 - H-41's verdict per network, arm and clause, and **the step of its stopping rule reached**, with the next decision
   it names and does not take.
 
-**This is the first brief that declares its scope** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)).
+**This is the first brief that declares its scope** ([ADR-0191](../../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)).
 `affectedFiles` and `protectedFiles` above are what the round may and may not write.
 `spec-brief archive --strict` refuses the round otherwise. `briefs/README.md` says what to do with a file the scope
 does not hold.
@@ -68,18 +73,18 @@ does not hold.
   included.
 - **No capacity of a run's configuration is reached silently.**
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
 - A change to a record's or a section's bytes bumps the image's version, updates its table in whitepaper §5.2, and
   gets a changelog entry, in the same pull request.
 - A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test
-  ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of
+  ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of
   `testkit/prop.rs`, and the pull request's mutation gate catches every mutant in the lines it changes
-  ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The pull request leaves draft with the commit that asks for the merge**, which sets the round's ADRs to
   `accepted`.
 - **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards
-  ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's
+  ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's
   minutes.
 - No pinned number of an earlier round moves, but the whole-image pins by the format's mask.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
