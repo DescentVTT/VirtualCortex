@@ -1,6 +1,21 @@
 {
-  "patterns": ["docs/**/*.md", "briefs/**/*.md", "README.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "CLAUDE.md"],
-  "historyPatterns": ["CHANGELOG.md"],
-  "ignoreReferences": ["LICENSE-*", "../LICENSE-*", "**/LICENSE-*"],
+  "patterns": [
+    "docs/**/*.md",
+    "briefs/**/*.md",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "CLAUDE.md"
+  ],
+  "historyPatterns": [
+    "CHANGELOG.md",
+    "docs/explorations/[0-9]*.md"
+  ],
+  "ignoreReferences": [
+    "LICENSE-*",
+    "../LICENSE-*",
+    "**/LICENSE-*"
+  ],
   "strict": true
 }

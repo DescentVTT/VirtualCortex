@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "spec": "npm run spec:guard && npm run spec:prove && npm run spec:graph && npm run spec:briefs && npm run spec:archive && npm run spec:archive:test && npm run spec:scope && npm run spec:scope:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:version && npm run spec:version:test && npm run spec:scripts:test && npm run spec:deps && npm run spec:costs && npm run spec:costs:test && npm run mutants:timeouts:test",
+    "spec": "npm run spec:guard && npm run spec:prove && npm run spec:graph && npm run spec:briefs && npm run spec:archive && npm run spec:archive:test && npm run spec:scope && npm run spec:scope:test && npm run spec:explorations && npm run spec:explorations:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:version && npm run spec:version:test && npm run spec:scripts:test && npm run spec:deps && npm run spec:costs && npm run spec:costs:test && npm run mutants:timeouts:test",
     "spec:guard": "spec-guard \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --verbose --ignore-status",
     "spec:prove": "spec-guard prove \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --ignore-status",
     "spec:graph": "spec-graph check",
@@ -17,6 +17,8 @@
     "spec:archive:test": "node --test scripts/check-archive.test.mjs",
     "spec:scope": "node scripts/check-scope.mjs",
     "spec:scope:test": "node --test scripts/check-scope.test.mjs",
+    "spec:explorations": "node scripts/check-explorations.mjs",
+    "spec:explorations:test": "node --test scripts/check-explorations.test.mjs",
     "spec:decisions": "node scripts/check-decisions.mjs",
     "spec:decisions:test": "node --test scripts/check-decisions.test.mjs",
     "spec:version": "node scripts/check-version.mjs",
