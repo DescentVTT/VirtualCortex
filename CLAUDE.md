@@ -250,6 +250,7 @@ git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff tar
 # 3. By dispatch alone, never on the developer machine
 gh workflow run ci.yml --ref <branch> -f scope=exhaustive   # every whole-domain test, eighteen shards; a calibration adds -f exclude='<the round's own tests>'
 gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'   # a round's arms, lead-ins and trials: one job a test on AArch64, its output kept
+gh workflow run ci.yml --ref explore/NNN-<slug> -f scope=arms -f tests='<test>_explore ...'   # an exploration's runs, as often as it needs (docs/explorations/)
 ```
 
 The mutation line is the gate a pull request meets: every mutant `cargo-mutants` can make in the
@@ -265,7 +266,7 @@ figure is recorded there as not admissible and is never written into the whitepa
 
 `npm run spec` is `spec:guard` (executable assertions in the documents against `crates/`),
 `spec:graph` (cross-document consistency: links, ADR lifecycle, open obligations) and
-`spec:prove` (each assertion is shown a violation of itself and must fail it, so none passes over nothing), `spec:briefs` (`spec-brief lint` over `.spec-brief.json`: every live brief carries its mandatory sections in order and a Latest ≠ Newest standing directive, and no archived brief has changed since its hash), `spec:archive` (every archived brief carries that hash, [ADR-0185](docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md); `spec:archive:test` tests the checker), `spec:scope` (from brief 075 every brief declares `affectedFiles` and `protectedFiles`, and none protects less than its copy on `origin/main`, [ADR-0191](docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md); `spec:scope:test` tests the checker), `spec:decisions` (every ADR has its row in whitepaper §9 and in `docs/adr/README.md`, F-41; `spec:decisions:test` tests the checker), `spec:version` (the whitepaper's front matter and its Document control table declare the same version and date, F-43; on a pull request CI runs it again against the base, and a change to the document with its version left behind fails, [ADR-0064](docs/adr/0064-the-documentation-gate-and-the-version.md)) `spec:deps` (state crates declare
+`spec:prove` (each assertion is shown a violation of itself and must fail it, so none passes over nothing), `spec:briefs` (`spec-brief lint` over `.spec-brief.json`: every live brief carries its mandatory sections in order and a Latest ≠ Newest standing directive, and no archived brief has changed since its hash), `spec:archive` (every archived brief carries that hash, [ADR-0185](docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md); `spec:archive:test` tests the checker), `spec:explorations` (every note in `docs/explorations/` is marked exploratory with its branch, commit and runs, and no ADR cites one outside its Context, [ADR-0193](docs/adr/0193-an-exploration-lane.md); `spec:explorations:test` tests the checker), `spec:scope` (from brief 075 every brief declares `affectedFiles` and `protectedFiles`, and none protects less than its copy on `origin/main`, [ADR-0191](docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md); `spec:scope:test` tests the checker), `spec:decisions` (every ADR has its row in whitepaper §9 and in `docs/adr/README.md`, F-41; `spec:decisions:test` tests the checker), `spec:version` (the whitepaper's front matter and its Document control table declare the same version and date, F-43; on a pull request CI runs it again against the base, and a change to the document with its version left behind fails, [ADR-0064](docs/adr/0064-the-documentation-gate-and-the-version.md)) `spec:deps` (state crates declare
 no dependencies, TC-2) and `spec:costs` (every line of the whole-domain tests' cost table names a test in the tree, ADR-0092; `spec:costs:test` tests the deal). Each fails with a file and line.
 
 CI runs `npm run spec`, one step and the same command, so a check inside it is enforced and a check outside it is enforced nowhere: `spec:decisions` was added to the gate and to three documents on 2026-09-20 and to the workflow not at all (F-44). `spec:scripts:test` holds the list to running every `spec:*` and every `*:test` script.
@@ -279,6 +280,9 @@ CI runs `npm run spec`, one step and the same command, so a check inside it is e
   it or its pull request is open ([ADR-0186](docs/adr/0186-merge-commits.md)).
 - A change to a record and the change to its documentation travel in the same PR.
 - A rule change is an ADR first (`status: proposed`), accepted on merge.
+- A question with no prediction is an exploration, not a round: `…_explore` tests on a kept
+  `explore/NNN-…` branch, dispatched at `scope=arms`, written down as a note in `docs/explorations/`
+  that decides nothing ([ADR-0193](docs/adr/0193-an-exploration-lane.md)).
 - To execute a brief: read `briefs/README.md`, then the brief, then the files it names. When done,
   archive it as that README says, with the frozen banner and every deliverable dispositioned.
 - From brief 075 a round writes inside its brief's `affectedFiles` and never into its
