@@ -120,7 +120,7 @@ are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The gain's field and the default, built in the engine, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The gain's field and the default, built in the engine, in a new ADR at the next free number (`ls docs/adr`).**
   - `Config::synaptic_gain_q16`, default `GAIN_ONE_Q16`. A new `ConfigError` refuses it outside the controller's
     bounds, and `Executor::new` starts the homeostasis record's gain at it.
   - For an engine built from an image, the image's gain outranks it.
@@ -132,18 +132,18 @@ are what to re-derive.
     - an engine built from it reading (128 windows left, the sum 0), at 1.75, its flag set, its image read back to
       the same engine;
     - an image's gain outranking the configuration's.
-- [ ] **H-41's candidate, byte for byte.** On each of seeds 22, 23 and 24 at 1 024 units, the image of an engine
+- [x] **H-41's candidate, byte for byte.** On each of seeds 22, 23 and 24 at 1 024 units, the image of an engine
   built from `reads_its_targets()` with H-41's sizing, its arenas synthesized from the network's prior, equals the
   image of H-41's candidate before its lead-in.
-- [ ] **The dispatch**, at `scope=both`, once the last commit under `src/` and `tests/` is pushed. Its eighteen
+- [x] **The dispatch**, at `scope=both`, once the last commit under `src/` and `tests/` is pushed. Its eighteen
   whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from it.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - What was built, and that `Config::default()` builds the engine it built.
   - The byte-for-byte check per network.
   - The dispatch with its run id and commit, each shard's job time against its bound, and whether the sweep had
     ended.
   - Brief 075's sweep, if this ADR is the first to merge after it ends.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper: §8.8's rate row naming the default as Implemented; where the configuration's fields are described,
     the gain's; and §9.
   - The ADR index and `CHANGELOG.md`.
@@ -151,7 +151,7 @@ are what to re-derive.
     engine's default"* among what does not exist.
   - `README.md` and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 076 --strict`, every deliverable dispositioned. The round's ADR
+- [x] **The brief archived** with `spec-brief archive 076 --strict`, every deliverable dispositioned. The round's ADR
   is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
