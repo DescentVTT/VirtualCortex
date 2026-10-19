@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-19
 title: One place for each kind of fact
 kind: process
