@@ -18,7 +18,10 @@
 
 #![deny(clippy::arithmetic_side_effects)]
 
-use cortex_core::{STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16};
+use cortex_connectome::{CortexFileHeader, SECTION_MODULATOR, SectionEntry, crc64};
+use cortex_core::{
+    ISTDP_TARGET_PERIOD_TICKS, STP_MAX, STP_U, THRESHOLD_BASE, spike_message, synaptic_efficacy_q16,
+};
 use cortex_homeostasis::{
     ACTIVITY_BIN_SHIFT, ACTIVITY_WINDOW_BINS, ACTIVITY_WINDOW_SHIFT, CONTROL_STEP_MAX_Q0_16,
     GAIN_MAX_Q16, GAIN_ONE_Q16, HomeostaticDrivePool, SIGMA_MAX_Q16,
@@ -1012,5 +1015,341 @@ fn a_read_round_trips_mid_window_and_a_loaded_engine_reads_and_regulates_alike()
     assert!(
         gains[14..].iter().any(|&g| g != GAIN_ONE_Q16),
         "the rule moved it after the read, against {target}: {gains:?}"
+    );
+}
+
+/// The windows of the read of seventeen in
+/// `under_a_read_the_gain_is_held_the_last_sixteen_summed_and_the_rule_runs_from_the_next_window`:
+/// the first growing by a tenth a bin from three spikes, not summed; then fifteen of ten spikes a
+/// bin and one with seven bins of eleven, 15 x 320 + 327 = 5 127, a mean of 320.
+fn seventeen_windows() -> Vec<[u32; ACTIVITY_WINDOW_BINS as usize]> {
+    let mut growth = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    let mut x = 3_000u64;
+    for c in growth.iter_mut() {
+        *c = (x / 1_000) as u32;
+        x = x.wrapping_mul(11) / 10;
+    }
+    let at_target = [RATE_TARGET / 32; ACTIVITY_WINDOW_BINS as usize];
+    let mut above = at_target;
+    for c in above.iter_mut().take(7) {
+        *c = c.wrapping_add(1);
+    }
+    let mut windows = vec![growth];
+    windows.extend([at_target; 15]);
+    windows.push(above);
+    windows
+}
+
+/// The inhibitory target by the same read (ADR-0192, ADR-0194): beside the read of seventeen
+/// windows above, an engine with the flag set and one with it unset run the same designed
+/// windows. At every window of the read the two are one — the record, held, the read's progress
+/// and the rate's target — and the inhibitory rule's period is the configuration's, 20 000, on
+/// both, the flag still set; at the read's last window, and not before, the engine with the flag
+/// holds the inhibitory period at the rate's, 26 214, and the flag is spent, where the other still
+/// holds 20 000. An image written then loads with both periods, and neither the read nor the
+/// flag.
+#[test]
+fn with_the_flag_the_read_sets_the_inhibitory_target_at_its_last_window_and_not_before() {
+    let reading = |flag: bool| Config {
+        rate_read_windows: 17,
+        istdp_target_read: flag,
+        ..config(2, 0, STEP)
+    };
+    let mut set = Executor::<64>::new(reading(true)).unwrap();
+    let mut unset = Executor::<64>::new(reading(false)).unwrap();
+    arm(&mut set);
+    arm(&mut unset);
+    assert_eq!(
+        (set.istdp_target_read(), unset.istdp_target_read()),
+        (true, false)
+    );
+    let mut oracle = HomeostaticDrivePool {
+        control_step_q0_16: STEP,
+        ..HomeostaticDrivePool::new()
+    };
+    let mut oracle_unset = oracle;
+    let windows = seventeen_windows();
+    for (k, counts) in windows.iter().enumerate() {
+        designed_window_then(&mut set, &mut oracle, counts, |o| {
+            o.hold();
+        });
+        designed_window_then(&mut unset, &mut oracle_unset, counts, |o| {
+            o.hold();
+        });
+        assert_eq!(*set.homeostasis(), oracle, "window {k}, held");
+        assert_eq!(
+            (
+                set.homeostasis(),
+                set.target_read(),
+                set.rate_target_period_ticks()
+            ),
+            (
+                unset.homeostasis(),
+                unset.target_read(),
+                unset.rate_target_period_ticks()
+            ),
+            "window {k}: the read as with the flag unset"
+        );
+        let last = k.wrapping_add(1) == windows.len();
+        assert_eq!(
+            (set.istdp_target_period_ticks(), set.istdp_target_read()),
+            if last {
+                (RATE_PERIOD, false)
+            } else {
+                (ISTDP_TARGET_PERIOD_TICKS, true)
+            },
+            "window {k}: the inhibitory period set at the read's last window and not before"
+        );
+        assert_eq!(
+            (unset.istdp_target_period_ticks(), unset.istdp_target_read()),
+            (ISTDP_TARGET_PERIOD_TICKS, false),
+            "window {k}: unset, the configuration's period"
+        );
+    }
+    assert_eq!(
+        (
+            set.target_read(),
+            set.rate_target_period_ticks(),
+            set.rate_target_per_window()
+        ),
+        (None, RATE_PERIOD, Some(RATE_TARGET))
+    );
+    let loaded = Image::decode::<64>(&Image::encode(&set).unwrap(), config(2, 0, 0)).unwrap();
+    assert_eq!(
+        (
+            loaded.target_read(),
+            loaded.istdp_target_read(),
+            loaded.rate_target_period_ticks(),
+            loaded.istdp_target_period_ticks(),
+            *loaded.homeostasis()
+        ),
+        (None, false, RATE_PERIOD, RATE_PERIOD, oracle),
+        "the image after the read: both periods, no read and no flag"
+    );
+    let loaded_unset =
+        Image::decode::<64>(&Image::encode(&unset).unwrap(), config(2, 0, 0)).unwrap();
+    assert_eq!(
+        (
+            loaded_unset.rate_target_period_ticks(),
+            loaded_unset.istdp_target_period_ticks()
+        ),
+        (RATE_PERIOD, ISTDP_TARGET_PERIOD_TICKS)
+    );
+    assert_eq!(set.ticks(), 17 * WINDOW);
+}
+
+/// A period the inhibitory rule refuses ends the read refused (ADR-0194): sixteen windows of eight
+/// spikes on 64 units are a mean of eight, whose period, 1 048 576 ticks, the rate's target
+/// accepts, at eight spikes a window, and the inhibitory rule refuses, past its 1 000 000. With
+/// the flag unset the read ends in that target; with it set the read ends refused, the gain held
+/// from there on and the inhibitory period left at 20 000, and the writer refuses its image.
+#[test]
+fn a_read_whose_period_the_inhibitory_rule_refuses_ends_refused_with_the_flag() {
+    let mut sparse = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    for c in sparse.iter_mut().take(8) {
+        *c = 1;
+    }
+    let reading = |flag: bool| Config {
+        rate_read_windows: 16,
+        istdp_target_read: flag,
+        ..config(2, 0, STEP)
+    };
+    let mut ends = Vec::new();
+    for flag in [false, true] {
+        let mut exec = Executor::<64>::new(reading(flag)).unwrap();
+        arm(&mut exec);
+        let mut oracle = HomeostaticDrivePool {
+            control_step_q0_16: STEP,
+            ..HomeostaticDrivePool::new()
+        };
+        for k in 0..16u8 {
+            designed_window_then(&mut exec, &mut oracle, &sparse, |o| {
+                o.hold();
+            });
+            assert_eq!(*exec.homeostasis(), oracle, "window {k}, held");
+        }
+        ends.push((
+            exec.target_read(),
+            exec.rate_target_period_ticks(),
+            exec.rate_target_per_window(),
+            exec.istdp_target_period_ticks(),
+            exec.istdp_target_read(),
+        ));
+        if flag {
+            designed_window_then(&mut exec, &mut oracle, &sparse, |o| {
+                o.hold();
+            });
+            assert_eq!(
+                (*exec.homeostasis(), exec.homeostasis().synaptic_gain_q16),
+                (oracle, GAIN_ONE_Q16),
+                "refused, the gain held from there on"
+            );
+            assert!(matches!(
+                Image::encode(&exec),
+                Err(ImageError::Config(ConfigError::RateTargetOutOfRange))
+            ));
+        }
+    }
+    assert_eq!(
+        ends,
+        [
+            (None, 1_048_576, Some(8), ISTDP_TARGET_PERIOD_TICKS, false),
+            (
+                Some(TargetRead::Refused),
+                0,
+                None,
+                ISTDP_TARGET_PERIOD_TICKS,
+                false
+            ),
+        ]
+    );
+}
+
+/// The same image with the modulator section's byte `at` written `value` and the section
+/// resealed.
+fn with_modulator_byte(image: &[u8], at: usize, value: u8) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for entry_at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[entry_at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_MODULATOR {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            img[offset..][at] = value;
+            entry.crc64 = crc64(&img[offset..][..length]);
+            img[entry_at..][..64].copy_from_slice(&entry.encode());
+            return img;
+        }
+    }
+    panic!("the image holds a modulator section");
+}
+
+/// A read with the flag round-trips through the image mid-window (ADR-0194): on the recurrent
+/// network of `a_read_round_trips_mid_window_and_a_loaded_engine_reads_and_regulates_alike`, an
+/// image written in the read's third window carries the flag at `[26]` and loads with it whatever
+/// the configuration says, and the loaded engine and one on four workers finish the read as the
+/// engine that wrote it does, window for window, each setting both periods at the read's last;
+/// the same image with the flag's byte cleared loads unset, reads alike, and ends the read with
+/// the inhibitory period the configuration's.
+#[test]
+fn a_read_with_the_flag_round_trips_mid_window_and_a_loaded_engine_sets_both_periods_alike() {
+    let reading = |workers: usize| Config {
+        rate_read_windows: 16,
+        istdp_target_read: true,
+        ..config(workers, 2 * UNITS, STEP)
+    };
+    let mut exec = Executor::<64>::new(reading(2)).unwrap();
+    wire_recurrent(&mut exec);
+    let mut four = Executor::<64>::new(reading(4)).unwrap();
+    wire_recurrent(&mut four);
+    let mut unit = 0u32;
+    let mut unit_four = 0u32;
+    for _ in 0..2 {
+        drive_window(&mut exec, 6_000, &mut unit);
+        drive_window(&mut four, 6_000, &mut unit_four);
+    }
+    let inject = exec.injector();
+    let inject_four = four.injector();
+    for _ in 0..5 {
+        exec.run(3_000);
+        four.run(3_000);
+        kick(&inject, unit);
+        kick(&inject_four, unit_four);
+        unit = unit.wrapping_add(1);
+        unit_four = unit_four.wrapping_add(1);
+    }
+    let mut waited = 0u64;
+    while !exec.is_quiescent() {
+        exec.tick();
+        four.tick();
+        waited = waited.wrapping_add(1);
+        assert!(waited < 40_000, "the network falls quiet");
+    }
+    let written = exec.target_read();
+    assert!(
+        matches!(written, Some(TargetRead::Reading { left: 14, sum }) if sum > 0),
+        "two windows of sixteen read and summed: {written:?}"
+    );
+    assert!(exec.istdp_target_read() && exec.homeostasis().window_bins > 0);
+    let image = Image::encode(&exec).unwrap();
+    for config in [
+        config(2, 0, 0),
+        Config {
+            rate_read_windows: 128,
+            ..config(2, 0, 0)
+        },
+    ] {
+        let loaded = Image::decode::<64>(&image, config).unwrap();
+        assert_eq!(
+            (loaded.target_read(), loaded.istdp_target_read()),
+            (written, true),
+            "the image's read and its flag outrank the configuration's"
+        );
+    }
+    let cleared = with_modulator_byte(&image, 26, 0);
+    assert_ne!(cleared, image, "the flag at `[26]`");
+    assert_eq!(with_modulator_byte(&cleared, 26, 1), image);
+    let mut loaded = Image::decode::<64>(&image, config(2, 0, 0)).unwrap();
+    let mut without = Image::decode::<64>(&cleared, config(2, 0, 0)).unwrap();
+    assert_eq!(
+        (without.target_read(), without.istdp_target_read()),
+        (written, false)
+    );
+    let state = |e: &Executor<64>| {
+        (
+            *e.homeostasis(),
+            e.target_read(),
+            e.rate_target_period_ticks(),
+            e.istdp_target_period_ticks(),
+            e.istdp_target_read(),
+        )
+    };
+    let mut unit_copy = unit;
+    let mut unit_without = unit;
+    for window in 3..=18u32 {
+        drive_window(&mut exec, 6_000, &mut unit);
+        drive_window(&mut loaded, 6_000, &mut unit_copy);
+        drive_window(&mut four, 6_000, &mut unit_four);
+        drive_window(&mut without, 6_000, &mut unit_without);
+        assert_eq!(
+            state(&loaded),
+            state(&exec),
+            "window {window}: loaded alike"
+        );
+        assert_eq!(
+            state(&four),
+            state(&exec),
+            "window {window}: four workers alike"
+        );
+        assert_eq!(
+            (
+                *without.homeostasis(),
+                without.target_read(),
+                without.rate_target_period_ticks()
+            ),
+            (
+                *exec.homeostasis(),
+                exec.target_read(),
+                exec.rate_target_period_ticks()
+            ),
+            "window {window}: the read itself the flag's twin"
+        );
+        assert_eq!(
+            (exec.istdp_target_period_ticks(), exec.istdp_target_read()),
+            if window >= 16 {
+                (exec.rate_target_period_ticks(), false)
+            } else {
+                (ISTDP_TARGET_PERIOD_TICKS, true)
+            },
+            "window {window}: both periods one from the read's end"
+        );
+        assert_eq!(
+            without.istdp_target_period_ticks(),
+            ISTDP_TARGET_PERIOD_TICKS
+        );
+    }
+    assert_eq!(
+        exec.target_read(),
+        None,
+        "the read ended at its sixteenth window"
     );
 }
