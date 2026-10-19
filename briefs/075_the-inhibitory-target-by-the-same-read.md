@@ -139,7 +139,7 @@ quoted sentences are what to re-derive.
 
 ## Deliverables
 
-- [ ] **The flag, built in the engine, in a new ADR at the next free number (`ls docs/adr`).**
+- [x] **The flag, built in the engine, in a new ADR at the next free number (`ls docs/adr`).**
   - ADR-0192's flag at `[26]`.
   - The read sets the inhibitory period beside the rate's at its end, through `set_istdp_target_period`.
   - Refused: the flag without the read, and a mean whose period the inhibitory rule would refuse.
@@ -151,7 +151,7 @@ quoted sentences are what to re-derive.
     - an image written during the read with the flag set reading back to the same run;
     - the inhibitory period set exactly at the read's last window and not before.
   - The whole-image pins moved by the format's mask alone.
-- [ ] **H-41's protocol, in a new ADR at the next free number, before any lead-in is run with the flag set.**
+- [x] **H-41's protocol, in a new ADR at the next free number, before any lead-in is run with the flag set.**
   - The networks, the read, the step and the flag.
   - What holds a derivation with the flag set, where none has a pin.
   - H-41's clauses and constants, restated from ADR-0192 and pinned in the tests.
@@ -160,19 +160,19 @@ quoted sentences are what to re-derive.
     - each arm's mean count a window within one per cent of its read target;
     - through each arm the gain after every window within 1.6625 and 1.8375.
   - The readings, no clause, as ADR-0192 lists them.
-- [ ] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests.
+- [x] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests.
   Every pinned number of the tree holds at format 24 with the flag unset, H-40's derivations and six arms among them.
-- [ ] **The derivations with the flag set on the three networks**, each a weekly `exhaustive` test, run once by a
+- [x] **The derivations with the flag set on the three networks**, each a weekly `exhaustive` test, run once by a
   dispatch at `scope=arms`. Pinned from that run:
   - the lead-in by window, the inhibitory sum among it;
   - the read and the period both rules took;
   - what each rule returned, or that it returned nothing;
   - the frozen block's readings, and the frozen copy's period beside the read's.
-- [ ] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a
+- [x] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a
   dispatch at `scope=arms`, their tables pinned per block.
-- [ ] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen
+- [x] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen
   whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
-- [ ] **The ADR's reading.**
+- [x] **The ADR's reading.**
   - H-41's verdict per network, arm and clause.
   - The prediction and each of the three predicted readings against what was read.
   - Each network beside its own arms under H-40, the inhibitory sum's course in the lead-in and the arms among it.
@@ -180,15 +180,15 @@ quoted sentences are what to re-derive.
   - **The step of the stopping rule reached, and the next decision it names, not taken.**
   - Each dispatch with its run id and commit, each shard's job time against its bound, and whether the sweep had
     ended.
-- [ ] **The gate.** At most one runtime test: H-41's clauses and its predicted readings' rules at their edges, over
+- [x] **The gate.** At most one runtime test: H-41's clauses and its predicted readings' rules at their edges, over
   tables written by hand.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - Whitepaper: §5.2's modulator table at format 24, §11.1's H-41 with its verdict and step, and §9.
   - The ADR index and `CHANGELOG.md`.
   - `CLAUDE.md` where the standing changes: the image's format, and the result.
   - `README.md` and `docs/zh-TW`'s reader's guide as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 075 --strict`, every deliverable dispositioned. The round's
+- [x] **The brief archived** with `spec-brief archive 075 --strict`, every deliverable dispositioned. The round's
   ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review
   with it.
 
