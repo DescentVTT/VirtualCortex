@@ -61,6 +61,23 @@ Each is appended to, round after round.
 
 **Tried before writing this:** spec-graph 0.17.0's check passes with `title:`, `summary:`, `kind:` and `hypothesis:` in an ADR's front matter. This was tried on ADR-0196 and reverted. How spec-graph reads each key is the brief's to read before relying on it.
 
+**The sweep of brief 075's reproduction, recorded here**, as [ADR-0158](0158-the-sweep-off-the-next-decisions-path.md) asks of the first ADR that merges after a sweep ends. Dispatch 39202114129's thirteen sweep jobs ended green at 12:03Z.
+
+- **3 927 mutants: 3 745 caught, none missed, 157 unviable, 25 timeouts.**
+  - Of the caught, 2 418 are in the state crates and 1 327 in the runtime.
+  - That is 11 more mutants than the 3 916 ADR-0191 recorded, which is about ADR-0194's flag.
+- **Twenty-two timeouts are in the places [ADR-0062](0062-the-first-complete-sweeps-list.md) reads as inherent**:
+  - `cortex-core`'s three chain iterators, six;
+  - the injector, twelve;
+  - the barrier's wait, one;
+  - the workers' stop and run, three.
+- **Three are in `Image::decode`'s loading**, code ADR-0052 wrote and not this round's:
+  - `image.rs:1175:24`, `delete !` at the clause store, is of F-42's kind by [ADR-0063](0063-the-sweep-reads-its-own-timeouts.md)'s evidence: it was still finishing tests.
+  - `image.rs:1167:24`, `delete !` at the term arena, and `image.rs:1144:44`, `||` for `&&` at the episodes, had stopped finishing tests by that evidence. In neither was the test that never reported one of the mutant's own module.
+  - Each of the three shared its window with an injector mutant that timed out: 2 124, 1 648 and 2 518 s of overlap.
+  - Each sits in a `for` over the section's records, so none can keep the decode from ending.
+- **There is no survivor**, so the sweep leaves no finding.
+
 ## Decision Drivers
 
 - **The maintainers' choices** (2026-10-19):
