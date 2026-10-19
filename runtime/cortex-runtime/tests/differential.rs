@@ -366,6 +366,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             whole_punishment: false,
             rate_target_period_ticks: 0,
             rate_read_windows: 0,
+            istdp_target_read: false,
         },
         wire_random,
         20_000,

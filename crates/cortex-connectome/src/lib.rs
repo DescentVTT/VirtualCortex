@@ -97,9 +97,10 @@ pub const SECTION_AMENDMENT: u32 = 41;
 /// `[48]` and its shift and scale at `[49]` and `[50]` (ADR-0131), the whole punishment's flag
 /// at `[51]` (ADR-0155), the critic's window at `[52..54)` (ADR-0134), the rate's target
 /// period at `[56..60)` (ADR-0180), the read of that target under way — its windows left at
-/// `[39]` and the sum of its last sixteen at `[60..64)` and `[54..56)` (ADR-0189) — and 2
-/// reserved bytes that MUST be zero (`[26..28)`); always written and required, so that the
-/// modulation a run continues under is in the image.
+/// `[39]` and the sum of its last sixteen at `[60..64)` and `[54..56)` (ADR-0189) — the read's
+/// flag for the inhibitory target at `[26]` (ADR-0194), and 1 reserved byte that MUST be zero
+/// (`[27]`); always written and required, so that the modulation a run continues under is in
+/// the image.
 pub const SECTION_MODULATOR: u32 = 42;
 /// The engine's homeostasis state (ADR-0036): one 64-byte record, `cortex-homeostasis`'s
 /// `HomeostaticDrivePool` with its synaptic gain, its control step and the open window of the
@@ -300,7 +301,15 @@ impl CortexFileHeader {
     ///   version-22 image's zeros there read as no read, which is the rule before this version
     ///   bit for bit; the loader still refuses a version-22 header, as it refuses every foreign
     ///   version.
-    pub const FORMAT_VERSION: u32 = 23;
+    /// - 24: the modulator section's `[26]` is the flag of the inhibitory rule's target by the
+    ///   read, one while it is set and zero while it is not; set beside a read of the rate's
+    ///   target under way, the read's last window sets the inhibitory rule's target period at
+    ///   `[20..24)` to the period it sets the rate's to, and the flag is spent; the loader
+    ///   refuses it beside no read under way (ADR-0192, ADR-0194). `[27]` stays reserved. A
+    ///   version-23 image's zero there reads as unset, which is the rule before this version bit
+    ///   for bit; the loader still refuses a version-23 header, as it refuses every foreign
+    ///   version.
+    pub const FORMAT_VERSION: u32 = 24;
 
     /// A header for an image of these counts, this tick duration and this clock, sealed. The
     /// tick is the writer's argument (`cortex-core`'s `TICK_NS` in the runtime): this crate
@@ -484,7 +493,7 @@ mod tests {
             u64::from_be_bytes(CortexFileHeader::MAGIC),
             0x5643_4F52_5445_5831
         );
-        assert_eq!(CortexFileHeader::FORMAT_VERSION, 23);
+        assert_eq!(CortexFileHeader::FORMAT_VERSION, 24);
     }
 
     #[test]
@@ -530,8 +539,8 @@ mod tests {
         );
         assert_eq!(
             CortexFileHeader::FORMAT_VERSION,
-            23,
-            "ADR-0189: the read of the rate's target in the modulator section"
+            24,
+            "ADR-0194: the inhibitory target by the read in the modulator section"
         );
     }
 

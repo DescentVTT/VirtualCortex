@@ -240,6 +240,17 @@ pub struct Config {
     /// has one target. For an engine built from an image, the image's read, under way or none,
     /// outranks this one: it changes what the run does, so it is part of the image (§8.3).
     pub rate_read_windows: u8,
+    /// The inhibitory rule's target by the same read (ADR-0192, ADR-0194): while set beside a
+    /// read of the rate's target, the read's last window sets the inhibitory rule's target period
+    /// to the period it sets the rate's to, through the path an image's period takes
+    /// (`set_istdp_target_period`), so that both rules run against the read from the next window;
+    /// a mean whose period the inhibitory rule refuses, outside `[ISTDP_PERIOD_MIN_TICKS,
+    /// ISTDP_PERIOD_MAX_TICKS]`, then ends the read refused. The flag is the read's: it is spent
+    /// when the read ends. Unset (the default), a read sets the rate's target alone, as before
+    /// ADR-0194, bit for bit. Refused without a read. For an engine built from an image, the
+    /// image's, beside its read under way, outranks this one: it changes what the run does, so it
+    /// is part of the image (§8.3).
+    pub istdp_target_read: bool,
 }
 
 impl Default for Config {
@@ -273,6 +284,7 @@ impl Default for Config {
             whole_punishment: false,
             rate_target_period_ticks: 0,
             rate_read_windows: 0,
+            istdp_target_read: false,
         }
     }
 }
@@ -415,6 +427,10 @@ pub enum ConfigError {
     /// an image carries a read under way beside a period: an image has one target (ADR-0188,
     /// ADR-0189).
     RateReadBesideTarget,
+    /// `istdp_target_read` is set without a read of the rate's target (`rate_read_windows` zero),
+    /// or an image carries it beside no read under way: the inhibitory target is taken from the
+    /// read (ADR-0192, ADR-0194).
+    IstdpReadWithoutRead,
 }
 
 /// The read of the rate's target (ADR-0188, ADR-0189), between ticks: `Executor::target_read`.
@@ -726,8 +742,11 @@ enum ReadStep {
 /// `ReadStep` of a window's close: the window's spikes summed when it is one of the read's last
 /// sixteen — the windows left, this one among them, at most sixteen — and, where it was the
 /// last, the target `read_target_of` makes of the sum for `units` units. A read always has a
-/// window left to close, so a `left` of zero is read as the last, as one is.
-fn read_step(left: u8, sum: u64, spikes: u64, units: usize) -> ReadStep {
+/// window left to close, so a `left` of zero is read as the last, as one is. Where the read sets
+/// the inhibitory rule's target as well (`inhibitory`, ADR-0194), a period that rule refuses,
+/// outside `[ISTDP_PERIOD_MIN_TICKS, ISTDP_PERIOD_MAX_TICKS]`, is refused: the bounds are a range
+/// pattern, so no comparison is left for a mutant to move.
+fn read_step(left: u8, sum: u64, spikes: u64, units: usize, inhibitory: bool) -> ReadStep {
     let sum = if left <= READ_SUMMED_WINDOWS {
         sum.saturating_add(spikes)
     } else {
@@ -735,9 +754,12 @@ fn read_step(left: u8, sum: u64, spikes: u64, units: usize) -> ReadStep {
     };
     match left.checked_sub(1) {
         Some(left @ 1..) => ReadStep::Reading { left, sum },
-        _ => match read_target_of(units, sum) {
-            Ok((period, count)) => ReadStep::Target { period, count },
-            Err(_) => ReadStep::Refused,
+        _ => match (read_target_of(units, sum), inhibitory) {
+            (Ok((period, count)), false)
+            | (Ok((period @ ISTDP_PERIOD_MIN_TICKS..=ISTDP_PERIOD_MAX_TICKS, count)), true) => {
+                ReadStep::Target { period, count }
+            }
+            _ => ReadStep::Refused,
         },
     }
 }
@@ -1058,6 +1080,10 @@ pub struct Executor<const CAP: usize> {
     /// The read of the rate's target (ADR-0189): under way from the configuration's span or the
     /// image's progress, refused, or none — unset, or ended in the period above.
     target_read: Option<TargetRead>,
+    /// Whether the read under way sets the inhibitory rule's target at its end as well (ADR-0194):
+    /// the configuration's or the image's, set only beside a read under way and spent when the
+    /// read ends.
+    istdp_target_read: bool,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -1181,6 +1207,11 @@ impl<const CAP: usize> Executor<CAP> {
             (left, 0) => Some(TargetRead::Reading { left, sum: 0 }),
             _ => return Err(ConfigError::RateReadBesideTarget),
         };
+        // The inhibitory target by the read (ADR-0194): refused without a read to take it from,
+        // after the read's own refusals.
+        if let (true, None) = (config.istdp_target_read, target_read) {
+            return Err(ConfigError::IstdpReadWithoutRead);
+        }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -1301,6 +1332,7 @@ impl<const CAP: usize> Executor<CAP> {
             rate_target_period_ticks: config.rate_target_period_ticks,
             rate_target,
             target_read,
+            istdp_target_read: config.istdp_target_read,
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
                 sleep_shift: config.sleep_shift,
@@ -1464,6 +1496,25 @@ impl<const CAP: usize> Executor<CAP> {
             return Err(ConfigError::RateReadBesideTarget);
         }
         self.target_read = Some(TargetRead::Reading { left, sum });
+        Ok(())
+    }
+
+    /// The inhibitory rule's target by the read (ADR-0192, ADR-0194), between ticks: whether the
+    /// read under way sets that rule's period beside the rate's at its last window. False while
+    /// unset, and once the read has ended, the flag spent with it: the period the read set is then
+    /// `istdp_target_period_ticks`.
+    pub fn istdp_target_read(&self) -> bool {
+        self.istdp_target_read
+    }
+
+    /// The loader's: the flag an image carries beside its read under way (ADR-0194), which
+    /// outranks the configuration's (§8.3). Refused beside no read under way, as `new` refuses
+    /// the configuration's without a read.
+    pub(crate) fn set_istdp_target_read(&mut self) -> Result<(), ConfigError> {
+        let Some(TargetRead::Reading { .. }) = self.target_read else {
+            return Err(ConfigError::IstdpReadWithoutRead);
+        };
+        self.istdp_target_read = true;
         Ok(())
     }
 
@@ -2196,19 +2247,31 @@ impl<const CAP: usize> Executor<CAP> {
     /// the read moved on by `read_step` — one window fewer, the count summed where it is one of
     /// the last sixteen — and at its last window the target set, the period and its count, for the
     /// next window's rule, or the read refused. A refused read holds the gain at every window.
+    /// Where the read sets the inhibitory rule's target as well (ADR-0194), its last window sets
+    /// that rule's period to the same period, published to the workers for the next tick, and a
+    /// period that rule refuses refuses the read; either end spends the flag.
     fn read_close(&mut self, read: TargetRead) {
         let spikes = self.homeostasis.hold();
         let TargetRead::Reading { left, sum } = read else {
             return;
         };
-        self.target_read = match read_step(left, sum, spikes, self.shared.units.len()) {
+        let inhibitory = self.istdp_target_read;
+        self.target_read = match read_step(left, sum, spikes, self.shared.units.len(), inhibitory) {
             ReadStep::Reading { left, sum } => Some(TargetRead::Reading { left, sum }),
             ReadStep::Target { period, count } => {
                 self.rate_target_period_ticks = period;
                 self.rate_target = Some(count);
+                // `read_step` gave a period the inhibitory rule accepts where the flag is set.
+                if inhibitory && !self.set_istdp_target_period(period) {
+                    abort("the inhibitory rule refused the period the read's step accepted for it");
+                }
+                self.istdp_target_read = false;
                 None
             }
-            ReadStep::Refused => Some(TargetRead::Refused),
+            ReadStep::Refused => {
+                self.istdp_target_read = false;
+                Some(TargetRead::Refused)
+            }
         };
     }
 
@@ -4566,36 +4629,36 @@ mod tests {
     fn a_read_sums_its_last_sixteen_windows_and_makes_its_target_at_its_last() {
         let n = 1024usize;
         assert_eq!(
-            read_step(128, 0, 2_000, n),
+            read_step(128, 0, 2_000, n, false),
             ReadStep::Reading { left: 127, sum: 0 }
         );
         assert_eq!(
-            read_step(17, 0, 2_000, n),
+            read_step(17, 0, 2_000, n, false),
             ReadStep::Reading { left: 16, sum: 0 }
         );
         assert_eq!(
-            read_step(16, 0, 2_000, n),
+            read_step(16, 0, 2_000, n, false),
             ReadStep::Reading {
                 left: 15,
                 sum: 2_000
             }
         );
         assert_eq!(
-            read_step(2, 14 * 2_306, 2_306, n),
+            read_step(2, 14 * 2_306, 2_306, n, false),
             ReadStep::Reading {
                 left: 1,
                 sum: 15 * 2_306
             }
         );
         assert_eq!(
-            read_step(1, 15 * 2_306, 2_306, n),
+            read_step(1, 15 * 2_306, 2_306, n, false),
             ReadStep::Target {
                 period: 58_204,
                 count: 2_306
             }
         );
         assert_eq!(
-            read_step(1, 15 * 2_306, 2_306 + 7, n),
+            read_step(1, 15 * 2_306, 2_306 + 7, n, false),
             ReadStep::Target {
                 period: 58_204,
                 count: 2_306
@@ -4603,17 +4666,17 @@ mod tests {
             "less than half a spike in the mean"
         );
         assert_eq!(
-            read_step(1, 15 * 2_306, 2_306 + 8, n),
+            read_step(1, 15 * 2_306, 2_306 + 8, n, false),
             ReadStep::Target {
                 period: 58_178,
                 count: 2_307
             },
             "a half goes up"
         );
-        assert_eq!(read_step(1, 0, 7, n), ReadStep::Refused, "no spike");
+        assert_eq!(read_step(1, 0, 7, n, false), ReadStep::Refused, "no spike");
         assert_eq!(
-            read_step(0, 15 * 2_306, 2_306, n),
-            read_step(1, 15 * 2_306, 2_306, n)
+            read_step(0, 15 * 2_306, 2_306, n, false),
+            read_step(1, 15 * 2_306, 2_306, n, false)
         );
         // The bound the loader holds a read to.
         assert_eq!(read_sum_max(255), 0);
@@ -4677,6 +4740,115 @@ mod tests {
         assert!(matches!(
             with(128, u32::MAX),
             Err(ConfigError::RateTargetOutOfRange)
+        ));
+    }
+
+    /// A read that sets the inhibitory rule's target as well (ADR-0194): its last window's target
+    /// is the read's without the flag wherever that rule accepts the period, and refused where it
+    /// does not — at 1 024 units a mean of 135 a window is a period of 994 205 and 134 one of
+    /// 1 001 625; the rule's widest period, 1 000 000, a mean of 2 048 at 15 625 units, is
+    /// accepted and the next mean down, a period of 1 000 489, refused; its shortest, 100, a mean
+    /// of 32 768 at 25 units, accepted and 99 refused. A window before the last, and a read the
+    /// rate's target refuses, are the read's either way.
+    #[test]
+    fn a_read_that_sets_the_inhibitory_target_refuses_a_period_that_rule_refuses() {
+        // The last window of a read whose sixteen windows were `mean` each.
+        let last = |units: usize, mean: u64, inhibitory: bool| {
+            read_step(1, 15 * mean, mean, units, inhibitory)
+        };
+        let target = |period, count| ReadStep::Target { period, count };
+        for (units, mean, period, count) in [
+            (1024usize, 2_330u64, 57_604u32, 2_330u32),
+            (1024, 135, 994_205, 135),
+            (15_625, 2_048, 1_000_000, 2_048),
+            (25, 32_768, 100, 32_768),
+        ] {
+            assert_eq!(
+                last(units, mean, false),
+                target(period, count),
+                "{units} at {mean}"
+            );
+            assert_eq!(
+                last(units, mean, true),
+                target(period, count),
+                "{units} at {mean}"
+            );
+        }
+        for (units, mean, period, count) in [
+            (1024usize, 134u64, 1_001_625u32, 134u32),
+            (15_625, 2_047, 1_000_489, 2_047),
+            (25, 33_099, 99, 33_099),
+        ] {
+            assert_eq!(
+                last(units, mean, false),
+                target(period, count),
+                "{units} at {mean}"
+            );
+            assert_eq!(
+                last(units, mean, true),
+                ReadStep::Refused,
+                "{units} at {mean}"
+            );
+        }
+        assert_eq!(last(1024, 0, true), ReadStep::Refused, "no spike");
+        assert_eq!(
+            read_step(16, 0, 2_330, 1024, true),
+            read_step(16, 0, 2_330, 1024, false),
+            "a window before the last"
+        );
+        assert_eq!(
+            read_step(0, 15 * 135, 135, 1024, true),
+            last(1024, 135, true),
+            "a left of zero is the last"
+        );
+    }
+
+    /// The inhibitory target by the read in the configuration (ADR-0194): unset by default; set
+    /// beside a read, the engine's flag set and the inhibitory period the configuration's until
+    /// the read ends; refused without a read, after the read's own refusals.
+    #[test]
+    fn the_inhibitory_target_by_the_read_is_unset_by_default_and_refused_without_a_read() {
+        assert!(!Config::default().istdp_target_read);
+        let with = |windows, period, flag| {
+            Executor::<8>::new(Config {
+                units: 1024,
+                rate_read_windows: windows,
+                rate_target_period_ticks: period,
+                istdp_target_read: flag,
+                ..Config::default()
+            })
+        };
+        let unset = with(128, 0, false).unwrap();
+        assert!(!unset.istdp_target_read());
+        let set = with(128, 0, true).unwrap();
+        assert_eq!(
+            (
+                set.istdp_target_read(),
+                set.target_read(),
+                set.istdp_target_period_ticks()
+            ),
+            (
+                true,
+                Some(TargetRead::Reading { left: 128, sum: 0 }),
+                ISTDP_TARGET_PERIOD_TICKS
+            )
+        );
+        for period in [0u32, 58_201] {
+            assert!(
+                matches!(
+                    with(0, period, true),
+                    Err(ConfigError::IstdpReadWithoutRead)
+                ),
+                "no read, a period of {period}"
+            );
+        }
+        assert!(matches!(
+            with(15, 0, true),
+            Err(ConfigError::RateReadOutOfRange)
+        ));
+        assert!(matches!(
+            with(128, 58_201, true),
+            Err(ConfigError::RateReadBesideTarget)
         ));
     }
 
@@ -5401,7 +5573,9 @@ mod prop {
 /// text ends it — the mean of the last sixteen counts, the period of that mean and the count of
 /// that period, each to nearest by doubling in wider integers, or the refusal — and holds, at
 /// every window between, the windows left and the sum of those of its last sixteen closed, each
-/// within the bound the loader holds a read to.
+/// within the bound the loader holds a read to. Since ADR-0194 every other four rounds read with
+/// the inhibitory target by the read set, where the oracle also refuses a target whose period the
+/// inhibitory rule refuses, ADR-0192's text, and the walk meets both of that rule's bounds.
 #[cfg(test)]
 mod read_prop {
     use super::*;
@@ -5442,11 +5616,22 @@ mod read_prop {
         Some((period as u32, count as u32))
     }
 
+    /// ADR-0192's refusal beside it (ADR-0194): where the read sets the inhibitory rule's target
+    /// as well, a target whose period that rule refuses, outside 100 to 1 000 000 ticks, refused.
+    fn inhibitory_by_hand(target: Option<(u32, u32)>) -> Option<(u32, u32)> {
+        target.filter(|&(period, _)| (100..=1_000_000).contains(&period))
+    }
+
     #[test]
     fn a_read_stepped_window_by_window_ends_where_the_hand_rule_ends_it() {
         let mut rng = Lcg::new(0x0189);
         let (mut targets, mut refused) = (0u32, 0u32);
+        // The rounds whose target the inhibitory rule alone refuses (ADR-0194), by either bound.
+        let (mut wide, mut short) = (0u32, 0u32);
         for round in 0..4_000u32 {
+            // The flag on every other four rounds (ADR-0194), so that each of the four spans' rules
+            // meets it; the walk's draws are the ones they were.
+            let inhibitory = (round / 4) % 2 == 1;
             let span: u8 = match round % 4 {
                 0 => 16,
                 1 => 17,
@@ -5472,7 +5657,7 @@ mod read_prop {
             let (mut left, mut sum) = (span, 0u64);
             let mut end = None;
             for (k, &count) in counts.iter().enumerate() {
-                match read_step(left, sum, count, units) {
+                match read_step(left, sum, count, units, inhibitory) {
                     ReadStep::Reading { left: l, sum: s } => {
                         assert_eq!(l, left.wrapping_sub(1), "round {round}, window {k}");
                         let closed = k.wrapping_add(1);
@@ -5488,7 +5673,19 @@ mod read_prop {
                     }
                 }
             }
-            let expected = match read_by_hand(units, &counts) {
+            let by_hand = read_by_hand(units, &counts);
+            let by_hand = if inhibitory {
+                let kept = inhibitory_by_hand(by_hand);
+                match (by_hand, kept) {
+                    (Some((period, _)), None) if period > 1_000_000 => wide = wide.wrapping_add(1),
+                    (Some(_), None) => short = short.wrapping_add(1),
+                    _ => {}
+                }
+                kept
+            } else {
+                by_hand
+            };
+            let expected = match by_hand {
                 Some((period, count)) => ReadStep::Target { period, count },
                 None => ReadStep::Refused,
             };
@@ -5505,6 +5702,10 @@ mod read_prop {
         assert!(
             targets > 1_000 && refused > 100,
             "the walk met both ends: {targets} targets, {refused} refused"
+        );
+        assert!(
+            wide > 10 && short > 100,
+            "the walk met both of the inhibitory rule's bounds: {wide} past the widest, {short} short of the shortest"
         );
     }
 }

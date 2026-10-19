@@ -6186,11 +6186,12 @@ const REVERSAL_CENSUS_1024: [&[(u32, u64)]; 2] = [
 /// ADR-0094 the image's format is not the one H-17 read, so its header's version and seal are
 /// not the bytes H-17 read, and ADR-0095 pins the image as it is now beside the CRC H-17 read;
 /// ADR-0114 moved the format from 16 to 17, ADR-0123 from 17 to 18, ADR-0131 from 18 to 19,
-/// ADR-0134 from 19 to 20, ADR-0155 from 20 to 21, ADR-0180 from 21 to 22 and ADR-0189 from 22
-/// to 23, and each re-pinned it the same way (it was `0xd2965219775c394a` at format 16,
-/// `0x938ad516b6badd90` at 17, `0x50af5c06f491f0fe` at 18, `0x11b3db0935771424` at 19,
-/// `0x443ce10ddfc9b4a7` at 20, `0x052066021e2f507d` at 21 and `0xc605ef125c047d13` at 22).
-const REVERSAL_IMAGE_CRC_1024: u64 = 0x8719681d9de299c9;
+/// ADR-0134 from 19 to 20, ADR-0155 from 20 to 21, ADR-0180 from 21 to 22, ADR-0189 from 22
+/// to 23 and ADR-0194 from 23 to 24, and each re-pinned it the same way (it was
+/// `0xd2965219775c394a` at format 16, `0x938ad516b6badd90` at 17, `0x50af5c06f491f0fe` at 18,
+/// `0x11b3db0935771424` at 19, `0x443ce10ddfc9b4a7` at 20, `0x052066021e2f507d` at 21,
+/// `0xc605ef125c047d13` at 22 and `0x8719681d9de299c9` at 23).
+const REVERSAL_IMAGE_CRC_1024: u64 = 0x6d1b9b1b89793c15;
 /// The same image with its header's version written back to 15 and the header resealed: the
 /// CRC-64 H-17 read (ADR-0091), so that every byte of the image but the version and the seal is
 /// the image H-17 ran from (ADR-0095).
@@ -13887,13 +13888,13 @@ const PUNISHED_MOVES_1024: [&[MovesBlock]; 2] = [
 ];
 /// The one signed image every arm of H-18, H-19 and H-20 decodes, its CRC-64. ADR-0114 moved
 /// the format from 16 to 17, ADR-0123 from 17 to 18, ADR-0131 from 18 to 19, ADR-0134 from 19 to
-/// 20, ADR-0155 from 20 to 21, ADR-0180 from 21 to 22 and ADR-0189 from 22 to 23, so its
-/// header's version and seal are not the bytes those arms read; the image as it is now,
-/// re-pinned as ADR-0095 re-pinned H-17's (it was `0x766de462f9b77576` at format 17,
-/// `0xb5486d72bb9c5818` at 18, the CRC H-21 read, `0xf454ea7d7a7abcc2` at 19, the CRC H-22 read,
-/// `0xa1dbd07990c41c41` at 20, the CRC H-23 to H-29 read, `0xe0c757765122f89b` at 21 and
-/// `0x23e2de661309d5f5` at 22).
-const PUNISHED_IMAGE_CRC_1024: u64 = 0x62fe5969d2ef312f;
+/// 20, ADR-0155 from 20 to 21, ADR-0180 from 21 to 22, ADR-0189 from 22 to 23 and ADR-0194
+/// from 23 to 24, so its header's version and seal are not the bytes those arms read; the image
+/// as it is now, re-pinned as ADR-0095 re-pinned H-17's (it was `0x766de462f9b77576` at format
+/// 17, `0xb5486d72bb9c5818` at 18, the CRC H-21 read, `0xf454ea7d7a7abcc2` at 19, the CRC H-22
+/// read, `0xa1dbd07990c41c41` at 20, the CRC H-23 to H-29 read, `0xe0c757765122f89b` at 21,
+/// `0x23e2de661309d5f5` at 22 and `0x62fe5969d2ef312f` at 23).
+const PUNISHED_IMAGE_CRC_1024: u64 = 0x88fcaa6fc67494f3;
 /// The same image with its header's version written back to 16 and the header resealed: the
 /// CRC-64 H-18, H-19 and H-20 read (ADR-0096, ADR-0108, ADR-0110), so that every byte of the
 /// image but the version and the seal is the image they ran from (ADR-0114, as ADR-0095).
@@ -14568,8 +14569,8 @@ fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
         (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
-        (0x62fe_5969_d2ef_312f, 0x3771_636d_3851_91ac),
-        "H-18's image, at format 23 and as read at format 16"
+        (0x88fc_aa6f_c674_94f3, 0x3771_636d_3851_91ac),
+        "H-18's image, at format 24 and as read at format 16"
     );
     // The criterion's clauses 1 and 2 at their edges over blocks written by hand, as H-18's.
     let blocks_of = |correct: &[u32]| -> Vec<Block> {
@@ -22384,8 +22385,8 @@ fn a_few_trials_over_a_schedule_at_1024_units_and_the_rules_of_the_schedule() {
     assert_eq!(SIGNED_GATE_BYTE, 25);
     assert_eq!(
         (PUNISHED_IMAGE_CRC_1024, PUNISHED_IMAGE_CRC_FORMAT_16_1024),
-        (0x62fe_5969_d2ef_312f, 0x3771_636d_3851_91ac),
-        "H-19's image, H-18's, at format 23 and as H-19 read it at format 16"
+        (0x88fc_aa6f_c674_94f3, 0x3771_636d_3851_91ac),
+        "H-19's image, H-18's, at format 24 and as H-19 read it at format 16"
     );
     // The schedule's rule: the mapping in force is the other than the first from the 1 537th
     // trial to the 3 584th and from the 5 633rd to the last; under H-19's one flip, from the
@@ -29862,8 +29863,8 @@ fn the_target_s_rule_the_clauses_of_h_21_and_the_image_s_patch() {
     );
     assert_eq!((GATE_BASELINE_Q16, INHIBITORY_BASELINE_Q16), (0, 0x8000));
     assert_eq!(
-        PUNISHED_IMAGE_CRC_1024, 0x62fe_5969_d2ef_312f,
-        "H-20's image, at format 23 (ADR-0189)"
+        PUNISHED_IMAGE_CRC_1024, 0x88fc_aa6f_c674_94f3,
+        "H-20's image, at format 24 (ADR-0194)"
     );
     assert_eq!(
         (
@@ -41953,8 +41954,8 @@ fn the_critic_s_arithmetic_the_clauses_of_h_22_and_the_image_s_patch() {
     assert_eq!((CRITIC_AT, GROUPS, REWARD_Q16), (48, 6, ONE));
     assert_eq!(TARGET_PERIOD_1024, 58_201);
     assert_eq!(
-        TARGET_IMAGE_CRC_1024, 0x7851_dbe9_bcee_cc28,
-        "H-21's image, at format 23 (ADR-0189)"
+        TARGET_IMAGE_CRC_1024, 0x9253_28ef_a875_69f4,
+        "H-21's image, at format 24 (ADR-0194)"
     );
     assert_eq!(
         (SCHEDULE_TRIALS, SCHEDULE_FLIPS, MAPPINGS),
@@ -42411,12 +42412,12 @@ fn the_critic_s_arithmetic_the_clauses_of_h_22_and_the_image_s_patch() {
 
 // ----------------------------------------------------------- the measurement (brief 055)
 
-/// H-21's image by its CRC-64: H-20's with the target period written (ADR-0129), at format 23
+/// H-21's image by its CRC-64: H-20's with the target period written (ADR-0129), at format 24
 /// (it was `0xafe7eff2d59da51f` at 18, the CRC H-21 read, `0xeefb68fd147b41c5` at 19, the CRC
 /// H-22 read, `0xbb7452f9fec5e146` at 20, the CRC H-23 to H-29 read, `0xfa68d5f63f23059c` at
-/// 21 and `0x394d5ce67d0828f2` at 22; ADR-0134, ADR-0155, ADR-0180 and ADR-0189 re-pinned it
-/// with the format as ADR-0095 re-pinned H-17's).
-const TARGET_IMAGE_CRC_1024: u64 = 0x7851dbe9bceecc28;
+/// 21, `0x394d5ce67d0828f2` at 22 and `0x7851dbe9bceecc28` at 23; ADR-0134, ADR-0155, ADR-0180,
+/// ADR-0189 and ADR-0194 re-pinned it with the format as ADR-0095 re-pinned H-17's).
+const TARGET_IMAGE_CRC_1024: u64 = 0x925328efa87569f4;
 /// The same image with its header's version written back to 18 and the header resealed: the
 /// CRC-64 H-21 read (ADR-0129), so that every byte of the image but the version and the seal is
 /// the image H-21 ran from (ADR-0134, as ADR-0095).
@@ -54103,11 +54104,11 @@ fn the_window_s_rule_its_arithmetic_the_clauses_of_h_23_and_the_image_s_patch() 
             WINDOWED_IMAGE_CRC_1024
         ),
         (
-            0x29cd_2491_d74f_85e4,
+            0xc3cf_d797_c3d4_2038,
             0xbf67_9785_7fda_0809,
-            0x9361_6469_748c_989d
+            0x7963_976f_6017_3d41
         ),
-        "H-22's image at format 23 and as H-22 read it at 19, and the image each arm decodes"
+        "H-22's image at format 24 and as H-22 read it at 19, and the image each arm decodes"
     );
     // Clause 3's bound is the slowest reversal H-20 and H-21 read with the task's critic, both
     // arms: 23 blocks, H-21's first from the mirrored assignment.
@@ -54636,20 +54637,21 @@ fn the_window_s_rule_its_arithmetic_the_clauses_of_h_23_and_the_image_s_patch() 
 
 // ----------------------------------------------------------- the measurement (brief 056)
 
-/// H-22's image by its CRC-64: H-21's with the critic written (ADR-0132), at format 23 (it was
-/// `0xeae8ad819564a88a` at 20, the CRC H-23 to H-29 read, `0xabf42a8e54824c50` at 21 and
-/// `0x68d1a39e16a9613e` at 22; ADR-0155, ADR-0180 and ADR-0189 re-pinned it with the format as
-/// ADR-0095 re-pinned H-17's).
-const VALUED_IMAGE_CRC_1024: u64 = 0x29cd2491d74f85e4;
+/// H-22's image by its CRC-64: H-21's with the critic written (ADR-0132), at format 24 (it was
+/// `0xeae8ad819564a88a` at 20, the CRC H-23 to H-29 read, `0xabf42a8e54824c50` at 21,
+/// `0x68d1a39e16a9613e` at 22 and `0x29cd2491d74f85e4` at 23; ADR-0155, ADR-0180, ADR-0189 and
+/// ADR-0194 re-pinned it with the format as ADR-0095 re-pinned H-17's).
+const VALUED_IMAGE_CRC_1024: u64 = 0xc3cfd797c3d42038;
 /// The same image with its header's version written back to 19 and the header resealed: the
 /// CRC-64 H-22 read (ADR-0132), so that every byte of the image but the version and the seal is
 /// the image H-22 ran from (ADR-0134, as ADR-0095).
 const VALUED_IMAGE_CRC_FORMAT_19_1024: u64 = 0xbf6797857fda0809;
 /// The image each arm of H-23 decodes: H-22's with the window written at the length its rule
-/// reads, 100 ticks, committed before any rewarded run. At format 23: ADR-0155 moved the format
-/// from 20, ADR-0180 from 21, where it was `0x11586a76f7415129`, and ADR-0189 from 22, where it
-/// was `0xd27de366b56a7c47`, and each re-pinned it as ADR-0095 re-pinned H-17's.
-const WINDOWED_IMAGE_CRC_1024: u64 = 0x93616469748c989d;
+/// reads, 100 ticks, committed before any rewarded run. At format 24: ADR-0155 moved the format
+/// from 20, ADR-0180 from 21, where it was `0x11586a76f7415129`, ADR-0189 from 22, where it was
+/// `0xd27de366b56a7c47`, and ADR-0194 from 23, where it was `0x93616469748c989d`, and each
+/// re-pinned it as ADR-0095 re-pinned H-17's.
+const WINDOWED_IMAGE_CRC_1024: u64 = 0x7963976f60173d41;
 /// The same image with its header's version written back to 20 and the header resealed: the
 /// CRC-64 every arm from H-23's to H-29's read (ADR-0135 to ADR-0153), so that every byte of the
 /// image but the version and the seal is the image they ran from (ADR-0155, as ADR-0095).
@@ -67023,7 +67025,7 @@ fn the_clauses_of_h_24_the_network_s_oracle_and_the_readings_rules() {
         "clauses 1 and 2 are H-20's"
     );
     assert_eq!(
-        WINDOWED_IMAGE_CRC_1024, 0x9361_6469_748c_989d,
+        WINDOWED_IMAGE_CRC_1024, 0x7963_976f_6017_3d41,
         "H-23's image, the one each arm decodes"
     );
     // The image's outside sum: the settled image's excitatory sum less its four couplings.
@@ -84540,7 +84542,7 @@ fn the_clauses_of_h_25_the_drawn_sources_and_the_readings_rules() {
     );
     assert_eq!(
         (WINDOWED_IMAGE_CRC_1024, WINDOW_TICKS_1024),
-        (0x9361_6469_748c_989d, 100),
+        (0x7963_976f_6017_3d41, 100),
         "H-23's image, the one each arm decodes, and its window"
     );
     let outside = image_outside();
@@ -176099,8 +176101,8 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     assert_eq!((WHOLE_AT, WHOLE_SET, MARGIN_SPIKES), (51, 1, 2));
     assert_eq!(
         (WINDOWED_IMAGE_CRC_1024, WINDOWED_IMAGE_CRC_FORMAT_20_1024),
-        (0x9361_6469_748c_989d, 0x5044_ed79_36a7_b5f3),
-        "H-29's image at format 23 and as H-29 read it at 20"
+        (0x7963_976f_6017_3d41, 0x5044_ed79_36a7_b5f3),
+        "H-29's image at format 24 and as H-29 read it at 20"
     );
     // What the modulator receives, by the hand rule: the error, unless the engine carries the
     // whole punishment and the reward and the value are both below zero; then the reward.
@@ -182598,8 +182600,8 @@ fn the_clauses_of_h_31_the_schedule_s_hand_rule_and_the_readings_rules() {
     );
     assert_eq!(
         (WINDOWED_IMAGE_CRC_1024, WINDOWED_IMAGE_CRC_FORMAT_20_1024),
-        (0x9361_6469_748c_989d, 0x5044_ed79_36a7_b5f3),
-        "H-29's image at format 23 and as H-29 read it at 20, the image an arm decodes"
+        (0x7963_976f_6017_3d41, 0x5044_ed79_36a7_b5f3),
+        "H-29's image at format 24 and as H-29 read it at 20, the image an arm decodes"
     );
     // ------------------------------------------------ the schedule's hand rule (ADR-0157)
     // ADR-0157's schedule as written: the flips before the trials of index 1 536, 4 608 and
@@ -189403,8 +189405,8 @@ fn the_clauses_of_h_32_the_exploration_s_hand_rules_and_the_readings_rules() {
     );
     assert_eq!(
         (WINDOWED_IMAGE_CRC_1024, WINDOWED_IMAGE_CRC_FORMAT_20_1024),
-        (0x9361_6469_748c_989d, 0x5044_ed79_36a7_b5f3),
-        "H-29's image at format 23 and as H-29 read it at 20"
+        (0x7963_976f_6017_3d41, 0x5044_ed79_36a7_b5f3),
+        "H-29's image at format 24 and as H-29 read it at 20"
     );
     assert_eq!(
         EXPLORED_FIRST_DRAWN_1024,
@@ -197356,6 +197358,8 @@ struct Made {
 ///   `DERIVED_READ_FORMAT` and resealed, the format H-33 and H-34 read theirs at.
 /// - `crcs_ruled` (ADR-0189): the same six written back to `RULED_READ_FORMAT`, the format H-38
 ///   and H-39 read theirs at.
+/// - `crcs_read_target` (ADR-0194): the same six written back to `READ_TARGET_FORMAT`, the format
+///   H-40 read its at.
 /// - `couplings`: the settled image's four couplings.
 /// - `read` (ADR-0190): under a read of the target, what the read left after the lead-in — under
 ///   way, refused, or none — and the period and the count the engine then held; none without a
@@ -197384,6 +197388,7 @@ struct Derivation {
     crcs: Option<[u64; 6]>,
     crcs_read: Option<[u64; 6]>,
     crcs_ruled: Option<[u64; 6]>,
+    crcs_read_target: Option<[u64; 6]>,
     couplings: Option<[[i64; 2]; 2]>,
     made: Option<Made>,
     read: Option<ReadMade>,
@@ -197401,6 +197406,12 @@ const DERIVED_READ_FORMAT: u32 = 21;
 /// CRCs through each image with its header's version written back to it and the header resealed,
 /// as `DERIVED_READ_FORMAT` holds H-33's and H-34's.
 const RULED_READ_FORMAT: u32 = 22;
+
+/// The format H-40's derivations read their images at (ADR-0190): 23. Since ADR-0194 moved the
+/// format to 24 a derivation under the read is held to that round's CRCs through each image with
+/// its header's version written back to it and the header resealed, as `RULED_READ_FORMAT` holds
+/// H-38's and H-39's.
+const READ_TARGET_FORMAT: u32 = 23;
 
 /// The configuration H-25 ran under, derived on ADR-0044's prior at 1 024 units from `seed`
 /// (ADR-0165, ADR-0167; `derive_at` with the size, since brief 068): each constant by the rule
@@ -197777,6 +197788,7 @@ fn derive_under(units: u32, seed: u64, settling: &Settling, name: &str) -> Deriv
     d.crcs = Some(images.map(|image| crc64(image)));
     d.crcs_read = Some(images.map(|image| crc64(&with_version(image, DERIVED_READ_FORMAT))));
     d.crcs_ruled = Some(images.map(|image| crc64(&with_version(image, RULED_READ_FORMAT))));
+    d.crcs_read_target = Some(images.map(|image| crc64(&with_version(image, READ_TARGET_FORMAT))));
     let image_couplings = pair_couplings(&signed_from(&windowed, units), &sets);
     d.couplings = Some(image_couplings);
     d.made = Some(Made {
@@ -197826,6 +197838,11 @@ fn dump_derivation(name: &str, d: &Derivation) {
     eprintln!(
         "DUMP {name} crcs with the version written back to {RULED_READ_FORMAT} {:?}",
         d.crcs_ruled
+            .map(|crcs| crcs.map(|crc| format!("{crc:#018x}")))
+    );
+    eprintln!(
+        "DUMP {name} crcs with the version written back to {READ_TARGET_FORMAT} {:?}",
+        d.crcs_read_target
             .map(|crcs| crcs.map(|crc| format!("{crc:#018x}")))
     );
     eprintln!("DUMP {name} PIN couplings {:?}", d.couplings);
@@ -333206,8 +333223,9 @@ fn read_derivation_held(n: usize, name: &str, d: &Derivation, read: &ReadRead) {
 }
 
 /// H-40's derivation on network `n` held to the tables pinned from its one run: H-38's
-/// (`rate_pins_held`'s) but the images at the format this round reads, 23, and the read's
-/// reading and what the engine made of it.
+/// (`rate_pins_held`'s) but the images at the format that round read, 23, through each image
+/// with its header's version written back to it since ADR-0194 (`READ_TARGET_FORMAT`), and the
+/// read's reading and what the engine made of it.
 fn read_pins_held(name: &str, n: usize, d: &Derivation, read: &ReadRead) {
     let pins = read_rate_pins(n);
     assert_eq!(Some(d.rules), pins.rules, "{name}: what each rule returned");
@@ -333234,7 +333252,10 @@ fn read_pins_held(name: &str, n: usize, d: &Derivation, read: &ReadRead) {
         pins.target_lead_in,
         "{name}: the target's lead-in"
     );
-    assert_eq!(d.crcs, pins.crcs, "{name}: the images, at format 23");
+    assert_eq!(
+        d.crcs_read_target, pins.crcs,
+        "{name}: the images, each with its header's version written back to the format H-40 read"
+    );
     assert_eq!(d.couplings, pins.couplings, "{name}: the image's couplings");
     assert_eq!(Some(*read), READ_READ[n], "{name}: the read's reading");
     assert_eq!(
