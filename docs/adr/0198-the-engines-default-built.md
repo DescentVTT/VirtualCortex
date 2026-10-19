@@ -42,7 +42,7 @@ What was read first (principle 2), on 2026-10-19, at `main` `5f7150e`:
 
 ## Decision Outcome
 
-**Options 1(a), 2(a), 3(a) and 4(a).** Built in brief 076's first commit.
+**Options 1(a), 2(a), 3(a) and 4(a).** Built in `8892e52`, brief 076's one commit under `src/` and `tests/`, in pull request [#223](https://github.com/DescentVTT/VirtualCortex/pull/223).
 
 ### The gain an engine starts with (Implemented)
 
@@ -97,7 +97,34 @@ and `..Self::default()` for every other field. The sizing is the caller's, by st
 
 ### What the dispatch read
 
-To be written from the dispatch at `scope=both` once its eighteen whole-domain shards end.
+- **The dispatch.** Run [39280026945](https://github.com/DescentVTT/VirtualCortex/actions/runs/39280026945) at **`scope=both`** on `8892e52`, the round's one commit under `src/` and `tests/`, at 15:42:31Z, once that commit was pushed. A file under `src/` changed, so by [ADR-0075](0075-the-dispatch-scope-follows-the-diff.md) the scope is `both`. No commit under `src/` or `tests/` follows it: the commits after it change the documents, the brief and the cost table.
+- **Every whole-domain shard is green, and every pinned number held** on x86-64: all 156 `exhaustive` tests passed, each exit 0 with one test reported, 136 129 s summed (136 155 s in brief 075's reproduction). The round added no whole-domain test and changed none, so these are the tree's 156, H-41's three derivations, six arms and trial among them, each holding its tables with the gain's field at its default.
+- **The shards**, dealt by brief 075's table, which knew all 156:
+
+  | Shard | Job, of its bound | Its two heaviest tests (s) | Tests | Their seconds summed | Tests' wall time, of the bound |
+  | ---: | ---: | :--- | ---: | ---: | ---: |
+  | 0 | 48.4 min, 27 % | `the_address_drawn_on_seed_23_from_the_mirrored_assignment_at_2048_units` 2 827; `the_address_drawn_under_the_rate_s_rule_from_the_mirrored_at_1024_units` 1 425 | 9 | 5 638 | 2 827 s, 26 % |
+  | 1 | 62.8 min, 35 % | `the_address_drawn_on_seed_22_from_the_assignment_at_2048_units` 3 329; `a_reward_right_three_times_in_four_from_the_mirrored_assignment_at_1024_units` 1 771 | 8 | 7 033 | 3 685 s, 34 % |
+  | 2 | 71.2 min, 40 % | `the_address_drawn_on_seed_22_from_the_mirrored_assignment_at_2048_units` 3 582; `the_address_drawn_under_both_targets_read_on_seed_22_from_the_assignment_at_1024_units` 1 939 | 6 | 8 242 | 4 146 s, 38 % |
+  | 3 | 74.9 min, 42 % | `the_address_drawn_on_seed_23_from_the_assignment_at_2048_units` 3 603; `the_address_drawn_at_a_sixteenth_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 799 | 7 | 8 148 | 4 406 s, 41 % |
+  | 4 | 71.8 min, 40 % | `the_span_a_choice_among_three_is_given_from_the_mirrored_assignment_at_1024_units` 2 345; `the_address_drawn_under_the_target_read_on_seed_24_from_the_assignment_at_1024_units` 1 888 | 9 | 7 982 | 4 233 s, 39 % |
+  | 5 | 64.8 min, 36 % | `the_address_drawn_under_the_target_read_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 912; `a_reward_right_three_times_in_four_from_the_assignment_at_1024_units` 1 769 | 8 | 7 454 | 3 803 s, 35 % |
+  | 6 | 77.0 min, 43 % | `the_span_a_choice_among_three_is_given_from_the_assignment_at_1024_units` 1 979; `the_address_drawn_under_the_target_read_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 899 | 9 | 8 545 | 4 524 s, 42 % |
+  | 7 | 56.7 min, 31 % | `the_address_drawn_at_a_sixteenth_on_seed_22_from_the_assignment_at_1024_units` 1 418; `a_reward_right_seven_times_in_eight_from_the_mirrored_assignment_at_1024_units` 1 386 | 7 | 6 316 | 3 330 s, 31 % |
+  | 8 | 60.3 min, 34 % | `the_gate_s_output_delivered_from_the_assignment_at_1024_units` 1 723; `the_address_drawn_under_the_rate_s_rule_from_the_assignment_at_1024_units` 1 716 | 10 | 6 916 | 3 526 s, 33 % |
+  | 9 | 66.2 min, 37 % | `a_reward_right_three_times_in_four_on_seed_23_from_the_mirrored_assignment_at_1024_units` 1 840; `three_answers_from_the_assignment_at_1024_units` 1 812 | 10 | 7 769 | 3 888 s, 36 % |
+  | 10 | 66.7 min, 37 % | `the_address_drawn_under_both_targets_read_on_seed_22_from_the_mirrored_assignment_at_1024_units` 2 002; `the_address_drawn_from_the_assignment_at_1024_units` 1 795 | 9 | 7 791 | 3 914 s, 36 % |
+  | 11 | 68.8 min, 38 % | `the_gate_s_output_delivered_from_the_mirrored_assignment_at_1024_units` 1 826; `the_address_drawn_at_a_sixteenth_on_seed_23_from_the_assignment_at_1024_units` 1 825 | 10 | 8 061 | 4 040 s, 37 % |
+  | 12 | 70.5 min, 39 % | `a_reward_right_three_times_in_four_on_seed_23_from_the_assignment_at_1024_units` 1 880; `a_reward_right_seven_times_in_eight_from_the_assignment_at_1024_units` 1 774 | 10 | 8 006 | 4 139 s, 38 % |
+  | 13 | 43.0 min, 24 % | `three_answers_from_the_mirrored_assignment_at_1024_units` 1 250; `the_address_drawn_under_the_target_read_on_seed_22_from_the_mirrored_assignment_at_1024_units` 1 128 | 9 | 4 911 | 2 513 s, 23 % |
+  | 14 | 71.2 min, 40 % | `the_address_drawn_under_both_targets_read_on_seed_23_from_the_assignment_at_1024_units` 1 924; `the_address_drawn_at_a_sixteenth_on_seed_24_from_the_assignment_at_1024_units` 1 808 | 9 | 7 873 | 4 184 s, 39 % |
+  | 15 | 64.5 min, 36 % | `the_address_drawn_under_both_targets_read_on_seed_24_from_the_assignment_at_1024_units` 1 876; `the_address_drawn_on_seed_24_from_the_assignment_at_1024_units` 1 803 | 7 | 6 870 | 3 791 s, 35 % |
+  | 16 | 67.9 min, 38 % | `the_address_drawn_under_both_targets_read_on_seed_24_from_the_mirrored_assignment_at_1024_units` 1 918; `the_address_drawn_on_seed_23_from_the_assignment_at_1024_units` 1 844 | 10 | 7 934 | 3 990 s, 37 % |
+  | 17 | 93.5 min, 52 % | `the_address_drawn_under_the_target_read_on_seed_23_from_the_assignment_at_1024_units` 2 359; `the_address_drawn_under_the_target_read_on_seed_22_from_the_assignment_at_1024_units` 2 344 | 9 | 10 640 | 5 525 s, 51 % |
+
+  The percentages are of the job's bound, 180 minutes ([ADR-0179](0179-the-bounds-rule-restated.md)). Each shard ran its tests two at a time, at 1.81 to 2.00 of their summed seconds over the wall. The eighteen waited 6 to 107 minutes for runners after the dispatch and started from 15:48:46Z to 17:29:30Z; the last ended at 18:44:24Z, 3 h 02 min after the dispatch. **No shard's job passed 60 per cent of its bound**: the longest, shard 17's, took 93.5 minutes, 52 per cent. Shard 17 is the heaviest by the same deal that made shard 1 the heaviest in brief 075's reproduction: the table's 136 155 s, the runners' spread. Under the table regenerated from this run (`scripts/exhaustive-costs.tsv`, 156 lines, 136 129 s) every shard is planned at 7 560 to 7 567 s summed, about 3 800 s run two at a time, 35 per cent of the bound.
+- **The sweep** of this dispatch had not ended when this evidence was written, at 18:46Z: eleven of its thirteen jobs were running and two queued, behind the shards (ADR-0166). It is recorded by the first ADR that merges after it ends ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)). Brief 075's sweep, run 39202114129's, was recorded by [ADR-0197](0197-one-place-for-each-kind-of-fact.md), so no other sweep is left unrecorded.
+- **The pull request's gate** on `8892e52`, run 39280075070: the five checks green — Rust (check, test, fmt, clippy), the minimum supported version, AArch64's T-1, the documentation and the mutation gate; the mutation gate on the changed lines made 6 mutants and caught all 6, none missed.
 
 ## Consequences
 
@@ -110,6 +137,7 @@ To be written from the dispatch at `scope=both` once its eighteen whole-domain s
 ## Confirmation
 
 - `cargo test --workspace --locked` runs the six tests above in the gate.
-- The pull request's mutation gate meets the changed lines of `executor.rs`: the refusal, the record's field and `reads_its_targets()`.
-- One dispatch at `scope=both` on the last commit under `src/` and `tests/` holds every pinned number of the tree.
+- The pull request's mutation gate met the changed lines of `executor.rs`, the refusal, the record's field and `reads_its_targets()`: 6 mutants, all caught.
+- Dispatch 39280026945 at `scope=both` on `8892e52`, the last commit under `src/` and `tests/`, held every pinned number of the tree in its eighteen whole-domain shards.
+- `scripts/exhaustive-costs.tsv` is regenerated from that dispatch.
 - Whitepaper 4.134.0 carries §5.2's paragraph, §8.8's rate row naming the default Implemented, and §9's row.
