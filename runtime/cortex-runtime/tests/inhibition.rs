@@ -355486,6 +355486,26 @@ fn settled_inhibition(table: &[LeadInWindow], settled: Option<usize>) -> Option<
     table.get(settled?.checked_sub(1)?).map(|window| window.2)
 }
 
+/// The windows of a lead-in's read, counted from one, that part from its twin under H-40
+/// (ADR-0195): each of the first 127 compared whole; the 128th, the read's last, in every field but
+/// the units at the target, which `spikes_and_at_target` reads at the inhibitory period in force
+/// after the window's close — which that close sets to the read's under the flag, where H-40's
+/// was the default — so that the reading, not the network, would part there; and a window either
+/// table lacks. None parts where the network ran H-40's read.
+fn twin_apart(table: &[LeadInWindow], twin: &[LeadInWindow]) -> Vec<usize> {
+    let span = usize::from(BOTH_SPAN);
+    (0..span)
+        .filter(|&k| match (table.get(k), twin.get(k)) {
+            (Some(a), Some(b)) if k.wrapping_add(1) == span => {
+                (a.0, a.1, a.2, a.3, a.5, a.6) != (b.0, b.1, b.2, b.3, b.5, b.6)
+            }
+            (Some(a), Some(b)) => a != b,
+            _ => true,
+        })
+        .map(|k| k.wrapping_add(1))
+        .collect()
+}
+
 /// Predicted reading 1's rule (ADR-0192): an inhibitory sum at a lead-in's settling strictly above
 /// H-40's on the same network.
 fn inhibition_above(sum: i64, beside: i64) -> bool {
@@ -355611,7 +355631,8 @@ fn both_derivation(n: usize, name: &str) -> (Derivation, ReadRead) {
 /// - what it makes before the settled network, and its cancel where it was reached, are the
 ///   network's derivation's with the gain held, as H-40's are;
 /// - every window of the read is H-40's on the network, window for window, as H-40's derivation
-///   pinned it: the flag acts at the read's last window and at none before it;
+///   pinned it, the 128th in every field but the units at the target (`twin_apart`): the flag acts
+///   at the read's last window's close and at none before it;
 /// - the read's sixteen windows and their target are H-40's, and what the engine made of the read
 ///   is H-40's: the period and the count, the read ended;
 /// - the inhibitory period the engine held after the lead-in is that period, and so is the one
@@ -355640,8 +355661,8 @@ fn both_derivation_held(n: usize, name: &str, d: &Derivation, read: &ReadRead) {
         "{name}: H-40's lead-in runs past its read"
     );
     assert_eq!(
-        d.lead_in.get(..span),
-        twin.get(..span),
+        twin_apart(&d.lead_in, twin),
+        Vec::<usize>::new(),
         "{name}: every window of the read is H-40's, window for window"
     );
     assert_eq!(read.held, 0, "{name}: no window of the read moved the gain");
@@ -355918,10 +355939,12 @@ fn the_address_drawn_under_both_targets_read_on_seed_24_from_the_mirrored_assign
 /// gain's rule's gain, the flag carried through the image it reloads from; the read's 128
 /// windows, run one window at a time, each held row for row to H-40's lead-in on that network as
 /// its derivation pinned it — every spike, both readouts, both sums, the units at the target, the
-/// gain and the estimate — with the flag set and the inhibitory period the default after each
-/// window but the last; and after the last the read ended in H-40's target, the inhibitory period
-/// that target's period and the flag spent. It reads nothing of H-41: no window after the read is
-/// run.
+/// gain and the estimate, the 128th in every field but the units at the target (`twin_apart`) —
+/// with the flag set and the inhibitory period the default after each window but the last; and
+/// after the last the read ended in H-40's target, the inhibitory period that target's period and
+/// the flag spent. It reads nothing of H-41: no window after the read is run. Its first dispatch
+/// held the 128th whole and failed there, on the units at the target alone, read at the period the
+/// window's close had set (ADR-0195).
 #[test]
 #[ignore]
 fn the_flag_sets_both_targets_at_the_read_s_end_on_seed_22_at_1024_units_exhaustive() {
@@ -355955,9 +355978,14 @@ fn the_flag_sets_both_targets_at_the_read_s_end_on_seed_22_at_1024_units_exhaust
         exec.rate_target_per_window()
     );
     assert_eq!(
-        Some(table.as_slice()),
-        READ_LEAD_IN[0].get(..span),
+        twin_apart(&table, READ_LEAD_IN[0]),
+        Vec::<usize>::new(),
         "{name}: the read's windows are H-40's, row for row"
+    );
+    assert_eq!(
+        table.len(),
+        span,
+        "{name}: the read's windows and no window after it"
     );
     assert_eq!(
         (
@@ -356037,6 +356065,27 @@ fn the_networks_of_h_41_both_targets_by_the_read_and_its_predicted_readings_rule
     assert_eq!(settled_inhibition(&table, Some(1)), Some(100));
     assert_eq!(settled_inhibition(&table, Some(4)), Some(103));
     assert_eq!(settled_inhibition(&table, Some(5)), None, "past the table");
+    // `twin_apart` over H-40's pinned lead-in on seed 22: its own read parts nowhere; a change
+    // to the 128th window's units at the target alone parts nowhere, to its spikes or to the
+    // 127th's units at the target there; a table short of the read parts where it ends.
+    let twin = READ_LEAD_IN[0];
+    assert_eq!(twin_apart(twin, twin), Vec::<usize>::new());
+    let mut moved: Vec<LeadInWindow> = twin.to_vec();
+    moved[127].4 = moved[127].4.wrapping_add(1);
+    assert_eq!(
+        twin_apart(&moved, twin),
+        Vec::<usize>::new(),
+        "the 128th's units at the target are read at the period its close set"
+    );
+    moved[127].0 = moved[127].0.wrapping_add(1);
+    moved[126].4 = moved[126].4.wrapping_add(1);
+    moved[0].6 = moved[0].6.wrapping_add(1);
+    assert_eq!(twin_apart(&moved, twin), vec![1, 127, 128]);
+    assert_eq!(
+        twin_apart(&twin[..126], twin),
+        vec![127, 128],
+        "a window the table lacks"
+    );
     let beside = BOTH_BESIDE_INHIBITION[0];
     assert!(!inhibition_above(beside, beside), "equal is not above");
     assert!(inhibition_above(beside.saturating_add(1), beside));
@@ -356105,7 +356154,7 @@ fn the_networks_of_h_41_both_targets_by_the_read_and_its_predicted_readings_rule
 /// The gate's checks over H-41's pinned tables (ADR-0195), by the rules committed before any of
 /// them was run, each where it is pinned. On each network whose derivation is pinned: the rules
 /// before the settled network are the gain held's; the read's windows are H-40's lead-in on the
-/// network; the lead-in is the first settled window under both targets, or the bound, and what the
+/// network (`twin_apart`); the lead-in is the first settled window under both targets, or the bound, and what the
 /// derivation returned of that rule is the rule's over the table where the read made a target and
 /// the network fell quiet; the read's reading is `read_read`'s and H-40's, what the engine made of
 /// it H-40's, and the inhibitory period after the lead-in the read's period; every window after the
@@ -356149,8 +356198,8 @@ fn both_tables() {
         let gain = held_rules.gain.expect("the gain's rule's gain");
         let table = pins.lead_in;
         assert_eq!(
-            table.get(..span),
-            READ_LEAD_IN[n].get(..span),
+            twin_apart(table, READ_LEAD_IN[n]),
+            Vec::<usize>::new(),
             "{name}: the read's windows are H-40's"
         );
         let settled = UNDER_BOTH_TARGETS.settled(priors.1, gain, table);
