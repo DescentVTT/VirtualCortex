@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-19
 depends-on: ADR-0195
 decision-makers: VirtualCortex maintainers
@@ -114,7 +114,7 @@ So an image born at the defaults would read at a gain of 1.0, which no run has r
 
 ## Confirmation
 
-`briefs/076_the-engines-default.md` builds the gain's field and the default, shows the default byte for byte H-41's candidate, and holds every pin by one dispatch. Whitepaper 4.NNN.0 carries:
+`briefs/076_the-engines-default.md` builds the gain's field and the default, shows the default byte for byte H-41's candidate, and holds every pin by one dispatch. Whitepaper 4.132.0 carries:
 - §9's row;
 - F-71 in §11;
 - §8.8's per-unit row and §11.1's item corrected;
