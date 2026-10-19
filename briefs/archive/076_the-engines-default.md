@@ -1,17 +1,22 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-19
 affectedFiles: [runtime/cortex-runtime/src/**, runtime/cortex-runtime/tests/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
 protectedFiles: [crates/**, benches/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, scripts/check-archive.mjs, scripts/check-scope.mjs, scripts/check-explorations.mjs, .spec-brief.json, rust-toolchain.toml, Cargo.toml, Cargo.lock]
+integrity: sha256-09a20976467ff85183dc65832f9416999f3aa3680dc2a1197ca3770121c75d0b
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-19 (UTC) in pull request [#223](https://github.com/DescentVTT/VirtualCortex/pull/223).** Brief 076 built ADR-0196's decision, recorded in ADR-0198: Config::synaptic_gain_q16, the gain an engine starts with, default 1.0 and refused outside 0.25 to 4, the image's outranking it; and Config::reads_its_targets(), Config::default() with H-41's five values. An engine born under the default writes H-41's candidate's image byte for byte on seeds 22, 23 and 24 at 1 024 units, and Config::default() builds the engine it built: dispatch 39280026945 at scope=both held every pinned number in eighteen green shards. No record, no format, no hypothesis. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 076: The engine's default — ADR-0196's decision built: the gain an engine starts with as a field of the configuration, `Config::reads_its_targets()` with H-41's five values and `Config::default()` the bare engine it was; the default shown byte for byte H-41's candidate on seeds 22, 23 and 24 at 1 024 units, and every pin held by one dispatch; no hypothesis, no derivation and no arm run
 
 ## Mission
 
 **This brief builds two things in the engine and runs nothing new.** H-41 read that the engine can read both of its
-network's targets ([ADR-0195](../docs/adr/0195-the-inhibitory-target-by-the-same-read-measured.md)).
-[ADR-0196](../docs/adr/0196-the-engines-default.md) makes what H-41 measured of the network's own regime the
+network's targets ([ADR-0195](../../docs/adr/0195-the-inhibitory-target-by-the-same-read-measured.md)).
+[ADR-0196](../../docs/adr/0196-the-engines-default.md) makes what H-41 measured of the network's own regime the
 engine's default for an image no derivation has settled. It does so in a named configuration, leaving
 `Config::default()` the bare engine that every pin runs.
 
@@ -26,7 +31,7 @@ When the round is done, the tree holds:
 **There is no hypothesis.** Nothing is run under the default that H-41 did not run, so there is nothing to predict and
 no stopping rule to reach.
 
-The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)):
+The scope is the front matter's ([ADR-0191](../../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)):
 `spec-brief archive --strict` refuses the round outside it. `briefs/README.md` says what to do with a file the scope
 does not hold.
 
@@ -67,15 +72,15 @@ does not hold.
 - **The engine and the harness are read before a description of them is trusted**, this brief's and ADR-0196's
   included.
 - No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name
-  ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
-  ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
-- The runtime's gate grows by at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)): the
+  ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction
+  ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
+- The runtime's gate grows by at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)): the
   byte-for-byte check, if it fits the gate's time, or else an `#[ignore]`d test whose name contains `exhaustive`. A new
   refusal carries a test over the lattice of `testkit/prop.rs`. The pull request's mutation gate catches every mutant
-  in the lines it changes ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+  in the lines it changes ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The pull request leaves draft with the commit that asks for the merge**, which sets the round's ADR to `accepted`.
 - **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards
-  ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's
+  ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's
   minutes.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -111,8 +116,8 @@ are what to re-derive.
 5. **T-1** (`runtime/cortex-runtime/tests/differential.rs`,
    `the_random_network_hashes_to_the_pinned_value_on_every_architecture`) spells every field of the configuration out.
 6. **The calibration** took its first candidate, 1.75, on every network derived: seeds 22, 23 and 24 at 1 024 units,
-   and seeds 22 and 23 at 2 048 units ([ADR-0167](../docs/adr/0167-another-network-of-the-same-size-measured.md),
-   [ADR-0169](../docs/adr/0169-twice-the-size-measured.md)).
+   and seeds 22 and 23 at 2 048 units ([ADR-0167](../../docs/adr/0167-another-network-of-the-same-size-measured.md),
+   [ADR-0169](../../docs/adr/0169-twice-the-size-measured.md)).
 7. **The process** (ADR-0184, ADR-0191, `briefs/README.md`): eighteen weekly shards; `spec-brief archive <NNN>
    --strict` measured from `origin/main`; `npm run spec:scope` prints each widening of `affectedFiles`.
 8. **The sweep**: brief 075's reproduction, run 39202114129, was dispatched at `scope=both`. Its sweep is recorded by
