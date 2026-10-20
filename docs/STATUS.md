@@ -1,12 +1,12 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-Brief 077 wrote it on 2026-10-20 ([ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)), after [ADR-0198](adr/0198-the-engines-default-built.md) merged.
+Brief 078 wrote it on 2026-10-20 ([ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)), after [ADR-0201](adr/0201-math-that-github-renders.md) merged.
 
 ## The engine
 
-- **It runs.** The records with their layout assertions, the update rules, synaptic fan-out with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena, the `.cortex` image (format 24), the criticality controller, sleep with the episodic ledger and its replay, and the symbolic layer are Implemented ([§1.6](WHITEPAPER.md#16-implementation-status-at-a-glance)).
-- **Its default** for an image no derivation has settled is `Config::reads_its_targets()`: `Config::default()` with the modulation at rest 0.5, the gain 1.75, the rate's rule at step = 1/16, the read of 128 windows and both targets by it ([ADR-0196](adr/0196-the-engines-default.md), built by ADR-0198). `Config::default()` stays the bare engine every pin runs.
+- **It runs.** The records with their layout assertions, the update rules, synaptic fan-out with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena, the `.cortex` image (format 25), the criticality controller, sleep with the episodic ledger and its replay, and the symbolic layer are Implemented ([§1.6](WHITEPAPER.md#16-implementation-status-at-a-glance)).
+- **Its default** for an image no derivation has settled is `Config::reads_its_targets()`: `Config::default()` with the modulation at rest 0.5, the gain 1.75, the rate's rule at step = 1/16, the read of 128 windows and both targets by it ([ADR-0196](adr/0196-the-engines-default.md), built by [ADR-0198](adr/0198-the-engines-default-built.md)). `Config::default()` stays the bare engine every pin runs. The probe of the step, `Config::step_probe`, is built and unset in both ([ADR-0202](adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md)).
 
 ## What it learns
 
@@ -22,6 +22,7 @@ Every hypothesis, with its report, is in [docs/research/](research/README.md).
 | The criticality controller's step | no: every step takes the network to 24.4 Hz a unit | H-37 |
 | The gain moved by a rate the controller holds | yes, at step = 1/8 on seed 22 and at 1/16 on three networks | H-38, H-39 |
 | A target the engine reads, then the inhibitory target by the same read | yes, on three networks | H-40, H-41 |
+| A step the engine makes from its own loop | yes, on three networks: S = 15.0 to 15.2, step = 1/61 to 1/60, the alternation 12 to 21 % lower | [H-42](research/H-42.md) |
 
 **The learning configuration** is H-25's ([ADR-0146](adr/0146-the-tag-the-address-already-is.md)):
 - the excitatory synapses under the reward's gate, with the signed gate set;
@@ -38,7 +39,7 @@ Per trial the host gives the reward's sign, and the readout sets are the body's 
 - The whole punishment is a parameter of the image no configuration sets (ADR-0155, ADR-0156).
 - The exploration is an option of the task no run sets (ADR-0163, ADR-0164).
 - The controller's step under its estimate is zero in every run that learns (ADR-0077, ADR-0177).
-- The rate's rule is set in H-38's to H-41's runs, the read of its target in H-40's and H-41's, and the read's flag in H-41's alone. All three are set in the default, under which no tick has run (ADR-0198).
+- The rate's rule is set in H-38's to H-42's runs, the read of its target in H-40's to H-42's, the read's flag in H-41's and H-42's, and the probe in H-42's alone. The first three are set in the default, under which no tick has run (ADR-0198), and the probe is not.
 - The speed line is closed, the sweep kept and the lanes reverted ([ADR-0105](adr/0105-the-speed-line-closed.md)).
 
 ## What does not exist
@@ -47,13 +48,12 @@ Per trial the host gives the reward's sign, and the readout sets are the body's 
 - The lookahead ADR-0099 ordered, and a lever on the rest of the turn.
 - The real-time mode's reach, measured on the reference platform.
 - The `mmap` path, the shared-memory mappings, core pinning, the tool broker and standardising apart.
-- The default run on a network, a size or a generator H-41 did not run.
-- The per-unit gain of §8.8.
+- The default or the probe run on a network, a size or a generator H-42 did not run.
+- The per-unit gain of §8.8, and a reserved byte in the modulator section.
 
 ## The next decision
 
-[ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md) took the first of ADR-0196's three: a step the engine makes from its own loop, H-42, which brief 078 runs.
-1. H-42's yes puts the probe in `Config::reads_its_targets()` in step = 1/16's place; its no names an ADR on how S is read, or on λ.
+1. H-42's yes reaches step 3 of [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md)'s stopping rule: an ADR that puts the probe in `Config::reads_its_targets()` in step = 1/16's place.
 2. Then M10, a reward past the trial ([Appendix C](WHITEPAPER.md#appendix-c-roadmap)).
 3. A re-read of the targets by evidence, at M12.
 

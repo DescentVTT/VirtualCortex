@@ -53,7 +53,7 @@ VirtualCortex 是一個以 Rust 撰寫的**單機神經擬態虛擬 Actor 引擎
 | [§8 Cross-cutting concepts](../WHITEPAPER.md#8-cross-cutting-concepts) | Q16.16 數值模型、記錄佈局規則 L-1 至 L-6、確定性、時間、並行、記憶體、序列化、**生物機制對照表與參考方程式**（§8.8）、錯誤處理、安全、可觀測性，以及 §8.12 至 §8.18：計算現象學、原生語言、社交分寸、再表徵、聲學合成、計算幽默與自我修正。 |
 | [§9 Architecture decisions](../WHITEPAPER.md#9-architecture-decisions) | ADR 索引；決策本體在 [`docs/adr/`](../adr/README.md)。 |
 | [§10 Quality requirements](../WHITEPAPER.md#10-quality-requirements) | 品質樹與 T-1 至 T-8 目標情境，每列都有量測協定與空白的「Measured」欄。 |
-| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding（F-n）：文件與程式碼不一致的地方、已知的錯誤，以及各自怎麼處置。§11.1 是假設總表，每個假設（H-1 至 H-41）一列，另列尚未編號的開放問題；每個假設的原文、停止規則與讀值在 [`docs/research/`](../research/README.md)。 |
+| [§11 Risks and technical debt](../WHITEPAPER.md#11-risks-and-technical-debt) | 編號 finding（F-n）：文件與程式碼不一致的地方、已知的錯誤，以及各自怎麼處置。§11.1 是假設總表，每個假設（H-1 至 H-42）一列，另列尚未編號的開放問題；每個假設的原文、停止規則與讀值在 [`docs/research/`](../research/README.md)。 |
 | [§12 Glossary](../WHITEPAPER.md#12-glossary) | 術語表。 |
 | [附錄 A](../WHITEPAPER.md#appendix-a-capacity-model) | 容量模型（是計畫，不是量測）。這張表是離線模式的計畫：一台伺服器裝得下多少，而不是能即時跑多少（ADR-0098）。ADR-0097 量出每個 tick 要服務的單元比例，並寫下單元數、即時 tick 與輸入密度三個目標必須一起滿足的預算；在 ADR-0044 的輸入密度下，離線跑這份計畫比即時慢約 1 700 倍，接上身體的即時模式則只能跑預算允許的單元數，約 2.6 萬個（Target）。表格本身沒改，F-49 已由這個決定解決。 |
 | [附錄 B](../WHITEPAPER.md#appendix-b-verification-and-conformance) | 七層驗證 V-1 至 V-7（編譯期佈局斷言、spec-guard 文件對程式碼、spec-graph 文件對文件、brief 章節、manifest 依賴、PR 改動行的 mutation gate、兩種架構上的判定 pin）加上建置閘門（release profile 測試、rustdoc、MSRV、benchmark 冒煙）。 |
