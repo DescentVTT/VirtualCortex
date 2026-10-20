@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A step the engine makes from its own loop, built ([ADR-0202](docs/adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md)); image format 25; whitepaper 5.3.0.** `Config::step_probe` starts ADR-0200's probe at the read's end: 16 windows at g₀·(1 ∓ 1/64), then the step 4 096·c*/D. Its flag is the modulator section's `[27]`. Unset, every run is the run it was.
 - **The spec tools' pinned versions held by the gate; whitepaper 5.2.1.** Appendix B names spec-guard 0.26.0, spec-graph 0.17.0 and spec-brief 0.8.0, and three `@assert-count` directives now hold each against `package.json`. The 0.28.0, 0.19.0 and 0.10.0 releases were tried and held back.
 - **Math that GitHub renders ([ADR-0201](docs/adr/0201-math-that-github-renders.md)); whitepaper 5.2.0.** `\operatorname` becomes `\mathrm`, math with a backslash before punctuation moves to `` $`...`$ `` or a ```` ```math ```` fence in 42 files, and `spec:shape` holds every block to it.
 - **A step the engine makes from its own loop ([ADR-0200](docs/adr/0200-a-step-the-engine-makes-from-its-own-loop.md)); H-42 written before any run; brief 078; whitepaper 5.1.0.** After the read, a probe of ±1/64 reads the steepness S, and the rate's rule runs at step = (1/4)/S.
