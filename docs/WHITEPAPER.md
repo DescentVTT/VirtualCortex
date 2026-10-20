@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.2.0
+version: 5.2.1
 status: active
 date: 2026-10-20
 ---
@@ -11,7 +11,7 @@ date: 2026-10-20
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.2.0 |
+| Version | 5.2.1 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-20 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2878,6 +2878,9 @@ Five independent document checks and eight build and test gates, each answering 
 
 The three spec tools are pinned to exact versions in `package.json` (spec-guard 0.26.0, spec-graph 0.17.0, spec-brief 0.8.0; [ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md)) and have no runtime dependencies; they require Node 22 or newer. `spec-guard prove` shows each rule in force a violation of itself and fails on one that still passes, so an assertion over nothing is found by the gate. spec-guard runs with `--ignore-status`: since 0.6.0 it withholds the directives of a document whose status is `draft`, `proposed`, `rejected`, `deprecated` or `superseded`, and since 0.12.0 `archived`, and every live brief is `proposed`, so without the flag a brief's precondition directives (`briefs/README.md`) would be reported and never executed.
 
+<!-- @assert-count target="package.json" symbol='"@descent-vtt/spec-guard": "0.26.0"' min="1" reason="ADR-0185: the version this sentence names is the one package.json pins" -->
+<!-- @assert-count target="package.json" symbol='"@descent-vtt/spec-graph": "0.17.0"' min="1" reason="ADR-0185: the version this sentence names is the one package.json pins" -->
+<!-- @assert-count target="package.json" symbol='"@descent-vtt/spec-brief": "0.8.0"' min="1" reason="ADR-0185: the version this sentence names is the one package.json pins" -->
 <!-- @assert-count target=".spec-brief.json" symbol="Latest ≠ Newest" min="1" reason="F-39, ADR-0185: every live brief restates the doctrine among its standing directives" -->
 <!-- @assert-count target="package.json" symbol="spec-guard prove" min="1" reason="ADR-0185: the gate shows each assertion can fail" -->
 <!-- @assert-count target="package.json" symbol="spec-brief lint" min="1" reason="ADR-0185: the briefs' contract and the archived briefs' hashes" -->

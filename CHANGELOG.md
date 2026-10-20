@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **The spec tools' pinned versions held by the gate; whitepaper 5.2.1.** Appendix B names spec-guard 0.26.0, spec-graph 0.17.0 and spec-brief 0.8.0, and three `@assert-count` directives now hold each against `package.json`. The 0.28.0, 0.19.0 and 0.10.0 releases were tried and held back.
 - **Math that GitHub renders ([ADR-0201](docs/adr/0201-math-that-github-renders.md)); whitepaper 5.2.0.** `\operatorname` becomes `\mathrm`, math with a backslash before punctuation moves to `` $`...`$ `` or a ```` ```math ```` fence in 42 files, and `spec:shape` holds every block to it.
 - **A step the engine makes from its own loop ([ADR-0200](docs/adr/0200-a-step-the-engine-makes-from-its-own-loop.md)); H-42 written before any run; brief 078; whitepaper 5.1.0.** After the read, a probe of ±1/64 reads the steepness S, and the rate's rule runs at step = (1/4)/S.
 - **One place for each kind of fact, built ([ADR-0199](docs/adr/0199-one-place-for-each-kind-of-fact-built.md)); brief 077; whitepaper 5.0.0.** `docs/STATUS.md` holds the standing and `docs/research/` each hypothesis, moved verbatim. Every ADR has a title, a summary and a kind, the tables are written from them, and `spec:shape` and `spec:index` join the gate. Brief 076's sweep: no survivor.
