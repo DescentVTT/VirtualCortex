@@ -1,8 +1,8 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.5.0
+version: 5.6.0
 status: active
-date: 2026-10-20
+date: 2026-10-21
 ---
 
 # VirtualCortex Architecture Whitepaper
@@ -11,9 +11,9 @@ date: 2026-10-20
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.5.0 |
+| Version | 5.6.0 |
 | Status | Active (living document; amended by ADR) |
-| Date | 2026-10-20 |
+| Date | 2026-10-21 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
@@ -2505,6 +2505,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0202](adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md) | A step the engine makes from its own loop, built | accepted |
 | [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md) | A step the engine makes from its own loop, its protocol | accepted |
 | [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | A step the engine makes from its own loop, measured | accepted |
+| [ADR-0205](adr/0205-the-probe-in-the-engines-default.md) | The probe in the engine's default | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2628,6 +2629,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-73 | The Traditional Chinese guide's row for Appendix C named the milestones *"M1 至 M9"*; Appendix C lists M1 to M15. | `docs/zh-TW/README.md` | **Resolved** ([ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)): the row is rewritten with the guide's other rows that carried status. |
 | F-74 | `README.md`'s Status said the repository *"is at the state-model stage"*, where `CLAUDE.md` said it *"is past the state-model stage"*. | `README.md` | **Resolved** ([ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)): README's Status links `docs/STATUS.md` and names no stage. |
 | F-75 | The Traditional Chinese guide's row for §11 counted the hypotheses as *"H-1 至 H-41"*; §11.1 has listed H-42 since [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), whitepaper 5.1.0. | `docs/zh-TW/README.md` | **Resolved** ([ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)): the row reads H-1 至 H-42. |
+| F-76 | The gate's step *"Test in the release profile"* was bounded at 10 minutes with the comment *"192 s at the longest"* ([ADR-0159](adr/0159-the-gates-jobs-bounded.md)); the last twelve green runs took up to 516 s, and brief 078's pull request hit the bound once on a commit that changed only documents. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0205](adr/0205-the-probe-in-the-engines-default.md)): the bound is 26 minutes, three times 516 s by ADR-0159's rule; where the rounds' pinned tables live, which grows the test crates' compile time, is named and not taken. |
 
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->

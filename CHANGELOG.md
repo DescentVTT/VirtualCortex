@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **The probe in the engine's default ([ADR-0205](docs/adr/0205-the-probe-in-the-engines-default.md)); brief 079; F-76; whitepaper 5.6.0.** `Config::reads_its_targets()` is to set `step_probe`. The gate's release test step is bounded at 26 minutes, three times its longest of 516 s.
 - **A step the engine makes from its own loop, measured ([ADR-0204](docs/adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)); H-42 = yes at step 3; whitepaper 5.5.0.** On seeds 22, 23 and 24 the probe read S = 15.0 to 15.2 and made step = 1/61 to 1/60, and both arms held H-25's four clauses. All four predicted readings held. Readings in `docs/research/H-42.md`; F-75.
 - **A step the engine makes from its own loop, its protocol ([ADR-0203](docs/adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md)); whitepaper 5.4.0.** H-42's constants, clauses and four readings are code in `tests/inhibition.rs` before any lead-in with the probe set. A run with no pin is held to H-41's twin and an oracle of the probe, and a trial on seed 22 runs first.
 - **A step the engine makes from its own loop, built ([ADR-0202](docs/adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md)); image format 25; whitepaper 5.3.0.** `Config::step_probe` starts ADR-0200's probe at the read's end: 16 windows at g₀·(1 ∓ 1/64), then the step 4 096·c*/D. Its flag is the modulator section's `[27]`. Unset, every run is the run it was.
