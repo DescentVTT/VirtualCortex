@@ -47,7 +47,24 @@ The readings' tables and the dispatches are in [H-42's report](../research/H-42.
 - The calibration, dispatch 39366349243 at `scope=exhaustive` on `049ec66`, ran 156 tests in 18 shards with H-42's ten excluded. Every pin held at format 25 with the probe unset.
 - The trial, the derivations and the arms ran once each at `scope=arms` on AArch64: dispatches 39373902002 and 39374289306 on `049ec66`, and 39374860385 on `158fde4`.
 - The tables were pinned from those logs in `158fde4` and `1fc2f28`, pull request #227.
-- The reproduction, dispatch 39376979724 at `scope=both` on `1fc2f28`, is the check of every pinned table on x86-64. Its sweep had not ended when this ADR was written; the first ADR that merges after it ends records it ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)).
+- The reproduction, dispatch 39376979724 at `scope=both` on `1fc2f28`, ran 166 tests in 18 shards on x86-64, each green, and reproduced every pinned table. Its jobs took 43.0 to 87.1 minutes, the longest 48 % of its 180-minute bound. The cost table is regenerated from it: 166 lines, 130 054 s.
+
+**The sweep of that dispatch, recorded here.** It ended green before any ADR merged, so this one records it ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)).
+
+| Outcome | Mutants |
+| :--- | ---: |
+| Caught | 3 793 |
+| Missed | 0 |
+| Unviable | 158 |
+| Timeouts | 28 |
+| All | 3 979 |
+
+- 46 mutants more than the 3 933 [ADR-0199](0199-one-place-for-each-kind-of-fact-built.md) recorded: the probe's code, ADR-0202's.
+- 23 timeouts are where [ADR-0062](0062-the-first-complete-sweeps-list.md) reads them as inherent: ADR-0199's 22, and the barrier's second wait, `barrier.rs:41:55`, a spinning hang.
+- 3 are in `Image::decode`, ADR-0199's three at their moved lines, each beside an injector mutant that timed out. Two were still finishing tests, and one had stopped with none of its unreported tests its own module's.
+- `store.rs:148:9` was still finishing tests. These four are F-42's kind, by [ADR-0063](0063-the-sweep-reads-its-own-timeouts.md)'s evidence.
+- `branching.rs:100:16` ran its whole window beside `barrier.rs:41:55`'s spinning hang. Its log ends in `tests/criticality.rs`'s tests on four workers, none of its own module's: F-42's kind.
+- No survivor, so no finding.
 
 ## Consequences
 

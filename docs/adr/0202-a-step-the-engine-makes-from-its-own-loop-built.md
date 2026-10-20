@@ -124,6 +124,11 @@ What was read first (principle 2), on 2026-10-20 at `main` `62195dc`:
 - **H-41's eighteen keep their numbers**: a derivation reads its images written back to 24 as well (`Derivation::crcs_both_targets`, `BOTH_TARGETS_FORMAT`).
 - *Why not option 6(b)*: it would move numbers a check can hold where they are.
 
+### The mutation gate
+
+On pull request #227's run 39376981604 at `1fc2f28`, `cargo-mutants` made 56 mutants in the changed lines: 51 caught, 5 unviable, none missed ([ADR-0030](0030-verification-governance.md)).
+No file under `src/` changed after `5cbdf58`, the build's commit.
+
 ### What brief 078 did not empower, and this does not take
 
 The rate's rule, `hold`, `move_gain`, the gain's bounds, the read, its span, λ, the probe's size and windows, and `Config::reads_its_targets()` do not change.
