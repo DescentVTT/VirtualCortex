@@ -259,6 +259,20 @@ pub struct Config {
     /// image's, beside its read under way, outranks this one: it changes what the run does, so it
     /// is part of the image (§8.3).
     pub istdp_target_read: bool,
+    /// The probe of the step (ADR-0200, ADR-0202): while set beside a read of the rate's target,
+    /// the read's end starts a probe in the rule's place. For sixteen windows the record's gain
+    /// $g_0$ is held and the workers are given it times $1 - 1/64$, $1 + 1/64$, $1 + 1/64$,
+    /// $1 - 1/64$, four, eight and four windows ([`Executor::gain_given_q16`]); the probe sums the
+    /// higher windows' counts less the lower ones', $D$. At its last window the step becomes
+    /// $\kappa = 4\,096\,c^{*}/D$ in Q0.16, $c^{*}$ the read's target count, which is
+    /// $\lambda / S$ with $\lambda = 1/4$ and the steepness $S = 4D/c^{*}$, and the rate's rule
+    /// runs from the next window at it. A probe whose $D$ is not above zero, or whose $\kappa$
+    /// passes `CONTROL_STEP_MAX_Q0_16`, ends refused, the gain held from there on, as a refused
+    /// read ends. The flag is the probe's: it is spent when the probe ends, or when the read ends
+    /// refused. Unset (the default), a read ends in the rule at `control_step_q0_16`, as before
+    /// ADR-0202, bit for bit. Refused without a read. For an engine built from an image, the
+    /// image's, beside its read or its probe under way, outranks this one (§8.3).
+    pub step_probe: bool,
 }
 
 impl Default for Config {
@@ -294,6 +308,7 @@ impl Default for Config {
             rate_target_period_ticks: 0,
             rate_read_windows: 0,
             istdp_target_read: false,
+            step_probe: false,
         }
     }
 }
@@ -469,6 +484,10 @@ pub enum ConfigError {
     /// or an image carries it beside no read under way: the inhibitory target is taken from the
     /// read (ADR-0192, ADR-0194).
     IstdpReadWithoutRead,
+    /// `step_probe` is set without a read of the rate's target (`rate_read_windows` zero), or an
+    /// image carries it beside no read and no probe under way, or a probe beside no target the
+    /// read made: the probe follows the read (ADR-0200, ADR-0202).
+    StepProbeWithoutRead,
 }
 
 /// The read of the rate's target (ADR-0188, ADR-0189), between ticks: `Executor::target_read`.
@@ -477,9 +496,18 @@ pub enum TargetRead {
     /// Under way: `left` windows of the read still to close, at least one, the gain held through
     /// each; `sum` the spikes of those of its last sixteen windows closed so far.
     Reading { left: u8, sum: u64 },
+    /// The probe of the step after the read (ADR-0200, ADR-0202), under way: `left` of its sixteen
+    /// windows still to close, at least one, the record's gain held through each and the workers
+    /// given it moved by a sixty-fourth (`Executor::gain_given_q16`); `sum` the counts of its
+    /// windows closed so far at the higher gain less those at the lower. The read's target is set
+    /// beside it, and the rule waits for the probe's step.
+    Probing { left: u8, sum: i64 },
     /// Ended on a mean whose period the rate's target refuses: no target, and the gain held from
     /// there on, as through the read. The writer refuses an image of the engine with
-    /// `ConfigError::RateTargetOutOfRange`, so no image carries it.
+    /// `ConfigError::RateTargetOutOfRange`, so no image carries it. Since ADR-0202 also a probe
+    /// that made no step: the read's target is kept as a reading, the gain is held from there on
+    /// and no rule runs, and the writer refuses its image with
+    /// `ConfigError::ControlStepOutOfRange`.
     Refused,
 }
 
@@ -810,6 +838,127 @@ pub(crate) fn read_sum_max(left: u8) -> u64 {
     u64::from(READ_SUMMED_WINDOWS.saturating_sub(left)).saturating_mul(u64::from(RATE_TARGET_MAX))
 }
 
+/// The probe's windows (ADR-0200): four at the lower gain, eight at the higher and four at the
+/// lower, which `TargetRead::Probing`'s `left` counts down from sixteen. The order cancels a
+/// count that drifts at a constant rate through them.
+pub(crate) const PROBE_WINDOWS: u8 = 16;
+/// The probe's windows at either gain before the higher ones, and the higher ones (ADR-0200):
+/// the higher are those with five to twelve left (`probe_raises`).
+const PROBE_LOWER_FIRST: u8 = 4;
+const PROBE_HIGHER: u8 = 8;
+const _: () = assert!(PROBE_WINDOWS == 2 * PROBE_HIGHER && PROBE_HIGHER == 2 * PROBE_LOWER_FIRST);
+/// The probe's move of the gain as a shift (ADR-0200): a sixty-fourth either way, its two
+/// factors and the half the product rounds by.
+const PROBE_SHIFT: u32 = 6;
+const PROBE_UP: u64 = 65;
+const PROBE_DOWN: u64 = 63;
+const PROBE_HALF: u64 = 32;
+const _: () = assert!(
+    PROBE_UP == (1 << PROBE_SHIFT) + 1
+        && PROBE_DOWN == (1 << PROBE_SHIFT) - 1
+        && PROBE_HALF == 1 << (PROBE_SHIFT - 1)
+);
+/// λ of ADR-0200 as a shift: a quarter.
+const PROBE_LAMBDA_SHIFT: u32 = 2;
+/// The step the probe makes as a shift of the target's count over its sum (ADR-0200): with eight
+/// windows a side, $2^3$, and the gain moved by $2 \cdot 2^{-6}$ between them, the steepness is
+/// $S = D \cdot 2^{6 - 1 - 3} / c^{*} = 4D/c^{*}$, and $\kappa = \lambda / S$ in Q0.16 is
+/// $2^{16 - 2 - 2}\,c^{*}/D$, ADR-0200's $4\,096\,c^{*}/D$.
+const PROBE_STEP_SHIFT: u32 = 12;
+const _: () = assert!(
+    PROBE_STEP_SHIFT == 16 - PROBE_LAMBDA_SHIFT - (PROBE_SHIFT - 1 - 3)
+        && PROBE_HIGHER as u32 == 1 << 3
+);
+
+/// Whether the probe's window with `left` windows still to close, itself among them, runs at the
+/// higher gain (ADR-0200): the eight between its first four and its last four. A range pattern,
+/// so no comparison is left for a mutant to move.
+fn probe_raises(left: u8) -> bool {
+    matches!(left, 5..=12)
+}
+const _: () = assert!(
+    5 == PROBE_WINDOWS - PROBE_LOWER_FIRST - PROBE_HIGHER + 1
+        && 12 == PROBE_WINDOWS - PROBE_LOWER_FIRST
+);
+
+/// The gain the workers are given through the probe's window with `left` windows still to close
+/// (ADR-0200, ADR-0202): `gain`, the record's $g_0$, which the probe holds, times $65/64$ in a
+/// window that raises it and $63/64$ in the others, to nearest with a half going up. The product
+/// may pass the controller's bounds by a sixty-fourth of them; the record's gain never does.
+fn probe_gain_q16(gain: u32, left: u8) -> u32 {
+    let factor = if probe_raises(left) {
+        PROBE_UP
+    } else {
+        PROBE_DOWN
+    };
+    let given = u64::from(gain)
+        .saturating_mul(factor)
+        .saturating_add(PROBE_HALF)
+        >> PROBE_SHIFT;
+    u32::try_from(given).unwrap_or(u32::MAX)
+}
+
+/// The step a probe's sum makes against the read's target count (ADR-0200, ADR-0202):
+/// $\kappa = 4\,096\,c^{*}/D$ in Q0.16, to nearest with a half going up. None where the sum is
+/// not above zero — the higher gain counted no more than the lower, a steepness the probe cannot
+/// read — and where $\kappa$ passes `CONTROL_STEP_MAX_Q0_16`, a steepness below a half. The sum
+/// is held to no comparison: a sum below zero is no `u64`, and a sum of zero divides nothing.
+fn probe_step_of(count: u32, sum: i64) -> Option<u16> {
+    let sum = u64::try_from(sum).ok()?;
+    let step = (u64::from(count) << PROBE_STEP_SHIFT)
+        .saturating_add(sum >> 1)
+        .checked_div(sum)?;
+    match u16::try_from(step) {
+        Ok(step @ 0..=CONTROL_STEP_MAX_Q0_16) => Some(step),
+        _ => None,
+    }
+}
+
+/// A window's close under the probe (ADR-0202): what follows a probe with `left` windows still to
+/// close and `sum` so far, the window having counted `spikes`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProbeStep {
+    /// The probe goes on: one window fewer left, the count added or taken.
+    Probing { left: u8, sum: i64 },
+    /// The window was the probe's last: the step it made.
+    Step(u16),
+    /// The window was the probe's last, and its sum makes no step.
+    Refused,
+}
+
+/// `ProbeStep` of a window's close: the window's spikes added to the sum where the window ran at
+/// the higher gain and taken from it where it ran at the lower, and, where it was the last, the
+/// step `probe_step_of` makes of the sum against `count`, the read's target count. A probe always
+/// has a window left to close, so a `left` of zero is read as the last, as one is.
+fn probe_step(left: u8, sum: i64, spikes: u64, count: u32) -> ProbeStep {
+    // A window's count is below 2^30, so it fits; it saturates by name past that.
+    let spikes = i64::try_from(spikes).unwrap_or(i64::MAX);
+    let sum = if probe_raises(left) {
+        sum.saturating_add(spikes)
+    } else {
+        sum.saturating_sub(spikes)
+    };
+    match left.checked_sub(1) {
+        Some(left @ 1..) => ProbeStep::Probing { left, sum },
+        _ => probe_step_of(count, sum).map_or(ProbeStep::Refused, ProbeStep::Step),
+    }
+}
+
+/// The least and the most a probe's sum holds with `left` windows still to close (ADR-0202):
+/// each window's count at most `RATE_TARGET_MAX`, taken from the sum in each lower window closed
+/// and added in each higher one; zero and zero while none is closed. The loader refuses a sum
+/// outside them, which is a record the writer never produces.
+pub(crate) fn probe_sum_bounds(left: u8) -> (i64, i64) {
+    let closed = PROBE_WINDOWS.saturating_sub(left);
+    let higher = closed.saturating_sub(PROBE_LOWER_FIRST).min(PROBE_HIGHER);
+    let lower = closed.saturating_sub(higher);
+    let max = i64::from(RATE_TARGET_MAX);
+    (
+        i64::from(lower).saturating_mul(max).saturating_neg(),
+        i64::from(higher).saturating_mul(max),
+    )
+}
+
 /// The two compartment sums under the tick's gain: `sum × gain`, Q16.16, rounded to nearest
 /// and clamped to the width; exact at a gain of 1.0 (ADR-0036).
 #[inline]
@@ -1122,6 +1271,10 @@ pub struct Executor<const CAP: usize> {
     /// the configuration's or the image's, set only beside a read under way and spent when the
     /// read ends.
     istdp_target_read: bool,
+    /// Whether the read under way is followed by the probe of the step, or the probe is under way
+    /// (ADR-0202): the configuration's or the image's, set only beside a read or a probe under
+    /// way and spent when the probe ends or the read ends refused.
+    step_probe: bool,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -1253,6 +1406,11 @@ impl<const CAP: usize> Executor<CAP> {
         if let (true, None) = (config.istdp_target_read, target_read) {
             return Err(ConfigError::IstdpReadWithoutRead);
         }
+        // The probe of the step (ADR-0202): refused without a read to follow, after the read's
+        // own refusals and the inhibitory flag's.
+        if let (true, None) = (config.step_probe, target_read) {
+            return Err(ConfigError::StepProbeWithoutRead);
+        }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -1374,6 +1532,7 @@ impl<const CAP: usize> Executor<CAP> {
             rate_target,
             target_read,
             istdp_target_read: config.istdp_target_read,
+            step_probe: config.step_probe,
             // The gain the configuration starts the engine at (ADR-0196), 1.0 by default.
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
@@ -1558,6 +1717,44 @@ impl<const CAP: usize> Executor<CAP> {
             return Err(ConfigError::IstdpReadWithoutRead);
         };
         self.istdp_target_read = true;
+        Ok(())
+    }
+
+    /// The probe of the step (ADR-0200, ADR-0202), between ticks: whether the read under way is
+    /// followed by the probe, or the probe is under way (`TargetRead::Probing`). False while
+    /// unset, and once the probe has ended, the flag spent with it: the step it made is then the
+    /// record's `control_step_q0_16`.
+    pub fn step_probe(&self) -> bool {
+        self.step_probe
+    }
+
+    /// The gain the workers are given at the next tick (ADR-0202): the record's
+    /// `synaptic_gain_q16`, or, while the probe is under way, the record's moved by the probe's
+    /// sixty-fourth for the window its windows left name. The tick publishes this, and nothing
+    /// else, to every worker.
+    pub fn gain_given_q16(&self) -> u32 {
+        match self.target_read {
+            Some(TargetRead::Probing { left, .. }) => {
+                probe_gain_q16(self.homeostasis.synaptic_gain_q16, left)
+            }
+            _ => self.homeostasis.synaptic_gain_q16,
+        }
+    }
+
+    /// The loader's: the probe's flag an image carries (ADR-0202), which outranks the
+    /// configuration's (§8.3), beside the read under way it follows, or, where `probe` gives one,
+    /// with the probe under way, `left` windows still to close and `sum` so far, beside the
+    /// target the read made. Refused beside no read under way and no probe, and a probe beside no
+    /// target, as `new` refuses the configuration's flag without a read.
+    pub(crate) fn set_step_probe(&mut self, probe: Option<(u8, i64)>) -> Result<(), ConfigError> {
+        match (probe, self.target_read, self.rate_target) {
+            (None, Some(TargetRead::Reading { .. }), _) => {}
+            (Some((left, sum)), None, Some(_)) => {
+                self.target_read = Some(TargetRead::Probing { left, sum });
+            }
+            _ => return Err(ConfigError::StepProbeWithoutRead),
+        }
+        self.step_probe = true;
         Ok(())
     }
 
@@ -2245,7 +2442,8 @@ impl<const CAP: usize> Executor<CAP> {
     /// are masks on the tick, so a loaded engine continues the window it was written in. The
     /// gain is regulated by the window's count over the rate's target while one is set
     /// (ADR-0180), and by the estimate under the saturation rule while none is; while a read of
-    /// the target is under way or refused it is held (ADR-0189, `read_close`).
+    /// the target is under way or refused, or the probe of the step after it is under way, it is
+    /// held (ADR-0189, ADR-0202, `read_close`).
     fn tally(&mut self) {
         let spikes = self
             .shared
@@ -2292,9 +2490,16 @@ impl<const CAP: usize> Executor<CAP> {
     /// next window's rule, or the read refused. A refused read holds the gain at every window.
     /// Where the read sets the inhibitory rule's target as well (ADR-0194), its last window sets
     /// that rule's period to the same period, published to the workers for the next tick, and a
-    /// period that rule refuses refuses the read; either end spends the flag.
+    /// period that rule refuses refuses the read; either end spends the flag. Where the probe of
+    /// the step follows the read (ADR-0202), a read that made its target starts the probe in the
+    /// rule's place, and a window under the probe is the probe's (`probe_close`); a read refused
+    /// spends the probe's flag too.
     fn read_close(&mut self, read: TargetRead) {
         let spikes = self.homeostasis.hold();
+        if let TargetRead::Probing { left, sum } = read {
+            self.probe_close(left, sum, spikes);
+            return;
+        }
         let TargetRead::Reading { left, sum } = read else {
             return;
         };
@@ -2309,10 +2514,39 @@ impl<const CAP: usize> Executor<CAP> {
                     abort("the inhibitory rule refused the period the read's step accepted for it");
                 }
                 self.istdp_target_read = false;
-                None
+                // The probe from the next window where its flag is set (ADR-0202); else the rule.
+                self.step_probe.then_some(TargetRead::Probing {
+                    left: PROBE_WINDOWS,
+                    sum: 0,
+                })
             }
             ReadStep::Refused => {
                 self.istdp_target_read = false;
+                self.step_probe = false;
+                Some(TargetRead::Refused)
+            }
+        };
+    }
+
+    /// A window's close under the probe of the step (ADR-0200, ADR-0202), the gain already held
+    /// and the window's count read by `read_close`: the probe moved on by `probe_step` — one
+    /// window fewer, the count added where the window ran at the higher gain and taken where it
+    /// ran at the lower — and at its last window the step it made set in the record, for the
+    /// rate's rule from the next window, the record's gain the read's all along; or the probe
+    /// refused, the gain held from there on and the read's target kept as a reading. Either end
+    /// spends the flag.
+    fn probe_close(&mut self, left: u8, sum: i64, spikes: u64) {
+        // The read set the target before the probe began, so it is there.
+        let count = self.rate_target.unwrap_or(0);
+        self.target_read = match probe_step(left, sum, spikes, count) {
+            ProbeStep::Probing { left, sum } => Some(TargetRead::Probing { left, sum }),
+            ProbeStep::Step(step) => {
+                self.homeostasis.control_step_q0_16 = step;
+                self.step_probe = false;
+                None
+            }
+            ProbeStep::Refused => {
+                self.step_probe = false;
                 Some(TargetRead::Refused)
             }
         };
@@ -2729,10 +2963,11 @@ impl<const CAP: usize> Executor<CAP> {
             .modulation_inhibitory
             .store(inhibitory_word(modulations.inhibitory), Ordering::Relaxed);
         self.modulator.decay_dopamine(DOPAMINE_TAU_SHIFT);
-        // The gain this tick's turns scale by (ADR-0036), likewise before the barrier.
+        // The gain this tick's turns scale by (ADR-0036), likewise before the barrier: the
+        // record's, or under the probe of the step the probe's of it (ADR-0202).
         self.shared
             .gain
-            .store(self.homeostasis.synaptic_gain_q16, Ordering::Relaxed);
+            .store(self.gain_given_q16(), Ordering::Relaxed);
         // The episode this tick's phase 3 replays, if a ripple is due in slow-wave sleep
         // (ADR-0038), likewise.
         let replay = self.ripple();
@@ -4895,6 +5130,365 @@ mod tests {
         ));
     }
 
+    /// The probe's gain (ADR-0202), each number from an oracle in wider integers written from
+    /// ADR-0200's text: the record's moved a sixty-fourth by the window its windows left name —
+    /// down in the first four and the last four, up in the eight between, and down at any other
+    /// count — to nearest with a half going up. At 1.75 the two are 1.75 x 63/64 and 1.75 x 65/64
+    /// exactly; 16 416 x 63/64 is 16 159.5 and x 65/64 16 672.5, each going up, and one LSB either
+    /// side of it goes to nearest; at the controller's bounds the product passes them by a
+    /// sixty-fourth of them.
+    #[test]
+    fn the_probe_s_gain_is_the_record_s_moved_a_sixty_fourth_by_its_window() {
+        let g = 0x0001_C000u32;
+        for left in [16u8, 15, 14, 13, 4, 3, 2, 1, 0, 17, u8::MAX] {
+            assert!(!probe_raises(left), "{left} left");
+            assert_eq!(probe_gain_q16(g, left), 112_896, "{left} left");
+        }
+        for left in 5u8..=12 {
+            assert!(probe_raises(left), "{left} left");
+            assert_eq!(probe_gain_q16(g, left), 116_480, "{left} left");
+        }
+        for (gain, down, up) in [
+            (0x4020u32, 16_160u32, 16_673u32),
+            (0x401F, 16_159, 16_671),
+            (0x4021, 16_160, 16_674),
+            (GAIN_ONE_Q16, 64_512, 66_560),
+            (GAIN_MIN_Q16, 16_128, 16_640),
+            (GAIN_MAX_Q16, 258_048, 266_240),
+        ] {
+            assert_eq!(
+                (probe_gain_q16(gain, 16), probe_gain_q16(gain, 12)),
+                (down, up),
+                "{gain:#x}"
+            );
+        }
+    }
+
+    /// A probe's windows and its step (ADR-0200, ADR-0202), each number by hand: a window's count
+    /// is taken from the sum in the probe's first four windows and its last four and added in the
+    /// eight between; at the last window the step is $4\,096\,c^{*}/D$ to nearest, a half going
+    /// up — at $c^{*} = 2\,306$ and $D = 9\,224$, a steepness of 16, a sixty-fourth. Refused at a
+    /// sum of zero and below; at the bound, 0x8000, a step, and one past it refused; a target of
+    /// no spike a step of zero. A `left` of zero is the last, as one is. The bounds the loader
+    /// holds a probe's sum to, by the windows closed so far.
+    #[test]
+    fn a_probe_sums_its_higher_windows_less_its_lower_and_makes_its_step_at_its_last() {
+        let c = 2_306u32;
+        let probing = |left, sum| ProbeStep::Probing { left, sum };
+        assert_eq!(probe_step(16, 0, 1_730, c), probing(15, -1_730));
+        assert_eq!(probe_step(13, -5_190, 1_733, c), probing(12, -6_923));
+        assert_eq!(probe_step(12, -6_923, 2_887, c), probing(11, -4_036));
+        assert_eq!(probe_step(5, 16_183, 2_894, c), probing(4, 19_077));
+        assert_eq!(probe_step(4, 19_077, 1_742, c), probing(3, 17_335));
+        assert_eq!(probe_step(2, 10_969, 1_744, c), probing(1, 9_225));
+        assert_eq!(probe_step(1, 9_225 + 1, 2, c), ProbeStep::Step(1_024));
+        assert_eq!(probe_step(0, 9_226, 2, c), probe_step(1, 9_226, 2, c));
+        // The sum at the last window: zero and below refused, the bound a step, one past refused.
+        assert_eq!(probe_step(1, 2_000, 2_000, c), ProbeStep::Refused, "D = 0");
+        assert_eq!(probe_step(1, 0, 1, c), ProbeStep::Refused, "D = -1");
+        assert_eq!(
+            probe_step(1, i64::MIN, 1, c),
+            ProbeStep::Refused,
+            "the width"
+        );
+        for (count, sum, step) in [
+            (2_306u32, 9_224i64, Some(1_024u16)),
+            (2_306, 289, Some(32_683)),
+            (2_306, 288, None),
+            (8, 1, Some(0x8000)),
+            (32_768, 4_096, Some(0x8000)),
+            (32_769, 4_096, None),
+            (320, 40, Some(0x8000)),
+            (320, 39, None),
+            (320, 320, Some(0x1000)),
+            (3, 8_192, Some(2)),
+            (3, 8_193, Some(1)),
+            (0, 1, Some(0)),
+            (2_306, 0, None),
+            (2_306, -9_224, None),
+        ] {
+            assert_eq!(probe_step_of(count, sum), step, "{count} over {sum}");
+        }
+        // The loader's bounds, by the windows closed so far: none, the first four lower, then
+        // the eight higher, then the last four lower.
+        let m = i64::from(RATE_TARGET_MAX);
+        for (left, bounds) in [
+            (17u8, (0i64, 0i64)),
+            (16, (0, 0)),
+            (15, (-m, 0)),
+            (12, (-2_147_483_520, 0)),
+            (11, (-2_147_483_520, m)),
+            (4, (-2_147_483_520, 4_294_967_040)),
+            (3, (-2_684_354_400, 4_294_967_040)),
+            (1, (-3_758_096_160, 4_294_967_040)),
+            (0, (-4_294_967_040, 4_294_967_040)),
+        ] {
+            assert_eq!(probe_sum_bounds(left), bounds, "{left} left");
+        }
+    }
+
+    /// The probe of the step in the configuration (ADR-0202): unset by default and in the
+    /// engine's default, which this round does not change; set beside a read, the engine's flag
+    /// set beside the read under way and the workers given the record's gain; refused without a
+    /// read, after the read's own refusals and the inhibitory flag's.
+    #[test]
+    fn the_probe_is_unset_by_default_and_refused_without_a_read() {
+        assert!(!Config::default().step_probe);
+        assert!(!Config::reads_its_targets().step_probe);
+        let with = |windows, period, inhibitory, probe| {
+            Executor::<8>::new(Config {
+                units: 1024,
+                synaptic_gain_q16: 0x0001_C000,
+                rate_read_windows: windows,
+                rate_target_period_ticks: period,
+                istdp_target_read: inhibitory,
+                step_probe: probe,
+                ..Config::default()
+            })
+        };
+        assert!(!with(128, 0, true, false).unwrap().step_probe());
+        let set = with(128, 0, true, true).unwrap();
+        assert_eq!(
+            (
+                set.step_probe(),
+                set.istdp_target_read(),
+                set.target_read(),
+                set.gain_given_q16()
+            ),
+            (
+                true,
+                true,
+                Some(TargetRead::Reading { left: 128, sum: 0 }),
+                0x0001_C000
+            )
+        );
+        for period in [0u32, 58_201] {
+            assert!(
+                matches!(
+                    with(0, period, false, true),
+                    Err(ConfigError::StepProbeWithoutRead)
+                ),
+                "no read, a period of {period}"
+            );
+        }
+        assert!(matches!(
+            with(0, 0, true, true),
+            Err(ConfigError::IstdpReadWithoutRead)
+        ));
+        assert!(matches!(
+            with(15, 0, false, true),
+            Err(ConfigError::RateReadOutOfRange)
+        ));
+        assert!(matches!(
+            with(128, 58_201, false, true),
+            Err(ConfigError::RateReadBesideTarget)
+        ));
+    }
+
+    /// A window's close as `tally` makes it, with the record's open window holding `spikes` in
+    /// one bin: what `read_close` reads of it under the read or the probe.
+    fn close_holding(exec: &mut Executor<8>, spikes: u32) {
+        exec.homeostasis.window_bins = 1;
+        exec.homeostasis.first_activity = spikes;
+        exec.homeostasis.last_activity = spikes;
+        exec.homeostasis.sum_prev = 0;
+        let read = exec.target_read.expect("a read or a probe under way");
+        exec.read_close(read);
+    }
+
+    /// The probe as the engine runs it (ADR-0200, ADR-0202), window by window through
+    /// `read_close`, each number by hand. A read of sixteen windows of 2 306 ends in its target,
+    /// the period 58 204, and with the probe's flag the probe begins in the rule's place: sixteen
+    /// windows left, nothing summed, the step the configuration's, the record's gain 1.75 and the
+    /// workers given 1.75 x 63/64. Through the probe's windows — 1 730 and up by one in the four
+    /// lower, 2 883 and up by one in the eight higher, then 1 742 and up — the sum is the higher
+    /// less the lower, the drift cancelling to D = 9 224, the record's gain and step held and the
+    /// workers' gain the window's; at the last the step becomes 1 024, a sixty-fourth, the flag is
+    /// spent and the workers are given the record's gain again. Without the flag the read ends in
+    /// the same target and no probe. A probe whose sum is zero ends refused: the gain held from
+    /// there on, the target kept as a reading, the step the configuration's, the flag spent, and
+    /// its image refused. A read refused spends the probe's flag, and no probe begins.
+    #[test]
+    fn a_probe_begins_at_the_read_s_end_and_sets_the_step_at_its_last_window_or_ends_refused() {
+        let built = |probe: bool| {
+            let mut exec = Executor::<8>::new(Config {
+                units: 1024,
+                synaptic_gain_q16: 0x0001_C000,
+                control_step_q0_16: 0x1000,
+                rate_read_windows: 16,
+                step_probe: probe,
+                ..Config::default()
+            })
+            .unwrap();
+            exec.target_read = Some(TargetRead::Reading {
+                left: 1,
+                sum: 15 * 2_306,
+            });
+            close_holding(&mut exec, 2_306);
+            exec
+        };
+        let unset = built(false);
+        assert_eq!(
+            (
+                unset.target_read(),
+                unset.rate_target_period_ticks(),
+                unset.rate_target_per_window(),
+                unset.step_probe()
+            ),
+            (None, 58_204, Some(2_306), false),
+            "without the flag the rule from the next window"
+        );
+        let windows: Vec<(u32, bool)> = (0..16u32)
+            .map(|k| match k {
+                4..=11 => (k.wrapping_add(2_883), true),
+                _ => (k.wrapping_add(1_730), false),
+            })
+            .collect();
+        for (equal, ended) in [(false, None), (true, Some(TargetRead::Refused))] {
+            let mut exec = built(true);
+            assert_eq!(
+                (
+                    exec.target_read(),
+                    exec.rate_target_period_ticks(),
+                    exec.rate_target_per_window(),
+                    exec.step_probe(),
+                    exec.homeostasis().control_step_q0_16,
+                    exec.gain_given_q16()
+                ),
+                (
+                    Some(TargetRead::Probing { left: 16, sum: 0 }),
+                    58_204,
+                    Some(2_306),
+                    true,
+                    0x1000,
+                    112_896
+                ),
+                "the probe in the rule's place"
+            );
+            let mut sum = 0i64;
+            for (k, &(count, higher)) in windows.iter().enumerate() {
+                let count = if equal { 2_306 } else { count };
+                close_holding(&mut exec, count);
+                sum = if higher {
+                    sum.wrapping_add(i64::from(count))
+                } else {
+                    sum.wrapping_sub(i64::from(count))
+                };
+                let left = 15u8.wrapping_sub(k as u8);
+                if left > 0 {
+                    assert_eq!(
+                        (
+                            exec.target_read(),
+                            exec.homeostasis().control_step_q0_16,
+                            exec.homeostasis().synaptic_gain_q16,
+                            exec.step_probe(),
+                            exec.gain_given_q16()
+                        ),
+                        (
+                            Some(TargetRead::Probing { left, sum }),
+                            0x1000,
+                            0x0001_C000,
+                            true,
+                            if (5..=12).contains(&left) {
+                                116_480
+                            } else {
+                                112_896
+                            }
+                        ),
+                        "window {k}"
+                    );
+                }
+            }
+            assert_eq!(sum, if equal { 0 } else { 9_224 }, "the drift cancelled");
+            assert_eq!(
+                (
+                    exec.target_read(),
+                    exec.homeostasis().control_step_q0_16,
+                    exec.step_probe(),
+                    exec.gain_given_q16(),
+                    exec.rate_target_per_window()
+                ),
+                (
+                    ended,
+                    if equal { 0x1000 } else { 1_024 },
+                    false,
+                    0x0001_C000,
+                    Some(2_306)
+                ),
+                "the probe's end"
+            );
+            if equal {
+                assert!(matches!(
+                    crate::Image::encode(&exec),
+                    Err(crate::ImageError::Config(
+                        ConfigError::ControlStepOutOfRange
+                    ))
+                ));
+            }
+        }
+        // A read refused: no target, the probe's flag spent with it and no probe.
+        let mut refused = built(true);
+        refused.target_read = Some(TargetRead::Reading { left: 1, sum: 0 });
+        refused.step_probe = true;
+        close_holding(&mut refused, 0);
+        assert_eq!(
+            (refused.target_read(), refused.step_probe()),
+            (Some(TargetRead::Refused), false)
+        );
+    }
+
+    /// The gain the tick publishes to the workers is `gain_given_q16`'s (ADR-0202): on a silent
+    /// engine of one unit set by hand to the probe's first window beside a target of one spike,
+    /// the workers are given 1.0 x 63/64 at its first tick, and through the probe's sixteen
+    /// windows each window's gain at its first tick and its last; the silent windows sum nothing,
+    /// so the probe ends refused, the record's gain 1.0 given from there on and held.
+    #[test]
+    fn the_tick_gives_the_workers_the_probe_s_gain_through_its_windows() {
+        let mut exec = Executor::<8>::new(Config {
+            units: 1,
+            control_step_q0_16: 0x2000,
+            rate_read_windows: 16,
+            step_probe: true,
+            ..Config::default()
+        })
+        .unwrap();
+        exec.target_read = Some(TargetRead::Probing { left: 16, sum: 0 });
+        exec.rate_target = Some(1);
+        let window = WINDOW_CADENCE.period();
+        for left in (1..=16u8).rev() {
+            let given = if (5..=12).contains(&left) {
+                66_560
+            } else {
+                64_512
+            };
+            exec.tick();
+            assert_eq!(
+                exec.shared.gain.load(Ordering::Relaxed),
+                given,
+                "{left} left"
+            );
+            exec.run(window.wrapping_sub(2));
+            assert_eq!(
+                (
+                    exec.shared.gain.load(Ordering::Relaxed),
+                    exec.gain_given_q16()
+                ),
+                (given, given),
+                "{left} left, the window's last tick to come"
+            );
+            exec.tick();
+        }
+        assert_eq!(exec.target_read(), Some(TargetRead::Refused));
+        exec.run(window);
+        assert_eq!(
+            (
+                exec.shared.gain.load(Ordering::Relaxed),
+                exec.homeostasis().synaptic_gain_q16
+            ),
+            (GAIN_ONE_Q16, GAIN_ONE_Q16)
+        );
+    }
+
     /// The gain an engine starts with (ADR-0196): 1.0 by default, so that `Config::default()`
     /// builds the engine it built, its homeostasis record `HomeostaticDrivePool::new()`'s and the
     /// workers' gain 1.0; from either of the controller's bounds, 0.25 and 4, to the other, the
@@ -5987,6 +6581,141 @@ mod read_prop {
         assert!(
             wide > 10 && short > 100,
             "the walk met both of the inhibitory rule's bounds: {wide} past the widest, {short} short of the shortest"
+        );
+    }
+}
+
+/// The lattice property (ADR-0030) of the probe of the step (ADR-0202): over targets, windows'
+/// counts and gains drawn on and between their edges, a probe stepped window by window by
+/// `probe_step` from its start ends where an oracle written from ADR-0200's text ends it — the
+/// eight higher windows' counts less the eight lower ones', in the order four lower, eight higher,
+/// four lower, and the step $4\,096\,c^{*}/D$ to nearest by doubling in wider integers, refused at
+/// $D \le 0$ and past 0x8000 — and holds, at every window between, the windows left and the sum so
+/// far within the bounds the loader holds a probe to; and the gain the workers are given through
+/// each window is the record's times $1 \mp 1/64$ to nearest by doubling. The walk meets a step
+/// accepted, a sum not above zero and a step past its bound.
+#[cfg(test)]
+mod probe_prop {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    /// ADR-0200's step in `i128`, from its text and not from the engine's code.
+    fn step_by_hand(count: u32, counts: &[u64]) -> Option<u16> {
+        let d = counts.iter().enumerate().fold(0i128, |d, (k, &c)| {
+            if (4..12).contains(&k) {
+                d.saturating_add(i128::from(c))
+            } else {
+                d.saturating_sub(i128::from(c))
+            }
+        });
+        if d <= 0 {
+            return None;
+        }
+        let step = i128::from(count)
+            .saturating_mul(4_096)
+            .saturating_mul(2)
+            .saturating_add(d)
+            .div_euclid(d.saturating_mul(2));
+        u16::try_from(step).ok().filter(|&step| step <= 0x8000)
+    }
+
+    /// ADR-0200's gain in `i128`: the record's times 65/64 in the windows five to twelve left and
+    /// times 63/64 in the others, to nearest by doubling.
+    fn gain_by_hand(gain: u32, left: u8) -> u32 {
+        let factor = if (5..=12).contains(&left) { 65 } else { 63 };
+        let given = i128::from(gain)
+            .saturating_mul(factor)
+            .saturating_mul(2)
+            .saturating_add(64)
+            .div_euclid(128);
+        u32::try_from(given).unwrap_or(u32::MAX)
+    }
+
+    #[test]
+    fn a_probe_stepped_window_by_window_ends_where_the_hand_rule_ends_it() {
+        let mut rng = Lcg::new(0x0202);
+        let (mut steps, mut not_above, mut past) = (0u32, 0u32, 0u32);
+        for round in 0..4_000u32 {
+            let count: u32 = match round % 4 {
+                0 => 2_306,
+                1 => rng.pick(&[0u32, 1, 8, 320, 32_768, 32_769, RATE_TARGET_MAX]),
+                2 => rng.below(1 << 14),
+                _ => rng.u32_edge_biased().min(RATE_TARGET_MAX),
+            };
+            let gain = match round % 3 {
+                0 => 0x0001_C000,
+                1 => rng.pick(&[GAIN_MIN_Q16, 0x4020, 0x401F, GAIN_ONE_Q16, GAIN_MAX_Q16]),
+                _ => GAIN_MIN_Q16.saturating_add(rng.below(0x0003_C001)),
+            };
+            // A window's counts about the target, one side higher by a margin, or anywhere; none
+            // above what a window's bins count.
+            let lower = u64::from(count).saturating_sub(u64::from(rng.below(64)));
+            let margin = u64::from(rng.pick(&[0u32, 1, 2, 5, 40, 1_153]));
+            let counts: Vec<u64> = (0..16usize)
+                .map(|k| {
+                    let c = match rng.below(5) {
+                        0 => u64::from(rng.pick(&U32_LATTICE)),
+                        1 => 0,
+                        _ if (4..12).contains(&k) => lower
+                            .saturating_add(margin)
+                            .saturating_add(u64::from(rng.below(3))),
+                        _ => lower.saturating_add(u64::from(rng.below(3))),
+                    };
+                    c.min(u64::from(RATE_TARGET_MAX))
+                })
+                .collect();
+            let (mut left, mut sum) = (PROBE_WINDOWS, 0i64);
+            let mut end = None;
+            for (k, &c) in counts.iter().enumerate() {
+                assert_eq!(
+                    probe_gain_q16(gain, left),
+                    gain_by_hand(gain, left),
+                    "round {round}, window {k}: {gain:#x}"
+                );
+                match probe_step(left, sum, c, count) {
+                    ProbeStep::Probing { left: l, sum: s } => {
+                        assert_eq!(l, left.wrapping_sub(1), "round {round}, window {k}");
+                        let (least, most) = probe_sum_bounds(l);
+                        assert!(
+                            (least..=most).contains(&s),
+                            "round {round}, window {k}: {s} within {least} and {most}"
+                        );
+                        (left, sum) = (l, s);
+                    }
+                    step => {
+                        assert_eq!(k, 15, "round {round}");
+                        end = Some(step);
+                    }
+                }
+            }
+            let expected = match step_by_hand(count, &counts) {
+                Some(step) => {
+                    steps = steps.wrapping_add(1);
+                    ProbeStep::Step(step)
+                }
+                None => {
+                    let higher: u64 = counts[4..12].iter().sum();
+                    let lower: u64 = counts[..4].iter().chain(&counts[12..]).sum();
+                    if higher > lower {
+                        past = past.wrapping_add(1);
+                    } else {
+                        not_above = not_above.wrapping_add(1);
+                    }
+                    ProbeStep::Refused
+                }
+            };
+            assert_eq!(
+                end,
+                Some(expected),
+                "round {round}: target {count}, {counts:?}"
+            );
+        }
+        assert!(
+            steps > 500 && not_above > 500 && past > 100,
+            "the walk met each end: {steps} steps, {not_above} not above zero, {past} past the bound"
         );
     }
 }

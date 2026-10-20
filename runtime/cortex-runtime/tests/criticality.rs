@@ -1448,3 +1448,390 @@ fn a_read_with_the_flag_round_trips_mid_window_and_a_loaded_engine_sets_both_per
         "the read ended at its sixteenth window"
     );
 }
+
+/// A designed window of `total` spikes on a network without synapses: its bins as even as
+/// `total` allows, the first `total % 32` one spike above the others.
+fn window_of(total: u32) -> [u32; ACTIVITY_WINDOW_BINS as usize] {
+    let (each, over) = (
+        total >> ACTIVITY_WINDOW_SHIFT,
+        total & (u32::from(ACTIVITY_WINDOW_BINS).wrapping_sub(1)),
+    );
+    let mut counts = [each; ACTIVITY_WINDOW_BINS as usize];
+    for c in counts.iter_mut().take(over as usize) {
+        *c = c.wrapping_add(1);
+    }
+    counts
+}
+
+/// The probe's sixteen designed windows (ADR-0202): window `k` holds 290 + k spikes in the four
+/// lower windows first and last, and 330 + k in the eight higher between, so that the counts
+/// drift up by one a window and the drift cancels: the higher sum 2 700, the lower 2 380, and
+/// D = 320.
+fn probe_windows() -> Vec<(u32, bool)> {
+    (0..16u32)
+        .map(|k| match k {
+            4..=11 => (k.wrapping_add(330), true),
+            _ => (k.wrapping_add(290), false),
+        })
+        .collect()
+}
+
+/// The probe of the step as the executor composes it (ADR-0200, ADR-0202), over designed windows
+/// on a network without synapses, beside an engine with the flag unset: through the read of
+/// seventeen windows the two are one, the probe's flag set on the first; at the read's end both
+/// hold the target, 26 214 ticks and 320 spikes a window, and with the flag the probe begins in
+/// the rule's place. Through its sixteen windows the record is held — a record fed the same
+/// counts and held, in every field — the step the configuration's, the sum by hand, and the
+/// workers given 1.0 x 63/64 in the four lower windows first and last and 1.0 x 65/64 in the
+/// eight between; at its last window, and not before, the step becomes 4 096 x 320 / 320, a
+/// sixteenth, where the configuration's was an eighth, and the flag is spent. An image written
+/// then loads with that step, and neither a probe nor its flag. From the next window the rate's
+/// rule moves the gain at the probe's step, a decaying window of 373 spikes lowering it to the
+/// hand rule's 64 858.
+#[test]
+fn with_the_probe_the_read_s_end_starts_sixteen_windows_and_the_step_is_set_at_their_last() {
+    let reading = |probe: bool| Config {
+        rate_read_windows: 17,
+        step_probe: probe,
+        ..config(2, 0, STEP)
+    };
+    let mut set = Executor::<64>::new(reading(true)).unwrap();
+    let mut unset = Executor::<64>::new(reading(false)).unwrap();
+    arm(&mut set);
+    arm(&mut unset);
+    assert_eq!((set.step_probe(), unset.step_probe()), (true, false));
+    let mut oracle = HomeostaticDrivePool {
+        control_step_q0_16: STEP,
+        ..HomeostaticDrivePool::new()
+    };
+    let mut oracle_unset = oracle;
+    let windows = seventeen_windows();
+    for (k, counts) in windows.iter().enumerate() {
+        designed_window_then(&mut set, &mut oracle, counts, |o| {
+            o.hold();
+        });
+        designed_window_then(&mut unset, &mut oracle_unset, counts, |o| {
+            o.hold();
+        });
+        assert_eq!(
+            (set.homeostasis(), set.rate_target_period_ticks()),
+            (unset.homeostasis(), unset.rate_target_period_ticks()),
+            "window {k}: the read as with the flag unset"
+        );
+        if k.wrapping_add(1) < windows.len() {
+            assert_eq!(
+                (set.target_read(), set.gain_given_q16(), set.step_probe()),
+                (unset.target_read(), GAIN_ONE_Q16, true),
+                "window {k}: the read under way, the workers given the record's gain"
+            );
+        }
+    }
+    assert_eq!(
+        (
+            unset.target_read(),
+            unset.rate_target_period_ticks(),
+            unset.rate_target_per_window()
+        ),
+        (None, RATE_PERIOD, Some(RATE_TARGET))
+    );
+    assert_eq!(
+        (
+            set.target_read(),
+            set.rate_target_period_ticks(),
+            set.rate_target_per_window(),
+            set.step_probe(),
+            set.gain_given_q16()
+        ),
+        (
+            Some(TargetRead::Probing { left: 16, sum: 0 }),
+            RATE_PERIOD,
+            Some(RATE_TARGET),
+            true,
+            64_512
+        ),
+        "the probe in the rule's place"
+    );
+    let mut sum = 0i64;
+    for (k, &(total, higher)) in probe_windows().iter().enumerate() {
+        designed_window_then(&mut set, &mut oracle, &window_of(total), |o| {
+            o.hold();
+        });
+        sum = if higher {
+            sum.wrapping_add(i64::from(total))
+        } else {
+            sum.wrapping_sub(i64::from(total))
+        };
+        let left = 15u8.wrapping_sub(k as u8);
+        if left == 0 {
+            break;
+        }
+        assert_eq!(*set.homeostasis(), oracle, "probe window {k}, held");
+        assert_eq!(
+            (set.target_read(), set.step_probe(), set.gain_given_q16()),
+            (
+                Some(TargetRead::Probing { left, sum }),
+                true,
+                if (5..=12).contains(&left) {
+                    66_560
+                } else {
+                    64_512
+                }
+            ),
+            "probe window {k}: the step not yet set"
+        );
+    }
+    assert_eq!(sum, 320, "the drift cancelled");
+    oracle.control_step_q0_16 = 0x1000;
+    assert_eq!(
+        *set.homeostasis(),
+        oracle,
+        "the step at the probe's last window"
+    );
+    assert_eq!(
+        (set.target_read(), set.step_probe(), set.gain_given_q16()),
+        (None, false, GAIN_ONE_Q16)
+    );
+    let loaded = Image::decode::<64>(&Image::encode(&set).unwrap(), config(2, 0, STEP)).unwrap();
+    assert_eq!(
+        (
+            loaded.target_read(),
+            loaded.step_probe(),
+            loaded.rate_target_period_ticks(),
+            *loaded.homeostasis()
+        ),
+        (None, false, RATE_PERIOD, oracle),
+        "the image after the probe: the step it made, no probe and no flag"
+    );
+    // The rule from the next window, at the probe's step.
+    let mut decay = [0u32; ACTIVITY_WINDOW_BINS as usize];
+    let mut x = 40_000u64;
+    for c in decay.iter_mut() {
+        *c = (x / 1_000) as u32;
+        x = x.wrapping_mul(9) / 10;
+    }
+    designed_window_under(&mut set, &mut oracle, &decay, Some(RATE_TARGET));
+    assert_eq!(*set.homeostasis(), oracle, "the rate's rule's window");
+    assert_eq!(set.homeostasis().synaptic_gain_q16, 64_858);
+    assert_eq!(set.ticks(), 34 * WINDOW);
+}
+
+/// The probe's last window at its refusals and its bound (ADR-0202), from images of a target of
+/// 320 spikes a window written with the probe under way at its last window, its sum the window's
+/// 320 spikes above `D`; the window, a lower one, takes them. A sum of 40, the bound, makes the
+/// step 0x8000, and the rule moves the gain from the next window at it; 39, past the bound, and
+/// zero and below each end the probe refused: the gain held from there on, the target kept, the
+/// step the image's, the flag spent and the image refused with `ControlStepOutOfRange`.
+#[test]
+fn a_probe_ends_refused_at_a_sum_not_above_zero_and_past_the_step_s_bound() {
+    let base = {
+        let exec = Executor::<64>::new(Config {
+            rate_target_period_ticks: RATE_PERIOD,
+            ..config(2, 0, STEP)
+        })
+        .unwrap();
+        Image::encode(&exec).unwrap()
+    };
+    let at_its_last = |d: i64| {
+        let mut img = with_modulator_byte(&base, 27, 1);
+        img = with_modulator_byte(&img, 39, 1);
+        let word = d.wrapping_add(i64::from(RATE_TARGET)).to_le_bytes();
+        for (&at, &b) in [60usize, 61, 62, 63, 54, 55].iter().zip(&word[..6]) {
+            img = with_modulator_byte(&img, at, b);
+        }
+        img
+    };
+    for (d, step) in [
+        (40i64, Some(0x8000u16)),
+        (39, None),
+        (0, None),
+        (-1, None),
+        (-641, None),
+    ] {
+        let mut exec = Image::decode::<64>(&at_its_last(d), config(2, 0, 0)).unwrap();
+        arm(&mut exec);
+        assert_eq!(
+            (exec.target_read(), exec.step_probe()),
+            (
+                Some(TargetRead::Probing {
+                    left: 1,
+                    sum: d.wrapping_add(i64::from(RATE_TARGET))
+                }),
+                true
+            ),
+            "D = {d}: under way at the last window"
+        );
+        let mut oracle = *exec.homeostasis();
+        designed_window_then(&mut exec, &mut oracle, &window_of(RATE_TARGET), |o| {
+            o.hold();
+        });
+        let ended = match step {
+            Some(step) => {
+                oracle.control_step_q0_16 = step;
+                None
+            }
+            None => Some(TargetRead::Refused),
+        };
+        assert_eq!(*exec.homeostasis(), oracle, "D = {d}: the last window");
+        assert_eq!(
+            (
+                exec.target_read(),
+                exec.step_probe(),
+                exec.rate_target_per_window()
+            ),
+            (ended, false, Some(RATE_TARGET)),
+            "D = {d}: the probe's end"
+        );
+        // The next window: the rule at the step, or the gain held.
+        let decay = window_of(373);
+        match step {
+            Some(_) => designed_window_under(&mut exec, &mut oracle, &decay, Some(RATE_TARGET)),
+            None => designed_window_then(&mut exec, &mut oracle, &decay, |o| {
+                o.hold();
+            }),
+        }
+        assert_eq!(*exec.homeostasis(), oracle, "D = {d}: the window after");
+        assert_eq!(
+            exec.homeostasis().synaptic_gain_q16 == GAIN_ONE_Q16,
+            step.is_none(),
+            "D = {d}: the gain moved by the rule, or held"
+        );
+        if step.is_none() {
+            assert!(
+                matches!(
+                    Image::encode(&exec),
+                    Err(ImageError::Config(ConfigError::ControlStepOutOfRange))
+                ),
+                "D = {d}: no step to write"
+            );
+        }
+    }
+}
+
+/// The probe round-trips through the image mid-window (ADR-0202): on the recurrent network of
+/// `a_read_round_trips_mid_window_and_a_loaded_engine_reads_and_regulates_alike`, at a gain of 1.5,
+/// where a sixty-fourth moves its count, after a read of sixteen windows and two of the probe, an image written in the probe's third window carries
+/// its flag at `[27]`, its windows left at `[39]` and its sum, below zero, beside the read's
+/// target, and loads with them whatever the configuration says. The loaded engine and one on
+/// four workers finish the probe as the engine that wrote it does, window for window — the
+/// workers given the probe's gain, which the network's counts answer — each setting the step at
+/// the probe's last window, and the rule runs after it alike. The same image with the flag's
+/// byte cleared holds a sum below zero where a read's would be, which the loader refuses.
+#[test]
+fn a_probe_round_trips_mid_window_and_a_loaded_engine_probes_and_regulates_alike() {
+    let reading = |workers: usize| Config {
+        rate_read_windows: 16,
+        step_probe: true,
+        synaptic_gain_q16: 0x0001_8000,
+        ..config(workers, 2 * UNITS, STEP)
+    };
+    let mut exec = Executor::<64>::new(reading(2)).unwrap();
+    wire_recurrent(&mut exec);
+    let mut four = Executor::<64>::new(reading(4)).unwrap();
+    wire_recurrent(&mut four);
+    let mut unit = 0u32;
+    let mut unit_four = 0u32;
+    for _ in 0..18 {
+        drive_window(&mut exec, 6_000, &mut unit);
+        drive_window(&mut four, 6_000, &mut unit_four);
+    }
+    assert!(
+        matches!(
+            exec.target_read(),
+            Some(TargetRead::Probing { left: 14, .. })
+        ),
+        "two windows of the probe: {:?}",
+        exec.target_read()
+    );
+    let inject = exec.injector();
+    let inject_four = four.injector();
+    for _ in 0..5 {
+        exec.run(3_000);
+        four.run(3_000);
+        kick(&inject, unit);
+        kick(&inject_four, unit_four);
+        unit = unit.wrapping_add(1);
+        unit_four = unit_four.wrapping_add(1);
+    }
+    let mut waited = 0u64;
+    while !exec.is_quiescent() {
+        exec.tick();
+        four.tick();
+        waited = waited.wrapping_add(1);
+        assert!(waited < 40_000, "the network falls quiet");
+    }
+    let written = exec.target_read();
+    assert!(
+        matches!(written, Some(TargetRead::Probing { left: 14, sum }) if sum < 0),
+        "two lower windows taken: {written:?}"
+    );
+    assert!(exec.step_probe() && exec.homeostasis().window_bins > 0);
+    let image = Image::encode(&exec).unwrap();
+    for config in [
+        config(2, 0, 0),
+        Config {
+            rate_read_windows: 128,
+            step_probe: true,
+            ..config(2, 0, 0)
+        },
+    ] {
+        let loaded = Image::decode::<64>(&image, config).unwrap();
+        assert_eq!(
+            (
+                loaded.target_read(),
+                loaded.step_probe(),
+                loaded.rate_target_period_ticks()
+            ),
+            (written, true, exec.rate_target_period_ticks()),
+            "the image's probe outranks the configuration's"
+        );
+    }
+    let cleared = with_modulator_byte(&image, 27, 0);
+    assert_ne!(cleared, image, "the flag at `[27]`");
+    assert!(
+        matches!(
+            Image::decode::<64>(&cleared, config(2, 0, 0)),
+            Err(ImageError::ReservedNotZero {
+                section: SECTION_MODULATOR,
+                index: 0
+            })
+        ),
+        "the probe's bytes without its flag: a sum below zero, which no read holds"
+    );
+    let mut loaded = Image::decode::<64>(&image, config(2, 0, 0)).unwrap();
+    let state = |e: &Executor<64>| {
+        (
+            *e.homeostasis(),
+            e.target_read(),
+            e.step_probe(),
+            e.gain_given_q16(),
+        )
+    };
+    assert_eq!(state(&loaded), state(&exec));
+    let mut unit_copy = unit;
+    let mut steps = Vec::new();
+    for window in 19..=36u32 {
+        drive_window(&mut exec, 6_000, &mut unit);
+        drive_window(&mut loaded, 6_000, &mut unit_copy);
+        drive_window(&mut four, 6_000, &mut unit_four);
+        assert_eq!(
+            state(&loaded),
+            state(&exec),
+            "window {window}: loaded alike"
+        );
+        assert_eq!(
+            state(&four),
+            state(&exec),
+            "window {window}: four workers alike"
+        );
+        steps.push(exec.homeostasis().control_step_q0_16);
+    }
+    assert_eq!(
+        (exec.target_read(), exec.step_probe()),
+        (None, false),
+        "the probe ended at its sixteenth window"
+    );
+    assert!(
+        steps[..13].iter().all(|&s| s == STEP) && steps[13..].iter().all(|&s| s != STEP),
+        "the step the configuration's through the probe and the probe's from its last: {steps:?}"
+    );
+}

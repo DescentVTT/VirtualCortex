@@ -1,30 +1,35 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-20
 affectedFiles: [runtime/cortex-runtime/src/**, runtime/cortex-runtime/tests/**, crates/cortex-connectome/src/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
 protectedFiles: [crates/cortex-core/src/**, crates/cortex-homeostasis/src/**, benches/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, scripts/check-archive.mjs, scripts/check-scope.mjs, scripts/check-explorations.mjs, scripts/check-doc-shape.mjs, scripts/adr-index.mjs, .spec-brief.json, package.json, package-lock.json, rust-toolchain.toml, Cargo.toml, Cargo.lock]
+integrity: sha256-3591f3918ea4c6d99f9d056d83d580232caaf16f2df1beacf470d390c46ad8c2
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-20 (UTC) in pull request [#227](https://github.com/DescentVTT/VirtualCortex/pull/227).** Brief 078 built ADR-0200's probe of the step as Config::step_probe, its flag at the modulator section's [27] and its state in the read's bytes, image format 25, unset bit for bit (ADR-0202), committed H-42's protocol before any lead-in with the probe set (ADR-0203), and ran H-42 once. On seeds 22, 23 and 24 at 1 024 units the probe read S = 15.0 to 15.2 and made step = 1/61 to 1/60, every lead-in settled, and both arms held H-25's four clauses: H-42 = yes at step 3 with all four predicted readings held, the pairs on opposite sides of the target 485 to 527 of 959 against H-41's 591 to 623 (ADR-0204). The reproduction, dispatch 39376979724, reproduced every pin, and its sweep found no survivor. F-75 resolved. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 078: A step the engine makes from its own loop
 
 ## Mission
 
 **This brief builds one thing in the engine and runs one hypothesis once.**
-[ADR-0200](../docs/adr/0200-a-step-the-engine-makes-from-its-own-loop.md) gives the read a probe:
+[ADR-0200](../../docs/adr/0200-a-step-the-engine-makes-from-its-own-loop.md) gives the read a probe:
 - with a flag set, the read's end holds the gain at ±1/64 of the read's for 16 windows;
 - it reads the steepness S of the network's count;
 - the rate's rule then runs at step κ = (1/4)/S, not at 1/16.
 
-ADR-0200 wrote **H-42** before any run, in [H-42's report](../docs/research/H-42.md), and **predicts yes** with four readings.
+ADR-0200 wrote **H-42** before any run, in [H-42's report](../../docs/research/H-42.md), and **predicts yes** with four readings.
 
 When the round is done, the tree holds:
 - the probe in the engine, unset bit for bit, its flag at the modulator section's `[27]`, the image at format 25;
 - on each of seeds 22, 23 and 24 at 1 024 units, the derivation with the probe set and H-25's two arms under it, as weekly `exhaustive` tests;
 - H-42's verdict per network, arm and clause, and the step of its stopping rule reached, with the next decision it names and does not take.
 
-It is the first round under [ADR-0197](../docs/adr/0197-one-place-for-each-kind-of-fact.md)'s documents. Its readings go to H-42's report, its measured ADR is short, and it rewrites `docs/STATUS.md` ([briefs/README.md](README.md#a-rounds-documents)).
+It is the first round under [ADR-0197](../../docs/adr/0197-one-place-for-each-kind-of-fact.md)'s documents. Its readings go to H-42's report, its measured ADR is short, and it rewrites `docs/STATUS.md` ([briefs/README.md](../README.md#a-rounds-documents)).
 
-The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
+The scope is the front matter's ([ADR-0191](../../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
 
 **Do not run this round beside brief 065's**: both dispatch the weekly workflow.
 
@@ -53,12 +58,12 @@ The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eigh
 - **The prediction is ADR-0200's**: yes. The round reports it against what was read, and each predicted reading as held or missed.
 - **The engine and the harness are read before a description of them is trusted**, this brief's and ADR-0200's included.
 - **No capacity of a run's configuration is reached silently.**
-- No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
+- No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
 - A change to a record's or a section's bytes bumps the image's version, updates its table in whitepaper §5.2, and gets a changelog entry, in the same pull request.
-- A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of `testkit/prop.rs`, and the mutation gate catches every mutant in the lines the change touches ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+- A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of `testkit/prop.rs`, and the mutation gate catches every mutant in the lines the change touches ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The documents are ADR-0197's**: new ADRs in its shape, the tables written by `node scripts/adr-index.mjs`, new text within `npm run spec:shape`'s limits.
 - **The pull request leaves draft with the commit that asks for the merge**, which sets the round's ADRs to `accepted`.
-- **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's minutes.
+- **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's minutes.
 - No pinned number of an earlier round moves, but the whole-image pins by the format's mask.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -98,7 +103,7 @@ Re-derived on 2026-10-20 against `main` at `26cadb7`. Line numbers move; the sym
 
 ## Deliverables
 
-- [ ] **The probe, built in the engine, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The probe, built in the engine, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - ADR-0200's flag at `[27]`, its 16 windows, its sum, its step and its refusals, the gain returned to g₀.
   - The image at format 25, its table in §5.2.
   - Unset, every run the run it was, bit for bit; a format-24 image read as unset.
@@ -108,32 +113,34 @@ Re-derived on 2026-10-20 against `main` at `26cadb7`. Line numbers move; the sym
     - an image written during the probe reading back to the same run;
     - the step set exactly at the probe's last window and not before.
   - The whole-image pins moved by the format's mask alone.
-- [ ] **H-42's protocol, in a new ADR at the next free number, kind `protocol`, before any lead-in is run with the probe set.**
+- [x] **H-42's protocol, in a new ADR at the next free number, kind `protocol`, before any lead-in is run with the probe set.**
   - The networks, the read, the probe and λ.
   - What holds a derivation with the probe set, where none has a pin.
   - H-42's clauses and constants, restated from ADR-0200 and pinned in the tests.
   - The four predicted readings as rules over the tables.
-- [ ] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests. Every pinned number of the tree holds at format 25 with the flag unset, H-41's derivations and six arms among them.
-- [ ] **The derivations with the probe set on the three networks**, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`. Pinned from that run:
+- [x] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests. Every pinned number of the tree holds at format 25 with the flag unset, H-41's derivations and six arms among them.
+- [x] **The derivations with the probe set on the three networks**, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`. Pinned from that run:
   - the lead-in by window;
   - the read, the probe's D, S and κ;
   - what each rule returned, or that it returned nothing;
   - the frozen block's readings.
-- [ ] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
-- [ ] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
-- [ ] **H-42's report**, `docs/research/H-42.md`: its `verdict:` set, the readings' tables, each network beside its twin under H-41, and the dispatches that are their evidence.
-- [ ] **The measured ADR**, kind `measured`, short:
+- [x] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
+- [x] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
+- [x] **H-42's report**, `docs/research/H-42.md`: its `verdict:` set, the readings' tables, each network beside its twin under H-41, and the dispatches that are their evidence.
+- [x] **The measured ADR**, kind `measured`, short:
   - the verdict per network, arm and clause, in one table;
   - each of the four predicted readings, held or missed, in a line;
   - the step of the stopping rule reached, and the next decision it names, not taken.
-- [ ] **The gate.** At most one runtime test: H-42's clauses and its predicted readings' rules at their edges, over tables written by hand.
-- [ ] **The documents, in the same pull request.**
+- [x] **The gate.** At most one runtime test: H-42's clauses and its predicted readings' rules at their edges, over tables written by hand.
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
   - Whitepaper: §5.2's modulator table at format 25, and the tables written by `node scripts/adr-index.mjs`.
   - `CHANGELOG.md`, one entry of at most 400 characters a change.
   - `README.md` and `docs/zh-TW/README.md` as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 078 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+
+  Done in [ADR-0202](../../docs/adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md) and [ADR-0204](../../docs/adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md). §5.2 holds no table of the modulator section: its layout is §8.7's, written at format 25, beside §5.2.2's version history. `README.md` needed no change, and the zh-TW guide's count of hypotheses is F-75.
+- [x] **The brief archived** with `spec-brief archive 078 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 

@@ -27,10 +27,12 @@
 //! set or unset; since ADR-0180 the rate's target, the period the controller holds the
 //! population's count to, sits after the window, zero while unset; since ADR-0189 the read of
 //! that target under way, the windows it has left and the sum of its last sixteen so far, sits
-//! around it, zero while none is.
+//! around it, zero while none is; since ADR-0202 the probe of the step after the read, its flag
+//! the section's last reserved byte and its state in the read's bytes beside the target.
 
 use crate::executor::{
-    AmendError, Config, ConfigError, Executor, InjectError, TargetRead, read_sum_max,
+    AmendError, Config, ConfigError, Executor, InjectError, PROBE_WINDOWS, TargetRead,
+    probe_sum_bounds, read_sum_max,
 };
 use cortex_affect::InteroceptiveState;
 use cortex_connectome::{
@@ -177,8 +179,9 @@ const SIGNED_GATE_SET: u8 = 1;
 /// The modulator section's class of short-term plasticity (ADR-0114; format 17): a flag byte at
 /// `[32]`, `STP_CLASS_SET` while a class is set and zero while none is, and the class's $U$,
 /// $\tau_f$ shift and $\tau_d$ shift at `[33]`, `[34]` and `[35]`, zero while unset.
-/// `[26..28)` stay reserved and must be zero. A record a format-16 writer left zero there reads
-/// as unset, which is the rule before ADR-0114 bit for bit.
+/// `[26..28)` stayed reserved until formats 24 and 25 made them the read's flag and the probe's.
+/// A record a format-16 writer left zero there reads as unset, which is the rule before ADR-0114
+/// bit for bit.
 const STP_CLASS_FLAG: usize = 32;
 const STP_CLASS_U: usize = 33;
 const STP_CLASS_TAU_F: usize = 34;
@@ -234,8 +237,9 @@ const RATE_TARGET: core::ops::Range<usize> = 56..60;
 /// counts so far, a 48-bit count, its low thirty-two bits at `[60..64)` and its high sixteen at
 /// `[54..56)`, at most sixteen windows at `RATE_TARGET_MAX`, which takes thirty-three. Every byte
 /// zero while no read is under way. `[26..28)` stayed reserved until format 24 made `[26]` the
-/// read's flag. A record a format-22 writer left zero there reads as no read, which is the
-/// controller of ADR-0180 bit for bit.
+/// read's flag and format 25 `[27]` the probe's, whose state under way these bytes hold beside
+/// the target (`STEP_PROBE_FLAG`). A record a format-22 writer left zero there reads as no read,
+/// which is the controller of ADR-0180 bit for bit.
 const RATE_READ_LEFT: usize = 39;
 const RATE_READ_SUM_LOW: core::ops::Range<usize> = 60..64;
 const RATE_READ_SUM_HIGH: core::ops::Range<usize> = 54..56;
@@ -248,9 +252,61 @@ const RATE_READ_SUM_HIGH: core::ops::Range<usize> = 54..56;
 const ISTDP_READ_FLAG: usize = 26;
 const ISTDP_READ_SET: u8 = 1;
 
-/// The modulator record's reserved byte: the one between the inhibitory target's flag and the
-/// inhibitory baseline's value.
-const MODULATOR_RESERVED: core::ops::Range<usize> = 27..28;
+/// The modulator section's probe of the step (ADR-0202; format 25): a flag byte at `[27]`, the
+/// section's last reserved byte, `STEP_PROBE_SET` while the read under way is followed by the
+/// probe or the probe is under way, and zero otherwise. Beside a read under way the read's bytes
+/// are the read's; beside the rate's target the read made they are the probe's under way — its
+/// windows left at `[39]`, from one to sixteen, and its signed sum at `[60..64)` and `[54..56)`,
+/// forty-eight bits of two's complement. A record a format-24 writer left zero there reads as
+/// unset, which is the read of ADR-0194 bit for bit. The modulator record has no reserved byte
+/// left.
+const STEP_PROBE_FLAG: usize = 27;
+const STEP_PROBE_SET: u8 = 1;
+
+/// The probe's flag a modulator record carries (ADR-0202): unset while it is zero, set while it
+/// is `STEP_PROBE_SET`, which the loader refuses beside no read and no probe under way as
+/// `Executor::new` refuses the configuration's without a read; any other flag is a byte the
+/// writer never produces.
+fn step_probe_of(record: &[u8]) -> Result<bool, ImageError> {
+    match record[STEP_PROBE_FLAG] {
+        0 => Ok(false),
+        STEP_PROBE_SET => Ok(true),
+        _ => Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0,
+        }),
+    }
+}
+
+/// The probe under way a modulator record carries (ADR-0202), read where the probe's flag is set
+/// beside the rate's target: its windows left, from one to `PROBE_WINDOWS`, and its sum, the
+/// forty-eight bits sign-extended, within what its windows closed so far can count
+/// (`probe_sum_bounds`). Any other is a record the writer never produces.
+fn probe_of(record: &[u8]) -> Result<(u8, i64), ImageError> {
+    // The sum's low four bytes and its next two in place, and the top two each the sign of the
+    // forty-eighth bit, all ones or all zeros: bytes and no comparison.
+    let mut word = [0u8; 8];
+    word[..4].copy_from_slice(&record[RATE_READ_SUM_LOW]);
+    word[4..6].copy_from_slice(&record[RATE_READ_SUM_HIGH]);
+    let sign = 0u8.wrapping_sub(word[5] >> 7);
+    word[6] = sign;
+    word[7] = sign;
+    let sum = i64::from_le_bytes(word);
+    match record[RATE_READ_LEFT] {
+        left @ 1..=PROBE_WINDOWS
+            if {
+                let (least, most) = probe_sum_bounds(left);
+                (least..=most).contains(&sum)
+            } =>
+        {
+            Ok((left, sum))
+        }
+        _ => Err(ImageError::ReservedNotZero {
+            section: SECTION_MODULATOR,
+            index: 0,
+        }),
+    }
+}
 
 /// The inhibitory target by the read a modulator record carries (ADR-0194): unset while its flag
 /// is zero, set while it is `ISTDP_READ_SET`, which the loader refuses beside no read under way
@@ -650,11 +706,13 @@ impl Image {
         // `[51]` (ADR-0155; format 21), the critic's window at `[52..54)` (ADR-0134; format 20),
         // the rate's target period at `[56..60)` (ADR-0180; format 22), the read of the target
         // under way at `[39]`, `[54..56)` and `[60..64)` (ADR-0189; format 23), the inhibitory
-        // target by the read's flag at `[26]` (ADR-0194; format 24) and 1 reserved byte. The
-        // baselines, the period, the gate, the class, the slow current, the critic, its window,
-        // the whole punishment, the rate's target, its read and the read's flag change what a run
-        // does, so they are in the image, not in a configuration (§8.3). A read that ended
-        // refused has no target to write, and its engine has no image.
+        // target by the read's flag at `[26]` (ADR-0194; format 24), and the probe of the step's
+        // flag at `[27]`, its state under way in the read's bytes beside the target (ADR-0202;
+        // format 25); no reserved byte. The baselines, the period, the gate, the class, the slow
+        // current, the critic, its window, the whole punishment, the rate's target, its read, the
+        // read's flag and the probe change what a run does, so they are in the image, not in a
+        // configuration (§8.3). A read or a probe that ended refused has no target or no step to
+        // write, and its engine has no image.
         let mut modulator_bytes = vec![0u8; 64];
         modulator_bytes[0..16].copy_from_slice(&exec.modulator().encode());
         modulator_bytes[16..20].copy_from_slice(&exec.modulation_baseline_q16().to_le_bytes());
@@ -690,23 +748,34 @@ impl Image {
         }
         modulator_bytes[RATE_TARGET]
             .copy_from_slice(&exec.rate_target_period_ticks().to_le_bytes());
-        match exec.target_read() {
-            None => {}
-            Some(TargetRead::Reading { left, sum }) => {
-                modulator_bytes[RATE_READ_LEFT] = left;
-                // The sum's low four bytes and its next two, little-endian, as the loader reads
-                // them: a sum the read holds fits forty-eight bits (`read_sum_max`).
-                let word = sum.to_le_bytes();
-                modulator_bytes[RATE_READ_SUM_LOW].copy_from_slice(&word[..4]);
-                modulator_bytes[RATE_READ_SUM_HIGH].copy_from_slice(&word[4..6]);
-            }
+        // The read under way, or the probe under way after it (ADR-0202), in the same bytes: the
+        // windows left, and the sum's low four bytes and its next two, little-endian, as the
+        // loader reads them. A read's sum fits forty-eight bits (`read_sum_max`), and so does a
+        // probe's in two's complement (`probe_sum_bounds`).
+        let under_way = match exec.target_read() {
+            None => None,
+            Some(TargetRead::Reading { left, sum }) => Some((left, sum.to_le_bytes())),
+            Some(TargetRead::Probing { left, sum }) => Some((left, sum.to_le_bytes())),
+            // A read refused made no target; a probe refused, beside the target, no step.
             Some(TargetRead::Refused) => {
-                return Err(ImageError::Config(ConfigError::RateTargetOutOfRange));
+                return Err(ImageError::Config(match exec.rate_target_per_window() {
+                    None => ConfigError::RateTargetOutOfRange,
+                    Some(_) => ConfigError::ControlStepOutOfRange,
+                }));
             }
+        };
+        if let Some((left, word)) = under_way {
+            modulator_bytes[RATE_READ_LEFT] = left;
+            modulator_bytes[RATE_READ_SUM_LOW].copy_from_slice(&word[..4]);
+            modulator_bytes[RATE_READ_SUM_HIGH].copy_from_slice(&word[4..6]);
         }
         // Set only beside a read under way: the engine spends it when the read ends.
         if exec.istdp_target_read() {
             modulator_bytes[ISTDP_READ_FLAG] = ISTDP_READ_SET;
+        }
+        // Set only beside a read or a probe under way: the engine spends it when the probe ends.
+        if exec.step_probe() {
+            modulator_bytes[STEP_PROBE_FLAG] = STEP_PROBE_SET;
         }
         sections.push((SECTION_MODULATOR, 64, modulator_bytes));
         // The engine's homeostasis state, always: the gain and the estimator's window change
@@ -886,14 +955,16 @@ impl Image {
         // The modulator's one record (ADR-0032), read here for the class of short-term
         // plasticity (ADR-0114), the slow current (ADR-0123), the critic (ADR-0131), its
         // window (ADR-0134), the whole punishment (ADR-0155), the rate's target (ADR-0180), its
-        // read under way (ADR-0189) and the read's flag for the inhibitory target (ADR-0194):
-        // each worker holds the first two from `Executor::new`, which sizes the critic's counts,
-        // refuses a window or a whole punishment without a critic and makes the target's count
-        // of the image's units, refusing a period no window can be held to, and a unit marked
-        // for either of the first two, or carrying a weight for the third, is refused below
-        // while there is none; the read is set on the engine `new` built, refused beside a
-        // period, and the flag after it, refused beside no read. The image's, set or unset,
-        // outrank the configuration's (§8.3).
+        // read under way (ADR-0189), the read's flag for the inhibitory target (ADR-0194) and
+        // the probe of the step (ADR-0202): each worker holds the first two from
+        // `Executor::new`, which sizes the critic's counts, refuses a window or a whole
+        // punishment without a critic and makes the target's count of the image's units,
+        // refusing a period no window can be held to, and a unit marked for either of the first
+        // two, or carrying a weight for the third, is refused below while there is none; the read
+        // is set on the engine `new` built, refused beside a period, and the flag after it,
+        // refused beside no read; the probe's flag last, with the probe under way where the
+        // record carries the target, refused beside no read and no probe. The image's, set or
+        // unset, outrank the configuration's (§8.3).
         if modulator.record_count() != 1 {
             return Err(ImageError::Directory(SECTION_MODULATOR));
         }
@@ -903,7 +974,18 @@ impl Image {
         let critic_window_ticks = critic_window_of(section_of(bytes, &modulator)?);
         let whole_punishment = whole_punishment_of(section_of(bytes, &modulator)?)?;
         let rate_target_period_ticks = rate_target_of(section_of(bytes, &modulator)?);
-        let target_read = target_read_of(section_of(bytes, &modulator)?)?;
+        // The probe's flag (ADR-0202): beside the rate's target the read's bytes are the probe's
+        // under way, and otherwise the read's, under way or none.
+        let step_probe = step_probe_of(section_of(bytes, &modulator)?)?;
+        let probe = if step_probe && rate_target_period_ticks != 0 {
+            Some(probe_of(section_of(bytes, &modulator)?)?)
+        } else {
+            None
+        };
+        let target_read = match probe {
+            Some(_) => None,
+            None => target_read_of(section_of(bytes, &modulator)?)?,
+        };
         let istdp_target_read = istdp_target_read_of(section_of(bytes, &modulator)?)?;
         let mut exec = Executor::<CAP>::new(Config {
             units,
@@ -924,6 +1006,8 @@ impl Image {
             rate_read_windows: 0,
             // And so does its flag (ADR-0194), set below beside the read.
             istdp_target_read: false,
+            // And so does the probe's (ADR-0202), set below beside the read or with the probe.
+            step_probe: false,
             ..config
         })?;
         if let Some((left, sum)) = target_read {
@@ -932,6 +1016,9 @@ impl Image {
         }
         if istdp_target_read {
             exec.set_istdp_target_read().map_err(ImageError::Config)?;
+        }
+        if step_probe {
+            exec.set_step_probe(probe).map_err(ImageError::Config)?;
         }
         let horizon = WorkerWheel::horizon_ticks();
         {
@@ -1057,17 +1144,15 @@ impl Image {
             // (ADR-0094), the class of short-term plasticity at `[32..36)`, the slow current at
             // `[36..48)`, the critic at `[48..51)`, the whole punishment's flag at `[51]`, the
             // critic's window at `[52..54)`, the rate's target at `[56..60)`, its read under way
-            // at `[39]`, `[54..56)` and `[60..64)` and the read's flag at `[26]`, read above
-            // (ADR-0114, ADR-0123, ADR-0131, ADR-0155, ADR-0134, ADR-0180, ADR-0189, ADR-0194),
-            // 1 reserved byte; its count was held to one above.
+            // or the probe after it at `[39]`, `[54..56)` and `[60..64)`, the read's flag at
+            // `[26]` and the probe's at `[27]`, read above (ADR-0114, ADR-0123, ADR-0131,
+            // ADR-0155, ADR-0134, ADR-0180, ADR-0189, ADR-0194, ADR-0202), no reserved byte; its
+            // count was held to one above.
             let record = section_of(bytes, &modulator)?;
             let reserved_not_zero = || ImageError::ReservedNotZero {
                 section: SECTION_MODULATOR,
                 index: 0,
             };
-            if record[MODULATOR_RESERVED].iter().any(|&b| b != 0) {
-                return Err(reserved_not_zero());
-            }
             let baseline = i32::from_le_bytes(record[16..20].try_into().unwrap_or([0; 4]));
             if !exec.set_modulation_baseline(baseline) {
                 return Err(ImageError::Config(ConfigError::ModulationOutOfRange));

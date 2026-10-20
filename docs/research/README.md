@@ -55,7 +55,7 @@ The question is the hypothesis's own name, as §11.1 wrote it.
 | H-39 | the rate's rule at a step of a sixteenth, on three networks | yes | [ADR-0182](../adr/0182-a-sixteenth-on-three-networks.md), [ADR-0183](../adr/0183-a-sixteenth-on-three-networks-measured.md) | [H-39](H-39.md) |
 | H-40 | a target the engine reads, at a sixteenth, on three networks | yes | [ADR-0188](../adr/0188-a-target-the-engine-reads.md), [ADR-0190](../adr/0190-a-target-the-engine-reads-measured.md) | [H-40](H-40.md) |
 | H-41 | the inhibitory target by the same read, on three networks | yes | [ADR-0192](../adr/0192-the-inhibitory-target-by-the-same-read.md), [ADR-0195](../adr/0195-the-inhibitory-target-by-the-same-read-measured.md) | [H-41](H-41.md) |
-| H-42 | a step the engine makes from its own loop, on three networks | open | [ADR-0200](../adr/0200-a-step-the-engine-makes-from-its-own-loop.md) | [H-42](H-42.md) |
+| H-42 | a step the engine makes from its own loop, on three networks | yes | [ADR-0200](../adr/0200-a-step-the-engine-makes-from-its-own-loop.md), [ADR-0203](../adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md), [ADR-0204](../adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | [H-42](H-42.md) |
 <!-- adr-index: end hypotheses -->
 
 ## Lines with no number
