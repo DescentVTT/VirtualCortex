@@ -98,7 +98,7 @@ Re-derived on 2026-10-20 against `main` at `26cadb7`. Line numbers move; the sym
 
 ## Deliverables
 
-- [ ] **The probe, built in the engine, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The probe, built in the engine, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - ADR-0200's flag at `[27]`, its 16 windows, its sum, its step and its refusals, the gain returned to g₀.
   - The image at format 25, its table in §5.2.
   - Unset, every run the run it was, bit for bit; a format-24 image read as unset.
@@ -108,32 +108,34 @@ Re-derived on 2026-10-20 against `main` at `26cadb7`. Line numbers move; the sym
     - an image written during the probe reading back to the same run;
     - the step set exactly at the probe's last window and not before.
   - The whole-image pins moved by the format's mask alone.
-- [ ] **H-42's protocol, in a new ADR at the next free number, kind `protocol`, before any lead-in is run with the probe set.**
+- [x] **H-42's protocol, in a new ADR at the next free number, kind `protocol`, before any lead-in is run with the probe set.**
   - The networks, the read, the probe and λ.
   - What holds a derivation with the probe set, where none has a pin.
   - H-42's clauses and constants, restated from ADR-0200 and pinned in the tests.
   - The four predicted readings as rules over the tables.
-- [ ] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests. Every pinned number of the tree holds at format 25 with the flag unset, H-41's derivations and six arms among them.
-- [ ] **The derivations with the probe set on the three networks**, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`. Pinned from that run:
+- [x] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests. Every pinned number of the tree holds at format 25 with the flag unset, H-41's derivations and six arms among them.
+- [x] **The derivations with the probe set on the three networks**, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`. Pinned from that run:
   - the lead-in by window;
   - the read, the probe's D, S and κ;
   - what each rule returned, or that it returned nothing;
   - the frozen block's readings.
-- [ ] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
-- [ ] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
-- [ ] **H-42's report**, `docs/research/H-42.md`: its `verdict:` set, the readings' tables, each network beside its twin under H-41, and the dispatches that are their evidence.
-- [ ] **The measured ADR**, kind `measured`, short:
+- [x] **The arms**: on each network whose clause 0 holds, H-25's two, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
+- [x] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
+- [x] **H-42's report**, `docs/research/H-42.md`: its `verdict:` set, the readings' tables, each network beside its twin under H-41, and the dispatches that are their evidence.
+- [x] **The measured ADR**, kind `measured`, short:
   - the verdict per network, arm and clause, in one table;
   - each of the four predicted readings, held or missed, in a line;
   - the step of the stopping rule reached, and the next decision it names, not taken.
-- [ ] **The gate.** At most one runtime test: H-42's clauses and its predicted readings' rules at their edges, over tables written by hand.
-- [ ] **The documents, in the same pull request.**
+- [x] **The gate.** At most one runtime test: H-42's clauses and its predicted readings' rules at their edges, over tables written by hand.
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
   - Whitepaper: §5.2's modulator table at format 25, and the tables written by `node scripts/adr-index.mjs`.
   - `CHANGELOG.md`, one entry of at most 400 characters a change.
   - `README.md` and `docs/zh-TW/README.md` as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 078 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+
+  Done in [ADR-0202](../docs/adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md) and [ADR-0204](../docs/adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md). §5.2 holds no table of the modulator section: its layout is §8.7's, written at format 25, beside §5.2.2's version history. `README.md` needed no change, and the zh-TW guide's count of hypotheses is F-75.
+- [x] **The brief archived** with `spec-brief archive 078 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
