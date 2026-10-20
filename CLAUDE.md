@@ -13,126 +13,21 @@ neural computation on 64-byte cache-line records, Q16.16 fixed point, and a fixe
 core-pinned workers. Thirty-two crates, one per subsystem, no dependencies between them;
 fourteen were admitted by [ADR-0016](docs/adr/0016-thirty-two-crate-architecture.md) on 2026-09-10.
 
-It is past the **state-model stage**. This section says where the work stands and where to read
-the rest; it is not the record of the rounds
-([ADR-0150](docs/adr/0150-a-round-waits-for-what-it-checks.md)). A round changes it only where the
-standing changes.
+Where the work stands, and the next decision, is in [docs/STATUS.md](docs/STATUS.md), which every
+round rewrites whole. This file carries no status of its own
+([ADR-0197](docs/adr/0197-one-place-for-each-kind-of-fact.md)).
 
 | To know | Read |
 | :--- | :--- |
+| Where the work stands, and the next decision | [docs/STATUS.md](docs/STATUS.md) |
 | What is built, subsystem by subsystem | Whitepaper [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance) |
-| Every hypothesis asked of the engine, with its verdict and stopping rule | Whitepaper [§11.1](docs/WHITEPAPER.md#111-hypotheses-and-open-questions) |
+| Every hypothesis asked of the engine, with its verdict | Whitepaper [§11.1](docs/WHITEPAPER.md#111-hypotheses-and-open-questions); each one's text, stopping rule and readings in [docs/research/](docs/research/README.md) |
 | What is known to be wrong | Whitepaper [§11](docs/WHITEPAPER.md#11-risks-and-technical-debt), findings F-n |
 | Why each thing was decided, in order | [docs/adr/README.md](docs/adr/README.md) |
 | What each round did | [CHANGELOG.md](CHANGELOG.md) |
 
-**Where the work stands.**
-
-- **The engine runs.** The records with their layout assertions, the update rules, synaptic fan-out
-  with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena,
-  the `.cortex` image (format 24), the criticality controller, sleep with the episodic ledger and
-  its replay, and the symbolic layer (hypervectors, categorial reduction, induction, the discovery
-  path) are Implemented.
-- **It learns.** On the reference network at 1 024 units the engine learns a two-alternative task,
-  revises it through three reversals with its couplings bounded, and holds a reward that is right
-  seven times in eight (H-13 to H-28). Asked a choice among three answers on that configuration,
-  it learns the first mapping as it learns one between two and does not revise every mapping
-  inside the schedule: H-29 read no, on one stimulus of one mapping of eight
-  ([ADR-0153](docs/adr/0153-three-answers-measured.md)). With a punishment delivered whole where
-  the critic's value is below zero, the first revision among three is in time and the two after
-  it are lost: H-30 read no ([ADR-0156](docs/adr/0156-a-punishment-the-value-does-not-soften-measured.md)).
-  Given half again the blocks a mapping, the first revision among three completes and the ones
-  after it slow, the last not made by one stimulus in either arm, with a coupling past its bound:
-  H-31 read no ([ADR-0161](docs/adr/0161-the-span-a-choice-among-three-is-given-measured.md)).
-  With a selection drawn among the readouts with a probability equal to the part of the critic's
-  value below zero, the first revision among three is made in both arms and sooner, the second in
-  neither and the third in one: H-32 read no
-  ([ADR-0164](docs/adr/0164-an-exploration-the-value-gates-measured.md)), and by its stopping rule the
-  line among three answers stops there.
-  On two other networks of the same size, ADR-0044's prior from seeds 23 and 24, with each constant
-  of the configuration derived again by its rule, the engine learns and revises the two-alternative
-  task as on the first: H-33 read yes
-  ([ADR-0167](docs/adr/0167-another-network-of-the-same-size-measured.md)).
-  At twice the size, 2 048 units, on two networks of that generator, with each constant derived by
-  its rule and the critic's rule extended first past 64 units a stimulus (ADR-0168), it learns and
-  revises the task as at 1 024: H-34 read yes
-  ([ADR-0169](docs/adr/0169-twice-the-size-measured.md)).
-  Under a reward right three times in four on the first network, seven mappings of eight are
-  learned and one reversal of six is not made inside the schedule, by one stimulus of two, with the
-  couplings bounded and the critic holding the expected reward: H-35 read no
-  ([ADR-0172](docs/adr/0172-a-reward-right-three-times-in-four-measured.md)). The boundary lies
-  between that share and seven in eight.
-  Under the same share on the two other networks of the size, seeds 23 and 24, each with its
-  constants derived by their rules, the first learns all eight mappings and the second six, one
-  reversal of twelve not made inside the schedule; over the three networks twenty-one mappings of
-  twenty-four are learned: H-36 read no
-  ([ADR-0174](docs/adr/0174-three-in-four-on-the-other-networks-measured.md)). The no at three in
-  four is not one network's.
-  With the engine's criticality controller on, at five steps from a sixteenth to one in 256 on the
-  first network, no step holds the network where the stimulus fires once and is seen: every step
-  takes it to the saturation rule's rate, 24.4 Hz a unit, a smaller step narrowing the gain's
-  swing there and not lowering it, and the estimate reads near one at no rate: H-37 read no, as
-  predicted ([ADR-0177](docs/adr/0177-the-controllers-step-measured.md)).
-  With the controller given a second rule, the gain moved by the window's count over a target
-  (ADR-0178, ADR-0180), and the target the settled network's own rate, every step from an eighth
-  to one in 256 holds the first network where the stimulus fires once and is seen; under an
-  eighth, the largest, the engine learns and revises the two-alternative task as with the gain
-  held, the count held at its target and the gain two per cent below its image's: H-38 read yes,
-  as predicted ([ADR-0181](docs/adr/0181-a-rate-the-controller-holds-measured.md)). The rate
-  changes fifteen per cent for one per cent of gain there, so an eighth is at that loop's edge
-  and a sixteenth inside it.
-  Under a sixteenth, on that network and on seeds 23 and 24, each with the target its own
-  derivation with the gain held returns, the engine learns and revises the two-alternative task
-  on every network, the count held at its target with the gain held's scatter: H-39 read yes, as
-  predicted, and of its four predicted readings the alternation's missed, a sixteenth halving an
-  eighth's and not removing it ([ADR-0183](docs/adr/0183-a-sixteenth-on-three-networks-measured.md)).
-  With the target the engine reads for itself (ADR-0189): its gain held for 128 windows, the mean
-  count of the last sixteen the target, then the rate's rule at a sixteenth. On those three
-  networks the engine learns and revises the two-alternative task as under a derived target, the
-  read targets 1.0 to 2.8 per cent above the derived ones and the count held at them: H-40 read
-  yes, as predicted, and of its three predicted readings the first missed, the live count still
-  rising through the read ([ADR-0190](docs/adr/0190-a-target-the-engine-reads-measured.md)).
-  With the inhibitory rule's target taken by the same read (ADR-0194): at the read's end both
-  rules run against its period. On those three networks the inhibitory sum stops falling in the
-  lead-in, each settled image carrying 13.4 to 14.0 per cent more inhibition, and the engine learns
-  and revises the two-alternative task as under H-40: H-41 read yes, as predicted, with all three
-  of its predicted readings ([ADR-0195](docs/adr/0195-the-inhibitory-target-by-the-same-read-measured.md)).
-  What the engine carries by default for an image no derivation has settled is
-  `Config::reads_its_targets()` ([ADR-0196](docs/adr/0196-the-engines-default.md), built by
-  [ADR-0198](docs/adr/0198-the-engines-default-built.md)): `Config::default()` with what H-41 read
-  of the network's own regime — the modulation at rest 0.5, the gain 1.75, the rate's rule at a
-  sixteenth, the read of 128 windows and both targets by it. An engine born under it writes H-41's
-  candidate's image byte for byte on the three networks; `Config::default()` stays the bare engine
-  every pin runs. Every learning result before H-38 stands with the gain held and the controller off.
-  The task takes any number of readouts up to 64 (ADR-0152). The learning configuration is H-25's
-  ([ADR-0146](docs/adr/0146-the-tag-the-address-already-is.md)):
-  - the excitatory synapses under the reward's gate, with the signed gate set;
-  - the inhibitory synapses under a baseline of their own, with the inhibitory rule's target at the
-    settled network's rate;
-  - a critic of the engine's own, counting each unit's spikes within the shortest synaptic delay
-    after a reward;
-  - the reward's address drawn by the engine: its sources the units that window counted, its targets
-    the readout its own selection chose.
-
-  Per trial the host gives the reward's sign. The readout sets are the body's interface.
-- **What was asked and read as no stays in the tree, unset.** The rule held by the network is paused
-  with the facilitating class and the slow current
-  ([ADR-0126](docs/adr/0126-the-gate-raised-measured.md)); the address's neural target side is closed
-  with the hold and the released delivery (ADR-0146); the whole punishment is a parameter of the
-  image no configuration sets (ADR-0155, ADR-0156); the exploration is an option of the task no
-  run's configuration sets (ADR-0163, ADR-0164); the controller's step under its estimate is zero
-  in every run that learns (ADR-0077, ADR-0177), the rate's rule is set in H-38's to H-41's
-  runs and in no other (ADR-0181, ADR-0183, ADR-0190, ADR-0195), the read of its target in H-40's
-  and H-41's, and the read's flag for the inhibitory target in H-41's alone; all three are also
-  set in the default, under which no tick has run (ADR-0198); the speed line is closed with the sweep kept
-  and the lanes reverted ([ADR-0105](docs/adr/0105-the-speed-line-closed.md)).
-- **What does not exist.** Every subsystem's real dynamics beyond these rules; the lookahead
-  ADR-0099 ordered and a lever on the rest of the turn; the real-time mode's reach measured on the
-  reference platform; the `mmap` path, the shared-memory mappings and core pinning; the tool broker;
-  standardising apart; the default run on a network, a size or a generator H-41 did not run; the
-  per-unit gain of §8.8.
-- **The next round** is the live brief in [briefs/](briefs/README.md), if there is one; the decision
-  behind it is the newest ADR in the index.
+**The next round** is the live brief in [briefs/](briefs/README.md), if there is one; the decision
+behind it is the newest ADR in the index.
 
 ## The principles
 
@@ -169,7 +64,8 @@ Each one is here because breaking it has already produced a defect in this repos
    one. Finish everything not blocked, then name what is left and why.
 8. **No intermediate documents that drift.** One canonical whitepaper in English; the Traditional
    Chinese file is a reader's guide with no layouts or figures; briefs are inputs and are frozen
-   when executed; outcomes live in ADRs, the changelog and the code.
+   when executed; outcomes live in ADRs, the reports in `docs/research/`, the changelog and the
+   code, and where the work stands in `docs/STATUS.md` alone ([ADR-0197](docs/adr/0197-one-place-for-each-kind-of-fact.md)).
 
 ## Invariants of the code
 
@@ -280,6 +176,11 @@ figure is recorded there as not admissible and is never written into the whitepa
 `spec:graph` (cross-document consistency: links, ADR lifecycle, open obligations) and
 `spec:prove` (each assertion is shown a violation of itself and must fail it, so none passes over nothing), `spec:briefs` (`spec-brief lint` over `.spec-brief.json`: every live brief carries its mandatory sections in order and a Latest ≠ Newest standing directive, and no archived brief has changed since its hash), `spec:archive` (every archived brief carries that hash, [ADR-0185](docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md); `spec:archive:test` tests the checker), `spec:explorations` (every note in `docs/explorations/` is marked exploratory with its branch, commit and runs, and no ADR cites one outside its Context, [ADR-0193](docs/adr/0193-an-exploration-lane.md); `spec:explorations:test` tests the checker), `spec:scope` (from brief 075 every brief declares `affectedFiles` and `protectedFiles`, and none protects less than its copy on `origin/main`, [ADR-0191](docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md); `spec:scope:test` tests the checker), `spec:decisions` (every ADR has its row in whitepaper §9 and in `docs/adr/README.md`, F-41; `spec:decisions:test` tests the checker), `spec:version` (the whitepaper's front matter and its Document control table declare the same version and date, F-43; on a pull request CI runs it again against the base, and a change to the document with its version left behind fails, [ADR-0064](docs/adr/0064-the-documentation-gate-and-the-version.md)) `spec:deps` (state crates declare
 no dependencies, TC-2) and `spec:costs` (every line of the whole-domain tests' cost table names a test in the tree, ADR-0092; `spec:costs:test` tests the deal). Each fails with a file and line.
+
+It runs `spec:index` too (the ADR index, §9 and the hypotheses' tables are what
+`scripts/adr-index.mjs` writes from front matter; `spec:index:test` tests it) and `spec:shape`
+(ADR-0197's limits on the text a change adds or modifies against `origin/main`, and an accepted
+ADR's body byte for byte its base copy; `spec:shape:test` tests it).
 
 CI runs `npm run spec`, one step and the same command, so a check inside it is enforced and a check outside it is enforced nowhere: `spec:decisions` was added to the gate and to three documents on 2026-09-20 and to the workflow not at all (F-44). `spec:scripts:test` holds the list to running every `spec:*` and every `*:test` script.
 

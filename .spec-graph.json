@@ -10,7 +10,12 @@
   ],
   "historyPatterns": [
     "CHANGELOG.md",
-    "docs/explorations/[0-9]*.md"
+    "docs/explorations/[0-9]*.md",
+    "docs/research/H-*.md",
+    "!docs/research/H-23.md",
+    "!docs/research/H-26.md",
+    "docs/research/a-rule-held-by-the-network.md",
+    "docs/research/the-operating-regime.md"
   ],
   "ignoreReferences": [
     "LICENSE-*",

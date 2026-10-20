@@ -94,6 +94,16 @@ written, and `npm run spec:archive` fails one that carries no hash. To reopen a 
 of archived briefs. Since 0.9.0 it reads an archived brief as a record, and an open box there no
 longer fails it, which is why the refusal and the hash are spec-brief's.
 
+## A round's documents
+
+From brief 078, a round writes its result once, in the place [ADR-0197](../docs/adr/0197-one-place-for-each-kind-of-fact.md) gives it, and links to it from everywhere else.
+- **Every round rewrites [`docs/STATUS.md`](../docs/STATUS.md) whole**: where the work stands, the last verdicts with their links, what does not exist, and the next decision, in at most 60 lines.
+- **A round that reads a hypothesis writes its report**, `docs/research/H-n.md`, in its pull request: the front matter `hypothesis:`, `question:` and `verdict:`, the hypothesis as written before any run, its readings' tables and the dispatches that are their evidence.
+- **Its measured ADR is short**: the verdict per network, arm and clause in one table, each predicted reading as held or missed in a line, and the stopping rule's step reached with the next decision it names. The protocol ADR and the built ADR are as they were.
+- **A new ADR takes ADR-0197's shape**: `title:`, `summary:`, `kind:` and, where it has one, `hypothesis:` in its front matter, its H1 `# ADR-NNNN: ` and the title, and **In brief** first.
+- **The tables are written, not edited**: `node scripts/adr-index.mjs` writes the index, §9 and the hypotheses' tables from front matter, and `npm run spec:index` fails a hand edit.
+- **New text meets the limits** `npm run spec:shape` holds ([CONTRIBUTING.md](../CONTRIBUTING.md#where-each-fact-goes-and-the-shape-of-new-text)), and the `CHANGELOG.md` entry is at most 400 characters.
+
 ## Evidencing a round
 
 How a round that measures reaches its merge ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md)).
