@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-18
 depends-on: ADR-0030
+title: The weekly sweep's cost is its timeouts, not its mutants
+kind: process
+summary: The weekly sweep runs per area with a per-mutant timeout derived from that area's own tests on its runner, and a completeness check refuses a partial sweep. The runtime area is sharded six ways by the rule that measured it.
 decision-makers: VirtualCortex maintainers
 ---
 

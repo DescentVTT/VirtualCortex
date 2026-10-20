@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0128
+title: A target the network fires at, measured
+kind: measured
+hypothesis: H-21
+summary: 'H-21 is yes: the rule gave a target period of 58 201 ticks, and H-20''s schedule kept the inhibitory sum at or above 0.848 of the settled image''s in both arms and learned every mapping. The drain slowed rather than stopped.'
 decision-makers: VirtualCortex maintainers
 ---
 

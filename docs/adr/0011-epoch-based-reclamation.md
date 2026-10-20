@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Epoch-based reclamation for structural plasticity
+kind: decision
+summary: Structural plasticity uses epoch-based reclamation, Specified, to be implemented with `crossbeam-epoch` unless a `no_std`-compatible in-house variant proves necessary for the runtime crate. Retirement and reuse are recorded per arena segment in `ImmuneScrubNode`.
 decision-makers: VirtualCortex maintainers
 ---
 

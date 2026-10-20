@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-20
 depends-on: ADR-0066
+title: The reward addressed
+kind: decision
+hypothesis: H-12
+summary: 'The dopamine term reaches the synapses from the presented stimulus''s units onto the selected readout''s units, every other synapse consolidating under the baseline alone. Written before any rewarded run: on this task the delivery is a teaching signal toward the answer, lagged by one trial.'
 decision-makers: VirtualCortex maintainers
 ---
 

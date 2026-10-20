@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Self-amendment
+kind: decision
+summary: A policy amendment passes four gates and a trial in two forks of the image, committed only when the engine behaved exactly as before and cost less. The engine never amends its own code. Image format 10.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0024
 ---

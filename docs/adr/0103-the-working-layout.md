@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0102
+title: The working layout
+kind: decision
+summary: Phase 1 may gather a chunk of scheduled units' integrated fields into lanes and integrate them together, the 64-byte record staying the only home of a unit's state. The lanes are safe Rust for the compiler's vectorizer, every lane bit for bit the scalar rule.
 decision-makers: VirtualCortex maintainers
 ---
 

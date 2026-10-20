@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0138
+title: The address drawn, built
+kind: built
+summary: ADR-0138's drawing is `Executor::address_drawn(targets)`, a call between ticks that writes the sources from the critic's own counts, refused without the critic or its window. The task's `Delivery::Drawn` calls it, and nothing of the image, the records or a rule changed.
 decision-makers: VirtualCortex maintainers
 ---
 

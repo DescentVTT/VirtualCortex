@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0113
+title: The facilitating class built
+kind: built
+summary: ADR-0113's mark is built as bit 2 of a unit's `flags`, `FLAG_FACILITATING`, with `step_stp_class` beside the untouched `step_stp` and the class a parameter of the image, the format moved from 16 to 17. Unset, every run is the run it was, bit for bit.
 decision-makers: VirtualCortex maintainers
 ---
 

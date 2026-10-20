@@ -3,6 +3,9 @@ status: accepted
 date: 2026-09-26
 depends-on: ADR-0101
 amends: [ADR-0023, ADR-0017]
+title: The sweep timed with no census, and kept
+kind: measured
+summary: 'The sweep without the gate is kept: timed on ADR-0101''s workload it read 0.517, 0.527, 0.745 and 0.643 of the base''s wall time per tick at (a) to (d), inside every bound of ADR-0099. Every reading of behaviour held bit for bit.'
 decision-makers: VirtualCortex maintainers
 ---
 

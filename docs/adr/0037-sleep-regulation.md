@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-12
+title: Sleep as a state machine on the window cadence
+kind: decision
+summary: 'Sleep is a state machine stepped once per window: a two-process sleep pressure against a circadian threshold, three stages under an ultradian budget, and a wake as an input. The homeostasis record gains its sleep fields, format version 13.'
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0036
 ---

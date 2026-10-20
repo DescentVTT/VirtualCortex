@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0176
+title: The bound's rule restated
+kind: process
+summary: A weekly shard's bound stays 180 minutes, its rule now that no shard of a dispatch reads past 60 per cent of it, by the job's own minutes. ADR-0176's rule, which counted a slow runner twice (F-68), is withdrawn.
 decision-makers: VirtualCortex maintainers
 ---
 

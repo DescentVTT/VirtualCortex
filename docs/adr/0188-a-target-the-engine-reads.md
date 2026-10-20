@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-18
 depends-on: ADR-0183
+title: A target the engine reads
+kind: protocol
+hypothesis: H-40
+summary: 'The engine is given a read: its gain held for its first 128 windows, the mean count of the last sixteen becomes its target, and the rate''s rule runs at the image''s step. H-40 asks whether a read target serves as a derived one did, predicted yes.'
 decision-makers: VirtualCortex maintainers
 ---
 

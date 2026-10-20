@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0130
+title: The critic built
+kind: built
+summary: ADR-0130's value weight is `value_weight`, an `i16` at `[52..54)` of the unit record, and the value, the error and the step are a pure rule in `cortex-neuromod`. The image format moves from 18 to 19, and unset every run is the run it was, bit for bit.
 decision-makers: VirtualCortex maintainers
 ---
 

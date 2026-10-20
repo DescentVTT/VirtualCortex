@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-28
 depends-on: ADR-0122
+title: The slow current built
+kind: built
+summary: ADR-0122's mark is built as bit 3 of a unit's `flags`, `FLAG_SLOW`, the slow potential `v_slow` in the record's `[20..24)` and `integrate_slow` beside the untouched `integrate`, the format moved from 17 to 18. Unset, every run is the run it was.
 decision-makers: VirtualCortex maintainers
 ---
 

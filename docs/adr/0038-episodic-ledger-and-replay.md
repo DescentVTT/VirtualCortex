@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-12
+title: The episodic ledger and its replay
+kind: decision
+hypothesis: H-9
+summary: An append-only ledger of `Episode` records in `cortex-hippocampus`, tagged as an input, is replayed on a ripple cadence in slow-wave sleep and depotentiated in REM, in sections 44 and 45. Whether that consolidates anything a later behaviour reads is H-9.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0037
 ---

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0116
+title: The region measured
+kind: measured
+summary: 'No cell is robust, so there is no cell for the second round: the usable region is one weight, a quarter of the range, at 64, 80 and 96 units. The task''s stimulus and the drained network each ignite the context in half the rounds.'
 decision-makers: VirtualCortex maintainers
 ---
 

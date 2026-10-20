@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-21
 depends-on: ADR-0072
+title: A stimulus that fires each unit once
+kind: measured
+hypothesis: H-12
+summary: No candidate, one message at the unit's threshold, one of 1.25 or their midpoint, fires every unit once and adds under a tenth of a spike after. The trace stays net depression under each, so there is no rewarded run, and the executor scaling an injected message by the gain is finding F-47.
 decision-makers: VirtualCortex maintainers
 ---
 

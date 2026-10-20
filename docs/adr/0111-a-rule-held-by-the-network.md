@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0110
+title: A rule held by the network
+kind: decision
+summary: 'The maintainers take a representation of the rule in force: a context the network holds by its own activity, switched by an error, under which each mapping is kept apart. It is staged in three rounds, and brief 048 measures the first.'
 decision-makers: VirtualCortex maintainers
 ---
 

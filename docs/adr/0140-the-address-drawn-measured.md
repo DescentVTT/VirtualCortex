@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0139
+title: The address drawn, measured
+kind: measured
+hypothesis: H-25
+summary: 'H-25 is yes: with the reward''s sources drawn by the engine, every mapping was learned in both arms and each reversal passed 40 of 64 in 14 to 21 blocks. The learning loop no longer takes the stimulus''s identity from the host.'
 decision-makers: VirtualCortex maintainers
 ---
 

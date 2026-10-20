@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Rust edition 2024 and a pinned MSRV
+kind: process
+summary: The workspace uses edition 2024 and MSRV 1.85, both inherited from `[workspace.package]`, with resolver 3 and `rust-toolchain.toml` pinning `1.97.1`. The CI job `msrv` checks and tests the workspace on the toolchain `rust-version` names.
 decision-makers: VirtualCortex maintainers
 ---
 

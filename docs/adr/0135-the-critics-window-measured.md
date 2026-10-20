@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0134
+title: The critic's window, measured
+kind: measured
+hypothesis: H-23
+summary: 'H-23 is yes: with the critic counting only within 100 ticks after each reward, every mapping was learned in both arms and each reversal passed 40 of 64 in 14 to 20 blocks. Each stimulus''s mean value stood within 0.12 of the reward of $2p - 1$.'
 decision-makers: VirtualCortex maintainers
 ---
 

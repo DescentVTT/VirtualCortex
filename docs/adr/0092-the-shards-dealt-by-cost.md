@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-24
 amends: [ADR-0073, ADR-0084]
+title: The shards dealt by cost
+kind: process
+summary: The tests go longest first to the least-loaded shard, costed by a table the weekly run itself measures, each test in a process of its own. The table decides the balance and never the coverage, and a line that names no test fails `npm run spec`.
 decision-makers: VirtualCortex maintainers
 ---
 

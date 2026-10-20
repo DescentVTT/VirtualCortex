@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-13
+title: A second anatomical prior and the estimator's regime
+kind: measured
+summary: The homeostasis record stays as it is. On both priors the coarse estimate's noise is the bin's, and a fine-bin slope reads a driven population's autocorrelation, which follows the gross causal ratio at 1 024 units and not at 256.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0044
 ---

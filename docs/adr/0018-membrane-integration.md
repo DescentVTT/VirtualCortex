@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Membrane integration
+kind: decision
+summary: Membrane integration uses shift leaks with a one-LSB floor, difference coupling into the soma, a 2 ms refractory window, apical-gated BAC plateaus and an adaptive threshold, with potentials relative to rest. A threshold at or below zero never fires.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0002
 ---

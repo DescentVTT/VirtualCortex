@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0144
+title: The gate's output delivered, measured
+kind: measured
+hypothesis: H-27
+summary: 'H-27 is no, on clauses 1 and 3: under the hold the consolidation on the side not selected turned from a cost into a gain, but the learning was slower than H-25''s. The release alone was no, as predicted.'
 decision-makers: VirtualCortex maintainers
 ---
 

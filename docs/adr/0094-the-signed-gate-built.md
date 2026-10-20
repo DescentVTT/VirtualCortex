@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-24
 depends-on: ADR-0093
+title: The signed gate built
+kind: built
+summary: ADR-0093's parameter is placed as a flag byte at `[25]` of the modulator section and the image format moved from 15 to 16, with `consolidate_signed` beside `consolidate`, which is untouched. Unset, every run is the run it was, bit for bit.
 decision-makers: VirtualCortex maintainers
 ---
 

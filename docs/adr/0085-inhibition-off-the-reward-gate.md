@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0083
+title: Inhibition off the reward's gate
+kind: protocol
+hypothesis: H-16
+summary: 'Consolidation gated by the reward is chosen, and an inhibitory synapse may consolidate under a baseline of its own, a parameter of the image, while every excitatory synapse stays under the gate. H-16 is written before any run: H-14''s configuration with that baseline at 0.5.'
 decision-makers: VirtualCortex maintainers
 ---
 

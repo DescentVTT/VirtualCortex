@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Mailbox and gate protocol
+kind: decision
+summary: The mailbox is an index stack pushed by compare-exchange and drained whole by one swap, so it needs no ABA tag and `mailbox_tag` becomes reserved (image format version 4). Four operations are sequentially consistent so that `end_turn` loses no wakeup.
 decision-makers: VirtualCortex maintainers
 amended-by: ADR-0102
 amends: ADR-0006

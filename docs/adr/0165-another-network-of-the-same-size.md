@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-11
 depends-on: ADR-0164
+title: Another network of the same size
+kind: protocol
+hypothesis: H-33
+summary: 'The next question is whether the learning configuration is the rules'' or that network''s: H-25''s two arms on priors of seeds 23 and 24, every constant derived again by the rule that derived it. H-33 is written with no prediction for the verdict.'
 decision-makers: VirtualCortex maintainers
 ---
 

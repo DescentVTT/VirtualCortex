@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-19
 depends-on: ADR-0195
+title: The engine's default for an image no derivation has settled
+kind: decision
+summary: '`Config::reads_its_targets()` carries what H-41 measured of the network''s own regime: the modulation at rest 0.5, the gain 1.75, the rate''s rule at a sixteenth, the read of 128 windows and both targets by it. `Config::default()` stays the bare engine every pin runs.'
 decision-makers: VirtualCortex maintainers
 ---
 

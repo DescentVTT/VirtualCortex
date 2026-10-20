@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Timing wheel geometry
+kind: decision
+summary: 'The wheel is `FlatTimingWheel<const CAP: usize>`, 256 × 10 µs fine and 256 × 100 µs coarse, a horizon of 2 560 fine ticks. A slot is a fixed-capacity list of 28-bit tokens, `WorkerWheel` is `FlatTimingWheel<2048>`, and the 64-bit lane mask is gone.'
 decision-makers: VirtualCortex maintainers
 amends: ADR-0004
 ---

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-14
 depends-on: ADR-0051
+title: The causal count inside the loop
+kind: measured
+summary: Measured against the oracle on both priors at 256, 1 024 and 4 096 units, the in-loop count of descendants reads the input's density and not the branching ratio. The record and the controller are untouched, and the count stays the executor's reading.
 decision-makers: VirtualCortex maintainers
 ---
 

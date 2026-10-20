@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0137
+title: The address drawn
+kind: protocol
+hypothesis: H-25
+summary: 'The engine draws the reward''s address itself: its sources the units the critic''s window counted since the previous reward, its targets the output channel its own selection chose. H-25 is written before any run, with H-23''s clauses and H-24''s clause on the network.'
 decision-makers: VirtualCortex maintainers
 ---
 

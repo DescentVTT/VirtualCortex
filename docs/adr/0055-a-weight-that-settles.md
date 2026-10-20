@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-14
 depends-on: ADR-0053
+title: A weight that settles
+kind: decision
+summary: The excitatory depression scales with the weight's magnitude, so under stationary pairing a magnitude has a fixed point instead of draining to nothing. Over the day the criterion held at 1 024 units, not in full at 256, and §8.8's per-unit gain stays Specified.
 decision-makers: VirtualCortex maintainers
 ---
 

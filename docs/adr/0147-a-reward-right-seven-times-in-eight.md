@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0146
+title: A reward right seven times in eight
+kind: protocol
+hypothesis: H-28
+summary: On H-25's configuration and schedule the reward's sign is the outcome's in seven trials of eight and its opposite in one, by a coin of the task's own draw. The share is derived from the schedule, and H-28 is written before any run.
 decision-makers: VirtualCortex maintainers
 ---
 

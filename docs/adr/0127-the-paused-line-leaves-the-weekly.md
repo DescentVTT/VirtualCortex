@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0126
+title: The paused line leaves the weekly
+kind: process
+summary: Forty of the paused line's forty-four whole-domain tests leave the weekly job, renamed from `…_exhaustive` to `…_paused` and kept in the tree with every pin, runnable by name. Four stay, and the weekly plan falls from about 61 to about 24 per cent of its bound.
 decision-makers: VirtualCortex maintainers
 ---
 

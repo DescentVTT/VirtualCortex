@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0178
+title: A rate the controller holds, built
+kind: built
+summary: ADR-0178's rule is built as `HomeostaticDrivePool::regulate_rate` beside `regulate`, its target the period `Config::rate_target_period_ticks`, zero unset. The image format moved from 21 to 22, and unset every run is the run it was, bit for bit.
 decision-makers: VirtualCortex maintainers
 ---
 

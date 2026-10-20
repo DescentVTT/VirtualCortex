@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-23
 depends-on: ADR-0086
+title: Inhibition off the reward's gate, measured
+kind: measured
+hypothesis: H-16
+summary: 'H-16 is yes: with the modulation baseline at zero and the inhibitory baseline at 0.5, the task moves the selection to the answer in 128 of the last 128 trials in both assignments. H-15''s no is thereby put on the excitatory side.'
 decision-makers: VirtualCortex maintainers
 ---
 

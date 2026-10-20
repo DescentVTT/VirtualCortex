@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-13
+title: The hypervector body
+kind: decision
+summary: '`HypervectorBody` is a second record of `cortex-symbolic`, 160 words of 64 bits, the width 10 240. Its algebra is integer rules: binding by XOR, permutation by rotation, bundling by majority and the Hamming distance, with no intrinsic and no `unsafe`.'
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0016
 ---

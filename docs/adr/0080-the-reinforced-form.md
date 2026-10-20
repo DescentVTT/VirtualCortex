@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0079
+title: The reinforced form
+kind: protocol
+hypothesis: H-14
+summary: 'H-14 is written before any run: the task as built, its reward addressed to the readout the engine selected with the outcome''s sign, is asked to move the selection to the answer. It runs in both assignments over three of the instrument''s runs.'
 decision-makers: VirtualCortex maintainers
 ---
 

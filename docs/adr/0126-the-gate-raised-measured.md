@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0125
+title: The gate raised, measured
+kind: measured
+summary: 'With the slow current''s lower gate voltage at 0.7, 0.8 and 0.9 of the threshold, every one of the sixteen cells fails where the kick passes, fifteen igniting without a kick and none letting go. ADR-0125''s case 2: the line pauses, the facilitating class and the slow current staying unset.'
 decision-makers: VirtualCortex maintainers
 ---
 

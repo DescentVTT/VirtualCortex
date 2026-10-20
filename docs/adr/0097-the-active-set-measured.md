@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-25
 depends-on: ADR-0023
+title: The active set, measured
+kind: measured
+summary: 'The executor counts its turns: under ADR-0044''s drive it serves 99.99 per cent of the reference network''s units every tick at 1 024 and 4 096 units, while 0.002 per cent of them fire. One message of 0.125 keeps a unit awake 2 503 ticks.'
 decision-makers: VirtualCortex maintainers
 ---
 

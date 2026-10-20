@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-17
 depends-on: ADR-0182
+title: A sixteenth, on three networks, measured
+kind: measured
+hypothesis: H-39
+summary: 'H-39 is yes, as ADR-0182 predicted: on seeds 22, 23 and 24 at a sixteenth, clause 0 holds on every network and H-25''s two arms on each hold H-25''s four clauses. Three of four predicted readings held, and the alternation''s missed.'
 decision-makers: VirtualCortex maintainers
 ---
 

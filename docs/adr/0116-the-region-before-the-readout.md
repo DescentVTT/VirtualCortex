@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0115
+title: The region before the readout
+kind: protocol
+summary: 'Before a readout is gated by the context, the usable region is measured for its width and for whether it survives another seed, a drained network and the task''s own stimulus. F-54 is decided: the readouts give up places 5 and 16.'
 decision-makers: VirtualCortex maintainers
 ---
 

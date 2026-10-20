@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0162
+title: An exploration the value gates, built
+kind: built
+summary: ADR-0162's rule is built as an option of the task, `Exploration::ValueGated`, the engine's value read by the task at the trial's end and compared with a coin of sixteen bits in integers. Unset, every trial is the trial it was.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0158
+title: The sweep's tests under nextest, measured before anything is adopted
+kind: process
+summary: '`cargo-nextest` is held to Latest ≠ Newest and measured on the runtime''s area in two sweeps of one commit, before anything is adopted. It is kept only if no mutant''s verdict is weaker and the area''s machine time falls to three quarters or less.'
 decision-makers: VirtualCortex maintainers
 ---
 

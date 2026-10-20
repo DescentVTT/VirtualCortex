@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-23
 depends-on: ADR-0087
+title: The assignment reversed
+kind: protocol
+hypothesis: H-17
+summary: 'The reversal is chosen and written as H-17 before any run: H-16''s configuration over 3 072 trials with the answer''s mapping flipped at the half, in both directions. It is predicted no, because under the reward''s gate a pair consolidates only when selected and correct.'
 decision-makers: VirtualCortex maintainers
 ---
 

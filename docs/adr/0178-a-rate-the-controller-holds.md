@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0177
+title: A rate the controller holds
+kind: protocol
+hypothesis: H-38
+summary: The controller is given a second rule, the gain moved by the window's count over a target in the estimate's place, the target a period in ticks of the image and zero unset. Under H-38, predicted yes, six steps are scanned and H-25's two arms run under the largest that holds.
 decision-makers: VirtualCortex maintainers
 ---
 

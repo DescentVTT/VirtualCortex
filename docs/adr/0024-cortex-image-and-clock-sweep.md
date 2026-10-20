@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: The `.cortex` image
+kind: decision
+summary: The image gets a section directory, a table-free CRC-64/XZ, and a loader and writer that read into arenas (format version 7). A clock sweep evicts quiet units to a write-ahead log and re-hydrates them, and `PlasticDelta` is the Tier-2 delta record.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0023
 ---

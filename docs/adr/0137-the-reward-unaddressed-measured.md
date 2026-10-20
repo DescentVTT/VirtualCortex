@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0136
+title: The reward unaddressed, measured
+kind: measured
+hypothesis: H-24
+summary: 'H-24 is no, on clause 1: with the dopamine term delivered to every synapse, the engine learned the first mapping in part and did not learn the reversals. Every coupling stayed bounded, and the network held within 0.987 and 1.043 of the image''s.'
 decision-makers: VirtualCortex maintainers
 ---
 

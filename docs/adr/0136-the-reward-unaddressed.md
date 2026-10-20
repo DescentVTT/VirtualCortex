@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0135
+title: The reward unaddressed
+kind: protocol
+hypothesis: H-24
+summary: The dopamine term, delivered since H-14 only to the presented stimulus's synapses onto the selected readout, reaches every synapse again, nothing of the engine changed. H-24, written before any run, keeps H-23's learning clauses and adds one that the network holds.
 decision-makers: VirtualCortex maintainers
 ---
 

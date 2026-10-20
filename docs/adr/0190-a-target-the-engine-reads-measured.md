@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-18
 depends-on: ADR-0189
+title: A target the engine reads, measured
+kind: measured
+hypothesis: H-40
+summary: 'H-40 is yes, as ADR-0188 predicted: on seeds 22, 23 and 24 at a sixteenth, the engine''s read makes a target on every network and H-25''s two arms on each hold H-25''s four clauses. The read targets are 1.0 to 2.8 per cent above the derived ones.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Every performance figure is Measured or Target, never asserted
+kind: process
+summary: Whitepaper §10.2 is the single table of figures, and every row carries a Target and an empty Measured column until a benchmark exists. The withdrawn figures are named in that section so that their absence is visible rather than silent.
 decision-makers: VirtualCortex maintainers
 ---
 

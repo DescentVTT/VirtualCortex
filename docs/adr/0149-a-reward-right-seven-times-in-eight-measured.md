@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0148
+title: A reward right seven times in eight, measured
+kind: measured
+hypothesis: H-28
+summary: 'H-28 is yes: with the coin misleading in 949 of the run''s 7 680 trials, every mapping was learned in both arms and no coupling passed 1.30. Each stimulus''s mean value stood within 0.13 of the reward of three quarters of 2p − 1.'
 decision-makers: VirtualCortex maintainers
 ---
 

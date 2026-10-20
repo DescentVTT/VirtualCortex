@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0132
+title: The critic's window
+kind: protocol
+hypothesis: H-23
+summary: The engine's critic counts a unit's spikes only within a window that opens at each reward and is as long as the shortest delay of any synapse the image carries. H-23 is written before any run, with a reversal clause and a prediction clause in place of H-22's clause 3.
 decision-makers: VirtualCortex maintainers
 ---
 

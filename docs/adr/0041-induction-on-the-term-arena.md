@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-13
+title: Induction on the term arena
+kind: decision
+hypothesis: H-11
+summary: A definite clause is a term over a reserved functor. Plotkin's least general generalisation, absorption, identification and intra-construction are bounded rules with first-fit matching, each output resolving back to its inputs, every failure restoring the scratch.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0025
 ---

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0104
+title: The speed line closed
+kind: decision
+summary: 'The speed line is closed: the sweep without the gate is kept (ADR-0102) and the membrane''s rule in lanes is not (ADR-0104). What is left is named with the need that would take each, and the learning line resumes from H-18''s named next decision.'
 decision-makers: VirtualCortex maintainers
 ---
 

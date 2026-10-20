@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-24
 amends: ADR-0093
+title: An image's pin moves with its format
+kind: protocol
+hypothesis: H-18
+summary: 'ADR-0093''s stopping rule is amended before any run: the pinned numbers that stop the round with the signed gate unset are the engine''s and the records'', not the header''s version and its seal. H-17''s whole-image CRC is re-pinned at format 16.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-19
 depends-on: ADR-0044
+title: A task, a readout and a reward
+kind: decision
+hypothesis: H-12
+summary: The runtime composes a two-alternative task on the executor, with a reward whose sign is the outcome's. Its readout counts a trial's spikes per set and selects through `cortex-basal-ganglia`'s gating rule, the harness's state is the caller's, and the image format stays 14.
 decision-makers: VirtualCortex maintainers
 ---
 

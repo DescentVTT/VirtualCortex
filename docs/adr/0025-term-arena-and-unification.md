@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: A term arena and first-order unification for `cortex-reasoning`
+kind: decision
+summary: '`TermNode` is admitted as a second 64-byte record in `cortex-reasoning` under ADR-0016''s test, with an iterative `unify` that binds into a caller''s table and undoes its trail on failure. `resolve_first_order` resolves two-literal clauses through those bindings.'
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0016
 ---

@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-13
+title: Episodes tagged from the spike train
+kind: measured
+hypothesis: [H-9, H-11]
+summary: A pattern tagged from an experience completes after a night, five of six, and the network's own densest coincidence does not (H-9). A rewarded invention's pattern is tagged and consolidated, deciding H-11's synaptic half at 256 and 1 024 units.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0038
 ---

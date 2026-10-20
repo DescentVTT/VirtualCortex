@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0129
+title: A critic of the engine's own
+kind: protocol
+hypothesis: H-22
+summary: The expected reward the dopamine signal is measured against is held by the engine instead, as a value weight on every unit read from its own spikes since the last reward. H-22, written before any run, asks that the learning holds, the couplings stay bounded and the critic predicts.
 decision-makers: VirtualCortex maintainers
 ---
 

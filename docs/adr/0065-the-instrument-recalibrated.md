@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-20
 depends-on: ADR-0060
+title: The instrument recalibrated
+kind: protocol
+hypothesis: H-12
+summary: 'Every constant is committed before the first rewarded run: a stimulus spaced beyond the prior''s local window, a readout window from its delay band, a trial of one dopamine time constant. With the weights frozen, the calibration passes 2.0 at 256 units and 1.75 at 1 024.'
 decision-makers: VirtualCortex maintainers
 ---
 

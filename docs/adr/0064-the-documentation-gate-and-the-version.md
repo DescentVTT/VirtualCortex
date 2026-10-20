@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-20
 amends: ADR-0008
+title: The documentation gate is one command and the whitepaper's version is checked
+kind: process
+summary: CI runs `npm run spec` as one step rather than a list of steps that drifted from it. The whitepaper's two version declarations must agree, and a change to the document must move its version forward.
 decision-makers: VirtualCortex maintainers
 ---
 

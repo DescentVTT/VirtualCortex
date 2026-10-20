@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-10-19
+title: An exploration lane
+kind: process
+summary: A question with no prediction runs as `#[ignore]`d `…_explore` tests on a kept `explore/NNN-…` branch at `scope=arms`, written down as a note in `docs/explorations/` marked exploratory. A note decides nothing, and an ADR cites one only in its Context.
 decision-makers: VirtualCortex maintainers
 ---
 

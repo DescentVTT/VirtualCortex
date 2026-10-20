@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-11
 depends-on: ADR-0165
+title: Another network of the same size, measured
+kind: measured
+hypothesis: H-33
+summary: 'H-33 is yes, on both networks, in both arms and in all five clauses: on ADR-0044''s prior from seeds 23 and 24 every rule gave a value and H-25''s two arms learned every mapping. The learning configuration is the rules'' and not one network''s.'
 decision-makers: VirtualCortex maintainers
 ---
 

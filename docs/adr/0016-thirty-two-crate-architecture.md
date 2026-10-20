@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Thirty-two state crates
+kind: decision
+summary: Fourteen crates are admitted, from `cortex-thalamus` to `cortex-imagination`, the §1.5, §8.10 and §8.9 boundaries are moved, and thirty-two is locked as the count. A new crate must pass a six-part admission test, starting with a named gap and no existing owner.
 decision-makers: VirtualCortex maintainers
 amends: ADR-0005
 depends-on: ADR-0015

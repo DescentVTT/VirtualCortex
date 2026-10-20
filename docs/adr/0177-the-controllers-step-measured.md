@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0175
+title: The controller's step, measured
+kind: measured
+hypothesis: H-37
+summary: H-37 is no, on clause 0 at every step, as ADR-0175 predicted, and the step is not the lever. Every step holds the network at 24.4 Hz a unit, and a smaller step narrows the gain's band and does not lower it.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-21
 amends: ADR-0030
+title: The whole-domain tests report what each binary took
+kind: process
+summary: The whole-domain job reads the seconds cargo already prints per test binary and reports each binary's time and its `exhaustive` test count. Sharding stays a decision for a round that has the numbers.
 decision-makers: VirtualCortex maintainers
 ---
 

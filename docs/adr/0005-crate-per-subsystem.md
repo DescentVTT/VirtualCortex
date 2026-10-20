@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: One crate per subsystem with no inter-crate dependencies among state crates
+kind: decision
+summary: Each subsystem is one crate, eighteen at the decision, and state crates have no inter-crate dependencies. Dependencies are permitted only from a runtime crate downward and only on a vetted allow-list, each addition recorded in the changelog.
 decision-makers: VirtualCortex maintainers
 amended-by: ADR-0016
 ---

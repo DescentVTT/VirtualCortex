@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0181
+title: A sixteenth, on three networks
+kind: protocol
+hypothesis: H-39
+summary: Under the rate's rule at a sixteenth, on seeds 22, 23 and 24 at 1 024 units, H-25's two arms run on each network under the target its own derivation returns. H-39 is predicted yes, and nothing under `src/` changes.
 decision-makers: VirtualCortex maintainers
 ---
 

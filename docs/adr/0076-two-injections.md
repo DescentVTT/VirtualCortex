@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-21
 depends-on: ADR-0074
+title: Two injections
+kind: measured
+hypothesis: H-12
+summary: A cancel, a negative basal message into the stimulus's units inside the trial, is built and derived from the engine's rule. Under it the sight passes (62 of 64) and the sign does not (13 of 64), so by H-12's stopping rule the stimulus side is exhausted.
 decision-makers: VirtualCortex maintainers
 ---
 

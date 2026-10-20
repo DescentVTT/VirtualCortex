@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0143
+title: The gate's output delivered, built
+kind: built
+summary: 'ADR-0143''s two mechanisms are built in the task: a `Hold`, unset by default, under which the channel not selected takes basal messages of negative efficacy, and `Delivery::Released`. No rule of the engine, no record and nothing of the image changed.'
 decision-makers: VirtualCortex maintainers
 ---
 

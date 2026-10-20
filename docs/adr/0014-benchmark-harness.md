@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Benchmark harness
+kind: process
+summary: The harness is `criterion` pinned at `=0.7.0` with default features off, confined to the separate crate `benches/cortex-bench`, so the state crates' dependency tables stay empty. CI runs the benchmarks in `--test` mode and asserts no timing.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0010
 ---

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0099
+title: The sweep without the gate, built and not kept
+kind: measured
+summary: A sweep in which each worker owns a fixed range of the unit arena held every reading of behaviour bit for bit and ran 2.0 to 2.7 times faster wherever most units are served. It ran 1.18 times slower at ADR-0097's sparsest drive, so under ADR-0099's criterion it is not kept.
 decision-makers: VirtualCortex maintainers
 ---
 

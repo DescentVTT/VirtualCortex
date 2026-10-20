@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-14
+title: Dale's principle in plasticity
+kind: decision
+summary: A block's polarity is its presynaptic unit's flag, and consolidation keeps the weight within the polarity's half of the width, so F-36 is resolved. An inhibitory block takes the symmetric window of Vogels et al. 2011.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0032
 ---

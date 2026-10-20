@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Zero allocation and zero syscalls on the hot path
+kind: decision
+summary: State crates carry no heap-owning types (`Box`, `Vec`, `String`) and should be `#![no_std]`, and runtime crates allocate only in their constructors. One `clock_nanosleep(TIMER_ABSTIME)` per period, outside the tick loop proper, is the sole permitted blocking call.
 decision-makers: VirtualCortex maintainers
 ---
 

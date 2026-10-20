@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0117
+title: An inhibition of the context's own
+kind: protocol
+summary: 'The context''s own inhibition is taken: each member of ADR-0117''s assembly receives added synapses from the network''s inhibitory units, so the inhibition it meets rises when the network does. Brief 051 measures a grid of recurrent and inhibitory weights.'
 decision-makers: VirtualCortex maintainers
 ---
 

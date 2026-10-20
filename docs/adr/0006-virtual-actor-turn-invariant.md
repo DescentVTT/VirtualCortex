@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Virtual-actor turn invariant enforced by an atomic gate
+kind: decision
+summary: 'The turn invariant is held by the fields `gate_state: AtomicU8`, `mailbox_head_ptr: AtomicU64` and `mailbox_tag: u64` in `DendriticSuperNeuron`. A worker that claims a unit drains its entire mailbox in one pass, then integrates once.'
 decision-makers: VirtualCortex maintainers
 ---
 

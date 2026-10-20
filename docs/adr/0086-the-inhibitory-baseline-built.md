@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-23
 depends-on: ADR-0085
+title: The inhibitory baseline built
+kind: built
+summary: ADR-0085's parameter is placed in the modulator section as a flag byte at `[24]` and a Q16.16 value at `[28..32)`, the image format moved from 14 to 15. Unset, every pinned number of the tree and the determinism pin stand bit for bit.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-21
 amends: ADR-0071
+title: The whole-domain tests run in three shards
+kind: process
+summary: The whole-domain tests run in three shards taken from the binaries `--list` names at run time, each checking what it ran against what the list counted. The floor is now the largest single binary, and that is said rather than hidden.
 decision-makers: VirtualCortex maintainers
 ---
 

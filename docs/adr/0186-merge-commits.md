@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-18
 amends: ADR-0150
+title: Merge commits
+kind: process
+summary: '`main` now takes a pull request by a merge commit, and the ruleset allows that method alone and no longer requires a linear history. A branch is brought up to date by merging `main` into it, never by a rebase once a run has been made on it or its pull request is open.'
 decision-makers: VirtualCortex maintainers
 ---
 

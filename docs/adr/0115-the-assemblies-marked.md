@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0114
+title: The assemblies marked, measured
+kind: measured
+summary: 'One cell is usable, 64 units under set (ii) at a quarter of the range: kicked, it holds as a train of bursts refreshed inside the class''s primed window, and released, it lets go. Every other cell never holds or runs away.'
 decision-makers: VirtualCortex maintainers
 ---
 

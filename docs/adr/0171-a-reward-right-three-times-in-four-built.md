@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-12
 depends-on: ADR-0170
+title: A reward right three times in four, built
+kind: built
+summary: ADR-0170's feedback is built in the task as `Feedback::ThreeInFour`, the reward's sign the outcome's unless the trial's coin is misleading and then the opposite. Every trial misleading at seven in eight is misleading here.
 decision-makers: VirtualCortex maintainers
 ---
 

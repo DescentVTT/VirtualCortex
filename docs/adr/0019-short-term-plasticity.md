@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Short-term plasticity
+kind: decision
+summary: 'Short-term plasticity is event-driven Tsodyks–Markram on the Q0.8 fields: `step_stp(elapsed_ticks)` runs once per presynaptic spike, with exponentials by squaring. The constants are U = 51/256, τ_f = 2^14 ticks and τ_d = 2^15 ticks, one synapse type for the engine.'
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0012
 ---

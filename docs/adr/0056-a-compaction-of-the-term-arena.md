@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-14
 depends-on: ADR-0052
+title: A compaction of the term arena
+kind: decision
+summary: The nodes the clause store does not reach are reclaimed by one descending pass that marks and one ascending pass that moves, a rule of `cortex-reasoning`. The executor runs it between ticks on a call and at every entry into slow-wave sleep, the image unchanged.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Two-tier timing wheel for axonal delay
+kind: decision
+summary: 'Axonal delay uses a two-tier timing wheel, `FlatTimingWheel` in `cortex-core` with `fine_ring: [u64; 200]` and `coarse_ring: [u64; 80]`. Horizons are 2 ms and 8 ms, a delay beyond the coarse horizon is a load-time error, and ADR-0013 later resolved its ring length and slots.'
 decision-makers: VirtualCortex maintainers
 amended-by: ADR-0013
 ---

@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-12
+title: Multirate stepping as a cadence
+kind: decision
+summary: Multirate stepping is a `Cadence`, a power-of-two period and a phase, a mask on the tick. The population spike tally and the idle-tick benchmark are added, and conservative lookahead is left to a measurement.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0023
 ---

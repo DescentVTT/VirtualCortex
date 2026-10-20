@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-12
+title: Criticality control
+kind: decision
+hypothesis: H-8
+summary: The branching ratio is estimated by lag-one regression over bins of population activity in the homeostasis record, and a bounded global synaptic gain, stepped once per window, is the actuator. Format version 12. Whether it reads σ at the reference scale is H-8.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0035
 ---

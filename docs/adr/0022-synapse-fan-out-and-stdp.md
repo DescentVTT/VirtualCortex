@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Synaptic fan-out and STDP
+kind: decision
+summary: Fan-out chains store `index + 1`, a delayed delivery is a 28-bit `synapse_token(block, slot)`, and the release at the presynaptic spike is stored in `last_release_q16`. STDP is the nearest-neighbour pair rule at the presynaptic spike (image format version 6).
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0013
 ---

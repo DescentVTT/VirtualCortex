@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-20
 depends-on: ADR-0068
+title: The addressed reward measured
+kind: measured
+hypothesis: H-12
+summary: 'With the addressed delivery the one variable, the rewarded clause fails at 1 024 units: 56 correct of the last 128 and the mirrored assignment 65, against 80. The answer couplings part by three to five per cent in the direction the trace''s sign set, and the behaviour reads nothing of it.'
 decision-makers: VirtualCortex maintainers
 ---
 

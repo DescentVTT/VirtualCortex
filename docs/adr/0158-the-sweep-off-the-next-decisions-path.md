@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0150
+title: The sweep off the next decision's path
+kind: process
+summary: A sweep's outcome is now written down by the first ADR that merges after it ends, and no ADR waits for it. The runtime's sweep is dealt to twelve shards where it was six, and running its tests under nextest is named and not decided.
 decision-makers: VirtualCortex maintainers
 ---
 

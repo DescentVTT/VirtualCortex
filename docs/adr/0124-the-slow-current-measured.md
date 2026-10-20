@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-28
 depends-on: ADR-0123
+title: The slow current measured
+kind: measured
+summary: 'By the protocol no cell runs: the kick''s second clause fails at every arm and shift, and the maintainers chose to stop the round there. The slow current raises the unwired members'' rate from ADR-0117''s 1.6 Hz to 4 to 54 Hz.'
 decision-makers: VirtualCortex maintainers
 ---
 
