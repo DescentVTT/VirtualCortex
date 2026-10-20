@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-14
 depends-on: ADR-0050
+title: The term arena in the image and the discovery loop inside the tick
+kind: decision
+summary: The clause store, the term nodes, the arena's counters, the affect state and an episode's binding to an invented predicate are the executor's and the image's (format 14). A committed invention's outputs are instantiated through the bindings, and the search runs on the tick's cadence while awake.
 decision-makers: VirtualCortex maintainers
 ---
 

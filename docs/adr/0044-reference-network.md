@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-13
+title: The reference network
+kind: measured
+hypothesis: [H-8, H-9]
+summary: On a seeded prior at 256 and 1 024 units, one window's lag-one slope is not a reading of σ and the controller's fixed point is the ceiling (H-8). After a night a cue of half a local cluster completes the rest (H-9).
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0036
 ---

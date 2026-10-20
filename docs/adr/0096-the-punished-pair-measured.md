@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-24
 depends-on: ADR-0095
+title: The punished pair, measured
+kind: measured
+hypothesis: H-18
+summary: 'H-18 is yes: with the signed gate set, an engine that learned the answer before the flip selected the new answer in 128 of the last 128 trials at the 4 608th. In both arms the old answer''s pairs fell back to 0.95 to 1.06 of the image''s couplings.'
 decision-makers: VirtualCortex maintainers
 ---
 

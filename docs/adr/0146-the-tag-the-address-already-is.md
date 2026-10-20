@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0145
+title: The tag the address already is
+kind: decision
+summary: The attention-gated feedback H-27's stopping rule names is read as what the drawn address's target side already does, and a tag carried by membrane potential is not built. The second step is closed and the learning configuration stays H-25's.
 decision-makers: VirtualCortex maintainers
 ---
 

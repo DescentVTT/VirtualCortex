@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Three-factor plasticity
+kind: decision
+summary: An eligibility trace per synapse in the block is consolidated into the weight by the modulator at the presynaptic spike. The apical mask moves into the chain word, and the engine's modulator is held in the executor and the image, format version 11.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0022
 ---

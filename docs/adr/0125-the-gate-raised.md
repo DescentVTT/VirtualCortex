@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0124
+title: The gate raised, and a stopping rule for the line
+kind: protocol
+summary: The slow current's lower gate voltage is raised above the band the quiet state's fluctuations reach, the last try of the rule held by the network. A rule written before any run pauses the line if no kick passes, no cell is usable in the core, or no cell is robust under the conditions.
 decision-makers: VirtualCortex maintainers
 ---
 

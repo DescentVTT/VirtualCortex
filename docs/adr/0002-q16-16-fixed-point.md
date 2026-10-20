@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Q16.16 fixed-point arithmetic
+kind: decision
+summary: 'Arithmetic is Q16.16 fixed point with no IEEE-754 on the hot path: `f32` and `f64` must not appear in any crate under `crates/`. Narrower fields use a stated Q-format (`u8` short-term-plasticity variables are Q0.8), and the numeric rules are in whitepaper §8.1.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-22
 amends: ADR-0073
+title: The shards take tests, not binaries
+kind: process
+summary: Every binary's tests are spread over the shards, each binary's share run in one process with its tests named as exact filters read from `--list` at run time. A listing that fails or names nothing now fails the shard (F-48).
 decision-makers: VirtualCortex maintainers
 ---
 

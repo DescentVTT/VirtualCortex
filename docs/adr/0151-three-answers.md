@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-08
 depends-on: ADR-0149
+title: Three answers
+kind: protocol
+hypothesis: H-29
+summary: H-28's stopping rule is taken at three answers on H-25's configuration, stimuli, schedule and arms, a channel selected when its count is the largest and none at a tie. Each stimulus's answer moves to the next readout at a flip, and H-29 is written before any run.
 decision-makers: VirtualCortex maintainers
 ---
 

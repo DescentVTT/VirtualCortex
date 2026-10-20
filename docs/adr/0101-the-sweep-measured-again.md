@@ -3,6 +3,9 @@ status: accepted
 date: 2026-09-26
 depends-on: ADR-0100
 amends: [ADR-0099]
+title: The sweep measured again
+kind: protocol
+summary: 'Of ADR-0100''s named options the second is taken: the sweep without the gate is timed again on ADR-0097''s four runs with no census in the timed ticks, against ADR-0099''s bounds unchanged. A lever''s gain is read on a workload whose instrument reads no record the engine does not.'
 decision-makers: VirtualCortex maintainers
 ---
 

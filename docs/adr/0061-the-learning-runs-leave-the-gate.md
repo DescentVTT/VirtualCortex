@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-20
 amends: ADR-0060
+title: The learning runs leave the gate
+kind: process
+summary: Brief 027's five full runs at 256 units leave the gate and become weekly `exhaustive` tests, and the gate keeps the rewarded run's first block. A run in the gate is paid again by every runtime mutant of the weekly sweep.
 decision-makers: VirtualCortex maintainers
 ---
 

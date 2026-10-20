@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-10-18
+title: The upgrade suite planned
+kind: decision
+summary: Of the twenty-nine proposals UPG-01 to UPG-29, one is done, seven are taken into the plan in an order, four come after the tool broker and seventeen are deferred. Latest ≠ Newest is kept and governs what the tree depends on, not what the engine does.
 decision-makers: VirtualCortex maintainers
 ---
 

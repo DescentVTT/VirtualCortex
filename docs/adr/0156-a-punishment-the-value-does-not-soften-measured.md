@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0155
+title: A punishment the value does not soften, measured
+kind: measured
+hypothesis: H-30
+summary: 'H-30 is no, on clauses 1 and 5, where a yes was predicted: the first reversal passed in 19 and 22 blocks where H-29''s took 31 and 30. The second and the third never passed 40 of 64 and their mappings were not learned, in both arms.'
 decision-makers: VirtualCortex maintainers
 ---
 

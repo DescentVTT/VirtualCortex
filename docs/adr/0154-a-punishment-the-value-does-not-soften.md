@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0153
+title: A punishment the value does not soften
+kind: protocol
+hypothesis: H-30
+summary: A parameter of the image is decided under which a reward below zero is delivered whole where the value is below zero, with the critic's own error and every other case unchanged. Unset, every run is the run it was, and H-30 is written before any run.
 decision-makers: VirtualCortex maintainers
 ---
 

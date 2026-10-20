@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0082
+title: Plasticity everywhere, measured
+kind: measured
+hypothesis: H-15
+summary: 'H-15 is no: with the modulation baseline at 0.5, the task moves the selection to the answer in 106 of the last 128 trials mirrored and 78 in the assignment, two short of the mark. The unrewarded consolidation carries every stimulus–readout coupling up by a third to a half.'
 decision-makers: VirtualCortex maintainers
 ---
 

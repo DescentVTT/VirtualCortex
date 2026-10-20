@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-21
 amends: ADR-0067
+title: The dispatch's scope follows the diff
+kind: process
+summary: A round dispatches the whole-tree sweep only when its actual change can have left a mutant uncaught, decided by the executing round from its diff. Adding a test never qualifies, because an added test can only catch more.
 decision-makers: VirtualCortex maintainers
 ---
 

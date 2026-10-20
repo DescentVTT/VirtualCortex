@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0112
+title: A facilitating class of synapses
+kind: decision
+summary: 'The facilitating route is chosen over a slower current: a unit may be marked facilitating, its synapses releasing under short-term plasticity whose facilitation outlasts its depression. The class''s constants are a parameter of the image, and unset, every run is the run it was.'
 decision-makers: VirtualCortex maintainers
 ---
 

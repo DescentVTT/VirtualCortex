@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-19
 depends-on: ADR-0192
+title: The inhibitory target by the same read, built
+kind: built
+summary: 'ADR-0192''s flag is built as `Config::istdp_target_read`: set beside a read, the read''s last window sets the inhibitory rule''s period to the rate''s, and the flag is spent. The image format moved from 23 to 24, and unset every run is the run it was.'
 decision-makers: VirtualCortex maintainers
 ---
 

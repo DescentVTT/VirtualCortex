@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0157
+title: The span a choice among three is given, measured
+kind: measured
+hypothesis: H-31
+summary: H-31 is no, on clauses 1 and 2 in both arms and on clause 4 in one, where a yes was predicted. The first reversal's mapping was learned at 48 blocks in both arms, and the third reversal's mapping in neither.
 decision-makers: VirtualCortex maintainers
 ---
 

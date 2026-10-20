@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0077
+title: The reward's direction before a task's difference
+kind: protocol
+hypothesis: H-13
+summary: 'Of the three routes H-12''s stopping rule named, the sign task is chosen and written as H-13 before any run. H-13: a reward delivered to a stimulus''s synapses onto one readout raises the couplings it reaches and that readout''s response, against the reward withheld.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Structural enforcement of the invariants that were held by review
+kind: process
+summary: Workspace lints forbid `unsafe` and floats, a manifest check holds state crates to no dependencies, and rustdoc warnings fail CI. The arithmetic lint is denied in the twelve crates that pass it, actions are pinned and line endings normalised.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0023
 ---

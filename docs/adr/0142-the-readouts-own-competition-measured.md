@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0141
+title: The readouts' own competition, measured
+kind: measured
+hypothesis: H-26
+summary: 'H-26 is no, as predicted, and at the bar: the released shadow''s consolidation on the pairs of the readout not selected came to 0.486 to 0.602 of the learning signal. It was past half in six of the eight mappings.'
 decision-makers: VirtualCortex maintainers
 ---
 

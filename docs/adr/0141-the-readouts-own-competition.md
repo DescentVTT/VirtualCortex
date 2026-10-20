@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-01
 depends-on: ADR-0140
+title: The readouts' own competition
+kind: protocol
+hypothesis: H-26
+summary: On H-25's own runs an open-loop shadow replays the stimulus–readout synapses as if the address's targets were released to every unit, reading the release's cost before anything is built. H-26 holds when the cost is at most half the signal in every mapping of both arms, predicted no.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0107
+title: The reward-prediction error, measured
+kind: measured
+hypothesis: H-19
+summary: 'H-19 is no, clause 3 the one that failed: with the critic set the engine learned the mapping and revised it in both arms, and did not settle. Over each mapping''s last 256 trials one answer pair moved by 1.22 to 1.87 per cent of its image coupling.'
 decision-makers: VirtualCortex maintainers
 ---
 

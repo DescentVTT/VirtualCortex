@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-11
 depends-on: ADR-0163
+title: An exploration the value gates, measured
+kind: measured
+hypothesis: H-32
+summary: 'H-32 is no, on clause 1 in both arms: the first reversal among three is learned in both arms and sooner, the second in neither, and the third is lost in one. The line stops among three answers, and the exploration stays in the tree unset.'
 decision-makers: VirtualCortex maintainers
 ---
 

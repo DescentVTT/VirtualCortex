@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-25
 depends-on: ADR-0098
+title: The engine's speed
+kind: protocol
+summary: 'The three levers that change no rule are taken in order: the sweep without the gate, a working layout of the integrated fields, then the lookahead. Each is held to every reading of behaviour bit for bit and kept only if a gain written before its first timed run is read.'
 decision-makers: VirtualCortex maintainers
 ---
 

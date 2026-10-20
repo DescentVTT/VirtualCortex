@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Computational phenomenology
+kind: decision
+hypothesis: H-3
+summary: Of seven tiers, five become integer rules with tests, and qualia-space geometry and information closure stay Specified with no field (image format version 5). Whether any rule constitutes experience is hypothesis H-3, and the whitepaper does not claim the engine feels.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0016
 ---

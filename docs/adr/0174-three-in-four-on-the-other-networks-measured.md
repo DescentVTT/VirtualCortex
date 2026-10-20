@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-12
 depends-on: ADR-0173
+title: Three in four on the other networks, measured
+kind: measured
+hypothesis: H-36
+summary: 'H-36 is no, on clause 1 on one network of the two: seed 23 learned every mapping in both arms, and seed 24 learned six of eight. Over the three networks twenty-one mappings of twenty-four were learned and sixteen reversals of eighteen crossed.'
 decision-makers: VirtualCortex maintainers
 ---
 

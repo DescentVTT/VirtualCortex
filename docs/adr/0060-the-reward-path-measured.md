@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-19
 depends-on: ADR-0059
+title: The reward path measured
+kind: measured
+hypothesis: H-12
+summary: 'The rewarded clause fails at 256 and 1 024 units: the two-alternative task''s accuracy stays at chance in every block of every run, and no constant moves. The readings locate the reason in the readout and the pairing statistics, not in the modulator.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: The executor
+kind: decision
+summary: The executor is the runtime crate `runtime/cortex-runtime`, running each tick in three barrier-separated phases over in-house bounded Chase–Lev deques. Its arena type is the one `unsafe` in the workspace, under a contract on which references each phase holds.
 decision-makers: VirtualCortex maintainers
 amended-by: ADR-0102
 depends-on: ADR-0017

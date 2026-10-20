@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-23
 amends: ADR-0089
+title: The old answer held from the trial after the flip
+kind: protocol
+hypothesis: H-17
+summary: 'ADR-0089''s assertion is amended before any run: the first trial under the second mapping still consolidates the last reward of the first, so the old answer''s pairs are held from the 1 537th trial''s end. Nothing else of H-17 changes.'
 decision-makers: VirtualCortex maintainers
 ---
 

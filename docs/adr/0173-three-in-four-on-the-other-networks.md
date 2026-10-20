@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-12
 depends-on: ADR-0172
+title: Three in four on the other networks
+kind: protocol
+hypothesis: H-36
+summary: Before a rule of the engine is changed, the share of three in four is asked of the other networks of the size, seeds 23 and 24, each under the configuration its rules derived. H-36 carries H-35's four clauses on each, with no prediction for the verdict.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0109
+title: A schedule of reversals, measured
+kind: measured
+hypothesis: H-20
+summary: 'H-20 is yes: through three reversals over 7 680 trials the engine learned every mapping, 113 to 125 of each mapping''s last 128 trials in both arms. No stimulus–readout coupling passed 1.30 of its image''s at any block''s end, the highest 1.166 and 1.174.'
 decision-makers: VirtualCortex maintainers
 ---
 

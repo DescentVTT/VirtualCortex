@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0126
+title: A target the network fires at
+kind: protocol
+hypothesis: H-21
+summary: The inhibitory rule's target rate, a parameter of the image left at its default of 5 Hz while the settled network fires at about 1.7, is set to the settled network's own rate. H-21 asks before any run whether H-20's schedule then keeps its inhibition and still learns every mapping.
 decision-makers: VirtualCortex maintainers
 ---
 

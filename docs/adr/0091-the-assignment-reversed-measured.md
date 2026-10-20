@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-23
 depends-on: ADR-0090
+title: The assignment reversed, measured
+kind: measured
+hypothesis: H-17
+summary: 'H-17 is no: an engine that learned the answer in 128 of the last 128 trials before the flip selected the new answer in 0 of the last 128 after it, in both arms. The old answer''s pairs, punished 1 534 times each arm, did not move.'
 decision-makers: VirtualCortex maintainers
 ---
 

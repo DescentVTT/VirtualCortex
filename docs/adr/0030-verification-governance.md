@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Verification governance
+kind: process
+summary: A mutation gate on the lines a change touches, a zero-dependency property kit with a lattice and a seeded walk, and exhaustive tests where the domain allows are adopted. The tests run in the release profile, and a determinism pin is checked on two architectures.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0029
 ---

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0168
+title: A shard's bound by its longest test
+kind: process
+summary: A weekly shard's bound becomes 180 minutes, the least multiple of thirty that holds the longest test two and a half times over, the slowest runner read. The twelve shards, the deal and the briefs' 60 per cent stay.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-19
 depends-on: ADR-0196
+title: The engine's default, built
+kind: built
+summary: '`Config::synaptic_gain_q16` is the gain `Executor::new` starts an engine at, and `Config::reads_its_targets()` is `Config::default()` with ADR-0196''s five values. An engine born under it writes H-41''s candidate''s image byte for byte on seeds 22, 23 and 24.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0106
+title: The critic built
+kind: built
+hypothesis: H-19
+summary: 'ADR-0106''s expected reward per stimulus is built as `Task::critic`, off unless set: the reward delivered is the outcome''s less the stimulus''s expectation, which then moves by an arithmetic shift of the error. Unset, every run is the run it was.'
 decision-makers: VirtualCortex maintainers
 ---
 

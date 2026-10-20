@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-20
 depends-on: ADR-0058
+title: The first complete sweep's list
+kind: process
+summary: 'A triage rule tells an inherent timeout from a directive-class one: thirty-six timeouts are classified and four loops made ranges. Twenty-one survivors are dispositioned by a test, a shape or a named exclusion, and one timeout was a slow pass starved by the hang beside it.'
 decision-makers: VirtualCortex maintainers
 ---
 

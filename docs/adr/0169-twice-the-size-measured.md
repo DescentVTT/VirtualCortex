@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-12
 depends-on: ADR-0168
+title: Twice the size, measured
+kind: measured
+hypothesis: H-34
+summary: 'H-34 is yes, on both networks, in both arms and in all five clauses: at 2 048 units from seeds 22 and 23 every rule gave a value and H-25''s arms learned every mapping. The learning configuration is its rules'' at twice the size.'
 decision-makers: VirtualCortex maintainers
 ---
 

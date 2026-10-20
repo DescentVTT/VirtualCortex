@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-19
 depends-on: ADR-0194
+title: The inhibitory target by the same read, measured
+kind: measured
+hypothesis: H-41
+summary: 'H-41 is yes, as ADR-0192 predicted: on seeds 22, 23 and 24 at a sixteenth the engine holds the read''s periods for both rules from the 129th window, and the inhibitory sum stops falling. H-25''s two arms on each network hold H-25''s four clauses.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-08
 depends-on: ADR-0151
+title: Three answers, built
+kind: built
+summary: ADR-0151's selection and mapping are built in the task, with `Readout`, `Task` and `Outcome` generic over the number of channels and `Task::flip` moving each answer to the next readout. Under two readouts a trial is the trial it was.
 decision-makers: VirtualCortex maintainers
 ---
 

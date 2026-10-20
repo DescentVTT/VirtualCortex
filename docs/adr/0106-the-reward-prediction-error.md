@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0096
+title: The reward-prediction error
+kind: protocol
+hypothesis: H-19
+summary: 'Of the four questions H-18''s stopping rule named, the reward-prediction error is taken: the dopamine signal receives the outcome''s reward less an expected reward per stimulus. H-19, written before any run, asks whether the engine learns, revises and settles, with no prediction for the verdict.'
 decision-makers: VirtualCortex maintainers
 ---
 

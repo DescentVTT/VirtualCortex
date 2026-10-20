@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0092
+title: A fifth shard
+kind: process
+summary: The weekly job's whole-domain tests are dealt to five shards where ADR-0088 dealt them to four, by ADR-0092's deal unchanged, because ADR-0117's first dispatch put one shard at 59 per cent of its bound. The script is unchanged.
 decision-makers: VirtualCortex maintainers
 ---
 

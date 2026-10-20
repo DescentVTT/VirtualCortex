@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-19
 amends: ADR-0150
+title: A round's scope, eighteen shards, and the reproduction first
+kind: process
+summary: From brief 075 a brief declares what its round may write and may not, and `spec-brief archive --strict` refuses a round that wrote outside the one or into the other. The whole-domain tests go to eighteen shards, and a round dispatches its reproduction as soon as its tables are pinned.
 decision-makers: VirtualCortex maintainers
 ---
 

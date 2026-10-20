@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0180
+title: A rate the controller holds, measured
+kind: measured
+hypothesis: H-38
+summary: 'H-38 is yes, as ADR-0178 predicted: on seed 22 at 1 024 units clause 0 holds at every step of the six, and under an eighth H-25''s two arms hold H-25''s four clauses. Each of the four predicted readings held, and the steepness reads fifteen, an eighth at its loop''s edge.'
 decision-makers: VirtualCortex maintainers
 ---
 

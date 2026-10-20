@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-12
+title: Synaptic density
+kind: decision
+hypothesis: H-7
+summary: The four-synapse block stands. Eight-bit logarithmic weights, eight synapses per block and an in-engine far-memory synapse tier are rejected, and the density levers are put in order, each admitted only by the measurement named.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0012
 ---

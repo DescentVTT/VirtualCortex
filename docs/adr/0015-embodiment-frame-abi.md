@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Embodiment frame ABI and single-producer single-consumer ring protocol
+kind: decision
+summary: '`TorqueFrame` and `JointStateFrame` are 64-byte `#[repr(C, align(64))]` frames for `DOF = 12`, in rings of `CAPACITY = 16` under a monotonic-cursor release/acquire protocol. `FRAME_ABI_VERSION = 1` and `CAPACITY` are written into the control block and checked by `is_compatible()`.'
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0006
 ---

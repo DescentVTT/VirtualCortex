@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: 64-byte cache-line POD records as the unit of state
+kind: decision
+summary: Every primary state record is `#[repr(C)]`, and arena records are `align(64)` and exactly 64 bytes. Cross-record links are indices into arenas, trailing padding is an explicit byte array that must be zero, and size and alignment are asserted at compile time.
 decision-makers: VirtualCortex maintainers
 ---
 

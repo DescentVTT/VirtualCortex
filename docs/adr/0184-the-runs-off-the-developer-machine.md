@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-17
 amends: ADR-0150
+title: The runs off the developer machine
+kind: process
+summary: A round's runs now go by dispatch, the calibration at `scope=exhaustive` with the round's own tests excluded and the arms and any trial at a new `scope=arms` on AArch64. Before a push the developer machine runs the fast checks and the pull request's gate runs the rest.
 decision-makers: VirtualCortex maintainers
 ---
 

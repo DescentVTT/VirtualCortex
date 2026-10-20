@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: The tick in the image header
+kind: decision
+summary: The image header carries the tick's duration at `[60..64)`, refused when it is not this build's, and the clock at `[40..48)`. The loader resumes that clock, so every stamp keeps its meaning.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0024
 ---

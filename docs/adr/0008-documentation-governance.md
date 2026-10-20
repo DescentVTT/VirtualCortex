@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Documentation governance
+kind: process
+summary: From whitepaper 3.0.0, `docs/WHITEPAPER.md` is canonical, `docs/adr/` holds one MADR record per decision, and a disagreement with the repository is a numbered finding in §11, the repository authoritative. `spec-guard` and `spec-graph` are pinned and run in CI as blocking checks.
 decision-makers: VirtualCortex maintainers
 ---
 

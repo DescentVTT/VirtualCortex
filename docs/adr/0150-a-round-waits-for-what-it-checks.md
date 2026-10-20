@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0075
+title: A round waits for what it checks
+kind: process
+summary: 'Four waits that check nothing more are removed and no check is: the merge waits for the dispatch''s whole-domain shards and not its sweep, and the arms run once. An ADR cites its round''s commits as the pull request holds them, and the tests are dealt to twelve shards.'
 decision-makers: VirtualCortex maintainers
 ---
 

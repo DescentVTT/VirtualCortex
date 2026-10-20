@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: The `.cortex` memory-mappable image format
+kind: decision
+summary: The header is Implemented in `cortex-connectome`, and the section directory and loader are Specified. Any change to a record layout, including reserved bytes, bumps `version`, atomics are stored as plain integers that must be zero at rest, and a foreign `version` fails closed.
 decision-makers: VirtualCortex maintainers
 ---
 

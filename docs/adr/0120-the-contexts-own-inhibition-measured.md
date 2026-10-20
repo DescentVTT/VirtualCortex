@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-28
 depends-on: ADR-0119
+title: The context's own inhibition measured
+kind: measured
+summary: No cell of the core grid is usable, so no cell is robust and there is no cell for the second round. At a quarter of the range the inhibition keeps the assembly from holding at every inhibitory weight, and from three eighths up every cell ignites without a kick.
 decision-makers: VirtualCortex maintainers
 ---
 

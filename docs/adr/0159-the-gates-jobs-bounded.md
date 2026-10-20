@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0030
+title: The gate's jobs bounded
+kind: process
+summary: Each test step of the gate's three Rust jobs is bounded at three times the longest it took in twelve green runs, and each job at an hour. A hang then fails in bounded time and keeps its log, and F-67 is opened with its cause not known.
 decision-makers: VirtualCortex maintainers
 ---
 

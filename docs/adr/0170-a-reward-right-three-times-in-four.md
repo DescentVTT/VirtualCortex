@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-12
 depends-on: ADR-0169
+title: A reward right three times in four
+kind: protocol
+hypothesis: H-35
+summary: 'H-34''s stopping rule is taken at a less reliable reward: H-28''s task with the reward''s sign the outcome''s in three trials of four and its opposite in one, on H-25''s configuration, network, schedule and arms. H-35 makes no prediction for the verdict.'
 decision-makers: VirtualCortex maintainers
 ---
 

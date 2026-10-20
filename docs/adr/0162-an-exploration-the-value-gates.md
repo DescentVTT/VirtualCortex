@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0161
+title: An exploration the value gates
+kind: protocol
+hypothesis: H-32
+summary: With the task's exploration set, a trial's selection is drawn among the readout's channels with a probability equal to the part of the engine's own value below zero, and is the gate's otherwise. H-32 is written with no prediction for the verdict.
 decision-makers: VirtualCortex maintainers
 ---
 

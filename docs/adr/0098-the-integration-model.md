@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-25
 depends-on: ADR-0097
+title: The integration model
+kind: decision
+summary: Every awake unit is integrated every tick, as built, since service on arrival buys nothing without a catch-up the membrane does not have. Appendix A's three targets are met in two modes, a real-time mode with a body attached and an offline mode with none.
 decision-makers: VirtualCortex maintainers
 ---
 

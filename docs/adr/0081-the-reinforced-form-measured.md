@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0080
+title: The reinforced form, measured
+kind: measured
+hypothesis: H-14
+summary: 'H-14 is yes: the task as built moves the selection to the answer in 128 of the last 128 trials in the assignment and in the mirrored assignment over 1 536 trials. The answer couplings rise to 1.35 to 1.45 of the image''s.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-20
 depends-on: ADR-0065
+title: The reward path measured again, through the calibrated instrument
+kind: measured
+hypothesis: H-12
+summary: 'The rewarded clause fails at 256 and 1 024 units with the calibration passed: 53 and 49 correct of the last 128 against the 80 asked for, the mirrored assignment 53 and 65. The instrument resolves the stimulus from the background but not one stimulus from the other.'
 decision-makers: VirtualCortex maintainers
 ---
 

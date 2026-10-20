@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-30
 depends-on: ADR-0133
+title: The critic's window built
+kind: built
+summary: ADR-0133's window is `Config::critic_window_ticks`, a length in ticks at the modulator section's `[52..54)`, zero unset, and the loader refuses a window that is not `shortest_delay`. The image format moves from 19 to 20, and unset every run is the run it was, bit for bit.
 decision-makers: VirtualCortex maintainers
 ---
 

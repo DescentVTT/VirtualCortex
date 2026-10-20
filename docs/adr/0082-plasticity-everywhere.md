@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0081
+title: Plasticity everywhere
+kind: protocol
+hypothesis: H-15
+summary: Of the candidates H-14's stopping rule named, the baseline at which every synapse consolidates is chosen and written as H-15 before any run. It is H-14's configuration with the modulation baseline at 0.5 instead of zero, every other constant H-14's.
 decision-makers: VirtualCortex maintainers
 ---
 

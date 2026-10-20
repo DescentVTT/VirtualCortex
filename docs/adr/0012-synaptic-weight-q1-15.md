@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Sixteen-bit synaptic base weights are Q1.15
+kind: decision
+summary: Sixteen-bit synaptic weights are Q1.15, named `weights_q1_15`, a signed fraction of the firing threshold, chosen over Q8.8 for resolution. The efficacy is formed exactly in i64 and shifted by 15 in `cortex_core::synaptic_efficacy_q16`, and `FORMAT_VERSION` is 2.
 decision-makers: VirtualCortex maintainers
 ---
 

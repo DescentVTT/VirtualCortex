@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-13
+title: Exact continued fractions on the scratchpad
+kind: decision
+summary: The convergents of a polynomial continued fraction are the first sequencing of slots into an expression, overflow the slot's flag. An exact tolerance test against a rational target and a bounded coefficient search are added, the meet-in-the-middle search Specified.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0016
 ---

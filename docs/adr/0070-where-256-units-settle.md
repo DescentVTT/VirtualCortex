@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-21
 depends-on: ADR-0055
+title: Where 256 units settle
+kind: measured
+hypothesis: H-12
+summary: 256 units is not usable for this task behind a lead-in of any length, because the drive alone carries the excitatory sum below the level at which the instrument sees. A learning round's criterion stays at 1 024 units.
 decision-makers: VirtualCortex maintainers
 ---
 

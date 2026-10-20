@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-17
 amends: ADR-0008
+title: The spec tools upgraded, and spec-brief admitted
+kind: process
+summary: spec-guard moves to 0.26.0 and spec-graph to 0.17.0, and spec-brief 0.8.0 holds the briefs' contract from `.spec-brief.json` and archives a round with an integrity hash. `spec-guard prove` joins the gate, and spec-harness is not adopted.
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-13
+title: The executive clause search
+kind: decision
+hypothesis: H-11
+summary: The runtime's search over a clause store commits an invention whose reward is positive and undoes every other, with candidate pairs and a bounded proof search in `cortex-reasoning`. The symbolic half of H-11 is decided, the synaptic half open.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0043
 ---

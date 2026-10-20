@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-28
 depends-on: ADR-0118
+title: A sixth shard
+kind: process
+summary: The weekly job's whole-domain tests are dealt to six shards where ADR-0118 dealt them to five, because the regenerated table plans every shard at 57 per cent of its bound at five. It is the last shard this lever buys.
 decision-makers: VirtualCortex maintainers
 ---
 

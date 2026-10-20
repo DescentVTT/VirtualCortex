@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-12
 depends-on: ADR-0171
+title: A reward right three times in four, measured
+kind: measured
+hypothesis: H-35
+summary: 'H-35 is no on clause 1: with the reward''s sign the outcome''s in three trials of four, seven mappings of eight were learned, the fourth from the assignment at 75, five short. Five reversals of six passed 40 of 64 in 19 to 26 blocks and the sixth in none of its 32.'
 decision-makers: VirtualCortex maintainers
 ---
 

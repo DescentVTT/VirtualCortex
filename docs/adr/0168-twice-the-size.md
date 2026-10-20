@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-12
 depends-on: ADR-0167
+title: Twice the size
+kind: protocol
+hypothesis: H-34
+summary: 'H-33''s stopping rule is taken at another size: ADR-0044''s generator at 2 048 units from seeds 22 and 23, every constant derived by its rule at that size, then H-25''s two arms. The critic''s rule is extended past 64 units a stimulus before any run.'
 decision-makers: VirtualCortex maintainers
 ---
 

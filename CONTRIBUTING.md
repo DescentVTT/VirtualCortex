@@ -69,6 +69,39 @@ The whitepaper is the canonical architecture document and is governed by [ADR-00
   control table — and both move together (F-43). `npm run spec:version` checks the agreement; CI
   checks the bump against the base of the pull request.
 
+### Where each fact goes, and the shape of new text
+
+Each kind of fact has one home, and every other document links to it ([ADR-0197](docs/adr/0197-one-place-for-each-kind-of-fact.md)).
+
+| Fact | Its home |
+| :--- | :--- |
+| Where the work stands | [`docs/STATUS.md`](docs/STATUS.md), rewritten whole by every round, no history |
+| Why a thing was decided | an ADR |
+| What a hypothesis read | its report in [`docs/research/`](docs/research/README.md) |
+| What changed | `CHANGELOG.md`, one entry a change, linking its ADR |
+| The architecture | the whitepaper; a status cell gives its label and links |
+| How to work | this file, `CLAUDE.md` and `briefs/README.md` |
+
+**Checked by `npm run spec:shape`** (`scripts/check-doc-shape.mjs`), on the text a change adds or modifies against `origin/main`:
+- a paragraph or a list item of at most 1 200 characters, a table cell of at most 400, and in the ADR index at most 300;
+- `docs/STATUS.md` of at most 60 lines, and a new `CHANGELOG.md` entry of at most 400 characters;
+- a new ADR's `title:` of at most 80 characters, its `summary:` of at most 300 and its `kind:` one of `decision`, `protocol`, `built`, `measured` and `process`;
+- a new ADR's H1 as `# ADR-NNNN: ` and its title, and its body opening with **In brief**;
+- an accepted ADR's body byte for byte its base copy, its front matter changed only in `status:`, `superseded-by:` and `amended-by:`.
+
+Text the base already holds passes whatever its length, so a sentence moved verbatim from one document to another is not new text.
+Archived briefs, code blocks and the directive comments are not read.
+
+**Checked by `npm run spec:index`** (`scripts/adr-index.mjs`): the ADR index, the whitepaper's §9 and the hypotheses' tables in §11.1 and `docs/research/README.md` are what the script writes from front matter. Run `node scripts/adr-index.mjs` to write them.
+
+**Held by review**, because no check can read them: an ADR's **In brief** as three bullets (the decision, why, and what is left open), and these six:
+1. the conclusion first;
+2. one thing a sentence, at most 35 words, and no clauses chained by semicolons;
+3. numbers and symbols, `step = 1/16` rather than *a sixteenth*;
+4. a mechanism's one short name, the one in the whitepaper's §12 Glossary;
+5. results in tables, reasoning in paragraphs;
+6. one sentence a line in new text.
+
 ### Briefs
 
 Rounds of work are written as numbered, self-contained prompts in [`briefs/`](briefs/README.md). A brief says what done looks like, re-derives its facts with paths and a date, lists deliverables as checkboxes, states what the round is not empowered to do and what it may override (as an ADR), and says how it is verified and reported. When executed it is archived by `spec-brief archive`, which refuses a deliverable left open, moves it to `briefs/archive/` with a frozen banner and writes an integrity hash; the gate fails an archived brief changed since, or one with no hash ([ADR-0185](docs/adr/0185-the-spec-tools-upgraded-and-spec-brief.md)). See that README for the sections every brief carries; `npm run spec:briefs` enforces them from `.spec-brief.json`.
@@ -109,6 +142,8 @@ gh workflow run ci.yml --ref explore/NNN-<slug> -f scope=arms -f tests='<test>_e
 ```
 
 `npm run spec` is the whole documentation gate and is the single step CI runs, so a check added to it is enforced and a check outside it is enforced nowhere (F-44). The parts run alone: `npm run spec:guard` the executable assertions; `npm run spec:prove` that each of them can fail; `npm run spec:graph` the cross-document checks; `npm run spec:briefs` the briefs' contract and the archived briefs' hashes; `npm run spec:archive` that every archived brief carries one; `npm run spec:explorations` that every exploration note is marked exploratory with its branch, commit and runs and that no ADR cites one outside its Context ([ADR-0193](docs/adr/0193-an-exploration-lane.md)); `npm run spec:scope` that every brief from 075 declares its scope and protects no less than on `origin/main` ([ADR-0191](docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)); `npm run spec:decisions` that every ADR has its row in whitepaper §9 and in `docs/adr/README.md` (F-41); `npm run spec:version` the whitepaper's two version declarations (F-43); `npm run spec:deps` the manifests (TC-2); `npm run spec:costs` that every line of the whole-domain tests' cost table names a test in the tree ([ADR-0092](docs/adr/0092-the-shards-dealt-by-cost.md)). All exit non-zero with a file and line number when something is wrong. `npm run mutants:timeouts <mutants.out>` is not part of the gate: it reads a weekly sweep's own output and says what each of its timeouts was doing when the bound cut it ([ADR-0063](docs/adr/0063-the-sweep-reads-its-own-timeouts.md)).
+
+It runs `npm run spec:index` and `npm run spec:shape` too, the two checks of the documents' shape above, each with its tests.
 
 ## Definition of done
 

@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-13
+title: Categorial reduction on the term arena
+kind: decision
+hypothesis: H-10
+summary: A category is a term, the four combinatory rules are unifications, and a greedy shift-reduce reducer reads a sequence of lexical categories into one with a log. Type raising and a chart are Specified. Its coverage is H-10.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0025
 ---

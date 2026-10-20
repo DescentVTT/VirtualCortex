@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0152
+title: Three answers, measured
+kind: measured
+hypothesis: H-29
+summary: 'H-29 is no, on clause 1: the first mapping was learned as between two and seven of the eight were learned, but not the mirrored arm''s second. A reversal took 21 to 31 of a mapping''s 32 blocks against H-25''s 14 to 21.'
 decision-makers: VirtualCortex maintainers
 ---
 

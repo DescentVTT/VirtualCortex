@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-13
 depends-on: ADR-0174
+title: The controller's step
+kind: protocol
+hypothesis: H-37
+summary: 'The line under an unreliable reward is closed with no rule of the engine changed, and the question is asked of the criticality controller''s step: five steps from a sixteenth to one in 256. H-37 is predicted no at every step.'
 decision-makers: VirtualCortex maintainers
 ---
 

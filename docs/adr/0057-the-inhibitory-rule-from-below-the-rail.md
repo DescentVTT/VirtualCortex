@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-14
 depends-on: ADR-0053
+title: The inhibitory rule read from below the rail
+kind: measured
+summary: 'No target is chosen: with the inhibitory gain at 2.0, a day at 256 and 1 024 units at two periods reads the fraction of units at the target under a rule written first. No lane is made for a parameter that changes behaviour, which stays with the maintainers.'
 decision-makers: VirtualCortex maintainers
 ---
 

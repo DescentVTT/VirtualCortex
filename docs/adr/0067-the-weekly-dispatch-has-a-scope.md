@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-20
 amends: ADR-0058
+title: The weekly dispatch has a scope
+kind: process
+summary: Through a `scope` input on the weekly dispatch, a round always runs the exhaustive tests, where its own measurement lives. It runs the whole-tree sweep beside them only when it added or removed a test, moved one between the gate and the weekly job, or changed the sweep itself.
 decision-makers: VirtualCortex maintainers
 ---
 

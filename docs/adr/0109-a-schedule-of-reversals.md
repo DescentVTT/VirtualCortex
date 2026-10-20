@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0108
+title: A schedule of reversals
+kind: protocol
+hypothesis: H-20
+summary: H-19's configuration is kept, and the learning line takes H-18's second named question under it. H-20, written before any run, asks whether through three reversals every mapping is learned and every coupling stays below 1.30 of its image's.
 decision-makers: VirtualCortex maintainers
 ---
 

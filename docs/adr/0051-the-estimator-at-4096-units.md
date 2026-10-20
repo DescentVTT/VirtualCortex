@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-14
+title: The estimator at 4 096 units
+kind: measured
+summary: 'No record line is added: the measurement of ADR-0047 on both priors at 4 096 units, a weekly `exhaustive` test, does not meet the rule written before the run. The fine-bin slope reads above the gross causal ratio where the population nears the ceiling.'
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0047
 ---

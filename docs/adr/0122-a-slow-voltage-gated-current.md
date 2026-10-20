@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-28
 depends-on: ADR-0120
+title: A slow, voltage-gated current
+kind: decision
+summary: 'ADR-0111''s other candidate for persistence is taken: a marked unit carries a slow current integrating its excitatory synaptic input over tens of milliseconds, reaching the soma only as far as the soma is depolarised. Unset, every run is the run it was.'
 decision-makers: VirtualCortex maintainers
 ---
 

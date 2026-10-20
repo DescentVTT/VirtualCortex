@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-14
 depends-on: ADR-0049
+title: The waking day and the inhibitory target period
+kind: decision
+summary: The inhibitory rule's target period is a parameter of the image, not of the registry, since ADR-0031's behaviour gate admits no parameter that changes what the engine does (F-37). A day was measured at 256 and 1 024 units under two periods, and no target is chosen.
 decision-makers: VirtualCortex maintainers
 ---
 

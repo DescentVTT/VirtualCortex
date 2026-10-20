@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-13
+title: The discovery path
+kind: decision
+hypothesis: H-11
+summary: A clause store's description length is the free energy the valence rule reads, an invention's drop the valence, a quarter of it the modulator's reward-prediction error. A node is certified only by a completed prover frame.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0032
 ---

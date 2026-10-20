@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-19
 depends-on: ADR-0190
+title: The inhibitory target by the same read
+kind: protocol
+hypothesis: H-41
+summary: With a flag set, the read sets the inhibitory rule's period beside the rate's at its end, and the rest of the lead-in settles under the network's own targets. The flag is the modulator section's `[26]` (format 24), and H-41, on seeds 22, 23 and 24, is predicted yes.
 decision-makers: VirtualCortex maintainers
 ---
 

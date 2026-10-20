@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-18
 depends-on: ADR-0188
+title: A target the engine reads, built
+kind: built
+summary: ADR-0188's read is built as `Config::rate_read_windows`, zero unset, the gain held through it by `HomeostaticDrivePool::hold` and at its last window the mean made a period. The image format moved from 22 to 23, and unset every run is the run it was.
 decision-makers: VirtualCortex maintainers
 ---
 

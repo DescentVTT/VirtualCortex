@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-26
 depends-on: ADR-0103
+title: The membrane's rule in lanes, built and not kept
+kind: measured
+summary: The membrane's rule in lanes is not kept. Vectorized by the compiler, it read 1.209, 1.132, 1.211 and 1.122 of the base's wall time per tick at runs (a) to (d), against ADR-0099's bounds of 0.80 and 1.10, as predicted.
 decision-makers: VirtualCortex maintainers
 ---
 

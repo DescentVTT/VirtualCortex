@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0076
+title: The background side
+kind: measured
+hypothesis: H-12
+summary: 'Step 2 of H-12''s stopping rule: no candidate passes, so there is no rewarded run and H-12 closes as a no for this task in this regime. The settled network''s trace is net potentiation on average, +0.4 per synapse per trial, but the sign reads 53 against 56.'
 decision-makers: VirtualCortex maintainers
 ---
 

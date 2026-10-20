@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-22
 depends-on: ADR-0078
+title: The reward's direction, measured
+kind: measured
+hypothesis: H-13
+summary: 'H-13 is yes: a reward after every trial to the presented stimulus''s synapses onto its assigned readout raises those couplings by 12 to 15 per cent over 512 trials. That readout''s response is above the same trial''s with the reward withheld in 128 and 127 of the last 128.'
 decision-makers: VirtualCortex maintainers
 ---
 

@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-11
 depends-on: ADR-0158
+title: The sweep after the shards
+kind: process
+summary: The sweep's jobs now wait for the whole-domain shards, which keeps the sweep's twelve shards and gives the merge's path the first places. With twelve, a dispatch at `scope=both` had become twenty-five jobs for twenty places.
 decision-makers: VirtualCortex maintainers
 ---
 

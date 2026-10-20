@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0156
+title: The span a choice among three is given
+kind: protocol
+hypothesis: H-31
+summary: A mapping after a flip is 48 blocks where it was 32, by the number of answers and by H-29's own slowest reversal, with the configuration left as it is. The whole punishment is unset, and H-31 is written before any run.
 decision-makers: VirtualCortex maintainers
 ---
 

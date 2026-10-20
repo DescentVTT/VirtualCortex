@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-21
 depends-on: ADR-0069
+title: What the trace is made of
+kind: measured
+hypothesis: H-12
+summary: At 1 024 units and the present gain, the volley's pairing is net potentiation and the background's net depression of four to five times it. Each stimulus unit fires about twice more after its volley (F-46), and a ladder of lower gains passes at none, so there is no rewarded run.
 decision-makers: VirtualCortex maintainers
 ---
 

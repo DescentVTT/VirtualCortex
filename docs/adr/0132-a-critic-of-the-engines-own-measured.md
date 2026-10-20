@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-29
 depends-on: ADR-0131
+title: A critic of the engine's own, measured
+kind: measured
+hypothesis: H-22
+summary: 'H-22 is no, on clause 3 alone: every mapping was learned in both arms with no coupling past 1.30 of its image''s. In one mapping the engine''s value on the correct trials stood at 0.495 of the reward, below the half clause 3 asks.'
 decision-makers: VirtualCortex maintainers
 ---
 

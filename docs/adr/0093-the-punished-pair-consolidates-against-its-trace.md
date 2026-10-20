@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-09-24
 depends-on: ADR-0091
+title: The punished pair consolidates against its trace
+kind: protocol
+hypothesis: H-18
+summary: 'A signed gate is chosen: an addressed excitatory synapse consolidates under `clamp(baseline + dopamine, −1, 1)`, so a punishment moves its weight against its trace''s sign. H-18 is written before any run: H-17''s configuration with the gate set and a second mapping twice as long.'
 decision-makers: VirtualCortex maintainers
 ---
 

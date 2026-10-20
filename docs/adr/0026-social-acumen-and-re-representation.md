@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Social acumen and re-representation
+kind: decision
+hypothesis: H-5
+summary: A sincerity gap and a second-level expectation go in `cortex-social`, tact and indirectness in `cortex-linguistic`, an anomaly that marks a concept stale in `cortex-knowledge` and a basis rotation in `cortex-symbolic`. Whether that yields a synthesis a reader would call novel is H-5.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0021
 ---

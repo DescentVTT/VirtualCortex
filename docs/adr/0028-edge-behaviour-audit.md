@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Edge behaviour under audit
+kind: decision
+summary: A gate is closed until it is evaluated, a reflex is released with its override, every packed or shifted input is read within its bound, and the loader refuses what the writer would never produce. Image format version 9.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0024
 ---

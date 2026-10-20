@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-20
 amends: ADR-0062
+title: The sweep reads its own timeouts
+kind: process
+summary: Beside `timeout.txt` the weekly job writes when each timeout ran, what ran in the shard's other slot and whether its test run was still finishing tests. The report does not classify, and the verdict stays ADR-0062's rule.
 decision-makers: VirtualCortex maintainers
 ---
 

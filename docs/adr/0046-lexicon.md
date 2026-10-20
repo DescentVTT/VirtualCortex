@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-13
+title: The lexicon
+kind: decision
+summary: A caller's table maps token ids to concept ids with a lexical shape, in the runtime. A token sequence is read into a frame and a complete frame realised into token ids, with `surface_token_id` written. No word is in the engine.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0040
 ---

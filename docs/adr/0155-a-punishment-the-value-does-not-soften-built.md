@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-09
 depends-on: ADR-0154
+title: A punishment the value does not soften, built
+kind: built
+summary: ADR-0154's rule is built as `ValueCritic::received_q16` beside the critic's error, and the parameter as `Config::whole_punishment`, a flag byte at the modulator section's `[51]`. The image format moved from 20 to 21, and unset, every run is the run it was.
 decision-makers: VirtualCortex maintainers
 ---
 

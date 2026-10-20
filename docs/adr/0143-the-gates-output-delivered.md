@@ -2,6 +2,10 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0142
+title: The gate's output delivered
+kind: protocol
+hypothesis: H-27
+summary: The channel not selected at the readout window's close is inhibited through the span in which the pair rule still pairs the volley, and the address's targets are released to every unit. H-27 is written before any run, with H-25's four clauses and the release alone as its control.
 decision-makers: VirtualCortex maintainers
 ---
 

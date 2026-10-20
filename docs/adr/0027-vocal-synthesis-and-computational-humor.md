@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Vocal synthesis as motor output and computational humor
+kind: decision
+hypothesis: H-6
+summary: A `VocalFrame` with an integer source–filter renderer goes in `cortex-embodiment`, the benign-violation appraisal in `cortex-affect`, reward in `cortex-neuromod` and the playful marker in `cortex-linguistic`. That a listener finds the marked turn funny is H-6.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0015
 ---

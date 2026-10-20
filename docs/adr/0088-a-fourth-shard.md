@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-23
 amends: ADR-0073
+title: A fourth shard
+kind: process
+summary: The three shards read 48, 23 and 77 per cent of their bound on a slower runner, so the matrix takes a fourth shard and the script its `n`. The floor is now the longest single test, which is said rather than hidden.
 decision-makers: VirtualCortex maintainers
 ---
 

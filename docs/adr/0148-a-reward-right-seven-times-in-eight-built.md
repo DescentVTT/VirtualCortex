@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-10-07
 depends-on: ADR-0147
+title: A reward right seven times in eight, built
+kind: built
+summary: ADR-0147's feedback is `Feedback::SevenInEight`, under which the reward's sign is the outcome's unless the trial's coin, three bits of its own draw, is misleading, and then the opposite. No rule of the engine, no record and nothing of the image changed.
 decision-makers: VirtualCortex maintainers
 ---
 

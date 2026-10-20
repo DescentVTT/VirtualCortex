@@ -2,6 +2,9 @@
 status: accepted
 date: 2026-09-27
 depends-on: ADR-0111
+title: An assembly that holds, measured
+kind: measured
+summary: 'No cell is usable: three cells hold by the rule, and each of them also ignites without a kick and does not let go. The holds are population bursts, each draining the members'' pool to a few per cent, never a sustained rate.'
 decision-makers: VirtualCortex maintainers
 ---
 

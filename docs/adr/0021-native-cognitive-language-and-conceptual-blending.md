@@ -1,6 +1,10 @@
 ---
 status: accepted
 date: 2026-09-10
+title: Native cognitive language
+kind: decision
+hypothesis: H-4
+summary: Nested constructions, conceptual blending, default-mode wandering and dialogue grounding become fields and rules in existing records, without a language model (image format version 5). Every rule produces ids, bits, orders and hashes, and the lexicon is the runtime's.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0016
 ---

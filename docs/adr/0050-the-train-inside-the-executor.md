@@ -1,6 +1,9 @@
 ---
 status: accepted
 date: 2026-09-14
+title: The spike train inside the executor
+kind: decision
+summary: Every worker's spikes of a tick are merged after the tick, in unit order, into a bounded ring the executor owns, bit-identical on every worker count. ADR-0048's capture rules run on it, and a rewarded search tags the coincidence before its reward in one call.
 decision-makers: VirtualCortex maintainers
 depends-on: ADR-0048
 ---
