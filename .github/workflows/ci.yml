@@ -122,7 +122,7 @@ jobs:
         run: cargo test --workspace --locked
 
       - name: Test in the release profile (the engine's; no overflow checks) (ADR-0030)
-        timeout-minutes: 10 # 192 s at the longest (ADR-0159)
+        timeout-minutes: 26 # 516 s at the longest in twelve green runs (ADR-0159, ADR-0205, F-76)
         run: cargo test --workspace --release --locked
 
       - name: Format
