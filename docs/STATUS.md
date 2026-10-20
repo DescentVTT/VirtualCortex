@@ -52,8 +52,8 @@ Per trial the host gives the reward's sign, and the readout sets are the body's 
 
 ## The next decision
 
-ADR-0196 names three, in this order, and takes none:
-1. An ADR on the rate's rule's step from the engine's own loop, with a hypothesis that it removes the count's alternation.
+[ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md) took the first of ADR-0196's three: a step the engine makes from its own loop, H-42, which brief 078 runs.
+1. H-42's yes puts the probe in `Config::reads_its_targets()` in step = 1/16's place; its no names an ADR on how S is read, or on λ.
 2. Then M10, a reward past the trial ([Appendix C](WHITEPAPER.md#appendix-c-roadmap)).
 3. A re-read of the targets by evidence, at M12.
 
