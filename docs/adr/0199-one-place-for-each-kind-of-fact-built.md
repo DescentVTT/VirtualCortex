@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-20
 depends-on: ADR-0197
 title: One place for each kind of fact, built

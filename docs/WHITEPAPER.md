@@ -2480,7 +2480,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0196](adr/0196-the-engines-default.md) | The engine's default for an image no derivation has settled | accepted |
 | [ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md) | One place for each kind of fact | accepted |
 | [ADR-0198](adr/0198-the-engines-default-built.md) | The engine's default, built | accepted |
-| [ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md) | One place for each kind of fact, built | proposed |
+| [ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md) | One place for each kind of fact, built | accepted |
 <!-- adr-index: end decisions -->
 
 ---
