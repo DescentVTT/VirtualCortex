@@ -53,8 +53,7 @@ Per trial the host gives the reward's sign, and the readout sets are the body's 
 
 ## The next decision
 
-1. H-42's yes reaches step 3 of [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md)'s stopping rule: an ADR that puts the probe in `Config::reads_its_targets()` in step = 1/16's place.
-2. Then M10, a reward past the trial ([Appendix C](WHITEPAPER.md#appendix-c-roadmap)).
-3. A re-read of the targets by evidence, at M12.
-
-The live brief, if there is one, is in [briefs/](../briefs/README.md).
+[ADR-0205](adr/0205-the-probe-in-the-engines-default.md) took ADR-0200's step 3: the probe in `Config::reads_its_targets()`, which brief 079, the live brief in [briefs/](../briefs/README.md), builds with no hypothesis.
+1. Then M10, a reward past the trial ([Appendix C](WHITEPAPER.md#appendix-c-roadmap)).
+2. A re-read of the targets by evidence, at M12.
+3. Where the rounds' pinned tables live, so the gate's compile time stops growing (F-76).
