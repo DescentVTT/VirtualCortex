@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.3.0
+version: 5.4.0
 status: active
 date: 2026-10-20
 ---
@@ -11,7 +11,7 @@ date: 2026-10-20
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.3.0 |
+| Version | 5.4.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-20 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2503,6 +2503,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md) | A step the engine makes from its own loop | accepted |
 | [ADR-0201](adr/0201-math-that-github-renders.md) | Math that GitHub renders | accepted |
 | [ADR-0202](adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md) | A step the engine makes from its own loop, built | proposed |
+| [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md) | A step the engine makes from its own loop, its protocol | proposed |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2685,7 +2686,7 @@ A hypothesis's text, its stopping rule and its rounds' readings are in its repor
 | H-39 | the rate's rule at a step of a sixteenth, on three networks | yes | [ADR-0182](adr/0182-a-sixteenth-on-three-networks.md), [ADR-0183](adr/0183-a-sixteenth-on-three-networks-measured.md) | [H-39](research/H-39.md) |
 | H-40 | a target the engine reads, at a sixteenth, on three networks | yes | [ADR-0188](adr/0188-a-target-the-engine-reads.md), [ADR-0190](adr/0190-a-target-the-engine-reads-measured.md) | [H-40](research/H-40.md) |
 | H-41 | the inhibitory target by the same read, on three networks | yes | [ADR-0192](adr/0192-the-inhibitory-target-by-the-same-read.md), [ADR-0195](adr/0195-the-inhibitory-target-by-the-same-read-measured.md) | [H-41](research/H-41.md) |
-| H-42 | a step the engine makes from its own loop, on three networks | open | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md) | [H-42](research/H-42.md) |
+| H-42 | a step the engine makes from its own loop, on three networks | open | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md) | [H-42](research/H-42.md) |
 <!-- adr-index: end hypotheses -->
 
 **The open questions, and those settled,** that no hypothesis numbers:
