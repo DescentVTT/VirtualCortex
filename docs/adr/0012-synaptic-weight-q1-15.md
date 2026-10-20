@@ -40,10 +40,10 @@ Q1.15 is also the canonical sixteen-bit fixed-point format in signal processing,
 
 For a weight $w$ (Q1.15), release $u$ (Q0.8) and resource $R$ (Q0.8):
 
-$$
+```math
 e_{\text{Q16.16}} \;=\; \big\lfloor (w \cdot u \cdot R) \gg 15 \big\rfloor,
 \qquad w \cdot u \cdot R \text{ formed exactly in } i64 .
-$$
+```
 
 The product carries 15 + 8 + 8 = 31 fractional bits; one arithmetic shift by 15 yields 16. Nothing is rounded before the shift, so every bit of the weight survives, scaled by the coarser STP factors; the STP factors, not the weight, are the resolution floor of the path. The magnitude is bounded by 1.0, so the result always fits an `i32`, and the shift floors toward negative infinity, as §8.1 requires of all Q16.16 arithmetic. The accumulation into `v_basal` or `v_apical` is `saturating_add`.
 

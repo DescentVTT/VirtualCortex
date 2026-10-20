@@ -13,7 +13,7 @@ decision-makers: VirtualCortex maintainers
 ## Context and Problem Statement
 
 [ADR-0178](0178-a-rate-the-controller-holds.md) decided the rule and left its placement to brief 072. Its decision:
-- *"Once a window, where the estimate's rule moves the gain, the rate's rule moves it by the same form: $g \leftarrow g\,(1 - \kappa\,\operatorname{clamp}(c / c^{*} - 1,\, -1,\, 1))$, with $c$ the window's spikes and $c^{*}$ the target's count for a window."*
+- *"Once a window, where the estimate's rule moves the gain, the rate's rule moves it by the same form: $`g \leftarrow g\,(1 - \kappa\,\mathrm{clamp}(c / c^{*} - 1,\, -1,\, 1))`$, with $c$ the window's spikes and $c^{*}$ the target's count for a window."*
 - *"The target is a period in ticks, a parameter of the image: a unit's mean interval at the target rate. The executor makes of it the window's count, the units times the window's ticks over the period. Zero is unset."*
 - *"Unset, the controller is ADR-0036's, bit for bit."*
 - *"Set, the saturation rule is not consulted … The estimate is still computed and kept in the record as a reading; it moves nothing."*

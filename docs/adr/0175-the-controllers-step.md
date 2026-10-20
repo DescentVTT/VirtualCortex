@@ -45,7 +45,7 @@ The three mappings that failed stand at the same two places of the schedule, in 
 
 ### The operating regime, and what the tree already holds
 
-Every learning result was read with the gain held, at the 1.75 a calibration picked, where the population fires at 1.7 Hz. The engine's criticality controller ([ADR-0036](0036-criticality-control.md)) was off. Once a window of $2^{17}$ ticks, eight trials, it moves the gain by $g \leftarrow g\,(1 - \kappa\,\operatorname{clamp}(\hat\sigma - 1, -1, 1))$, with $\hat\sigma$ the lag-one slope of the window's thirty-two bins and $\kappa$ its step; a window at one spike a unit a bin or more, 24.4 Hz, is read as saturated, $\hat\sigma$ at its ceiling of 16.
+Every learning result was read with the gain held, at the 1.75 a calibration picked, where the population fires at 1.7 Hz. The engine's criticality controller ([ADR-0036](0036-criticality-control.md)) was off. Once a window of $2^{17}$ ticks, eight trials, it moves the gain by $`g \leftarrow g\,(1 - \kappa\,\mathrm{clamp}(\hat\sigma - 1, -1, 1))`$, with $\hat\sigma$ the lag-one slope of the window's thirty-two bins and $\kappa$ its step; a window at one spike a unit a bin or more, 24.4 Hz, is read as saturated, $\hat\sigma$ at its ceiling of 16.
 
 **Under the controller at a step of an eighth the instrument is drowned.** [ADR-0077](0077-the-background-side.md) read it on seed 22 at 1 024 units, and the tree pins it (`BACKGROUND_LEAD_IN_1024`, `BACKGROUND_MEASURES_1024`; `the_controller_at_1024_units_exhaustive`):
 

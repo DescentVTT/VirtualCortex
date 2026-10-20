@@ -17,7 +17,7 @@ decision-makers: VirtualCortex maintainers
 - *"The slow potential $s$, Q16.16, in the record's `[20..24)`. It stays zero in every unmarked unit, so an image with no marked unit is the image it was."*
 - The constants $k_s$, $g$, $V_{lo} < V_{hi}$ *"a parameter of the image in the modulator section's reserved bytes"*, each refused outside what the rule resolves; unset, a marked unit is refused.
 - The input: for a marked unit, *"the positive efficacies of the synaptic messages landing in the basal compartment … scaled by the gain"*; an unmarked unit's turn adds nothing.
-- The rule beside `integrate`: $s \leftarrow \operatorname{leak}(s, k_s) + \text{input} \cdot 2^{-g}$, in the refractory window too; the gate $\gamma(v) = \operatorname{clamp}((v - V_{lo})/(V_{hi} - V_{lo}), 0, 1)$ on the soma before this tick's update; the soma receives $\gamma(v) \cdot s \cdot 2^{-4}$, only while $s > 0$.
+- The rule beside `integrate`: $s \leftarrow \mathrm{leak}(s, k_s) + \text{input} \cdot 2^{-g}$, in the refractory window too; the gate $\gamma(v) = \mathrm{clamp}((v - V_{lo})/(V_{hi} - V_{lo}), 0, 1)$ on the soma before this tick's update; the soma receives $\gamma(v) \cdot s \cdot 2^{-4}$, only while $s > 0$.
 - *"`FORMAT_VERSION` moves from 17 to 18. A pin of a whole image moves with the format number and nothing else, restated under a masked check as ADR-0095 did."*
 
 Brief 052's empowerment names the choices: which bit marks a unit, the field's name, where the constants sit and how the loader refuses, the rule's name and signature, and how the executor selects it. What was read first (principle 2):

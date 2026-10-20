@@ -64,9 +64,11 @@ What was read before anything was written (principle 2, and brief 061's directiv
 - **Clause 3** is H-24's band, `left_band`: the excitatory sum outside the four couplings within three quarters and five quarters of the image's at every block's end, over 120 blocks.
 - **Clause 4** (`holds_expected_reward`): for a stimulus's $n$ trials over a mapping's last 128, $c$ of them correct, their values summing to $V$, with the reward $r$:
 
-  $$|4V - 3\,(2c - n)\,r| \le r\,n$$
+  ```math
+  |4V - 3\,(2c - n)\,r| \le r\,n
+  ```
 
-  and at least one trial. It is $|V/n - \tfrac{3}{4}(2p - 1)\,r| \le r/4$ with $p = c/n$, cleared of its divisions. `RELIABILITY` is the three quarters, $2q - 1$ at $q = 7/8$.
+  and at least one trial. It is $`|V/n - \tfrac{3}{4}(2p - 1)\,r| \le r/4`$ with $p = c/n$, cleared of its divisions. `RELIABILITY` is the three quarters, $2q - 1$ at $q = 7/8$.
 - **The verdict** (`Misled`, `misled`): yes when all four hold in both arms.
 - **The step** (`misled_step`): 3 at a yes; 4 at a no in which clause 3 fails in an arm, whatever else failed beside it; otherwise 5 at a no on clause 1 or 2, whatever clause 4 read; otherwise 6, a no on clause 4 alone.
 - `MISLED_PREDICTED` is yes, ADR-0147's. It is dumped beside the reading and never asserted.

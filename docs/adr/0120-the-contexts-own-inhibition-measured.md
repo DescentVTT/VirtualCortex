@@ -17,7 +17,7 @@ decision-makers: VirtualCortex maintainers
 What was read before anything was written (principle 2):
 
 1. **ADR-0117's substrate** (`runtime/cortex-runtime/tests/assembly.rs`): the geometry (`R0_MASK_050`, `R1_MASK_050`, `context_geometry`), `members`, set (ii) (`SET_050`), `marked`, `grown`, `wire_drawn`, the kick, `layout`, `span_protocol_under`, `run_050`, `backgrounds_controls_050`, `holding`, `failed`, `bursts_049`, the conditions (`Condition`, `DELAY_SEED_050`, `drained_image`, `frozen_again`, `stimulus_task`, `STIMULUS_AT`), the rules (`robust_cells`, `usable_neighbours`, `round_two_cell`, `failures_050`) and the pins (`GRID_RUNS_050`, `GRID_050`, `CONDITION_RUNS_050`, `CONDITION_GRID_050`). At 64 units a member sends and receives 32 recurrent synapses (`fan`).
-2. **The prior's inhibitory units** (`crates/cortex-connectome/src/prior.rs`, `runtime/cortex-runtime/src/synthesis.rs`): unit $i$ when $(i + 1) \bmod 5 = 0$, 204 of them at 1 024 units, at places 4, 9, 14 and 19 of each period of twenty. Synthesis sets their `FLAG_INHIBITORY`. The prior draws an inhibitory synapse's magnitude as an excitatory weight of 6 000 to 12 000 times 255/16 and saturates it at the width, so every one leaves at $-32\,767$, `-i16::MAX`, one LSB above $-1.0$. Each of the four places is a readout place of the task's geometry and of ADR-0116's (the gate).
+2. **The prior's inhibitory units** (`crates/cortex-connectome/src/prior.rs`, `runtime/cortex-runtime/src/synthesis.rs`): unit $i$ when $(i + 1) \bmod 5 = 0$, 204 of them at 1 024 units, at places 4, 9, 14 and 19 of each period of twenty. Synthesis sets their `FLAG_INHIBITORY`. The prior draws an inhibitory synapse's magnitude as an excitatory weight of 6 000 to 12 000 times 255/16 and saturates it at the width, so every one leaves at $`-32\,767`$, `-i16::MAX`, one LSB above $-1.0$. Each of the four places is a readout place of the task's geometry and of ADR-0116's (the gate).
 3. **What a spike releases** (`runtime/cortex-runtime/src/executor.rs`): at a presynaptic spike the executor walks the unit's whole chain, releases every slot under the unit's pair (`release_all`), stores the efficacy in the slot (`last_release_q16`) and delivers it after the slot's delay. The polarity every rule reads is the unit's flag (`Polarity::of_flags`), so a synapse appended to an inhibitory unit's chain is an inhibitory synapse to every rule.
 4. **`wire_drawn` asserts that the arena holds exactly the prior's blocks and the assembly's.** Brief 051's arena holds the inhibition's after them, so the wiring is split: `wire_among` wires the assembly into an arena that holds at least those, and `wire_drawn` keeps its check and calls it. Every earlier run wires as it did.
 5. **ADR-0117's readings count the members' spikes and the rest's**, not the inhibitory units'. The sources' spikes are counted in every window by `span_protocol_counting`, which `span_protocol_under` now calls with no units to count: a reading of the train, which no input of a run sees.
@@ -38,7 +38,7 @@ What was read before anything was written (principle 2):
 ## Considered Options
 
 1. **The sources' draw**: (a) sixteen distinct inhibitory units a member over the whole ring, a unit within the prior's window of the member allowed and a source shared by several members allowed; (b) the window's units excluded; (c) no source shared, which the ring cannot give: 1 024 draws over 204 units.
-2. **The whole of the range, negative**: (a) $-32\,768$, `i16::MIN`, exactly $-1.0$; (b) $-32\,767$, the prior's own inhibitory rail.
+2. **The whole of the range, negative**: (a) $`-32\,768`$, `i16::MIN`, exactly $-1.0$; (b) $`-32\,767`$, the prior's own inhibitory rail.
 3. **Condition (b)'s backgrounds and controls**: (a) run again; (b) the core's.
 4. **The grid**: the brief's twelve cells, or widened by a weight between two, a size of 96, or eight or thirty-two sources a member.
 5. **The weekly tests**: how the 70 runs and condition (c)'s arm are dealt.
@@ -273,7 +273,7 @@ On a developer machine in the release profile a run took about 100 s with six ot
 ## Alternatives considered and why rejected
 
 - **The window's units excluded** (option 1(b)): 20 of 1 024 draws; the brief's draw over the ring keeps the rule simpler and the window's units fire as the network does.
-- **$-32\,768$** (option 2(a)): a weight the prior never writes; the whole of the range the network has is its rail.
+- **$`-32\,768`$** (option 2(a)): a weight the prior never writes; the whole of the range the network has is its rail.
 - **(b)'s own backgrounds and controls** (option 3(a)): six runs whose every tick is the core's.
 - **A wider grid** (option 4): the budget; a widening is a later round's, where the reading says it matters.
 - **Condition (c) in one test**: one arm fewer, about 1 100 s, and one test of about 2 600 s, which the dispatch would cost at 900 s on one shard.

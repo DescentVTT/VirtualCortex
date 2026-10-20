@@ -61,7 +61,7 @@ ADR-0151's rule: each readout is four of the fourteen places of a period that li
 - three of them are inhibitory, 4, 14 and 19 (`INHIBITORY_PLACES`), so each readout holds exactly one;
 - eleven are free: 3, 5, 6, 7, 8, 12, 13, 15, 16, 17 and 18 (`FREE_PLACES`). Each readout takes three, nine in all, and two are left in no set.
 
-**The deals.** The readouts are numbered by their inhibitory place: readout 0 holds place 4, readout 1 place 14 and readout 2 place 19. Two deals that differ by the readouts' names alone are then one deal. A deal is readout 0's three free places, then readout 1's three of the eight left, then readout 2's three of the five left: $165 \times 56 \times 10 = 92\,400$ deals (`DEALS`).
+**The deals.** The readouts are numbered by their inhibitory place: readout 0 holds place 4, readout 1 place 14 and readout 2 place 19. Two deals that differ by the readouts' names alone are then one deal. A deal is readout 0's three free places, then readout 1's three of the eight left, then readout 2's three of the five left: $`165 \times 56 \times 10 = 92\,400`$ deals (`DEALS`).
 
 **The order** (`deals`). Each readout's three free places are written as an ascending triple. The deals are in lexicographic order of the three triples, readout 0's outermost, then readout 1's, then readout 2's, and triples compare by their first place, then their second, then their third.
 - The first deal: readout 0 is places 3, 4, 5 and 6; readout 1 is 7, 8, 12 and 14; readout 2 is 13, 15, 16 and 19.

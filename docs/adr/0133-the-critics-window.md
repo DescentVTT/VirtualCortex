@@ -75,7 +75,7 @@ So in the first hundred ticks after a reward a trial holds the new stimulus's vo
 ### The constants (option 3(a))
 
 H-22's shift 9 and scale 2 are kept. Brief 056 restates ADR-0132's arithmetic for the window's features before any run, and holds it by the gate:
-- the volley's 51 spikes move the value of the same volley by $51/2\,048$ of the error, 0.80 of the task critic's thirty-second, as before;
+- the volley's 51 spikes move the value of the same volley by $`51/2\,048`$ of the error, 0.80 of the task critic's thirty-second, as before;
 - about two background spikes join them.
 
 If the restated arithmetic shows the constants no longer resolve the rule, the round stops before any rewarded run and the finding is written. The constants are not moved.
