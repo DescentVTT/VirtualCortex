@@ -25,6 +25,12 @@
 // 5. A new ADR -- not on the base, or not accepted there -- carries `title:` of at most 80
 //    characters, `summary:` of at most 300, `kind:` one of five, an H1 that is `# ADR-NNNN: ` and
 //    its title, and a body that opens with "In brief".
+// 6. Math renders on GitHub (ADR-0201), in every block of the living documents, in every ADR's
+//    body and in every changelog entry, not only in new text: no `\operatorname`, which GitHub
+//    refuses, and no backslash before ASCII punctuation in `$...$` or `$$...$$`, which Markdown
+//    takes as an escape before the math is rendered. Such math is written `$`...`$` inline and as
+//    a ```math fence on its own lines. A change that only moves math into those forms, or
+//    `\operatorname` to `\mathrm`, is not new text, and an accepted ADR so changed keeps its body.
 //
 // Not read: archived briefs, code blocks, front matter outside the ADRs, and the directive
 // comments themselves. A base git cannot read fails the check, since a comparison with nothing
@@ -79,6 +85,69 @@ export function isLiving(path) {
 }
 
 const lf = (text) => text.replace(/\r\n?/g, "\n");
+
+/** A backslash before ASCII punctuation: an escape to Markdown, a macro to TeX. */
+const ESCAPE = /\\[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/;
+
+/**
+ * Text with GitHub's protected math read as the plain forms (ADR-0201): `$`...`$` as `$...$`, a
+ * ```math fence and a line that is `$$...$$` as a `$$` block, a `$$` line without its
+ * indentation, and `\operatorname{` as `\mathrm{`. Math moved into the forms GitHub renders
+ * reads as the text it was.
+ */
+export function rendered(text) {
+  return lf(text)
+    .replace(/^[ \t]*```math[ \t]*\n([\s\S]*?)\n[ \t]*```[ \t]*$/gm, "$$$$\n$1\n$$$$")
+    .replace(/^([ \t]*)\$\$([^$\n]+)\$\$[ \t]*$/gm, "$$$$\n$1$2\n$$$$")
+    .replace(/^[ \t]*\$\$[ \t]*$/gm, "$$$$")
+    .replace(/\$`([^`\n]*)`\$/g, "$$$1$$")
+    .replace(/\\operatorname\{/g, "\\mathrm{");
+}
+
+/**
+ * The math in a text GitHub renders wrongly, one description each (ADR-0201): `\operatorname`
+ * anywhere in math, and a backslash before ASCII punctuation in `$...$` or `$$...$$` outside
+ * the protected `$`...`$`. Code spans are not math.
+ */
+export function badMath(text) {
+  const found = [];
+  for (const m of text.matchAll(/\$`([^`]*)`\$/g)) {
+    if (/\\operatorname\b/.test(m[1])) found.push("\\operatorname, which GitHub refuses");
+  }
+  const plain = text.replace(/\$`[^`]*`\$/g, "").replace(/`[^`]*`/g, "");
+  for (const m of plain.matchAll(/\$\$([^$]+?)\$\$|\$([^$\s][^$]*?)\$/g)) {
+    const tex = m[1] ?? m[2];
+    if (/\\operatorname\b/.test(tex)) found.push("\\operatorname, which GitHub refuses");
+    const esc = ESCAPE.exec(tex);
+    if (esc) found.push(`${esc[0]} outside $\`...\`$, which Markdown takes before the math`);
+  }
+  return [...new Set(found)];
+}
+
+/** The lines of the ```math fences of a body that name `\operatorname`, 1-based from `firstLine`. */
+export function fencedOperatorname(body, firstLine = 1) {
+  const out = [];
+  let inMath = false;
+  let fence = null;
+  lf(body)
+    .split("\n")
+    .forEach((raw, i) => {
+      const t = raw.trim();
+      if (fence !== null) {
+        if (t.startsWith(fence)) {
+          fence = null;
+          inMath = false;
+        } else if (inMath && /\\operatorname\b/.test(raw)) out.push(firstLine + i);
+        return;
+      }
+      const open = /^(`{3,}|~{3,})\s*(\S*)/.exec(t);
+      if (open) {
+        fence = open[1];
+        inMath = open[2] === "math";
+      }
+    });
+  return out;
+}
 const length = (text) => [...text].length;
 
 /** The front matter's lines and the body, or no front matter and the whole text as the body. */
@@ -220,7 +289,7 @@ export function blocks(body, firstLine = 1) {
  */
 export function normalise(text, path) {
   const dir = posix.dirname(path);
-  return lf(text)
+  return rendered(text)
     .replace(/\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g, (all, target, title) => {
       if (/^[a-z][a-z0-9+.-]*:/i.test(target)) return all;
       if (target.startsWith("#")) return `](/${path}${target}${title})`;
@@ -311,6 +380,7 @@ export function checkShape(head, base) {
             .join("\n")
         : "";
       for (const entry of changelogEntries(text)) {
+        for (const bad of badMath(entry.text)) problems.push(`${path}:${entry.line}: math GitHub renders wrongly: ${bad}`);
         const n = length(entry.text);
         if (n > LIMITS.changelogEntry && !before.includes(normalise(entry.text, path).trim())) {
           problems.push(`${path}:${entry.line}: a new entry of ${n} characters, over ${LIMITS.changelogEntry}`);
@@ -337,7 +407,11 @@ export function checkShape(head, base) {
 
 function checkBlocks(path, body, bodyLine, isNew, cellLimit) {
   const problems = [];
+  for (const line of fencedOperatorname(body, bodyLine)) {
+    problems.push(`${path}:${line}: math GitHub renders wrongly: \\operatorname, which GitHub refuses`);
+  }
   for (const block of blocks(body, bodyLine)) {
+    for (const bad of badMath(block.text)) problems.push(`${path}:${block.line}: math GitHub renders wrongly: ${bad}`);
     const limit = block.kind === "cell" ? cellLimit : LIMITS.block;
     const n = length(block.text);
     if (n > limit && isNew(block.text, path)) {
@@ -358,7 +432,15 @@ function checkAdr(path, text, before, isNew) {
   const accepted = baseKeys !== null && scalar(baseKeys.get("status")) === "accepted";
 
   if (accepted) {
-    if (here.body !== there.body) problems.push(`${path}: the body of an accepted ADR differs from its base copy`);
+    if (here.body !== there.body && rendered(here.body) !== rendered(there.body)) {
+      problems.push(`${path}: the body of an accepted ADR differs from its base copy`);
+    }
+    for (const line of fencedOperatorname(here.body, here.bodyLine)) {
+      problems.push(`${path}:${line}: math GitHub renders wrongly: \\operatorname, which GitHub refuses`);
+    }
+    for (const block of blocks(here.body, here.bodyLine)) {
+      for (const bad of badMath(block.text)) problems.push(`${path}:${block.line}: math GitHub renders wrongly: ${bad}`);
+    }
     const completing = !baseKeys.has("title");
     for (const key of new Set([...keys.keys(), ...baseKeys.keys()])) {
       if (keys.get(key) === baseKeys.get(key) || LIFECYCLE.includes(key)) continue;
@@ -464,5 +546,5 @@ if (invoked) {
     console.error(`check-doc-shape: ${problems.length} problem(s) against ${ref}`);
     process.exit(1);
   }
-  console.log(`check-doc-shape: ${head.size} file(s) read against ${ref}; new text within ADR-0197's limits`);
+  console.log(`check-doc-shape: ${head.size} file(s) read against ${ref}; new text within ADR-0197's limits, math as GitHub renders it`);
 }
