@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A step the engine makes from its own loop ([ADR-0200](docs/adr/0200-a-step-the-engine-makes-from-its-own-loop.md)); H-42 written before any run; brief 078; whitepaper 5.1.0.** After the read, a probe of ±1/64 reads the steepness S, and the rate's rule runs at step = (1/4)/S.
 - **One place for each kind of fact, built ([ADR-0199](docs/adr/0199-one-place-for-each-kind-of-fact-built.md)); brief 077; whitepaper 5.0.0.** `docs/STATUS.md` holds the standing and `docs/research/` each hypothesis, moved verbatim. Every ADR has a title, a summary and a kind, the tables are written from them, and `spec:shape` and `spec:index` join the gate. Brief 076's sweep: no survivor.
 - **The engine's default, built ([ADR-0198](docs/adr/0198-the-engines-default-built.md)); brief 076; whitepaper 4.134.0; no record, no section, no format; `Config::default()` builds the engine it built.**
   - **The gain an engine starts with** (`runtime/cortex-runtime/src/executor.rs`): `Config::synaptic_gain_q16`, default `GAIN_ONE_Q16`, put by `Executor::new` in the homeostasis record and the workers' gain word; refused outside 0.25 to 4 (`ConfigError::GainOutOfRange`), at the load too. An image's gain outranks it.
