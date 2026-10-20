@@ -87,9 +87,10 @@ Each kind of fact has one home, and every other document links to it ([ADR-0197]
 - `docs/STATUS.md` of at most 60 lines, and a new `CHANGELOG.md` entry of at most 400 characters;
 - a new ADR's `title:` of at most 80 characters, its `summary:` of at most 300 and its `kind:` one of `decision`, `protocol`, `built`, `measured` and `process`;
 - a new ADR's H1 as `# ADR-NNNN: ` and its title, and its body opening with **In brief**;
-- an accepted ADR's body byte for byte its base copy, its front matter changed only in `status:`, `superseded-by:` and `amended-by:`.
+- an accepted ADR's body byte for byte its base copy, its front matter changed only in `status:`, `superseded-by:` and `amended-by:`;
+- math as GitHub renders it, in every block and every ADR, not only new text ([ADR-0201](docs/adr/0201-math-that-github-renders.md)): `\mathrm{...}` for an operator's name, never `\operatorname`, which GitHub refuses; and math holding a backslash before punctuation, such as `\,` `\;` `\{` or `\%`, written `` $`...`$ `` inline and as a ```` ```math ```` fence for a block, since Markdown takes `\,` in `$...$` as an escape.
 
-Text the base already holds passes whatever its length, so a sentence moved verbatim from one document to another is not new text.
+Text the base already holds passes whatever its length, so a sentence moved verbatim from one document to another is not new text, nor is a block whose only change is its math's form.
 Archived briefs, code blocks and the directive comments are not read.
 
 **Checked by `npm run spec:index`** (`scripts/adr-index.mjs`): the ADR index, the whitepaper's §9 and the hypotheses' tables in §11.1 and `docs/research/README.md` are what the script writes from front matter. Run `node scripts/adr-index.mjs` to write them.

@@ -19,7 +19,7 @@ decision-makers: VirtualCortex maintainers
 
 **What H-38 read of the step**, on seed 22:
 - **Every step of the six holds clause 0**, and the protocol took the largest, an eighth.
-- **The rate changes fifteen per cent for one per cent of gain**, where [ADR-0178](0178-a-rate-the-controller-holds.md) had taken nine to fourteen. By ADR-0178's arithmetic a gain that stands off its target by $\delta$ stands at $(1 - \kappa S)\,\delta$ a window later: $-0.88\,\delta$ at an eighth, $+0.06\,\delta$ at a sixteenth.
+- **The rate changes fifteen per cent for one per cent of gain**, where [ADR-0178](0178-a-rate-the-controller-holds.md) had taken nine to fourteen. By ADR-0178's arithmetic a gain that stands off its target by $\delta$ stands at $`(1 - \kappa S)\,\delta`$ a window later: $`-0.88\,\delta`$ at an eighth, $`+0.06\,\delta`$ at a sixteenth.
 - **An eighth is at its loop's edge.** Its gain alternates; a window's count ranges from 1 228 to 3 375 in its lead-in and from 1 880 to 2 882 through its arms; and with the weights frozen the alternation grows over the eight windows read, from 182 above the target to 721 below.
 - **A sixteenth is well inside it.** Its lead-in's count stays within 2 067 and 2 507, where the gain held's stays within 2 132 and 2 462.
 - **No arm has run under a sixteenth.** ADR-0181: *"the readings order the two steps' lead-ins and not their learning."*

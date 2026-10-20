@@ -1,5 +1,6 @@
 ---
 status: accepted
+amended-by: ADR-0201
 date: 2026-10-19
 title: One place for each kind of fact
 kind: process

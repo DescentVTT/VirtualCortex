@@ -51,7 +51,7 @@ So the engine learns from a prediction error that the host computes, from a labe
 - **The weights.** Each unit carries a value weight $w_i$, signed, in its record's `[52..54)`, the `_reserved` field today, "MUST be zero". It stays zero in every image written before the critic, and in every run without it. The record's field and whitepaper §5.2's table change, and the format moves from 18 to 19.
 - **The features.** $c_i$, the unit's spikes since the previous reward the engine received, read from the executor's own train. The rewards alone mark the window: in the task one trial, $2^{14}$ ticks; for a host that rewards otherwise, whatever lies between its rewards.
 - **At a reward $r$**, with the critic set:
-  - the value $V = \sum_i w_i\, c_i$, widened and saturating;
+  - the value $`V = \sum_i w_i\, c_i`$, widened and saturating;
   - the error $\delta = r - V$, saturating, is what the modulator receives in place of $r$;
   - every unit that fired moves its weight by $(\delta \cdot c_i) \gg k$, saturating within the weight's width. The step is the error's sign times the feature, the delta rule.
 

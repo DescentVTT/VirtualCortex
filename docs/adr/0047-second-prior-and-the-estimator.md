@@ -70,7 +70,7 @@ Option 2. Option 3 is not taken, for the reason the measurement gives; option 4 
 ## Alternatives considered and why rejected
 
 - **The estimator's window lengthened** (more pairs per window): the mean it converges to is still the autocorrelation at ten to forty generations.
-- **The multistep fit** ($r_k = b\,m^k$ fitted over $k$): its raw material is pinned here; the fit would read the same autocorrelation.
+- **The multistep fit** ($`r_k = b\,m^k`$ fitted over $k$): its raw material is pinned here; the fit would read the same autocorrelation.
 - **The second prior in `cortex-connectome` as a named constructor**: a struct literal with two fields changed is the prior; a constructor would name a topology the tests already name.
 
 ## Confirmation

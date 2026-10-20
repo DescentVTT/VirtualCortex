@@ -84,9 +84,11 @@ A copy (options 1(b) and 5(b)) would let the two shares' arms drift apart, and a
 - **Clause 3** is H-24's band, `left_band`: the excitatory sum outside the four couplings within three quarters and five quarters of the image's at every block's end, over 120 blocks.
 - **Clause 4** (`holds_expected_reward_at` at `IN_FOUR_RELIABILITY`, a half): for a stimulus's $n$ trials over a mapping's last 128, $c$ of them correct, their values summing to $V$, with the reward $r$:
 
-  $$|2V - (2c - n)\,r| \le \tfrac{1}{2}\,r\,n$$
+  ```math
+  |2V - (2c - n)\,r| \le \tfrac{1}{2}\,r\,n
+  ```
 
-  and at least one trial. It is $|V/n - \tfrac{1}{2}(2p - 1)\,r| \le r/4$ with $p = c/n$. The rule clears the division: both sides are read times four.
+  and at least one trial. It is $`|V/n - \tfrac{1}{2}(2p - 1)\,r| \le r/4`$ with $p = c/n$. The rule clears the division: both sides are read times four.
 - **The verdict** (`Misled`, `misled_at`): yes when all four hold in both arms.
 - **The step** (`in_four_step`): 3 at a yes; 4 at a no in which clause 3 fails in an arm, whatever else failed beside it; otherwise 5 at a no on clause 1 or 2, whatever clause 4 read; otherwise 6, a no on clause 4 alone. They are `misled_step`'s.
 - **Step 5's split** (`Split`, option 3(a)), as ADR-0170 writes it:

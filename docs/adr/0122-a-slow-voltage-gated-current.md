@@ -72,8 +72,8 @@ The maintainers chose this route on 2026-09-28. ADR-0120's own branches — a fe
   Unset, no unit may be marked: the loader refuses a marked unit. Set with no unit marked, nothing reads the constants.
 - **The input.** For a marked unit, the executor's turn also sums the positive efficacies of the synaptic messages landing in the basal compartment: the excitatory synapses' releases, never the drive's or any injected message. It scales that sum by the gain as it scales the basal input, and passes it to the slow rule. An unmarked unit's turn adds nothing: no word, no allocation and no syscall is added to the tick.
 - **The rule**, beside `integrate`, which is not touched. Each tick, before the soma's update:
-  - $s \leftarrow \operatorname{leak}(s, k_s) + \text{input} \cdot 2^{-g}$, saturating, the input taken in the refractory window too (option 3). The channel's opening is its input's; the soma's refractoriness is the soma's;
-  - the gate: $\gamma(v) = \operatorname{clamp}\bigl((v - V_{lo})/(V_{hi} - V_{lo}), 0, 1\bigr)$, read on the soma before this tick's update;
+  - $s \leftarrow \mathrm{leak}(s, k_s) + \text{input} \cdot 2^{-g}$, saturating, the input taken in the refractory window too (option 3). The channel's opening is its input's; the soma's refractoriness is the soma's;
+  - the gate: $\gamma(v) = \mathrm{clamp}\bigl((v - V_{lo})/(V_{hi} - V_{lo}), 0, 1\bigr)$, read on the soma before this tick's update;
   - the soma receives $\gamma(v_{\text{soma}}) \cdot s \cdot 2^{-4}$ beside its coupling to the basal and apical compartments. That is the coupling's own fraction, and only while $s > 0$.
 
   Everything else is `integrate`'s. With $s$ at zero and no input the rule is `integrate` bit for bit, which a property test holds over the lattice of `testkit/prop.rs`.

@@ -18,7 +18,7 @@ decision-makers: VirtualCortex maintainers
 **Where every target so far came from** (`runtime/cortex-runtime/tests/inhibition.rs`, the derivation):
 1. The lead-in runs from a gain of 1.75 under ADR-0044's drive, one window of $2^{17}$ ticks at a time, until it is settled by [ADR-0055](0055-a-weight-that-settles.md)'s criterion. That criterion is over the excitatory sums, not the spikes: sixteen windows each within 0.75 per cent of the sum sixteen windows before.
 2. The settled image is frozen, with the modulation's baseline at zero so that nothing learns, and run under the drive for $2^{20}$ ticks, eight windows.
-3. The target is the period of their spikes, $1\,024 \times 2^{20}$ over the count, which is 58 201 ticks on seed 22: 2 306 spikes a window.
+3. The target is the period of their spikes, $`1\,024 \times 2^{20}`$ over the count, which is 58 201 ticks on seed 22: 2 306 spikes a window.
 4. The same period is the inhibitory rule's target at the modulator section's `[20..24)` ([ADR-0128](0128-a-target-the-network-fires-at.md)). H-38 and H-39 carried it into the rate's target at `[56..60)`.
 
 **What the engine holds of that.** Nothing: no criterion of a settled network, no lead-in and no frozen copy. The rate's rule runs from the first window against a period that is a field of the configuration and of the image (`Config::rate_target_period_ticks`, [ADR-0180](0180-a-rate-the-controller-holds-built.md)). An image no derivation has settled has no target to give it.

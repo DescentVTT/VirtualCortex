@@ -6,7 +6,18 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
-import { KINDS, LIMITS, blocks, cells, changelogEntries, checkShape, normalise } from "./check-doc-shape.mjs";
+import {
+  KINDS,
+  LIMITS,
+  badMath,
+  blocks,
+  cells,
+  changelogEntries,
+  checkShape,
+  fencedOperatorname,
+  normalise,
+  rendered,
+} from "./check-doc-shape.mjs";
 
 const words = (n) => "x".repeat(n);
 const WP = "docs/WHITEPAPER.md";
@@ -179,6 +190,67 @@ test("cells split at the pipes that are not escaped, and the delimiter row is no
 
 test("normalise resolves a relative link and an anchor to the root, and leaves a URL", () => {
   assert.equal(normalise("[a](../adr/x.md#s) [b](#c) [d](https://e.org/f)", "docs/research/H-1.md"), "[a](/docs/adr/x.md#s) [b](/docs/research/H-1.md#c) [d](https://e.org/f)");
+});
+
+// --- math GitHub renders (ADR-0201) ---------------------------------------------------------------
+
+test("\\operatorname in math fails anywhere in a living document, protected or not", () => {
+  const msg = (line) => `${WP}:${line}: math GitHub renders wrongly: \\operatorname, which GitHub refuses`;
+  assert.deepEqual(shape({ [WP]: "It is $\\operatorname{clamp}(x, 0, 1)$.\n" }), [msg(1)]);
+  assert.deepEqual(shape({ [WP]: "It is $`\\operatorname{clamp}(x)`$.\n" }), [msg(1)]);
+  assert.deepEqual(shape({ [WP]: "Text.\n\n```math\n\\operatorname{round}(x)\n```\n" }), [msg(4)]);
+  assert.deepEqual(shape({ [WP]: "It is $\\mathrm{clamp}(x, 0, 1)$.\n" }), []);
+  assert.deepEqual(shape({ [WP]: "Code `$\\operatorname{x}$` is not math.\n\n```rust\n\\operatorname\n```\n" }), []);
+});
+
+test("a backslash before punctuation in $...$ or $$...$$ fails, and passes in $`...`$ or a math fence", () => {
+  const msg = (line, esc) => `${WP}:${line}: math GitHub renders wrongly: ${esc} outside $\`...\`$, which Markdown takes before the math`;
+  assert.deepEqual(shape({ [WP]: "Set $a\\,b$.\n" }), [msg(1, "\\,")]);
+  assert.deepEqual(shape({ [WP]: "A set $\\{1, 2\\}$.\n" }), [msg(1, "\\{")]);
+  assert.deepEqual(shape({ [WP]: "$$\nx \\;=\\; y\n$$\n" }), [msg(1, "\\;")]);
+  assert.deepEqual(shape({ [WP]: "Set $`a\\,b`$ and $`\\{1\\}`$.\n" }), []);
+  assert.deepEqual(shape({ [WP]: "```math\nx \\;=\\; y \\\\ z\n```\n" }), []);
+  assert.deepEqual(shape({ [WP]: "Plain $a + b$, $\\mathrm{round}(x)$ and $$x \\le y$$.\n" }), []);
+});
+
+test("the math rule reads every block, not only new text, in the living documents and the changelog", () => {
+  const old = "Old $a\\,b$ math.\n";
+  assert.equal(shape({ [WP]: old }, { [WP]: old }).length, 1);
+  const log = "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- An entry with $\\operatorname{x}$.\n";
+  assert.deepEqual(shape({ "CHANGELOG.md": log }, { "CHANGELOG.md": log }), [
+    "CHANGELOG.md:7: math GitHub renders wrongly: \\operatorname, which GitHub refuses",
+  ]);
+  assert.deepEqual(shape({ "briefs/archive/070_x.md": old }), []);
+});
+
+test("math moved into GitHub's forms is not new text, however long its block", () => {
+  const before = `${words(1300)} $\\operatorname{round}(a\\,b)$ end.\n`;
+  const after = `${words(1300)} $\`\\mathrm{round}(a\\,b)\`$ end.\n`;
+  assert.deepEqual(shape({ [WP]: after }, { [WP]: before }), []);
+  assert.deepEqual(shape({ [WP]: after.replace("end", "ends") }, { [WP]: before }), [`${WP}:1: a paragraph of 1331 characters, over 1200`]);
+});
+
+test("an accepted ADR keeps its body when only its math moves into GitHub's forms, and not otherwise", () => {
+  const path = "docs/adr/0100-x.md";
+  const front = ["status: accepted", "date: 2026-09-01", ...SHAPED.slice(2)];
+  const body = "It is $\\operatorname{clamp}(x)$ and $a\\,b$.\n\n  $$|4V - 3\\,r| \\le r$$\n\n$$\nx \\;=\\; y\n$$\n";
+  const fixed = "It is $\\mathrm{clamp}(x)$ and $`a\\,b`$.\n\n  ```math\n  |4V - 3\\,r| \\le r\n  ```\n\n```math\nx \\;=\\; y\n```\n";
+  const before = adr(front, "# ADR-0100: Old", body);
+  assert.deepEqual(shape({ [path]: adr(front, "# ADR-0100: Old", fixed) }, { [path]: before }), []);
+  const changed = fixed.replace("3\\,r", "4\\,r");
+  assert.deepEqual(shape({ [path]: adr(front, "# ADR-0100: Old", changed) }, { [path]: before }), [
+    `${path}: the body of an accepted ADR differs from its base copy`,
+  ]);
+  assert.equal(shape({ [path]: before }, { [path]: before }).length, 4);
+});
+
+test("rendered reads the protected forms as the plain ones", () => {
+  assert.equal(rendered("a $`x\\,y`$ b"), "a $x\\,y$ b");
+  assert.equal(rendered("```math\nq\n```"), "$$\nq\n$$");
+  assert.equal(rendered("  $$q$$"), "$$\n  q\n$$");
+  assert.equal(rendered("$\\operatorname{c}$"), "$\\mathrm{c}$");
+  assert.deepEqual(badMath("$`a\\,b`$ `$c\\,d$` $e + f$"), []);
+  assert.deepEqual(fencedOperatorname("x\n```math\n\\operatorname{a}\n```\n```rust\n\\operatorname\n```", 10), [12]);
 });
 
 test("a base git cannot read fails the check", () => {
