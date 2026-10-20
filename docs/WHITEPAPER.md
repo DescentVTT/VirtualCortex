@@ -2502,9 +2502,9 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md) | One place for each kind of fact, built | accepted |
 | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md) | A step the engine makes from its own loop | accepted |
 | [ADR-0201](adr/0201-math-that-github-renders.md) | Math that GitHub renders | accepted |
-| [ADR-0202](adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md) | A step the engine makes from its own loop, built | proposed |
-| [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md) | A step the engine makes from its own loop, its protocol | proposed |
-| [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | A step the engine makes from its own loop, measured | proposed |
+| [ADR-0202](adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md) | A step the engine makes from its own loop, built | accepted |
+| [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md) | A step the engine makes from its own loop, its protocol | accepted |
+| [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | A step the engine makes from its own loop, measured | accepted |
 <!-- adr-index: end decisions -->
 
 ---

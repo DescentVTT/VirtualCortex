@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-20
 depends-on: ADR-0200
 title: A step the engine makes from its own loop, built
