@@ -1,17 +1,22 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-21
 affectedFiles: [runtime/cortex-runtime/src/**, runtime/cortex-runtime/tests/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
 protectedFiles: [crates/**, benches/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, scripts/check-archive.mjs, scripts/check-scope.mjs, scripts/check-explorations.mjs, scripts/check-doc-shape.mjs, scripts/adr-index.mjs, .spec-brief.json, package.json, package-lock.json, rust-toolchain.toml, Cargo.toml, Cargo.lock]
+integrity: sha256-6707dc1fce02f93af4e30fbdf6145c8a5684aad00fc23fbc0460d85e3ea34e94
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-24 (UTC) in pull request [#229](https://github.com/DescentVTT/VirtualCortex/pull/229).** Brief 079 built ADR-0205's default in ADR-0206: Config::reads_its_targets() sets step_probe and nothing else, and Config::default() builds the engine it built. An engine born under the default writes H-42's candidate's image byte for byte on seeds 22, 23 and 24 at 1 024 units, and with the probe unset H-41's. Dispatch 40097581635 at scope=both on 771494d ran 166 whole-domain tests green in eighteen shards, the longest job 48 per cent of its bound, and every other pin held. There was no hypothesis. ADR-0206 also records the schedule's sweep of 2026-10-19: no survivor. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 079: The probe in the engine's default
 
 ## Mission
 
 **This brief changes one value of the engine's default and runs nothing new.**
-H-42 read yes ([ADR-0204](../docs/adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)).
-[ADR-0205](../docs/adr/0205-the-probe-in-the-engines-default.md) puts the probe in `Config::reads_its_targets()`, so the step the engine makes from its own loop replaces step = 1/16 in the default.
+H-42 read yes ([ADR-0204](../../docs/adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)).
+[ADR-0205](../../docs/adr/0205-the-probe-in-the-engines-default.md) puts the probe in `Config::reads_its_targets()`, so the step the engine makes from its own loop replaces step = 1/16 in the default.
 
 When the round is done, the tree holds:
 - `Config::reads_its_targets()` with `step_probe: true`, its other five values unchanged;
@@ -20,7 +25,7 @@ When the round is done, the tree holds:
 
 **There is no hypothesis.** Nothing is run under the default that H-42 did not run.
 
-The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
+The scope is the front matter's ([ADR-0191](../../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
 
 **Do not run this round beside brief 065's**: both dispatch the weekly workflow.
 
@@ -36,11 +41,11 @@ The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eigh
 - **The dispatch is made once the last commit under `src/` and `tests/` is pushed**, at `scope=both`, since a file under `src/` changes. A change under either after it is dispatched again, or shown in the ADR to change no run. No whole-domain test runs on the developer machine.
 - **The branch is named `claude/brief-079-…`**, never rebased or force-pushed once a dispatch has run on it. Every commit is signed.
 - **The engine and the harness are read before a description of them is trusted**, this brief's and ADR-0205's included.
-- No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
-- The runtime's gate grows by no test: the default's byte-for-byte test is moved, not added ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The pull request's mutation gate catches every mutant in the lines it changes ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+- No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
+- The runtime's gate grows by no test: the default's byte-for-byte test is moved, not added ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). The pull request's mutation gate catches every mutant in the lines it changes ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The documents are ADR-0197's and ADR-0201's**: a new ADR in their shape, the tables written by `node scripts/adr-index.mjs`, new text within `npm run spec:shape`'s limits and its math GitHub's.
 - **The pull request leaves draft with the commit that asks for the merge**, which sets the round's ADR to `accepted`.
-- **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's minutes.
+- **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's minutes.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
 ## Context
@@ -60,22 +65,22 @@ Re-derived on 2026-10-21 against brief 078's head, `9ac4475`. Line numbers move;
 
 ## Deliverables
 
-- [ ] **The default, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The default, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - `Config::reads_its_targets()` with `step_probe: true`.
   - The field-by-field test with the probe set.
   - The byte-for-byte test moved to H-42's candidate: on each of seeds 22, 23 and 24 at 1 024 units, an engine born under the default with H-42's sizing writes the image `candidate_under(…, &UNDER_THE_PROBE)` writes, at the gain `PROBE_RULES` pinned.
-- [ ] **The dispatch**, at `scope=both`, once the last commit under `src/` and `tests/` is pushed. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from it.
-- [ ] **The ADR's reading.**
+- [x] **The dispatch**, at `scope=both`, once the last commit under `src/` and `tests/` is pushed. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from it.
+- [x] **The ADR's reading.**
   - What was built.
   - The byte-for-byte check per network.
   - The dispatch with its run id and commit, each shard's job time against its bound, and whether its sweep had ended.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
   - Whitepaper: where the default is described, the probe in it; and the tables written by `node scripts/adr-index.mjs`.
   - `CHANGELOG.md`, one entry of at most 400 characters.
   - `README.md` and `docs/zh-TW/README.md` as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 079 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 079 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 

@@ -314,19 +314,23 @@ impl Default for Config {
 }
 
 impl Config {
-    /// The engine's default for an image no derivation has settled (ADR-0196): `Config::default()`
-    /// with five fields set, each what H-41 read of the network's own regime on three networks at
-    /// 1 024 units (ADR-0195), and no other:
+    /// The engine's default for an image no derivation has settled (ADR-0196, ADR-0205):
+    /// `Config::default()` with six fields set, each what H-41 or H-42 read of the network's own
+    /// regime on three networks at 1 024 units (ADR-0195, ADR-0204), and no other:
     /// - the modulation at rest 0.5, every rewarded run's lead-in's since brief 027;
     /// - the gain 1.75, the calibration's first candidate, calibrated on every network derived;
-    /// - the controller's step a sixteenth (H-39, H-40, H-41);
+    /// - the controller's step a sixteenth (H-39, H-40, H-41), which no window reads while the
+    ///   probe is set, and which H-42's runs carried;
     /// - the read of the rate's target over 128 windows (H-40, H-41);
-    /// - the read's flag, so that its end sets the inhibitory rule's target too (H-41).
+    /// - the read's flag, so that its end sets the inhibitory rule's target too (H-41);
+    /// - the probe of the step, so that the rate's rule runs at the step the engine makes from
+    ///   its own loop in the sixteenth's place (H-42).
     ///
     /// An engine born under it holds its gain at 1.75 for 128 windows, sets both targets from
-    /// the mean count of the last sixteen and runs the rate's rule at a sixteenth from the 129th.
-    /// The sizing is the caller's, by struct update, and the learning configuration stays unset.
-    /// `Config::default()` stays the bare engine, every rule unset, that every pin runs.
+    /// the mean count of the last sixteen, probes its loop for sixteen windows more and runs the
+    /// rate's rule at the step the probe made from the 145th. The sizing is the caller's, by
+    /// struct update, and the learning configuration stays unset. `Config::default()` stays the
+    /// bare engine, every rule unset, that every pin runs.
     pub fn reads_its_targets() -> Self {
         Self {
             modulation_baseline_q16: 0x8000,
@@ -334,6 +338,7 @@ impl Config {
             control_step_q0_16: 0x1000,
             rate_read_windows: 128,
             istdp_target_read: true,
+            step_probe: true,
             ..Self::default()
         }
     }
@@ -5227,14 +5232,13 @@ mod tests {
         }
     }
 
-    /// The probe of the step in the configuration (ADR-0202): unset by default and in the
-    /// engine's default, which this round does not change; set beside a read, the engine's flag
-    /// set beside the read under way and the workers given the record's gain; refused without a
-    /// read, after the read's own refusals and the inhibitory flag's.
+    /// The probe of the step in the configuration (ADR-0202): unset by default — the engine's
+    /// default sets it since ADR-0205, held by that default's own test field by field; set beside
+    /// a read, the engine's flag set beside the read under way and the workers given the record's
+    /// gain; refused without a read, after the read's own refusals and the inhibitory flag's.
     #[test]
     fn the_probe_is_unset_by_default_and_refused_without_a_read() {
         assert!(!Config::default().step_probe);
-        assert!(!Config::reads_its_targets().step_probe);
         let with = |windows, period, inhibitory, probe| {
             Executor::<8>::new(Config {
                 units: 1024,
@@ -5543,13 +5547,13 @@ mod tests {
         }
     }
 
-    /// The engine's default (ADR-0196), field by field against `Config::default()`: the
-    /// modulation at rest 0.5, the gain 1.75, the step a sixteenth, the read 128 windows and its
-    /// flag set, each other than the bare engine's; and with those five put back, the bare engine,
-    /// so that every other field — the sizing, the rate's target, the inhibitory period and the
-    /// whole learning configuration — is `Config::default()`'s.
+    /// The engine's default (ADR-0196, ADR-0205), field by field against `Config::default()`: the
+    /// modulation at rest 0.5, the gain 1.75, the step a sixteenth, the read 128 windows, its
+    /// flag set and the probe of the step set, each other than the bare engine's; and with those
+    /// six put back, the bare engine, so that every other field — the sizing, the rate's target,
+    /// the inhibitory period and the whole learning configuration — is `Config::default()`'s.
     #[test]
-    fn reads_its_targets_is_the_default_with_adr_0196_s_five_values_and_no_other() {
+    fn reads_its_targets_is_the_default_with_adr_0196_s_five_values_the_probe_and_no_other() {
         let (default, bare) = (Config::reads_its_targets(), Config::default());
         assert_eq!(
             (
@@ -5562,15 +5566,17 @@ mod tests {
             (0x8000, 0x0001_C000, 0x1000, 128, true),
             "ADR-0196's five values"
         );
+        assert!(default.step_probe, "ADR-0205's probe");
         assert_eq!(
             (
                 bare.modulation_baseline_q16,
                 bare.synaptic_gain_q16,
                 bare.control_step_q0_16,
                 bare.rate_read_windows,
-                bare.istdp_target_read
+                bare.istdp_target_read,
+                bare.step_probe
             ),
-            (0x0001_0000, 0x0001_0000, 0, 0, false),
+            (0x0001_0000, 0x0001_0000, 0, 0, false, false),
             "the bare engine's, each other than the default's"
         );
         assert_eq!(
@@ -5580,6 +5586,7 @@ mod tests {
                 control_step_q0_16: bare.control_step_q0_16,
                 rate_read_windows: bare.rate_read_windows,
                 istdp_target_read: bare.istdp_target_read,
+                step_probe: bare.step_probe,
                 ..default.clone()
             },
             bare,
@@ -5600,16 +5607,17 @@ mod tests {
         );
     }
 
-    /// An engine born under the default (ADR-0196): reading, 128 windows left and nothing summed,
-    /// at the gain 1.75 and the step a sixteenth, its flag set, no target and the inhibitory
-    /// period the default's, at the modulation 0.5 with the learning configuration unset; its
-    /// image, decoded under the bare engine's configuration, is the same engine, read back whole
-    /// and written again byte for byte.
+    /// An engine born under the default (ADR-0196, ADR-0205): reading, 128 windows left and
+    /// nothing summed, at the gain 1.75 and the step a sixteenth, its flag and the probe's set, no
+    /// target and the inhibitory period the default's, at the modulation 0.5 with the learning
+    /// configuration unset; its image, decoded under the bare engine's configuration, is the same
+    /// engine, read back whole and written again byte for byte.
     #[test]
     fn an_engine_born_under_the_default_reads_at_1_75_with_its_flag_and_its_image_reads_back_alike()
     {
         type Readings = (
             Option<TargetRead>,
+            bool,
             bool,
             u32,
             Option<u32>,
@@ -5621,6 +5629,7 @@ mod tests {
             (
                 exec.target_read(),
                 exec.istdp_target_read(),
+                exec.step_probe(),
                 exec.rate_target_period_ticks(),
                 exec.rate_target_per_window(),
                 exec.istdp_target_period_ticks(),
@@ -5635,6 +5644,7 @@ mod tests {
         .unwrap();
         let expected: Readings = (
             Some(TargetRead::Reading { left: 128, sum: 0 }),
+            true,
             true,
             0,
             None,

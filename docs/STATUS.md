@@ -1,12 +1,13 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-Brief 078 wrote it on 2026-10-20 ([ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)), after [ADR-0201](adr/0201-math-that-github-renders.md) merged.
+Brief 079 wrote it on 2026-10-24 ([ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md)), after [ADR-0205](adr/0205-the-probe-in-the-engines-default.md) merged.
 
 ## The engine
 
 - **It runs.** The records with their layout assertions, the update rules, synaptic fan-out with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena, the `.cortex` image (format 25), the criticality controller, sleep with the episodic ledger and its replay, and the symbolic layer are Implemented ([§1.6](WHITEPAPER.md#16-implementation-status-at-a-glance)).
-- **Its default** for an image no derivation has settled is `Config::reads_its_targets()`: `Config::default()` with the modulation at rest 0.5, the gain 1.75, the rate's rule at step = 1/16, the read of 128 windows and both targets by it ([ADR-0196](adr/0196-the-engines-default.md), built by [ADR-0198](adr/0198-the-engines-default-built.md)). `Config::default()` stays the bare engine every pin runs. The probe of the step, `Config::step_probe`, is built and unset in both ([ADR-0202](adr/0202-a-step-the-engine-makes-from-its-own-loop-built.md)).
+- **Its default** for an image no derivation has settled is `Config::reads_its_targets()`: `Config::default()` with the modulation at rest 0.5, the gain 1.75, the read of 128 windows, both targets by it, and the probe, so the rate's rule runs at the step the engine makes in step = 1/16's place ([ADR-0196](adr/0196-the-engines-default.md), [ADR-0205](adr/0205-the-probe-in-the-engines-default.md)).
+- **An engine born under it** writes H-42's candidate's image byte for byte on seeds 22, 23 and 24 ([ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md)). `Config::default()` stays the bare engine every pin runs.
 
 ## What it learns
 
@@ -39,7 +40,7 @@ Per trial the host gives the reward's sign, and the readout sets are the body's 
 - The whole punishment is a parameter of the image no configuration sets (ADR-0155, ADR-0156).
 - The exploration is an option of the task no run sets (ADR-0163, ADR-0164).
 - The controller's step under its estimate is zero in every run that learns (ADR-0077, ADR-0177).
-- The rate's rule is set in H-38's to H-42's runs, the read of its target in H-40's to H-42's, the read's flag in H-41's and H-42's, and the probe in H-42's alone. The first three are set in the default, under which no tick has run (ADR-0198), and the probe is not.
+- The rate's rule, the read of its target, the read's flag and the probe are each set in the default. On H-42's three networks its image is H-42's candidate's, and no other network has run under it.
 - The speed line is closed, the sweep kept and the lanes reverted ([ADR-0105](adr/0105-the-speed-line-closed.md)).
 
 ## What does not exist
@@ -48,12 +49,12 @@ Per trial the host gives the reward's sign, and the readout sets are the body's 
 - The lookahead ADR-0099 ordered, and a lever on the rest of the turn.
 - The real-time mode's reach, measured on the reference platform.
 - The `mmap` path, the shared-memory mappings, core pinning, the tool broker and standardising apart.
-- The default or the probe run on a network, a size or a generator H-42 did not run.
+- The default run on a network, a size or a generator H-42 did not run.
 - The per-unit gain of §8.8, and a reserved byte in the modulator section.
 
 ## The next decision
 
-[ADR-0205](adr/0205-the-probe-in-the-engines-default.md) took ADR-0200's step 3: the probe in `Config::reads_its_targets()`, which brief 079, the live brief in [briefs/](../briefs/README.md), builds with no hypothesis.
-1. Then M10, a reward past the trial ([Appendix C](WHITEPAPER.md#appendix-c-roadmap)).
+ADR-0205's default is built, and ADR-0200's stopping rule is done.
+1. M10, a reward past the trial ([Appendix C](WHITEPAPER.md#appendix-c-roadmap)): a decision ADR and a measured round.
 2. A re-read of the targets by evidence, at M12.
 3. Where the rounds' pinned tables live, so the gate's compile time stops growing (F-76).
