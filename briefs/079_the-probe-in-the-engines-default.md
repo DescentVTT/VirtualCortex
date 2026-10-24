@@ -60,22 +60,22 @@ Re-derived on 2026-10-21 against brief 078's head, `9ac4475`. Line numbers move;
 
 ## Deliverables
 
-- [ ] **The default, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The default, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - `Config::reads_its_targets()` with `step_probe: true`.
   - The field-by-field test with the probe set.
   - The byte-for-byte test moved to H-42's candidate: on each of seeds 22, 23 and 24 at 1 024 units, an engine born under the default with H-42's sizing writes the image `candidate_under(…, &UNDER_THE_PROBE)` writes, at the gain `PROBE_RULES` pinned.
-- [ ] **The dispatch**, at `scope=both`, once the last commit under `src/` and `tests/` is pushed. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from it.
-- [ ] **The ADR's reading.**
+- [x] **The dispatch**, at `scope=both`, once the last commit under `src/` and `tests/` is pushed. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from it.
+- [x] **The ADR's reading.**
   - What was built.
   - The byte-for-byte check per network.
   - The dispatch with its run id and commit, each shard's job time against its bound, and whether its sweep had ended.
-- [ ] **The documents, in the same pull request.**
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
   - Whitepaper: where the default is described, the probe in it; and the tables written by `node scripts/adr-index.mjs`.
   - `CHANGELOG.md`, one entry of at most 400 characters.
   - `README.md` and `docs/zh-TW/README.md` as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 079 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 079 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
