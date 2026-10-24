@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-24
 depends-on: ADR-0205
 title: The probe in the engine's default, built

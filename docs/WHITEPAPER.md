@@ -2515,7 +2515,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md) | A step the engine makes from its own loop, its protocol | accepted |
 | [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | A step the engine makes from its own loop, measured | accepted |
 | [ADR-0205](adr/0205-the-probe-in-the-engines-default.md) | The probe in the engine's default | accepted |
-| [ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md) | The probe in the engine's default, built | proposed |
+| [ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md) | The probe in the engine's default, built | accepted |
 <!-- adr-index: end decisions -->
 
 ---
