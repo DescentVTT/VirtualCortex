@@ -168701,9 +168701,29 @@ struct AnsweredRead {
 /// An arm's readings from its tables, `k` its index in `ANSWERED_ARMS`: every rule above over
 /// the blocks and the trials, the image's couplings and sums, and H-25's crossings beside.
 fn answered_read(schedule: &Schedule, k: usize, run: &AnsweredRun) -> AnsweredRead {
+    answered_read_on(
+        schedule,
+        k,
+        run,
+        &DEALT_COUPLINGS_1024,
+        QUIET_1024[SETTLED].1,
+        CROSSINGS_DRAWN_1024[k][0],
+    )
+}
+
+/// `answered_read` against the image given (exploration 001, on its branch alone): its six
+/// couplings under the deal, its sums by polarity, and the first crossing a later start is read
+/// beside. `answered_read` calls it with the instrument's image and H-25's crossing.
+fn answered_read_on(
+    schedule: &Schedule,
+    k: usize,
+    run: &AnsweredRun,
+    image: &[[i64; ANSWERS]; 2],
+    sums: (i64, i64),
+    beside: Option<usize>,
+) -> AnsweredRead {
     let first = first_answers(ANSWERED_ARMS[k]);
-    let image = &DEALT_COUPLINGS_1024;
-    let (image_inhibitory, image_excitatory) = QUIET_1024[SETTLED].1;
+    let (image_inhibitory, image_excitatory) = sums;
     let image_outside = answered_outside(image_excitatory, image);
     let blocks = run.blocks.as_slice();
     let means = answered_means(blocks);
@@ -168731,7 +168751,7 @@ fn answered_read(schedule: &Schedule, k: usize, run: &AnsweredRun) -> AnsweredRe
         went: went_by_mapping(schedule, blocks),
         inhibitory: low_high_last(image_inhibitory, &inhibitory),
         outside: low_high_last(image_outside, &outside),
-        later_start: later_start(crossings[0], CROSSINGS_DRAWN_1024[k][0]),
+        later_start: later_start(crossings[0], beside),
         below_zero_first: below_zero_first(schedule, &means, crossings[0]),
         eliminated: eliminated(held, &course),
         sums_after: blocks.last().map_or((0, 0), |b| b.sums),
@@ -197387,6 +197407,8 @@ struct Made {
 /// - `carried`, `after_frozen` (brief 071): the gain and the estimate the settled image carries,
 ///   and the two as the frozen block left them; with the gain held the gain is the gain's rule's
 ///   in both.
+/// - `zero` (exploration 001, on its branch alone): the settled image frozen, the first of the
+///   six `crcs` holds, kept whole so that an exploration can fork it.
 #[derive(Default)]
 struct Derivation {
     rules: Rules,
@@ -197415,6 +197437,7 @@ struct Derivation {
     read: Option<ReadMade>,
     istdp: Option<u32>,
     probe: Option<u16>,
+    zero: Option<Vec<u8>>,
 }
 
 /// The format H-33's and H-34's derivations read their images at (ADR-0167, ADR-0169): 21. Since
@@ -197750,6 +197773,7 @@ fn derive_under(units: u32, seed: u64, settling: &Settling, name: &str) -> Deriv
     }
     d.carried = Some((carried, exec.homeostasis().branching_ratio_q16));
     let zero = frozen_image(&exec);
+    d.zero = Some(zero.clone());
     {
         // The rate's target the image carries: the settling's, or under a read the one it made.
         let target = d.read.map_or(settling.target, |(_, period, _)| period);
@@ -400778,3 +400802,767 @@ const PROBE_ARM_OPPOSITE: [[Option<u32>; 2]; 3] = [
     [Some(527), Some(493)],
     [Some(497), Some(491)],
 ];
+
+// ======================================================================== exploration 001
+//
+// The old no's under the engine's default (ADR-0193; `docs/explorations/`), on the branch
+// `explore/001-the-old-noes-under-the-default` alone. Four questions whose answers were read as
+// no under an earlier configuration, asked again on H-42's network of seed 22 at 1 024 units —
+// `derive_under` under `UNDER_THE_PROBE`, the network an engine born under
+// `Config::reads_its_targets()` settles (ADR-0206): the causal count of ADR-0054 against its
+// oracle, H-29's three answers, H-35's reward right three times in four, and a reward the host
+// gives one or two trials late. No prediction is written, nothing is pinned and no rule of `main`
+// moves: every number is printed, and the only things held are the network's derivation, to the
+// tables H-42's one run pinned, and the harness's own checks.
+
+use cortex_runtime::{Attribution, Perturbation, cascade, fork};
+
+/// The network an exploration runs on: H-42's derivation on network `n` under the probe, dumped
+/// and held to the tables its one run pinned as its own test holds it, so that the network is
+/// the one the engine's default settles; the derivation, and the configuration a rewarded run
+/// takes from it.
+fn explore_network(n: usize, name: &str) -> (Derivation, Made) {
+    let (mut d, read) = probe_derivation(n, name);
+    probe_derivation_held(n, name, &d, &read);
+    assert!(
+        d.rules.hold(),
+        "{name}: clause 0 holds on this network, or it has no arm"
+    );
+    let made = d
+        .made
+        .take()
+        .expect("a derivation whose rules hold makes a configuration");
+    eprintln!("DUMP {name} the network is H-42's, its derivation the one pinned");
+    (d, made)
+}
+
+// ------------------------------------------------------- 1. the causal count (ADR-0054)
+
+/// ADR-0054's gains, `tests/reference.rs`'s `GAINS`: 1.75, 2.0 and 2.25.
+const EXPLORE_GAINS: [u32; 3] = [0x0001_C000, 0x0002_0000, 0x0002_4000];
+
+/// ADR-0054's kicks at 1 024 units, and the reading beyond it: sixteen kicks in its form, one
+/// horizon for all, and 256, each kicked fork run to its own horizon.
+const EXPLORE_KICKS: (u32, u32) = (16, 256);
+
+/// ADR-0054's oracle constants, `tests/reference.rs`'s: a descendant fires within 128 ticks of
+/// its message's arrival, a baseline spike within 512 ticks after it is the same spike advanced,
+/// the kick is one message of 1.5, the first kick four bins after the fork's clock, one every 64
+/// ticks, and a fork runs three far delays past its kick.
+const EXPLORE_LATENCY: u32 = 128;
+const EXPLORE_ADVANCE: u32 = 512;
+const EXPLORE_KICK_Q16: i32 = 0x0001_8000;
+const EXPLORE_KICK_EVERY: u64 = 64;
+const EXPLORE_HORIZON: u64 = 3 * 2559;
+
+/// The record's bin and window, `tests/reference.rs`'s `BIN` and `WINDOW`.
+const EXPLORE_BIN: u64 = 1 << ACTIVITY_BIN_SHIFT;
+const EXPLORE_WINDOW: u64 = 1 << (ACTIVITY_BIN_SHIFT + ACTIVITY_WINDOW_SHIFT);
+
+/// The windows read inside the loop: ADR-0054's two at 1 024 units, and two more.
+const EXPLORE_WINDOWS: u64 = 4;
+
+/// One window as `tests/reference.rs`'s `windows` reports it: `(gain, estimate, spikes,
+/// descendants)`, the last the in-loop count of ADR-0054.
+type ExploreWindow = (u32, u32, u64, u64);
+
+/// ADR-0054's pinned reading on the prior at 1 024 units and the gain 1.75
+/// (`tests/reference.rs`): the first two windows `(gain, estimate, spikes, descendants)` and the
+/// sixteen kicks' attribution, which this copy of its method is read beside.
+const EXPLORE_PRIOR_WINDOWS: [ExploreWindow; 2] = [
+    (0x0001_C000, 21_657, 2_406, 825),
+    (0x0001_C000, 17_656, 2_297, 722),
+];
+const EXPLORE_PRIOR_ATTRIBUTION: Attribution = Attribution {
+    kicks: 16,
+    ancestors: 34,
+    descendants: 18,
+    advanced: 3,
+    extra: 92,
+    missing: 102,
+};
+
+/// The configuration an exploration's forks decode under: the harness's, two workers and the
+/// baseline zero, with a train that holds a fork's whole run.
+fn explore_config(units: u32) -> Config {
+    Config {
+        train_capacity: 1 << 22,
+        ..config(units, 2, 0)
+    }
+}
+
+/// `image` with its homeostasis record's gain set to `gain` and its step to zero, the section
+/// resealed: the network at a fixed gain, as ADR-0054 read the prior at each of its three.
+fn explore_at_gain(image: &[u8], gain: u32) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_HOMEOSTASIS {
+            let (offset, length) = (entry.offset as usize, entry.length as usize);
+            let mut pool = HomeostaticDrivePool::decode((&img[offset..][..64]).try_into().unwrap());
+            pool.synaptic_gain_q16 = gain;
+            pool.control_step_q0_16 = 0;
+            img[offset..][..length].copy_from_slice(&pool.encode());
+            entry.crc64 = crc64(&img[offset..][..length]);
+            img[at..][..64].copy_from_slice(&entry.encode());
+            return img;
+        }
+    }
+    panic!("the image holds a homeostasis section");
+}
+
+/// The kicked unit's synapses as the oracle reads them, `tests/reference.rs`'s `synapses_of`.
+fn explore_synapses(exec: &Engine, unit: u32) -> Vec<(u32, u16)> {
+    exec.units()[unit as usize]
+        .fan_out(exec.blocks())
+        .map(|s| (s.target, s.delay_ticks))
+        .collect()
+}
+
+/// `tests/reference.rs`'s `windows`: `windows` windows under the drive, each window's gain and
+/// estimate as its regulation left them, its spikes by the record's bins and its descendants by
+/// the executor's in-loop count (ADR-0054).
+fn explore_windows(exec: &mut Engine, drive: &Drive, windows: u64) -> Vec<ExploreWindow> {
+    let mut out = Vec::new();
+    for _ in 0..windows {
+        let mut spikes = 0u64;
+        let before = exec.descendants();
+        for _ in 0..(1u64 << ACTIVITY_WINDOW_SHIFT) {
+            let until = exec.ticks().saturating_add(EXPLORE_BIN);
+            run_driven(exec, drive, until).expect("the drive runs");
+            let h = exec.homeostasis();
+            let bin = if h.window_bins == 0 {
+                h.first_activity
+            } else {
+                h.last_activity
+            };
+            spikes = spikes.saturating_add(u64::from(bin));
+        }
+        let h = exec.homeostasis();
+        out.push((
+            h.synaptic_gain_q16,
+            h.branching_ratio_q16,
+            spikes,
+            exec.descendants().saturating_sub(before),
+        ));
+    }
+    out
+}
+
+/// The in-loop ratio of a window (ADR-0054), Q16.16: descendants over spikes; none for a window
+/// without a spike.
+fn explore_in_loop(w: &ExploreWindow) -> Option<u32> {
+    let (_, _, spikes, descendants) = *w;
+    descendants
+        .checked_shl(16)
+        .and_then(|d| d.checked_div(spikes))
+        .and_then(|ratio| u32::try_from(ratio).ok())
+}
+
+/// ADR-0054's oracle (`tests/reference.rs`'s `attribution`) from an image at any clock: `kicks`
+/// kicks from `at`, one every 64 ticks into unit `61 j` of the arena, each in a fork of its own
+/// beside one baseline. In ADR-0054's form (`one_horizon`) every fork runs to three far delays
+/// past `at`; otherwise each kicked fork runs to three far delays past its own kick and the
+/// baseline to three past the last, where 256 kicks would pass ADR-0054's horizon.
+fn explore_attribution(
+    image: &[u8],
+    config: &Config,
+    units: u32,
+    synapses: &[Vec<(u32, u16)>],
+    kicks: u32,
+    at: u64,
+    one_horizon: bool,
+) -> Attribution {
+    let drive = drive(units);
+    let tick_of = |j: u32| at.saturating_add(u64::from(j).saturating_mul(EXPLORE_KICK_EVERY));
+    let last = tick_of(kicks.saturating_sub(1));
+    let baseline_until = if one_horizon {
+        at.saturating_add(EXPLORE_HORIZON)
+    } else {
+        last.saturating_add(EXPLORE_HORIZON)
+    };
+    let baseline =
+        fork::<2048>(image, config, &drive, &[], baseline_until).expect("the baseline fork");
+    let mut cascades = Vec::new();
+    for j in 0..kicks {
+        let unit = j.wrapping_mul(61).checked_rem(units).unwrap_or(0);
+        let tick = tick_of(j);
+        let until = if one_horizon {
+            baseline_until
+        } else {
+            tick.saturating_add(EXPLORE_HORIZON)
+        };
+        let kick = Perturbation {
+            unit,
+            tick,
+            messages: 1,
+            efficacy_q16: EXPLORE_KICK_Q16,
+        };
+        let perturbed = fork::<2048>(image, config, &drive, &[kick], until).expect("a kicked fork");
+        cascades.push(cascade(
+            &baseline,
+            &perturbed,
+            unit,
+            tick as u32,
+            &synapses[unit as usize],
+            EXPLORE_LATENCY,
+            EXPLORE_ADVANCE,
+        ));
+    }
+    Attribution::of(&cascades)
+}
+
+/// One gain's reading of ADR-0054 on `image`, dumped whole: the oracle's sixteen kicks in its
+/// form and its 256, from four bins after the image's clock; then, from the first window boundary
+/// after the clock, `EXPLORE_WINDOWS` windows with the in-loop ratio of each beside the gross and
+/// the net causal ratios. Returns the windows and the two attributions.
+fn explore_causal_at(
+    name: &str,
+    image: &[u8],
+    units: u32,
+    gain: u32,
+) -> (Vec<ExploreWindow>, Attribution, Attribution) {
+    let image = explore_at_gain(image, gain);
+    let cfg = explore_config(units);
+    let mut exec = Image::decode::<2048>(&image, cfg.clone()).expect("a well-formed record");
+    assert_eq!(
+        (
+            exec.homeostasis().synaptic_gain_q16,
+            exec.homeostasis().control_step_q0_16,
+            exec.modulation_baseline_q16()
+        ),
+        (gain, 0, 0),
+        "{name}: the gain fixed, the controller off and the weights frozen"
+    );
+    let clock = exec.ticks();
+    let synapses: Vec<Vec<(u32, u16)>> = (0..units).map(|u| explore_synapses(&exec, u)).collect();
+    let at = clock.saturating_add(4 * EXPLORE_BIN);
+    let sixteen = explore_attribution(&image, &cfg, units, &synapses, EXPLORE_KICKS.0, at, true);
+    let wide = explore_attribution(&image, &cfg, units, &synapses, EXPLORE_KICKS.1, at, false);
+    let drive = drive(units);
+    let boundary = clock
+        .div_ceil(EXPLORE_WINDOW)
+        .saturating_mul(EXPLORE_WINDOW);
+    run_driven(&mut exec, &drive, boundary).expect("the drive runs");
+    let windows = explore_windows(&mut exec, &drive, EXPLORE_WINDOWS);
+    let in_loop: Vec<Option<u32>> = windows.iter().map(explore_in_loop).collect();
+    eprintln!(
+        "DUMP {name} gain {gain:#x} clock {clock} inhibitory baseline {:?} windows from {boundary} {windows:?} in_loop {in_loop:?}",
+        exec.inhibitory_baseline_q16()
+    );
+    for (kicks, a) in [(EXPLORE_KICKS.0, sixteen), (EXPLORE_KICKS.1, wide)] {
+        eprintln!(
+            "DUMP {name} gain {gain:#x} kicks {kicks} {a:?} gross {:?} net {:?}",
+            a.branching_ratio_q16(),
+            a.net_branching_ratio_q16()
+        );
+    }
+    (windows, sixteen, wide)
+}
+
+/// Exploration 001's first question: ADR-0054's comparison — the in-loop ratio of descendants
+/// over spikes beside the oracle's gross causal ratio — on the prior it ran on, as the copy of
+/// its method's check, and on the default's settled network of seed 22, at its three gains and
+/// at the gain the settled image carries.
+#[test]
+#[ignore]
+fn the_causal_count_on_the_default_s_settled_network_on_seed_22_explore() {
+    let units = SCAN_UNITS;
+    // ADR-0054's network: the prior at its clock of zero, the method's copy read beside its pin.
+    for &gain in &EXPLORE_GAINS {
+        let name = "explore001 causal prior22";
+        let exec = at_gain(&prior(units), explore_config(units), gain);
+        let image = Image::encode(&exec).expect("quiescent");
+        drop(exec);
+        let (windows, sixteen, _) = explore_causal_at(name, &image, units, gain);
+        if gain == EXPLORE_GAINS[0] {
+            eprintln!(
+                "DUMP {name} the copy of ADR-0054's method reproduces its pinned reading at 1.75: windows {} attribution {}",
+                windows.get(..2) == Some(EXPLORE_PRIOR_WINDOWS.as_slice()),
+                sixteen == EXPLORE_PRIOR_ATTRIBUTION
+            );
+        }
+    }
+    // The default's settled network: H-42's derivation of seed 22, its image frozen.
+    let name = "explore001 causal settled22";
+    let (d, _) = explore_network(0, name);
+    let zero = d.zero.as_ref().expect("the settled image, frozen");
+    let carried = d.carried.map(|(gain, _)| gain);
+    eprintln!(
+        "DUMP {name} the settled image carries the gain and the estimate {:?}, the step {:?}",
+        d.carried, d.probe
+    );
+    for gain in EXPLORE_GAINS.into_iter().chain(carried) {
+        explore_causal_at(name, zero, units, gain);
+    }
+}
+
+// ----------------------------------------------- 2. three answers (ADR-0152, ADR-0153)
+
+/// One arm of H-29's task on the default's network `n` (exploration 001): H-29's three
+/// readouts, dealt by its rule over the network's own image — the first deal in the committed
+/// order whose six couplings are within ten per cent — and H-29's run on that image
+/// (`answered_run`): its stimuli and cancel, H-25's delivery, H-20's flips, the critic's oracle
+/// and the network's held to the record at every trial. The frozen block's sight, which H-29
+/// read from the instrument's zero image at its settled clock, is not run. Everything is dumped
+/// beside H-29's readings and the network's own two-answer arm (H-42); nothing is held.
+fn explore_three_answers(n: usize, arm: Reversal) {
+    let k = ANSWERED_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-29");
+    let name = format!("explore001 answered{} {arm:?}", PROBE_SEEDS[n]);
+    let (_, made) = explore_network(n, &name);
+    assert_eq!(
+        (made.derived.rotation, made.derived.cancel),
+        (DERIVED_1024.rotation, DERIVED_1024.cancel),
+        "{name}: H-29's sets and cancel are the instrument's, so the network's must be"
+    );
+    let exec = signed_from(&made.windowed, SCAN_UNITS);
+    let by_place = place_couplings(&exec);
+    let taken = first_dealt(&by_place);
+    let passing = deals()
+        .iter()
+        .filter(|deal| dealt(&deal_couplings(&by_place, deal)))
+        .count();
+    eprintln!(
+        "DUMP {name} place couplings {by_place:?} first dealt {taken:?} passing {passing} of {DEALS}; H-29's {:?} passing {DEALS_PASSING_1024}",
+        (DEAL_INDEX_1024, DEAL_1024)
+    );
+    let (_, deal) = taken.expect("no deal passes the readouts' rule on this network");
+    let sets = answered_sets(&deal);
+    let couplings = answered_couplings(&exec, &sets);
+    eprintln!(
+        "DUMP {name} dealt couplings {couplings:?} within ten per cent {}; H-29's {DEALT_COUPLINGS_1024:?}",
+        dealt(&couplings)
+    );
+    drop(exec);
+    let mut exec = signed_from(&made.windowed, SCAN_UNITS);
+    let first = first_answers(arm);
+    let beside = PROBE_ARM_READINGS[n][k].and_then(|read| read.crossings[0]);
+    let run = answered_run(
+        &mut exec,
+        &sets,
+        first,
+        Feedback::Answer,
+        ANSWERED_DELIVERY,
+        Exploration::Unset,
+        &SCHEDULE,
+        SCHEDULE_TRIALS,
+        &mut |_, _| {},
+    );
+    let read = answered_read_on(&SCHEDULE, k, &run, &couplings, made.sums, beside);
+    eprintln!("DUMP {name} blocks {:?}", run.blocks);
+    eprintln!("DUMP {name} trace {:#018x}", run.trace);
+    eprintln!("DUMP {name} readings {read:?}");
+    eprintln!(
+        "DUMP {name} correct by block {:?}",
+        run.blocks
+            .iter()
+            .map(|b| b.correct[0].saturating_add(b.correct[1]))
+            .collect::<Vec<u32>>()
+    );
+    eprintln!(
+        "DUMP {name} correct by block beside H-29's {:?}",
+        ANSWERED_BLOCKS_1024[k]
+            .iter()
+            .map(|b| b.correct[0].saturating_add(b.correct[1]))
+            .collect::<Vec<u32>>()
+    );
+    eprintln!(
+        "DUMP {name} this arm: learned by each {:?} crossings {:?} over {:?} left {:?} the expected reward held {:?}",
+        read.last.map(|m| learned_by_each(&m)),
+        read.crossings,
+        read.over,
+        read.left,
+        read.last.map(|m| m.map(holds_expected))
+    );
+    let h29 = ANSWERED_READINGS_1024[k].expect("H-29's readings, pinned");
+    eprintln!(
+        "DUMP {name} H-29's: learned by each {:?} crossings {:?} over {:?} left {:?} the expected reward held {:?}",
+        h29.last.map(|m| learned_by_each(&m)),
+        h29.crossings,
+        h29.over,
+        h29.left,
+        h29.last.map(|m| m.map(holds_expected))
+    );
+    eprintln!(
+        "DUMP {name} the network's two-answer arm (H-42): crossings {:?} last 128 correct {:?}",
+        PROBE_ARM_READINGS[n][k].map(|read| read.crossings),
+        PROBE_ARM_READINGS[n][k].map(|read| read.correct)
+    );
+    eprintln!(
+        "DUMP {name} each stimulus's crossing after each flip {:?}; its first new selection {:?}; the old answer held {:?} blocks; value by block {:?}",
+        read.each_crossed,
+        read.first_new,
+        read.old_held,
+        answered_means(&run.blocks)
+    );
+}
+
+/// Exploration 001's second question, from the assignment: H-29's arm on the default's network
+/// of seed 22.
+#[test]
+#[ignore]
+fn three_answers_on_the_default_s_network_on_seed_22_from_the_assignment_explore() {
+    explore_three_answers(0, Reversal::AssignmentFirst);
+}
+
+/// Exploration 001's second question, from the mirrored assignment.
+#[test]
+#[ignore]
+fn three_answers_on_the_default_s_network_on_seed_22_from_the_mirrored_assignment_explore() {
+    explore_three_answers(0, Reversal::MirroredFirst);
+}
+
+// ------------------------------ 3 and 4. three in four, and a reward late (exploration 001)
+
+/// The rule an exploration's arm signs a trial's reward by: the answer's, or the answer's
+/// opposite where the coin of three in four misleads (ADR-0171).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExploreSign {
+    Answer,
+    ThreeInFour,
+}
+
+/// What the deliveries of one mapping were, each reward delivered at the end of a trial of it
+/// for the trial `late` before (exploration 001's fourth question):
+/// - `delivered`: the rewards delivered;
+/// - `same_stimulus`: those whose rewarded trial presented the stimulus the delivering trial
+///   presented;
+/// - `matched`: those whose rewarded trial and delivering trial presented one stimulus and
+///   selected one readout, a readout, so that the address the delivery writes — the delivering
+///   trial's — names the rewarded trial's pair;
+/// - `agrees`: those whose sign is the sign the delivering trial's own outcome earned;
+/// - `sources`: the drawn sources, `[in the rewarded trial's stimulus set, in the other stimulus
+///   set, anywhere else]`, summed over the deliveries;
+/// - `traces`: the stimulus–readout traces summed over the deliveries whose rewarded trial
+///   selected a readout, as the record held them decayed to the moment read, `[the rewarded
+///   trial's pair at its own end, the same pair at the delivery, the addressed pair at the
+///   delivery]`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ExploreDeliveries {
+    delivered: u32,
+    same_stimulus: u32,
+    matched: u32,
+    agrees: u32,
+    sources: [u64; 3],
+    traces: [i64; 3],
+}
+
+/// The stimulus–readout traces on `exec`, `[stimulus][readout]`: the eligibility of every
+/// synapse an excitatory unit of a stimulus's set sends to a unit of a readout's, summed, each
+/// decayed by the ticks since its block's last presynaptic spike as the record will decay it
+/// at the next, on a copy of the block.
+fn explore_traces(exec: &Engine, sets: &[Set; 4]) -> [[i64; 2]; 2] {
+    let now = exec.ticks() as u32;
+    let mut out = [[0i64; 2]; 2];
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        let id = unit.id as u32;
+        let Some(s) = sets[..2].iter().position(|set| set.contains(id)) else {
+            continue;
+        };
+        for syn in unit.fan_out(exec.blocks()) {
+            let Some(r) = sets[2..].iter().position(|set| set.contains(syn.target)) else {
+                continue;
+            };
+            let Some(&held) = exec.blocks().get(syn.block_idx as usize) else {
+                continue;
+            };
+            let mut block = held;
+            if block.last_spike_tick != NO_SPIKE_ON_RECORD {
+                block.decay_eligibility(now.wrapping_sub(block.last_spike_tick));
+            }
+            let trace = block
+                .eligibility_q1_15
+                .get(usize::from(syn.slot))
+                .copied()
+                .unwrap_or(0);
+            out[s][r] = out[s][r].saturating_add(i64::from(trace));
+        }
+    }
+    out
+}
+
+/// One trial of an exploration's arm as its end left it: the stimulus, the selection, whether
+/// it was correct, the reward's sign its outcome earns, and the stimulus–readout traces before
+/// any reward of its end (`explore_traces`).
+type ExploreTrial = (u8, Option<u8>, bool, bool, [[i64; 2]; 2]);
+
+/// The mapping of H-20's schedule the trial of index `trial` lies under.
+fn explore_mapping(trial: usize) -> usize {
+    SPANS
+        .iter()
+        .position(|&(from, to)| (from..to).contains(&trial))
+        .unwrap_or(0)
+}
+
+/// One arm of exploration 001's third or fourth question on the default's network `n`: H-25's
+/// arm from the image H-42's derivation wrote — its stimuli and cancel, the drawn delivery, H-20's
+/// flips, the engine's critic and its window — with the task's reward withheld and the host's
+/// given in its place: at the end of each trial, after the task has written the trial's address,
+/// the reward of the trial `late` before, signed by `sign`; none in the first `late` trials, and
+/// the last `late` never delivered. At `late` zero under the answer's sign this is H-42's arm on
+/// the network, its blocks, trace and values the ones pinned, which is printed. Nothing of the
+/// engine is changed: the delay is the host's alone.
+fn explore_arm(n: usize, arm: Reversal, sign: ExploreSign, late: usize) {
+    let k = DRAWN_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!(
+        "explore001 {sign:?} late {late} seed {} {arm:?}",
+        PROBE_SEEDS[n]
+    );
+    let units = SCAN_UNITS;
+    let (_, made) = explore_network(n, &name);
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = signed_from(&made.windowed, units);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.draws(),
+            exec.modulation_baseline_q16(),
+            exec.homeostasis().synaptic_gain_q16
+        ),
+        (
+            Some(made.critic),
+            made.window,
+            Ok(()),
+            GATE_BASELINE_Q16,
+            made.gain
+        ),
+        "{name}: the configuration, and the engine draws"
+    );
+    let task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Withheld,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    // The task is `Copy`: a copy reads the coin the run's own task draws, which no flip moves.
+    let probe = task;
+    let survival = stp_decay_factor_q16(
+        TRIAL_TICKS.saturating_mul(late as u32),
+        ELIGIBILITY_TAU_SHIFT,
+    );
+    // Per trial, as its end left it: the stimulus, the selection, whether it was correct, the
+    // reward's sign its outcome earns under `sign`, and the traces before any reward of its end.
+    let mut history: Vec<ExploreTrial> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut read: Vec<EarnedTrial> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut values: Vec<i32> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut deliveries = [ExploreDeliveries::default(); 4];
+    let mut matched_by_block: Vec<u32> = vec![0; SCHEDULE_BLOCKS];
+    let mut gains: Vec<u32> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        &mut |exec, trial, _, outcome| {
+            let traces = explore_traces(exec, &sets);
+            let positive = match sign {
+                ExploreSign::Answer => outcome.correct,
+                ExploreSign::ThreeInFour => {
+                    outcome.correct != probe.misleading_in_four_at(trial as u64)
+                }
+            };
+            history.push((
+                outcome.stimulus,
+                outcome.selection,
+                outcome.correct,
+                positive,
+                traces,
+            ));
+            let rewarded = trial
+                .checked_sub(late)
+                .and_then(|u| history.get(u))
+                .copied();
+            let (received, value, signal) = match rewarded {
+                Some((s_u, r_u, _, p_u, then)) => {
+                    let into = &mut deliveries[explore_mapping(trial)];
+                    let s_t = usize::from(outcome.stimulus);
+                    let su = usize::from(s_u);
+                    into.delivered = into.delivered.saturating_add(1);
+                    into.same_stimulus = into.same_stimulus.saturating_add(u32::from(su == s_t));
+                    let matched = su == s_t && r_u.is_some() && r_u == outcome.selection;
+                    into.matched = into.matched.saturating_add(u32::from(matched));
+                    if matched {
+                        let j = trial.checked_div(BLOCK).unwrap_or(0);
+                        if let Some(m) = matched_by_block.get_mut(j) {
+                            *m = m.saturating_add(1);
+                        }
+                    }
+                    into.agrees = into.agrees.saturating_add(u32::from(p_u == positive));
+                    for u in 0..units {
+                        if exec.is_source(u) {
+                            let at = if sets[su].contains(u) {
+                                0
+                            } else if sets[su ^ 1].contains(u) {
+                                1
+                            } else {
+                                2
+                            };
+                            into.sources[at] = into.sources[at].saturating_add(1);
+                        }
+                    }
+                    if let Some(r) = r_u.map(usize::from) {
+                        into.traces[0] = into.traces[0].saturating_add(then[su][r]);
+                        into.traces[1] = into.traces[1].saturating_add(traces[su][r]);
+                        if let Some(rt) = outcome.selection.map(usize::from) {
+                            into.traces[2] = into.traces[2].saturating_add(traces[s_t][rt]);
+                        }
+                    }
+                    let signal = exec.reward(if p_u {
+                        REWARD_Q16
+                    } else {
+                        REWARD_Q16.saturating_neg()
+                    });
+                    let prediction = exec.prediction().expect("the engine's critic reads");
+                    (prediction.received_q16, prediction.value_q16, signal)
+                }
+                None => (0, 0, exec.modulator().dopamine_rpe),
+            };
+            read.push((
+                outcome.stimulus,
+                outcome.counts,
+                outcome.selection,
+                outcome.correct,
+                received,
+                [[0; 2]; 2],
+                0,
+                signal,
+            ));
+            values.push(value);
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                gains.push(exec.homeostasis().synaptic_gain_q16);
+            }
+        },
+    );
+    assert_eq!(
+        (blocks.len(), read.len(), values.len()),
+        (SCHEDULE_BLOCKS, SCHEDULE_TRIALS, SCHEDULE_TRIALS),
+        "{name}: 120 blocks, a reading a trial"
+    );
+    let twin = PROBE_ARM_BLOCKS[n][k];
+    eprintln!(
+        "DUMP {name} reproduces H-42's arm on the network (blocks, trace, values): {:?}; an untouched trace keeps {survival} of 65 536 over {late} trials",
+        (
+            blocks.as_slice() == twin,
+            trace == PROBE_ARM_TRACES[n][k],
+            values_hash(&values) == PROBE_ARM_VALUE_HASH[n][k]
+        )
+    );
+    eprintln!("DUMP {name} blocks {blocks:?}");
+    eprintln!("DUMP {name} trace {trace:#018x}");
+    eprintln!("DUMP {name} correct by block {:?}", curve(&blocks));
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let learning = scheduled_of(&made.couplings, [&blocks, &blocks]);
+    let stimulus = stimulus_values(&read, &values);
+    let reliability = match sign {
+        ExploreSign::Answer => TRUE_RELIABILITY,
+        ExploreSign::ThreeInFour => IN_FOUR_RELIABILITY,
+    };
+    eprintln!(
+        "DUMP {name} this arm: last 128 correct {:?} learned {:?} crossings {:?} over {:?} left {:?} stimulus values {stimulus:?} the expected reward held at {reliability:?} {:?}",
+        mapping_correct(&blocks),
+        learning.learned[0],
+        crossings(&blocks),
+        learning.over[0],
+        left_band(outside, &blocks),
+        stimulus.map(|m| m.map(|s| holds_expected_reward_at(reliability, s)))
+    );
+    eprintln!(
+        "DUMP {name} the network's arm under the true reward (H-42): last 128 correct {:?} crossings {:?}",
+        mapping_correct(twin),
+        crossings(twin)
+    );
+    if sign == ExploreSign::ThreeInFour {
+        eprintln!(
+            "DUMP {name} H-35's arm: last 128 correct {:?} crossings {:?} correct by block {:?}",
+            mapping_correct(IN_FOUR_BLOCKS_1024[k]),
+            crossings(IN_FOUR_BLOCKS_1024[k]),
+            curve(IN_FOUR_BLOCKS_1024[k])
+        );
+    }
+    eprintln!(
+        "DUMP {name} value by block {:?}",
+        value_means(&value_blocks(&read, &values))
+    );
+    eprintln!("DUMP {name} deliveries by mapping {deliveries:?}");
+    eprintln!("DUMP {name} matched by block {matched_by_block:?}");
+    eprintln!("DUMP {name} gain by block {gains:?}");
+    eprintln!(
+        "DUMP {name} sums after {:?} image {:?}",
+        weights_by_polarity(&exec),
+        made.sums
+    );
+}
+
+/// Exploration 001's control for its fourth question: the reward on time, through the host,
+/// from the assignment — H-42's arm on seed 22, as a check of the host's delivery.
+#[test]
+#[ignore]
+fn a_reward_on_time_by_the_host_on_seed_22_from_the_assignment_explore() {
+    explore_arm(0, Reversal::AssignmentFirst, ExploreSign::Answer, 0);
+}
+
+/// The same control from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_on_time_by_the_host_on_seed_22_from_the_mirrored_assignment_explore() {
+    explore_arm(0, Reversal::MirroredFirst, ExploreSign::Answer, 0);
+}
+
+/// Exploration 001's third question, from the assignment: H-35's reward right three times in
+/// four on the default's network of seed 22.
+#[test]
+#[ignore]
+fn three_in_four_on_the_default_s_network_on_seed_22_from_the_assignment_explore() {
+    explore_arm(0, Reversal::AssignmentFirst, ExploreSign::ThreeInFour, 0);
+}
+
+/// Exploration 001's third question, from the mirrored assignment.
+#[test]
+#[ignore]
+fn three_in_four_on_the_default_s_network_on_seed_22_from_the_mirrored_assignment_explore() {
+    explore_arm(0, Reversal::MirroredFirst, ExploreSign::ThreeInFour, 0);
+}
+
+/// Exploration 001's fourth question, one trial late, from the assignment.
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_on_seed_22_from_the_assignment_explore() {
+    explore_arm(0, Reversal::AssignmentFirst, ExploreSign::Answer, 1);
+}
+
+/// Exploration 001's fourth question, one trial late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_on_seed_22_from_the_mirrored_assignment_explore() {
+    explore_arm(0, Reversal::MirroredFirst, ExploreSign::Answer, 1);
+}
+
+/// Exploration 001's fourth question, two trials late, from the assignment.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_on_seed_22_from_the_assignment_explore() {
+    explore_arm(0, Reversal::AssignmentFirst, ExploreSign::Answer, 2);
+}
+
+/// Exploration 001's fourth question, two trials late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_on_seed_22_from_the_mirrored_assignment_explore() {
+    explore_arm(0, Reversal::MirroredFirst, ExploreSign::Answer, 2);
+}
