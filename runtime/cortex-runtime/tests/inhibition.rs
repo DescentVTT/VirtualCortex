@@ -401488,11 +401488,17 @@ fn explore_arm(n: usize, arm: Reversal, sign: ExploreSign, late: usize) {
         crossings(twin)
     );
     if sign == ExploreSign::ThreeInFour {
+        // The network's arm at three in four with the gain held: H-35's on seed 22, H-36's on
+        // seeds 23 and 24.
+        let (round, held) = match n.checked_sub(1) {
+            None => ("H-35", IN_FOUR_BLOCKS_1024[k]),
+            Some(m) => ("H-36", OTHERS_BLOCKS[m][k]),
+        };
         eprintln!(
-            "DUMP {name} H-35's arm: last 128 correct {:?} crossings {:?} correct by block {:?}",
-            mapping_correct(IN_FOUR_BLOCKS_1024[k]),
-            crossings(IN_FOUR_BLOCKS_1024[k]),
-            curve(IN_FOUR_BLOCKS_1024[k])
+            "DUMP {name} {round}'s arm: last 128 correct {:?} crossings {:?} correct by block {:?}",
+            mapping_correct(held),
+            crossings(held),
+            curve(held)
         );
     }
     eprintln!(
@@ -401565,4 +401571,33 @@ fn a_reward_two_trials_late_on_seed_22_from_the_assignment_explore() {
 #[ignore]
 fn a_reward_two_trials_late_on_seed_22_from_the_mirrored_assignment_explore() {
     explore_arm(0, Reversal::MirroredFirst, ExploreSign::Answer, 2);
+}
+
+/// Exploration 001's third question on seed 23, from the assignment: read beside H-36's arm on
+/// that network, the reward at three in four with the gain held.
+#[test]
+#[ignore]
+fn three_in_four_on_the_default_s_network_on_seed_23_from_the_assignment_explore() {
+    explore_arm(1, Reversal::AssignmentFirst, ExploreSign::ThreeInFour, 0);
+}
+
+/// Exploration 001's third question on seed 23, from the mirrored assignment.
+#[test]
+#[ignore]
+fn three_in_four_on_the_default_s_network_on_seed_23_from_the_mirrored_assignment_explore() {
+    explore_arm(1, Reversal::MirroredFirst, ExploreSign::ThreeInFour, 0);
+}
+
+/// Exploration 001's third question on seed 24, from the assignment.
+#[test]
+#[ignore]
+fn three_in_four_on_the_default_s_network_on_seed_24_from_the_assignment_explore() {
+    explore_arm(2, Reversal::AssignmentFirst, ExploreSign::ThreeInFour, 0);
+}
+
+/// Exploration 001's third question on seed 24, from the mirrored assignment.
+#[test]
+#[ignore]
+fn three_in_four_on_the_default_s_network_on_seed_24_from_the_mirrored_assignment_explore() {
+    explore_arm(2, Reversal::MirroredFirst, ExploreSign::ThreeInFour, 0);
 }
