@@ -697,24 +697,34 @@ impl AgeScore {
 /// least `lead`, and so strictly the lowest; none until every age has a score, and none where
 /// no age leads by as much.
 fn delay_leader(scores: &[Option<u64>], lead: u64) -> Option<u8> {
-    let mut lowest: Option<(usize, u64)> = None;
-    for (age, &score) in scores.iter().enumerate() {
-        let score = score?;
-        if lowest.is_none_or(|(_, low)| score < low) {
-            lowest = Some((age, score));
-        }
-    }
-    let (leader, low) = lowest?;
-    scores
-        .iter()
-        .enumerate()
-        .filter(|&(age, _)| age != leader)
-        .all(|(_, &score)| {
-            score
-                .and_then(|s| s.checked_sub(low))
-                .is_some_and(|gap| gap > 0 && gap >= lead)
+    (0..scores.len())
+        .find(|&age| {
+            let Some(low) = scores.get(age).copied().flatten() else {
+                return false;
+            };
+            scores
+                .iter()
+                .enumerate()
+                .filter(|&(other, _)| other != age)
+                .all(|(_, &score)| {
+                    score
+                        .and_then(|s| s.checked_sub(low))
+                        .is_some_and(|gap| gap > 0 && gap >= lead)
+                })
         })
-        .then_some(leader as u8)
+        .map(|age| age as u8)
+}
+
+/// The run after a reward read from age zero (ADR-0216): one more where the same age other than
+/// zero leads again, one where another such age leads, and none where age zero or no age leads.
+fn delay_run_after(run: Option<(u8, u8)>, leader: Option<u8>) -> Option<(u8, u8)> {
+    match (leader, run) {
+        (Some(age), Some((leading, running))) if age != 0 && age == leading => {
+            Some((age, running.saturating_add(1)))
+        }
+        (Some(age), _) if age != 0 => Some((age, 1)),
+        _ => None,
+    }
 }
 
 /// The delay read (ADR-0216, ADR-0217): the age the engine consolidates at, whether its first
@@ -2263,16 +2273,10 @@ impl<const CAP: usize> Executor<CAP> {
             let lead = u64::from(reward_q16.unsigned_abs()).saturating_mul(DELAY_WINDOW as u64)
                 >> DELAY_LEAD_SHIFT;
             let ages = usize::from(self.kept_addresses).saturating_add(1);
-            delay.run = match (
-                delay_leader(scores.get(..ages).unwrap_or(&[]), lead),
+            delay.run = delay_run_after(
                 delay.run,
-            ) {
-                (Some(age), Some((leading, running))) if age != 0 && age == leading => {
-                    Some((age, running.saturating_add(1)))
-                }
-                (Some(age), _) if age != 0 => Some((age, 1)),
-                _ => None,
-            };
+                delay_leader(scores.get(..ages).unwrap_or(&[]), lead),
+            );
             if let Some((age, DELAY_RUN)) = delay.run {
                 if let Some(mut weights) =
                     delay.weights.get_mut(usize::from(age)).map(std::mem::take)
@@ -8061,6 +8065,8 @@ mod delay_prop {
         assert_eq!(delay_leader(&[Some(90), Some(89)], 1), Some(1));
         assert_eq!(delay_leader(&[Some(200), Some(90), None], 10), None);
         assert_eq!(delay_leader(&[None, Some(0)], 0), None);
+        assert_eq!(delay_leader(&[Some(0), None], 0), None);
+        assert_eq!(delay_leader(&[None], 0), None);
         assert_eq!(delay_leader(&[], 0), None);
         assert_eq!(delay_leader(&[Some(u64::MAX - 1), Some(u64::MAX)], 2), None);
         assert_eq!(
@@ -8072,6 +8078,38 @@ mod delay_prop {
             Some(0),
             "one other at the lead's edge"
         );
+    }
+
+    /// The run at its edges (ADR-0216): the same age other than zero leading again adds one, to
+    /// its width's end; another such age leading starts again at one; age zero leading, or no
+    /// age, ends it, a run of 63 included.
+    #[test]
+    fn the_run_counts_one_age_leading_again_and_starts_again_at_another() {
+        assert_eq!(delay_run_after(None, Some(1)), Some((1, 1)));
+        assert_eq!(delay_run_after(None, Some(4)), Some((4, 1)));
+        assert_eq!(delay_run_after(Some((1, 5)), Some(1)), Some((1, 6)));
+        assert_eq!(
+            delay_run_after(Some((2, 63)), Some(2)),
+            Some((2, DELAY_RUN))
+        );
+        assert_eq!(
+            delay_run_after(Some((1, u8::MAX)), Some(1)),
+            Some((1, u8::MAX))
+        );
+        assert_eq!(
+            delay_run_after(Some((1, 5)), Some(2)),
+            Some((2, 1)),
+            "another age"
+        );
+        assert_eq!(
+            delay_run_after(Some((2, 63)), Some(1)),
+            Some((1, 1)),
+            "another age"
+        );
+        assert_eq!(delay_run_after(Some((2, 63)), Some(0)), None, "age zero");
+        assert_eq!(delay_run_after(None, Some(0)), None, "age zero");
+        assert_eq!(delay_run_after(Some((1, 5)), None), None, "no leader");
+        assert_eq!(delay_run_after(None, None), None);
     }
 
     /// The move made once (ADR-0216). Two armed units under one kept address: unit 1 kicked at
