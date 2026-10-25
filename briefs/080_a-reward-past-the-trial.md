@@ -78,7 +78,7 @@ Re-derived on 2026-10-25 against `main` at `045952a`. Line numbers move; the sym
 
 ## Deliverables
 
-- [ ] **The kept addresses and the task's delay, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The kept addresses and the task's delay, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - ADR-0207's `Config::kept_addresses`, the trial's close and the reward of an age, with their refusals.
   - The task's delay.
   - Unset, every run the run it was, bit for bit; kept and rewarded at age zero, the same.
@@ -87,27 +87,27 @@ Re-derived on 2026-10-25 against `main` at `045952a`. Line numbers move; the sym
     - over the lattice against an oracle;
     - the twin at age zero against the run without the addresses kept;
     - an entry spent once, and a reward of an age not kept refused.
-- [ ] **H-43's protocol, in a new ADR at the next free number, kind `protocol`, before any arm runs at a delay.**
+- [x] **H-43's protocol, in a new ADR at the next free number, kind `protocol`, before any arm runs at a delay.**
   - The networks, the delays, the arms.
   - H-43's clauses and constants, restated from ADR-0207 and pinned in the tests.
   - The three predicted readings as rules over the tables.
   - How the address each reward writes is read against the rewarded trial's pair.
-- [ ] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests, every pinned number held; and the twin at age zero on each network, H-42's arm bit for bit.
-- [ ] **The arms**: twelve, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
-- [ ] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
-- [ ] **H-43's report**, `docs/research/H-43.md`: its `verdict:` set, the readings' tables, each arm beside its on-time twin and exploration 001's arm at the same delay, and the dispatches that are their evidence.
-- [ ] **The measured ADR**, kind `measured`, short:
+- [x] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests, every pinned number held; and the twin at age zero on each network, H-42's arm bit for bit.
+- [x] **The arms**: twelve, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
+- [x] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
+- [x] **H-43's report**, `docs/research/H-43.md`: its `verdict:` set, the readings' tables, each arm beside its on-time twin and exploration 001's arm at the same delay, and the dispatches that are their evidence.
+- [x] **The measured ADR**, kind `measured`, short:
   - the verdict per network, arm, delay and clause, in one table;
   - each of the three predicted readings, held or missed, in a line;
   - the step of the stopping rule reached, and the next decision it names, not taken.
-- [ ] **The gate.** At most one runtime test: H-43's clauses and its predicted readings' rules at their edges, over tables written by hand.
-- [ ] **The documents, in the same pull request.**
+- [x] **The gate.** At most one runtime test: H-43's clauses and its predicted readings' rules at their edges, over tables written by hand.
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
   - Whitepaper: where the reward's path and the task are described, the kept addresses and the delay; and the tables written by `node scripts/adr-index.mjs`.
   - `CHANGELOG.md`, one entry of at most 400 characters a change.
   - `README.md` and `docs/zh-TW/README.md` as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 080 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 080 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
