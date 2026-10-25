@@ -448718,11 +448718,15 @@ enum UntoldAge {
     Zero,
     /// The host's switch: age zero, until an age other than the one in use has had the lowest
     /// score at `UNTOLD_WINDOW` consecutive rewards, below every other age's by at least
-    /// `lead_q16` on the mean at each; then that age. Its arms are written once the untold arms
-    /// are read, their lead chosen from them.
-    #[allow(dead_code)]
+    /// `lead_q16` on the mean at each; then that age.
     Switch { lead_q16: i32 },
 }
+
+/// The switch the arms run (exploration 003), its lead chosen from the eight arms told and untold
+/// on seed 22 at `4f64c1b`: a thirty-second of the reward, the smallest of `UNTOLD_LEADS` above
+/// the largest lead an age other than the delay held over 64 consecutive rewards in any of them,
+/// 0.0275 of the reward (age zero, untold, two trials late from the mirrored assignment).
+const UNTOLD_SWITCH: UntoldAge = UntoldAge::Switch { lead_q16: ONE / 32 };
 
 /// When the switch would first have moved, at a lead of `UNTOLD_LEADS` (exploration 003): the
 /// lead, the trial and the age an age other than zero first completed the run at, and the trial
@@ -449238,4 +449242,33 @@ fn a_delay_untold_read_by_age_two_trials_late_on_seed_22_from_the_assignment_exp
 #[ignore]
 fn a_delay_untold_read_by_age_two_trials_late_on_seed_22_from_the_mirrored_assignment_explore() {
     untold_arm(0, Reversal::MirroredFirst, 2, UntoldAge::Zero);
+}
+
+/// Exploration 003, the host's switch: seed 22, one trial late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_one_trial_late_on_seed_22_from_the_assignment_explore() {
+    untold_arm(0, Reversal::AssignmentFirst, 1, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 22, one trial late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_one_trial_late_on_seed_22_from_the_mirrored_assignment_explore() {
+    untold_arm(0, Reversal::MirroredFirst, 1, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 22, two trials late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_two_trials_late_on_seed_22_from_the_assignment_explore() {
+    untold_arm(0, Reversal::AssignmentFirst, 2, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 22, two trials late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_two_trials_late_on_seed_22_from_the_mirrored_assignment_explore()
+{
+    untold_arm(0, Reversal::MirroredFirst, 2, UNTOLD_SWITCH);
 }
