@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.11.0
+version: 5.12.0
 status: active
 date: 2026-10-25
 ---
@@ -11,7 +11,7 @@ date: 2026-10-25
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.11.0 |
+| Version | 5.12.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-25 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2536,6 +2536,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md) | A reward past the trial, its address kept, its protocol | accepted |
 | [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | A reward past the trial, its address kept, measured | accepted |
 | [ADR-0211](adr/0211-the-round-shortened.md) | The round shortened | accepted |
+| [ADR-0212](adr/0212-three-in-four-on-the-default.md) | A reward right three times in four, on the default | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2659,11 +2660,12 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-73 | The Traditional Chinese guide's row for Appendix C named the milestones *"M1 至 M9"*; Appendix C lists M1 to M15. | `docs/zh-TW/README.md` | **Resolved** ([ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)): the row is rewritten with the guide's other rows that carried status. |
 | F-74 | `README.md`'s Status said the repository *"is at the state-model stage"*, where `CLAUDE.md` said it *"is past the state-model stage"*. | `README.md` | **Resolved** ([ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)): README's Status links `docs/STATUS.md` and names no stage. |
 | F-75 | The Traditional Chinese guide's row for §11 counted the hypotheses as *"H-1 至 H-41"*; §11.1 has listed H-42 since [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), whitepaper 5.1.0. | `docs/zh-TW/README.md` | **Resolved** ([ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)): the row reads H-1 至 H-42. |
-| F-76 | The gate's step *"Test in the release profile"* was bounded at 10 minutes with the comment *"192 s at the longest"* ([ADR-0159](adr/0159-the-gates-jobs-bounded.md)); the last twelve green runs took up to 516 s, and brief 078's pull request hit the bound once on a commit that changed only documents. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0205](adr/0205-the-probe-in-the-engines-default.md)): the bound is 26 minutes, three times 516 s by ADR-0159's rule; where the rounds' pinned tables live, which grows the test crates' compile time, is named and not taken. |
+| F-76 | The gate's step *"Test in the release profile"* was bounded at 10 minutes with the comment *"192 s at the longest"* ([ADR-0159](adr/0159-the-gates-jobs-bounded.md)); the last twelve green runs took up to 516 s, and brief 078's pull request hit the bound once on a commit that changed only documents. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0205](adr/0205-the-probe-in-the-engines-default.md), [ADR-0212](adr/0212-three-in-four-on-the-default.md)): the bound is 26 minutes, three times 516 s by ADR-0159's rule. What grows the step is its tests, not the pinned tables' build (F-81), and the tables stay where they are. |
 | F-77 | [ADR-0054](adr/0054-the-causal-count-inside-the-loop.md)'s text says its rule held *"on the lattice at 1.75 at every size"*; its own table puts the lattice 0.19 and 0.22 below the gross ratio at 1 024 units and 0.18 and 0.22 at 4 096. Exploration 001 noticed it. | ADR-0054 | **Resolved** ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): recorded here; ADR-0054 is accepted and is not edited, and the rule's outcome does not depend on it. |
-| F-78 | The sweep of brief 079's dispatch, run 40097581635, had its runtime-2 job cut at its 330-minute bound, 16:58Z to 22:29Z on 2026-10-24, with 18 of its 123 mutants untested; at twelve shards the runtime's jobs took 2 h 13 min to 5 h 31 min. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): the runtime's sweep is dealt over sixteen shards; the cause, the test crates growing with the rounds' pinned tables, is F-76's. |
+| F-78 | The sweep of brief 079's dispatch, run 40097581635, had its runtime-2 job cut at its 330-minute bound, 16:58Z to 22:29Z on 2026-10-24, with 18 of its 123 mutants untested; at twelve shards the runtime's jobs took 2 h 13 min to 5 h 31 min. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md), [ADR-0212](adr/0212-three-in-four-on-the-default.md)): the runtime's sweep is dealt over sixteen shards, whose jobs took 2 h 15 min to 4 h 01 min on brief 080's run. Its time is its tests', not the tables' build (F-81). |
 | F-79 | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) bounds a reward's age *"below `kept_addresses`"*, and runs a delay of two at `kept_addresses` 2: its text refuses its own run. | ADR-0207 | **Resolved** ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)): `kept_addresses` is built as the oldest age a reward may name, with one entry more held; ADR-0207 is accepted and is not edited. |
 | F-80 | The workflow's header said the runtime's sweep ran *"in twelve shards"* after [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) dealt it over sixteen. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0211](adr/0211-the-round-shortened.md)): the header says sixteen. |
+| F-81 | F-76 and F-78 name the rounds' pinned tables, growing the test crates' compile time, as the cause of the release step's growth and of the sweep's length. Exploration 002 read, exploratory, the release build no slower with the tables in the source than in a data file, and a sweep's machine time 12 % builds and the rest tests. | F-76, F-78 | **Resolved** ([ADR-0212](adr/0212-three-in-four-on-the-default.md)): recorded; the tables stay in the test sources. |
 
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->
@@ -2726,6 +2728,7 @@ A hypothesis's text, its stopping rule and its rounds' readings are in its repor
 | H-41 | the inhibitory target by the same read, on three networks | yes | [ADR-0192](adr/0192-the-inhibitory-target-by-the-same-read.md), [ADR-0195](adr/0195-the-inhibitory-target-by-the-same-read-measured.md) | [H-41](research/H-41.md) |
 | H-42 | a step the engine makes from its own loop, on three networks | yes | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md), [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | [H-42](research/H-42.md) |
 | H-43 | a reward past the trial, its address kept, on three networks | yes | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md), [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md), [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | [H-43](research/H-43.md) |
+| H-44 | a reward right three times in four, on the default, beside a control at step zero | open | [ADR-0212](adr/0212-three-in-four-on-the-default.md) | [H-44](research/H-44.md) |
 <!-- adr-index: end hypotheses -->
 
 **The open questions, and those settled,** that no hypothesis numbers:

@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A reward right three times in four, on the default ([ADR-0212](docs/adr/0212-three-in-four-on-the-default.md)); H-44; brief 081; F-81; whitepaper 5.12.0.** H-35's question on seeds 22, 23 and 24 beside a control whose image's step is zero, predicted yes. The pinned tables stay where they are, F-76 and F-78 are resolved, and brief 080's sweep is recorded: no survivor.
 - **The round shortened ([ADR-0211](docs/adr/0211-the-round-shortened.md)); F-80; whitepaper 5.11.0.** A round dispatches its calibration with its arms, and its reproduction runs only its own tests (`-f only`). The sweep runs on the schedule alone, the dispatch's default scope is `exhaustive`, and a pull request of documents alone skips the four Rust jobs.
 - **A reward past the trial, measured ([ADR-0210](docs/adr/0210-a-reward-past-the-trial-its-address-kept-measured.md)); H-43 = yes at step 3; whitepaper 5.10.0.** On seeds 22, 23 and 24, at one and two trials' delay, both arms held H-25's four clauses, 118 to 128 of 128. Readings 1 and 3 held, reading 2 missed. Readings in `docs/research/H-43.md`.
 - **A reward past the trial, its protocol ([ADR-0209](docs/adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md)).** H-43's constants, clauses and three readings are code in `tests/inhibition.rs` before any arm at a delay. Six twins on time are held to H-42's arms bit for bit, and the address each reward writes is read from the engine.
