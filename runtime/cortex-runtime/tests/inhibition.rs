@@ -227,6 +227,21 @@
 mod harness;
 use harness::*;
 
+// Exploration 002 (ADR-0193): the pinned tables of at least a kilobyte whose values are plain
+// literals live in tests/data/inhibition.tables and are read from it at run time
+// (tests/instrument/data_file.rs). Not in main.
+#[allow(dead_code)]
+#[path = "instrument/data_file.rs"]
+mod data_file;
+use std::sync::LazyLock;
+use data_file::DataFile;
+static DATA_FILE: LazyLock<DataFile> = LazyLock::new(|| {
+    DataFile::from_file(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/inhibition.tables"
+    ))
+});
+
 use cortex_core::{
     ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, Polarity,
     SYNAPSES_PER_BLOCK, SynapseBlock, istdp_alpha_q1_15,
@@ -1734,6 +1749,7 @@ const INHIBITION_BLOCKS_1024: [&[Block]; 3] = [
         ),
     ],
 ];
+static INHIBITION_BLOCKS_1024__READ: LazyLock<[&[Block]; 3]> = LazyLock::new(|| DATA_FILE.read("INHIBITION_BLOCKS_1024"));
 const INHIBITION_TRACES_1024: [u64; 3] =
     [0x6e6a4106db4a096f, 0x644d8c85291aa525, 0x9536fa34086e28a9];
 const INHIBITION_COMPOSITIONS_1024: [&[Composition]; 3] = [
@@ -2896,6 +2912,7 @@ const INHIBITION_COMPOSITIONS_1024: [&[Composition]; 3] = [
         ),
     ],
 ];
+static INHIBITION_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 3]> = LazyLock::new(|| DATA_FILE.read("INHIBITION_COMPOSITIONS_1024"));
 const INHIBITION_EARNED_1024: [&[EarnedBlock]; 3] = [
     &[
         (
@@ -3264,6 +3281,7 @@ const INHIBITION_EARNED_1024: [&[EarnedBlock]; 3] = [
         ([[15, 12, 2], [15, 13, 7]], 0, [[0, 0], [0, 0]], 0, 0),
     ],
 ];
+static INHIBITION_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 3]> = LazyLock::new(|| DATA_FILE.read("INHIBITION_EARNED_1024"));
 const INHIBITION_READ_1024: [u64; 3] = [0x9125c69cd9000bff, 0xbb2bfa57ebdfaff0, 0xfbb9d0ae596907cf];
 const INHIBITION_CENSUS_1024: [&[(u32, u64)]; 3] = [
     &[
@@ -5030,6 +5048,7 @@ const REVERSAL_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static REVERSAL_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("REVERSAL_BLOCKS_1024"));
 const REVERSAL_TRACES_1024: [u64; 2] = [0x64a1d9adad28586c, 0x742fba322cc8bd8a];
 const REVERSAL_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -5805,6 +5824,7 @@ const REVERSAL_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static REVERSAL_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("REVERSAL_COMPOSITIONS_1024"));
 const REVERSAL_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -6147,6 +6167,7 @@ const REVERSAL_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static REVERSAL_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("REVERSAL_EARNED_1024"));
 const REVERSAL_READ_1024: [u64; 2] = [0xfa696f8fb2545fd6, 0x5c13c015d378e9a5];
 const REVERSAL_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -9943,6 +9964,7 @@ const PUNISHED_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static PUNISHED_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("PUNISHED_BLOCKS_1024"));
 const PUNISHED_TRACES_1024: [u64; 2] = [0x987e1bcfabe50662, 0x7767c0e1a4be0c88];
 const PUNISHED_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -12254,6 +12276,7 @@ const PUNISHED_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static PUNISHED_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("PUNISHED_COMPOSITIONS_1024"));
 const PUNISHED_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -13268,6 +13291,7 @@ const PUNISHED_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static PUNISHED_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("PUNISHED_EARNED_1024"));
 const PUNISHED_READ_1024: [u64; 2] = [0xb299ee60cde2ecbd, 0xfafd2eaa5834f3fb];
 const PUNISHED_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -13886,6 +13910,7 @@ const PUNISHED_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static PUNISHED_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("PUNISHED_MOVES_1024"));
 /// The one signed image every arm of H-18, H-19 and H-20 decodes, its CRC-64. ADR-0114 moved
 /// the format from 16 to 17, ADR-0123 from 17 to 18, ADR-0131 from 18 to 19, ADR-0134 from 19 to
 /// 20, ADR-0155 from 20 to 21, ADR-0180 from 21 to 22, ADR-0189 from 22 to 23, ADR-0194 from
@@ -17222,6 +17247,7 @@ const CRITIC_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static CRITIC_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("CRITIC_BLOCKS_1024"));
 const CRITIC_TRACES_1024: [u64; 2] = [0x994424537f5461cc, 0x286698c2385a3ee8];
 const CRITIC_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -19533,6 +19559,7 @@ const CRITIC_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static CRITIC_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("CRITIC_COMPOSITIONS_1024"));
 const CRITIC_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -20547,6 +20574,7 @@ const CRITIC_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static CRITIC_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("CRITIC_EARNED_1024"));
 const CRITIC_READ_1024: [u64; 2] = [0x95f37c43af259777, 0xe3ed3b2b426c3c16];
 const CRITIC_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -21161,6 +21189,7 @@ const CRITIC_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static CRITIC_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("CRITIC_MOVES_1024"));
 /// Each stimulus's expectation at every block's end, `[A, B]`, per arm.
 const CRITIC_EXPECTED_1024: [&[[i32; 2]]; 2] = [
     &[
@@ -21312,6 +21341,7 @@ const CRITIC_EXPECTED_1024: [&[[i32; 2]]; 2] = [
         [58415, 57512],
     ],
 ];
+static CRITIC_EXPECTED_1024__READ: LazyLock<[&[[i32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("CRITIC_EXPECTED_1024"));
 /// The strong punishments of the old answer per block from the flip, `[A, B]`, per arm.
 const CRITIC_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
@@ -21415,6 +21445,7 @@ const CRITIC_STRONG_1024: [&[[u32; 2]]; 2] = [
         [1, 2],
     ],
 ];
+static CRITIC_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("CRITIC_STRONG_1024"));
 /// The four couplings at the end of the 1 537th trial, per arm, as read.
 const CRITIC_CARRY_1024: [[[i64; 2]; 2]; 2] = [
     [[7158812, 6283500], [6244171, 7664900]],
@@ -25076,6 +25107,7 @@ const SCHEDULE_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static SCHEDULE_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("SCHEDULE_BLOCKS_1024"));
 const SCHEDULE_TRACES_1024: [u64; 2] = [0xdd2a9318b3c5d288, 0xf4c8a5f8566b124e];
 const SCHEDULE_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -27131,6 +27163,7 @@ const SCHEDULE_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static SCHEDULE_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("SCHEDULE_COMPOSITIONS_1024"));
 const SCHEDULE_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -28033,6 +28066,7 @@ const SCHEDULE_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static SCHEDULE_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("SCHEDULE_EARNED_1024"));
 const SCHEDULE_READ_1024: [u64; 2] = [0x78e39782209b718a, 0x5d995a7cb23cf34f];
 const SCHEDULE_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -28587,6 +28621,7 @@ const SCHEDULE_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static SCHEDULE_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("SCHEDULE_MOVES_1024"));
 /// Each stimulus's expectation at every block's end after the second flip, `[A, B]`, per arm.
 const SCHEDULE_EXPECTED_1024: [&[[i32; 2]]; 2] = [
     &[
@@ -28722,6 +28757,7 @@ const SCHEDULE_EXPECTED_1024: [&[[i32; 2]]; 2] = [
         [57632, 60638],
     ],
 ];
+static SCHEDULE_EXPECTED_1024__READ: LazyLock<[&[[i32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("SCHEDULE_EXPECTED_1024"));
 /// The strong punishments of the old answer per block after the second flip, `[A, B]`, per
 /// arm.
 const SCHEDULE_STRONG_1024: [&[[u32; 2]]; 2] = [
@@ -28858,6 +28894,7 @@ const SCHEDULE_STRONG_1024: [&[[u32; 2]]; 2] = [
         [2, 1],
     ],
 ];
+static SCHEDULE_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("SCHEDULE_STRONG_1024"));
 /// The four couplings at the end of the first trial under each new mapping, per arm, as read;
 /// the first H-19's `CRITIC_CARRY_1024`.
 const SCHEDULE_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [
@@ -33694,6 +33731,7 @@ const TARGET_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static TARGET_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_BLOCKS_1024"));
 const TARGET_TRACES_1024: [u64; 2] = [0xde1db3a9d0229c28, 0x8e3df2a2880105e4];
 const TARGET_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -37541,6 +37579,7 @@ const TARGET_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static TARGET_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_COMPOSITIONS_1024"));
 const TARGET_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -39227,6 +39266,7 @@ const TARGET_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static TARGET_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_EARNED_1024"));
 const TARGET_READ_1024: [u64; 2] = [0x6a55577b78aa3ee3, 0xc993ae1f857b651b];
 const TARGET_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -40243,6 +40283,7 @@ const TARGET_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static TARGET_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_MOVES_1024"));
 const TARGET_EXPECTED_1024: [&[[i32; 2]]; 2] = [
     &[
         [4414, 2701],
@@ -40489,6 +40530,7 @@ const TARGET_EXPECTED_1024: [&[[i32; 2]]; 2] = [
         [51926, 58974],
     ],
 ];
+static TARGET_EXPECTED_1024__READ: LazyLock<[&[[i32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_EXPECTED_1024"));
 const TARGET_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
         [29, 33],
@@ -40687,6 +40729,7 @@ const TARGET_STRONG_1024: [&[[u32; 2]]; 2] = [
         [1, 2],
     ],
 ];
+static TARGET_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_STRONG_1024"));
 const TARGET_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [
     [
         [[7199710, 6283914], [6252480, 7725662]],
@@ -40945,6 +40988,7 @@ const TARGET_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
         [4938, 4815, 13854, 68],
     ],
 ];
+static TARGET_SPIKES_1024__READ: LazyLock<[&[[u64; CLASSES]]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_SPIKES_1024"));
 const TARGET_INHIBITION_1024: [&[ClassInhibition]; 2] = [
     &[
         ([23409359, 17312156, 124770397, 691377], 98),
@@ -41191,6 +41235,7 @@ const TARGET_INHIBITION_1024: [&[ClassInhibition]; 2] = [
         ([15601914, 21805192, 102605242, 611948], 856),
     ],
 ];
+static TARGET_INHIBITION_1024__READ: LazyLock<[&[ClassInhibition]; 2]> = LazyLock::new(|| DATA_FILE.read("TARGET_INHIBITION_1024"));
 const TARGET_AT_TARGET_1024: [[u32; 4]; 2] =
     [[47232, 47360, 47936, 46720], [47232, 47104, 47744, 45568]];
 const BELOW_1024: [Option<usize>; 2] = [None, None];
@@ -45808,6 +45853,7 @@ const VALUED_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static VALUED_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("VALUED_BLOCKS_1024"));
 const VALUED_TRACES_1024: [u64; 2] = [0x681281d3285393a0, 0xdbe1ca126a63d46a];
 const VALUED_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -49655,6 +49701,7 @@ const VALUED_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static VALUED_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("VALUED_COMPOSITIONS_1024"));
 const VALUED_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -51341,6 +51388,7 @@ const VALUED_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static VALUED_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("VALUED_EARNED_1024"));
 const VALUED_READ_1024: [u64; 2] = [0xdd005dc6e0a17e45, 0x23d08a00546bcf92];
 const VALUED_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -52359,6 +52407,7 @@ const VALUED_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static VALUED_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("VALUED_MOVES_1024"));
 const VALUED_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
         [10, 13],
@@ -52557,6 +52606,7 @@ const VALUED_STRONG_1024: [&[[u32; 2]]; 2] = [
         [2, 1],
     ],
 ];
+static VALUED_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("VALUED_STRONG_1024"));
 const VALUED_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [
     [
         [[7253276, 6272265], [6271038, 7729764]],
@@ -52815,6 +52865,7 @@ const VALUED_VALUES_1024: [&[ValueBlock]; 2] = [
         [[30, 1245414, 26, 601041], [34, 2117644, 33, 139217]],
     ],
 ];
+static VALUED_VALUES_1024__READ: LazyLock<[&[ValueBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("VALUED_VALUES_1024"));
 const VALUED_VALUE_HASH_1024: [u64; 2] = [0xb0940e292146584a, 0xeb35dbb21cb55aef];
 const VALUED_WEIGHTS_1024: [&[Weights]; 2] = [
     &[
@@ -53250,6 +53301,7 @@ const VALUED_WEIGHTS_1024: [&[Weights]; 2] = [
         ([62660, 16151, 140551, 121410, 63532, 8305], -9983, 10650),
     ],
 ];
+static VALUED_WEIGHTS_1024__READ: LazyLock<[&[Weights]; 2]> = LazyLock::new(|| DATA_FILE.read("VALUED_WEIGHTS_1024"));
 const CORRECT_VALUED_1024: [[u32; 4]; 2] = [[121, 96, 120, 100], [125, 89, 121, 113]];
 const OVER_VALUED_1024: [Option<(usize, usize, usize)>; 2] = [None, None];
 const ERRORS_VALUED_1024: [[(i64, u32); 4]; 2] = [
@@ -58041,6 +58093,7 @@ const WINDOWED_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static WINDOWED_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_BLOCKS_1024"));
 const WINDOWED_TRACES_1024: [u64; 2] = [0x8ef90c39dced6622, 0x43d6734476f03fe6];
 const WINDOWED_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -61888,6 +61941,7 @@ const WINDOWED_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static WINDOWED_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_COMPOSITIONS_1024"));
 const WINDOWED_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -63574,6 +63628,7 @@ const WINDOWED_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static WINDOWED_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_EARNED_1024"));
 const WINDOWED_READ_1024: [u64; 2] = [0x3c319186a48e56ed, 0x06ce93c8a99e5f8d];
 const WINDOWED_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -64591,6 +64646,7 @@ const WINDOWED_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static WINDOWED_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_MOVES_1024"));
 const WINDOWED_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
         [29, 34],
@@ -64789,6 +64845,7 @@ const WINDOWED_STRONG_1024: [&[[u32; 2]]; 2] = [
         [0, 1],
     ],
 ];
+static WINDOWED_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_STRONG_1024"));
 const WINDOWED_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [
     [
         [[7236049, 6287551], [6266034, 7765856]],
@@ -65047,6 +65104,7 @@ const WINDOWED_VALUES_1024: [&[ValueBlock]; 2] = [
         [[30, 1760084, 30, 205996], [34, 2095166, 33, 130322]],
     ],
 ];
+static WINDOWED_VALUES_1024__READ: LazyLock<[&[ValueBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_VALUES_1024"));
 const WINDOWED_VALUE_HASH_1024: [u64; 2] = [0x763d3a5224fbeaa1, 0xe459949f5cfa3607];
 const WINDOWED_WEIGHTS_1024: [&[Weights]; 2] = [
     &[
@@ -65294,6 +65352,7 @@ const WINDOWED_WEIGHTS_1024: [&[Weights]; 2] = [
         ([13397, 243399, 245641, 6599, -5915, 903], -1505, 5732),
     ],
 ];
+static WINDOWED_WEIGHTS_1024__READ: LazyLock<[&[Weights]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_WEIGHTS_1024"));
 const WINDOWED_ADMITTED_1024: [&[Admitted]; 2] = [
     &[
         [[14, 1677, 2, 26, 19, 0], [11, 4, 1525, 22, 15, 0]],
@@ -65540,6 +65599,7 @@ const WINDOWED_ADMITTED_1024: [&[Admitted]; 2] = [
         [[15, 1529, 2, 15, 23, 1], [14, 6, 1731, 18, 15, 0]],
     ],
 ];
+static WINDOWED_ADMITTED_1024__READ: LazyLock<[&[Admitted]; 2]> = LazyLock::new(|| DATA_FILE.read("WINDOWED_ADMITTED_1024"));
 const CORRECT_WINDOWED_1024: [[u32; 4]; 2] = [[120, 121, 120, 115], [124, 116, 116, 123]];
 const OVER_WINDOWED_1024: [Option<(usize, usize, usize)>; 2] = [None, None];
 const STIMULUS_VALUES_WINDOWED_1024: [[[StimulusValue; 2]; 4]; 2] = [
@@ -71059,6 +71119,7 @@ const UNADDRESSED_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static UNADDRESSED_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_BLOCKS_1024"));
 const UNADDRESSED_TRACES_1024: [u64; 2] = [0x56c51bc47386d3a4, 0xaa1db7bc2f35b6a2];
 const UNADDRESSED_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -74906,6 +74967,7 @@ const UNADDRESSED_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static UNADDRESSED_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_COMPOSITIONS_1024"));
 const UNADDRESSED_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -76592,6 +76654,7 @@ const UNADDRESSED_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static UNADDRESSED_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_EARNED_1024"));
 const UNADDRESSED_READ_1024: [u64; 2] = [0x4f6498e2a0948953, 0x0be05d25b4194d89];
 const UNADDRESSED_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -77609,6 +77672,7 @@ const UNADDRESSED_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static UNADDRESSED_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_MOVES_1024"));
 const UNADDRESSED_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
         [23, 28],
@@ -77807,6 +77871,7 @@ const UNADDRESSED_STRONG_1024: [&[[u32; 2]]; 2] = [
         [4, 4],
     ],
 ];
+static UNADDRESSED_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_STRONG_1024"));
 const UNADDRESSED_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [
     [
         [[6790629, 6603019], [6376170, 7297492]],
@@ -78065,6 +78130,7 @@ const UNADDRESSED_VALUES_1024: [&[ValueBlock]; 2] = [
         [[30, -478979, 13, 1071209], [34, 1586094, 30, 570947]],
     ],
 ];
+static UNADDRESSED_VALUES_1024__READ: LazyLock<[&[ValueBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_VALUES_1024"));
 const UNADDRESSED_VALUE_HASH_1024: [u64; 2] = [0x0ee5a1c6deebb1ce, 0x7010ccb90c22e0b9];
 const UNADDRESSED_WEIGHTS_1024: [&[Weights]; 2] = [
     &[
@@ -78312,6 +78378,7 @@ const UNADDRESSED_WEIGHTS_1024: [&[Weights]; 2] = [
         ([10666, -59180, 187648, 11953, 7082, 158], -2257, 4785),
     ],
 ];
+static UNADDRESSED_WEIGHTS_1024__READ: LazyLock<[&[Weights]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_WEIGHTS_1024"));
 const UNADDRESSED_ADMITTED_1024: [&[Admitted]; 2] = [
     &[
         [[15, 1676, 2, 26, 20, 0], [11, 3, 1525, 22, 15, 0]],
@@ -78558,6 +78625,7 @@ const UNADDRESSED_ADMITTED_1024: [&[Admitted]; 2] = [
         [[14, 1530, 2, 16, 23, 1], [16, 5, 1732, 20, 18, 0]],
     ],
 ];
+static UNADDRESSED_ADMITTED_1024__READ: LazyLock<[&[Admitted]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_ADMITTED_1024"));
 const UNADDRESSED_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
     &[
         [4590, 4749, 13015, 72],
@@ -78804,6 +78872,7 @@ const UNADDRESSED_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
         [5265, 4863, 14079, 76],
     ],
 ];
+static UNADDRESSED_SPIKES_1024__READ: LazyLock<[&[[u64; CLASSES]]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_SPIKES_1024"));
 const UNADDRESSED_CELLS_1024: [&[Cells]; 2] = [
     &[
         [
@@ -83610,6 +83679,7 @@ const UNADDRESSED_CELLS_1024: [&[Cells]; 2] = [
         ],
     ],
 ];
+static UNADDRESSED_CELLS_1024__READ: LazyLock<[&[Cells]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_CELLS_1024"));
 const UNADDRESSED_WENT_1024: [&[Went]; 2] = [
     &[
         [[794720, -768120], [773030, -825838], [4664181, -4505003]],
@@ -83868,6 +83938,7 @@ const UNADDRESSED_WENT_1024: [&[Went]; 2] = [
         [[862842, -770386], [750785, -694465], [3826773, -4320654]],
     ],
 ];
+static UNADDRESSED_WENT_1024__READ: LazyLock<[&[Went]; 2]> = LazyLock::new(|| DATA_FILE.read("UNADDRESSED_WENT_1024"));
 const CORRECT_UNADDRESSED_1024: [[u32; 4]; 2] = [[79, 78, 64, 87], [89, 67, 64, 83]];
 const OVER_UNADDRESSED_1024: [Option<(usize, usize, usize)>; 2] = [None, None];
 const LEFT_UNADDRESSED_1024: [Option<(usize, i64)>; 2] = [None, None];
@@ -88394,6 +88465,7 @@ const DRAWN_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static DRAWN_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_BLOCKS_1024"));
 const DRAWN_TRACES_1024: [u64; 2] = [0x113d0b33181135e2, 0xee98a94a4ba25846];
 const DRAWN_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -92241,6 +92313,7 @@ const DRAWN_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static DRAWN_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_COMPOSITIONS_1024"));
 const DRAWN_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -93927,6 +94000,7 @@ const DRAWN_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static DRAWN_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_EARNED_1024"));
 const DRAWN_READ_1024: [u64; 2] = [0x606fddf2c6648248, 0xda51758177c02783];
 const DRAWN_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -94945,6 +95019,7 @@ const DRAWN_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static DRAWN_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_MOVES_1024"));
 const DRAWN_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
         [29, 34],
@@ -95143,6 +95218,7 @@ const DRAWN_STRONG_1024: [&[[u32; 2]]; 2] = [
         [1, 1],
     ],
 ];
+static DRAWN_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_STRONG_1024"));
 const DRAWN_AT_FLIPS_1024: [[[[i64; 2]; 2]; 3]; 2] = [
     [
         [[7234988, 6281675], [6286916, 7794124]],
@@ -95401,6 +95477,7 @@ const DRAWN_VALUES_1024: [&[ValueBlock]; 2] = [
         [[30, 1682846, 27, 259123], [34, 1850003, 31, 348697]],
     ],
 ];
+static DRAWN_VALUES_1024__READ: LazyLock<[&[ValueBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_VALUES_1024"));
 const DRAWN_VALUE_HASH_1024: [u64; 2] = [0x4c87997e17939b2d, 0xcdb1e67e960ddd86];
 const DRAWN_WEIGHTS_1024: [&[Weights]; 2] = [
     &[
@@ -95648,6 +95725,7 @@ const DRAWN_WEIGHTS_1024: [&[Weights]; 2] = [
         ([15198, 220144, 213152, 6182, -5791, 832], -1558, 5111),
     ],
 ];
+static DRAWN_WEIGHTS_1024__READ: LazyLock<[&[Weights]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_WEIGHTS_1024"));
 const DRAWN_ADMITTED_1024: [&[Admitted]; 2] = [
     &[
         [[14, 1677, 2, 26, 19, 0], [11, 4, 1525, 22, 15, 0]],
@@ -95894,6 +95972,7 @@ const DRAWN_ADMITTED_1024: [&[Admitted]; 2] = [
         [[15, 1529, 2, 15, 22, 1], [14, 6, 1731, 17, 16, 0]],
     ],
 ];
+static DRAWN_ADMITTED_1024__READ: LazyLock<[&[Admitted]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_ADMITTED_1024"));
 const DRAWN_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
     &[
         [4630, 4743, 13027, 71],
@@ -96140,6 +96219,7 @@ const DRAWN_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
         [4965, 4817, 13803, 69],
     ],
 ];
+static DRAWN_SPIKES_1024__READ: LazyLock<[&[[u64; CLASSES]]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_SPIKES_1024"));
 const DRAWN_CELLS_1024: [&[Cells]; 2] = [
     &[
         [
@@ -100946,6 +101026,7 @@ const DRAWN_CELLS_1024: [&[Cells]; 2] = [
         ],
     ],
 ];
+static DRAWN_CELLS_1024__READ: LazyLock<[&[Cells]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_CELLS_1024"));
 const DRAWN_WENT_1024: [&[Went]; 2] = [
     &[
         [[367457, -298249], [275725, -356364], [10317, -5330]],
@@ -101192,6 +101273,7 @@ const DRAWN_WENT_1024: [&[Went]; 2] = [
         [[209775, -165055], [35085, -53439], [1385, -1678]],
     ],
 ];
+static DRAWN_WENT_1024__READ: LazyLock<[&[Went]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_WENT_1024"));
 const DRAWN_SOURCED_1024: [&[Sourced]; 2] = [
     &[
         [[14, 1677, 2, 26, 19, 0], [11, 4, 1525, 22, 15, 0]],
@@ -101438,6 +101520,7 @@ const DRAWN_SOURCED_1024: [&[Sourced]; 2] = [
         [[15, 1529, 2, 15, 22, 1], [14, 6, 1731, 17, 16, 0]],
     ],
 ];
+static DRAWN_SOURCED_1024__READ: LazyLock<[&[Sourced]; 2]> = LazyLock::new(|| DATA_FILE.read("DRAWN_SOURCED_1024"));
 const DRAWN_SOURCES_HASH_1024: [u64; 2] = [0x39f157c1260bb9c5, 0x5285cd4173ec5f47];
 const CORRECT_DRAWN_1024: [[u32; 4]; 2] = [[122, 124, 119, 116], [124, 118, 123, 117]];
 const OVER_DRAWN_1024: [Option<(usize, usize, usize)>; 2] = [None, None];
@@ -104735,6 +104818,7 @@ const RELEASED_COSTED_1024: [&[Costed]; 2] = [
         ),
     ],
 ];
+static RELEASED_COSTED_1024__READ: LazyLock<[&[Costed]; 2]> = LazyLock::new(|| DATA_FILE.read("RELEASED_COSTED_1024"));
 const RELEASED_HEARD_1024: [&[Heard]; 2] = [
     &[
         [[730, 503, 54], [8523, 8077, 1057]],
@@ -104981,6 +105065,7 @@ const RELEASED_HEARD_1024: [&[Heard]; 2] = [
         [[1159, 653, 138], [9151, 8431, 1186]],
     ],
 ];
+static RELEASED_HEARD_1024__READ: LazyLock<[&[Heard]; 2]> = LazyLock::new(|| DATA_FILE.read("RELEASED_HEARD_1024"));
 const RELEASED_ELIGIBLE_1024: [&[Eligible]; 2] = [
     &[
         [[1060615, -937128], [1060295, -887548], [89678, -94939]],
@@ -105227,6 +105312,7 @@ const RELEASED_ELIGIBLE_1024: [&[Eligible]; 2] = [
         [[2366041, -1306841], [1833540, -1373489], [313879, -179674]],
     ],
 ];
+static RELEASED_ELIGIBLE_1024__READ: LazyLock<[&[Eligible]; 2]> = LazyLock::new(|| DATA_FILE.read("RELEASED_ELIGIBLE_1024"));
 const RELEASED_MARGINS_1024: [&[Margins]; 2] = [
     &[
         ([4, 17, 9, 15, 15, 4], 227),
@@ -105473,6 +105559,7 @@ const RELEASED_MARGINS_1024: [&[Margins]; 2] = [
         ([4, 0, 2, 8, 21, 29], 506),
     ],
 ];
+static RELEASED_MARGINS_1024__READ: LazyLock<[&[Margins]; 2]> = LazyLock::new(|| DATA_FILE.read("RELEASED_MARGINS_1024"));
 const RELEASED_COUPLINGS_1024: [&[[[i64; 2]; 2]]; 2] = [
     &[
         [[6236737, 6686584], [6571083, 6841691]],
@@ -105719,6 +105806,7 @@ const RELEASED_COUPLINGS_1024: [&[[[i64; 2]; 2]]; 2] = [
         [[6907877, 6633383], [6843156, 7789513]],
     ],
 ];
+static RELEASED_COUPLINGS_1024__READ: LazyLock<[&[[[i64; 2]; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("RELEASED_COUPLINGS_1024"));
 const RELEASED_HASH_1024: [u64; 2] = [0x9466ed8c8e715027, 0xe34424a493330239];
 /// The cost per mapping, the rule's left side: 0.560, 0.514, 0.594 and 0.558 of the signal from
 /// the assignment, and 0.520, 0.486, 0.496 and 0.602 from the mirrored.
@@ -114505,6 +114593,7 @@ const GATED_BLOCKS_1024: [&[Block]; 4] = [
         ),
     ],
 ];
+static GATED_BLOCKS_1024__READ: LazyLock<[&[Block]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_BLOCKS_1024"));
 const GATED_TRACES_1024: [u64; 4] = [
     0x07a9c908165b634c,
     0x027e061de360ff82,
@@ -122201,6 +122290,7 @@ const GATED_COMPOSITIONS_1024: [&[Composition]; 4] = [
         ),
     ],
 ];
+static GATED_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_COMPOSITIONS_1024"));
 const GATED_EARNED_1024: [&[EarnedBlock]; 4] = [
     &[
         (
@@ -125571,6 +125661,7 @@ const GATED_EARNED_1024: [&[EarnedBlock]; 4] = [
         ),
     ],
 ];
+static GATED_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_EARNED_1024"));
 const GATED_READ_1024: [u64; 4] = [
     0x214e5e34f3c0a69c,
     0x0bf8f9a5784643df,
@@ -125672,6 +125763,7 @@ const GATED_CENSUS_1024: [&[(u32, u64)]; 4] = [
         (72, 1),
     ],
 ];
+static GATED_CENSUS_1024__READ: LazyLock<[&[(u32, u64)]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_CENSUS_1024"));
 const GATED_MOVES_1024: [&[MovesBlock]; 4] = [
     &[
         [
@@ -127602,6 +127694,7 @@ const GATED_MOVES_1024: [&[MovesBlock]; 4] = [
         ],
     ],
 ];
+static GATED_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_MOVES_1024"));
 const GATED_STRONG_1024: [&[[u32; 2]]; 4] = [
     &[
         [21, 31],
@@ -127996,6 +128089,7 @@ const GATED_STRONG_1024: [&[[u32; 2]]; 4] = [
         [7, 6],
     ],
 ];
+static GATED_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_STRONG_1024"));
 const GATED_AT_FLIPS_1024: [Option<[[[i64; 2]; 2]; 3]>; 4] = [
     Some([
         [[7288573, 5671976], [5704553, 7886654]],
@@ -128508,6 +128602,7 @@ const GATED_VALUES_1024: [&[ValueBlock]; 4] = [
         [[30, 8852, 14, 919145], [34, 278221, 23, 1333551]],
     ],
 ];
+static GATED_VALUES_1024__READ: LazyLock<[&[ValueBlock]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_VALUES_1024"));
 const GATED_VALUE_HASH_1024: [u64; 4] = [
     0x59f82b720eedcef9,
     0x1f692e46ee357dae,
@@ -129004,6 +129099,7 @@ const GATED_WEIGHTS_1024: [&[Weights]; 4] = [
         ([6809, -23424, 49324, 3271, -946, 371], -1828, 2033),
     ],
 ];
+static GATED_WEIGHTS_1024__READ: LazyLock<[&[Weights]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_WEIGHTS_1024"));
 const GATED_ADMITTED_1024: [&[Admitted]; 4] = [
     &[
         [[15, 1676, 2, 25, 20, 0], [11, 4, 1525, 23, 15, 0]],
@@ -129494,6 +129590,7 @@ const GATED_ADMITTED_1024: [&[Admitted]; 4] = [
         [[14, 1529, 2, 15, 23, 1], [13, 7, 1732, 18, 15, 0]],
     ],
 ];
+static GATED_ADMITTED_1024__READ: LazyLock<[&[Admitted]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_ADMITTED_1024"));
 const GATED_SPIKES_1024: [&[[u64; CLASSES]]; 4] = [
     &[
         [3937, 4694, 11166, 71],
@@ -129984,6 +130081,7 @@ const GATED_SPIKES_1024: [&[[u64; CLASSES]]; 4] = [
         [4842, 4812, 13475, 67],
     ],
 ];
+static GATED_SPIKES_1024__READ: LazyLock<[&[[u64; CLASSES]]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_SPIKES_1024"));
 const GATED_CELLS_1024: [&[Cells]; 4] = [
     &[
         [
@@ -139594,6 +139692,7 @@ const GATED_CELLS_1024: [&[Cells]; 4] = [
         ],
     ],
 ];
+static GATED_CELLS_1024__READ: LazyLock<[&[Cells]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_CELLS_1024"));
 const GATED_WENT_1024: [&[Went]; 4] = [
     &[
         [[510270, -455857], [440479, -547821], [97776, -77715]],
@@ -140084,6 +140183,7 @@ const GATED_WENT_1024: [&[Went]; 4] = [
         [[705571, -611642], [653772, -584436], [96566, -127286]],
     ],
 ];
+static GATED_WENT_1024__READ: LazyLock<[&[Went]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_WENT_1024"));
 const GATED_SOURCED_1024: [&[Sourced]; 4] = [
     &[
         [[15, 1676, 2, 25, 20, 0], [11, 4, 1525, 23, 15, 0]],
@@ -140574,6 +140674,7 @@ const GATED_SOURCED_1024: [&[Sourced]; 4] = [
         [[14, 1529, 2, 15, 23, 1], [13, 7, 1732, 18, 15, 0]],
     ],
 ];
+static GATED_SOURCED_1024__READ: LazyLock<[&[Sourced]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_SOURCED_1024"));
 const GATED_SOURCES_HASH_1024: [u64; 4] = [
     0x63888334365071b5,
     0xa8235039d89090b3,
@@ -143950,6 +144051,7 @@ const GATED_COSTED_1024: [&[Costed]; 4] = [
         ),
     ],
 ];
+static GATED_COSTED_1024__READ: LazyLock<[&[Costed]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_COSTED_1024"));
 const GATED_QUIETED_1024: [&[Quieted]; 4] = [
     &[
         [[677, 457, 166], [1447, 4, 672], [7347, 4948, 2808]],
@@ -144440,6 +144542,7 @@ const GATED_QUIETED_1024: [&[Quieted]; 4] = [
         [[829, 595, 186], [1979, 1956, 537], [8141, 7855, 2321]],
     ],
 ];
+static GATED_QUIETED_1024__READ: LazyLock<[&[Quieted]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_QUIETED_1024"));
 const GATED_ELIGIBLE_1024: [&[Eligible]; 4] = [
     &[
         [[507375, -534849], [488154, -501776], [136983, -159399]],
@@ -144930,6 +145033,7 @@ const GATED_ELIGIBLE_1024: [&[Eligible]; 4] = [
         [[677733, -532103], [668786, -518509], [188052, -159453]],
     ],
 ];
+static GATED_ELIGIBLE_1024__READ: LazyLock<[&[Eligible]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_ELIGIBLE_1024"));
 const GATED_MARGINS_1024: [&[Margins]; 4] = [
     &[
         ([10, 9, 12, 14, 11, 8], 220),
@@ -145420,6 +145524,7 @@ const GATED_MARGINS_1024: [&[Margins]; 4] = [
         ([8, 7, 9, 16, 22, 2], 234),
     ],
 ];
+static GATED_MARGINS_1024__READ: LazyLock<[&[Margins]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_MARGINS_1024"));
 const GATED_MESSAGES_1024: [&[u64]; 4] = [
     &[
         173502, 195993, 192780, 189567, 192780, 173502, 192780, 189567, 183141, 183141, 192780,
@@ -145460,6 +145565,7 @@ const GATED_MESSAGES_1024: [&[u64]; 4] = [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ],
 ];
+static GATED_MESSAGES_1024__READ: LazyLock<[&[u64]; 4]> = LazyLock::new(|| DATA_FILE.read("GATED_MESSAGES_1024"));
 const GATED_ALONG_HASH_1024: [u64; 4] = [
     0xefa7d4c19adb4266,
     0x8c01a6363d05bb54,
@@ -150631,6 +150737,7 @@ const MISLED_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static MISLED_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_BLOCKS_1024"));
 const MISLED_TRACES_1024: [u64; 2] = [0xd83249f86273b20c, 0x95643f5934ff780a];
 const MISLED_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -154478,6 +154585,7 @@ const MISLED_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static MISLED_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_COMPOSITIONS_1024"));
 const MISLED_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -156164,6 +156272,7 @@ const MISLED_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static MISLED_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_EARNED_1024"));
 const MISLED_READ_1024: [u64; 2] = [0x37291a3458953949, 0x61fe812b644476a2];
 const MISLED_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -157181,6 +157290,7 @@ const MISLED_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static MISLED_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_MOVES_1024"));
 const MISLED_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
         [25, 30],
@@ -157379,6 +157489,7 @@ const MISLED_STRONG_1024: [&[[u32; 2]]; 2] = [
         [1, 1],
     ],
 ];
+static MISLED_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_STRONG_1024"));
 const MISLED_AT_FLIPS_1024: [Option<[[[i64; 2]; 2]; 3]>; 2] = [
     Some([
         [[7327781, 6349912], [6309338, 7879270]],
@@ -157637,6 +157748,7 @@ const MISLED_VALUES_1024: [&[ValueBlock]; 2] = [
         [[30, 967540, 28, 147170], [34, 1143624, 30, 702979]],
     ],
 ];
+static MISLED_VALUES_1024__READ: LazyLock<[&[ValueBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_VALUES_1024"));
 const MISLED_VALUE_HASH_1024: [u64; 2] = [0xb7b46fe16259b5cb, 0xadef640c39c2e08d];
 const MISLED_WEIGHTS_1024: [&[Weights]; 2] = [
     &[
@@ -157884,6 +157996,7 @@ const MISLED_WEIGHTS_1024: [&[Weights]; 2] = [
         ([311, 113696, 145355, 756, 3986, -50], -1775, 3970),
     ],
 ];
+static MISLED_WEIGHTS_1024__READ: LazyLock<[&[Weights]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_WEIGHTS_1024"));
 const MISLED_ADMITTED_1024: [&[Admitted]; 2] = [
     &[
         [[14, 1677, 2, 26, 19, 0], [11, 4, 1525, 22, 15, 0]],
@@ -158130,6 +158243,7 @@ const MISLED_ADMITTED_1024: [&[Admitted]; 2] = [
         [[15, 1529, 2, 15, 23, 1], [15, 6, 1731, 18, 15, 0]],
     ],
 ];
+static MISLED_ADMITTED_1024__READ: LazyLock<[&[Admitted]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_ADMITTED_1024"));
 const MISLED_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
     &[
         [4639, 4742, 13034, 71],
@@ -158376,6 +158490,7 @@ const MISLED_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
         [4930, 4810, 13703, 70],
     ],
 ];
+static MISLED_SPIKES_1024__READ: LazyLock<[&[[u64; CLASSES]]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_SPIKES_1024"));
 const MISLED_CELLS_1024: [&[Cells]; 2] = [
     &[
         [
@@ -163182,6 +163297,7 @@ const MISLED_CELLS_1024: [&[Cells]; 2] = [
         ],
     ],
 ];
+static MISLED_CELLS_1024__READ: LazyLock<[&[Cells]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_CELLS_1024"));
 const MISLED_WENT_1024: [&[Went]; 2] = [
     &[
         [[356707, -294000], [290332, -329656], [8198, -7170]],
@@ -163428,6 +163544,7 @@ const MISLED_WENT_1024: [&[Went]; 2] = [
         [[718607, -585370], [36541, -53133], [4404, -6887]],
     ],
 ];
+static MISLED_WENT_1024__READ: LazyLock<[&[Went]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_WENT_1024"));
 const MISLED_SOURCED_1024: [&[Sourced]; 2] = [
     &[
         [[14, 1677, 2, 26, 19, 0], [11, 4, 1525, 22, 15, 0]],
@@ -163674,6 +163791,7 @@ const MISLED_SOURCED_1024: [&[Sourced]; 2] = [
         [[15, 1529, 2, 15, 23, 1], [15, 6, 1731, 18, 15, 0]],
     ],
 ];
+static MISLED_SOURCED_1024__READ: LazyLock<[&[Sourced]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_SOURCED_1024"));
 const MISLED_SOURCES_HASH_1024: [u64; 2] = [0xd55e68cc243ff3c6, 0xc45ab10bbb168143];
 const MISLED_OUTCOMES_1024: [&[Outcomes]; 2] = [
     &[
@@ -163921,6 +164039,7 @@ const MISLED_OUTCOMES_1024: [&[Outcomes]; 2] = [
         [[50, 2, 4], [8, 0, 0]],
     ],
 ];
+static MISLED_OUTCOMES_1024__READ: LazyLock<[&[Outcomes]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_OUTCOMES_1024"));
 const MISLED_KIND_MOVES_1024: [&[KindMoves]; 2] = [
     &[
         [
@@ -165367,6 +165486,7 @@ const MISLED_KIND_MOVES_1024: [&[KindMoves]; 2] = [
         ],
     ],
 ];
+static MISLED_KIND_MOVES_1024__READ: LazyLock<[&[KindMoves]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_KIND_MOVES_1024"));
 const MISLED_KIND_ERRORS_1024: [&[KindErrors]; 2] = [
     &[
         [1960446, -1711447, 425402, -71154],
@@ -165613,6 +165733,7 @@ const MISLED_KIND_ERRORS_1024: [&[KindErrors]; 2] = [
         [1640665, -602017, 0, -790516],
     ],
 ];
+static MISLED_KIND_ERRORS_1024__READ: LazyLock<[&[KindErrors]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_KIND_ERRORS_1024"));
 const MISLED_BEYOND_1024: [&[Beyond]; 2] = [
     &[
         [
@@ -167059,6 +167180,7 @@ const MISLED_BEYOND_1024: [&[Beyond]; 2] = [
         ],
     ],
 ];
+static MISLED_BEYOND_1024__READ: LazyLock<[&[Beyond]; 2]> = LazyLock::new(|| DATA_FILE.read("MISLED_BEYOND_1024"));
 const MISLED_READINGS_1024: [Option<MisledRead>; 2] = [
     Some(MisledRead {
         correct: [123, 113, 122, 119],
@@ -199207,6 +199329,7 @@ const CANCELLED_SEEDED: [&[(Block, u64, Composition)]; 2] = [
         ),
     ],
 ];
+static CANCELLED_SEEDED__READ: LazyLock<[&[(Block, u64, Composition)]; 2]> = LazyLock::new(|| DATA_FILE.read("CANCELLED_SEEDED"));
 /// The settling's lead-in, per network.
 const LEAD_IN_SEEDED: [&[LeadInWindow]; 2] = [
     &[
@@ -200043,6 +200166,7 @@ const LEAD_IN_SEEDED: [&[LeadInWindow]; 2] = [
         (2349, [1080, 1052], 164038322, 217923858, 25856, 114688, 0),
     ],
 ];
+static LEAD_IN_SEEDED__READ: LazyLock<[&[LeadInWindow]; 2]> = LazyLock::new(|| DATA_FILE.read("LEAD_IN_SEEDED"));
 /// The quiet run's ticks and the sums it left, per network.
 const QUIET_SEEDED: [Option<(u64, (i64, i64))>; 2] = [
     Some((2519, (160740112, 217277901))),
@@ -200117,6 +200241,7 @@ const FROZEN_SEEDED: [Option<(Block, u64, Composition)>; 2] = [
         ),
     )),
 ];
+static FROZEN_SEEDED__READ: LazyLock<[Option<(Block, u64, Composition)>; 2]> = LazyLock::new(|| DATA_FILE.read("FROZEN_SEEDED"));
 /// Every trial's counts of that block, per network.
 const FROZEN_COUNTED_SEEDED: [&[Counted]; 2] = [
     &[
@@ -200252,6 +200377,7 @@ const FROZEN_COUNTED_SEEDED: [&[Counted]; 2] = [
         (1, [14, 16]),
     ],
 ];
+static FROZEN_COUNTED_SEEDED__READ: LazyLock<[&[Counted]; 2]> = LazyLock::new(|| DATA_FILE.read("FROZEN_COUNTED_SEEDED"));
 /// The volley's census of that block, per network.
 const FROZEN_CENSUS_SEEDED: [&[(u32, u64)]; 2] = [
     &[
@@ -207039,6 +207165,7 @@ const SEEDED_BLOCKS: [[&[Block]; 2]; 2] = [
         ],
     ],
 ];
+static SEEDED_BLOCKS__READ: LazyLock<[[&[Block]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("SEEDED_BLOCKS"));
 /// The arms' accuracy sequences.
 const SEEDED_TRACES: [[u64; 2]; 2] = [
     [0x6ac58bc5eb8ffcca, 0xdf6c36bd8e03e528],
@@ -210424,6 +210551,7 @@ const SEEDED_EARNED: [[&[EarnedBlock]; 2]; 2] = [
         ],
     ],
 ];
+static SEEDED_EARNED__READ: LazyLock<[[&[EarnedBlock]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("SEEDED_EARNED"));
 /// The arms' readings, every trial's in one number.
 const SEEDED_READ: [[u64; 2]; 2] = [
     [0x3f2473f41abb5035, 0x882977adba10e67e],
@@ -210924,6 +211052,7 @@ const SEEDED_VALUES: [[&[ValueBlock]; 2]; 2] = [
         ],
     ],
 ];
+static SEEDED_VALUES__READ: LazyLock<[[&[ValueBlock]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("SEEDED_VALUES"));
 /// Every trial's value in one number.
 const SEEDED_VALUE_HASH: [[u64; 2]; 2] = [
     [0x09a00e455f366975, 0x8645cb3442bb9040],
@@ -211424,6 +211553,7 @@ const SEEDED_SOURCED: [[&[Sourced]; 2]; 2] = [
         ],
     ],
 ];
+static SEEDED_SOURCED__READ: LazyLock<[[&[Sourced]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("SEEDED_SOURCED"));
 /// Every trial's drawn sources in one number.
 const SEEDED_SOURCES_HASH: [[u64; 2]; 2] = [
     [0x0f61bfb2a00354f0, 0xd25da5838507e096],
@@ -212749,6 +212879,7 @@ const CANCELLED_TWICE: [&[(Block, u64, Composition)]; 2] = [
         ),
     ],
 ];
+static CANCELLED_TWICE__READ: LazyLock<[&[(Block, u64, Composition)]; 2]> = LazyLock::new(|| DATA_FILE.read("CANCELLED_TWICE"));
 /// The settling's windows, per network.
 const LEAD_IN_TWICE: [&[LeadInWindow]; 2] = [
     &[
@@ -213841,6 +213972,7 @@ const LEAD_IN_TWICE: [&[LeadInWindow]; 2] = [
         (4599, [2094, 2052], 323198547, 433494743, 25312, 114688, 0),
     ],
 ];
+static LEAD_IN_TWICE__READ: LazyLock<[&[LeadInWindow]; 2]> = LazyLock::new(|| DATA_FILE.read("LEAD_IN_TWICE"));
 /// The quiet run's ticks and the settled sums by polarity, per network.
 const QUIET_TWICE: [Option<(u64, (i64, i64))>; 2] = [
     Some((2538, (327469997, 434617180))),
@@ -213915,6 +214047,7 @@ const FROZEN_TWICE: [Option<(Block, u64, Composition)>; 2] = [
         ),
     )),
 ];
+static FROZEN_TWICE__READ: LazyLock<[Option<(Block, u64, Composition)>; 2]> = LazyLock::new(|| DATA_FILE.read("FROZEN_TWICE"));
 /// Every trial's counts of that frozen block, per network.
 const FROZEN_COUNTED_TWICE: [&[Counted]; 2] = [
     &[
@@ -214050,6 +214183,7 @@ const FROZEN_COUNTED_TWICE: [&[Counted]; 2] = [
         (1, [21, 22]),
     ],
 ];
+static FROZEN_COUNTED_TWICE__READ: LazyLock<[&[Counted]; 2]> = LazyLock::new(|| DATA_FILE.read("FROZEN_COUNTED_TWICE"));
 /// That frozen block's volley census, per network.
 const FROZEN_CENSUS_TWICE: [&[(u32, u64)]; 2] = [
     &[
@@ -220838,6 +220972,7 @@ const TWICE_BLOCKS: [[&[Block]; 2]; 2] = [
         ],
     ],
 ];
+static TWICE_BLOCKS__READ: LazyLock<[[&[Block]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("TWICE_BLOCKS"));
 /// Each arm's accuracy sequence in one number.
 const TWICE_TRACES: [[u64; 2]; 2] = [
     [0x0f5dde424a8f788e, 0xbcc59d0e54b6d202],
@@ -224223,6 +224358,7 @@ const TWICE_EARNED: [[&[EarnedBlock]; 2]; 2] = [
         ],
     ],
 ];
+static TWICE_EARNED__READ: LazyLock<[[&[EarnedBlock]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("TWICE_EARNED"));
 /// Every trial's reading of each arm in one number.
 const TWICE_READ: [[u64; 2]; 2] = [
     [0xed666d10a89cd19c, 0xb3acc4b90b05bd8e],
@@ -224723,6 +224859,7 @@ const TWICE_VALUES: [[&[ValueBlock]; 2]; 2] = [
         ],
     ],
 ];
+static TWICE_VALUES__READ: LazyLock<[[&[ValueBlock]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("TWICE_VALUES"));
 /// Every trial's value of each arm in one number.
 const TWICE_VALUE_HASH: [[u64; 2]; 2] = [
     [0x9f969d334fe58cfb, 0x90327a33223a1648],
@@ -225223,6 +225360,7 @@ const TWICE_SOURCED: [[&[Sourced]; 2]; 2] = [
         ],
     ],
 ];
+static TWICE_SOURCED__READ: LazyLock<[[&[Sourced]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("TWICE_SOURCED"));
 /// Every trial's drawn sources of each arm in one number.
 const TWICE_SOURCES_HASH: [[u64; 2]; 2] = [
     [0x69c44d6bcd455be5, 0x180ad3fa47f2fa17],
@@ -230086,6 +230224,7 @@ const IN_FOUR_BLOCKS_1024: [&[Block]; 2] = [
         ),
     ],
 ];
+static IN_FOUR_BLOCKS_1024__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_BLOCKS_1024"));
 const IN_FOUR_TRACES_1024: [u64; 2] = [0xe90e56f48ea0efc6, 0xbccdc3df6846bf64];
 const IN_FOUR_COMPOSITIONS_1024: [&[Composition]; 2] = [
     &[
@@ -233933,6 +234072,7 @@ const IN_FOUR_COMPOSITIONS_1024: [&[Composition]; 2] = [
         ),
     ],
 ];
+static IN_FOUR_COMPOSITIONS_1024__READ: LazyLock<[&[Composition]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_COMPOSITIONS_1024"));
 const IN_FOUR_EARNED_1024: [&[EarnedBlock]; 2] = [
     &[
         (
@@ -235619,6 +235759,7 @@ const IN_FOUR_EARNED_1024: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static IN_FOUR_EARNED_1024__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_EARNED_1024"));
 const IN_FOUR_READ_1024: [u64; 2] = [0x5506b8c560fc0e49, 0x28e2ea035a27b91c];
 const IN_FOUR_CENSUS_1024: [&[(u32, u64)]; 2] = [
     &[
@@ -236639,6 +236780,7 @@ const IN_FOUR_MOVES_1024: [&[MovesBlock]; 2] = [
         ],
     ],
 ];
+static IN_FOUR_MOVES_1024__READ: LazyLock<[&[MovesBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_MOVES_1024"));
 const IN_FOUR_STRONG_1024: [&[[u32; 2]]; 2] = [
     &[
         [17, 23],
@@ -236837,6 +236979,7 @@ const IN_FOUR_STRONG_1024: [&[[u32; 2]]; 2] = [
         [3, 2],
     ],
 ];
+static IN_FOUR_STRONG_1024__READ: LazyLock<[&[[u32; 2]]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_STRONG_1024"));
 const IN_FOUR_AT_FLIPS_1024: [Option<[[[i64; 2]; 2]; 3]>; 2] = [
     Some([
         [[6938692, 6351371], [6361316, 7449864]],
@@ -237095,6 +237238,7 @@ const IN_FOUR_VALUES_1024: [&[ValueBlock]; 2] = [
         [[30, 159895, 21, 79703], [34, 673436, 30, 967504]],
     ],
 ];
+static IN_FOUR_VALUES_1024__READ: LazyLock<[&[ValueBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_VALUES_1024"));
 const IN_FOUR_VALUE_HASH_1024: [u64; 2] = [0x611e07e5aae48f2c, 0x62f206a27a51700c];
 const IN_FOUR_WEIGHTS_1024: [&[Weights]; 2] = [
     &[
@@ -237342,6 +237486,7 @@ const IN_FOUR_WEIGHTS_1024: [&[Weights]; 2] = [
         ([2377, -6512, 119187, -350, 265, -1222], -1486, 3433),
     ],
 ];
+static IN_FOUR_WEIGHTS_1024__READ: LazyLock<[&[Weights]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_WEIGHTS_1024"));
 const IN_FOUR_ADMITTED_1024: [&[Admitted]; 2] = [
     &[
         [[15, 1677, 2, 26, 19, 0], [11, 4, 1525, 22, 15, 0]],
@@ -237588,6 +237733,7 @@ const IN_FOUR_ADMITTED_1024: [&[Admitted]; 2] = [
         [[15, 1529, 2, 15, 23, 1], [15, 6, 1731, 18, 14, 0]],
     ],
 ];
+static IN_FOUR_ADMITTED_1024__READ: LazyLock<[&[Admitted]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_ADMITTED_1024"));
 const IN_FOUR_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
     &[
         [4641, 4743, 13035, 71],
@@ -237834,6 +237980,7 @@ const IN_FOUR_SPIKES_1024: [&[[u64; CLASSES]]; 2] = [
         [4891, 4806, 13439, 66],
     ],
 ];
+static IN_FOUR_SPIKES_1024__READ: LazyLock<[&[[u64; CLASSES]]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_SPIKES_1024"));
 const IN_FOUR_CELLS_1024: [&[Cells]; 2] = [
     &[
         [
@@ -242640,6 +242787,7 @@ const IN_FOUR_CELLS_1024: [&[Cells]; 2] = [
         ],
     ],
 ];
+static IN_FOUR_CELLS_1024__READ: LazyLock<[&[Cells]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_CELLS_1024"));
 const IN_FOUR_WENT_1024: [&[Went]; 2] = [
     &[
         [[341295, -309123], [305552, -330029], [7884, -6773]],
@@ -242886,6 +243034,7 @@ const IN_FOUR_WENT_1024: [&[Went]; 2] = [
         [[652801, -597271], [93852, -107959], [8274, -3268]],
     ],
 ];
+static IN_FOUR_WENT_1024__READ: LazyLock<[&[Went]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_WENT_1024"));
 const IN_FOUR_SOURCED_1024: [&[Sourced]; 2] = [
     &[
         [[15, 1677, 2, 26, 19, 0], [11, 4, 1525, 22, 15, 0]],
@@ -243132,6 +243281,7 @@ const IN_FOUR_SOURCED_1024: [&[Sourced]; 2] = [
         [[15, 1529, 2, 15, 23, 1], [15, 6, 1731, 18, 14, 0]],
     ],
 ];
+static IN_FOUR_SOURCED_1024__READ: LazyLock<[&[Sourced]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_SOURCED_1024"));
 const IN_FOUR_SOURCES_HASH_1024: [u64; 2] = [0xc96e28cc02b40e55, 0xaab337231699dc12];
 const IN_FOUR_OUTCOMES_1024: [&[Outcomes]; 2] = [
     &[
@@ -243379,6 +243529,7 @@ const IN_FOUR_OUTCOMES_1024: [&[Outcomes]; 2] = [
         [[39, 5, 4], [12, 4, 0]],
     ],
 ];
+static IN_FOUR_OUTCOMES_1024__READ: LazyLock<[&[Outcomes]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_OUTCOMES_1024"));
 const IN_FOUR_KIND_MOVES_1024: [&[KindMoves]; 2] = [
     &[
         [
@@ -244825,6 +244976,7 @@ const IN_FOUR_KIND_MOVES_1024: [&[KindMoves]; 2] = [
         ],
     ],
 ];
+static IN_FOUR_KIND_MOVES_1024__READ: LazyLock<[&[KindMoves]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_KIND_MOVES_1024"));
 const IN_FOUR_KIND_ERRORS_1024: [&[KindErrors]; 2] = [
     &[
         [1719004, -1442185, 669685, -294030],
@@ -245071,6 +245223,7 @@ const IN_FOUR_KIND_ERRORS_1024: [&[KindErrors]; 2] = [
         [1961078, -665264, 226518, -913871],
     ],
 ];
+static IN_FOUR_KIND_ERRORS_1024__READ: LazyLock<[&[KindErrors]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_KIND_ERRORS_1024"));
 const IN_FOUR_BEYOND_1024: [&[Beyond]; 2] = [
     &[
         [
@@ -246517,6 +246670,7 @@ const IN_FOUR_BEYOND_1024: [&[Beyond]; 2] = [
         ],
     ],
 ];
+static IN_FOUR_BEYOND_1024__READ: LazyLock<[&[Beyond]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_BEYOND_1024"));
 const IN_FOUR_READINGS_1024: [Option<MisledRead>; 2] = [
     Some(MisledRead {
         correct: [115, 80, 110, 75],
@@ -247047,6 +247201,7 @@ const IN_FOUR_ALONE_1024: [&[Outcomes]; 2] = [
         [[5, 3, 0], [7, 1, 0]],
     ],
 ];
+static IN_FOUR_ALONE_1024__READ: LazyLock<[&[Outcomes]; 2]> = LazyLock::new(|| DATA_FILE.read("IN_FOUR_ALONE_1024"));
 const IN_FOUR_BESIDE_1024: [Option<BesideRead>; 2] = [
     Some(BesideRead {
         accounts: [
@@ -256980,6 +257135,7 @@ const OTHERS_BLOCKS: [[&[Block]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_BLOCKS__READ: LazyLock<[[&[Block]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_BLOCKS"));
 const OTHERS_TRACES: [[u64; 2]; 2] = [
     [0x677576ea1db6f5ae, 0x4b791ae5002d22ae],
     [0x334c82acb04dbd68, 0x287d10dd6860b9e4],
@@ -264678,6 +264834,7 @@ const OTHERS_COMPOSITIONS: [[&[Composition]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_COMPOSITIONS__READ: LazyLock<[[&[Composition]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_COMPOSITIONS"));
 const OTHERS_EARNED: [[&[EarnedBlock]; 2]; 2] = [
     [
         &[
@@ -268052,6 +268209,7 @@ const OTHERS_EARNED: [[&[EarnedBlock]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_EARNED__READ: LazyLock<[[&[EarnedBlock]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_EARNED"));
 const OTHERS_READ: [[u64; 2]; 2] = [
     [0x7ef13a3d6620708f, 0x8ee3db606bb2caa7],
     [0x21cc69026814bf27, 0xd70f420d8a4f9d02],
@@ -268163,6 +268321,7 @@ const OTHERS_CENSUS: [[&[(u32, u64)]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_CENSUS__READ: LazyLock<[[&[(u32, u64)]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_CENSUS"));
 const OTHERS_MOVES: [[&[MovesBlock]; 2]; 2] = [
     [
         &[
@@ -270097,6 +270256,7 @@ const OTHERS_MOVES: [[&[MovesBlock]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_MOVES__READ: LazyLock<[[&[MovesBlock]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_MOVES"));
 const OTHERS_STRONG: [[&[[u32; 2]]; 2]; 2] = [
     [
         &[
@@ -270495,6 +270655,7 @@ const OTHERS_STRONG: [[&[[u32; 2]]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_STRONG__READ: LazyLock<[[&[[u32; 2]]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_STRONG"));
 const OTHERS_AT_FLIPS: [[Option<AtFlips>; 2]; 2] = [
     [
         Some([
@@ -271015,6 +271176,7 @@ const OTHERS_VALUES: [[&[ValueBlock]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_VALUES__READ: LazyLock<[[&[ValueBlock]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_VALUES"));
 const OTHERS_VALUE_HASH: [[u64; 2]; 2] = [
     [0xaa157ef248dc6938, 0xaf62f33c2cfd166f],
     [0xa23717317bbd0703, 0x35f0b89b45b21525],
@@ -271513,6 +271675,7 @@ const OTHERS_WEIGHTS: [[&[Weights]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_WEIGHTS__READ: LazyLock<[[&[Weights]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_WEIGHTS"));
 const OTHERS_ADMITTED: [[&[Admitted]; 2]; 2] = [
     [
         &[
@@ -272007,6 +272170,7 @@ const OTHERS_ADMITTED: [[&[Admitted]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_ADMITTED__READ: LazyLock<[[&[Admitted]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_ADMITTED"));
 const OTHERS_SPIKES: [[&[[u64; CLASSES]]; 2]; 2] = [
     [
         &[
@@ -272501,6 +272665,7 @@ const OTHERS_SPIKES: [[&[[u64; CLASSES]]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_SPIKES__READ: LazyLock<[[&[[u64; CLASSES]]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_SPIKES"));
 const OTHERS_CELLS: [[&[Cells]; 2]; 2] = [
     [
         &[
@@ -282115,6 +282280,7 @@ const OTHERS_CELLS: [[&[Cells]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_CELLS__READ: LazyLock<[[&[Cells]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_CELLS"));
 const OTHERS_WENT: [[&[Went]; 2]; 2] = [
     [
         &[
@@ -282609,6 +282775,7 @@ const OTHERS_WENT: [[&[Went]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_WENT__READ: LazyLock<[[&[Went]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_WENT"));
 const OTHERS_SOURCED: [[&[Sourced]; 2]; 2] = [
     [
         &[
@@ -283103,6 +283270,7 @@ const OTHERS_SOURCED: [[&[Sourced]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_SOURCED__READ: LazyLock<[[&[Sourced]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_SOURCED"));
 const OTHERS_SOURCES_HASH: [[u64; 2]; 2] = [
     [0xfc71341b2375aa92, 0x9521e8c7cd29e680],
     [0x466feb372a67f627, 0x13a7c411ebac9e06],
@@ -283601,6 +283769,7 @@ const OTHERS_OUTCOMES: [[&[Outcomes]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_OUTCOMES__READ: LazyLock<[[&[Outcomes]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_OUTCOMES"));
 const OTHERS_KIND_MOVES: [[&[KindMoves]; 2]; 2] = [
     [
         &[
@@ -286495,6 +286664,7 @@ const OTHERS_KIND_MOVES: [[&[KindMoves]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_KIND_MOVES__READ: LazyLock<[[&[KindMoves]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_KIND_MOVES"));
 const OTHERS_KIND_ERRORS: [[&[KindErrors]; 2]; 2] = [
     [
         &[
@@ -286989,6 +287159,7 @@ const OTHERS_KIND_ERRORS: [[&[KindErrors]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_KIND_ERRORS__READ: LazyLock<[[&[KindErrors]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_KIND_ERRORS"));
 const OTHERS_BEYOND: [[&[Beyond]; 2]; 2] = [
     [
         &[
@@ -289883,6 +290054,7 @@ const OTHERS_BEYOND: [[&[Beyond]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_BEYOND__READ: LazyLock<[[&[Beyond]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_BEYOND"));
 const OTHERS_READINGS: [[Option<MisledRead>; 2]; 2] = [
     [
         Some(MisledRead {
@@ -290947,6 +291119,7 @@ const OTHERS_ALONE: [[&[Outcomes]; 2]; 2] = [
         ],
     ],
 ];
+static OTHERS_ALONE__READ: LazyLock<[[&[Outcomes]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("OTHERS_ALONE"));
 const OTHERS_BESIDE: [[Option<BesideRead>; 2]; 2] = [
     [
         Some(BesideRead {
@@ -299572,6 +299745,7 @@ const SCAN_LEAD_IN: [&[LeadInWindow]; 5] = [
         ),
     ],
 ];
+static SCAN_LEAD_IN__READ: LazyLock<[&[LeadInWindow]; 5]> = LazyLock::new(|| DATA_FILE.read("SCAN_LEAD_IN"));
 const SCAN_QUIET: [Option<(u64, (i64, i64))>; 5] = [
     None,
     None,
@@ -299657,6 +299831,7 @@ const SCAN_FROZEN: [Option<(Block, u64, Composition)>; 5] = [
         ),
     )),
 ];
+static SCAN_FROZEN__READ: LazyLock<[Option<(Block, u64, Composition)>; 5]> = LazyLock::new(|| DATA_FILE.read("SCAN_FROZEN"));
 const SCAN_COUNTED: [&[Counted]; 5] = [
     &[],
     &[],
@@ -299794,6 +299969,7 @@ const SCAN_COUNTED: [&[Counted]; 5] = [
         (1, [54, 48]),
     ],
 ];
+static SCAN_COUNTED__READ: LazyLock<[&[Counted]; 5]> = LazyLock::new(|| DATA_FILE.read("SCAN_COUNTED"));
 const SCAN_FROZEN_CENSUS: [&[(u32, u64)]; 5] = [
     &[],
     &[],
@@ -304630,6 +304806,7 @@ const RATE_LEAD_IN: [&[LeadInWindow]; 6] = [
         (2331, [1116, 994], 162568343, 217455311, 26432, 114787, 0),
     ],
 ];
+static RATE_LEAD_IN__READ: LazyLock<[&[LeadInWindow]; 6]> = LazyLock::new(|| DATA_FILE.read("RATE_LEAD_IN"));
 /// Each step's quiet run, where the settled network's rule gave a window.
 const RATE_QUIET: [Option<(u64, (i64, i64))>; 6] = [
     Some((2252, (162864171, 215818040))),
@@ -304849,6 +305026,7 @@ const RATE_FROZEN: [Option<(Block, u64, Composition)>; 6] = [
         ),
     )),
 ];
+static RATE_FROZEN__READ: LazyLock<[Option<(Block, u64, Composition)>; 6]> = LazyLock::new(|| DATA_FILE.read("RATE_FROZEN"));
 /// Each step's frozen block's counts, trial by trial.
 const RATE_COUNTED: [&[Counted]; 6] = [
     &[
@@ -305248,6 +305426,7 @@ const RATE_COUNTED: [&[Counted]; 6] = [
         (1, [4, 9]),
     ],
 ];
+static RATE_COUNTED__READ: LazyLock<[&[Counted]; 6]> = LazyLock::new(|| DATA_FILE.read("RATE_COUNTED"));
 /// Each step's frozen block's census.
 const RATE_FROZEN_CENSUS: [&[(u32, u64)]; 6] = [
     &[
@@ -308841,6 +309020,7 @@ const RULED_BLOCKS: [&[Block]; 2] = [
         ),
     ],
 ];
+static RULED_BLOCKS__READ: LazyLock<[&[Block]; 2]> = LazyLock::new(|| DATA_FILE.read("RULED_BLOCKS"));
 const RULED_TRACES: [u64; 2] = [0xe246d68ece96a384, 0x26c25aa5790bb426];
 const RULED_COMPOSED: [u64; 2] = [0x67a5780df57dd459, 0xed2d9387c48f36cb];
 const RULED_EARNED: [&[EarnedBlock]; 2] = [
@@ -310529,6 +310709,7 @@ const RULED_EARNED: [&[EarnedBlock]; 2] = [
         ),
     ],
 ];
+static RULED_EARNED__READ: LazyLock<[&[EarnedBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("RULED_EARNED"));
 const RULED_READ: [u64; 2] = [0x6ff467d48c14c964, 0xc6bc50e44f3c83f9];
 const RULED_VALUES: [&[ValueBlock]; 2] = [
     &[
@@ -310776,6 +310957,7 @@ const RULED_VALUES: [&[ValueBlock]; 2] = [
         [[30, 1872351, 30, 93729], [34, 1783220, 32, 422177]],
     ],
 ];
+static RULED_VALUES__READ: LazyLock<[&[ValueBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("RULED_VALUES"));
 const RULED_VALUE_HASH: [u64; 2] = [0xd878853310d8eb29, 0x99d77f59ae22b334];
 const RULED_SOURCED: [&[Sourced]; 2] = [
     &[
@@ -311023,6 +311205,7 @@ const RULED_SOURCED: [&[Sourced]; 2] = [
         [[6, 1529, 2, 9, 14, 0], [7, 3, 1730, 17, 15, 0]],
     ],
 ];
+static RULED_SOURCED__READ: LazyLock<[&[Sourced]; 2]> = LazyLock::new(|| DATA_FILE.read("RULED_SOURCED"));
 const RULED_SOURCES_HASH: [u64; 2] = [0xfc4c21e7ba4f32d6, 0xb7397575c2c7dbe0];
 const RULED_READINGS: [Option<SeededRead>; 2] = [
     Some(SeededRead {
@@ -311731,6 +311914,7 @@ const RULED_GAIN_BLOCKS: [&[GainBlock]; 2] = [
         (111757, 113027, 112194, 18538),
     ],
 ];
+static RULED_GAIN_BLOCKS__READ: LazyLock<[&[GainBlock]; 2]> = LazyLock::new(|| DATA_FILE.read("RULED_GAIN_BLOCKS"));
 const RULED_GAIN: [Option<GainRead>; 2] = [
     Some(GainRead {
         windows: 960,
@@ -313809,6 +313993,7 @@ const SEEDED_RATE_LEAD_IN: [&[LeadInWindow]; 2] = [
         (2315, [1085, 1023], 167164802, 218499899, 25408, 114573, 0),
     ],
 ];
+static SEEDED_RATE_LEAD_IN__READ: LazyLock<[&[LeadInWindow]; 2]> = LazyLock::new(|| DATA_FILE.read("SEEDED_RATE_LEAD_IN"));
 const SEEDED_RATE_QUIET: [Option<(u64, (i64, i64))>; 2] = [
     Some((2426, (161674381, 217480636))),
     Some((2533, (167164802, 218499899))),
@@ -313882,6 +314067,7 @@ const SEEDED_RATE_FROZEN: [Option<(Block, u64, Composition)>; 2] = [
         ),
     )),
 ];
+static SEEDED_RATE_FROZEN__READ: LazyLock<[Option<(Block, u64, Composition)>; 2]> = LazyLock::new(|| DATA_FILE.read("SEEDED_RATE_FROZEN"));
 const SEEDED_RATE_COUNTED: [&[Counted]; 2] = [
     &[
         (0, [3, 5]),
@@ -314016,6 +314202,7 @@ const SEEDED_RATE_COUNTED: [&[Counted]; 2] = [
         (1, [17, 23]),
     ],
 ];
+static SEEDED_RATE_COUNTED__READ: LazyLock<[&[Counted]; 2]> = LazyLock::new(|| DATA_FILE.read("SEEDED_RATE_COUNTED"));
 const SEEDED_RATE_FROZEN_CENSUS: [&[(u32, u64)]; 2] = [
     &[
         (1, 102),
@@ -324202,6 +324389,7 @@ const SIXTEENTH_BLOCKS: [[&[Block]; 2]; 3] = [
         ],
     ],
 ];
+static SIXTEENTH_BLOCKS__READ: LazyLock<[[&[Block]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("SIXTEENTH_BLOCKS"));
 const SIXTEENTH_TRACES: [[u64; 2]; 3] = [
     [0x8293fbe09e0ae6c4, 0xe75f69dd314b7f48],
     [0xf7c2a0717266002c, 0x56dc51fcf70d2884],
@@ -329272,6 +329460,7 @@ const SIXTEENTH_EARNED: [[&[EarnedBlock]; 2]; 3] = [
         ],
     ],
 ];
+static SIXTEENTH_EARNED__READ: LazyLock<[[&[EarnedBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("SIXTEENTH_EARNED"));
 const SIXTEENTH_READ: [[u64; 2]; 3] = [
     [0x2edd50c18c62652a, 0x880a82709d788eb6],
     [0x556fbdb071387e20, 0xe48d243052ae8ad0],
@@ -330017,6 +330206,7 @@ const SIXTEENTH_VALUES: [[&[ValueBlock]; 2]; 3] = [
         ],
     ],
 ];
+static SIXTEENTH_VALUES__READ: LazyLock<[[&[ValueBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("SIXTEENTH_VALUES"));
 const SIXTEENTH_VALUE_HASH: [[u64; 2]; 3] = [
     [0x8a364ea80031ede5, 0xd3114039133166cb],
     [0x7e53320c40bddfd0, 0x9673838cd86fc185],
@@ -330762,6 +330952,7 @@ const SIXTEENTH_SOURCED: [[&[Sourced]; 2]; 3] = [
         ],
     ],
 ];
+static SIXTEENTH_SOURCED__READ: LazyLock<[[&[Sourced]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("SIXTEENTH_SOURCED"));
 const SIXTEENTH_SOURCES_HASH: [[u64; 2]; 3] = [
     [0xf51b8da31bd69122, 0x798fb4b1c8db4912],
     [0xb10dbd65fec65b74, 0x69ef6b08d0727c04],
@@ -332885,6 +333076,7 @@ const SIXTEENTH_GAIN_BLOCKS: [[&[GainBlock]; 2]; 3] = [
         ],
     ],
 ];
+static SIXTEENTH_GAIN_BLOCKS__READ: LazyLock<[[&[GainBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("SIXTEENTH_GAIN_BLOCKS"));
 const SIXTEENTH_GAIN: [[Option<GainRead>; 2]; 3] = [
     [
         Some(GainRead {
@@ -336164,6 +336356,7 @@ const READ_LEAD_IN: [&[LeadInWindow]; 3] = [
         (2265, [1008, 1052], 130184727, 214234265, 23104, 114403, 0),
     ],
 ];
+static READ_LEAD_IN__READ: LazyLock<[&[LeadInWindow]; 3]> = LazyLock::new(|| DATA_FILE.read("READ_LEAD_IN"));
 const READ_QUIET: [Option<(u64, (i64, i64))>; 3] = [
     Some((2535, (129936874, 214129431))),
     Some((2555, (130948477, 213657530))),
@@ -336275,6 +336468,7 @@ const READ_FROZEN: [Option<(Block, u64, Composition)>; 3] = [
         ),
     )),
 ];
+static READ_FROZEN__READ: LazyLock<[Option<(Block, u64, Composition)>; 3]> = LazyLock::new(|| DATA_FILE.read("READ_FROZEN"));
 const READ_COUNTED: [&[Counted]; 3] = [
     &[
         (0, [5, 8]),
@@ -336475,6 +336669,7 @@ const READ_COUNTED: [&[Counted]; 3] = [
         (1, [11, 15]),
     ],
 ];
+static READ_COUNTED__READ: LazyLock<[&[Counted]; 3]> = LazyLock::new(|| DATA_FILE.read("READ_COUNTED"));
 const READ_FROZEN_CENSUS: [&[(u32, u64)]; 3] = [
     &[
         (1, 109),
@@ -346711,6 +346906,7 @@ const READ_ARM_BLOCKS: [[&[Block]; 2]; 3] = [
         ],
     ],
 ];
+static READ_ARM_BLOCKS__READ: LazyLock<[[&[Block]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("READ_ARM_BLOCKS"));
 const READ_ARM_TRACES: [[u64; 2]; 3] = [
     [0x146cb3941e88e48c, 0xcfb955e16403dc4c],
     [0x9ee6e239f7d381e6, 0xd1019248dad08702],
@@ -351781,6 +351977,7 @@ const READ_ARM_EARNED: [[&[EarnedBlock]; 2]; 3] = [
         ],
     ],
 ];
+static READ_ARM_EARNED__READ: LazyLock<[[&[EarnedBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("READ_ARM_EARNED"));
 const READ_ARM_READ: [[u64; 2]; 3] = [
     [0x9abb53f8776d0abc, 0x3aeb506f1e9e3965],
     [0x5e50c422d668e019, 0x284ef74ee1d4f66a],
@@ -352526,6 +352723,7 @@ const READ_ARM_VALUES: [[&[ValueBlock]; 2]; 3] = [
         ],
     ],
 ];
+static READ_ARM_VALUES__READ: LazyLock<[[&[ValueBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("READ_ARM_VALUES"));
 const READ_ARM_VALUE_HASH: [[u64; 2]; 3] = [
     [0x41cd91736bfb6bba, 0xc4da4e4ca97b2e47],
     [0xd5a06d17e708de3c, 0x1f5a4a318a3fe1eb],
@@ -353271,6 +353469,7 @@ const READ_ARM_SOURCED: [[&[Sourced]; 2]; 3] = [
         ],
     ],
 ];
+static READ_ARM_SOURCED__READ: LazyLock<[[&[Sourced]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("READ_ARM_SOURCED"));
 const READ_ARM_SOURCES_HASH: [[u64; 2]; 3] = [
     [0x7f6f35df4f9b61b4, 0xda774d3d93003e15],
     [0x2871cc3eebf56110, 0x4251e0a7ed7fbe30],
@@ -355398,6 +355597,7 @@ const READ_ARM_GAIN_BLOCKS: [[&[GainBlock]; 2]; 3] = [
         ],
     ],
 ];
+static READ_ARM_GAIN_BLOCKS__READ: LazyLock<[[&[GainBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("READ_ARM_GAIN_BLOCKS"));
 const READ_ARM_GAIN: [[Option<GainRead>; 2]; 3] = [
     [
         Some(GainRead {
@@ -358613,6 +358813,7 @@ const BOTH_LEAD_IN: [&[LeadInWindow]; 3] = [
         (2272, [1010, 1055], 147900240, 214318317, 49920, 114449, 0),
     ],
 ];
+static BOTH_LEAD_IN__READ: LazyLock<[&[LeadInWindow]; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_LEAD_IN"));
 const BOTH_QUIET: [Option<(u64, (i64, i64))>; 3] = [
     Some((2535, (148100267, 214138354))),
     Some((2555, (148483159, 213714032))),
@@ -358721,6 +358922,7 @@ const BOTH_FROZEN: [Option<(Block, u64, Composition)>; 3] = [
         ),
     )),
 ];
+static BOTH_FROZEN__READ: LazyLock<[Option<(Block, u64, Composition)>; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_FROZEN"));
 const BOTH_COUNTED: [&[Counted]; 3] = [
     &[
         (0, [5, 8]),
@@ -358921,6 +359123,7 @@ const BOTH_COUNTED: [&[Counted]; 3] = [
         (1, [11, 15]),
     ],
 ];
+static BOTH_COUNTED__READ: LazyLock<[&[Counted]; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_COUNTED"));
 const BOTH_FROZEN_CENSUS: [&[(u32, u64)]; 3] = [
     &[
         (1, 110),
@@ -369167,6 +369370,7 @@ const BOTH_ARM_BLOCKS: [[&[Block]; 2]; 3] = [
         ],
     ],
 ];
+static BOTH_ARM_BLOCKS__READ: LazyLock<[[&[Block]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_ARM_BLOCKS"));
 const BOTH_ARM_TRACES: [[u64; 2]; 3] = [
     [0x5ef5143440376040, 0x8ddca1a286102444],
     [0x349901db2ca83a8a, 0x8b171bc8760a724c],
@@ -374237,6 +374441,7 @@ const BOTH_ARM_EARNED: [[&[EarnedBlock]; 2]; 3] = [
         ],
     ],
 ];
+static BOTH_ARM_EARNED__READ: LazyLock<[[&[EarnedBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_ARM_EARNED"));
 const BOTH_ARM_READ: [[u64; 2]; 3] = [
     [0xca5de89d93f5ede9, 0xec9813d36f0b8500],
     [0x7673fceffaade44a, 0x8a63a07fc44ddeb4],
@@ -374982,6 +375187,7 @@ const BOTH_ARM_VALUES: [[&[ValueBlock]; 2]; 3] = [
         ],
     ],
 ];
+static BOTH_ARM_VALUES__READ: LazyLock<[[&[ValueBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_ARM_VALUES"));
 const BOTH_ARM_VALUE_HASH: [[u64; 2]; 3] = [
     [0x464fb4463628ee28, 0xac49d92637a018c9],
     [0xde0f40d97d54be75, 0x08ecfc6ad98913a9],
@@ -375727,6 +375933,7 @@ const BOTH_ARM_SOURCED: [[&[Sourced]; 2]; 3] = [
         ],
     ],
 ];
+static BOTH_ARM_SOURCED__READ: LazyLock<[[&[Sourced]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_ARM_SOURCED"));
 const BOTH_ARM_SOURCES_HASH: [[u64; 2]; 3] = [
     [0xc9f13b5c31ec9410, 0xa3b00e51db359d95],
     [0x9063e8d2a2cd0bd4, 0x759bef598f833901],
@@ -377837,6 +378044,7 @@ const BOTH_ARM_GAIN_BLOCKS: [[&[GainBlock]; 2]; 3] = [
         ],
     ],
 ];
+static BOTH_ARM_GAIN_BLOCKS__READ: LazyLock<[[&[GainBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("BOTH_ARM_GAIN_BLOCKS"));
 const BOTH_ARM_GAIN: [[Option<GainRead>; 2]; 3] = [
     [
         Some(GainRead {
@@ -381418,6 +381626,7 @@ const PROBE_LEAD_IN: [&[LeadInWindow]; 3] = [
         (2274, [1075, 945], 147973979, 213658271, 50368, 114371, 0),
     ],
 ];
+static PROBE_LEAD_IN__READ: LazyLock<[&[LeadInWindow]; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_LEAD_IN"));
 const PROBE_QUIET: [Option<(u64, (i64, i64))>; 3] = [
     Some((2459, (148235483, 213566021))),
     Some((2512, (148605637, 213179762))),
@@ -381526,6 +381735,7 @@ const PROBE_FROZEN: [Option<(Block, u64, Composition)>; 3] = [
         ),
     )),
 ];
+static PROBE_FROZEN__READ: LazyLock<[Option<(Block, u64, Composition)>; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_FROZEN"));
 const PROBE_COUNTED: [&[Counted]; 3] = [
     &[
         (0, [3, 3]),
@@ -381726,6 +381936,7 @@ const PROBE_COUNTED: [&[Counted]; 3] = [
         (1, [7, 13]),
     ],
 ];
+static PROBE_COUNTED__READ: LazyLock<[&[Counted]; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_COUNTED"));
 const PROBE_FROZEN_CENSUS: [&[(u32, u64)]; 3] = [
     &[
         (1, 137),
@@ -391995,6 +392206,7 @@ const PROBE_ARM_BLOCKS: [[&[Block]; 2]; 3] = [
         ],
     ],
 ];
+static PROBE_ARM_BLOCKS__READ: LazyLock<[[&[Block]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_ARM_BLOCKS"));
 const PROBE_ARM_TRACES: [[u64; 2]; 3] = [
     [0x0d1871b8f7ae466c, 0x3b65097ecbd8cb48],
     [0x79a72570dfbfa784, 0x577f7d852b853c2c],
@@ -397059,6 +397271,7 @@ const PROBE_ARM_EARNED: [[&[EarnedBlock]; 2]; 3] = [
         ],
     ],
 ];
+static PROBE_ARM_EARNED__READ: LazyLock<[[&[EarnedBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_ARM_EARNED"));
 const PROBE_ARM_READ: [[u64; 2]; 3] = [
     [0x5f01b117c5a1b964, 0x2a1bdeccafe976d0],
     [0x27bc7cc25773b49b, 0xe42b3657005ce90d],
@@ -397804,6 +398017,7 @@ const PROBE_ARM_VALUES: [[&[ValueBlock]; 2]; 3] = [
         ],
     ],
 ];
+static PROBE_ARM_VALUES__READ: LazyLock<[[&[ValueBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_ARM_VALUES"));
 const PROBE_ARM_VALUE_HASH: [[u64; 2]; 3] = [
     [0xa864650f53e5e682, 0x01fdb8375c0c93b8],
     [0xdd2281bee29166c8, 0x16537ae0ffc13159],
@@ -398549,6 +398763,7 @@ const PROBE_ARM_SOURCED: [[&[Sourced]; 2]; 3] = [
         ],
     ],
 ];
+static PROBE_ARM_SOURCED__READ: LazyLock<[[&[Sourced]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_ARM_SOURCED"));
 const PROBE_ARM_SOURCES_HASH: [[u64; 2]; 3] = [
     [0xe7bc7387c13344b7, 0x46b54351ba9c68c5],
     [0x2a5f86f9b9f351d3, 0xd72a416b8230b182],
@@ -400672,6 +400887,7 @@ const PROBE_ARM_GAIN_BLOCKS: [[&[GainBlock]; 2]; 3] = [
         ],
     ],
 ];
+static PROBE_ARM_GAIN_BLOCKS__READ: LazyLock<[[&[GainBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("PROBE_ARM_GAIN_BLOCKS"));
 const PROBE_ARM_GAIN: [[Option<GainRead>; 2]; 3] = [
     [
         Some(GainRead {
@@ -402424,6 +402640,7 @@ const KEPT_TWIN_TABLES: [[&[KeptBlock]; 2]; 3] = [
         ],
     ],
 ];
+static KEPT_TWIN_TABLES__READ: LazyLock<[[&[KeptBlock]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("KEPT_TWIN_TABLES"));
 
 // The arms' tables, per network, per delay in `KEPT_DELAYS`' order and per arm, empty until their
 // one run.
@@ -422631,6 +422848,7 @@ const KEPT_ARM_BLOCKS: [[[&[Block]; 2]; 2]; 3] = [
         ],
     ],
 ];
+static KEPT_ARM_BLOCKS__READ: LazyLock<[[[&[Block]; 2]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("KEPT_ARM_BLOCKS"));
 const KEPT_ARM_TRACES: [[[u64; 2]; 2]; 3] = [
     [
         [0x450aa01c0e07d440, 0xfc7b3559d8dfbda8],
@@ -424143,3 +424361,217 @@ const KEPT_ARM_TABLES: [[[&[KeptBlock]; 2]; 2]; 3] = [
         ],
     ],
 ];
+static KEPT_ARM_TABLES__READ: LazyLock<[[[&[KeptBlock]; 2]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("KEPT_ARM_TABLES"));
+
+/// Exploration 002: every table moved to the data file reads from it as the `const` it was moved
+/// from, value for value.
+#[test]
+#[ignore = "exploration 002 (ADR-0193): a run on its branch, never in the weekly job"]
+fn the_moved_tables_read_as_written_in_inhibition_explore() {
+    assert_eq!(DATA_FILE.len(), 204);
+    assert_eq!(*INHIBITION_BLOCKS_1024__READ, INHIBITION_BLOCKS_1024, "INHIBITION_BLOCKS_1024");
+    assert_eq!(*INHIBITION_COMPOSITIONS_1024__READ, INHIBITION_COMPOSITIONS_1024, "INHIBITION_COMPOSITIONS_1024");
+    assert_eq!(*INHIBITION_EARNED_1024__READ, INHIBITION_EARNED_1024, "INHIBITION_EARNED_1024");
+    assert_eq!(*REVERSAL_BLOCKS_1024__READ, REVERSAL_BLOCKS_1024, "REVERSAL_BLOCKS_1024");
+    assert_eq!(*REVERSAL_COMPOSITIONS_1024__READ, REVERSAL_COMPOSITIONS_1024, "REVERSAL_COMPOSITIONS_1024");
+    assert_eq!(*REVERSAL_EARNED_1024__READ, REVERSAL_EARNED_1024, "REVERSAL_EARNED_1024");
+    assert_eq!(*PUNISHED_BLOCKS_1024__READ, PUNISHED_BLOCKS_1024, "PUNISHED_BLOCKS_1024");
+    assert_eq!(*PUNISHED_COMPOSITIONS_1024__READ, PUNISHED_COMPOSITIONS_1024, "PUNISHED_COMPOSITIONS_1024");
+    assert_eq!(*PUNISHED_EARNED_1024__READ, PUNISHED_EARNED_1024, "PUNISHED_EARNED_1024");
+    assert_eq!(*PUNISHED_MOVES_1024__READ, PUNISHED_MOVES_1024, "PUNISHED_MOVES_1024");
+    assert_eq!(*CRITIC_BLOCKS_1024__READ, CRITIC_BLOCKS_1024, "CRITIC_BLOCKS_1024");
+    assert_eq!(*CRITIC_COMPOSITIONS_1024__READ, CRITIC_COMPOSITIONS_1024, "CRITIC_COMPOSITIONS_1024");
+    assert_eq!(*CRITIC_EARNED_1024__READ, CRITIC_EARNED_1024, "CRITIC_EARNED_1024");
+    assert_eq!(*CRITIC_MOVES_1024__READ, CRITIC_MOVES_1024, "CRITIC_MOVES_1024");
+    assert_eq!(*CRITIC_EXPECTED_1024__READ, CRITIC_EXPECTED_1024, "CRITIC_EXPECTED_1024");
+    assert_eq!(*CRITIC_STRONG_1024__READ, CRITIC_STRONG_1024, "CRITIC_STRONG_1024");
+    assert_eq!(*SCHEDULE_BLOCKS_1024__READ, SCHEDULE_BLOCKS_1024, "SCHEDULE_BLOCKS_1024");
+    assert_eq!(*SCHEDULE_COMPOSITIONS_1024__READ, SCHEDULE_COMPOSITIONS_1024, "SCHEDULE_COMPOSITIONS_1024");
+    assert_eq!(*SCHEDULE_EARNED_1024__READ, SCHEDULE_EARNED_1024, "SCHEDULE_EARNED_1024");
+    assert_eq!(*SCHEDULE_MOVES_1024__READ, SCHEDULE_MOVES_1024, "SCHEDULE_MOVES_1024");
+    assert_eq!(*SCHEDULE_EXPECTED_1024__READ, SCHEDULE_EXPECTED_1024, "SCHEDULE_EXPECTED_1024");
+    assert_eq!(*SCHEDULE_STRONG_1024__READ, SCHEDULE_STRONG_1024, "SCHEDULE_STRONG_1024");
+    assert_eq!(*TARGET_BLOCKS_1024__READ, TARGET_BLOCKS_1024, "TARGET_BLOCKS_1024");
+    assert_eq!(*TARGET_COMPOSITIONS_1024__READ, TARGET_COMPOSITIONS_1024, "TARGET_COMPOSITIONS_1024");
+    assert_eq!(*TARGET_EARNED_1024__READ, TARGET_EARNED_1024, "TARGET_EARNED_1024");
+    assert_eq!(*TARGET_MOVES_1024__READ, TARGET_MOVES_1024, "TARGET_MOVES_1024");
+    assert_eq!(*TARGET_EXPECTED_1024__READ, TARGET_EXPECTED_1024, "TARGET_EXPECTED_1024");
+    assert_eq!(*TARGET_STRONG_1024__READ, TARGET_STRONG_1024, "TARGET_STRONG_1024");
+    assert_eq!(*TARGET_SPIKES_1024__READ, TARGET_SPIKES_1024, "TARGET_SPIKES_1024");
+    assert_eq!(*TARGET_INHIBITION_1024__READ, TARGET_INHIBITION_1024, "TARGET_INHIBITION_1024");
+    assert_eq!(*VALUED_BLOCKS_1024__READ, VALUED_BLOCKS_1024, "VALUED_BLOCKS_1024");
+    assert_eq!(*VALUED_COMPOSITIONS_1024__READ, VALUED_COMPOSITIONS_1024, "VALUED_COMPOSITIONS_1024");
+    assert_eq!(*VALUED_EARNED_1024__READ, VALUED_EARNED_1024, "VALUED_EARNED_1024");
+    assert_eq!(*VALUED_MOVES_1024__READ, VALUED_MOVES_1024, "VALUED_MOVES_1024");
+    assert_eq!(*VALUED_STRONG_1024__READ, VALUED_STRONG_1024, "VALUED_STRONG_1024");
+    assert_eq!(*VALUED_VALUES_1024__READ, VALUED_VALUES_1024, "VALUED_VALUES_1024");
+    assert_eq!(*VALUED_WEIGHTS_1024__READ, VALUED_WEIGHTS_1024, "VALUED_WEIGHTS_1024");
+    assert_eq!(*WINDOWED_BLOCKS_1024__READ, WINDOWED_BLOCKS_1024, "WINDOWED_BLOCKS_1024");
+    assert_eq!(*WINDOWED_COMPOSITIONS_1024__READ, WINDOWED_COMPOSITIONS_1024, "WINDOWED_COMPOSITIONS_1024");
+    assert_eq!(*WINDOWED_EARNED_1024__READ, WINDOWED_EARNED_1024, "WINDOWED_EARNED_1024");
+    assert_eq!(*WINDOWED_MOVES_1024__READ, WINDOWED_MOVES_1024, "WINDOWED_MOVES_1024");
+    assert_eq!(*WINDOWED_STRONG_1024__READ, WINDOWED_STRONG_1024, "WINDOWED_STRONG_1024");
+    assert_eq!(*WINDOWED_VALUES_1024__READ, WINDOWED_VALUES_1024, "WINDOWED_VALUES_1024");
+    assert_eq!(*WINDOWED_WEIGHTS_1024__READ, WINDOWED_WEIGHTS_1024, "WINDOWED_WEIGHTS_1024");
+    assert_eq!(*WINDOWED_ADMITTED_1024__READ, WINDOWED_ADMITTED_1024, "WINDOWED_ADMITTED_1024");
+    assert_eq!(*UNADDRESSED_BLOCKS_1024__READ, UNADDRESSED_BLOCKS_1024, "UNADDRESSED_BLOCKS_1024");
+    assert_eq!(*UNADDRESSED_COMPOSITIONS_1024__READ, UNADDRESSED_COMPOSITIONS_1024, "UNADDRESSED_COMPOSITIONS_1024");
+    assert_eq!(*UNADDRESSED_EARNED_1024__READ, UNADDRESSED_EARNED_1024, "UNADDRESSED_EARNED_1024");
+    assert_eq!(*UNADDRESSED_MOVES_1024__READ, UNADDRESSED_MOVES_1024, "UNADDRESSED_MOVES_1024");
+    assert_eq!(*UNADDRESSED_STRONG_1024__READ, UNADDRESSED_STRONG_1024, "UNADDRESSED_STRONG_1024");
+    assert_eq!(*UNADDRESSED_VALUES_1024__READ, UNADDRESSED_VALUES_1024, "UNADDRESSED_VALUES_1024");
+    assert_eq!(*UNADDRESSED_WEIGHTS_1024__READ, UNADDRESSED_WEIGHTS_1024, "UNADDRESSED_WEIGHTS_1024");
+    assert_eq!(*UNADDRESSED_ADMITTED_1024__READ, UNADDRESSED_ADMITTED_1024, "UNADDRESSED_ADMITTED_1024");
+    assert_eq!(*UNADDRESSED_SPIKES_1024__READ, UNADDRESSED_SPIKES_1024, "UNADDRESSED_SPIKES_1024");
+    assert_eq!(*UNADDRESSED_CELLS_1024__READ, UNADDRESSED_CELLS_1024, "UNADDRESSED_CELLS_1024");
+    assert_eq!(*UNADDRESSED_WENT_1024__READ, UNADDRESSED_WENT_1024, "UNADDRESSED_WENT_1024");
+    assert_eq!(*DRAWN_BLOCKS_1024__READ, DRAWN_BLOCKS_1024, "DRAWN_BLOCKS_1024");
+    assert_eq!(*DRAWN_COMPOSITIONS_1024__READ, DRAWN_COMPOSITIONS_1024, "DRAWN_COMPOSITIONS_1024");
+    assert_eq!(*DRAWN_EARNED_1024__READ, DRAWN_EARNED_1024, "DRAWN_EARNED_1024");
+    assert_eq!(*DRAWN_MOVES_1024__READ, DRAWN_MOVES_1024, "DRAWN_MOVES_1024");
+    assert_eq!(*DRAWN_STRONG_1024__READ, DRAWN_STRONG_1024, "DRAWN_STRONG_1024");
+    assert_eq!(*DRAWN_VALUES_1024__READ, DRAWN_VALUES_1024, "DRAWN_VALUES_1024");
+    assert_eq!(*DRAWN_WEIGHTS_1024__READ, DRAWN_WEIGHTS_1024, "DRAWN_WEIGHTS_1024");
+    assert_eq!(*DRAWN_ADMITTED_1024__READ, DRAWN_ADMITTED_1024, "DRAWN_ADMITTED_1024");
+    assert_eq!(*DRAWN_SPIKES_1024__READ, DRAWN_SPIKES_1024, "DRAWN_SPIKES_1024");
+    assert_eq!(*DRAWN_CELLS_1024__READ, DRAWN_CELLS_1024, "DRAWN_CELLS_1024");
+    assert_eq!(*DRAWN_WENT_1024__READ, DRAWN_WENT_1024, "DRAWN_WENT_1024");
+    assert_eq!(*DRAWN_SOURCED_1024__READ, DRAWN_SOURCED_1024, "DRAWN_SOURCED_1024");
+    assert_eq!(*RELEASED_COSTED_1024__READ, RELEASED_COSTED_1024, "RELEASED_COSTED_1024");
+    assert_eq!(*RELEASED_HEARD_1024__READ, RELEASED_HEARD_1024, "RELEASED_HEARD_1024");
+    assert_eq!(*RELEASED_ELIGIBLE_1024__READ, RELEASED_ELIGIBLE_1024, "RELEASED_ELIGIBLE_1024");
+    assert_eq!(*RELEASED_MARGINS_1024__READ, RELEASED_MARGINS_1024, "RELEASED_MARGINS_1024");
+    assert_eq!(*RELEASED_COUPLINGS_1024__READ, RELEASED_COUPLINGS_1024, "RELEASED_COUPLINGS_1024");
+    assert_eq!(*GATED_BLOCKS_1024__READ, GATED_BLOCKS_1024, "GATED_BLOCKS_1024");
+    assert_eq!(*GATED_COMPOSITIONS_1024__READ, GATED_COMPOSITIONS_1024, "GATED_COMPOSITIONS_1024");
+    assert_eq!(*GATED_EARNED_1024__READ, GATED_EARNED_1024, "GATED_EARNED_1024");
+    assert_eq!(*GATED_CENSUS_1024__READ, GATED_CENSUS_1024, "GATED_CENSUS_1024");
+    assert_eq!(*GATED_MOVES_1024__READ, GATED_MOVES_1024, "GATED_MOVES_1024");
+    assert_eq!(*GATED_STRONG_1024__READ, GATED_STRONG_1024, "GATED_STRONG_1024");
+    assert_eq!(*GATED_VALUES_1024__READ, GATED_VALUES_1024, "GATED_VALUES_1024");
+    assert_eq!(*GATED_WEIGHTS_1024__READ, GATED_WEIGHTS_1024, "GATED_WEIGHTS_1024");
+    assert_eq!(*GATED_ADMITTED_1024__READ, GATED_ADMITTED_1024, "GATED_ADMITTED_1024");
+    assert_eq!(*GATED_SPIKES_1024__READ, GATED_SPIKES_1024, "GATED_SPIKES_1024");
+    assert_eq!(*GATED_CELLS_1024__READ, GATED_CELLS_1024, "GATED_CELLS_1024");
+    assert_eq!(*GATED_WENT_1024__READ, GATED_WENT_1024, "GATED_WENT_1024");
+    assert_eq!(*GATED_SOURCED_1024__READ, GATED_SOURCED_1024, "GATED_SOURCED_1024");
+    assert_eq!(*GATED_COSTED_1024__READ, GATED_COSTED_1024, "GATED_COSTED_1024");
+    assert_eq!(*GATED_QUIETED_1024__READ, GATED_QUIETED_1024, "GATED_QUIETED_1024");
+    assert_eq!(*GATED_ELIGIBLE_1024__READ, GATED_ELIGIBLE_1024, "GATED_ELIGIBLE_1024");
+    assert_eq!(*GATED_MARGINS_1024__READ, GATED_MARGINS_1024, "GATED_MARGINS_1024");
+    assert_eq!(*GATED_MESSAGES_1024__READ, GATED_MESSAGES_1024, "GATED_MESSAGES_1024");
+    assert_eq!(*MISLED_BLOCKS_1024__READ, MISLED_BLOCKS_1024, "MISLED_BLOCKS_1024");
+    assert_eq!(*MISLED_COMPOSITIONS_1024__READ, MISLED_COMPOSITIONS_1024, "MISLED_COMPOSITIONS_1024");
+    assert_eq!(*MISLED_EARNED_1024__READ, MISLED_EARNED_1024, "MISLED_EARNED_1024");
+    assert_eq!(*MISLED_MOVES_1024__READ, MISLED_MOVES_1024, "MISLED_MOVES_1024");
+    assert_eq!(*MISLED_STRONG_1024__READ, MISLED_STRONG_1024, "MISLED_STRONG_1024");
+    assert_eq!(*MISLED_VALUES_1024__READ, MISLED_VALUES_1024, "MISLED_VALUES_1024");
+    assert_eq!(*MISLED_WEIGHTS_1024__READ, MISLED_WEIGHTS_1024, "MISLED_WEIGHTS_1024");
+    assert_eq!(*MISLED_ADMITTED_1024__READ, MISLED_ADMITTED_1024, "MISLED_ADMITTED_1024");
+    assert_eq!(*MISLED_SPIKES_1024__READ, MISLED_SPIKES_1024, "MISLED_SPIKES_1024");
+    assert_eq!(*MISLED_CELLS_1024__READ, MISLED_CELLS_1024, "MISLED_CELLS_1024");
+    assert_eq!(*MISLED_WENT_1024__READ, MISLED_WENT_1024, "MISLED_WENT_1024");
+    assert_eq!(*MISLED_SOURCED_1024__READ, MISLED_SOURCED_1024, "MISLED_SOURCED_1024");
+    assert_eq!(*MISLED_OUTCOMES_1024__READ, MISLED_OUTCOMES_1024, "MISLED_OUTCOMES_1024");
+    assert_eq!(*MISLED_KIND_MOVES_1024__READ, MISLED_KIND_MOVES_1024, "MISLED_KIND_MOVES_1024");
+    assert_eq!(*MISLED_KIND_ERRORS_1024__READ, MISLED_KIND_ERRORS_1024, "MISLED_KIND_ERRORS_1024");
+    assert_eq!(*MISLED_BEYOND_1024__READ, MISLED_BEYOND_1024, "MISLED_BEYOND_1024");
+    assert_eq!(*CANCELLED_SEEDED__READ, CANCELLED_SEEDED, "CANCELLED_SEEDED");
+    assert_eq!(*LEAD_IN_SEEDED__READ, LEAD_IN_SEEDED, "LEAD_IN_SEEDED");
+    assert_eq!(*FROZEN_SEEDED__READ, FROZEN_SEEDED, "FROZEN_SEEDED");
+    assert_eq!(*FROZEN_COUNTED_SEEDED__READ, FROZEN_COUNTED_SEEDED, "FROZEN_COUNTED_SEEDED");
+    assert_eq!(*SEEDED_BLOCKS__READ, SEEDED_BLOCKS, "SEEDED_BLOCKS");
+    assert_eq!(*SEEDED_EARNED__READ, SEEDED_EARNED, "SEEDED_EARNED");
+    assert_eq!(*SEEDED_VALUES__READ, SEEDED_VALUES, "SEEDED_VALUES");
+    assert_eq!(*SEEDED_SOURCED__READ, SEEDED_SOURCED, "SEEDED_SOURCED");
+    assert_eq!(*CANCELLED_TWICE__READ, CANCELLED_TWICE, "CANCELLED_TWICE");
+    assert_eq!(*LEAD_IN_TWICE__READ, LEAD_IN_TWICE, "LEAD_IN_TWICE");
+    assert_eq!(*FROZEN_TWICE__READ, FROZEN_TWICE, "FROZEN_TWICE");
+    assert_eq!(*FROZEN_COUNTED_TWICE__READ, FROZEN_COUNTED_TWICE, "FROZEN_COUNTED_TWICE");
+    assert_eq!(*TWICE_BLOCKS__READ, TWICE_BLOCKS, "TWICE_BLOCKS");
+    assert_eq!(*TWICE_EARNED__READ, TWICE_EARNED, "TWICE_EARNED");
+    assert_eq!(*TWICE_VALUES__READ, TWICE_VALUES, "TWICE_VALUES");
+    assert_eq!(*TWICE_SOURCED__READ, TWICE_SOURCED, "TWICE_SOURCED");
+    assert_eq!(*IN_FOUR_BLOCKS_1024__READ, IN_FOUR_BLOCKS_1024, "IN_FOUR_BLOCKS_1024");
+    assert_eq!(*IN_FOUR_COMPOSITIONS_1024__READ, IN_FOUR_COMPOSITIONS_1024, "IN_FOUR_COMPOSITIONS_1024");
+    assert_eq!(*IN_FOUR_EARNED_1024__READ, IN_FOUR_EARNED_1024, "IN_FOUR_EARNED_1024");
+    assert_eq!(*IN_FOUR_MOVES_1024__READ, IN_FOUR_MOVES_1024, "IN_FOUR_MOVES_1024");
+    assert_eq!(*IN_FOUR_STRONG_1024__READ, IN_FOUR_STRONG_1024, "IN_FOUR_STRONG_1024");
+    assert_eq!(*IN_FOUR_VALUES_1024__READ, IN_FOUR_VALUES_1024, "IN_FOUR_VALUES_1024");
+    assert_eq!(*IN_FOUR_WEIGHTS_1024__READ, IN_FOUR_WEIGHTS_1024, "IN_FOUR_WEIGHTS_1024");
+    assert_eq!(*IN_FOUR_ADMITTED_1024__READ, IN_FOUR_ADMITTED_1024, "IN_FOUR_ADMITTED_1024");
+    assert_eq!(*IN_FOUR_SPIKES_1024__READ, IN_FOUR_SPIKES_1024, "IN_FOUR_SPIKES_1024");
+    assert_eq!(*IN_FOUR_CELLS_1024__READ, IN_FOUR_CELLS_1024, "IN_FOUR_CELLS_1024");
+    assert_eq!(*IN_FOUR_WENT_1024__READ, IN_FOUR_WENT_1024, "IN_FOUR_WENT_1024");
+    assert_eq!(*IN_FOUR_SOURCED_1024__READ, IN_FOUR_SOURCED_1024, "IN_FOUR_SOURCED_1024");
+    assert_eq!(*IN_FOUR_OUTCOMES_1024__READ, IN_FOUR_OUTCOMES_1024, "IN_FOUR_OUTCOMES_1024");
+    assert_eq!(*IN_FOUR_KIND_MOVES_1024__READ, IN_FOUR_KIND_MOVES_1024, "IN_FOUR_KIND_MOVES_1024");
+    assert_eq!(*IN_FOUR_KIND_ERRORS_1024__READ, IN_FOUR_KIND_ERRORS_1024, "IN_FOUR_KIND_ERRORS_1024");
+    assert_eq!(*IN_FOUR_BEYOND_1024__READ, IN_FOUR_BEYOND_1024, "IN_FOUR_BEYOND_1024");
+    assert_eq!(*IN_FOUR_ALONE_1024__READ, IN_FOUR_ALONE_1024, "IN_FOUR_ALONE_1024");
+    assert_eq!(*OTHERS_BLOCKS__READ, OTHERS_BLOCKS, "OTHERS_BLOCKS");
+    assert_eq!(*OTHERS_COMPOSITIONS__READ, OTHERS_COMPOSITIONS, "OTHERS_COMPOSITIONS");
+    assert_eq!(*OTHERS_EARNED__READ, OTHERS_EARNED, "OTHERS_EARNED");
+    assert_eq!(*OTHERS_CENSUS__READ, OTHERS_CENSUS, "OTHERS_CENSUS");
+    assert_eq!(*OTHERS_MOVES__READ, OTHERS_MOVES, "OTHERS_MOVES");
+    assert_eq!(*OTHERS_STRONG__READ, OTHERS_STRONG, "OTHERS_STRONG");
+    assert_eq!(*OTHERS_VALUES__READ, OTHERS_VALUES, "OTHERS_VALUES");
+    assert_eq!(*OTHERS_WEIGHTS__READ, OTHERS_WEIGHTS, "OTHERS_WEIGHTS");
+    assert_eq!(*OTHERS_ADMITTED__READ, OTHERS_ADMITTED, "OTHERS_ADMITTED");
+    assert_eq!(*OTHERS_SPIKES__READ, OTHERS_SPIKES, "OTHERS_SPIKES");
+    assert_eq!(*OTHERS_CELLS__READ, OTHERS_CELLS, "OTHERS_CELLS");
+    assert_eq!(*OTHERS_WENT__READ, OTHERS_WENT, "OTHERS_WENT");
+    assert_eq!(*OTHERS_SOURCED__READ, OTHERS_SOURCED, "OTHERS_SOURCED");
+    assert_eq!(*OTHERS_OUTCOMES__READ, OTHERS_OUTCOMES, "OTHERS_OUTCOMES");
+    assert_eq!(*OTHERS_KIND_MOVES__READ, OTHERS_KIND_MOVES, "OTHERS_KIND_MOVES");
+    assert_eq!(*OTHERS_KIND_ERRORS__READ, OTHERS_KIND_ERRORS, "OTHERS_KIND_ERRORS");
+    assert_eq!(*OTHERS_BEYOND__READ, OTHERS_BEYOND, "OTHERS_BEYOND");
+    assert_eq!(*OTHERS_ALONE__READ, OTHERS_ALONE, "OTHERS_ALONE");
+    assert_eq!(*SCAN_LEAD_IN__READ, SCAN_LEAD_IN, "SCAN_LEAD_IN");
+    assert_eq!(*SCAN_FROZEN__READ, SCAN_FROZEN, "SCAN_FROZEN");
+    assert_eq!(*SCAN_COUNTED__READ, SCAN_COUNTED, "SCAN_COUNTED");
+    assert_eq!(*RATE_LEAD_IN__READ, RATE_LEAD_IN, "RATE_LEAD_IN");
+    assert_eq!(*RATE_FROZEN__READ, RATE_FROZEN, "RATE_FROZEN");
+    assert_eq!(*RATE_COUNTED__READ, RATE_COUNTED, "RATE_COUNTED");
+    assert_eq!(*RULED_BLOCKS__READ, RULED_BLOCKS, "RULED_BLOCKS");
+    assert_eq!(*RULED_EARNED__READ, RULED_EARNED, "RULED_EARNED");
+    assert_eq!(*RULED_VALUES__READ, RULED_VALUES, "RULED_VALUES");
+    assert_eq!(*RULED_SOURCED__READ, RULED_SOURCED, "RULED_SOURCED");
+    assert_eq!(*RULED_GAIN_BLOCKS__READ, RULED_GAIN_BLOCKS, "RULED_GAIN_BLOCKS");
+    assert_eq!(*SEEDED_RATE_LEAD_IN__READ, SEEDED_RATE_LEAD_IN, "SEEDED_RATE_LEAD_IN");
+    assert_eq!(*SEEDED_RATE_FROZEN__READ, SEEDED_RATE_FROZEN, "SEEDED_RATE_FROZEN");
+    assert_eq!(*SEEDED_RATE_COUNTED__READ, SEEDED_RATE_COUNTED, "SEEDED_RATE_COUNTED");
+    assert_eq!(*SIXTEENTH_BLOCKS__READ, SIXTEENTH_BLOCKS, "SIXTEENTH_BLOCKS");
+    assert_eq!(*SIXTEENTH_EARNED__READ, SIXTEENTH_EARNED, "SIXTEENTH_EARNED");
+    assert_eq!(*SIXTEENTH_VALUES__READ, SIXTEENTH_VALUES, "SIXTEENTH_VALUES");
+    assert_eq!(*SIXTEENTH_SOURCED__READ, SIXTEENTH_SOURCED, "SIXTEENTH_SOURCED");
+    assert_eq!(*SIXTEENTH_GAIN_BLOCKS__READ, SIXTEENTH_GAIN_BLOCKS, "SIXTEENTH_GAIN_BLOCKS");
+    assert_eq!(*READ_LEAD_IN__READ, READ_LEAD_IN, "READ_LEAD_IN");
+    assert_eq!(*READ_FROZEN__READ, READ_FROZEN, "READ_FROZEN");
+    assert_eq!(*READ_COUNTED__READ, READ_COUNTED, "READ_COUNTED");
+    assert_eq!(*READ_ARM_BLOCKS__READ, READ_ARM_BLOCKS, "READ_ARM_BLOCKS");
+    assert_eq!(*READ_ARM_EARNED__READ, READ_ARM_EARNED, "READ_ARM_EARNED");
+    assert_eq!(*READ_ARM_VALUES__READ, READ_ARM_VALUES, "READ_ARM_VALUES");
+    assert_eq!(*READ_ARM_SOURCED__READ, READ_ARM_SOURCED, "READ_ARM_SOURCED");
+    assert_eq!(*READ_ARM_GAIN_BLOCKS__READ, READ_ARM_GAIN_BLOCKS, "READ_ARM_GAIN_BLOCKS");
+    assert_eq!(*BOTH_LEAD_IN__READ, BOTH_LEAD_IN, "BOTH_LEAD_IN");
+    assert_eq!(*BOTH_FROZEN__READ, BOTH_FROZEN, "BOTH_FROZEN");
+    assert_eq!(*BOTH_COUNTED__READ, BOTH_COUNTED, "BOTH_COUNTED");
+    assert_eq!(*BOTH_ARM_BLOCKS__READ, BOTH_ARM_BLOCKS, "BOTH_ARM_BLOCKS");
+    assert_eq!(*BOTH_ARM_EARNED__READ, BOTH_ARM_EARNED, "BOTH_ARM_EARNED");
+    assert_eq!(*BOTH_ARM_VALUES__READ, BOTH_ARM_VALUES, "BOTH_ARM_VALUES");
+    assert_eq!(*BOTH_ARM_SOURCED__READ, BOTH_ARM_SOURCED, "BOTH_ARM_SOURCED");
+    assert_eq!(*BOTH_ARM_GAIN_BLOCKS__READ, BOTH_ARM_GAIN_BLOCKS, "BOTH_ARM_GAIN_BLOCKS");
+    assert_eq!(*PROBE_LEAD_IN__READ, PROBE_LEAD_IN, "PROBE_LEAD_IN");
+    assert_eq!(*PROBE_FROZEN__READ, PROBE_FROZEN, "PROBE_FROZEN");
+    assert_eq!(*PROBE_COUNTED__READ, PROBE_COUNTED, "PROBE_COUNTED");
+    assert_eq!(*PROBE_ARM_BLOCKS__READ, PROBE_ARM_BLOCKS, "PROBE_ARM_BLOCKS");
+    assert_eq!(*PROBE_ARM_EARNED__READ, PROBE_ARM_EARNED, "PROBE_ARM_EARNED");
+    assert_eq!(*PROBE_ARM_VALUES__READ, PROBE_ARM_VALUES, "PROBE_ARM_VALUES");
+    assert_eq!(*PROBE_ARM_SOURCED__READ, PROBE_ARM_SOURCED, "PROBE_ARM_SOURCED");
+    assert_eq!(*PROBE_ARM_GAIN_BLOCKS__READ, PROBE_ARM_GAIN_BLOCKS, "PROBE_ARM_GAIN_BLOCKS");
+    assert_eq!(*KEPT_TWIN_TABLES__READ, KEPT_TWIN_TABLES, "KEPT_TWIN_TABLES");
+    assert_eq!(*KEPT_ARM_BLOCKS__READ, KEPT_ARM_BLOCKS, "KEPT_ARM_BLOCKS");
+    assert_eq!(*KEPT_ARM_TABLES__READ, KEPT_ARM_TABLES, "KEPT_ARM_TABLES");
+    println!("EXPLORE inhibition: 204 tables read as written");
+}

@@ -10,7 +10,7 @@
 # debug it also times a cold `cargo check --workspace --all-targets`, the gate's Check and Clippy
 # steps' front end.
 #
-# Where the tree has the test `the_moved_tables_parse_explore` (the placements tried by the
+# Where the tree has a test `the_moved_tables_parse_in_<binary>_explore` (the placements tried by the
 # exploration), it is run once after the cold build, in the same profile: what reading the tables
 # at run time costs a test binary.
 #
@@ -72,8 +72,8 @@ for round in 1 2; do
   step "test-cold-$round" cargo test --workspace --no-run --locked --timings "${flag[@]}"
   if [ "$round" = 1 ]; then
     find target/"$profile"/deps -maxdepth 1 -type f -executable -printf '%f\t%s\n' | sort > "$out/sizes.tsv"
-    if grep -q 'the_moved_tables_parse_explore' runtime/cortex-runtime/tests/*.rs; then
-      step "parse-$round" cargo test --workspace --locked "${flag[@]}" -- --ignored --exact the_moved_tables_parse_explore --nocapture
+    if grep -q 'the_moved_tables_parse_in_' runtime/cortex-runtime/tests/*.rs; then
+      step "parse-$round" cargo test --workspace --locked "${flag[@]}" -- --ignored the_moved_tables_parse_in_ --nocapture
     fi
   fi
   mutate "$round"

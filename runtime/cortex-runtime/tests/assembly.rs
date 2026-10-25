@@ -32,6 +32,21 @@
 mod harness;
 use harness::*;
 
+// Exploration 002 (ADR-0193): the pinned tables of at least a kilobyte whose values are plain
+// literals live in tests/data/assembly.tables and are read from it at run time
+// (tests/instrument/data_file.rs). Not in main.
+#[allow(dead_code)]
+#[path = "instrument/data_file.rs"]
+mod data_file;
+use std::sync::LazyLock;
+use data_file::DataFile;
+static DATA_FILE: LazyLock<DataFile> = LazyLock::new(|| {
+    DataFile::from_file(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/assembly.tables"
+    ))
+});
+
 use cortex_connectome::{SECTION_NEURON, SECTION_SYNAPSE};
 use cortex_core::{
     BASAL_LEAK_SHIFT, FLAG_FACILITATING, FLAG_SLOW, STP_MAX, STP_U, SYNAPSES_PER_BLOCK,
@@ -3000,6 +3015,7 @@ const BACKGROUND_ROWS_1024: [&[EpochRow]; 3] = [
         ),
     ],
 ];
+static BACKGROUND_ROWS_1024__READ: LazyLock<[&[EpochRow]; 3]> = LazyLock::new(|| DATA_FILE.read("BACKGROUND_ROWS_1024"));
 
 /// Each size's control's rows: the grown image unwired, the kick and the release.
 const CONTROL_ROWS_1024: [&[EpochRow]; 3] = [
@@ -3985,6 +4001,7 @@ const CONTROL_ROWS_1024: [&[EpochRow]; 3] = [
         ),
     ],
 ];
+static CONTROL_ROWS_1024__READ: LazyLock<[&[EpochRow]; 3]> = LazyLock::new(|| DATA_FILE.read("CONTROL_ROWS_1024"));
 
 /// Each size's background, as `background_of` reads it.
 const BACKGROUNDS_1024: [Background; 3] = [
@@ -5360,6 +5377,7 @@ const CELL_ROWS_16: [&[EpochRow]; 4] = [
         ),
     ],
 ];
+static CELL_ROWS_16__READ: LazyLock<[&[EpochRow]; 4]> = LazyLock::new(|| DATA_FILE.read("CELL_ROWS_16"));
 
 /// The assembly of 16 read by the rules at each weight.
 const GRID_16: [Cell; 4] = [
@@ -6704,6 +6722,7 @@ const CELL_ROWS_32: [&[EpochRow]; 4] = [
         ),
     ],
 ];
+static CELL_ROWS_32__READ: LazyLock<[&[EpochRow]; 4]> = LazyLock::new(|| DATA_FILE.read("CELL_ROWS_32"));
 
 /// The assembly of 32 read by the rules at each weight.
 const GRID_32: [Cell; 4] = [
@@ -8048,6 +8067,7 @@ const CELL_ROWS_64: [&[EpochRow]; 4] = [
         ),
     ],
 ];
+static CELL_ROWS_64__READ: LazyLock<[&[EpochRow]; 4]> = LazyLock::new(|| DATA_FILE.read("CELL_ROWS_64"));
 
 /// The assembly of 64 read by the rules at each weight.
 const GRID_64: [Cell; 4] = [
@@ -10159,6 +10179,7 @@ const CONTROL_KICKS_049: [[&[[u32; 2]]; 3]; 2] = [
         ],
     ],
 ];
+static CONTROL_KICKS_049__READ: LazyLock<[[&[[u32; 2]]; 3]; 2]> = LazyLock::new(|| DATA_FILE.read("CONTROL_KICKS_049"));
 
 /// Each set's background's and control's windows hash, per size.
 const WINDOWS_HASH_049: [[[u64; 2]; 3]; 2] = [
@@ -10718,6 +10739,7 @@ const CELL_KICKS_049: [[[&[[u32; 2]]; 6]; 3]; 2] = [
         ],
     ],
 ];
+static CELL_KICKS_049__READ: LazyLock<[[[&[[u32; 2]]; 6]; 3]; 2]> = LazyLock::new(|| DATA_FILE.read("CELL_KICKS_049"));
 
 /// Each cell's windows hash, by set, size and weight.
 const CELL_HASH_049: [[[u64; 6]; 3]; 2] = [
@@ -11267,6 +11289,7 @@ const CELL_BURSTS_049: [[[BurstRead049; 6]; 3]; 2] = [
         ],
     ],
 ];
+static CELL_BURSTS_049__READ: LazyLock<[[[BurstRead049; 6]; 3]; 2]> = LazyLock::new(|| DATA_FILE.read("CELL_BURSTS_049"));
 
 // The runs' stretches, per set and size (brief 049).
 
@@ -11464,6 +11487,7 @@ const BACKGROUND_049_I_16: &[StretchRow] = &[
     [7, 596, 0, 1887, 3720, 7169703],
     [8, 522, 0, 1884, 3966, 7198515],
 ];
+static BACKGROUND_049_I_16__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BACKGROUND_049_I_16"));
 
 const CONTROL_049_I_16: &[StretchRow] = &[
     [12, 592, 0, 1919, 3723, 6893869],
@@ -11659,6 +11683,7 @@ const CONTROL_049_I_16: &[StretchRow] = &[
     [7, 596, 0, 1704, 3764, 6232710],
     [8, 518, 0, 1789, 3976, 6729118],
 ];
+static CONTROL_049_I_16__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CONTROL_049_I_16"));
 
 const BACKGROUND_049_I_32: &[StretchRow] = &[
     [20, 585, 0, 3737, 7511, 13676141],
@@ -11854,6 +11879,7 @@ const BACKGROUND_049_I_32: &[StretchRow] = &[
     [19, 584, 0, 3818, 7669, 14315125],
     [17, 517, 0, 3797, 7795, 14430933],
 ];
+static BACKGROUND_049_I_32__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BACKGROUND_049_I_32"));
 
 const CONTROL_049_I_32: &[StretchRow] = &[
     [20, 585, 0, 3737, 7511, 13676141],
@@ -12049,6 +12075,7 @@ const CONTROL_049_I_32: &[StretchRow] = &[
     [19, 585, 0, 3446, 7728, 12587066],
     [17, 511, 0, 3598, 7813, 13467551],
 ];
+static CONTROL_049_I_32__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CONTROL_049_I_32"));
 
 const BACKGROUND_049_I_64: &[StretchRow] = &[
     [40, 573, 0, 7467, 15100, 27258571],
@@ -12244,6 +12271,7 @@ const BACKGROUND_049_I_64: &[StretchRow] = &[
     [33, 571, 0, 7586, 15450, 29008617],
     [31, 505, 0, 7554, 15484, 28795736],
 ];
+static BACKGROUND_049_I_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BACKGROUND_049_I_64"));
 
 const CONTROL_049_I_64: &[StretchRow] = &[
     [40, 573, 0, 7467, 15100, 27258571],
@@ -12439,6 +12467,7 @@ const CONTROL_049_I_64: &[StretchRow] = &[
     [33, 573, 0, 6769, 15582, 25219104],
     [31, 500, 0, 7112, 15539, 26645225],
 ];
+static CONTROL_049_I_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CONTROL_049_I_64"));
 
 const BACKGROUND_049_II_16: &[StretchRow] = &[
     [12, 586, 0, 1274, 3820, 4884344],
@@ -12642,6 +12671,7 @@ const BACKGROUND_049_II_16: &[StretchRow] = &[
     [10, 544, 0, 1086, 3966, 4169751],
     [8, 597, 0, 1098, 3851, 4230296],
 ];
+static BACKGROUND_049_II_16__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BACKGROUND_049_II_16"));
 
 const CONTROL_049_II_16: &[StretchRow] = &[
     [12, 586, 0, 1274, 3820, 4884344],
@@ -12845,6 +12875,7 @@ const CONTROL_049_II_16: &[StretchRow] = &[
     [10, 544, 0, 946, 3970, 3457584],
     [8, 597, 0, 1016, 3870, 3822333],
 ];
+static CONTROL_049_II_16__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CONTROL_049_II_16"));
 
 const BACKGROUND_049_II_32: &[StretchRow] = &[
     [20, 578, 0, 2443, 7685, 9462825],
@@ -13048,6 +13079,7 @@ const BACKGROUND_049_II_32: &[StretchRow] = &[
     [21, 527, 0, 2199, 7856, 8389579],
     [21, 582, 0, 2274, 7722, 8597542],
 ];
+static BACKGROUND_049_II_32__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BACKGROUND_049_II_32"));
 
 const CONTROL_049_II_32: &[StretchRow] = &[
     [20, 578, 0, 2443, 7685, 9462825],
@@ -13251,6 +13283,7 @@ const CONTROL_049_II_32: &[StretchRow] = &[
     [21, 523, 0, 1920, 7894, 7044020],
     [21, 581, 0, 2116, 7752, 7833301],
 ];
+static CONTROL_049_II_32__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CONTROL_049_II_32"));
 
 const BACKGROUND_049_II_64: &[StretchRow] = &[
     [40, 558, 0, 4895, 15447, 18912136],
@@ -13454,6 +13487,7 @@ const BACKGROUND_049_II_64: &[StretchRow] = &[
     [35, 512, 0, 4441, 15832, 17382911],
     [38, 565, 0, 4509, 15594, 17369030],
 ];
+static BACKGROUND_049_II_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BACKGROUND_049_II_64"));
 
 const CONTROL_049_II_64: &[StretchRow] = &[
     [40, 558, 0, 4895, 15447, 18912136],
@@ -13657,6 +13691,7 @@ const CONTROL_049_II_64: &[StretchRow] = &[
     [35, 509, 0, 3748, 15905, 14047630],
     [39, 560, 0, 4126, 15643, 15447288],
 ];
+static CONTROL_049_II_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CONTROL_049_II_64"));
 
 // The runs' stretches, per set and size and weight (brief 049).
 
@@ -13854,6 +13889,7 @@ const CELL_049_I_16_0: &[StretchRow] = &[
     [8, 597, 0, 1744, 3755, 6359523],
     [9, 521, 0, 1828, 3961, 6836320],
 ];
+static CELL_049_I_16_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_16_0"));
 
 const CELL_049_I_16_1: &[StretchRow] = &[
     [112, 685, 3, 3153, 2779, 5970489],
@@ -14049,6 +14085,7 @@ const CELL_049_I_16_1: &[StretchRow] = &[
     [11, 598, 0, 1853, 3568, 6522228],
     [75, 602, 1, 2882, 3140, 6459674],
 ];
+static CELL_049_I_16_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_16_1"));
 
 const CELL_049_I_16_2: &[StretchRow] = &[
     [163, 712, 4, 3583, 319, 5509756],
@@ -14244,6 +14281,7 @@ const CELL_049_I_16_2: &[StretchRow] = &[
     [128, 713, 3, 3403, 698, 6412132],
     [93, 557, 2, 3211, 3462, 6576675],
 ];
+static CELL_049_I_16_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_16_2"));
 
 const CELL_049_I_16_3: &[StretchRow] = &[
     [221, 728, 4, 3685, 314, 5008204],
@@ -14439,6 +14477,7 @@ const CELL_049_I_16_3: &[StretchRow] = &[
     [182, 712, 3, 3652, 526, 5193952],
     [180, 604, 4, 3500, 2657, 4581912],
 ];
+static CELL_049_I_16_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_16_3"));
 
 const CELL_049_I_16_4: &[StretchRow] = &[
     [225, 688, 4, 3683, 401, 5079622],
@@ -14634,6 +14673,7 @@ const CELL_049_I_16_4: &[StretchRow] = &[
     [196, 713, 3, 3678, 654, 5199911],
     [179, 603, 5, 3442, 3129, 5105318],
 ];
+static CELL_049_I_16_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_16_4"));
 
 const CELL_049_I_16_5: &[StretchRow] = &[
     [284, 707, 5, 3760, 362, 4579638],
@@ -14829,6 +14869,7 @@ const CELL_049_I_16_5: &[StretchRow] = &[
     [227, 726, 4, 3742, 978, 4937910],
     [198, 603, 5, 3482, 3109, 5170939],
 ];
+static CELL_049_I_16_5__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_16_5"));
 
 const CELL_049_I_32_0: &[StretchRow] = &[
     [242, 774, 2, 6434, 5467, 11716573],
@@ -15024,6 +15065,7 @@ const CELL_049_I_32_0: &[StretchRow] = &[
     [249, 780, 2, 6744, 653, 13083859],
     [221, 707, 2, 7145, 504, 13344327],
 ];
+static CELL_049_I_32_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_32_0"));
 
 const CELL_049_I_32_1: &[StretchRow] = &[
     [461, 905, 5, 7372, 256, 9570160],
@@ -15219,6 +15261,7 @@ const CELL_049_I_32_1: &[StretchRow] = &[
     [399, 880, 3, 7141, 1040, 13004069],
     [396, 661, 4, 7390, 704, 10580822],
 ];
+static CELL_049_I_32_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_32_1"));
 
 const CELL_049_I_32_2: &[StretchRow] = &[
     [605, 894, 5, 7509, 2105, 7695667],
@@ -15414,6 +15457,7 @@ const CELL_049_I_32_2: &[StretchRow] = &[
     [458, 845, 4, 7382, 1164, 10616913],
     [500, 662, 6, 7501, 1252, 8457201],
 ];
+static CELL_049_I_32_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_32_2"));
 
 const CELL_049_I_32_3: &[StretchRow] = &[
     [757, 838, 6, 7804, 518, 7936343],
@@ -15609,6 +15653,7 @@ const CELL_049_I_32_3: &[StretchRow] = &[
     [653, 849, 6, 7447, 2070, 8971795],
     [718, 661, 8, 7641, 1323, 6751629],
 ];
+static CELL_049_I_32_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_32_3"));
 
 const CELL_049_I_32_4: &[StretchRow] = &[
     [983, 841, 8, 7810, 1235, 7886740],
@@ -15804,6 +15849,7 @@ const CELL_049_I_32_4: &[StretchRow] = &[
     [1135, 870, 10, 7876, 380, 5585426],
     [835, 639, 8, 7791, 435, 7042587],
 ];
+static CELL_049_I_32_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_32_4"));
 
 const CELL_049_I_32_5: &[StretchRow] = &[
     [2360, 840, 14, 8000, 223, 2462663],
@@ -15999,6 +16045,7 @@ const CELL_049_I_32_5: &[StretchRow] = &[
     [2672, 810, 16, 8000, 199, 833329],
     [2575, 583, 16, 8000, 207, 791750],
 ];
+static CELL_049_I_32_5__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_32_5"));
 
 const CELL_049_I_64_0: &[StretchRow] = &[
     [312, 847, 1, 11881, 11179, 24798737],
@@ -16194,6 +16241,7 @@ const CELL_049_I_64_0: &[StretchRow] = &[
     [43, 582, 0, 7224, 15345, 26655981],
     [629, 905, 4, 13983, 957, 23049533],
 ];
+static CELL_049_I_64_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_64_0"));
 
 const CELL_049_I_64_1: &[StretchRow] = &[
     [928, 1072, 4, 14558, 6814, 16908791],
@@ -16389,6 +16437,7 @@ const CELL_049_I_64_1: &[StretchRow] = &[
     [956, 1137, 7, 14541, 5592, 16965145],
     [807, 827, 6, 14961, 3213, 19001396],
 ];
+static CELL_049_I_64_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_64_1"));
 
 const CELL_049_I_64_2: &[StretchRow] = &[
     [1138, 958, 6, 14921, 1079, 14853062],
@@ -16584,6 +16633,7 @@ const CELL_049_I_64_2: &[StretchRow] = &[
     [1247, 1116, 5, 15180, 1922, 16213990],
     [1205, 777, 9, 15305, 3134, 12123088],
 ];
+static CELL_049_I_64_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_64_2"));
 
 const CELL_049_I_64_3: &[StretchRow] = &[
     [1817, 1006, 8, 14953, 7632, 14298267],
@@ -16779,6 +16829,7 @@ const CELL_049_I_64_3: &[StretchRow] = &[
     [2150, 1048, 11, 15452, 411, 10150038],
     [1579, 795, 10, 15429, 2836, 11926233],
 ];
+static CELL_049_I_64_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_64_3"));
 
 const CELL_049_I_64_4: &[StretchRow] = &[
     [3809, 1039, 15, 15999, 584, 3979386],
@@ -16974,6 +17025,7 @@ const CELL_049_I_64_4: &[StretchRow] = &[
     [3947, 1066, 16, 15998, 584, 2365607],
     [3723, 724, 16, 15999, 556, 2351762],
 ];
+static CELL_049_I_64_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_64_4"));
 
 const CELL_049_I_64_5: &[StretchRow] = &[
     [4923, 1040, 15, 16000, 532, 3374184],
@@ -17169,6 +17221,7 @@ const CELL_049_I_64_5: &[StretchRow] = &[
     [5226, 1004, 16, 16000, 417, 1678418],
     [4812, 708, 16, 16000, 418, 1836500],
 ];
+static CELL_049_I_64_5__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_I_64_5"));
 
 const CELL_049_II_16_0: &[StretchRow] = &[
     [15, 587, 0, 1312, 3778, 4880059],
@@ -17372,6 +17425,7 @@ const CELL_049_II_16_0: &[StretchRow] = &[
     [12, 546, 0, 979, 3935, 3478381],
     [9, 597, 0, 1055, 3828, 3917482],
 ];
+static CELL_049_II_16_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_16_0"));
 
 const CELL_049_II_16_1: &[StretchRow] = &[
     [31, 593, 0, 1499, 3644, 4978963],
@@ -17575,6 +17629,7 @@ const CELL_049_II_16_1: &[StretchRow] = &[
     [13, 546, 0, 993, 3924, 3480581],
     [9, 597, 0, 1063, 3821, 3949263],
 ];
+static CELL_049_II_16_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_16_1"));
 
 const CELL_049_II_16_2: &[StretchRow] = &[
     [139, 644, 3, 2478, 2834, 4601168],
@@ -17778,6 +17833,7 @@ const CELL_049_II_16_2: &[StretchRow] = &[
     [13, 546, 0, 1042, 3920, 3730033],
     [13, 597, 0, 1157, 3733, 4140643],
 ];
+static CELL_049_II_16_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_16_2"));
 
 const CELL_049_II_16_3: &[StretchRow] = &[
     [194, 677, 4, 2940, 322, 4274150],
@@ -17981,6 +18037,7 @@ const CELL_049_II_16_3: &[StretchRow] = &[
     [98, 594, 1, 2175, 2500, 3651644],
     [137, 698, 3, 2789, 1917, 5104424],
 ];
+static CELL_049_II_16_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_16_3"));
 
 const CELL_049_II_16_4: &[StretchRow] = &[
     [215, 711, 4, 3020, 353, 4291207],
@@ -18184,6 +18241,7 @@ const CELL_049_II_16_4: &[StretchRow] = &[
     [111, 592, 2, 2310, 2438, 3712727],
     [185, 699, 5, 2937, 1803, 4580884],
 ];
+static CELL_049_II_16_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_16_4"));
 
 const CELL_049_II_16_5: &[StretchRow] = &[
     [308, 665, 6, 3250, 298, 4066395],
@@ -18387,6 +18445,7 @@ const CELL_049_II_16_5: &[StretchRow] = &[
     [127, 592, 2, 2330, 3156, 4125839],
     [284, 699, 6, 3368, 684, 4213746],
 ];
+static CELL_049_II_16_5__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_16_5"));
 
 const CELL_049_II_32_0: &[StretchRow] = &[
     [31, 581, 0, 2602, 7526, 9521323],
@@ -18590,6 +18649,7 @@ const CELL_049_II_32_0: &[StretchRow] = &[
     [32, 528, 0, 2137, 7643, 7267919],
     [27, 585, 0, 2331, 7595, 8484836],
 ];
+static CELL_049_II_32_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_32_0"));
 
 const CELL_049_II_32_1: &[StretchRow] = &[
     [334, 779, 3, 5243, 5464, 8890650],
@@ -18793,6 +18853,7 @@ const CELL_049_II_32_1: &[StretchRow] = &[
     [222, 626, 1, 4495, 5805, 7953927],
     [499, 834, 4, 6499, 1806, 8230447],
 ];
+static CELL_049_II_32_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_32_1"));
 
 const CELL_049_II_32_2: &[StretchRow] = &[
     [618, 894, 5, 6496, 512, 8005054],
@@ -18996,6 +19057,7 @@ const CELL_049_II_32_2: &[StretchRow] = &[
     [261, 624, 2, 4734, 6065, 8339212],
     [628, 834, 7, 6653, 1808, 6556664],
 ];
+static CELL_049_II_32_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_32_2"));
 
 const CELL_049_II_32_3: &[StretchRow] = &[
     [802, 851, 7, 7020, 1051, 6857516],
@@ -19199,6 +19261,7 @@ const CELL_049_II_32_3: &[StretchRow] = &[
     [987, 762, 9, 6975, 3390, 6087629],
     [712, 801, 6, 7345, 443, 8604015],
 ];
+static CELL_049_II_32_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_32_3"));
 
 const CELL_049_II_32_4: &[StretchRow] = &[
     [1324, 814, 11, 7519, 441, 4698058],
@@ -19402,6 +19465,7 @@ const CELL_049_II_32_4: &[StretchRow] = &[
     [1152, 729, 8, 6963, 3526, 5895213],
     [1059, 773, 9, 7394, 367, 6106897],
 ];
+static CELL_049_II_32_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_32_4"));
 
 const CELL_049_II_32_5: &[StretchRow] = &[
     [2433, 828, 14, 7776, 268, 2041566],
@@ -19605,6 +19669,7 @@ const CELL_049_II_32_5: &[StretchRow] = &[
     [2816, 745, 16, 7776, 250, 895260],
     [2696, 769, 16, 7776, 225, 916596],
 ];
+static CELL_049_II_32_5__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_32_5"));
 
 const CELL_049_II_64_0: &[StretchRow] = &[
     [69, 583, 0, 5307, 14952, 18983767],
@@ -19808,6 +19873,7 @@ const CELL_049_II_64_0: &[StretchRow] = &[
     [42, 515, 0, 4055, 15755, 15141618],
     [50, 563, 0, 4470, 15354, 16441700],
 ];
+static CELL_049_II_64_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_64_0"));
 
 const CELL_049_II_64_1: &[StretchRow] = &[
     [416, 783, 2, 9223, 10944, 18172976],
@@ -20011,6 +20077,7 @@ const CELL_049_II_64_1: &[StretchRow] = &[
     [449, 693, 2, 9452, 8183, 14768740],
     [958, 944, 6, 12649, 5691, 14921515],
 ];
+static CELL_049_II_64_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_64_1"));
 
 const CELL_049_II_64_2: &[StretchRow] = &[
     [1234, 982, 6, 13049, 4352, 14020133],
@@ -20214,6 +20281,7 @@ const CELL_049_II_64_2: &[StretchRow] = &[
     [1326, 1053, 6, 13181, 1188, 14625351],
     [1203, 896, 8, 13861, 2735, 11755793],
 ];
+static CELL_049_II_64_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_64_2"));
 
 const CELL_049_II_64_3: &[StretchRow] = &[
     [1463, 1025, 6, 13588, 3593, 13077936],
@@ -20417,6 +20485,7 @@ const CELL_049_II_64_3: &[StretchRow] = &[
     [3558, 999, 16, 15169, 811, 2832576],
     [1338, 838, 6, 13847, 4631, 13812774],
 ];
+static CELL_049_II_64_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_64_3"));
 
 const CELL_049_II_64_4: &[StretchRow] = &[
     [3895, 1025, 15, 15507, 662, 3772962],
@@ -20620,6 +20689,7 @@ const CELL_049_II_64_4: &[StretchRow] = &[
     [4060, 1015, 16, 15402, 642, 2602893],
     [3767, 924, 16, 15543, 587, 2543097],
 ];
+static CELL_049_II_64_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_64_4"));
 
 const CELL_049_II_64_5: &[StretchRow] = &[
     [5311, 1027, 15, 15552, 569, 2859209],
@@ -20823,6 +20893,7 @@ const CELL_049_II_64_5: &[StretchRow] = &[
     [5570, 1035, 16, 15552, 428, 1795689],
     [5237, 906, 16, 15552, 513, 1870614],
 ];
+static CELL_049_II_64_5__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_049_II_64_5"));
 
 // ================================================ brief 050 (ADR-0117): the region before the readout
 
@@ -22817,6 +22888,7 @@ const GATE_KICKED_050: &[(u32, u32)] = &[
     (797, 516),
     (798, 765),
 ];
+static GATE_KICKED_050__READ: LazyLock<&[(u32, u32)]> = LazyLock::new(|| DATA_FILE.read("GATE_KICKED_050"));
 
 // ------------------------------------------------ brief 050's readings, pinned from the runs
 
@@ -23708,6 +23780,7 @@ const STIMULUS_TASK_050: [[TaskRead; 2]; 2] = [
         ],
     ],
 ];
+static STIMULUS_TASK_050__READ: LazyLock<[[TaskRead; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_TASK_050"));
 
 /// Condition (d)'s backgrounds by ADR-0065's measure per subset size, `[eight places, nine]`, six
 /// blocks each.
@@ -23749,6 +23822,7 @@ const STIMULUS_SIGHT_050: [[&[Sight050]; 2]; 2] = [
         ],
     ],
 ];
+static STIMULUS_SIGHT_050__READ: LazyLock<[[&[Sight050]; 2]; 2]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_SIGHT_050"));
 
 /// Each condition's cells, `[condition][subset size][subset weight]`.
 const CONDITION_RUNS_050: [[[Pinned050; 3]; 2]; 3] = [
@@ -24289,6 +24363,7 @@ const CONDITION_BURSTS_050: [[[BurstRead049; 3]; 2]; 3] = [
         ],
     ],
 ];
+static CONDITION_BURSTS_050__READ: LazyLock<[[[BurstRead049; 3]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("CONDITION_BURSTS_050"));
 
 /// Condition (d)'s cells' readouts' reading.
 const STIMULUS_CELL_TASK_050: [[TaskRead; 3]; 2] = [
@@ -24339,6 +24414,7 @@ const STIMULUS_CELL_TASK_050: [[TaskRead; 3]; 2] = [
         ],
     ],
 ];
+static STIMULUS_CELL_TASK_050__READ: LazyLock<[[TaskRead; 3]; 2]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_CELL_TASK_050"));
 
 /// The robust cells, `(size, weight)` by index into the grid: none.
 const ROBUST_050: &[(usize, usize)] = &[];
@@ -24594,6 +24670,7 @@ const CORE_BACKGROUND_050_48: &[StretchRow] = &[
     [26, 521, 0, 3313, 11865, 12926587],
     [28, 577, 0, 3362, 11727, 12951603],
 ];
+static CORE_BACKGROUND_050_48__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_BACKGROUND_050_48"));
 
 /// The core grid's control at 48 units.
 const CORE_CONTROL_050_48: &[StretchRow] = &[
@@ -24798,6 +24875,7 @@ const CORE_CONTROL_050_48: &[StretchRow] = &[
     [26, 517, 0, 2814, 11919, 10501914],
     [28, 573, 0, 3076, 11767, 11549122],
 ];
+static CORE_CONTROL_050_48__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_CONTROL_050_48"));
 
 /// The core grid's background at 80 units.
 const CORE_BACKGROUND_050_80: &[StretchRow] = &[
@@ -25002,6 +25080,7 @@ const CORE_BACKGROUND_050_80: &[StretchRow] = &[
     [42, 504, 0, 5521, 19734, 21610912],
     [45, 558, 0, 5579, 19580, 21591923],
 ];
+static CORE_BACKGROUND_050_80__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_BACKGROUND_050_80"));
 
 /// The core grid's control at 80 units.
 const CORE_CONTROL_050_80: &[StretchRow] = &[
@@ -25206,6 +25285,7 @@ const CORE_CONTROL_050_80: &[StretchRow] = &[
     [41, 503, 0, 4646, 19836, 17426476],
     [46, 550, 0, 5086, 19641, 19135238],
 ];
+static CORE_CONTROL_050_80__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_CONTROL_050_80"));
 
 /// The core grid's background at 96 units.
 const CORE_BACKGROUND_050_96: &[StretchRow] = &[
@@ -25410,6 +25490,7 @@ const CORE_BACKGROUND_050_96: &[StretchRow] = &[
     [55, 489, 0, 6720, 23672, 26229849],
     [55, 549, 0, 6762, 23447, 26160111],
 ];
+static CORE_BACKGROUND_050_96__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_BACKGROUND_050_96"));
 
 /// The core grid's control at 96 units.
 const CORE_CONTROL_050_96: &[StretchRow] = &[
@@ -25614,6 +25695,7 @@ const CORE_CONTROL_050_96: &[StretchRow] = &[
     [53, 489, 0, 5616, 23798, 20990454],
     [56, 540, 0, 6142, 23542, 23072339],
 ];
+static CORE_CONTROL_050_96__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_CONTROL_050_96"));
 
 /// The core grid's cell of 48 units at 0x1000.
 const CELL_050_48_0: &[StretchRow] = &[
@@ -25818,6 +25900,7 @@ const CELL_050_48_0: &[StretchRow] = &[
     [27, 517, 0, 2830, 11917, 10570748],
     [29, 573, 0, 3098, 11753, 11604376],
 ];
+static CELL_050_48_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_48_0"));
 
 /// The core grid's cell of 48 units at 0x1800.
 const CELL_050_48_1: &[StretchRow] = &[
@@ -26022,6 +26105,7 @@ const CELL_050_48_1: &[StretchRow] = &[
     [27, 517, 0, 2831, 11917, 10579928],
     [30, 573, 0, 3116, 11734, 11623759],
 ];
+static CELL_050_48_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_48_1"));
 
 /// The core grid's cell of 48 units at 0x2000.
 const CELL_050_48_2: &[StretchRow] = &[
@@ -26226,6 +26310,7 @@ const CELL_050_48_2: &[StretchRow] = &[
     [33, 525, 0, 3083, 11754, 11375564],
     [35, 574, 0, 3326, 11627, 12363935],
 ];
+static CELL_050_48_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_48_2"));
 
 /// The core grid's cell of 48 units at 0x2800.
 const CELL_050_48_3: &[StretchRow] = &[
@@ -26430,6 +26515,7 @@ const CELL_050_48_3: &[StretchRow] = &[
     [39, 526, 0, 3219, 11691, 11790070],
     [40, 572, 0, 3463, 11549, 12720707],
 ];
+static CELL_050_48_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_48_3"));
 
 /// The core grid's cell of 48 units at 0x3000.
 const CELL_050_48_4: &[StretchRow] = &[
@@ -26634,6 +26720,7 @@ const CELL_050_48_4: &[StretchRow] = &[
     [337, 696, 2, 6791, 8644, 11943462],
     [732, 840, 6, 9046, 7834, 12051625],
 ];
+static CELL_050_48_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_48_4"));
 
 /// The core grid's cell of 64 units at 0x1000.
 const CELL_050_64_0: &[StretchRow] = &[
@@ -26838,6 +26925,7 @@ const CELL_050_64_0: &[StretchRow] = &[
     [37, 511, 0, 3782, 15893, 14144669],
     [40, 560, 0, 4162, 15638, 15585639],
 ];
+static CELL_050_64_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_64_0"));
 
 /// The core grid's cell of 64 units at 0x1800.
 const CELL_050_64_1: &[StretchRow] = &[
@@ -27042,6 +27130,7 @@ const CELL_050_64_1: &[StretchRow] = &[
     [37, 511, 0, 3784, 15892, 14160770],
     [44, 561, 0, 4227, 15537, 15640309],
 ];
+static CELL_050_64_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_64_1"));
 
 /// The core grid's cell of 64 units at 0x2800.
 const CELL_050_64_3: &[StretchRow] = &[
@@ -27246,6 +27335,7 @@ const CELL_050_64_3: &[StretchRow] = &[
     [53, 527, 0, 4300, 15529, 15554958],
     [60, 580, 0, 4753, 15003, 17087798],
 ];
+static CELL_050_64_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_64_3"));
 
 /// The core grid's cell of 80 units at 0x1000.
 const CELL_050_80_0: &[StretchRow] = &[
@@ -27450,6 +27540,7 @@ const CELL_050_80_0: &[StretchRow] = &[
     [42, 503, 0, 4666, 19834, 17508471],
     [46, 550, 0, 5098, 19640, 19195996],
 ];
+static CELL_050_80_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_80_0"));
 
 /// The core grid's cell of 80 units at 0x1800.
 const CELL_050_80_1: &[StretchRow] = &[
@@ -27654,6 +27745,7 @@ const CELL_050_80_1: &[StretchRow] = &[
     [42, 503, 0, 4669, 19834, 17528921],
     [48, 551, 0, 5133, 19617, 19262829],
 ];
+static CELL_050_80_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_80_1"));
 
 /// The core grid's cell of 80 units at 0x2000.
 const CELL_050_80_2: &[StretchRow] = &[
@@ -27858,6 +27950,7 @@ const CELL_050_80_2: &[StretchRow] = &[
     [48, 502, 0, 5010, 19711, 18871677],
     [54, 552, 0, 5413, 19418, 20275565],
 ];
+static CELL_050_80_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_80_2"));
 
 /// The core grid's cell of 80 units at 0x2800.
 const CELL_050_80_3: &[StretchRow] = &[
@@ -28062,6 +28155,7 @@ const CELL_050_80_3: &[StretchRow] = &[
     [63, 514, 0, 5322, 19429, 19478414],
     [60, 556, 0, 5677, 19260, 21120010],
 ];
+static CELL_050_80_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_80_3"));
 
 /// The core grid's cell of 80 units at 0x3000.
 const CELL_050_80_4: &[StretchRow] = &[
@@ -28266,6 +28360,7 @@ const CELL_050_80_4: &[StretchRow] = &[
     [585, 704, 2, 12063, 9672, 18667202],
     [968, 1012, 5, 15091, 9810, 22079438],
 ];
+static CELL_050_80_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_80_4"));
 
 /// The core grid's cell of 96 units at 0x1000.
 const CELL_050_96_0: &[StretchRow] = &[
@@ -28470,6 +28565,7 @@ const CELL_050_96_0: &[StretchRow] = &[
     [55, 489, 0, 5651, 23788, 21093803],
     [59, 542, 0, 6207, 23496, 23229596],
 ];
+static CELL_050_96_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_96_0"));
 
 /// The core grid's cell of 96 units at 0x1800.
 const CELL_050_96_1: &[StretchRow] = &[
@@ -28674,6 +28770,7 @@ const CELL_050_96_1: &[StretchRow] = &[
     [57, 489, 0, 5691, 23773, 21186565],
     [67, 543, 0, 6360, 23285, 23406997],
 ];
+static CELL_050_96_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_96_1"));
 
 /// The core grid's cell of 96 units at 0x2000.
 const CELL_050_96_2: &[StretchRow] = &[
@@ -28878,6 +28975,7 @@ const CELL_050_96_2: &[StretchRow] = &[
     [72, 494, 0, 6239, 23447, 22995850],
     [74, 550, 0, 6769, 23088, 24922684],
 ];
+static CELL_050_96_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_96_2"));
 
 /// The core grid's cell of 96 units at 0x2800.
 const CELL_050_96_3: &[StretchRow] = &[
@@ -29082,6 +29180,7 @@ const CELL_050_96_3: &[StretchRow] = &[
     [94, 508, 0, 6648, 23083, 23551765],
     [95, 567, 0, 7275, 22742, 26251062],
 ];
+static CELL_050_96_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_96_3"));
 
 /// The core grid's cell of 96 units at 0x3000.
 const CELL_050_96_4: &[StretchRow] = &[
@@ -29286,6 +29385,7 @@ const CELL_050_96_4: &[StretchRow] = &[
     [682, 810, 1, 14116, 13248, 22470535],
     [1495, 1244, 6, 19324, 2858, 25666300],
 ];
+static CELL_050_96_4__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_050_96_4"));
 
 /// The subset's cell of 64 units at 0x1800 under (b).
 const SEED_050_64_1: &[StretchRow] = &[
@@ -29490,6 +29590,7 @@ const SEED_050_64_1: &[StretchRow] = &[
     [38, 509, 0, 3800, 15883, 14177544],
     [46, 560, 0, 4276, 15440, 15679291],
 ];
+static SEED_050_64_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("SEED_050_64_1"));
 
 /// The subset's cell of 64 units at 0x2000 under (b).
 const SEED_050_64_2: &[StretchRow] = &[
@@ -29694,6 +29795,7 @@ const SEED_050_64_2: &[StretchRow] = &[
     [41, 514, 0, 4052, 15779, 15205074],
     [52, 563, 0, 4499, 15291, 16443965],
 ];
+static SEED_050_64_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("SEED_050_64_2"));
 
 /// The subset's cell of 64 units at 0x2800 under (b).
 const SEED_050_64_3: &[StretchRow] = &[
@@ -29898,6 +30000,7 @@ const SEED_050_64_3: &[StretchRow] = &[
     [57, 519, 0, 4378, 15403, 15562711],
     [55, 565, 0, 4735, 15158, 17245860],
 ];
+static SEED_050_64_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("SEED_050_64_3"));
 
 /// The subset's cell of 96 units at 0x1800 under (b).
 const SEED_050_96_1: &[StretchRow] = &[
@@ -30102,6 +30205,7 @@ const SEED_050_96_1: &[StretchRow] = &[
     [59, 487, 0, 5720, 23721, 21190984],
     [68, 542, 0, 6401, 23235, 23473621],
 ];
+static SEED_050_96_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("SEED_050_96_1"));
 
 /// The subset's cell of 96 units at 0x2000 under (b).
 const SEED_050_96_2: &[StretchRow] = &[
@@ -30306,6 +30410,7 @@ const SEED_050_96_2: &[StretchRow] = &[
     [73, 490, 0, 6228, 23446, 22853529],
     [74, 546, 0, 6767, 23044, 24899130],
 ];
+static SEED_050_96_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("SEED_050_96_2"));
 
 /// The subset's cell of 96 units at 0x2800 under (b).
 const SEED_050_96_3: &[StretchRow] = &[
@@ -30510,6 +30615,7 @@ const SEED_050_96_3: &[StretchRow] = &[
     [95, 499, 0, 6662, 22988, 23414004],
     [92, 562, 0, 7268, 22522, 26100315],
 ];
+static SEED_050_96_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("SEED_050_96_3"));
 
 /// The subset's cell of 64 units at 0x1800 under (c).
 const DRAINED_050_64_1: &[StretchRow] = &[
@@ -30714,6 +30820,7 @@ const DRAINED_050_64_1: &[StretchRow] = &[
     [45, 591, 0, 3946, 15814, 14416879],
     [57, 620, 0, 4483, 15525, 16285935],
 ];
+static DRAINED_050_64_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_050_64_1"));
 
 /// The subset's cell of 64 units at 0x2000 under (c).
 const DRAINED_050_64_2: &[StretchRow] = &[
@@ -30918,6 +31025,7 @@ const DRAINED_050_64_2: &[StretchRow] = &[
     [54, 601, 0, 4259, 15600, 15396709],
     [81, 639, 0, 5020, 14940, 17295151],
 ];
+static DRAINED_050_64_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_050_64_2"));
 
 /// The subset's cell of 64 units at 0x2800 under (c).
 const DRAINED_050_64_3: &[StretchRow] = &[
@@ -31122,6 +31230,7 @@ const DRAINED_050_64_3: &[StretchRow] = &[
     [69, 607, 0, 4588, 15203, 15919362],
     [102, 655, 0, 5466, 14517, 18211203],
 ];
+static DRAINED_050_64_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_050_64_3"));
 
 /// The subset's cell of 96 units at 0x1800 under (c).
 const DRAINED_050_96_1: &[StretchRow] = &[
@@ -31326,6 +31435,7 @@ const DRAINED_050_96_1: &[StretchRow] = &[
     [76, 546, 0, 6058, 23573, 21767002],
     [85, 602, 0, 6808, 23201, 24732875],
 ];
+static DRAINED_050_96_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_050_96_1"));
 
 /// The subset's cell of 96 units at 0x2000 under (c).
 const DRAINED_050_96_2: &[StretchRow] = &[
@@ -31530,6 +31640,7 @@ const DRAINED_050_96_2: &[StretchRow] = &[
     [85, 561, 0, 6471, 23359, 23371872],
     [103, 613, 0, 7280, 22942, 26098095],
 ];
+static DRAINED_050_96_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_050_96_2"));
 
 /// The subset's cell of 96 units at 0x2800 under (c).
 const DRAINED_050_96_3: &[StretchRow] = &[
@@ -31734,6 +31845,7 @@ const DRAINED_050_96_3: &[StretchRow] = &[
     [114, 577, 0, 7008, 22472, 23787287],
     [1076, 1409, 2, 16842, 10835, 24045905],
 ];
+static DRAINED_050_96_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_050_96_3"));
 
 /// The subset's cell of 64 units at 0x1800 under (d).
 const STIMULUS_050_64_1: &[StretchRow] = &[
@@ -31938,6 +32050,7 @@ const STIMULUS_050_64_1: &[StretchRow] = &[
     [42, 650, 0, 3895, 15806, 14361739],
     [52, 697, 0, 4382, 15443, 16046711],
 ];
+static STIMULUS_050_64_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_050_64_1"));
 
 /// The subset's cell of 64 units at 0x2000 under (d).
 const STIMULUS_050_64_2: &[StretchRow] = &[
@@ -32142,6 +32255,7 @@ const STIMULUS_050_64_2: &[StretchRow] = &[
     [45, 653, 0, 4128, 15759, 15430431],
     [57, 698, 0, 4584, 15319, 16791501],
 ];
+static STIMULUS_050_64_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_050_64_2"));
 
 /// The subset's cell of 64 units at 0x2800 under (d).
 const STIMULUS_050_64_3: &[StretchRow] = &[
@@ -32346,6 +32460,7 @@ const STIMULUS_050_64_3: &[StretchRow] = &[
     [50, 651, 0, 4256, 15658, 15675810],
     [70, 720, 0, 4848, 14958, 17203520],
 ];
+static STIMULUS_050_64_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_050_64_3"));
 
 /// The subset's cell of 96 units at 0x1800 under (d).
 const STIMULUS_050_96_1: &[StretchRow] = &[
@@ -32550,6 +32665,7 @@ const STIMULUS_050_96_1: &[StretchRow] = &[
     [58, 620, 0, 5746, 23735, 21422871],
     [79, 672, 0, 6545, 23143, 23777259],
 ];
+static STIMULUS_050_96_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_050_96_1"));
 
 /// The subset's cell of 96 units at 0x2000 under (d).
 const STIMULUS_050_96_2: &[StretchRow] = &[
@@ -32754,6 +32870,7 @@ const STIMULUS_050_96_2: &[StretchRow] = &[
     [67, 625, 0, 6177, 23503, 23044449],
     [83, 677, 0, 6845, 23071, 25052853],
 ];
+static STIMULUS_050_96_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_050_96_2"));
 
 /// The subset's cell of 96 units at 0x2800 under (d).
 const STIMULUS_050_96_3: &[StretchRow] = &[
@@ -32958,6 +33075,7 @@ const STIMULUS_050_96_3: &[StretchRow] = &[
     [92, 635, 0, 6641, 23062, 23603316],
     [103, 695, 0, 7390, 22620, 26387529],
 ];
+static STIMULUS_050_96_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_050_96_3"));
 
 /// Condition (c)'s background at 64 units.
 const DRAINED_BACKGROUND_050_64: &[StretchRow] = &[
@@ -33162,6 +33280,7 @@ const DRAINED_BACKGROUND_050_64: &[StretchRow] = &[
     [38, 600, 0, 4602, 15790, 17927762],
     [47, 604, 0, 4709, 15685, 18034592],
 ];
+static DRAINED_BACKGROUND_050_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_BACKGROUND_050_64"));
 
 /// Condition (c)'s control at 64 units.
 const DRAINED_CONTROL_050_64: &[StretchRow] = &[
@@ -33366,6 +33485,7 @@ const DRAINED_CONTROL_050_64: &[StretchRow] = &[
     [38, 589, 0, 3827, 15885, 14182337],
     [47, 605, 0, 4266, 15740, 15880463],
 ];
+static DRAINED_CONTROL_050_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_CONTROL_050_64"));
 
 /// Condition (c)'s background at 96 units.
 const DRAINED_BACKGROUND_050_96: &[StretchRow] = &[
@@ -33570,6 +33690,7 @@ const DRAINED_BACKGROUND_050_96: &[StretchRow] = &[
     [62, 559, 0, 6956, 23590, 26805763],
     [64, 586, 0, 7007, 23551, 27114958],
 ];
+static DRAINED_BACKGROUND_050_96__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_BACKGROUND_050_96"));
 
 /// Condition (c)'s control at 96 units.
 const DRAINED_CONTROL_050_96: &[StretchRow] = &[
@@ -33774,6 +33895,7 @@ const DRAINED_CONTROL_050_96: &[StretchRow] = &[
     [61, 542, 0, 5795, 23763, 21281624],
     [65, 587, 0, 6351, 23653, 23856508],
 ];
+static DRAINED_CONTROL_050_96__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_CONTROL_050_96"));
 
 /// Condition (d)'s background at 64 units.
 const STIMULUS_BACKGROUND_050_64: &[StretchRow] = &[
@@ -33978,6 +34100,7 @@ const STIMULUS_BACKGROUND_050_64: &[StretchRow] = &[
     [38, 644, 0, 4575, 15783, 17814660],
     [41, 699, 0, 4604, 15522, 17720870],
 ];
+static STIMULUS_BACKGROUND_050_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_BACKGROUND_050_64"));
 
 /// Condition (d)'s control at 64 units.
 const STIMULUS_CONTROL_050_64: &[StretchRow] = &[
@@ -34182,6 +34305,7 @@ const STIMULUS_CONTROL_050_64: &[StretchRow] = &[
     [38, 648, 0, 3810, 15864, 14185130],
     [41, 689, 0, 4177, 15593, 15621000],
 ];
+static STIMULUS_CONTROL_050_64__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_CONTROL_050_64"));
 
 /// Condition (d)'s background at 96 units.
 const STIMULUS_BACKGROUND_050_96: &[StretchRow] = &[
@@ -34386,6 +34510,7 @@ const STIMULUS_BACKGROUND_050_96: &[StretchRow] = &[
     [56, 616, 0, 6889, 23636, 26956815],
     [62, 675, 0, 6929, 23328, 26671948],
 ];
+static STIMULUS_BACKGROUND_050_96__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_BACKGROUND_050_96"));
 
 /// Condition (d)'s control at 96 units.
 const STIMULUS_CONTROL_050_96: &[StretchRow] = &[
@@ -34590,6 +34715,7 @@ const STIMULUS_CONTROL_050_96: &[StretchRow] = &[
     [54, 618, 0, 5657, 23776, 21131795],
     [62, 662, 0, 6243, 23449, 23299913],
 ];
+static STIMULUS_CONTROL_050_96__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_CONTROL_050_96"));
 
 // ================================================ brief 051 (ADR-0120): an inhibition of the context's own
 
@@ -36218,6 +36344,7 @@ const GATE_KICKED_051: &[(u32, u32)] = &[
     (789, 16),
     (797, 356),
 ];
+static GATE_KICKED_051__READ: LazyLock<&[(u32, u32)]> = LazyLock::new(|| DATA_FILE.read("GATE_KICKED_051"));
 
 // ------------------------------------------------ brief 051's readings, pinned from the runs
 
@@ -36661,6 +36788,7 @@ const BG_TASK_051: [[TaskRead; 2]; 3] = [
         ],
     ],
 ];
+static BG_TASK_051__READ: LazyLock<[[TaskRead; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("BG_TASK_051"));
 
 /// Condition (d)'s backgrounds by ADR-0065's measure, `[inhibitory weight][eight places, nine]`.
 const BG_SIGHT_051: [[&[Sight050]; 2]; 3] = [
@@ -36719,6 +36847,7 @@ const BG_SIGHT_051: [[&[Sight050]; 2]; 3] = [
         ],
     ],
 ];
+static BG_SIGHT_051__READ: LazyLock<[[&[Sight050]; 2]; 3]> = LazyLock::new(|| DATA_FILE.read("BG_SIGHT_051"));
 
 /// Condition (c)'s drained image: the members' input from its prior synapses at (c)'s rates.
 const DRAINED_INPUT_051: (i64, i64) = (2274, -110);
@@ -38211,6 +38340,7 @@ const BURSTS_051: [[[BurstRead049; 3]; 4]; 4] = [
         ],
     ],
 ];
+static BURSTS_051__READ: LazyLock<[[[BurstRead049; 3]; 4]; 4]> = LazyLock::new(|| DATA_FILE.read("BURSTS_051"));
 
 /// Condition (d)'s cells' readouts, `[recurrent][inhibitory]`.
 const CELL_TASK_051: [[TaskRead; 3]; 4] = [
@@ -38307,6 +38437,7 @@ const CELL_TASK_051: [[TaskRead; 3]; 4] = [
         ],
     ],
 ];
+static CELL_TASK_051__READ: LazyLock<[[TaskRead; 3]; 4]> = LazyLock::new(|| DATA_FILE.read("CELL_TASK_051"));
 
 /// The core grid's usable cells, `(recurrent, inhibitory)` by index.
 const USABLE_051: &[(usize, usize)] = &[];
@@ -38401,6 +38532,7 @@ const FAILURES_051: [[[[bool; 3]; 4]; 3]; 4] = [
         ],
     ],
 ];
+static FAILURES_051__READ: LazyLock<[[[[bool; 3]; 4]; 3]; 4]> = LazyLock::new(|| DATA_FILE.read("FAILURES_051"));
 
 /// The background of the core at the inhibitory weight -8192.
 const CORE_BG_051_0: &[StretchRow] = &[
@@ -38605,6 +38737,7 @@ const CORE_BG_051_0: &[StretchRow] = &[
     [32, 503, 0, 4334, 15869, 17018851],
     [30, 562, 0, 4339, 15689, 16914936],
 ];
+static CORE_BG_051_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_BG_051_0"));
 
 /// The control of the core at the inhibitory weight -8192.
 const CORE_CTL_051_0: &[StretchRow] = &[
@@ -38809,6 +38942,7 @@ const CORE_CTL_051_0: &[StretchRow] = &[
     [32, 500, 0, 3703, 15933, 13980463],
     [31, 558, 0, 3983, 15723, 15105178],
 ];
+static CORE_CTL_051_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_CTL_051_0"));
 
 /// The background of the core at the inhibitory weight -16384.
 const CORE_BG_051_1: &[StretchRow] = &[
@@ -39013,6 +39147,7 @@ const CORE_BG_051_1: &[StretchRow] = &[
     [31, 503, 0, 4274, 15951, 16790113],
     [25, 560, 0, 4225, 15758, 16659824],
 ];
+static CORE_BG_051_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_BG_051_1"));
 
 /// The control of the core at the inhibitory weight -16384.
 const CORE_CTL_051_1: &[StretchRow] = &[
@@ -39217,6 +39352,7 @@ const CORE_CTL_051_1: &[StretchRow] = &[
     [31, 500, 0, 3682, 16004, 13973794],
     [26, 555, 0, 3894, 15786, 14945610],
 ];
+static CORE_CTL_051_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_CTL_051_1"));
 
 /// The background of the core at the inhibitory weight -32767.
 const CORE_BG_051_2: &[StretchRow] = &[
@@ -39421,6 +39557,7 @@ const CORE_BG_051_2: &[StretchRow] = &[
     [30, 505, 0, 4170, 15969, 16354514],
     [21, 558, 0, 4106, 15868, 16329691],
 ];
+static CORE_BG_051_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_BG_051_2"));
 
 /// The control of the core at the inhibitory weight -32767.
 const CORE_CTL_051_2: &[StretchRow] = &[
@@ -39625,6 +39762,7 @@ const CORE_CTL_051_2: &[StretchRow] = &[
     [30, 501, 0, 3666, 16008, 13933257],
     [21, 554, 0, 3806, 15907, 14817952],
 ];
+static CORE_CTL_051_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CORE_CTL_051_2"));
 
 /// The background of (c) at the inhibitory weight -8192.
 const DRAINED_BG_051_0: &[StretchRow] = &[
@@ -39829,6 +39967,7 @@ const DRAINED_BG_051_0: &[StretchRow] = &[
     [34, 597, 0, 4452, 15838, 17422082],
     [43, 602, 0, 4571, 15740, 17556459],
 ];
+static DRAINED_BG_051_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_BG_051_0"));
 
 /// The control of (c) at the inhibitory weight -8192.
 const DRAINED_CTL_051_0: &[StretchRow] = &[
@@ -40033,6 +40172,7 @@ const DRAINED_CTL_051_0: &[StretchRow] = &[
     [34, 587, 0, 3759, 15914, 14043780],
     [43, 605, 0, 4174, 15793, 15624367],
 ];
+static DRAINED_CTL_051_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_CTL_051_0"));
 
 /// The background of (c) at the inhibitory weight -16384.
 const DRAINED_BG_051_1: &[StretchRow] = &[
@@ -40237,6 +40377,7 @@ const DRAINED_BG_051_1: &[StretchRow] = &[
     [28, 592, 0, 4301, 15899, 17028084],
     [42, 602, 0, 4470, 15755, 17105109],
 ];
+static DRAINED_BG_051_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_BG_051_1"));
 
 /// The control of (c) at the inhibitory weight -16384.
 const DRAINED_CTL_051_1: &[StretchRow] = &[
@@ -40441,6 +40582,7 @@ const DRAINED_CTL_051_1: &[StretchRow] = &[
     [28, 585, 0, 3638, 15961, 13771000],
     [42, 606, 0, 4088, 15805, 15251343],
 ];
+static DRAINED_CTL_051_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_CTL_051_1"));
 
 /// The background of (c) at the inhibitory weight -32767.
 const DRAINED_BG_051_2: &[StretchRow] = &[
@@ -40645,6 +40787,7 @@ const DRAINED_BG_051_2: &[StretchRow] = &[
     [25, 589, 0, 4194, 15957, 16679630],
     [37, 601, 0, 4343, 15794, 16742557],
 ];
+static DRAINED_BG_051_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_BG_051_2"));
 
 /// The control of (c) at the inhibitory weight -32767.
 const DRAINED_CTL_051_2: &[StretchRow] = &[
@@ -40849,6 +40992,7 @@ const DRAINED_CTL_051_2: &[StretchRow] = &[
     [25, 582, 0, 3588, 16013, 13709847],
     [36, 605, 0, 3966, 15870, 15016641],
 ];
+static DRAINED_CTL_051_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("DRAINED_CTL_051_2"));
 
 /// The background of (d) at the inhibitory weight -8192.
 const STIMULUS_BG_051_0: &[StretchRow] = &[
@@ -41053,6 +41197,7 @@ const STIMULUS_BG_051_0: &[StretchRow] = &[
     [35, 638, 0, 4442, 15847, 17380685],
     [34, 695, 0, 4446, 15611, 17278420],
 ];
+static STIMULUS_BG_051_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_BG_051_0"));
 
 /// The control of (d) at the inhibitory weight -8192.
 const STIMULUS_CTL_051_0: &[StretchRow] = &[
@@ -41257,6 +41402,7 @@ const STIMULUS_CTL_051_0: &[StretchRow] = &[
     [34, 641, 0, 3731, 15920, 14019296],
     [34, 687, 0, 4040, 15676, 15261179],
 ];
+static STIMULUS_CTL_051_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_CTL_051_0"));
 
 /// The background of (d) at the inhibitory weight -16384.
 const STIMULUS_BG_051_1: &[StretchRow] = &[
@@ -41461,6 +41607,7 @@ const STIMULUS_BG_051_1: &[StretchRow] = &[
     [33, 636, 0, 4340, 15934, 17006919],
     [31, 697, 0, 4345, 15636, 16930141],
 ];
+static STIMULUS_BG_051_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_BG_051_1"));
 
 /// The control of (d) at the inhibitory weight -16384.
 const STIMULUS_CTL_051_1: &[StretchRow] = &[
@@ -41665,6 +41812,7 @@ const STIMULUS_CTL_051_1: &[StretchRow] = &[
     [33, 641, 0, 3711, 15991, 14014090],
     [31, 687, 0, 3984, 15688, 15113841],
 ];
+static STIMULUS_CTL_051_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_CTL_051_1"));
 
 /// The background of (d) at the inhibitory weight -32767.
 const STIMULUS_BG_051_2: &[StretchRow] = &[
@@ -41869,6 +42017,7 @@ const STIMULUS_BG_051_2: &[StretchRow] = &[
     [32, 639, 0, 4259, 15950, 16636284],
     [27, 697, 0, 4244, 15713, 16640345],
 ];
+static STIMULUS_BG_051_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_BG_051_2"));
 
 /// The control of (d) at the inhibitory weight -32767.
 const STIMULUS_CTL_051_2: &[StretchRow] = &[
@@ -42073,6 +42222,7 @@ const STIMULUS_CTL_051_2: &[StretchRow] = &[
     [32, 642, 0, 3694, 15995, 13970455],
     [28, 686, 0, 3927, 15739, 15022930],
 ];
+static STIMULUS_CTL_051_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("STIMULUS_CTL_051_2"));
 
 /// The cell under the core at the recurrent weight 0x2000 and the inhibitory weight -8192.
 const CELL_051_CORE_0_0: &[StretchRow] = &[
@@ -42277,6 +42427,7 @@ const CELL_051_CORE_0_0: &[StretchRow] = &[
     [35, 504, 0, 3817, 15904, 14395229],
     [41, 560, 0, 4210, 15534, 15602802],
 ];
+static CELL_051_CORE_0_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_0_0"));
 
 /// The cell under the core at the recurrent weight 0x2000 and the inhibitory weight -16384.
 const CELL_051_CORE_0_1: &[StretchRow] = &[
@@ -42481,6 +42632,7 @@ const CELL_051_CORE_0_1: &[StretchRow] = &[
     [33, 502, 0, 3721, 15993, 14082760],
     [34, 559, 0, 4051, 15650, 15236490],
 ];
+static CELL_051_CORE_0_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_0_1"));
 
 /// The cell under the core at the recurrent weight 0x2000 and the inhibitory weight -32767.
 const CELL_051_CORE_0_2: &[StretchRow] = &[
@@ -42685,6 +42837,7 @@ const CELL_051_CORE_0_2: &[StretchRow] = &[
     [32, 503, 0, 3701, 15997, 14033155],
     [24, 556, 0, 3877, 15872, 15007690],
 ];
+static CELL_051_CORE_0_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_0_2"));
 
 /// The cell under the core at the recurrent weight 0x3000 and the inhibitory weight -8192.
 const CELL_051_CORE_1_0: &[StretchRow] = &[
@@ -42889,6 +43042,7 @@ const CELL_051_CORE_1_0: &[StretchRow] = &[
     [438, 685, 1, 9498, 6995, 14556872],
     [789, 933, 3, 12357, 5537, 18200863],
 ];
+static CELL_051_CORE_1_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_1_0"));
 
 /// The cell under the core at the recurrent weight 0x3000 and the inhibitory weight -16384.
 const CELL_051_CORE_1_1: &[StretchRow] = &[
@@ -43093,6 +43247,7 @@ const CELL_051_CORE_1_1: &[StretchRow] = &[
     [54, 514, 0, 4341, 15497, 15618212],
     [48, 562, 0, 4627, 15175, 16990645],
 ];
+static CELL_051_CORE_1_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_1_1"));
 
 /// The cell under the core at the recurrent weight 0x3000 and the inhibitory weight -32767.
 const CELL_051_CORE_1_2: &[StretchRow] = &[
@@ -43297,6 +43452,7 @@ const CELL_051_CORE_1_2: &[StretchRow] = &[
     [50, 513, 0, 4269, 15597, 15535648],
     [29, 557, 0, 4281, 15736, 16685753],
 ];
+static CELL_051_CORE_1_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_1_2"));
 
 /// The cell under the core at the recurrent weight 0x4000 and the inhibitory weight -8192.
 const CELL_051_CORE_2_0: &[StretchRow] = &[
@@ -43501,6 +43657,7 @@ const CELL_051_CORE_2_0: &[StretchRow] = &[
     [770, 813, 2, 11848, 914, 14856640],
     [1019, 929, 8, 13218, 5964, 13316106],
 ];
+static CELL_051_CORE_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_2_0"));
 
 /// The cell under the core at the recurrent weight 0x4000 and the inhibitory weight -16384.
 const CELL_051_CORE_2_1: &[StretchRow] = &[
@@ -43705,6 +43862,7 @@ const CELL_051_CORE_2_1: &[StretchRow] = &[
     [746, 775, 3, 11746, 1003, 14381378],
     [1030, 891, 5, 13278, 5231, 15691161],
 ];
+static CELL_051_CORE_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_2_1"));
 
 /// The cell under the core at the recurrent weight 0x4000 and the inhibitory weight -32767.
 const CELL_051_CORE_2_2: &[StretchRow] = &[
@@ -43909,6 +44067,7 @@ const CELL_051_CORE_2_2: &[StretchRow] = &[
     [469, 710, 2, 9308, 11140, 15965317],
     [1035, 953, 5, 13230, 1002, 16909920],
 ];
+static CELL_051_CORE_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_2_2"));
 
 /// The cell under the core at the recurrent weight 0x6000 and the inhibitory weight -8192.
 const CELL_051_CORE_3_0: &[StretchRow] = &[
@@ -44113,6 +44272,7 @@ const CELL_051_CORE_3_0: &[StretchRow] = &[
     [4061, 1039, 16, 15417, 732, 2574010],
     [3708, 918, 16, 15522, 618, 2564448],
 ];
+static CELL_051_CORE_3_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_3_0"));
 
 /// The cell under the core at the recurrent weight 0x6000 and the inhibitory weight -16384.
 const CELL_051_CORE_3_1: &[StretchRow] = &[
@@ -44317,6 +44477,7 @@ const CELL_051_CORE_3_1: &[StretchRow] = &[
     [4009, 982, 16, 15385, 773, 2540581],
     [3688, 920, 16, 15517, 656, 2566907],
 ];
+static CELL_051_CORE_3_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_3_1"));
 
 /// The cell under the core at the recurrent weight 0x6000 and the inhibitory weight -32767.
 const CELL_051_CORE_3_2: &[StretchRow] = &[
@@ -44521,6 +44682,7 @@ const CELL_051_CORE_3_2: &[StretchRow] = &[
     [3972, 976, 16, 15361, 705, 2597776],
     [3073, 860, 14, 14783, 970, 5923927],
 ];
+static CELL_051_CORE_3_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_CORE_3_2"));
 
 /// The cell under (b) at the recurrent weight 0x2000 and the inhibitory weight -8192.
 const CELL_051_SEED_0_0: &[StretchRow] = &[
@@ -44725,6 +44887,7 @@ const CELL_051_SEED_0_0: &[StretchRow] = &[
     [35, 505, 0, 3770, 15899, 14153882],
     [42, 560, 0, 4201, 15503, 15493999],
 ];
+static CELL_051_SEED_0_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_0_0"));
 
 /// The cell under (b) at the recurrent weight 0x2000 and the inhibitory weight -16384.
 const CELL_051_SEED_0_1: &[StretchRow] = &[
@@ -44929,6 +45092,7 @@ const CELL_051_SEED_0_1: &[StretchRow] = &[
     [34, 505, 0, 3749, 15978, 14138905],
     [33, 558, 0, 4054, 15649, 15284044],
 ];
+static CELL_051_SEED_0_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_0_1"));
 
 /// The cell under (b) at the recurrent weight 0x2000 and the inhibitory weight -32767.
 const CELL_051_SEED_0_2: &[StretchRow] = &[
@@ -45133,6 +45297,7 @@ const CELL_051_SEED_0_2: &[StretchRow] = &[
     [33, 506, 0, 3726, 15982, 14079943],
     [26, 556, 0, 3924, 15809, 15098071],
 ];
+static CELL_051_SEED_0_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_0_2"));
 
 /// The cell under (b) at the recurrent weight 0x3000 and the inhibitory weight -8192.
 const CELL_051_SEED_1_0: &[StretchRow] = &[
@@ -45337,6 +45502,7 @@ const CELL_051_SEED_1_0: &[StretchRow] = &[
     [431, 685, 1, 9365, 7615, 14798162],
     [791, 966, 4, 12416, 5168, 18075635],
 ];
+static CELL_051_SEED_1_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_1_0"));
 
 /// The cell under (b) at the recurrent weight 0x3000 and the inhibitory weight -16384.
 const CELL_051_SEED_1_1: &[StretchRow] = &[
@@ -45541,6 +45707,7 @@ const CELL_051_SEED_1_1: &[StretchRow] = &[
     [430, 685, 1, 9340, 7679, 14728802],
     [546, 868, 3, 11126, 9227, 20508841],
 ];
+static CELL_051_SEED_1_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_1_1"));
 
 /// The cell under (b) at the recurrent weight 0x3000 and the inhibitory weight -32767.
 const CELL_051_SEED_1_2: &[StretchRow] = &[
@@ -45745,6 +45912,7 @@ const CELL_051_SEED_1_2: &[StretchRow] = &[
     [417, 697, 1, 9247, 7527, 14571255],
     [524, 844, 3, 11063, 8020, 21104348],
 ];
+static CELL_051_SEED_1_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_1_2"));
 
 /// The cell under (b) at the recurrent weight 0x4000 and the inhibitory weight -8192.
 const CELL_051_SEED_2_0: &[StretchRow] = &[
@@ -45949,6 +46117,7 @@ const CELL_051_SEED_2_0: &[StretchRow] = &[
     [778, 822, 3, 11855, 1116, 14898809],
     [1021, 894, 7, 13245, 5774, 13947944],
 ];
+static CELL_051_SEED_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_2_0"));
 
 /// The cell under (b) at the recurrent weight 0x4000 and the inhibitory weight -16384.
 const CELL_051_SEED_2_1: &[StretchRow] = &[
@@ -46153,6 +46322,7 @@ const CELL_051_SEED_2_1: &[StretchRow] = &[
     [757, 815, 3, 11810, 1029, 14429797],
     [1024, 940, 5, 13571, 1950, 15309321],
 ];
+static CELL_051_SEED_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_2_1"));
 
 /// The cell under (b) at the recurrent weight 0x4000 and the inhibitory weight -32767.
 const CELL_051_SEED_2_2: &[StretchRow] = &[
@@ -46357,6 +46527,7 @@ const CELL_051_SEED_2_2: &[StretchRow] = &[
     [735, 803, 3, 11660, 1149, 14339798],
     [779, 877, 4, 12575, 7529, 17019253],
 ];
+static CELL_051_SEED_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_2_2"));
 
 /// The cell under (b) at the recurrent weight 0x6000 and the inhibitory weight -8192.
 const CELL_051_SEED_3_0: &[StretchRow] = &[
@@ -46561,6 +46732,7 @@ const CELL_051_SEED_3_0: &[StretchRow] = &[
     [4034, 1026, 16, 15382, 601, 2597282],
     [3760, 900, 16, 15532, 600, 2576910],
 ];
+static CELL_051_SEED_3_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_3_0"));
 
 /// The cell under (b) at the recurrent weight 0x6000 and the inhibitory weight -16384.
 const CELL_051_SEED_3_1: &[StretchRow] = &[
@@ -46765,6 +46937,7 @@ const CELL_051_SEED_3_1: &[StretchRow] = &[
     [4147, 1022, 16, 15470, 696, 2441019],
     [3807, 906, 16, 15543, 528, 2425327],
 ];
+static CELL_051_SEED_3_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_3_1"));
 
 /// The cell under (b) at the recurrent weight 0x6000 and the inhibitory weight -32767.
 const CELL_051_SEED_3_2: &[StretchRow] = &[
@@ -46969,6 +47142,7 @@ const CELL_051_SEED_3_2: &[StretchRow] = &[
     [3618, 971, 15, 15238, 427, 3466916],
     [2509, 900, 12, 15370, 649, 8579084],
 ];
+static CELL_051_SEED_3_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_SEED_3_2"));
 
 /// The cell under (c) at the recurrent weight 0x2000 and the inhibitory weight -8192.
 const CELL_051_DRAINED_0_0: &[StretchRow] = &[
@@ -47173,6 +47347,7 @@ const CELL_051_DRAINED_0_0: &[StretchRow] = &[
     [44, 595, 0, 4060, 15819, 15114814],
     [67, 627, 0, 4694, 15382, 16780590],
 ];
+static CELL_051_DRAINED_0_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_0_0"));
 
 /// The cell under (c) at the recurrent weight 0x2000 and the inhibitory weight -16384.
 const CELL_051_DRAINED_0_1: &[StretchRow] = &[
@@ -47377,6 +47552,7 @@ const CELL_051_DRAINED_0_1: &[StretchRow] = &[
     [34, 587, 0, 3760, 15899, 14071758],
     [62, 630, 0, 4444, 15533, 15892551],
 ];
+static CELL_051_DRAINED_0_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_0_1"));
 
 /// The cell under (c) at the recurrent weight 0x2000 and the inhibitory weight -32767.
 const CELL_051_DRAINED_0_2: &[StretchRow] = &[
@@ -47581,6 +47757,7 @@ const CELL_051_DRAINED_0_2: &[StretchRow] = &[
     [27, 585, 0, 3624, 16006, 13816502],
     [50, 609, 0, 4197, 15668, 15342725],
 ];
+static CELL_051_DRAINED_0_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_0_2"));
 
 /// The cell under (c) at the recurrent weight 0x3000 and the inhibitory weight -8192.
 const CELL_051_DRAINED_1_0: &[StretchRow] = &[
@@ -47785,6 +47962,7 @@ const CELL_051_DRAINED_1_0: &[StretchRow] = &[
     [62, 601, 0, 4458, 15429, 15880396],
     [985, 1361, 6, 12063, 6146, 15088903],
 ];
+static CELL_051_DRAINED_1_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_1_0"));
 
 /// The cell under (c) at the recurrent weight 0x3000 and the inhibitory weight -16384.
 const CELL_051_DRAINED_1_1: &[StretchRow] = &[
@@ -47989,6 +48167,7 @@ const CELL_051_DRAINED_1_1: &[StretchRow] = &[
     [47, 595, 0, 4135, 15756, 15397122],
     [721, 1275, 3, 10714, 10005, 16110196],
 ];
+static CELL_051_DRAINED_1_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_1_1"));
 
 /// The cell under (c) at the recurrent weight 0x3000 and the inhibitory weight -32767.
 const CELL_051_DRAINED_1_2: &[StretchRow] = &[
@@ -48193,6 +48372,7 @@ const CELL_051_DRAINED_1_2: &[StretchRow] = &[
     [30, 588, 0, 3878, 15977, 15072061],
     [73, 645, 0, 4668, 15420, 16513013],
 ];
+static CELL_051_DRAINED_1_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_1_2"));
 
 /// The cell under (c) at the recurrent weight 0x4000 and the inhibitory weight -8192.
 const CELL_051_DRAINED_2_0: &[StretchRow] = &[
@@ -48397,6 +48577,7 @@ const CELL_051_DRAINED_2_0: &[StretchRow] = &[
     [1085, 1258, 5, 12561, 5953, 13179437],
     [1430, 1024, 8, 13927, 3447, 12153161],
 ];
+static CELL_051_DRAINED_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_2_0"));
 
 /// The cell under (c) at the recurrent weight 0x4000 and the inhibitory weight -16384.
 const CELL_051_DRAINED_2_1: &[StretchRow] = &[
@@ -48601,6 +48782,7 @@ const CELL_051_DRAINED_2_1: &[StretchRow] = &[
     [802, 1197, 3, 11401, 7481, 15169498],
     [1192, 1038, 5, 13117, 7576, 15122974],
 ];
+static CELL_051_DRAINED_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_2_1"));
 
 /// The cell under (c) at the recurrent weight 0x4000 and the inhibitory weight -32767.
 const CELL_051_DRAINED_2_2: &[StretchRow] = &[
@@ -48805,6 +48987,7 @@ const CELL_051_DRAINED_2_2: &[StretchRow] = &[
     [45, 596, 0, 4200, 15530, 15469360],
     [1017, 1252, 5, 11948, 9086, 15530408],
 ];
+static CELL_051_DRAINED_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_2_2"));
 
 /// The cell under (c) at the recurrent weight 0x6000 and the inhibitory weight -8192.
 const CELL_051_DRAINED_3_0: &[StretchRow] = &[
@@ -49009,6 +49192,7 @@ const CELL_051_DRAINED_3_0: &[StretchRow] = &[
     [4052, 1444, 16, 15455, 711, 2529784],
     [3796, 911, 16, 15542, 706, 2458319],
 ];
+static CELL_051_DRAINED_3_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_3_0"));
 
 /// The cell under (c) at the recurrent weight 0x6000 and the inhibitory weight -16384.
 const CELL_051_DRAINED_3_1: &[StretchRow] = &[
@@ -49213,6 +49397,7 @@ const CELL_051_DRAINED_3_1: &[StretchRow] = &[
     [4081, 1516, 16, 15454, 729, 2628811],
     [3772, 959, 16, 15540, 680, 2509183],
 ];
+static CELL_051_DRAINED_3_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_3_1"));
 
 /// The cell under (c) at the recurrent weight 0x6000 and the inhibitory weight -32767.
 const CELL_051_DRAINED_3_2: &[StretchRow] = &[
@@ -49417,6 +49602,7 @@ const CELL_051_DRAINED_3_2: &[StretchRow] = &[
     [2991, 1490, 12, 15187, 548, 9159029],
     [3834, 904, 16, 15533, 629, 2446265],
 ];
+static CELL_051_DRAINED_3_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_DRAINED_3_2"));
 
 /// The cell under (d) at the recurrent weight 0x2000 and the inhibitory weight -8192.
 const CELL_051_STIMULUS_0_0: &[StretchRow] = &[
@@ -49621,6 +49807,7 @@ const CELL_051_STIMULUS_0_0: &[StretchRow] = &[
     [38, 643, 0, 3923, 15850, 14738752],
     [42, 692, 0, 4264, 15587, 16009310],
 ];
+static CELL_051_STIMULUS_0_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_0_0"));
 
 /// The cell under (d) at the recurrent weight 0x2000 and the inhibitory weight -16384.
 const CELL_051_STIMULUS_0_1: &[StretchRow] = &[
@@ -49825,6 +50012,7 @@ const CELL_051_STIMULUS_0_1: &[StretchRow] = &[
     [36, 642, 0, 3770, 15970, 14150904],
     [41, 691, 0, 4162, 15600, 15538773],
 ];
+static CELL_051_STIMULUS_0_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_0_1"));
 
 /// The cell under (d) at the recurrent weight 0x2000 and the inhibitory weight -32767.
 const CELL_051_STIMULUS_0_2: &[StretchRow] = &[
@@ -50029,6 +50217,7 @@ const CELL_051_STIMULUS_0_2: &[StretchRow] = &[
     [36, 642, 0, 3768, 15970, 14138950],
     [34, 690, 0, 4057, 15681, 15383012],
 ];
+static CELL_051_STIMULUS_0_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_0_2"));
 
 /// The cell under (d) at the recurrent weight 0x3000 and the inhibitory weight -8192.
 const CELL_051_STIMULUS_1_0: &[StretchRow] = &[
@@ -50233,6 +50422,7 @@ const CELL_051_STIMULUS_1_0: &[StretchRow] = &[
     [50, 645, 0, 4261, 15658, 15791139],
     [326, 817, 1, 8713, 2733, 16405206],
 ];
+static CELL_051_STIMULUS_1_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_1_0"));
 
 /// The cell under (d) at the recurrent weight 0x3000 and the inhibitory weight -16384.
 const CELL_051_STIMULUS_1_1: &[StretchRow] = &[
@@ -50437,6 +50627,7 @@ const CELL_051_STIMULUS_1_1: &[StretchRow] = &[
     [43, 643, 0, 4146, 15877, 15764673],
     [72, 725, 0, 4861, 14843, 16965667],
 ];
+static CELL_051_STIMULUS_1_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_1_1"));
 
 /// The cell under (d) at the recurrent weight 0x3000 and the inhibitory weight -32767.
 const CELL_051_STIMULUS_1_2: &[StretchRow] = &[
@@ -50641,6 +50832,7 @@ const CELL_051_STIMULUS_1_2: &[StretchRow] = &[
     [40, 642, 0, 4096, 15906, 15562238],
     [48, 697, 0, 4465, 15339, 16525718],
 ];
+static CELL_051_STIMULUS_1_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_1_2"));
 
 /// The cell under (d) at the recurrent weight 0x4000 and the inhibitory weight -8192.
 const CELL_051_STIMULUS_2_0: &[StretchRow] = &[
@@ -50845,6 +51037,7 @@ const CELL_051_STIMULUS_2_0: &[StretchRow] = &[
     [794, 958, 3, 11941, 978, 15062607],
     [995, 998, 6, 13026, 6516, 13924777],
 ];
+static CELL_051_STIMULUS_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_2_0"));
 
 /// The cell under (d) at the recurrent weight 0x4000 and the inhibitory weight -16384.
 const CELL_051_STIMULUS_2_1: &[StretchRow] = &[
@@ -51049,6 +51242,7 @@ const CELL_051_STIMULUS_2_1: &[StretchRow] = &[
     [779, 940, 3, 11869, 1016, 15033113],
     [1038, 1071, 4, 13450, 3553, 14900626],
 ];
+static CELL_051_STIMULUS_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_2_1"));
 
 /// The cell under (d) at the recurrent weight 0x4000 and the inhibitory weight -32767.
 const CELL_051_STIMULUS_2_2: &[StretchRow] = &[
@@ -51253,6 +51447,7 @@ const CELL_051_STIMULUS_2_2: &[StretchRow] = &[
     [715, 945, 3, 11573, 973, 14441285],
     [975, 1094, 4, 13320, 3496, 14879010],
 ];
+static CELL_051_STIMULUS_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_2_2"));
 
 /// The cell under (d) at the recurrent weight 0x6000 and the inhibitory weight -8192.
 const CELL_051_STIMULUS_3_0: &[StretchRow] = &[
@@ -51457,6 +51652,7 @@ const CELL_051_STIMULUS_3_0: &[StretchRow] = &[
     [4024, 1146, 16, 15400, 707, 2641389],
     [3698, 1025, 16, 15538, 691, 2513912],
 ];
+static CELL_051_STIMULUS_3_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_3_0"));
 
 /// The cell under (d) at the recurrent weight 0x6000 and the inhibitory weight -16384.
 const CELL_051_STIMULUS_3_1: &[StretchRow] = &[
@@ -51661,6 +51857,7 @@ const CELL_051_STIMULUS_3_1: &[StretchRow] = &[
     [3992, 1107, 16, 15367, 730, 2626293],
     [3731, 1029, 16, 15527, 680, 2575016],
 ];
+static CELL_051_STIMULUS_3_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_3_1"));
 
 /// The cell under (d) at the recurrent weight 0x6000 and the inhibitory weight -32767.
 const CELL_051_STIMULUS_3_2: &[StretchRow] = &[
@@ -51865,6 +52062,7 @@ const CELL_051_STIMULUS_3_2: &[StretchRow] = &[
     [2787, 1110, 10, 15091, 633, 10461491],
     [3712, 1018, 16, 15484, 475, 2555756],
 ];
+static CELL_051_STIMULUS_3_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_051_STIMULUS_3_2"));
 
 // ================================================ brief 052 (ADR-0124): the slow current, measured
 
@@ -53457,6 +53655,7 @@ const GATE_KICKED_052: &[(u32, u32)] = &[
     (734, 216),
     (762, 336),
 ];
+static GATE_KICKED_052__READ: LazyLock<&[(u32, u32)]> = LazyLock::new(|| DATA_FILE.read("GATE_KICKED_052"));
 
 const GATE_SLOW_052: &[i32] = &[
     1064683, 1082358, 1067147, 1070613, 1056291, 1033082, 1055896, 1050573, 1053280, 1102508,
@@ -53672,6 +53871,7 @@ const BG_052_A_0: &[StretchRow] = &[
     [661, 533, 0, 10516, 3462, 7815304],
     [564, 602, 0, 10492, 3706, 8602911],
 ];
+static BG_052_A_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_052_A_0"));
 
 const CTL_052_A_0: &[StretchRow] = &[
     [588, 674, 2, 10724, 4011, 15028414],
@@ -53875,6 +54075,7 @@ const CTL_052_A_0: &[StretchRow] = &[
     [878, 627, 5, 10813, 3369, 8857417],
     [575, 607, 0, 10492, 3696, 8479706],
 ];
+static CTL_052_A_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_052_A_0"));
 
 const BG_052_A_1: &[StretchRow] = &[
     [194, 606, 0, 8183, 8735, 18801709],
@@ -54078,6 +54279,7 @@ const BG_052_A_1: &[StretchRow] = &[
     [243, 539, 0, 8498, 6664, 12268066],
     [239, 619, 0, 8518, 6884, 12925390],
 ];
+static BG_052_A_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_052_A_1"));
 
 const CTL_052_A_1: &[StretchRow] = &[
     [194, 606, 0, 8183, 8735, 18801709],
@@ -54281,6 +54483,7 @@ const CTL_052_A_1: &[StretchRow] = &[
     [278, 598, 0, 8472, 7387, 16254974],
     [243, 612, 0, 8479, 7054, 13316271],
 ];
+static CTL_052_A_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_052_A_1"));
 
 const BG_052_A_2: &[StretchRow] = &[
     [84, 585, 0, 7080, 11567, 20646437],
@@ -54484,6 +54687,7 @@ const BG_052_A_2: &[StretchRow] = &[
     [103, 550, 0, 7201, 10439, 17484891],
     [78, 583, 0, 7006, 11009, 18100022],
 ];
+static BG_052_A_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_052_A_2"));
 
 const CTL_052_A_2: &[StretchRow] = &[
     [84, 585, 0, 7080, 11567, 20646437],
@@ -54687,6 +54891,7 @@ const CTL_052_A_2: &[StretchRow] = &[
     [102, 552, 0, 7062, 11810, 21102845],
     [77, 589, 0, 7008, 11341, 19174387],
 ];
+static CTL_052_A_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_052_A_2"));
 
 const BG_052_B_0: &[StretchRow] = &[
     [645, 737, 2, 9662, 7769, 16287197],
@@ -54890,6 +55095,7 @@ const BG_052_B_0: &[StretchRow] = &[
     [1132, 831, 13, 12907, 5011, 16424034],
     [1127, 882, 11, 12959, 4179, 15623290],
 ];
+static BG_052_B_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_052_B_0"));
 
 const CTL_052_B_0: &[StretchRow] = &[
     [645, 737, 2, 9662, 7769, 16287197],
@@ -55093,6 +55299,7 @@ const CTL_052_B_0: &[StretchRow] = &[
     [1128, 817, 12, 11589, 5713, 13537739],
     [1148, 877, 13, 12776, 4584, 15061774],
 ];
+static CTL_052_B_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_052_B_0"));
 
 const BG_052_B_1: &[StretchRow] = &[
     [195, 617, 0, 6647, 12583, 18288859],
@@ -55296,6 +55503,7 @@ const BG_052_B_1: &[StretchRow] = &[
     [358, 687, 0, 9429, 10377, 22564532],
     [372, 794, 0, 9614, 10085, 22924683],
 ];
+static BG_052_B_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_052_B_1"));
 
 const CTL_052_B_1: &[StretchRow] = &[
     [195, 617, 0, 6647, 12583, 18288859],
@@ -55499,6 +55707,7 @@ const CTL_052_B_1: &[StretchRow] = &[
     [299, 624, 0, 6988, 11930, 16446410],
     [287, 701, 0, 8259, 11211, 20796106],
 ];
+static CTL_052_B_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_052_B_1"));
 
 const BG_052_B_2: &[StretchRow] = &[
     [81, 579, 0, 5424, 14487, 18752625],
@@ -55702,6 +55911,7 @@ const BG_052_B_2: &[StretchRow] = &[
     [107, 564, 0, 6114, 14369, 20797655],
     [90, 624, 0, 6034, 14313, 21168180],
 ];
+static BG_052_B_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_052_B_2"));
 
 const CTL_052_B_2: &[StretchRow] = &[
     [81, 579, 0, 5424, 14487, 18752625],
@@ -55905,6 +56115,7 @@ const CTL_052_B_2: &[StretchRow] = &[
     [100, 537, 0, 4712, 14873, 15068177],
     [85, 603, 0, 5253, 14616, 17867317],
 ];
+static CTL_052_B_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_052_B_2"));
 
 /// The backgrounds and the controls of the core, `[arm][shift][background, control]`.
 const BG_RUNS_052: [[[Pinned052; 2]; 3]; 2] = [
@@ -57541,6 +57752,7 @@ const GATE_KICKED_053: &[(u32, u32)] = &[
     (790, 436),
     (794, 265),
 ];
+static GATE_KICKED_053__READ: LazyLock<&[(u32, u32)]> = LazyLock::new(|| DATA_FILE.read("GATE_KICKED_053"));
 
 const GATE_SLOW_053: &[i32] = &[
     1_001_781, 1_008_410, 1_039_325, 1_032_661, 1_007_352, 1_001_046, 1_008_109, 989_315, 997_563,
@@ -59076,6 +59288,7 @@ const QUIET_053_A_ROWS: &[StretchRow] = &[
     [36, 519, 0, 6371, 13592, 21083756],
     [38, 569, 0, 6484, 13337, 21256452],
 ];
+static QUIET_053_A_ROWS__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("QUIET_053_A_ROWS"));
 
 const BG_053_A_7_0: &[StretchRow] = &[
     [328, 668, 0, 9492, 5445, 16482917],
@@ -59279,6 +59492,7 @@ const BG_053_A_7_0: &[StretchRow] = &[
     [391, 553, 0, 9636, 4365, 9416329],
     [364, 610, 0, 9495, 4883, 9950695],
 ];
+static BG_053_A_7_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_7_0"));
 
 const CTL_053_A_7_0: &[StretchRow] = &[
     [328, 668, 0, 9492, 5445, 16482917],
@@ -59482,6 +59696,7 @@ const CTL_053_A_7_0: &[StretchRow] = &[
     [430, 619, 0, 9747, 4496, 12993495],
     [362, 613, 0, 9520, 4847, 9980585],
 ];
+static CTL_053_A_7_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_7_0"));
 
 const BG_053_A_7_1: &[StretchRow] = &[
     [171, 618, 0, 8060, 8909, 19011396],
@@ -59685,6 +59900,7 @@ const BG_053_A_7_1: &[StretchRow] = &[
     [195, 538, 0, 8089, 7550, 13295586],
     [192, 607, 0, 8162, 7631, 14039009],
 ];
+static BG_053_A_7_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_7_1"));
 
 const CTL_053_A_7_1: &[StretchRow] = &[
     [171, 618, 0, 8060, 8909, 19011396],
@@ -59888,6 +60104,7 @@ const CTL_053_A_7_1: &[StretchRow] = &[
     [203, 595, 0, 8097, 8260, 17750360],
     [189, 614, 0, 8132, 7695, 14426756],
 ];
+static CTL_053_A_7_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_7_1"));
 
 const BG_053_A_7_2: &[StretchRow] = &[
     [79, 583, 0, 7020, 11752, 20717712],
@@ -60091,6 +60308,7 @@ const BG_053_A_7_2: &[StretchRow] = &[
     [95, 543, 0, 7146, 10589, 17778350],
     [75, 585, 0, 7016, 11010, 18320118],
 ];
+static BG_053_A_7_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_7_2"));
 
 const CTL_053_A_7_2: &[StretchRow] = &[
     [79, 583, 0, 7020, 11752, 20717712],
@@ -60294,6 +60512,7 @@ const CTL_053_A_7_2: &[StretchRow] = &[
     [93, 552, 0, 7013, 11946, 21327767],
     [75, 595, 0, 7012, 11345, 19352188],
 ];
+static CTL_053_A_7_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_7_2"));
 
 const BG_053_A_8_0: &[StretchRow] = &[
     [203, 651, 0, 8462, 7682, 18274717],
@@ -60497,6 +60716,7 @@ const BG_053_A_8_0: &[StretchRow] = &[
     [243, 553, 0, 8728, 5973, 12215651],
     [239, 607, 0, 8528, 6557, 12171872],
 ];
+static BG_053_A_8_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_8_0"));
 
 const CTL_053_A_8_0: &[StretchRow] = &[
     [203, 651, 0, 8462, 7682, 18274717],
@@ -60700,6 +60920,7 @@ const CTL_053_A_8_0: &[StretchRow] = &[
     [264, 606, 0, 8675, 6654, 16316565],
     [244, 617, 0, 8550, 6572, 12511627],
 ];
+static CTL_053_A_8_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_8_0"));
 
 const BG_053_A_8_1: &[StretchRow] = &[
     [134, 614, 0, 7711, 9589, 19542448],
@@ -60903,6 +61124,7 @@ const BG_053_A_8_1: &[StretchRow] = &[
     [149, 533, 0, 7667, 8638, 14803885],
     [151, 612, 0, 7774, 8559, 15348979],
 ];
+static BG_053_A_8_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_8_1"));
 
 const CTL_053_A_8_1: &[StretchRow] = &[
     [134, 614, 0, 7711, 9589, 19542448],
@@ -61106,6 +61328,7 @@ const CTL_053_A_8_1: &[StretchRow] = &[
     [149, 558, 0, 7534, 9928, 19132426],
     [151, 617, 0, 7765, 8798, 16205034],
 ];
+static CTL_053_A_8_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_8_1"));
 
 const BG_053_A_8_2: &[StretchRow] = &[
     [73, 581, 0, 6955, 11927, 20847967],
@@ -61309,6 +61532,7 @@ const BG_053_A_8_2: &[StretchRow] = &[
     [85, 536, 0, 7047, 10914, 18240029],
     [68, 587, 0, 6950, 11316, 18782604],
 ];
+static BG_053_A_8_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_8_2"));
 
 const CTL_053_A_8_2: &[StretchRow] = &[
     [73, 581, 0, 6955, 11927, 20847967],
@@ -61512,6 +61736,7 @@ const CTL_053_A_8_2: &[StretchRow] = &[
     [87, 553, 0, 6964, 12094, 21406128],
     [68, 590, 0, 6919, 11645, 19628402],
 ];
+static CTL_053_A_8_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_8_2"));
 
 const BG_053_A_9_0: &[StretchRow] = &[
     [105, 601, 0, 7359, 10452, 20016805],
@@ -61715,6 +61940,7 @@ const BG_053_A_9_0: &[StretchRow] = &[
     [114, 541, 0, 7431, 9454, 16452607],
     [125, 617, 0, 7532, 9350, 16483280],
 ];
+static BG_053_A_9_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_9_0"));
 
 const CTL_053_A_9_0: &[StretchRow] = &[
     [105, 601, 0, 7359, 10452, 20016805],
@@ -61918,6 +62144,7 @@ const CTL_053_A_9_0: &[StretchRow] = &[
     [115, 560, 0, 7351, 10613, 20302418],
     [128, 625, 0, 7584, 9391, 17260504],
 ];
+static CTL_053_A_9_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_9_0"));
 
 const BG_053_A_9_1: &[StretchRow] = &[
     [91, 591, 0, 7196, 11017, 20358545],
@@ -62121,6 +62348,7 @@ const BG_053_A_9_1: &[StretchRow] = &[
     [92, 521, 0, 7099, 10561, 17555537],
     [101, 605, 0, 7300, 10172, 17735515],
 ];
+static BG_053_A_9_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_9_1"));
 
 const CTL_053_A_9_1: &[StretchRow] = &[
     [91, 591, 0, 7196, 11017, 20358545],
@@ -62324,6 +62552,7 @@ const CTL_053_A_9_1: &[StretchRow] = &[
     [97, 545, 0, 7062, 11592, 20833616],
     [99, 605, 0, 7287, 10430, 18586200],
 ];
+static CTL_053_A_9_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_9_1"));
 
 const BG_053_A_9_2: &[StretchRow] = &[
     [61, 577, 0, 6801, 12391, 21091952],
@@ -62527,6 +62756,7 @@ const BG_053_A_9_2: &[StretchRow] = &[
     [71, 531, 0, 6812, 11678, 19034329],
     [59, 581, 0, 6811, 11853, 19510024],
 ];
+static BG_053_A_9_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_A_9_2"));
 
 const CTL_053_A_9_2: &[StretchRow] = &[
     [61, 577, 0, 6801, 12391, 21091952],
@@ -62730,6 +62960,7 @@ const CTL_053_A_9_2: &[StretchRow] = &[
     [69, 535, 0, 6698, 12894, 21758882],
     [59, 585, 0, 6799, 12174, 20408630],
 ];
+static CTL_053_A_9_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_A_9_2"));
 
 const BG_053_B_7_0: &[StretchRow] = &[
     [330, 717, 0, 8053, 9673, 17623722],
@@ -62933,6 +63164,7 @@ const BG_053_B_7_0: &[StretchRow] = &[
     [500, 749, 0, 11002, 7892, 21257484],
     [528, 851, 0, 11029, 7943, 20626001],
 ];
+static BG_053_B_7_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_7_0"));
 
 const CTL_053_B_7_0: &[StretchRow] = &[
     [330, 717, 0, 8053, 9673, 17623722],
@@ -63136,6 +63368,7 @@ const CTL_053_B_7_0: &[StretchRow] = &[
     [427, 656, 0, 8385, 9758, 16602892],
     [495, 799, 0, 10149, 8493, 19573320],
 ];
+static CTL_053_B_7_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_7_0"));
 
 const BG_053_B_7_1: &[StretchRow] = &[
     [170, 613, 0, 6430, 12822, 18408773],
@@ -63339,6 +63572,7 @@ const BG_053_B_7_1: &[StretchRow] = &[
     [248, 649, 0, 8492, 11811, 22780139],
     [243, 759, 0, 8541, 11502, 23266599],
 ];
+static BG_053_B_7_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_7_1"));
 
 const CTL_053_B_7_1: &[StretchRow] = &[
     [170, 613, 0, 6430, 12822, 18408773],
@@ -63542,6 +63776,7 @@ const CTL_053_B_7_1: &[StretchRow] = &[
     [217, 589, 0, 6270, 12956, 16537763],
     [230, 699, 0, 7532, 12062, 20143903],
 ];
+static CTL_053_B_7_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_7_1"));
 
 const BG_053_B_7_2: &[StretchRow] = &[
     [78, 580, 0, 5385, 14563, 18760020],
@@ -63745,6 +63980,7 @@ const BG_053_B_7_2: &[StretchRow] = &[
     [97, 566, 0, 5998, 14499, 20740819],
     [86, 614, 0, 5935, 14396, 21003038],
 ];
+static BG_053_B_7_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_7_2"));
 
 const CTL_053_B_7_2: &[StretchRow] = &[
     [78, 580, 0, 5385, 14563, 18760020],
@@ -63948,6 +64184,7 @@ const CTL_053_B_7_2: &[StretchRow] = &[
     [93, 540, 0, 4626, 14963, 14989692],
     [83, 597, 0, 5187, 14640, 17706192],
 ];
+static CTL_053_B_7_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_7_2"));
 
 const BG_053_B_8_0: &[StretchRow] = &[
     [201, 643, 0, 6856, 12078, 18463627],
@@ -64151,6 +64388,7 @@ const BG_053_B_8_0: &[StretchRow] = &[
     [274, 703, 0, 9098, 10524, 23536749],
     [292, 788, 0, 9214, 10831, 23189890],
 ];
+static BG_053_B_8_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_8_0"));
 
 const CTL_053_B_8_0: &[StretchRow] = &[
     [201, 643, 0, 6856, 12078, 18463627],
@@ -64354,6 +64592,7 @@ const CTL_053_B_8_0: &[StretchRow] = &[
     [265, 616, 0, 6948, 11814, 16858832],
     [301, 745, 0, 8406, 11281, 20520137],
 ];
+static CTL_053_B_8_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_8_0"));
 
 const BG_053_B_8_1: &[StretchRow] = &[
     [135, 609, 0, 6069, 13396, 18608567],
@@ -64557,6 +64796,7 @@ const BG_053_B_8_1: &[StretchRow] = &[
     [169, 617, 0, 7618, 13039, 23371734],
     [181, 712, 0, 7721, 12780, 23457233],
 ];
+static BG_053_B_8_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_8_1"));
 
 const CTL_053_B_8_1: &[StretchRow] = &[
     [135, 609, 0, 6069, 13396, 18608567],
@@ -64760,6 +65000,7 @@ const CTL_053_B_8_1: &[StretchRow] = &[
     [149, 566, 0, 5492, 14042, 16220775],
     [168, 655, 0, 6563, 13347, 19605834],
 ];
+static CTL_053_B_8_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_8_1"));
 
 const BG_053_B_8_2: &[StretchRow] = &[
     [73, 576, 0, 5325, 14660, 18818426],
@@ -64963,6 +65204,7 @@ const BG_053_B_8_2: &[StretchRow] = &[
     [88, 556, 0, 5788, 14601, 20297312],
     [71, 590, 0, 5675, 14658, 20673089],
 ];
+static BG_053_B_8_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_8_2"));
 
 const CTL_053_B_8_2: &[StretchRow] = &[
     [73, 576, 0, 5325, 14660, 18818426],
@@ -65166,6 +65408,7 @@ const CTL_053_B_8_2: &[StretchRow] = &[
     [84, 536, 0, 4501, 15142, 14917377],
     [67, 582, 0, 4928, 14919, 17476128],
 ];
+static CTL_053_B_8_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_8_2"));
 
 const BG_053_B_9_0: &[StretchRow] = &[
     [105, 602, 0, 5741, 14116, 18901585],
@@ -65369,6 +65612,7 @@ const BG_053_B_9_0: &[StretchRow] = &[
     [116, 560, 0, 6624, 13894, 22235221],
     [126, 646, 0, 6741, 13719, 22291654],
 ];
+static BG_053_B_9_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_9_0"));
 
 const CTL_053_B_9_0: &[StretchRow] = &[
     [105, 602, 0, 5741, 14116, 18901585],
@@ -65572,6 +65816,7 @@ const CTL_053_B_9_0: &[StretchRow] = &[
     [110, 547, 0, 4992, 14599, 15617140],
     [123, 642, 0, 5871, 14011, 18769244],
 ];
+static CTL_053_B_9_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_9_0"));
 
 const BG_053_B_9_1: &[StretchRow] = &[
     [89, 587, 0, 5537, 14407, 18885443],
@@ -65775,6 +66020,7 @@ const BG_053_B_9_1: &[StretchRow] = &[
     [96, 559, 0, 6106, 14508, 21271492],
     [102, 624, 0, 6221, 14096, 21471389],
 ];
+static BG_053_B_9_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_9_1"));
 
 const CTL_053_B_9_1: &[StretchRow] = &[
     [89, 587, 0, 5537, 14407, 18885443],
@@ -65978,6 +66224,7 @@ const CTL_053_B_9_1: &[StretchRow] = &[
     [98, 542, 0, 4759, 14898, 15329562],
     [99, 610, 0, 5473, 14417, 18296223],
 ];
+static CTL_053_B_9_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_9_1"));
 
 const BG_053_B_9_2: &[StretchRow] = &[
     [62, 577, 0, 5186, 14936, 18859782],
@@ -66181,6 +66428,7 @@ const BG_053_B_9_2: &[StretchRow] = &[
     [72, 543, 0, 5379, 15183, 19581238],
     [56, 575, 0, 5287, 15040, 19861276],
 ];
+static BG_053_B_9_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("BG_053_B_9_2"));
 
 const CTL_053_B_9_2: &[StretchRow] = &[
     [62, 577, 0, 5186, 14936, 18859782],
@@ -66384,6 +66632,7 @@ const CTL_053_B_9_2: &[StretchRow] = &[
     [70, 531, 0, 4286, 15431, 14750756],
     [56, 570, 0, 4680, 15187, 16984816],
 ];
+static CTL_053_B_9_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CTL_053_B_9_2"));
 
 /// The pair window after the kick's span, `[arm][V_lo][shift]`: the members' spikes their
 /// background gives it over the eight kicks (`background_after`), and the control's members' spikes
@@ -67134,6 +67383,7 @@ const CELL_BURSTS_053: [[BurstRead049; 4]; 4] = [
         ),
     ],
 ];
+static CELL_BURSTS_053__READ: LazyLock<[[BurstRead049; 4]; 4]> = LazyLock::new(|| DATA_FILE.read("CELL_BURSTS_053"));
 
 /// The slow potential and the gate over the picked pairs' cells' held stretches, `[pair][weight]`.
 const CELL_HELD_053: [[SlowHeld; 4]; 4] = [
@@ -67365,6 +67615,7 @@ const CELL_053_A_8_2_0: &[StretchRow] = &[
     [591, 713, 1, 9810, 3798, 8637535],
     [319, 626, 0, 9203, 4903, 9516754],
 ];
+static CELL_053_A_8_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_8_2_0"));
 
 const CELL_053_A_8_2_1: &[StretchRow] = &[
     [831, 779, 3, 11209, 2617, 8385725],
@@ -67568,6 +67819,7 @@ const CELL_053_A_8_2_1: &[StretchRow] = &[
     [907, 749, 2, 11301, 2232, 5711884],
     [684, 623, 1, 11398, 1956, 5827587],
 ];
+static CELL_053_A_8_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_8_2_1"));
 
 const CELL_053_A_8_2_2: &[StretchRow] = &[
     [1119, 786, 6, 12228, 1695, 6982024],
@@ -67771,6 +68023,7 @@ const CELL_053_A_8_2_2: &[StretchRow] = &[
     [1188, 735, 6, 12255, 1322, 4322158],
     [990, 613, 5, 12266, 1329, 4234089],
 ];
+static CELL_053_A_8_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_8_2_2"));
 
 const CELL_053_A_8_2_3: &[StretchRow] = &[
     [1426, 761, 10, 12960, 1089, 5398237],
@@ -67974,6 +68227,7 @@ const CELL_053_A_8_2_3: &[StretchRow] = &[
     [1544, 734, 9, 12913, 980, 3149382],
     [1370, 616, 7, 13225, 637, 3087245],
 ];
+static CELL_053_A_8_2_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_8_2_3"));
 
 const CELL_053_A_9_2_0: &[StretchRow] = &[
     [141, 654, 0, 7929, 8718, 19383570],
@@ -68177,6 +68431,7 @@ const CELL_053_A_9_2_0: &[StretchRow] = &[
     [159, 595, 0, 7833, 8831, 19178234],
     [148, 605, 0, 7712, 8494, 15319540],
 ];
+static CELL_053_A_9_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_9_2_0"));
 
 const CELL_053_A_9_2_1: &[StretchRow] = &[
     [485, 719, 1, 9157, 5119, 10688440],
@@ -68380,6 +68635,7 @@ const CELL_053_A_9_2_1: &[StretchRow] = &[
     [531, 715, 1, 9204, 4943, 8886000],
     [241, 609, 0, 8396, 6637, 11341635],
 ];
+static CELL_053_A_9_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_9_2_1"));
 
 const CELL_053_A_9_2_2: &[StretchRow] = &[
     [739, 782, 2, 11386, 2205, 9014331],
@@ -68583,6 +68839,7 @@ const CELL_053_A_9_2_2: &[StretchRow] = &[
     [745, 718, 2, 10275, 3398, 7009510],
     [613, 616, 2, 11759, 1228, 7414059],
 ];
+static CELL_053_A_9_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_9_2_2"));
 
 const CELL_053_A_9_2_3: &[StretchRow] = &[
     [937, 767, 4, 11715, 2102, 7125112],
@@ -68786,6 +69043,7 @@ const CELL_053_A_9_2_3: &[StretchRow] = &[
     [940, 741, 4, 11160, 2638, 5678043],
     [821, 606, 4, 11025, 2771, 5611077],
 ];
+static CELL_053_A_9_2_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_A_9_2_3"));
 
 const CELL_053_B_8_2_0: &[StretchRow] = &[
     [692, 786, 2, 11347, 4983, 15579931],
@@ -68989,6 +69247,7 @@ const CELL_053_B_8_2_0: &[StretchRow] = &[
     [722, 764, 4, 11152, 3803, 13951732],
     [1062, 866, 5, 13016, 4183, 12826465],
 ];
+static CELL_053_B_8_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_8_2_0"));
 
 const CELL_053_B_8_2_1: &[StretchRow] = &[
     [2167, 966, 13, 14618, 2391, 8539174],
@@ -69192,6 +69451,7 @@ const CELL_053_B_8_2_1: &[StretchRow] = &[
     [2569, 959, 15, 14733, 834, 6259699],
     [2276, 875, 14, 14780, 1049, 6371668],
 ];
+static CELL_053_B_8_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_8_2_1"));
 
 const CELL_053_B_8_2_2: &[StretchRow] = &[
     [3244, 991, 13, 15242, 1045, 6508466],
@@ -69395,6 +69655,7 @@ const CELL_053_B_8_2_2: &[StretchRow] = &[
     [3964, 971, 16, 15333, 627, 3539266],
     [3631, 872, 16, 15326, 889, 3669709],
 ];
+static CELL_053_B_8_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_8_2_2"));
 
 const CELL_053_B_8_2_3: &[StretchRow] = &[
     [4326, 970, 14, 15550, 628, 4542130],
@@ -69598,6 +69859,7 @@ const CELL_053_B_8_2_3: &[StretchRow] = &[
     [5058, 933, 16, 15545, 542, 2219733],
     [4879, 868, 16, 15548, 419, 2192080],
 ];
+static CELL_053_B_8_2_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_8_2_3"));
 
 const CELL_053_B_9_2_0: &[StretchRow] = &[
     [135, 631, 0, 6178, 13224, 18737022],
@@ -69801,6 +70063,7 @@ const CELL_053_B_9_2_0: &[StretchRow] = &[
     [156, 583, 0, 5744, 13406, 15982036],
     [192, 669, 0, 7056, 12472, 20106186],
 ];
+static CELL_053_B_9_2_0__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_9_2_0"));
 
 const CELL_053_B_9_2_1: &[StretchRow] = &[
     [1181, 937, 6, 12780, 6087, 12968062],
@@ -70004,6 +70267,7 @@ const CELL_053_B_9_2_1: &[StretchRow] = &[
     [1281, 889, 5, 12882, 5667, 12605540],
     [1408, 915, 8, 13996, 1795, 11459887],
 ];
+static CELL_053_B_9_2_1__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_9_2_1"));
 
 const CELL_053_B_9_2_2: &[StretchRow] = &[
     [2164, 960, 12, 14649, 1152, 8863204],
@@ -70207,6 +70471,7 @@ const CELL_053_B_9_2_2: &[StretchRow] = &[
     [2364, 924, 11, 14501, 1753, 7720423],
     [1963, 851, 12, 14475, 506, 8052979],
 ];
+static CELL_053_B_9_2_2__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_9_2_2"));
 
 const CELL_053_B_9_2_3: &[StretchRow] = &[
     [3470, 957, 14, 15276, 532, 5056384],
@@ -70410,3 +70675,264 @@ const CELL_053_B_9_2_3: &[StretchRow] = &[
     [3416, 988, 16, 15038, 1041, 5203407],
     [3066, 853, 16, 15057, 1189, 4986872],
 ];
+static CELL_053_B_9_2_3__READ: LazyLock<&[StretchRow]> = LazyLock::new(|| DATA_FILE.read("CELL_053_B_9_2_3"));
+
+/// Exploration 002: every table moved to the data file reads from it as the `const` it was moved
+/// from, value for value.
+#[test]
+#[ignore = "exploration 002 (ADR-0193): a run on its branch, never in the weekly job"]
+fn the_moved_tables_read_as_written_in_assembly_explore() {
+    assert_eq!(DATA_FILE.len(), 251);
+    assert_eq!(*BACKGROUND_ROWS_1024__READ, BACKGROUND_ROWS_1024, "BACKGROUND_ROWS_1024");
+    assert_eq!(*CONTROL_ROWS_1024__READ, CONTROL_ROWS_1024, "CONTROL_ROWS_1024");
+    assert_eq!(*CELL_ROWS_16__READ, CELL_ROWS_16, "CELL_ROWS_16");
+    assert_eq!(*CELL_ROWS_32__READ, CELL_ROWS_32, "CELL_ROWS_32");
+    assert_eq!(*CELL_ROWS_64__READ, CELL_ROWS_64, "CELL_ROWS_64");
+    assert_eq!(*CONTROL_KICKS_049__READ, CONTROL_KICKS_049, "CONTROL_KICKS_049");
+    assert_eq!(*CELL_KICKS_049__READ, CELL_KICKS_049, "CELL_KICKS_049");
+    assert_eq!(*CELL_BURSTS_049__READ, CELL_BURSTS_049, "CELL_BURSTS_049");
+    assert_eq!(*BACKGROUND_049_I_16__READ, BACKGROUND_049_I_16, "BACKGROUND_049_I_16");
+    assert_eq!(*CONTROL_049_I_16__READ, CONTROL_049_I_16, "CONTROL_049_I_16");
+    assert_eq!(*BACKGROUND_049_I_32__READ, BACKGROUND_049_I_32, "BACKGROUND_049_I_32");
+    assert_eq!(*CONTROL_049_I_32__READ, CONTROL_049_I_32, "CONTROL_049_I_32");
+    assert_eq!(*BACKGROUND_049_I_64__READ, BACKGROUND_049_I_64, "BACKGROUND_049_I_64");
+    assert_eq!(*CONTROL_049_I_64__READ, CONTROL_049_I_64, "CONTROL_049_I_64");
+    assert_eq!(*BACKGROUND_049_II_16__READ, BACKGROUND_049_II_16, "BACKGROUND_049_II_16");
+    assert_eq!(*CONTROL_049_II_16__READ, CONTROL_049_II_16, "CONTROL_049_II_16");
+    assert_eq!(*BACKGROUND_049_II_32__READ, BACKGROUND_049_II_32, "BACKGROUND_049_II_32");
+    assert_eq!(*CONTROL_049_II_32__READ, CONTROL_049_II_32, "CONTROL_049_II_32");
+    assert_eq!(*BACKGROUND_049_II_64__READ, BACKGROUND_049_II_64, "BACKGROUND_049_II_64");
+    assert_eq!(*CONTROL_049_II_64__READ, CONTROL_049_II_64, "CONTROL_049_II_64");
+    assert_eq!(*CELL_049_I_16_0__READ, CELL_049_I_16_0, "CELL_049_I_16_0");
+    assert_eq!(*CELL_049_I_16_1__READ, CELL_049_I_16_1, "CELL_049_I_16_1");
+    assert_eq!(*CELL_049_I_16_2__READ, CELL_049_I_16_2, "CELL_049_I_16_2");
+    assert_eq!(*CELL_049_I_16_3__READ, CELL_049_I_16_3, "CELL_049_I_16_3");
+    assert_eq!(*CELL_049_I_16_4__READ, CELL_049_I_16_4, "CELL_049_I_16_4");
+    assert_eq!(*CELL_049_I_16_5__READ, CELL_049_I_16_5, "CELL_049_I_16_5");
+    assert_eq!(*CELL_049_I_32_0__READ, CELL_049_I_32_0, "CELL_049_I_32_0");
+    assert_eq!(*CELL_049_I_32_1__READ, CELL_049_I_32_1, "CELL_049_I_32_1");
+    assert_eq!(*CELL_049_I_32_2__READ, CELL_049_I_32_2, "CELL_049_I_32_2");
+    assert_eq!(*CELL_049_I_32_3__READ, CELL_049_I_32_3, "CELL_049_I_32_3");
+    assert_eq!(*CELL_049_I_32_4__READ, CELL_049_I_32_4, "CELL_049_I_32_4");
+    assert_eq!(*CELL_049_I_32_5__READ, CELL_049_I_32_5, "CELL_049_I_32_5");
+    assert_eq!(*CELL_049_I_64_0__READ, CELL_049_I_64_0, "CELL_049_I_64_0");
+    assert_eq!(*CELL_049_I_64_1__READ, CELL_049_I_64_1, "CELL_049_I_64_1");
+    assert_eq!(*CELL_049_I_64_2__READ, CELL_049_I_64_2, "CELL_049_I_64_2");
+    assert_eq!(*CELL_049_I_64_3__READ, CELL_049_I_64_3, "CELL_049_I_64_3");
+    assert_eq!(*CELL_049_I_64_4__READ, CELL_049_I_64_4, "CELL_049_I_64_4");
+    assert_eq!(*CELL_049_I_64_5__READ, CELL_049_I_64_5, "CELL_049_I_64_5");
+    assert_eq!(*CELL_049_II_16_0__READ, CELL_049_II_16_0, "CELL_049_II_16_0");
+    assert_eq!(*CELL_049_II_16_1__READ, CELL_049_II_16_1, "CELL_049_II_16_1");
+    assert_eq!(*CELL_049_II_16_2__READ, CELL_049_II_16_2, "CELL_049_II_16_2");
+    assert_eq!(*CELL_049_II_16_3__READ, CELL_049_II_16_3, "CELL_049_II_16_3");
+    assert_eq!(*CELL_049_II_16_4__READ, CELL_049_II_16_4, "CELL_049_II_16_4");
+    assert_eq!(*CELL_049_II_16_5__READ, CELL_049_II_16_5, "CELL_049_II_16_5");
+    assert_eq!(*CELL_049_II_32_0__READ, CELL_049_II_32_0, "CELL_049_II_32_0");
+    assert_eq!(*CELL_049_II_32_1__READ, CELL_049_II_32_1, "CELL_049_II_32_1");
+    assert_eq!(*CELL_049_II_32_2__READ, CELL_049_II_32_2, "CELL_049_II_32_2");
+    assert_eq!(*CELL_049_II_32_3__READ, CELL_049_II_32_3, "CELL_049_II_32_3");
+    assert_eq!(*CELL_049_II_32_4__READ, CELL_049_II_32_4, "CELL_049_II_32_4");
+    assert_eq!(*CELL_049_II_32_5__READ, CELL_049_II_32_5, "CELL_049_II_32_5");
+    assert_eq!(*CELL_049_II_64_0__READ, CELL_049_II_64_0, "CELL_049_II_64_0");
+    assert_eq!(*CELL_049_II_64_1__READ, CELL_049_II_64_1, "CELL_049_II_64_1");
+    assert_eq!(*CELL_049_II_64_2__READ, CELL_049_II_64_2, "CELL_049_II_64_2");
+    assert_eq!(*CELL_049_II_64_3__READ, CELL_049_II_64_3, "CELL_049_II_64_3");
+    assert_eq!(*CELL_049_II_64_4__READ, CELL_049_II_64_4, "CELL_049_II_64_4");
+    assert_eq!(*CELL_049_II_64_5__READ, CELL_049_II_64_5, "CELL_049_II_64_5");
+    assert_eq!(*GATE_KICKED_050__READ, GATE_KICKED_050, "GATE_KICKED_050");
+    assert_eq!(*STIMULUS_TASK_050__READ, STIMULUS_TASK_050, "STIMULUS_TASK_050");
+    assert_eq!(*STIMULUS_SIGHT_050__READ, STIMULUS_SIGHT_050, "STIMULUS_SIGHT_050");
+    assert_eq!(*CONDITION_BURSTS_050__READ, CONDITION_BURSTS_050, "CONDITION_BURSTS_050");
+    assert_eq!(*STIMULUS_CELL_TASK_050__READ, STIMULUS_CELL_TASK_050, "STIMULUS_CELL_TASK_050");
+    assert_eq!(*CORE_BACKGROUND_050_48__READ, CORE_BACKGROUND_050_48, "CORE_BACKGROUND_050_48");
+    assert_eq!(*CORE_CONTROL_050_48__READ, CORE_CONTROL_050_48, "CORE_CONTROL_050_48");
+    assert_eq!(*CORE_BACKGROUND_050_80__READ, CORE_BACKGROUND_050_80, "CORE_BACKGROUND_050_80");
+    assert_eq!(*CORE_CONTROL_050_80__READ, CORE_CONTROL_050_80, "CORE_CONTROL_050_80");
+    assert_eq!(*CORE_BACKGROUND_050_96__READ, CORE_BACKGROUND_050_96, "CORE_BACKGROUND_050_96");
+    assert_eq!(*CORE_CONTROL_050_96__READ, CORE_CONTROL_050_96, "CORE_CONTROL_050_96");
+    assert_eq!(*CELL_050_48_0__READ, CELL_050_48_0, "CELL_050_48_0");
+    assert_eq!(*CELL_050_48_1__READ, CELL_050_48_1, "CELL_050_48_1");
+    assert_eq!(*CELL_050_48_2__READ, CELL_050_48_2, "CELL_050_48_2");
+    assert_eq!(*CELL_050_48_3__READ, CELL_050_48_3, "CELL_050_48_3");
+    assert_eq!(*CELL_050_48_4__READ, CELL_050_48_4, "CELL_050_48_4");
+    assert_eq!(*CELL_050_64_0__READ, CELL_050_64_0, "CELL_050_64_0");
+    assert_eq!(*CELL_050_64_1__READ, CELL_050_64_1, "CELL_050_64_1");
+    assert_eq!(*CELL_050_64_3__READ, CELL_050_64_3, "CELL_050_64_3");
+    assert_eq!(*CELL_050_80_0__READ, CELL_050_80_0, "CELL_050_80_0");
+    assert_eq!(*CELL_050_80_1__READ, CELL_050_80_1, "CELL_050_80_1");
+    assert_eq!(*CELL_050_80_2__READ, CELL_050_80_2, "CELL_050_80_2");
+    assert_eq!(*CELL_050_80_3__READ, CELL_050_80_3, "CELL_050_80_3");
+    assert_eq!(*CELL_050_80_4__READ, CELL_050_80_4, "CELL_050_80_4");
+    assert_eq!(*CELL_050_96_0__READ, CELL_050_96_0, "CELL_050_96_0");
+    assert_eq!(*CELL_050_96_1__READ, CELL_050_96_1, "CELL_050_96_1");
+    assert_eq!(*CELL_050_96_2__READ, CELL_050_96_2, "CELL_050_96_2");
+    assert_eq!(*CELL_050_96_3__READ, CELL_050_96_3, "CELL_050_96_3");
+    assert_eq!(*CELL_050_96_4__READ, CELL_050_96_4, "CELL_050_96_4");
+    assert_eq!(*SEED_050_64_1__READ, SEED_050_64_1, "SEED_050_64_1");
+    assert_eq!(*SEED_050_64_2__READ, SEED_050_64_2, "SEED_050_64_2");
+    assert_eq!(*SEED_050_64_3__READ, SEED_050_64_3, "SEED_050_64_3");
+    assert_eq!(*SEED_050_96_1__READ, SEED_050_96_1, "SEED_050_96_1");
+    assert_eq!(*SEED_050_96_2__READ, SEED_050_96_2, "SEED_050_96_2");
+    assert_eq!(*SEED_050_96_3__READ, SEED_050_96_3, "SEED_050_96_3");
+    assert_eq!(*DRAINED_050_64_1__READ, DRAINED_050_64_1, "DRAINED_050_64_1");
+    assert_eq!(*DRAINED_050_64_2__READ, DRAINED_050_64_2, "DRAINED_050_64_2");
+    assert_eq!(*DRAINED_050_64_3__READ, DRAINED_050_64_3, "DRAINED_050_64_3");
+    assert_eq!(*DRAINED_050_96_1__READ, DRAINED_050_96_1, "DRAINED_050_96_1");
+    assert_eq!(*DRAINED_050_96_2__READ, DRAINED_050_96_2, "DRAINED_050_96_2");
+    assert_eq!(*DRAINED_050_96_3__READ, DRAINED_050_96_3, "DRAINED_050_96_3");
+    assert_eq!(*STIMULUS_050_64_1__READ, STIMULUS_050_64_1, "STIMULUS_050_64_1");
+    assert_eq!(*STIMULUS_050_64_2__READ, STIMULUS_050_64_2, "STIMULUS_050_64_2");
+    assert_eq!(*STIMULUS_050_64_3__READ, STIMULUS_050_64_3, "STIMULUS_050_64_3");
+    assert_eq!(*STIMULUS_050_96_1__READ, STIMULUS_050_96_1, "STIMULUS_050_96_1");
+    assert_eq!(*STIMULUS_050_96_2__READ, STIMULUS_050_96_2, "STIMULUS_050_96_2");
+    assert_eq!(*STIMULUS_050_96_3__READ, STIMULUS_050_96_3, "STIMULUS_050_96_3");
+    assert_eq!(*DRAINED_BACKGROUND_050_64__READ, DRAINED_BACKGROUND_050_64, "DRAINED_BACKGROUND_050_64");
+    assert_eq!(*DRAINED_CONTROL_050_64__READ, DRAINED_CONTROL_050_64, "DRAINED_CONTROL_050_64");
+    assert_eq!(*DRAINED_BACKGROUND_050_96__READ, DRAINED_BACKGROUND_050_96, "DRAINED_BACKGROUND_050_96");
+    assert_eq!(*DRAINED_CONTROL_050_96__READ, DRAINED_CONTROL_050_96, "DRAINED_CONTROL_050_96");
+    assert_eq!(*STIMULUS_BACKGROUND_050_64__READ, STIMULUS_BACKGROUND_050_64, "STIMULUS_BACKGROUND_050_64");
+    assert_eq!(*STIMULUS_CONTROL_050_64__READ, STIMULUS_CONTROL_050_64, "STIMULUS_CONTROL_050_64");
+    assert_eq!(*STIMULUS_BACKGROUND_050_96__READ, STIMULUS_BACKGROUND_050_96, "STIMULUS_BACKGROUND_050_96");
+    assert_eq!(*STIMULUS_CONTROL_050_96__READ, STIMULUS_CONTROL_050_96, "STIMULUS_CONTROL_050_96");
+    assert_eq!(*GATE_KICKED_051__READ, GATE_KICKED_051, "GATE_KICKED_051");
+    assert_eq!(*BG_TASK_051__READ, BG_TASK_051, "BG_TASK_051");
+    assert_eq!(*BG_SIGHT_051__READ, BG_SIGHT_051, "BG_SIGHT_051");
+    assert_eq!(*BURSTS_051__READ, BURSTS_051, "BURSTS_051");
+    assert_eq!(*CELL_TASK_051__READ, CELL_TASK_051, "CELL_TASK_051");
+    assert_eq!(*FAILURES_051__READ, FAILURES_051, "FAILURES_051");
+    assert_eq!(*CORE_BG_051_0__READ, CORE_BG_051_0, "CORE_BG_051_0");
+    assert_eq!(*CORE_CTL_051_0__READ, CORE_CTL_051_0, "CORE_CTL_051_0");
+    assert_eq!(*CORE_BG_051_1__READ, CORE_BG_051_1, "CORE_BG_051_1");
+    assert_eq!(*CORE_CTL_051_1__READ, CORE_CTL_051_1, "CORE_CTL_051_1");
+    assert_eq!(*CORE_BG_051_2__READ, CORE_BG_051_2, "CORE_BG_051_2");
+    assert_eq!(*CORE_CTL_051_2__READ, CORE_CTL_051_2, "CORE_CTL_051_2");
+    assert_eq!(*DRAINED_BG_051_0__READ, DRAINED_BG_051_0, "DRAINED_BG_051_0");
+    assert_eq!(*DRAINED_CTL_051_0__READ, DRAINED_CTL_051_0, "DRAINED_CTL_051_0");
+    assert_eq!(*DRAINED_BG_051_1__READ, DRAINED_BG_051_1, "DRAINED_BG_051_1");
+    assert_eq!(*DRAINED_CTL_051_1__READ, DRAINED_CTL_051_1, "DRAINED_CTL_051_1");
+    assert_eq!(*DRAINED_BG_051_2__READ, DRAINED_BG_051_2, "DRAINED_BG_051_2");
+    assert_eq!(*DRAINED_CTL_051_2__READ, DRAINED_CTL_051_2, "DRAINED_CTL_051_2");
+    assert_eq!(*STIMULUS_BG_051_0__READ, STIMULUS_BG_051_0, "STIMULUS_BG_051_0");
+    assert_eq!(*STIMULUS_CTL_051_0__READ, STIMULUS_CTL_051_0, "STIMULUS_CTL_051_0");
+    assert_eq!(*STIMULUS_BG_051_1__READ, STIMULUS_BG_051_1, "STIMULUS_BG_051_1");
+    assert_eq!(*STIMULUS_CTL_051_1__READ, STIMULUS_CTL_051_1, "STIMULUS_CTL_051_1");
+    assert_eq!(*STIMULUS_BG_051_2__READ, STIMULUS_BG_051_2, "STIMULUS_BG_051_2");
+    assert_eq!(*STIMULUS_CTL_051_2__READ, STIMULUS_CTL_051_2, "STIMULUS_CTL_051_2");
+    assert_eq!(*CELL_051_CORE_0_0__READ, CELL_051_CORE_0_0, "CELL_051_CORE_0_0");
+    assert_eq!(*CELL_051_CORE_0_1__READ, CELL_051_CORE_0_1, "CELL_051_CORE_0_1");
+    assert_eq!(*CELL_051_CORE_0_2__READ, CELL_051_CORE_0_2, "CELL_051_CORE_0_2");
+    assert_eq!(*CELL_051_CORE_1_0__READ, CELL_051_CORE_1_0, "CELL_051_CORE_1_0");
+    assert_eq!(*CELL_051_CORE_1_1__READ, CELL_051_CORE_1_1, "CELL_051_CORE_1_1");
+    assert_eq!(*CELL_051_CORE_1_2__READ, CELL_051_CORE_1_2, "CELL_051_CORE_1_2");
+    assert_eq!(*CELL_051_CORE_2_0__READ, CELL_051_CORE_2_0, "CELL_051_CORE_2_0");
+    assert_eq!(*CELL_051_CORE_2_1__READ, CELL_051_CORE_2_1, "CELL_051_CORE_2_1");
+    assert_eq!(*CELL_051_CORE_2_2__READ, CELL_051_CORE_2_2, "CELL_051_CORE_2_2");
+    assert_eq!(*CELL_051_CORE_3_0__READ, CELL_051_CORE_3_0, "CELL_051_CORE_3_0");
+    assert_eq!(*CELL_051_CORE_3_1__READ, CELL_051_CORE_3_1, "CELL_051_CORE_3_1");
+    assert_eq!(*CELL_051_CORE_3_2__READ, CELL_051_CORE_3_2, "CELL_051_CORE_3_2");
+    assert_eq!(*CELL_051_SEED_0_0__READ, CELL_051_SEED_0_0, "CELL_051_SEED_0_0");
+    assert_eq!(*CELL_051_SEED_0_1__READ, CELL_051_SEED_0_1, "CELL_051_SEED_0_1");
+    assert_eq!(*CELL_051_SEED_0_2__READ, CELL_051_SEED_0_2, "CELL_051_SEED_0_2");
+    assert_eq!(*CELL_051_SEED_1_0__READ, CELL_051_SEED_1_0, "CELL_051_SEED_1_0");
+    assert_eq!(*CELL_051_SEED_1_1__READ, CELL_051_SEED_1_1, "CELL_051_SEED_1_1");
+    assert_eq!(*CELL_051_SEED_1_2__READ, CELL_051_SEED_1_2, "CELL_051_SEED_1_2");
+    assert_eq!(*CELL_051_SEED_2_0__READ, CELL_051_SEED_2_0, "CELL_051_SEED_2_0");
+    assert_eq!(*CELL_051_SEED_2_1__READ, CELL_051_SEED_2_1, "CELL_051_SEED_2_1");
+    assert_eq!(*CELL_051_SEED_2_2__READ, CELL_051_SEED_2_2, "CELL_051_SEED_2_2");
+    assert_eq!(*CELL_051_SEED_3_0__READ, CELL_051_SEED_3_0, "CELL_051_SEED_3_0");
+    assert_eq!(*CELL_051_SEED_3_1__READ, CELL_051_SEED_3_1, "CELL_051_SEED_3_1");
+    assert_eq!(*CELL_051_SEED_3_2__READ, CELL_051_SEED_3_2, "CELL_051_SEED_3_2");
+    assert_eq!(*CELL_051_DRAINED_0_0__READ, CELL_051_DRAINED_0_0, "CELL_051_DRAINED_0_0");
+    assert_eq!(*CELL_051_DRAINED_0_1__READ, CELL_051_DRAINED_0_1, "CELL_051_DRAINED_0_1");
+    assert_eq!(*CELL_051_DRAINED_0_2__READ, CELL_051_DRAINED_0_2, "CELL_051_DRAINED_0_2");
+    assert_eq!(*CELL_051_DRAINED_1_0__READ, CELL_051_DRAINED_1_0, "CELL_051_DRAINED_1_0");
+    assert_eq!(*CELL_051_DRAINED_1_1__READ, CELL_051_DRAINED_1_1, "CELL_051_DRAINED_1_1");
+    assert_eq!(*CELL_051_DRAINED_1_2__READ, CELL_051_DRAINED_1_2, "CELL_051_DRAINED_1_2");
+    assert_eq!(*CELL_051_DRAINED_2_0__READ, CELL_051_DRAINED_2_0, "CELL_051_DRAINED_2_0");
+    assert_eq!(*CELL_051_DRAINED_2_1__READ, CELL_051_DRAINED_2_1, "CELL_051_DRAINED_2_1");
+    assert_eq!(*CELL_051_DRAINED_2_2__READ, CELL_051_DRAINED_2_2, "CELL_051_DRAINED_2_2");
+    assert_eq!(*CELL_051_DRAINED_3_0__READ, CELL_051_DRAINED_3_0, "CELL_051_DRAINED_3_0");
+    assert_eq!(*CELL_051_DRAINED_3_1__READ, CELL_051_DRAINED_3_1, "CELL_051_DRAINED_3_1");
+    assert_eq!(*CELL_051_DRAINED_3_2__READ, CELL_051_DRAINED_3_2, "CELL_051_DRAINED_3_2");
+    assert_eq!(*CELL_051_STIMULUS_0_0__READ, CELL_051_STIMULUS_0_0, "CELL_051_STIMULUS_0_0");
+    assert_eq!(*CELL_051_STIMULUS_0_1__READ, CELL_051_STIMULUS_0_1, "CELL_051_STIMULUS_0_1");
+    assert_eq!(*CELL_051_STIMULUS_0_2__READ, CELL_051_STIMULUS_0_2, "CELL_051_STIMULUS_0_2");
+    assert_eq!(*CELL_051_STIMULUS_1_0__READ, CELL_051_STIMULUS_1_0, "CELL_051_STIMULUS_1_0");
+    assert_eq!(*CELL_051_STIMULUS_1_1__READ, CELL_051_STIMULUS_1_1, "CELL_051_STIMULUS_1_1");
+    assert_eq!(*CELL_051_STIMULUS_1_2__READ, CELL_051_STIMULUS_1_2, "CELL_051_STIMULUS_1_2");
+    assert_eq!(*CELL_051_STIMULUS_2_0__READ, CELL_051_STIMULUS_2_0, "CELL_051_STIMULUS_2_0");
+    assert_eq!(*CELL_051_STIMULUS_2_1__READ, CELL_051_STIMULUS_2_1, "CELL_051_STIMULUS_2_1");
+    assert_eq!(*CELL_051_STIMULUS_2_2__READ, CELL_051_STIMULUS_2_2, "CELL_051_STIMULUS_2_2");
+    assert_eq!(*CELL_051_STIMULUS_3_0__READ, CELL_051_STIMULUS_3_0, "CELL_051_STIMULUS_3_0");
+    assert_eq!(*CELL_051_STIMULUS_3_1__READ, CELL_051_STIMULUS_3_1, "CELL_051_STIMULUS_3_1");
+    assert_eq!(*CELL_051_STIMULUS_3_2__READ, CELL_051_STIMULUS_3_2, "CELL_051_STIMULUS_3_2");
+    assert_eq!(*GATE_KICKED_052__READ, GATE_KICKED_052, "GATE_KICKED_052");
+    assert_eq!(*BG_052_A_0__READ, BG_052_A_0, "BG_052_A_0");
+    assert_eq!(*CTL_052_A_0__READ, CTL_052_A_0, "CTL_052_A_0");
+    assert_eq!(*BG_052_A_1__READ, BG_052_A_1, "BG_052_A_1");
+    assert_eq!(*CTL_052_A_1__READ, CTL_052_A_1, "CTL_052_A_1");
+    assert_eq!(*BG_052_A_2__READ, BG_052_A_2, "BG_052_A_2");
+    assert_eq!(*CTL_052_A_2__READ, CTL_052_A_2, "CTL_052_A_2");
+    assert_eq!(*BG_052_B_0__READ, BG_052_B_0, "BG_052_B_0");
+    assert_eq!(*CTL_052_B_0__READ, CTL_052_B_0, "CTL_052_B_0");
+    assert_eq!(*BG_052_B_1__READ, BG_052_B_1, "BG_052_B_1");
+    assert_eq!(*CTL_052_B_1__READ, CTL_052_B_1, "CTL_052_B_1");
+    assert_eq!(*BG_052_B_2__READ, BG_052_B_2, "BG_052_B_2");
+    assert_eq!(*CTL_052_B_2__READ, CTL_052_B_2, "CTL_052_B_2");
+    assert_eq!(*GATE_KICKED_053__READ, GATE_KICKED_053, "GATE_KICKED_053");
+    assert_eq!(*QUIET_053_A_ROWS__READ, QUIET_053_A_ROWS, "QUIET_053_A_ROWS");
+    assert_eq!(*BG_053_A_7_0__READ, BG_053_A_7_0, "BG_053_A_7_0");
+    assert_eq!(*CTL_053_A_7_0__READ, CTL_053_A_7_0, "CTL_053_A_7_0");
+    assert_eq!(*BG_053_A_7_1__READ, BG_053_A_7_1, "BG_053_A_7_1");
+    assert_eq!(*CTL_053_A_7_1__READ, CTL_053_A_7_1, "CTL_053_A_7_1");
+    assert_eq!(*BG_053_A_7_2__READ, BG_053_A_7_2, "BG_053_A_7_2");
+    assert_eq!(*CTL_053_A_7_2__READ, CTL_053_A_7_2, "CTL_053_A_7_2");
+    assert_eq!(*BG_053_A_8_0__READ, BG_053_A_8_0, "BG_053_A_8_0");
+    assert_eq!(*CTL_053_A_8_0__READ, CTL_053_A_8_0, "CTL_053_A_8_0");
+    assert_eq!(*BG_053_A_8_1__READ, BG_053_A_8_1, "BG_053_A_8_1");
+    assert_eq!(*CTL_053_A_8_1__READ, CTL_053_A_8_1, "CTL_053_A_8_1");
+    assert_eq!(*BG_053_A_8_2__READ, BG_053_A_8_2, "BG_053_A_8_2");
+    assert_eq!(*CTL_053_A_8_2__READ, CTL_053_A_8_2, "CTL_053_A_8_2");
+    assert_eq!(*BG_053_A_9_0__READ, BG_053_A_9_0, "BG_053_A_9_0");
+    assert_eq!(*CTL_053_A_9_0__READ, CTL_053_A_9_0, "CTL_053_A_9_0");
+    assert_eq!(*BG_053_A_9_1__READ, BG_053_A_9_1, "BG_053_A_9_1");
+    assert_eq!(*CTL_053_A_9_1__READ, CTL_053_A_9_1, "CTL_053_A_9_1");
+    assert_eq!(*BG_053_A_9_2__READ, BG_053_A_9_2, "BG_053_A_9_2");
+    assert_eq!(*CTL_053_A_9_2__READ, CTL_053_A_9_2, "CTL_053_A_9_2");
+    assert_eq!(*BG_053_B_7_0__READ, BG_053_B_7_0, "BG_053_B_7_0");
+    assert_eq!(*CTL_053_B_7_0__READ, CTL_053_B_7_0, "CTL_053_B_7_0");
+    assert_eq!(*BG_053_B_7_1__READ, BG_053_B_7_1, "BG_053_B_7_1");
+    assert_eq!(*CTL_053_B_7_1__READ, CTL_053_B_7_1, "CTL_053_B_7_1");
+    assert_eq!(*BG_053_B_7_2__READ, BG_053_B_7_2, "BG_053_B_7_2");
+    assert_eq!(*CTL_053_B_7_2__READ, CTL_053_B_7_2, "CTL_053_B_7_2");
+    assert_eq!(*BG_053_B_8_0__READ, BG_053_B_8_0, "BG_053_B_8_0");
+    assert_eq!(*CTL_053_B_8_0__READ, CTL_053_B_8_0, "CTL_053_B_8_0");
+    assert_eq!(*BG_053_B_8_1__READ, BG_053_B_8_1, "BG_053_B_8_1");
+    assert_eq!(*CTL_053_B_8_1__READ, CTL_053_B_8_1, "CTL_053_B_8_1");
+    assert_eq!(*BG_053_B_8_2__READ, BG_053_B_8_2, "BG_053_B_8_2");
+    assert_eq!(*CTL_053_B_8_2__READ, CTL_053_B_8_2, "CTL_053_B_8_2");
+    assert_eq!(*BG_053_B_9_0__READ, BG_053_B_9_0, "BG_053_B_9_0");
+    assert_eq!(*CTL_053_B_9_0__READ, CTL_053_B_9_0, "CTL_053_B_9_0");
+    assert_eq!(*BG_053_B_9_1__READ, BG_053_B_9_1, "BG_053_B_9_1");
+    assert_eq!(*CTL_053_B_9_1__READ, CTL_053_B_9_1, "CTL_053_B_9_1");
+    assert_eq!(*BG_053_B_9_2__READ, BG_053_B_9_2, "BG_053_B_9_2");
+    assert_eq!(*CTL_053_B_9_2__READ, CTL_053_B_9_2, "CTL_053_B_9_2");
+    assert_eq!(*CELL_BURSTS_053__READ, CELL_BURSTS_053, "CELL_BURSTS_053");
+    assert_eq!(*CELL_053_A_8_2_0__READ, CELL_053_A_8_2_0, "CELL_053_A_8_2_0");
+    assert_eq!(*CELL_053_A_8_2_1__READ, CELL_053_A_8_2_1, "CELL_053_A_8_2_1");
+    assert_eq!(*CELL_053_A_8_2_2__READ, CELL_053_A_8_2_2, "CELL_053_A_8_2_2");
+    assert_eq!(*CELL_053_A_8_2_3__READ, CELL_053_A_8_2_3, "CELL_053_A_8_2_3");
+    assert_eq!(*CELL_053_A_9_2_0__READ, CELL_053_A_9_2_0, "CELL_053_A_9_2_0");
+    assert_eq!(*CELL_053_A_9_2_1__READ, CELL_053_A_9_2_1, "CELL_053_A_9_2_1");
+    assert_eq!(*CELL_053_A_9_2_2__READ, CELL_053_A_9_2_2, "CELL_053_A_9_2_2");
+    assert_eq!(*CELL_053_A_9_2_3__READ, CELL_053_A_9_2_3, "CELL_053_A_9_2_3");
+    assert_eq!(*CELL_053_B_8_2_0__READ, CELL_053_B_8_2_0, "CELL_053_B_8_2_0");
+    assert_eq!(*CELL_053_B_8_2_1__READ, CELL_053_B_8_2_1, "CELL_053_B_8_2_1");
+    assert_eq!(*CELL_053_B_8_2_2__READ, CELL_053_B_8_2_2, "CELL_053_B_8_2_2");
+    assert_eq!(*CELL_053_B_8_2_3__READ, CELL_053_B_8_2_3, "CELL_053_B_8_2_3");
+    assert_eq!(*CELL_053_B_9_2_0__READ, CELL_053_B_9_2_0, "CELL_053_B_9_2_0");
+    assert_eq!(*CELL_053_B_9_2_1__READ, CELL_053_B_9_2_1, "CELL_053_B_9_2_1");
+    assert_eq!(*CELL_053_B_9_2_2__READ, CELL_053_B_9_2_2, "CELL_053_B_9_2_2");
+    assert_eq!(*CELL_053_B_9_2_3__READ, CELL_053_B_9_2_3, "CELL_053_B_9_2_3");
+    println!("EXPLORE assembly: 251 tables read as written");
+}
