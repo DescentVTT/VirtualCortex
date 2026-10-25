@@ -5,7 +5,9 @@
 # `build-cost.sh <debug|release>` builds every test binary of the workspace from a clean target
 # with `cargo test --workspace --no-run --timings` (and `--release` for release), then changes one
 # file under runtime/cortex-runtime/src/ as cargo-mutants changes it for one mutant and builds
-# again: the build a mutant of the runtime pays. It does this twice, each time from `cargo clean`,
+# again with the sweep's own command, `cargo test --no-run -p cortex-runtime`: the build a mutant
+# of the runtime pays. The job runs it with CARGO_INCREMENTAL=0, as rust-cache sets it for every
+# other job of this workflow, the sweep's among them. It does this twice, each time from `cargo clean`,
 # with a different mutant the second time, so that each figure has two readings on one runner. In
 # debug it also times a cold `cargo check --workspace --all-targets`, the gate's Check and Clippy
 # steps' front end.
@@ -77,7 +79,7 @@ for round in 1 2; do
     fi
   fi
   mutate "$round"
-  step "test-incremental-$round" cargo test --workspace --no-run --locked --timings "${flag[@]}"
+  step "test-mutant-$round" cargo test --no-run -p cortex-runtime --locked --timings "${flag[@]}"
   git checkout -- runtime/cortex-runtime/src
 done
 

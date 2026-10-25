@@ -498,6 +498,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.scope == 'build-cost'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      # As rust-cache sets it for every other job here, the gate's and the sweep's among them: no
+      # cargo-mutants build in the sweep carries `-C incremental` (run 40097581635's logs).
+      CARGO_INCREMENTAL: "0"
     strategy:
       fail-fast: false
       matrix:
@@ -507,6 +511,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ matrix.ref }}
+          # The dispatched commit too, whose script measures every commit named.
+          fetch-depth: 0
 
       - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
         run: |
@@ -516,7 +522,10 @@ jobs:
           free -g
 
       - name: The test binaries built cold and after one mutant, twice
-        run: bash scripts/build-cost.sh ${{ matrix.profile }}
+        run: |
+          git show "$GITHUB_SHA:scripts/build-cost.sh" > "$RUNNER_TEMP/build-cost.sh"
+          echo "measuring $(git rev-parse HEAD) with the script of $GITHUB_SHA"
+          bash "$RUNNER_TEMP/build-cost.sh" ${{ matrix.profile }}
 
       - name: Keep the timings
         if: always()
