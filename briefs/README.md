@@ -121,9 +121,14 @@ section is the rule.
 
 1. **No whole-domain test runs on the developer machine**
    ([ADR-0184](../docs/adr/0184-the-runs-off-the-developer-machine.md)). A round's runs are dispatches on its branch:
-   - **The calibration**: `gh workflow run ci.yml --ref <branch> -f scope=exhaustive -f
-     exclude='<test> ...'`, naming every test of the round's own. A name the listing lacks fails
-     every shard before any test runs.
+   - **The calibration is what the change needs**
+     ([ADR-0215](../docs/adr/0215-the-calibration-a-change-needs.md)), read by `npm run
+     round:additive -- origin/main <the protocol's commit>` and quoted in the protocol ADR:
+     - exit 0, the change only adds: the round's own calibration tests, those its stopping rule's
+       step 2 names, at `scope=arms` beside the arms, and no dispatch at `scope=exhaustive`;
+     - exit 1: `gh workflow run ci.yml --ref <branch> -f scope=exhaustive -f exclude='<test>
+       ...'`, naming every test of the round's own. A name the listing lacks fails every shard
+       before any test runs.
    - **The arms run once**, and so do the round's lead-ins and any trial of its harness on an arm
      the tree pins: `gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'`.
      Each test runs in a job of its own on AArch64 with its output kept as the artifact
@@ -131,8 +136,8 @@ section is the rule.
    - **The calibration and the arms are dispatched together**, on the protocol's commit
      ([ADR-0211](../docs/adr/0211-the-round-shortened.md)). The calibration is read first, with
      any twin its stopping rule holds bit for bit to a pinned arm. No arm's log is read until
-     every calibration shard and every twin is green; one that fails stops the round as a
-     finding, and its arms are void.
+     every calibration shard or test and every twin is green; one that fails stops the round as
+     a finding, and its arms are void.
    - **The tables are written from those logs and committed.** The ADR names the run, the commit
      it ran on, and the job each table came from. The run's commit holds the protocol.
    - **A change after the calibration** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): a change to a file
@@ -145,7 +150,7 @@ section is the rule.
      it runs, and after its commit no file under `runtime/`, `crates/` or `benches/` and no
      `Cargo.toml` or `Cargo.lock` changes (ADR-0191).
    - **It runs the round's own tests alone** (ADR-0211): `gh workflow run ci.yml --ref <branch> -f
-     scope=exhaustive -f only='<test> ...'`, the names the calibration excluded. That holds when,
+     scope=exhaustive -f only='<test> ...'`, every test of the round's own. That holds when,
      from the calibration's commit to its own, no file under `src/` changed and no test or helper
      the calibration ran; the round reads it from `git diff`, and the merge's reviewer again.
      Otherwise it runs every test, with no `only`.
