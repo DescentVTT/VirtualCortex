@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.10.0
+version: 5.11.0
 status: active
 date: 2026-10-25
 ---
@@ -11,7 +11,7 @@ date: 2026-10-25
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.10.0 |
+| Version | 5.11.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-25 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2535,6 +2535,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md) | A reward past the trial, its address kept, built | accepted |
 | [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md) | A reward past the trial, its address kept, its protocol | accepted |
 | [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | A reward past the trial, its address kept, measured | accepted |
+| [ADR-0211](adr/0211-the-round-shortened.md) | The round shortened | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2662,6 +2663,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-77 | [ADR-0054](adr/0054-the-causal-count-inside-the-loop.md)'s text says its rule held *"on the lattice at 1.75 at every size"*; its own table puts the lattice 0.19 and 0.22 below the gross ratio at 1 024 units and 0.18 and 0.22 at 4 096. Exploration 001 noticed it. | ADR-0054 | **Resolved** ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): recorded here; ADR-0054 is accepted and is not edited, and the rule's outcome does not depend on it. |
 | F-78 | The sweep of brief 079's dispatch, run 40097581635, had its runtime-2 job cut at its 330-minute bound, 16:58Z to 22:29Z on 2026-10-24, with 18 of its 123 mutants untested; at twelve shards the runtime's jobs took 2 h 13 min to 5 h 31 min. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): the runtime's sweep is dealt over sixteen shards; the cause, the test crates growing with the rounds' pinned tables, is F-76's. |
 | F-79 | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) bounds a reward's age *"below `kept_addresses`"*, and runs a delay of two at `kept_addresses` 2: its text refuses its own run. | ADR-0207 | **Resolved** ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)): `kept_addresses` is built as the oldest age a reward may name, with one entry more held; ADR-0207 is accepted and is not edited. |
+| F-80 | The workflow's header said the runtime's sweep ran *"in twelve shards"* after [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) dealt it over sixteen. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0211](adr/0211-the-round-shortened.md)): the header says sixteen. |
 
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->
@@ -2929,7 +2931,7 @@ Five independent document checks and eight build and test gates, each answering 
 | V-5 Manifests | Do the state crates still declare no dependencies, and the runtime and the benchmark crate only what their ADRs allow (TC-2)? | `scripts/check-deps.mjs` (zero dependencies; [ADR-0029](adr/0029-structural-enforcement.md)) | CI, blocking |
 | V-8 Shape | Does the text a change adds or modifies keep ADR-0197's limits, is every accepted ADR's body its base copy, and are the ADR index, §9 and the hypotheses' tables what their front matter writes? | `scripts/check-doc-shape.mjs` against `origin/main` and `scripts/adr-index.mjs --check` (zero dependencies; [ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md), built by [ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)) | CI, blocking |
 | Rustdoc | Does every crate's documentation build without a warning (F-22)? | `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | CI, blocking |
-| V-6 Mutation | Does a test fail when a rule in the lines a pull request changes is wrong? | `cargo mutants --in-diff` ([cargo-mutants](https://mutants.rs) 27.1.0, pinned; `.cargo/mutants.toml`; [ADR-0030](adr/0030-verification-governance.md)). One survivor fails the check (a mutant that hangs a test is counted as caught); the whole tree is run weekly on a schedule, and on a round's branch when that round's own diff changes a file under a `src/` directory, deletes a test or takes one out of the suite the sweep runs, or changes `.cargo/mutants.toml` or the sweep's job — decided by the executing round from its diff, never by a brief before the diff exists, and never because a round **added** a test, which can only catch more ([ADR-0075](adr/0075-the-dispatch-scope-follows-the-diff.md), amending [ADR-0067](adr/0067-the-weekly-dispatch-has-a-scope.md): `gh workflow run ci.yml --ref <branch> -f scope=both`, because the gate's `--in-diff` scope cannot see a mutant in unchanged code that the change has left uncaught, which is how ADR-0061 found `Task::coin_at`'s); every round dispatches `scope=exhaustive`, where its own pinned numbers live. Survivors are listed in §11 or become tests. The weekly form is one job per area, each deriving its per-mutant bound from its own test suite timed on the runner, with a check that refuses a partial sweep, because the tool's automatic timeout is five times the workspace baseline while a mutant runs only its own package's tests (F-38, [ADR-0058](adr/0058-the-weekly-sweep-and-its-timeouts.md)). A timeout is read by the triage rule of [ADR-0062](adr/0062-the-first-complete-sweeps-list.md): a wait on another thread or a bound the mutant removed is a detection and stays; a test's own loop or an ordering comparison on moved state is the loop directive's counter-example and becomes a range, held to its previous form bit for bit; one that is neither is the instrument's, a slow pass under the hang beside it (F-42), which "counted as caught" covers alike. The weekly job reads its own `debug.log`, `outcomes.json` and per-mutant logs into `timeout-evidence.txt` beside `timeout.txt`, so each timeout arrives with the window it ran in, what ran in the shard's other slot and whether its test run was still finishing tests ([ADR-0063](adr/0063-the-sweep-reads-its-own-timeouts.md)); the reading stays the round's. | CI, blocking, pull requests |
+| V-6 Mutation | Does a test fail when a rule in the lines a pull request changes is wrong? | `cargo mutants --in-diff` ([cargo-mutants](https://mutants.rs) 27.1.0, pinned; `.cargo/mutants.toml`; [ADR-0030](adr/0030-verification-governance.md)): one survivor fails it, and a hang is caught. The whole tree is swept on the weekly schedule alone, one job per area ([ADR-0058](adr/0058-the-weekly-sweep-and-its-timeouts.md), [ADR-0211](adr/0211-the-round-shortened.md)). | CI, blocking, pull requests |
 | V-7 Determinism | Does the seeded network hash to the pinned value on x86-64 and on AArch64 (T-1)? | `cargo test --workspace` on `ubuntu-24.04` and `ubuntu-24.04-arm`; the pin in `runtime/cortex-runtime/tests/differential.rs` ([ADR-0030](adr/0030-verification-governance.md)). A round's arms run on `ubuntu-24.04-arm` and the weekly shards reproduce their tables on `ubuntu-24.04` ([ADR-0184](adr/0184-the-runs-off-the-developer-machine.md)) | CI, blocking |
 | Release profile | Do the tests hold in the engine's profile, without overflow checks? | `cargo test --workspace --release` ([ADR-0030](adr/0030-verification-governance.md)) | CI, blocking |
 | Benchmarks | Do the benchmarks still build and execute? (No timing is asserted; see §10.2.) | `cargo bench -p cortex-bench --bench hot_path -- --test` | CI, blocking |
@@ -2972,6 +2974,7 @@ git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff tar
 ```bash
 # 3. By dispatch alone, never on the developer machine
 gh workflow run ci.yml --ref <branch> -f scope=exhaustive   # every whole-domain test, eighteen shards; a calibration adds -f exclude='<the round's own tests>'
+gh workflow run ci.yml --ref <branch> -f scope=exhaustive -f only='<the round's own tests>'   # a round's reproduction, when nothing its calibration ran has changed
 gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'   # a round's arms, lead-ins and trials: one job a test on AArch64, its output kept
 gh workflow run ci.yml --ref explore/NNN-<slug> -f scope=arms -f tests='<test>_explore ...'   # an exploration's runs, as often as it needs (docs/explorations/)
 ```
@@ -2983,8 +2986,12 @@ The whole-domain tests run by dispatch alone, as eighteen shards in the weekly j
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="exhaustive-shard.sh ${{ matrix.shard }} 18" min="1" reason="ADR-0191: the whole-domain tests are dealt to eighteen shards" -->
 <!-- @assert-present file="scripts/exhaustive-shard.sh" reason="ADR-0073: the shard takes its slice from --list and checks what it ran" -->
 
-The blocks are the ones in `CLAUDE.md`, which is canonical ([ADR-0184](adr/0184-the-runs-off-the-developer-machine.md)). The first runs on the developer machine before a push and again in the pull request's gate; the second runs in the gate alone, the `arm64` job its tests on another architecture; the third runs by dispatch alone, and the weekly sweep is the whole-tree mutation run on a schedule, one job per area (ADR-0058). A round's arms, its lead-ins and its trials run by a dispatch at `scope=arms`, each test in a job of its own on AArch64 with its output kept (`scripts/arm-run.sh`), and the weekly shards on x86-64 reproduce them. Its calibration is a dispatch at `scope=exhaustive` with the round's own tests excluded by name; `scripts/exhaustive-shard.sh` fails before any test runs if the listing does not hold a name.
+The blocks are the ones in `CLAUDE.md`, which is canonical ([ADR-0184](adr/0184-the-runs-off-the-developer-machine.md)). The first runs on the developer machine before a push and again in the pull request's gate; the second runs in the gate alone, the `arm64` job its tests on another architecture; the third runs by dispatch alone, and the weekly sweep is the whole-tree mutation run on a schedule, one job per area (ADR-0058). A round's arms, its lead-ins and its trials run by a dispatch at `scope=arms`, each test in a job of its own on AArch64 with its output kept (`scripts/arm-run.sh`). Its calibration, dispatched with them, is a dispatch at `scope=exhaustive` with the round's own tests excluded by name, and its reproduction one with those tests alone named in `only`, on x86-64 ([ADR-0211](adr/0211-the-round-shortened.md)); `scripts/exhaustive-shard.sh` fails before any test runs if the listing does not hold a name. The sweep runs on the schedule alone, and a pull request of documents alone skips the four Rust jobs.
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="inputs.scope == 'arms'" min="2" reason="ADR-0184: a round's runs go by a dispatch at scope=arms" -->
+<!-- @assert-count target="scripts/exhaustive-shard.sh" symbol="ONLY" min="1" reason="ADR-0211: a reproduction runs the round's own tests alone" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="ONLY: ${{ inputs.only }}" min="1" reason="ADR-0211: the dispatch's only input reaches the shards" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="needs.changes.outputs.rust != 'false'" min="4" reason="ADR-0211: the four Rust jobs skip a pull request of documents alone" -->
+<!-- @assert-absence target=".github/workflows/ci.yml" symbol="default: both" reason="ADR-0211: a dispatch that names no scope runs no sweep" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="bash scripts/arm-run.sh" min="1" reason="ADR-0184: one job a test, its output kept" -->
 <!-- @assert-count target="scripts/exhaustive-shard.sh" symbol="EXCLUDE" min="1" reason="ADR-0184: a calibration excludes the round's own tests by name" -->
 <!-- @assert-present file="scripts/arm-run.sh" reason="ADR-0184: a round's run finds its test from the listing and keeps its output" -->

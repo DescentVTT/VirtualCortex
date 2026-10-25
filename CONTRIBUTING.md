@@ -113,7 +113,7 @@ Rounds of work are written as numbered, self-contained prompts in [`briefs/`](br
 
 ## Verification
 
-All of these must pass before a change is called done. They run in three places ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)): the first block on your machine before a push and again in the pull request's gate, the second in the gate alone, and the third, the whole-domain tests, only by dispatch. A round's calibration and arms are dispatches ([briefs/README.md](briefs/README.md#evidencing-a-round)).
+All of these must pass before a change is called done. They run in three places ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)): the first block on your machine before a push and again in the pull request's gate, the second in the gate alone, and the third, the whole-domain tests, only by dispatch. A round's calibration, arms and reproduction are dispatches ([briefs/README.md](briefs/README.md#evidencing-a-round)). A pull request whose every file is under `docs/` or `briefs/`, or is a Markdown file at the root, skips the gate's four Rust jobs, which report success ([ADR-0211](docs/adr/0211-the-round-shortened.md)).
 
 ```bash
 # 1. Before a push, on the developer machine; the pull request's gate runs these too
@@ -138,6 +138,7 @@ git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff tar
 ```bash
 # 3. By dispatch alone, never on the developer machine
 gh workflow run ci.yml --ref <branch> -f scope=exhaustive   # every whole-domain test, eighteen shards; a calibration adds -f exclude='<the round's own tests>'
+gh workflow run ci.yml --ref <branch> -f scope=exhaustive -f only='<the round's own tests>'   # a round's reproduction, when nothing its calibration ran has changed
 gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'   # a round's arms, lead-ins and trials: one job a test on AArch64, its output kept
 gh workflow run ci.yml --ref explore/NNN-<slug> -f scope=arms -f tests='<test>_explore ...'   # an exploration's runs, as often as it needs (docs/explorations/)
 ```

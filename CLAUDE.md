@@ -157,6 +157,7 @@ git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff tar
 ```bash
 # 3. By dispatch alone, never on the developer machine
 gh workflow run ci.yml --ref <branch> -f scope=exhaustive   # every whole-domain test, eighteen shards; a calibration adds -f exclude='<the round's own tests>'
+gh workflow run ci.yml --ref <branch> -f scope=exhaustive -f only='<the round's own tests>'   # a round's reproduction, when nothing its calibration ran has changed
 gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'   # a round's arms, lead-ins and trials: one job a test on AArch64, its output kept
 gh workflow run ci.yml --ref explore/NNN-<slug> -f scope=arms -f tests='<test>_explore ...'   # an exploration's runs, as often as it needs (docs/explorations/)
 ```
@@ -165,8 +166,11 @@ The mutation line is the gate a pull request meets: every mutant `cargo-mutants`
 lines the change touches must be caught by a test ([ADR-0030](docs/adr/0030-verification-governance.md));
 a new rule carries a test over the lattice of `testkit/prop.rs`. Before a release the whole-domain
 tests run by a dispatch at `scope=exhaustive`. A round's runs are dispatches too: its calibration at
-`scope=exhaustive` with its own tests excluded, and its arms at `scope=arms`, reproduced by the next
-dispatch at `scope=exhaustive` ([briefs/README.md](briefs/README.md#evidencing-a-round)).
+`scope=exhaustive` with its own tests excluded, made with its arms at `scope=arms`, and its
+reproduction at `scope=exhaustive` with only its own tests; the whole-tree sweep runs on the weekly
+schedule alone ([ADR-0211](docs/adr/0211-the-round-shortened.md),
+[briefs/README.md](briefs/README.md#evidencing-a-round)). A pull request of documents alone skips
+the gate's Rust jobs.
 
 The `cargo bench ... -- --test` line executes each benchmark once and asserts no timing. A number
 becomes Measured only through the protocol in `docs/benchmarks/README.md`; a developer-machine
