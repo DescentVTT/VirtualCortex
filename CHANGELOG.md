@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A delay the engine reads from its kept addresses ([ADR-0216](docs/adr/0216-a-delay-the-engine-reads.md)); H-45; brief 082; whitepaper 5.16.0.** A value critic per kept age and one latched move, at a lead of a thirty-second, asked at one and two trials' delay on seeds 22, 23 and 24 beside a control on time; predicted yes.
 - **The calibration a change needs ([ADR-0215](docs/adr/0215-the-calibration-a-change-needs.md)); whitepaper 5.15.0.** A round whose change only adds, read so by `scripts/check-additive.mjs` (`npm run round:additive`), calibrates with its own calibration tests beside its arms; any other change calibrates the whole tree. Its tests run in `npm run spec`.
 - **A reward right three times in four, on the default, measured ([ADR-0214](docs/adr/0214-three-in-four-on-the-default-measured.md)); H-44 = yes at step 3; whitepaper 5.14.0.** On seeds 22, 23 and 24, both arms held H-35's four clauses, 90 to 127 of 128, and so did the control at step zero, 80 to 127. Readings 1 and 2 missed, 3 held. Readings in `docs/research/H-44.md`.
 - **A reward right three times in four, on the default, its protocol ([ADR-0213](docs/adr/0213-three-in-four-on-the-default-its-protocol.md)); whitepaper 5.13.0.** H-44's constants, clauses and three readings are code in `tests/inhibition.rs` before any arm at three in four. The control's image is the default's with its step's two bytes written zero and re-sealed, held by a mask.

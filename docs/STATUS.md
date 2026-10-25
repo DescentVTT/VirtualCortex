@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0215](adr/0215-the-calibration-a-change-needs.md) wrote it on 2026-10-25, after brief 081 read H-44 ([ADR-0214](adr/0214-three-in-four-on-the-default-measured.md)).
+[ADR-0216](adr/0216-a-delay-the-engine-reads.md) wrote it on 2026-10-25, after brief 081 read H-44 ([ADR-0214](adr/0214-three-in-four-on-the-default-measured.md)) and exploration 003 read a delay the engine is not told.
 
 ## The engine
 
@@ -55,6 +55,6 @@ Per trial the host gives the reward's sign, and, under a delay, the trial's age.
 ## The next decision
 
 H-44 read yes at step 3 of its stopping rule, split (b): with the rule's step zero, the default's networks learned the share too, running 24 to 26 % above their rate targets.
-1. A delay the engine is not told, as H-44's stopping rule names it: exploration 003 reads first whether the engine can tell the delay from its kept addresses. Brief 065 stays live, paused.
+1. Brief 082 is live beside 065, which stays paused: H-45, a delay the engine reads from its kept addresses, one value critic an age and one move ([ADR-0216](adr/0216-a-delay-the-engine-reads.md)), predicted yes.
 2. A re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
 3. The schedule's sweep of 2026-10-26, recorded by the first ADR that merges after it ends.
