@@ -14,7 +14,9 @@
 #
 # Where the tree has a test `the_moved_tables_parse_in_<binary>_explore` (the placements tried by the
 # exploration), it is run once after the cold build, in the same profile: what reading the tables
-# at run time costs a test binary.
+# at run time costs a test binary. So is `the_moved_tables_read_as_written_in_<binary>_explore`,
+# where the tables are both in the source and in the data file: each read from the file is its
+# const.
 #
 # Writes `build-cost/`: `<step>.log`, `<step>.html` (cargo's timing report), `steps.tsv` (step,
 # seconds, exit status) and `sizes.tsv` (each test binary's bytes).
@@ -76,6 +78,9 @@ for round in 1 2; do
     find target/"$profile"/deps -maxdepth 1 -type f -executable -printf '%f\t%s\n' | sort > "$out/sizes.tsv"
     if grep -q 'the_moved_tables_parse_in_' runtime/cortex-runtime/tests/*.rs; then
       step "parse-$round" cargo test --workspace --locked "${flag[@]}" -- --ignored the_moved_tables_parse_in_ --nocapture
+    fi
+    if grep -q 'the_moved_tables_read_as_written_in_' runtime/cortex-runtime/tests/*.rs; then
+      step "read-as-written-$round" cargo test --workspace --locked "${flag[@]}" -- --ignored the_moved_tables_read_as_written_in_ --nocapture
     fi
   fi
   mutate "$round"

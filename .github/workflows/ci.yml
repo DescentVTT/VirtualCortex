@@ -78,7 +78,7 @@ on:
           # Exploration 002 alone, on its branch (ADR-0193): what the test crates cost to build.
           - build-cost
       refs:
-        description: "With scope=build-cost: the commits to build, separated by spaces; empty is the dispatched commit"
+        description: "Exploration 002: with scope=build-cost the commits to build, separated by spaces; with scope=arms the one commit to run on; empty is the dispatched commit"
         type: string
         default: ""
       tests:
@@ -432,11 +432,16 @@ jobs:
         test: ${{ fromJSON(needs.arms-plan.outputs.tests) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # On exploration 002's branch alone: `-f refs=<commit>` runs the tests on one earlier
+          # commit of the branch, since a dispatch names a branch and not a commit.
+          ref: ${{ inputs.refs != '' && inputs.refs || github.sha }}
 
       - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
         run: |
           rustup toolchain install
           rustup show active-toolchain
+          git rev-parse HEAD
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
