@@ -228,19 +228,15 @@ mod harness;
 use harness::*;
 
 // Exploration 002 (ADR-0193): the pinned tables of at least a kilobyte whose values are plain
-// literals live in tests/data/inhibition.tables and are read from it at run time
+// literals live in tests/data/inhibition.tables, in the binary by `include_str!`, and are parsed at run time
 // (tests/instrument/data_file.rs). Not in main.
 #[allow(dead_code)]
 #[path = "instrument/data_file.rs"]
 mod data_file;
 use std::sync::LazyLock;
 use data_file::DataFile;
-static DATA_FILE: LazyLock<DataFile> = LazyLock::new(|| {
-    DataFile::from_file(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/data/inhibition.tables"
-    ))
-});
+static DATA_FILE: LazyLock<DataFile> =
+    LazyLock::new(|| DataFile::from_text(include_str!("data/inhibition.tables")));
 
 use cortex_core::{
     ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, Polarity,
