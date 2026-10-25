@@ -449272,3 +449272,61 @@ fn a_delay_untold_switched_by_age_two_trials_late_on_seed_22_from_the_mirrored_a
 {
     untold_arm(0, Reversal::MirroredFirst, 2, UNTOLD_SWITCH);
 }
+
+/// Exploration 003, the host's switch: seed 23, one trial late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_one_trial_late_on_seed_23_from_the_assignment_explore() {
+    untold_arm(1, Reversal::AssignmentFirst, 1, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 23, one trial late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_one_trial_late_on_seed_23_from_the_mirrored_assignment_explore() {
+    untold_arm(1, Reversal::MirroredFirst, 1, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 23, two trials late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_two_trials_late_on_seed_23_from_the_assignment_explore() {
+    untold_arm(1, Reversal::AssignmentFirst, 2, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 23, two trials late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_two_trials_late_on_seed_23_from_the_mirrored_assignment_explore()
+{
+    untold_arm(1, Reversal::MirroredFirst, 2, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 24, one trial late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_one_trial_late_on_seed_24_from_the_assignment_explore() {
+    untold_arm(2, Reversal::AssignmentFirst, 1, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 24, one trial late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_one_trial_late_on_seed_24_from_the_mirrored_assignment_explore() {
+    untold_arm(2, Reversal::MirroredFirst, 1, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 24, two trials late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_two_trials_late_on_seed_24_from_the_assignment_explore() {
+    untold_arm(2, Reversal::AssignmentFirst, 2, UNTOLD_SWITCH);
+}
+
+/// Exploration 003, the host's switch: seed 24, two trials late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_switched_by_age_two_trials_late_on_seed_24_from_the_mirrored_assignment_explore()
+{
+    untold_arm(2, Reversal::MirroredFirst, 2, UNTOLD_SWITCH);
+}
