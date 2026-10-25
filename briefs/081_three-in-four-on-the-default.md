@@ -69,27 +69,27 @@ Re-derived on 2026-10-25 against `main` at `14c1f67`. Line numbers move; the sym
 
 ## Deliverables
 
-- [ ] **H-44's protocol, in a new ADR at the next free number (`ls docs/adr`), kind `protocol`, before any arm runs at three in four.**
+- [x] **H-44's protocol, in a new ADR at the next free number (`ls docs/adr`), kind `protocol`, before any arm runs at three in four.**
   - The control's image, how it is made from the default's, and its checks.
   - H-44's clauses and constants, restated from ADR-0212 and pinned in the tests.
   - The three predicted readings as rules over the tables.
   - The calibration's checks of H-44's stopping rule, step 2, as tests.
-- [ ] **The calibration and the arms, dispatched together on the protocol's commit**: a dispatch at `scope=exhaustive` excluding this round's own tests, every pinned number held, and the twelve arms at `scope=arms`, each a weekly `exhaustive` test run once. The calibration is read first.
-- [ ] **The arms' tables pinned per block**, once the calibration is green.
-- [ ] **The reproduction**, dispatched as soon as the tables are pinned: `scope=exhaustive` with `-f only` naming the round's own tests, when the diff from the calibration's commit changes no file under `src/` and no test or helper the calibration ran. Its shards are green and reproduce every pinned number, and the cost table is regenerated from the calibration's and the reproduction's artifacts.
-- [ ] **H-44's report**, `docs/research/H-44.md`: its `verdict:` set, the readings' tables, each default arm beside its control and exploration 001's arm, and the dispatches that are their evidence.
-- [ ] **The measured ADR**, kind `measured`, short:
+- [x] **The calibration and the arms, dispatched together on the protocol's commit**: a dispatch at `scope=exhaustive` excluding this round's own tests, every pinned number held, and the twelve arms at `scope=arms`, each a weekly `exhaustive` test run once. The calibration is read first.
+- [x] **The arms' tables pinned per block**, once the calibration is green.
+- [x] **The reproduction**, dispatched as soon as the tables are pinned: `scope=exhaustive` with `-f only` naming the round's own tests, when the diff from the calibration's commit changes no file under `src/` and no test or helper the calibration ran. Its shards are green and reproduce every pinned number, and the cost table is regenerated from the calibration's and the reproduction's artifacts.
+- [x] **H-44's report**, `docs/research/H-44.md`: its `verdict:` set, the readings' tables, each default arm beside its control and exploration 001's arm, and the dispatches that are their evidence.
+- [x] **The measured ADR**, kind `measured`, short:
   - the verdict per network, arm and clause, and the control's, in one table;
   - each of the three predicted readings, held or missed, in a line;
   - the step of the stopping rule reached, its split, and the next decision it names, not taken.
-- [ ] **The gate.** At most one runtime test: H-44's clauses and its predicted readings' rules at their edges, over tables written by hand.
-- [ ] **The documents, in the same pull request.**
+- [x] **The gate.** At most one runtime test: H-44's clauses and its predicted readings' rules at their edges, over tables written by hand.
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
   - Whitepaper: the tables written by `node scripts/adr-index.mjs`, and what the result changes elsewhere in it.
   - `CHANGELOG.md`, one entry of at most 400 characters a change.
   - `README.md` and `docs/zh-TW/README.md` as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 081 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 081 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
