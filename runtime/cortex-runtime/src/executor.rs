@@ -273,7 +273,23 @@ pub struct Config {
     /// ADR-0202, bit for bit. Refused without a read. For an engine built from an image, the
     /// image's, beside its read or its probe under way, outranks this one (§8.3).
     pub step_probe: bool,
+    /// The kept addresses (ADR-0207, ADR-0208): the oldest age, in trials, a reward may name.
+    /// While it is not zero, a trial's close ([`Executor::keep_address`]) keeps the critic's
+    /// counts, whose units not zero are the address's sources, and the targets given, as the
+    /// newest entry, then zeroes the counts and reopens the critic's window as a reward does; and
+    /// a reward of age $a$ ([`Executor::reward_kept`]) writes the address of the entry kept $a$
+    /// closes before the newest, reads the value and moves the critic's weights from that entry's
+    /// counts, and spends it. The engine holds this many entries beside the newest. Zero (the
+    /// default) keeps none, and every run is the run it was, bit for bit. Refused above
+    /// `KEPT_ADDRESSES_MAX`, the eligibility trace's τ in trials, and without the critic or its
+    /// window, from which the address is drawn (ADR-0139). Not in the image, as the counts are
+    /// not: for an engine built from an image, the configuration's.
+    pub kept_addresses: u8,
 }
+
+/// The oldest age a reward may name (ADR-0207): four trials, the eligibility trace's τ of
+/// $2^{16}$ ticks over a trial of $2^{14}$.
+pub const KEPT_ADDRESSES_MAX: u8 = 4;
 
 impl Default for Config {
     fn default() -> Self {
@@ -309,6 +325,7 @@ impl Default for Config {
             rate_read_windows: 0,
             istdp_target_read: false,
             step_probe: false,
+            kept_addresses: 0,
         }
     }
 }
@@ -493,6 +510,11 @@ pub enum ConfigError {
     /// image carries it beside no read and no probe under way, or a probe beside no target the
     /// read made: the probe follows the read (ADR-0200, ADR-0202).
     StepProbeWithoutRead,
+    /// `kept_addresses` is above `KEPT_ADDRESSES_MAX` (ADR-0208).
+    KeptAddressesOutOfRange,
+    /// `kept_addresses` is set without the critic or without its window: the address kept is
+    /// the one drawn from the window's counts (ADR-0139, ADR-0208).
+    KeptAddressesWithoutWindow,
 }
 
 /// The read of the rate's target (ADR-0188, ADR-0189), between ticks: `Executor::target_read`.
@@ -570,6 +592,25 @@ pub enum AddressError {
     /// spike since the previous reward, the whole network's, which is the global delivery's
     /// reach and not an address.
     NoWindow,
+    /// A trial's close kept, or a reward of an age given, while `Config::kept_addresses` is unset
+    /// (ADR-0208): the engine keeps no address.
+    NotKept,
+    /// A reward of an age above `Config::kept_addresses` (ADR-0208): the engine keeps no entry
+    /// that old.
+    AgeNotKept,
+    /// A reward of an age at which no address is kept (ADR-0208): fewer trials have closed since
+    /// the engine's start, its build or its load, or that trial's reward was given already.
+    NoKeptAddress,
+}
+
+/// One trial's address kept (ADR-0208): the critic's counts as the trial's close found them,
+/// whose units not zero are the address's sources, the targets given by unit, and whether its
+/// reward is still to come.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct KeptEntry {
+    counts: Vec<u32>,
+    targets: Vec<bool>,
+    live: bool,
 }
 
 /// The modulations of a tick (ADR-0068, ADR-0086): the one an addressed synapse consolidates
@@ -1280,6 +1321,15 @@ pub struct Executor<const CAP: usize> {
     /// (ADR-0202): the configuration's or the image's, set only beside a read or a probe under
     /// way and spent when the probe ends or the read ends refused.
     step_probe: bool,
+    /// The kept addresses (ADR-0208): the configuration's oldest age a reward may name, zero
+    /// while unset.
+    kept_addresses: u8,
+    /// The entries kept, a ring of `kept_addresses` and one more while set, none while unset,
+    /// whose newest is at `kept_newest`.
+    kept: Vec<KeptEntry>,
+    kept_newest: usize,
+    /// Entries a trial's close wrote over while their reward was still to come.
+    kept_let_go: u64,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -1396,6 +1446,14 @@ impl<const CAP: usize> Executor<CAP> {
         }
         if config.critic.is_none() && config.whole_punishment {
             return Err(ConfigError::WholePunishmentWithoutCritic);
+        }
+        if config.kept_addresses > KEPT_ADDRESSES_MAX {
+            return Err(ConfigError::KeptAddressesOutOfRange);
+        }
+        if config.kept_addresses != 0
+            && (config.critic.is_none() || config.critic_window_ticks == 0)
+        {
+            return Err(ConfigError::KeptAddressesWithoutWindow);
         }
         let rate_target = rate_target_of(config.units, config.rate_target_period_ticks)?;
         // The read (ADR-0189): unset at zero; refused short of the windows it sums, and beside a
@@ -1538,6 +1596,22 @@ impl<const CAP: usize> Executor<CAP> {
             target_read,
             istdp_target_read: config.istdp_target_read,
             step_probe: config.step_probe,
+            kept_addresses: config.kept_addresses,
+            // The newest entry and as many before it as a reward's age may reach, each sized
+            // here; none while unset.
+            kept: (0..if config.kept_addresses == 0 {
+                0
+            } else {
+                usize::from(config.kept_addresses).saturating_add(1)
+            })
+                .map(|_| KeptEntry {
+                    counts: vec![0; config.units],
+                    targets: vec![false; config.units],
+                    live: false,
+                })
+                .collect(),
+            kept_newest: 0,
+            kept_let_go: 0,
             // The gain the configuration starts the engine at (ADR-0196), 1.0 by default.
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
@@ -1787,19 +1861,32 @@ impl<const CAP: usize> Executor<CAP> {
             return self.modulator.reward(reward_q16);
         };
         let mut features = std::mem::take(&mut self.features);
+        let signal = self.read_reward(critic, reward_q16, &features);
+        features.fill(0);
+        self.features = features;
+        self.window_opened = self.tick;
+        signal
+    }
+
+    /// The critic's reading at a reward (ADR-0131, ADR-0155), of the counts given, between ticks:
+    /// the value of the units' weights times the counts, the error the reward less the value,
+    /// every weight moved by the error times its count, and what the modulator receives — the
+    /// error, or while the whole punishment is set the reward where both are below zero —
+    /// recorded and sent. Returns the signal. `reward` gives it the live counts and
+    /// `reward_kept` an entry's (ADR-0208), so that a kept reward at age zero is a reward, bit for
+    /// bit.
+    fn read_reward(&mut self, critic: ValueCritic, reward_q16: i32, counts: &[u32]) -> i32 {
         let units = self.units_mut();
         let value_q16 = critic.value_q16(
             units
                 .iter()
-                .zip(&features)
+                .zip(counts)
                 .map(|(unit, &count)| (unit.value_weight, count)),
         );
         let error_q16 = ValueCritic::error_q16(reward_q16, value_q16);
-        for (unit, count) in units.iter_mut().zip(features.iter_mut()) {
-            unit.value_weight = critic.step(unit.value_weight, error_q16, *count);
-            *count = 0;
+        for (unit, &count) in units.iter_mut().zip(counts) {
+            unit.value_weight = critic.step(unit.value_weight, error_q16, count);
         }
-        self.features = features;
         let received_q16 = if self.whole_punishment {
             ValueCritic::received_q16(reward_q16, value_q16)
         } else {
@@ -1810,8 +1897,132 @@ impl<const CAP: usize> Executor<CAP> {
             error_q16,
             received_q16,
         });
-        self.window_opened = self.tick;
         self.modulator.reward(received_q16)
+    }
+
+    /// The kept addresses (ADR-0207, ADR-0208), from the configuration: the oldest age a reward
+    /// may name; zero while unset, where the engine keeps no address.
+    pub fn kept_addresses(&self) -> u8 {
+        self.kept_addresses
+    }
+
+    /// The entries a trial's close wrote over while their reward was still to come (ADR-0208):
+    /// a reward that would have named one finds no address there.
+    pub fn kept_let_go(&self) -> u64 {
+        self.kept_let_go
+    }
+
+    /// The ring's slot of the entry kept `age` closes before the newest (ADR-0208). Refused while
+    /// no address is kept and above the oldest age kept.
+    fn kept_slot(&self, age: u8) -> Result<usize, AddressError> {
+        if self.kept_addresses == 0 {
+            return Err(AddressError::NotKept);
+        }
+        if age > self.kept_addresses {
+            return Err(AddressError::AgeNotKept);
+        }
+        // The newest is below the ring's length and the age at most one less, so the sum is above
+        // the age and below twice the length.
+        let len = self.kept.len();
+        self.kept_newest
+            .wrapping_add(len)
+            .wrapping_sub(usize::from(age))
+            .checked_rem(len)
+            .ok_or(AddressError::NotKept)
+    }
+
+    /// The address kept at `age` (ADR-0208), between ticks: the critic's counts the trial's close
+    /// found, whose units not zero are its sources, and its targets by unit. None while no
+    /// address is kept, above the oldest age kept, and where none is kept at that age: fewer
+    /// trials have closed, or its reward was given.
+    pub fn kept_at(&self, age: u8) -> Option<(&[u32], &[bool])> {
+        let slot = self.kept_slot(age).ok()?;
+        self.kept
+            .get(slot)
+            .filter(|entry| entry.live)
+            .map(|entry| (entry.counts.as_slice(), entry.targets.as_slice()))
+    }
+
+    /// Between ticks: a trial's close, its address kept (ADR-0207, ADR-0208). The critic's counts
+    /// — the spikes its window admitted since it last opened — and the units of `targets` become
+    /// the newest entry, the oldest written over; the counts start again from zero and the
+    /// critic's window opens again at this tick, as at a reward. The addressed set, the weights
+    /// and the signal are not touched: the address is written by the reward that names the trial
+    /// ([`Executor::reward_kept`]). An entry written over while its reward was still to come is
+    /// counted ([`Executor::kept_let_go`]). Refused as `address_drawn` is, while no address is
+    /// kept, and whole for a target outside the arena, nothing changed. Called between a trial's
+    /// last tick and its reward in place of `address_drawn`, the counts are that trial's window.
+    pub fn keep_address<T>(&mut self, targets: T) -> Result<(), AddressError>
+    where
+        T: IntoIterator<Item = u32>,
+        T::IntoIter: Clone,
+    {
+        self.draws()?;
+        let newest = self.kept_slot(0)?;
+        let targets = targets.into_iter();
+        if targets
+            .clone()
+            .any(|unit| unit as usize >= self.shared.targets.len())
+        {
+            return Err(AddressError::NoSuchUnit);
+        }
+        let slot = newest
+            .wrapping_add(1)
+            .checked_rem(self.kept.len())
+            .ok_or(AddressError::NotKept)?;
+        let entry = self.kept.get_mut(slot).ok_or(AddressError::NotKept)?;
+        if entry.live {
+            self.kept_let_go = self.kept_let_go.saturating_add(1);
+        }
+        for (kept, count) in entry.counts.iter_mut().zip(self.features.iter_mut()) {
+            *kept = *count;
+            *count = 0;
+        }
+        entry.targets.fill(false);
+        for unit in targets {
+            if let Some(flag) = entry.targets.get_mut(unit as usize) {
+                *flag = true;
+            }
+        }
+        entry.live = true;
+        self.kept_newest = slot;
+        self.window_opened = self.tick;
+        Ok(())
+    }
+
+    /// A reward for the trial whose address was kept `age` closes before the newest, between ticks
+    /// (ADR-0207, ADR-0208). The entry's address becomes the addressed set — its sources the units
+    /// whose kept count is not zero, its targets the units it kept — as `address_drawn` would have
+    /// written it at that trial's close; the critic reads the value from the entry's counts, moves
+    /// the weights by the error times them and sends what the modulator receives, as `reward` does
+    /// from the live counts; and the entry is spent. The live counts and the critic's window are
+    /// not touched. Returns the signal. At age zero, after a close, it is `address_drawn` and then
+    /// `reward` at that close, bit for bit. Refused as `address_drawn` is, while no address is
+    /// kept, above the oldest age kept and where none is kept at that age, nothing changed.
+    pub fn reward_kept(&mut self, reward_q16: i32, age: u8) -> Result<i32, AddressError> {
+        self.draws()?;
+        let slot = self.kept_slot(age)?;
+        let Some(critic) = self.critic else {
+            return Err(AddressError::NoCritic);
+        };
+        let entry = self
+            .kept
+            .get_mut(slot)
+            .filter(|entry| entry.live)
+            .ok_or(AddressError::NoKeptAddress)?;
+        entry.live = false;
+        let counts = std::mem::take(&mut entry.counts);
+        for (flag, &count) in self.shared.sources.iter().zip(&counts) {
+            flag.store(count != 0, Ordering::Relaxed);
+        }
+        for (flag, &target) in self.shared.targets.iter().zip(&entry.targets) {
+            flag.store(target, Ordering::Relaxed);
+        }
+        let signal = self.read_reward(critic, reward_q16, &counts);
+        if let Some(entry) = self.kept.get_mut(slot) {
+            entry.counts = counts;
+        }
+        Ok(signal)
     }
 
     /// Between ticks: the addressed set becomes the synapses from a unit of `sources` onto a
@@ -5992,6 +6203,281 @@ mod tests {
         exec.address_all();
         assert_eq!(sides(&exec), every);
     }
+
+    /// The kept addresses (ADR-0208): unset by default, where no address is kept and both calls
+    /// are refused; taken from one to four with the critic and its window, and refused above
+    /// four and without either.
+    #[test]
+    fn the_kept_addresses_are_unset_by_default_and_refused_above_four_or_without_the_window() {
+        assert_eq!(Config::default().kept_addresses, 0, "unset by default");
+        assert_eq!(KEPT_ADDRESSES_MAX, 4);
+        let critic = Some(ValueCritic { shift: 9, scale: 2 });
+        let with = |kept, critic, window| {
+            Executor::<8>::new(Config {
+                units: 3,
+                train_capacity: 8,
+                critic,
+                critic_window_ticks: window,
+                kept_addresses: kept,
+                ..Config::default()
+            })
+        };
+        for (critic, window) in [(None, 0), (critic, 0), (critic, 20)] {
+            let mut exec = with(0, critic, window).unwrap();
+            assert_eq!(
+                (exec.kept_addresses(), exec.kept_at(0), exec.kept_let_go()),
+                (0, None, 0)
+            );
+            let refusal = exec.draws().err().unwrap_or(AddressError::NotKept);
+            assert_eq!(exec.keep_address([0u32]), Err(refusal), "{refusal:?}");
+            assert_eq!(exec.reward_kept(0x1_0000, 0), Err(refusal), "{refusal:?}");
+            assert_eq!(exec.modulator().dopamine_rpe, 0, "{refusal:?}: no reward");
+        }
+        for kept in 1..=KEPT_ADDRESSES_MAX {
+            let exec = with(kept, critic, 20).unwrap();
+            assert_eq!(exec.kept_addresses(), kept);
+            assert!(
+                (0..=kept.saturating_add(1)).all(|age| exec.kept_at(age).is_none()),
+                "{kept}: nothing kept before a close"
+            );
+        }
+        for kept in [5, u8::MAX] {
+            for (critic, window) in [(critic, 20), (None, 0)] {
+                assert!(
+                    matches!(
+                        with(kept, critic, window),
+                        Err(ConfigError::KeptAddressesOutOfRange)
+                    ),
+                    "{kept}"
+                );
+            }
+        }
+        for (critic, window) in [(None, 0), (critic, 0)] {
+            assert!(matches!(
+                with(1, critic, window),
+                Err(ConfigError::KeptAddressesWithoutWindow)
+            ));
+        }
+        assert!(matches!(
+            with(1, None, 20),
+            Err(ConfigError::WindowWithoutCritic)
+        ));
+    }
+
+    /// A trial's close and a reward of an age (ADR-0208), each number from an oracle written from
+    /// the rule's text, on four armed units under a critic whose value is the weights times the
+    /// counts over four and whose weights move by the error times the count over 512. Before a
+    /// close nothing is kept, and a reward of an age is refused, above two as never kept. A close
+    /// keeps the window's counts and the targets given as the newest entry, zeroes the counts,
+    /// opens the window again and touches no address, weight or signal; a target outside the
+    /// arena is refused whole. A reward of age two after three closes writes the first close's
+    /// address — its counted units onto its targets — reads the value of its counts, moves the
+    /// weights by the error times them, sends the error, spends the entry and leaves the live
+    /// counts and the window as they were; a second reward of that age is refused. A close that
+    /// writes over a spent entry lets nothing go, and one that writes over an entry whose reward
+    /// is still to come counts it.
+    #[test]
+    fn a_close_keeps_its_counts_and_targets_and_a_reward_of_its_age_writes_and_spends_them() {
+        use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+        let critic = ValueCritic { shift: 9, scale: 2 };
+        let mut exec = Executor::<8>::new(Config {
+            units: 4,
+            nodes_per_worker: 128,
+            train_capacity: 64,
+            critic: Some(critic),
+            critic_window_ticks: 20,
+            kept_addresses: 2,
+            ..Config::default()
+        })
+        .unwrap();
+        for (unit, weight) in exec.units_mut().iter_mut().zip([100i16, -40, 7, 0]) {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+            unit.value_weight = weight;
+        }
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        // A trial: the units of `pattern` kicked at its start, 400 ticks run.
+        let trial = |exec: &mut Executor<8>, pattern: &[u32]| {
+            let inject = exec.injector();
+            for &unit in pattern {
+                for _ in 0..14 {
+                    inject.inject(unit, strong).unwrap();
+                }
+            }
+            for _ in 0..400 {
+                exec.tick();
+            }
+        };
+        let weights = |exec: &Executor<8>| -> Vec<i16> {
+            exec.units().iter().map(|u| u.value_weight).collect()
+        };
+        let sides = |exec: &Executor<8>| {
+            (
+                (0..4).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                (0..4).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+            )
+        };
+        let every = (vec![true; 4], vec![true; 4]);
+        assert_eq!(
+            exec.reward_kept(0x1_0000, 0),
+            Err(AddressError::NoKeptAddress)
+        );
+        assert_eq!(
+            exec.reward_kept(0x1_0000, 2),
+            Err(AddressError::NoKeptAddress)
+        );
+        assert_eq!(exec.reward_kept(0x1_0000, 3), Err(AddressError::AgeNotKept));
+        assert_eq!(
+            exec.reward_kept(0x1_0000, u8::MAX),
+            Err(AddressError::AgeNotKept)
+        );
+        assert_eq!(
+            (exec.modulator().dopamine_rpe, exec.prediction()),
+            (0, None)
+        );
+        // Three closes, each a trial's window kept with its targets.
+        let mut closes: Vec<(Vec<u32>, Vec<bool>)> = Vec::new();
+        for (pattern, targets) in [
+            (&[0u32, 2][..], &[3u32, 1][..]),
+            (&[1], &[0]),
+            (&[3, 0], &[]),
+        ] {
+            trial(&mut exec, pattern);
+            let counts = exec.features().to_vec();
+            assert_eq!(
+                counts.iter().map(|&c| c != 0).collect::<Vec<bool>>(),
+                (0..4u32)
+                    .map(|u| pattern.contains(&u))
+                    .collect::<Vec<bool>>(),
+                "the window counted the pattern"
+            );
+            let before = (weights(&exec), exec.modulator().dopamine_rpe, sides(&exec));
+            assert_eq!(exec.keep_address([0u32, 4]), Err(AddressError::NoSuchUnit));
+            assert_eq!(exec.features(), &counts[..], "refused whole");
+            assert_eq!(exec.keep_address(targets.iter().copied()), Ok(()));
+            let kept: Vec<bool> = (0..4u32).map(|u| targets.contains(&u)).collect();
+            assert_eq!(exec.kept_at(0), Some((&counts[..], &kept[..])));
+            assert_eq!(exec.features(), &[0; 4], "counted afresh");
+            assert_eq!(exec.window_opened(), exec.ticks(), "the window opens again");
+            assert_eq!(
+                (weights(&exec), exec.modulator().dopamine_rpe, sides(&exec)),
+                before,
+                "a close moves no weight, no signal and no address"
+            );
+            assert_eq!(exec.prediction(), None);
+            closes.push((counts, kept));
+        }
+        for (age, (counts, kept)) in closes.iter().rev().enumerate() {
+            assert_eq!(
+                exec.kept_at(age as u8),
+                Some((&counts[..], &kept[..])),
+                "age {age}"
+            );
+        }
+        assert_eq!(exec.kept_let_go(), 0);
+        assert_eq!(sides(&exec), every, "no address written yet");
+        // The live counts after the third close, which a reward of an age does not touch.
+        trial(&mut exec, &[1, 2]);
+        let live = exec.features().to_vec();
+        assert!(live.iter().any(|&c| c != 0));
+        let opened = exec.window_opened();
+        // The reward of age two: the first close's.
+        let (counts, kept) = closes[0].clone();
+        let before = weights(&exec);
+        let exact: i64 = before
+            .iter()
+            .zip(&counts)
+            .map(|(&w, &c)| i64::from(w) * i64::from(c))
+            .sum();
+        let value = exact.div_euclid(4) as i32;
+        let error = 0x1_0000 - value;
+        let signal = exec.modulator().dopamine_rpe;
+        assert_eq!(exec.reward_kept(0x1_0000, 2), Ok(signal + error));
+        assert_eq!(
+            exec.prediction(),
+            Some(Prediction {
+                value_q16: value,
+                error_q16: error,
+                received_q16: error
+            })
+        );
+        assert_eq!(
+            sides(&exec),
+            (counts.iter().map(|&c| c != 0).collect(), kept.clone()),
+            "the first close's address"
+        );
+        let moved: Vec<i16> = before
+            .iter()
+            .zip(&counts)
+            .map(|(&w, &c)| {
+                (i64::from(w) + (i64::from(error) * i64::from(c)).div_euclid(512)) as i16
+            })
+            .collect();
+        assert_eq!(weights(&exec), moved, "the delta rule on the kept counts");
+        assert_ne!(moved, before, "a weight moved");
+        assert_eq!(
+            (exec.features(), exec.window_opened()),
+            (&live[..], opened),
+            "the live counts and the window as they were"
+        );
+        assert_eq!(exec.kept_at(2), None, "spent");
+        assert_eq!(exec.kept_at(1), Some((&closes[1].0[..], &closes[1].1[..])));
+        assert_eq!(exec.kept_at(0), Some((&closes[2].0[..], &closes[2].1[..])));
+        let after = (
+            weights(&exec),
+            exec.modulator().dopamine_rpe,
+            sides(&exec),
+            exec.prediction(),
+        );
+        assert_eq!(
+            exec.reward_kept(-0x1_0000, 2),
+            Err(AddressError::NoKeptAddress)
+        );
+        assert_eq!(
+            (
+                weights(&exec),
+                exec.modulator().dopamine_rpe,
+                sides(&exec),
+                exec.prediction()
+            ),
+            after,
+            "a spent entry is refused, nothing changed"
+        );
+        // A fourth close writes over the spent entry; a fifth over the second close's, whose
+        // reward is still to come.
+        assert_eq!(exec.keep_address([2u32]), Ok(()));
+        assert_eq!(exec.kept_let_go(), 0, "the entry written over was spent");
+        assert_eq!(exec.kept_at(1), Some((&closes[2].0[..], &closes[2].1[..])));
+        assert_eq!(exec.kept_at(2), Some((&closes[1].0[..], &closes[1].1[..])));
+        trial(&mut exec, &[0]);
+        assert_eq!(exec.keep_address([1u32]), Ok(()));
+        assert_eq!(
+            exec.kept_let_go(),
+            1,
+            "the second close's reward never came"
+        );
+        assert_eq!(exec.kept_at(2), Some((&closes[2].0[..], &closes[2].1[..])));
+        // A reward of age zero: the newest close's, the fifth.
+        let (newest, targets) = exec
+            .kept_at(0)
+            .map(|(c, t)| (c.to_vec(), t.to_vec()))
+            .unwrap();
+        assert_eq!(
+            newest.iter().map(|&c| c != 0).collect::<Vec<bool>>(),
+            [true, false, false, false],
+            "the fifth close kept unit 0's spikes"
+        );
+        let before = weights(&exec);
+        let value = (i64::from(before[0]) * i64::from(newest[0])).div_euclid(4) as i32;
+        let signal = exec.modulator().dopamine_rpe;
+        assert_eq!(
+            exec.reward_kept(-0x1_0000, 0),
+            Ok(signal + (-0x1_0000 - value))
+        );
+        assert_eq!(sides(&exec), (vec![true, false, false, false], targets));
+        assert_eq!(exec.kept_at(0), None);
+    }
 }
 
 /// The lattice property (ADR-0030) of the addressing (ADR-0068): over the lattice and a
@@ -6727,5 +7213,297 @@ mod probe_prop {
             steps > 500 && not_above > 500 && past > 100,
             "the walk met each end: {steps} steps, {not_above} not above zero, {past} past the bound"
         );
+    }
+}
+
+/// The lattice property (ADR-0030) of the kept addresses (ADR-0208), two walks.
+///
+/// Against an oracle written from ADR-0208's text: over a seeded walk of trials — armed units
+/// kicked and ticks run — closes with targets drawn from the arena and one past it, and rewards of
+/// every age from zero to two past the oldest kept at rewards over the lattice, under critics,
+/// windows, oldest ages and the whole punishment drawn, every call is the oracle's. The oracle
+/// keeps a ring of the counts each close found and the targets it was given, refuses what the
+/// text refuses, and at a reward reads the value and moves the weights from the entry the age
+/// names by `ValueCritic`'s rule, writes that entry's address and spends it. After every call the
+/// entry at every age, the entries let go, the weights, the addressed set, the reading and the
+/// signal are the oracle's, and the live counts are zeroed by a close and untouched by a reward.
+///
+/// The twin: over a seeded walk of trials each closed and rewarded at once, an engine that keeps
+/// addresses and rewards at age zero is the engine that draws and rewards, bit for bit — its
+/// weights, counts, window, reading, signal and addressed set after every trial.
+#[cfg(test)]
+mod kept_prop {
+    use super::*;
+    use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    const UNITS: u32 = 6;
+
+    /// An engine of `UNITS` armed units under `config`, its value weights drawn.
+    fn armed(config: Config, rng: &mut Lcg) -> Executor<8> {
+        let mut exec = Executor::<8>::new(config).unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+            unit.value_weight = match rng.below(3) {
+                0 => rng.pick(&I16_LATTICE),
+                _ => rng.next_i16() >> rng.below(12),
+            };
+        }
+        exec
+    }
+
+    /// A configuration drawn: a critic the rule resolves, a window, the whole punishment or not,
+    /// and `kept` addresses.
+    fn drawn(rng: &mut Lcg, kept: u8) -> Config {
+        Config {
+            units: UNITS as usize,
+            nodes_per_worker: 256,
+            injector_capacity: 128,
+            train_capacity: 256,
+            critic: Some(ValueCritic {
+                shift: rng.below(31) as u8,
+                scale: rng.below(15) as u8,
+            }),
+            critic_window_ticks: rng.pick(&[1u16, 3, 20, 400, u16::MAX]),
+            whole_punishment: rng.below(2) == 0,
+            kept_addresses: kept,
+            ..Config::default()
+        }
+    }
+
+    /// A trial: each unit kicked with a chance of a half, then one to 120 ticks run.
+    fn trial(exec: &mut Executor<8>, rng: &mut Lcg) {
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        let inject = exec.injector();
+        for unit in 0..UNITS {
+            if rng.below(2) == 0 {
+                for _ in 0..14 {
+                    inject.inject(unit, strong).unwrap();
+                }
+            }
+        }
+        for _ in 0..=rng.below(120) {
+            exec.tick();
+        }
+    }
+
+    fn reward_of(rng: &mut Lcg) -> i32 {
+        match rng.below(3) {
+            0 => rng.pick(&I32_LATTICE),
+            1 => rng.pick(&[0x1_0000, -0x1_0000]),
+            _ => rng.next_i32() >> rng.below(16),
+        }
+    }
+
+    fn weights(exec: &Executor<8>) -> Vec<i16> {
+        exec.units().iter().map(|u| u.value_weight).collect()
+    }
+
+    fn sides(exec: &Executor<8>) -> (Vec<bool>, Vec<bool>) {
+        (
+            (0..UNITS).map(|u| exec.is_source(u)).collect(),
+            (0..UNITS).map(|u| exec.is_target(u)).collect(),
+        )
+    }
+
+    /// The oracle's entry: the counts a close found, the targets it was given, and whether its
+    /// reward is still to come.
+    type Entry = (Vec<u32>, Vec<bool>, bool);
+
+    #[test]
+    fn every_close_and_every_reward_of_an_age_is_the_oracle_s() {
+        let mut rng = Lcg::new(0x0208);
+        let (mut at_zero, mut at_oldest, mut aged) = (0u32, 0u32, 0u32);
+        let (mut spent, mut beyond, mut outside, mut let_go) = (0u32, 0u32, 0u32, 0u64);
+        for walk in 0..96u32 {
+            let kept = 1u8.saturating_add(rng.below(u32::from(KEPT_ADDRESSES_MAX)) as u8);
+            let config = drawn(&mut rng, kept);
+            let (critic, whole) = (config.critic.unwrap(), config.whole_punishment);
+            let mut exec = armed(config, &mut rng);
+            // The oracle: a ring of `kept + 1` entries and the newest's slot, the entries let go,
+            // the weights and the addressed set.
+            let len = usize::from(kept) + 1;
+            let mut ring: Vec<Entry> =
+                vec![(vec![0; UNITS as usize], vec![false; UNITS as usize], false); len];
+            let mut newest = 0usize;
+            let mut gone = 0u64;
+            let mut held = weights(&exec);
+            let mut address = (vec![true; UNITS as usize], vec![true; UNITS as usize]);
+            for step in 0..48u32 {
+                let at = format!("walk {walk} step {step}");
+                match rng.below(3) {
+                    0 => trial(&mut exec, &mut rng),
+                    1 => {
+                        let targets: Vec<u32> = (0..=UNITS)
+                            .filter(|&u| match u {
+                                UNITS => rng.below(8) == 0,
+                                _ => rng.below(2) == 0,
+                            })
+                            .collect();
+                        let counts = exec.features().to_vec();
+                        let opened = exec.window_opened();
+                        if targets.contains(&UNITS) {
+                            outside = outside.wrapping_add(1);
+                            assert_eq!(
+                                exec.keep_address(targets.iter().copied()),
+                                Err(AddressError::NoSuchUnit),
+                                "{at}"
+                            );
+                            assert_eq!(
+                                (exec.features(), exec.window_opened()),
+                                (&counts[..], opened),
+                                "{at}: refused whole"
+                            );
+                        } else {
+                            assert_eq!(exec.keep_address(targets.iter().copied()), Ok(()), "{at}");
+                            newest = (newest + 1) % len;
+                            if ring[newest].2 {
+                                gone += 1;
+                            }
+                            ring[newest] = (
+                                counts,
+                                (0..UNITS).map(|u| targets.contains(&u)).collect(),
+                                true,
+                            );
+                            assert_eq!(exec.features(), &[0; UNITS as usize], "{at}");
+                            assert_eq!(exec.window_opened(), exec.ticks(), "{at}");
+                        }
+                    }
+                    _ => {
+                        let age = rng.below(u32::from(kept) + 3) as u8;
+                        let reward = reward_of(&mut rng);
+                        let live = exec.features().to_vec();
+                        let opened = exec.window_opened();
+                        let mut modulator = *exec.modulator();
+                        let reading = exec.prediction();
+                        let slot = (newest + len - usize::from(age).min(len - 1)) % len;
+                        let got = exec.reward_kept(reward, age);
+                        if age > kept {
+                            beyond = beyond.wrapping_add(1);
+                            assert_eq!(got, Err(AddressError::AgeNotKept), "{at}");
+                        } else if !ring[slot].2 {
+                            spent = spent.wrapping_add(1);
+                            assert_eq!(got, Err(AddressError::NoKeptAddress), "{at}");
+                        } else {
+                            match age {
+                                0 => at_zero = at_zero.wrapping_add(1),
+                                a if a == kept => at_oldest = at_oldest.wrapping_add(1),
+                                _ => aged = aged.wrapping_add(1),
+                            }
+                            let (counts, targets, _) = ring[slot].clone();
+                            ring[slot].2 = false;
+                            let value =
+                                critic.value_q16(held.iter().copied().zip(counts.iter().copied()));
+                            let error = ValueCritic::error_q16(reward, value);
+                            held = held
+                                .iter()
+                                .zip(&counts)
+                                .map(|(&w, &c)| critic.step(w, error, c))
+                                .collect();
+                            let received = if whole {
+                                ValueCritic::received_q16(reward, value)
+                            } else {
+                                error
+                            };
+                            assert_eq!(got, Ok(modulator.reward(received)), "{at}");
+                            assert_eq!(
+                                exec.prediction(),
+                                Some(Prediction {
+                                    value_q16: value,
+                                    error_q16: error,
+                                    received_q16: received
+                                }),
+                                "{at}"
+                            );
+                            address = (counts.iter().map(|&c| c != 0).collect(), targets);
+                        }
+                        if got.is_err() {
+                            assert_eq!(exec.prediction(), reading, "{at}: refused, no reading");
+                        }
+                        assert_eq!(exec.modulator(), &modulator, "{at}: the signal");
+                        assert_eq!(
+                            (exec.features(), exec.window_opened()),
+                            (&live[..], opened),
+                            "{at}: the live counts and the window untouched"
+                        );
+                    }
+                }
+                assert_eq!(weights(&exec), held, "{at}: the weights");
+                assert_eq!(sides(&exec), address, "{at}: the addressed set");
+                assert_eq!(exec.kept_let_go(), gone, "{at}: let go");
+                for age in 0..=kept.saturating_add(2) {
+                    let expected = (age <= kept)
+                        .then(|| &ring[(newest + len - usize::from(age)) % len])
+                        .filter(|entry| entry.2)
+                        .map(|entry| (entry.0.as_slice(), entry.1.as_slice()));
+                    assert_eq!(exec.kept_at(age), expected, "{at}: age {age}");
+                }
+            }
+            let_go += gone;
+        }
+        assert!(
+            at_zero > 50
+                && at_oldest > 50
+                && aged > 50
+                && spent > 50
+                && beyond > 50
+                && outside > 20
+                && let_go > 20,
+            "the walk met every case: {at_zero} at zero, {at_oldest} at the oldest, {aged} between, {spent} spent or never kept, {beyond} beyond, {outside} outside, {let_go} let go"
+        );
+    }
+
+    #[test]
+    fn a_reward_kept_at_age_zero_is_the_drawn_reward_bit_for_bit() {
+        let mut rng = Lcg::new(0x2080);
+        let mut moved = 0u32;
+        for walk in 0..64u32 {
+            let kept = 1u8.saturating_add(rng.below(u32::from(KEPT_ADDRESSES_MAX)) as u8);
+            let config = drawn(&mut rng, kept);
+            let twin = Config {
+                kept_addresses: 0,
+                ..config.clone()
+            };
+            let seed = rng.next_u64();
+            let mut engines = [
+                armed(twin, &mut Lcg::new(seed)),
+                armed(config, &mut Lcg::new(seed)),
+            ];
+            for step in 0..32u32 {
+                let at = format!("walk {walk} step {step}");
+                let draw = rng.next_u64();
+                for exec in &mut engines {
+                    trial(exec, &mut Lcg::new(draw));
+                }
+                let targets: Vec<u32> = (0..UNITS).filter(|_| rng.below(2) == 0).collect();
+                let reward = reward_of(&mut rng);
+                let [drawing, keeping] = &mut engines;
+                drawing.address_drawn(targets.iter().copied()).unwrap();
+                let signal = drawing.reward(reward);
+                keeping.keep_address(targets.iter().copied()).unwrap();
+                assert_eq!(keeping.reward_kept(reward, 0), Ok(signal), "{at}");
+                let state = |exec: &Executor<8>| {
+                    (
+                        weights(exec),
+                        exec.features().to_vec(),
+                        exec.window_opened(),
+                        exec.prediction(),
+                        *exec.modulator(),
+                        sides(exec),
+                        exec.ticks(),
+                    )
+                };
+                assert_eq!(state(&engines[0]), state(&engines[1]), "{at}");
+                if engines[0].prediction().is_some_and(|p| p.error_q16 != 0) {
+                    moved = moved.wrapping_add(1);
+                }
+            }
+        }
+        assert!(moved > 1_000, "the rewards moved the reading: {moved}");
     }
 }

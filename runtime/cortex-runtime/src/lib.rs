@@ -64,7 +64,7 @@ pub use episode::{
 };
 pub use executor::{
     ACTIVATE, AddressError, AmendError, Config, ConfigError, Executor, Inject, InjectError,
-    Modulations, Policy, Prediction, TagError, TargetRead, WorkerReport,
+    KEPT_ADDRESSES_MAX, Modulations, Policy, Prediction, TagError, TargetRead, WorkerReport,
 };
 pub use image::{Image, ImageError, WriteAheadLog, shortest_delay};
 pub use language::{
@@ -79,7 +79,7 @@ pub use lexicon::{
 pub use store::TermError;
 pub use synthesis::{Drive, SynthesisError, blocks_for, blocks_per_unit, mix64, synthesize};
 pub use task::{
-    Cancel, Critic, Delivery, EXPLORATION_CHANNEL_BITS, EXPLORATION_COIN_BITS, Exploration,
+    Cancel, Critic, Delay, Delivery, EXPLORATION_CHANNEL_BITS, EXPLORATION_COIN_BITS, Exploration,
     Feedback, Hold, MAX_CHANNELS, MAX_PERIOD, MIN_INTERVAL_TICKS, MISLEADING_BITS,
     MISLEADING_IN_FOUR_BITS, Outcome, Readout, Set, Stimulus, Task, TaskError, Window,
     spikes_per_unit,

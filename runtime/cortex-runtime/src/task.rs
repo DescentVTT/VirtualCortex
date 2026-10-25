@@ -93,8 +93,15 @@
 //! seed. Everything after the selection is as it was: what is correct, what is addressed and
 //! the reward's sign are the selection's. With the exploration unset a trial is the trial it
 //! was, and with it set nothing changes where the value is at or above zero.
+//!
+//! A task's reward may come late ([`Delay`], ADR-0207, ADR-0208). While the engine keeps
+//! addresses, the drawn and the released deliveries keep each trial's address at its close
+//! (`Executor::keep_address`), and with the delay set to $k$ trial $t$'s sign is given at the end
+//! of trial $t + k$ through the address kept for trial $t$ (`Executor::reward_kept`): the first
+//! $k$ trials' ends give none, and the last $k$ signs are never given. On time, under kept
+//! addresses, a trial is the trial it was, bit for bit.
 
-use crate::executor::{AddressError, Executor, Inject, InjectError};
+use crate::executor::{AddressError, Executor, Inject, InjectError, KEPT_ADDRESSES_MAX};
 use crate::synthesis::{Drive, mix64};
 use cortex_basal_ganglia::BasalGangliaChannelState;
 use cortex_core::{BURST_REFRACTORY_TICKS, MODULATION_ONE_Q16, REFRACTORY_TICKS, spike_message};
@@ -662,6 +669,65 @@ impl Exploration {
     }
 }
 
+/// The signs a delay can hold at once: the oldest age an engine keeps an address for, and the
+/// trial whose close puts its sign behind them before the oldest is given.
+const DELAY_SIGNS: usize = KEPT_ADDRESSES_MAX as usize + 1;
+
+/// The reward's delay (ADR-0207, ADR-0208): with it set to $k$, trial $t$'s sign is given at the
+/// end of trial $t + k$, at age $k$, through the address the engine kept at trial $t$'s close
+/// ([`Executor::reward_kept`]); the first $k$ trials' ends give none, and the last $k$ signs are
+/// never given. The signs still to come are held here, oldest first, so that the task carries
+/// them from trial to trial as it carries its mapping, a flip included: a sign is the one its
+/// own trial earned. On time, every trial's sign is given at its own end, the task before
+/// ADR-0208. [`Task::check`] refuses a delay the engine keeps no address for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Delay {
+    trials: u8,
+    signs: [bool; DELAY_SIGNS],
+    pending: u8,
+}
+
+impl Delay {
+    /// On time: every trial's sign at its own end.
+    pub const ON_TIME: Self = Self::of(0);
+
+    /// A delay of `trials` trials, no sign yet to come.
+    pub const fn of(trials: u8) -> Self {
+        Self {
+            trials,
+            signs: [false; DELAY_SIGNS],
+            pending: 0,
+        }
+    }
+
+    /// The trials a sign comes late.
+    pub const fn trials(&self) -> u8 {
+        self.trials
+    }
+
+    /// The signs earned and not yet given.
+    pub const fn pending(&self) -> u8 {
+        self.pending
+    }
+
+    /// A trial's sign put behind those still to come, and the oldest returned once it is
+    /// `trials` trials old; none while fewer are held. On time the sign itself is returned, and
+    /// none is held. A sign past the signs a delay can hold is not taken, which `check` makes
+    /// unreachable: it refuses a delay beyond `KEPT_ADDRESSES_MAX`.
+    fn passed(&mut self, positive: bool) -> Option<bool> {
+        let slot = self.signs.get_mut(usize::from(self.pending))?;
+        *slot = positive;
+        self.pending = self.pending.saturating_add(1);
+        if self.pending <= self.trials {
+            return None;
+        }
+        let oldest = self.signs.first().copied();
+        self.signs.copy_within(1.., 0);
+        self.pending = self.pending.saturating_sub(1);
+        oldest
+    }
+}
+
 /// Where a trial's dopamine term reaches (ADR-0068): which synapses consolidate the next
 /// trial's traces under `clamp(baseline + dopamine, 0, 1)`, every other synapse consolidating
 /// under the baseline alone. The addressed set is a function of the trial's outcome only.
@@ -813,6 +879,15 @@ pub enum TaskError {
     /// The exploration with a reward magnitude of zero (ADR-0163): its probability is the
     /// value's part below zero over the magnitude.
     ExplorationWithoutReward,
+    /// A delay longer than the oldest age the engine keeps an address for (ADR-0208), the
+    /// engine's `kept_addresses`: a sign given late reaches its trial through that address.
+    DelayNotKept,
+    /// A delay under a delivery that draws no address, the global one or the addressed one
+    /// (ADR-0208): only an address the engine drew from its counts is kept.
+    DelayUndrawn,
+    /// A delay with the exploration (ADR-0208): the exploration reads the value the trial's own
+    /// reward would be taken against, and a late reward is taken against another trial's.
+    ExplorationWithDelay,
 }
 
 impl From<InjectError> for TaskError {
@@ -842,7 +917,10 @@ pub struct Outcome<const N: usize = 2> {
     /// Whether the selection was the stimulus's rewarded readout, whatever reward the trial
     /// then received (ADR-0148).
     pub correct: bool,
-    /// The reward delivered, signed; zero when withheld. Under a critic, the prediction error
+    /// The reward delivered, signed; zero when withheld, and under a delay (ADR-0208) where no
+    /// sign was due. Under a delay it is the reward of the trial the delay names, given at this
+    /// trial's end, and the signal and the value are that reward's. Under a critic, the
+    /// prediction error
     /// the modulator received (ADR-0107); under the engine's critic with the whole punishment
     /// set (ADR-0155), what the modulator received, which is the reward itself where it and
     /// the value were both below zero.
@@ -903,6 +981,9 @@ pub struct Task<const N: usize = 2> {
     /// Whether the selection may be drawn (ADR-0163): unset, it is the gate's at every trial,
     /// the trial before ADR-0163.
     pub exploration: Exploration,
+    /// The reward's delay (ADR-0208) and the signs it holds still to come: on time
+    /// ([`Delay::ON_TIME`]), every trial's sign at its own end, the trial before ADR-0208.
+    pub delay: Delay,
 }
 
 impl<const N: usize> Task<N> {
@@ -974,7 +1055,9 @@ impl<const N: usize> Task<N> {
     /// one, with a message and a cadence, negative, due at the window's close and landing
     /// inside the trial; under the drawn delivery or the released one an engine that draws;
     /// and with the exploration set an engine that carries the critic, no hold and a reward
-    /// whose magnitude is above zero.
+    /// whose magnitude is above zero; and a delay no longer than the oldest age the engine keeps
+    /// an address for, which past zero needs the drawn delivery or the released one and no
+    /// exploration.
     pub fn check<const CAP: usize>(&self, exec: &Executor<CAP>) -> Result<(), TaskError> {
         let units = exec.units().len() as u64;
         // The stimuli's sets, then the readout's, one a channel.
@@ -1107,6 +1190,21 @@ impl<const N: usize> Task<N> {
                 return Err(TaskError::RewardAtCeiling);
             }
         }
+        // The delay (ADR-0208): a sign given late reaches its trial through the address the
+        // engine kept at that trial's close, so the engine keeps one that old and, past zero, the
+        // delivery draws it; the exploration reads the value the trial's own reward is taken
+        // against, which a late reward is not.
+        if self.delay.trials() > exec.kept_addresses() {
+            return Err(TaskError::DelayNotKept);
+        }
+        if self.delay.trials() != 0 {
+            if !matches!(self.delivery, Delivery::Drawn | Delivery::Released) {
+                return Err(TaskError::DelayUndrawn);
+            }
+            if self.exploration != Exploration::Unset {
+                return Err(TaskError::ExplorationWithDelay);
+            }
+        }
         Ok(())
     }
 
@@ -1121,8 +1219,13 @@ impl<const N: usize> Task<N> {
     /// the ones the trial's end would read. With the exploration set (ADR-0163) the engine's
     /// value is read at the trial's end, before the reward, and where the trial's coin draws
     /// at it the selection is the trial's drawn channel in the gate's place; what is correct,
-    /// what is addressed and the reward's sign are then that selection's. Refused as `check`
-    /// refuses, and when the injector refuses a message.
+    /// what is addressed and the reward's sign are then that selection's. While the engine keeps
+    /// addresses (ADR-0208), the drawn and the released deliveries keep the trial's address at
+    /// its close in place of drawing it, the trial's sign joins those its delay holds, and the
+    /// sign that is the delay's age, where one is, is given through the address kept for its
+    /// trial; under the withheld feedback the close draws as before. On time it is the trial it
+    /// was, bit for bit, under every feedback. Refused as `check` refuses, and when the injector
+    /// refuses a message.
     pub fn trial<const CAP: usize>(
         &mut self,
         exec: &mut Executor<CAP>,
@@ -1188,7 +1291,13 @@ impl<const N: usize> Task<N> {
         // critic counted in its window onto the same readout, the counts this trial's since
         // the reward comes after; under the released one (ADR-0144) from those units onto
         // every unit, at a tie too; under the global one every synapse alike. Written
-        // whatever the feedback, so that the set is the outcome's and not the reward's.
+        // whatever the feedback, so that the set is the outcome's and not the reward's. While
+        // the engine keeps addresses (ADR-0208) the drawn and the released deliveries keep the
+        // address at the trial's close instead, and the reward that names the trial writes it;
+        // under the withheld feedback no reward will, and the close draws as before.
+        let kept = exec.kept_addresses() != 0
+            && matches!(self.delivery, Delivery::Drawn | Delivery::Released)
+            && self.feedback != Feedback::Withheld;
         match self.delivery {
             Delivery::Global => exec.address_all(),
             Delivery::Addressed => {
@@ -1202,40 +1311,44 @@ impl<const N: usize> Task<N> {
             }
             Delivery::Drawn => match selection {
                 Some(readout) => {
-                    exec.address_drawn(self.readout.sets[usize::from(readout)].units())?
+                    drawn_close(exec, kept, self.readout.sets[usize::from(readout)].units())?
                 }
-                None => exec.address_drawn(core::iter::empty())?,
+                None => drawn_close(exec, kept, core::iter::empty())?,
             },
             Delivery::Released => {
                 let units = exec.units().len() as u32;
-                exec.address_drawn(0..units)?
+                drawn_close(exec, kept, 0..units)?
             }
         }
-        let positive = match self.feedback {
-            Feedback::Answer => correct,
-            Feedback::Shuffled => self.coin_at(trial),
+        let earned = match self.feedback {
+            Feedback::Answer => Some(correct),
+            Feedback::Shuffled => Some(self.coin_at(trial)),
             // The outcome's sign unless the coin is misleading, whatever the outcome
             // (ADR-0148); `correct` above stays the selection's.
-            Feedback::SevenInEight => correct != self.misleading_at(trial),
+            Feedback::SevenInEight => Some(correct != self.misleading_at(trial)),
             // The same at one trial in four (ADR-0171), by two of that coin's three bits.
-            Feedback::ThreeInFour => correct != self.misleading_in_four_at(trial),
-            Feedback::Withheld => {
-                return Ok(Outcome {
-                    trial,
-                    stimulus,
-                    counts,
-                    selection,
-                    correct,
-                    reward_q16: 0,
-                    signal_q16: exec.modulator().dopamine_rpe,
-                    expected_q16: self
-                        .critic
-                        .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
-                    value_q16: None,
-                    held,
-                    drawn,
-                });
-            }
+            Feedback::ThreeInFour => Some(correct != self.misleading_in_four_at(trial)),
+            Feedback::Withheld => None,
+        };
+        // The delay (ADR-0208): the trial's sign joins those still to come, and the one that is
+        // the delay's age, where one is, is given; on time, the trial's own. A trial that gives
+        // none records no reward, as a withheld one does.
+        let Some(positive) = earned.and_then(|positive| self.delay.passed(positive)) else {
+            return Ok(Outcome {
+                trial,
+                stimulus,
+                counts,
+                selection,
+                correct,
+                reward_q16: 0,
+                signal_q16: exec.modulator().dopamine_rpe,
+                expected_q16: self
+                    .critic
+                    .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
+                value_q16: None,
+                held,
+                drawn,
+            });
         };
         let outcome_q16 = if positive {
             self.reward_q16
@@ -1251,7 +1364,13 @@ impl<const N: usize> Task<N> {
             }
             None => (outcome_q16, None),
         };
-        let signal_q16 = exec.reward(delivered_q16);
+        // Under kept addresses through the address its trial's close kept, at the delay's age
+        // (ADR-0208); otherwise into the address written above.
+        let signal_q16 = if kept {
+            exec.reward_kept(delivered_q16, self.delay.trials())?
+        } else {
+            exec.reward(delivered_q16)
+        };
         // Under the engine's critic (ADR-0131) the modulator received the reward less the
         // engine's value, or the reward whole where a punishment met a value below zero while
         // that is set (ADR-0155), which the executor read at this reward; unset, it reads none.
@@ -1272,6 +1391,24 @@ impl<const N: usize> Task<N> {
             held,
             drawn,
         })
+    }
+}
+
+/// A trial's close under the drawn delivery or the released one: the address drawn onto
+/// `targets` (ADR-0139), or, while the engine keeps addresses, kept (ADR-0208).
+fn drawn_close<const CAP: usize, T>(
+    exec: &mut Executor<CAP>,
+    kept: bool,
+    targets: T,
+) -> Result<(), AddressError>
+where
+    T: IntoIterator<Item = u32>,
+    T::IntoIter: Clone,
+{
+    if kept {
+        exec.keep_address(targets)
+    } else {
+        exec.address_drawn(targets)
     }
 }
 
@@ -1367,6 +1504,7 @@ mod tests {
             critic: None,
             hold: None,
             exploration: Exploration::Unset,
+            delay: Delay::ON_TIME,
         }
     }
 
@@ -4582,6 +4720,7 @@ mod tests {
             critic: None,
             hold: None,
             exploration: Exploration::Unset,
+            delay: Delay::ON_TIME,
         }
     }
 
@@ -4797,6 +4936,7 @@ mod tests {
             critic: None,
             hold: None,
             exploration: Exploration::Unset,
+            delay: Delay::ON_TIME,
         };
         assert_eq!(one.check(&network(1, ONE / 2)), Ok(()));
         one.flip();
@@ -5606,6 +5746,7 @@ mod tests {
             critic: None,
             hold: None,
             exploration: Exploration::ValueGated,
+            delay: Delay::ON_TIME,
         }
     }
 
@@ -6597,6 +6738,319 @@ mod tests {
         );
         assert_eq!(gates, [true; 2], "the gate selected another, and none");
     }
+
+    /// `windowed_network` keeping `kept` addresses (ADR-0208).
+    fn kept_network(window: u16, kept: u8) -> Executor<8> {
+        let mut exec = Executor::<8>::new(Config {
+            workers: 2,
+            units: 16,
+            injector_capacity: 64,
+            train_capacity: spikes_per_unit(TICKS).saturating_mul(16) as usize,
+            modulation_baseline_q16: ONE / 2,
+            critic: Some(ValueCritic { shift: 9, scale: 2 }),
+            critic_window_ticks: window,
+            kept_addresses: kept,
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+        exec
+    }
+
+    /// The readout cued before trial `trial` of the walks below, so that the selections differ:
+    /// the first, the second, or none, a tie.
+    fn cued(exec: &Executor<8>, t: &Task, trial: u64) {
+        match trial % 3 {
+            0 => cue(exec, t.readout.sets()[0]),
+            1 => cue(exec, t.readout.sets()[1]),
+            _ => {}
+        }
+    }
+
+    /// The delay's signs by hand (ADR-0208): on time each sign is returned as it is passed and
+    /// none is held; at a delay of two the first two are held and every later pass returns the
+    /// sign two before it, the held count two; at the most an engine keeps, four, the fifth pass
+    /// returns the first; past the signs a delay can hold, a sign is not taken.
+    #[test]
+    fn a_delay_returns_each_sign_at_its_age_and_none_before() {
+        assert_eq!(Delay::ON_TIME, Delay::of(0));
+        assert_eq!((Delay::ON_TIME.trials(), Delay::ON_TIME.pending()), (0, 0));
+        let mut on_time = Delay::ON_TIME;
+        for sign in [true, false, false, true] {
+            assert_eq!(on_time.passed(sign), Some(sign));
+            assert_eq!(on_time.pending(), 0);
+        }
+        let mut two = Delay::of(2);
+        assert_eq!(two.trials(), 2);
+        let signs = [true, false, false, true, true, false];
+        let passed: Vec<Option<bool>> = signs.iter().map(|&s| two.passed(s)).collect();
+        assert_eq!(
+            passed,
+            [None, None, Some(true), Some(false), Some(false), Some(true)]
+        );
+        assert_eq!(two.pending(), 2);
+        let mut four = Delay::of(KEPT_ADDRESSES_MAX);
+        let passed: Vec<Option<bool>> = [false, true, true, true, true, false]
+            .iter()
+            .map(|&s| four.passed(s))
+            .collect();
+        assert_eq!(passed, [None, None, None, None, Some(false), Some(true)]);
+        assert_eq!(four.pending(), 4);
+        let mut past = Delay::of(KEPT_ADDRESSES_MAX.saturating_add(1));
+        for k in 0..5u8 {
+            assert_eq!(past.passed(true), None);
+            assert_eq!(past.pending(), k.saturating_add(1));
+        }
+        assert_eq!(past.passed(false), None, "not taken");
+        assert_eq!(past.pending(), 5);
+    }
+
+    /// The delay's refusals (ADR-0208), before any tick: longer than the oldest age the engine
+    /// keeps, an engine that keeps none included; past zero under the global or the addressed
+    /// delivery, after the first; and past zero with the exploration. On time every delivery and
+    /// the exploration are taken, kept or not, and a delay up to the oldest age under the drawn
+    /// and the released deliveries.
+    #[test]
+    fn a_delay_is_refused_beyond_the_kept_addresses_under_a_delivery_that_draws_none_and_with_the_exploration()
+     {
+        let kept = kept_network(30, 2);
+        let unset = windowed_network(30);
+        let with = |delivery, delay, exploration| Task {
+            delivery,
+            delay: Delay::of(delay),
+            exploration,
+            ..task(Feedback::Answer)
+        };
+        for delivery in [
+            Delivery::Global,
+            Delivery::Addressed,
+            Delivery::Drawn,
+            Delivery::Released,
+        ] {
+            for exec in [&kept, &unset] {
+                assert_eq!(with(delivery, 0, Exploration::Unset).check(exec), Ok(()));
+                assert_eq!(
+                    with(delivery, 0, Exploration::ValueGated).check(exec),
+                    Ok(())
+                );
+            }
+            assert_eq!(
+                with(delivery, 3, Exploration::Unset).check(&kept),
+                Err(TaskError::DelayNotKept),
+                "{delivery:?}"
+            );
+            assert_eq!(
+                with(delivery, 1, Exploration::Unset).check(&unset),
+                Err(TaskError::DelayNotKept),
+                "{delivery:?}"
+            );
+        }
+        for delay in [1, 2] {
+            for delivery in [Delivery::Global, Delivery::Addressed] {
+                assert_eq!(
+                    with(delivery, delay, Exploration::Unset).check(&kept),
+                    Err(TaskError::DelayUndrawn)
+                );
+            }
+            for delivery in [Delivery::Drawn, Delivery::Released] {
+                assert_eq!(
+                    with(delivery, delay, Exploration::Unset).check(&kept),
+                    Ok(())
+                );
+                assert_eq!(
+                    with(delivery, delay, Exploration::ValueGated).check(&kept),
+                    Err(TaskError::ExplorationWithDelay)
+                );
+            }
+        }
+        let mut refused = with(Delivery::Global, 1, Exploration::Unset);
+        let mut exec = kept_network(30, 2);
+        assert_eq!(refused.trial(&mut exec, 0), Err(TaskError::DelayUndrawn));
+        assert_eq!(exec.ticks(), 0, "before any tick");
+    }
+
+    /// On time under kept addresses (ADR-0208): under every feedback, under the drawn and the
+    /// released deliveries, with the exploration unset and set, an engine that keeps one address
+    /// or four runs the trials of the engine that keeps none, bit for bit — each outcome, and
+    /// after each trial the weights, the counts, the window, the reading, the signal and the
+    /// addressed set; every entry spent at its own reward, none let go. Under the withheld feedback the close
+    /// draws, as before, and the counts stand.
+    #[test]
+    fn on_time_under_kept_addresses_a_trial_is_the_trial_it_was_bit_for_bit() {
+        let state = |exec: &Executor<8>| {
+            (
+                exec.units()
+                    .iter()
+                    .map(|u| u.value_weight)
+                    .collect::<Vec<i16>>(),
+                exec.features().to_vec(),
+                exec.window_opened(),
+                exec.prediction(),
+                *exec.modulator(),
+                (0..16).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                (0..16).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+            )
+        };
+        let mut rewarded = 0u32;
+        for feedback in [
+            Feedback::Answer,
+            Feedback::Shuffled,
+            Feedback::Withheld,
+            Feedback::SevenInEight,
+            Feedback::ThreeInFour,
+        ] {
+            for delivery in [Delivery::Drawn, Delivery::Released] {
+                for exploration in [Exploration::Unset, Exploration::ValueGated] {
+                    for kept in [1, KEPT_ADDRESSES_MAX] {
+                        let case = format!("{feedback:?} {delivery:?} {exploration:?} {kept}");
+                        let t = Task {
+                            delivery,
+                            exploration,
+                            ..task(feedback)
+                        };
+                        let mut tasks = [t, t];
+                        let mut engines = [windowed_network(30), kept_network(30, kept)];
+                        for trial in 0..12u64 {
+                            let mut outcomes = Vec::new();
+                            for (t, exec) in tasks.iter_mut().zip(engines.iter_mut()) {
+                                cued(exec, t, trial);
+                                outcomes.push(t.trial(exec, trial).unwrap());
+                            }
+                            assert_eq!(outcomes[0], outcomes[1], "{case} trial {trial}");
+                            assert_eq!(
+                                state(&engines[0]),
+                                state(&engines[1]),
+                                "{case} trial {trial}"
+                            );
+                            rewarded =
+                                rewarded.wrapping_add(u32::from(outcomes[0].reward_q16 != 0));
+                        }
+                        assert_eq!(tasks[0], tasks[1], "{case}: no sign held");
+                        assert_eq!(engines[1].kept_at(0), None, "{case}: every entry spent");
+                        assert_eq!(engines[1].kept_let_go(), 0, "{case}");
+                    }
+                }
+            }
+        }
+        assert!(rewarded > 300, "the trials were rewarded: {rewarded}");
+    }
+
+    /// A late sign through its trial's address (ADR-0208), each number from an oracle written
+    /// from the rule's text: on an engine that keeps two addresses, under the drawn delivery and
+    /// the answer, at a delay of one trial and of two, with a flip before the sixth trial. The
+    /// first `k` trials give no reward, record none, and leave the address and the reading as
+    /// they were. Trial `t` from `k` on gives the sign trial `t - k` earned, under the mapping of
+    /// its own time: its value is the critic's weights after trial `t - 1` times the counts trial
+    /// `t - k`'s close kept, over four; the error is the sign's reward less it; the address is
+    /// trial `t - k`'s — its counted units onto its targets — and its entry is spent, while the
+    /// newest is trial `t`'s own close and the delay holds `k` signs. Under the withheld feedback
+    /// nothing is kept, held or given.
+    #[test]
+    fn a_late_sign_is_given_through_the_address_its_trial_kept() {
+        let critic = ValueCritic { shift: 9, scale: 2 };
+        for k in [1u8, 2] {
+            let mut t = Task {
+                delivery: Delivery::Drawn,
+                delay: Delay::of(k),
+                ..task(Feedback::Answer)
+            };
+            let mut exec = kept_network(30, 2);
+            let mut closes: Vec<(Vec<u32>, Vec<bool>)> = Vec::new();
+            let mut outcomes: Vec<Outcome> = Vec::new();
+            let mut given = 0u32;
+            for trial in 0..14u64 {
+                let at = format!("delay {k} trial {trial}");
+                if trial == 5 {
+                    t.flip();
+                }
+                let weights: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
+                let sides = |exec: &Executor<8>| {
+                    (
+                        (0..16).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                        (0..16).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+                    )
+                };
+                let before = (sides(&exec), exec.prediction());
+                cued(&exec, &t, trial);
+                let outcome = t.trial(&mut exec, trial).unwrap();
+                let (counts, targets) = exec
+                    .kept_at(0)
+                    .map(|(c, s)| (c.to_vec(), s.to_vec()))
+                    .expect("the trial's close kept");
+                let selected: Vec<bool> = (0..16)
+                    .map(|u| {
+                        outcome
+                            .selection
+                            .is_some_and(|r| t.readout.sets()[usize::from(r)].contains(u))
+                    })
+                    .collect();
+                assert_eq!(targets, selected, "{at}: the close kept the selection");
+                closes.push((counts, targets));
+                match (trial as usize).checked_sub(usize::from(k)) {
+                    None => {
+                        assert_eq!(
+                            (outcome.reward_q16, outcome.value_q16),
+                            (0, None),
+                            "{at}: none given"
+                        );
+                        assert_eq!(outcome.signal_q16, exec.modulator().dopamine_rpe, "{at}");
+                        assert_eq!((sides(&exec), exec.prediction()), before, "{at}");
+                        assert_eq!(t.delay.pending(), k.min(trial as u8 + 1), "{at}");
+                    }
+                    Some(u) => {
+                        given = given.wrapping_add(1);
+                        let (kept_counts, kept_targets) = &closes[u];
+                        let reward = if outcomes[u].correct { REWARD } else { -REWARD };
+                        let value = critic
+                            .value_q16(weights.iter().copied().zip(kept_counts.iter().copied()));
+                        let error = ValueCritic::error_q16(reward, value);
+                        assert_eq!(
+                            (outcome.reward_q16, outcome.value_q16),
+                            (error, Some(value)),
+                            "{at}: trial {u}'s sign"
+                        );
+                        assert_eq!(
+                            sides(&exec),
+                            (
+                                kept_counts.iter().map(|&c| c != 0).collect(),
+                                kept_targets.clone()
+                            ),
+                            "{at}: trial {u}'s address"
+                        );
+                        assert_eq!(exec.kept_at(k), None, "{at}: spent");
+                        assert_eq!(t.delay.pending(), k, "{at}");
+                    }
+                }
+                outcomes.push(outcome);
+            }
+            assert_eq!(given, 14 - u32::from(k));
+            assert!(
+                outcomes.iter().any(|o| o.correct) && outcomes.iter().any(|o| !o.correct),
+                "delay {k}: signs of both kinds"
+            );
+            assert_eq!(exec.kept_let_go(), 0, "delay {k}");
+        }
+        let mut withheld = Task {
+            delivery: Delivery::Drawn,
+            delay: Delay::of(2),
+            ..task(Feedback::Withheld)
+        };
+        let mut exec = kept_network(30, 2);
+        for trial in 0..6u64 {
+            cued(&exec, &withheld, trial);
+            let outcome = withheld.trial(&mut exec, trial).unwrap();
+            assert_eq!((outcome.reward_q16, outcome.value_q16), (0, None));
+        }
+        assert_eq!(
+            (withheld.delay.pending(), exec.kept_at(0)),
+            (0, None),
+            "withheld: nothing held, nothing kept"
+        );
+    }
 }
 
 /// The lattice property (ADR-0030): over seeded trains and seeded set pairs the selection is
@@ -6627,6 +7081,37 @@ mod prop {
             mask: if mask == 0 { 1 } else { mask },
             count: lcg.below(8),
         }
+    }
+
+    /// The delay over the lattice (ADR-0208): at every delay up to the oldest age an engine keeps,
+    /// over seeded runs of signs, the pass of the sign of index `i` returns the sign of index
+    /// `i - k` from the `k`-th on and none before, and the delay holds the lesser of `i + 1` and
+    /// `k` signs after it.
+    #[test]
+    fn a_delay_returns_the_sign_its_trials_before_over_the_lattice() {
+        let mut lcg = Lcg::new(0x0208);
+        let mut given = [0u32; KEPT_ADDRESSES_MAX as usize + 1];
+        for round in 0..2_000u32 {
+            let k = lcg.below(u32::from(KEPT_ADDRESSES_MAX) + 1) as u8;
+            let signs: Vec<bool> = (0..lcg.below(40)).map(|_| lcg.below(2) == 0).collect();
+            let mut delay = Delay::of(k);
+            for (i, &sign) in signs.iter().enumerate() {
+                let expected = i.checked_sub(usize::from(k)).map(|j| signs[j]);
+                assert_eq!(delay.passed(sign), expected, "round {round}: {k}, {i}");
+                assert_eq!(
+                    usize::from(delay.pending()),
+                    (i + 1).min(usize::from(k)),
+                    "round {round}: {k}, {i}"
+                );
+                if expected.is_some() {
+                    given[usize::from(k)] += 1;
+                }
+            }
+        }
+        assert!(
+            given.iter().all(|&n| n > 1_000),
+            "every delay gave signs: {given:?}"
+        );
     }
 
     #[test]
@@ -6693,6 +7178,7 @@ mod prop {
             critic: None,
             hold: None,
             exploration: Exploration::Unset,
+            delay: Delay::ON_TIME,
         };
         let one = |seed: u64, trial: u64| {
             let t = Task { seed, ..drawing };
@@ -6777,6 +7263,7 @@ mod prop {
             critic: None,
             hold: None,
             exploration: Exploration::Unset,
+            delay: Delay::ON_TIME,
         };
         let others = 0x0004_0001_0000_0001 | EXPLORATION_COIN_BITS | EXPLORATION_CHANNEL_BITS;
         assert_eq!(
@@ -6989,6 +7476,7 @@ mod prop {
                 critic: None,
                 hold: Some(hold),
                 exploration: Exploration::Unset,
+                delay: Delay::ON_TIME,
             };
             // A readout cued in two rounds of three, each readout in turn.
             let cued = [Some(0usize), Some(1), None][(round % 3) as usize];
@@ -7367,6 +7855,7 @@ mod prop {
                 critic: None,
                 hold: None,
                 exploration: Exploration::Unset,
+                delay: Delay::ON_TIME,
             };
             let next = |a: u8| (usize::from(a) + 1).checked_rem(N).unwrap() as u8;
             for a in 0..N as u8 {
@@ -7463,6 +7952,7 @@ mod prop {
                 critic: None,
                 hold: None,
                 exploration: Exploration::ValueGated,
+                delay: Delay::ON_TIME,
             }
         }
         let stimuli = [stimulus(0), stimulus(8)];

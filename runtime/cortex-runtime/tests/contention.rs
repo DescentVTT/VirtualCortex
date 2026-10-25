@@ -53,6 +53,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         rate_read_windows: 0,
         istdp_target_read: false,
         step_probe: false,
+        kept_addresses: 0,
     })
     .expect("a valid configuration");
     assert_eq!(

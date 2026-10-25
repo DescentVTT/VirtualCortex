@@ -106949,6 +106949,7 @@ fn hold_probe(hold: Hold, ticks: u32) -> (Option<u8>, u32, (i32, i32)) {
         critic: None,
         hold: Some(hold),
         exploration: Exploration::Unset,
+        delay: Delay::ON_TIME,
     };
     // No unit the trial fires reaches the held unit: its potentials are the hold's alone.
     for source in [0u32, 1, SELECTED] {
@@ -167941,6 +167942,7 @@ fn answered_run(
         critic: None,
         hold: None,
         exploration,
+        delay: Delay::ON_TIME,
     };
     task.check(exec).expect("the task fits the executor");
     // The stimulus sets counted as a readout counts them.
@@ -189492,6 +189494,7 @@ fn the_clauses_of_h_32_the_exploration_s_hand_rules_and_the_readings_rules() {
         critic: None,
         hold: None,
         exploration: EXPLORED,
+        delay: Delay::ON_TIME,
     };
     let mut by_channel = [0u32; ANSWERS];
     let mut below = [0u32; 3];
