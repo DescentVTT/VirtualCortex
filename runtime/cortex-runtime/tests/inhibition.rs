@@ -424143,3 +424143,1350 @@ const KEPT_ARM_TABLES: [[[&[KeptBlock]; 2]; 2]; 3] = [
         ],
     ],
 ];
+
+// =================================================================================== H-44
+
+// ------------------------------------------- written before the run (ADR-0212, ADR-0213)
+
+/// The networks of H-44 (ADR-0212): H-42's, ADR-0044's generator at 1 024 units from seeds 22, 23
+/// and 24, each from the image its derivation under the probe wrote, the network an engine born
+/// under `Config::reads_its_targets()` settles. No other network and no other size is run.
+const ON_DEFAULT_SEEDS: [u64; 3] = PROBE_SEEDS;
+
+/// The arms of H-44 (ADR-0212): H-42's, H-25's two on H-20's schedule, with the task's feedback
+/// H-35's, `Feedback::ThreeInFour`, its coin `MISLEADING_IN_FOUR_BITS`.
+const ON_DEFAULT_ARMS: [Reversal; 2] = PROBE_ARMS;
+
+/// The image an arm of H-44 starts from (ADR-0212): the default's, the image its network's
+/// derivation under the probe wrote, the step the probe made in it; or the control's, that image
+/// with the homeostasis record's step written zero and the section re-sealed, every other byte
+/// the default's, so that the rate's rule leaves the gain through the arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Start {
+    Default,
+    Control,
+}
+
+/// The two starts in their order, `[the default's, the control's]`.
+const ON_DEFAULT_STARTS: [Start; 2] = [Start::Default, Start::Control];
+
+/// The names H-44's dumps carry, per network.
+const ON_DEFAULT_NAMES: [&str; 3] = ["default22", "default23", "default24"];
+
+/// The step the control's image carries (ADR-0212): zero, at which the rate's rule leaves the gain.
+const CONTROL_STEP_Q0_16: u16 = 0;
+
+/// Where the step lies in the homeostasis record (`HomeostaticDrivePool`): its bytes `[20..22)`,
+/// `control_step_q0_16`, little-endian.
+const STEP_AT: usize = 20;
+
+/// The coin's count over H-20's schedule (ADR-0212's stopping rule, step 2): H-35's, 1 913 of
+/// the 7 680 trials, `IN_FOUR_BY_MAPPING_1024` summed.
+const ON_DEFAULT_COIN: u32 = 1_913;
+const _: () = assert!(
+    IN_FOUR_BY_MAPPING_1024[0]
+        + IN_FOUR_BY_MAPPING_1024[1]
+        + IN_FOUR_BY_MAPPING_1024[2]
+        + IN_FOUR_BY_MAPPING_1024[3]
+        == ON_DEFAULT_COIN
+);
+
+/// ADR-0212's prediction for H-44, written before any run: yes.
+const ON_DEFAULT_PREDICTED: bool = true;
+
+/// ADR-0212's three predicted readings (ADR-0213), in its order, each predicted to hold: the
+/// control no on clause 1, a mapping below 80 of its last 128 in at least one of its six arms;
+/// on each network and arm the default's lowest mapping above its control's; and all 18 of the
+/// default's reversals reaching 40 of 64 inside their 32 blocks. A miss is recorded as one.
+const ON_DEFAULT_READINGS_PREDICTED: [bool; 3] = [true; 3];
+
+// ------------------------------------------------------------- the control's image (ADR-0213)
+
+/// The homeostasis section's entry: where its entry sits in the section table, and its
+/// section's offset and length.
+fn homeostasis_entry(img: &[u8]) -> (usize, usize, usize) {
+    let header = CortexFileHeader::decode(img[0..64].try_into().unwrap());
+    for at in (64..).step_by(64).take(header.section_count as usize) {
+        let entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        if entry.kind == SECTION_HOMEOSTASIS {
+            return (at, entry.offset as usize, entry.length as usize);
+        }
+    }
+    panic!("the image holds a homeostasis section");
+}
+
+/// The step an image carries, read from its homeostasis record's bytes.
+fn image_step(image: &[u8]) -> u16 {
+    let (_, offset, _) = homeostasis_entry(image);
+    u16::from_le_bytes(image[offset..][STEP_AT..][..2].try_into().unwrap())
+}
+
+/// The image with the homeostasis record's step written `step` and the section re-sealed; every
+/// other byte the image's. The control of H-44 is the default's image so written at
+/// `CONTROL_STEP_Q0_16`.
+fn with_step_bytes(image: &[u8], step: u16) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let (at, offset, length) = homeostasis_entry(&img);
+    img[offset..][STEP_AT..][..2].copy_from_slice(&step.to_le_bytes());
+    let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+    entry.crc64 = crc64(&img[offset..][..length]);
+    img[at..][..64].copy_from_slice(&entry.encode());
+    img
+}
+
+/// The masked check (ADR-0212's stopping rule, step 2): `control` differs from `image` only in
+/// the homeostasis record's two bytes of the step and in the section's entry in the table, which
+/// holds its seal; and writing `image`'s own step back into it gives `image` bit for bit.
+fn only_the_step(image: &[u8], control: &[u8]) -> bool {
+    let (at, offset, _) = homeostasis_entry(image);
+    let step = offset.saturating_add(STEP_AT);
+    let entry = at..at.saturating_add(64);
+    let mask = step..step.saturating_add(2);
+    image.len() == control.len()
+        && differing(image, control)
+            .iter()
+            .all(|p| mask.contains(p) || entry.contains(p))
+        && with_step_bytes(control, image_step(image)) == image
+}
+
+/// The control's image on H-44's network `n` (ADR-0212), made from the default's and held before
+/// it is run: the default's step the probe's, H-42's pin, and not zero; the control's image the
+/// default's in every byte but the step's two and the section's seal (`only_the_step`); and, each
+/// decoded, the control's homeostasis record the default's but for the step, its gain the
+/// image's, and the engine's weights, clock, targets, critic and window the default's.
+fn control_image(n: usize, name: &str, made: &Made) -> Vec<u8> {
+    let default = &made.windowed;
+    let control = with_step_bytes(default, CONTROL_STEP_Q0_16);
+    let moved = differing(default, &control);
+    eprintln!(
+        "DUMP {name} the control's image: the default's step {:#06x} written {CONTROL_STEP_Q0_16:#06x}, {} bytes moved at {moved:?}",
+        image_step(default),
+        moved.len()
+    );
+    assert_eq!(
+        Some(image_step(default)),
+        PROBE_STEP[n],
+        "{name}: the default's image carries the step its probe made"
+    );
+    assert_ne!(
+        image_step(default),
+        CONTROL_STEP_Q0_16,
+        "{name}: a step to write zero"
+    );
+    assert!(
+        only_the_step(default, &control),
+        "{name}: the control's image is the default's in every byte but the step's and the seal"
+    );
+    let units = SCAN_UNITS;
+    let (stepped, held) = (signed_from(default, units), signed_from(&control, units));
+    let (own, zero) = (*stepped.homeostasis(), *held.homeostasis());
+    assert_eq!(
+        (own.control_step_q0_16, zero.control_step_q0_16),
+        (image_step(default), CONTROL_STEP_Q0_16),
+        "{name}: each decoded with its image's step"
+    );
+    assert_eq!(
+        HomeostaticDrivePool {
+            control_step_q0_16: own.control_step_q0_16,
+            ..zero
+        },
+        own,
+        "{name}: the control's homeostasis record is the default's but for the step"
+    );
+    assert_eq!(
+        zero.synaptic_gain_q16, made.gain,
+        "{name}: the control starts at the image's gain"
+    );
+    assert_eq!(
+        (
+            weights_of(&held),
+            held.ticks(),
+            held.rate_target_per_window(),
+            held.istdp_target_period_ticks(),
+            held.critic(),
+            held.critic_window_ticks()
+        ),
+        (
+            weights_of(&stepped),
+            stepped.ticks(),
+            stepped.rate_target_per_window(),
+            stepped.istdp_target_period_ticks(),
+            stepped.critic(),
+            stepped.critic_window_ticks()
+        ),
+        "{name}: the control's engine is the default's but for the step"
+    );
+    control
+}
+
+/// H-44's coin (ADR-0212's stopping rule, step 2): H-35's, `misleads_in_four` at the harness's
+/// seed over H-20's schedule, held to its count per mapping, 1 913 in all, within H-35's bounds,
+/// and to the coin of `task`, a task of the arm's, at every trial.
+fn on_default_coin(name: &str, task: &Task) -> Vec<bool> {
+    let coin = coin_of_by(misleads_in_four, SCHEDULE_TRIALS);
+    let by_mapping = misleading_by_mapping(&coin);
+    let in_all = by_mapping
+        .iter()
+        .fold(0u32, |sum, &n| sum.saturating_add(n));
+    eprintln!(
+        "DUMP {name} the coin misleads in {by_mapping:?} trials per mapping, {in_all} of {SCHEDULE_TRIALS}; bounds {IN_FOUR_BOUNDS:?}"
+    );
+    assert_eq!(
+        (by_mapping, in_all),
+        (IN_FOUR_BY_MAPPING_1024, ON_DEFAULT_COIN),
+        "{name}: H-35's coin, 1 913 of 7 680"
+    );
+    assert!(
+        coin_within_of(IN_FOUR_BOUNDS, in_all),
+        "{name}: the coin's count within H-35's bounds"
+    );
+    assert!(
+        coin.iter()
+            .enumerate()
+            .all(|(t, &m)| task.misleading_in_four_at(t as u64) == m),
+        "{name}: the oracle's coin is the task's at every trial"
+    );
+    coin
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0212)
+
+/// H-44's four clauses on one arm (ADR-0212), H-35's by H-35's rules (`misled_on` at a half)
+/// against the image its network's derivation wrote: (1) every mapping learned, at least
+/// `REWARDED_MIN` of its last 128; (2) no coupling past 1.30 of its image's in a run of 120
+/// blocks; (3) the excitatory sum outside the four couplings within 0.75 and 1.25 of the image's
+/// at every block's end of a run of 120 blocks; and (4) each stimulus's mean value over each
+/// mapping's last 128 trials within a quarter of the reward of a half of $2p - 1$, `values` per
+/// mapping and stimulus.
+fn on_default_clauses(
+    couplings: &[[i64; 2]; 2],
+    outside: i64,
+    blocks: &[Block],
+    values: [[StimulusValue; 2]; 4],
+) -> [bool; 4] {
+    let read = misled_on(
+        IN_FOUR_RELIABILITY,
+        couplings,
+        outside,
+        [blocks, blocks],
+        [values, values],
+    );
+    [
+        read.learning.learned[0].iter().all(|&l| l),
+        read.learning.bounded[0],
+        read.held[0],
+        read.expected[0].iter().flatten().all(|&e| e),
+    ]
+}
+
+/// Clause 4's counts per mapping and stimulus from an arm's values by block (ADR-0213): over each
+/// mapping's last `LAST_BLOCKS` blocks, each stimulus's trials, its correct trials and its values
+/// summed — what `stimulus_values` reads of the trials, read from the table the arm pins; zeros
+/// for a table not of 120 blocks.
+fn stimulus_values_of(valued: &[ValueBlock]) -> [[StimulusValue; 2]; 4] {
+    if valued.len() != SCHEDULE_BLOCKS {
+        return [[(0, 0, 0); 2]; 4];
+    }
+    MAPPINGS.map(|(_, to)| {
+        let mut out = [(0u32, 0u32, 0i64); 2];
+        for block in valued.iter().take(to).skip(to.saturating_sub(LAST_BLOCKS)) {
+            for (s, by) in out.iter_mut().zip(block) {
+                s.0 = s.0.saturating_add(u32::try_from(by[0]).unwrap_or(u32::MAX));
+                s.1 = s.1.saturating_add(u32::try_from(by[2]).unwrap_or(u32::MAX));
+                s.2 = s.2.saturating_add(by[1]);
+            }
+        }
+        out
+    })
+}
+
+/// H-44's verdict (ADR-0212): the four clauses per network, start and arm, `[network][start][arm]`
+/// in `ON_DEFAULT_STARTS`' and `ON_DEFAULT_ARMS`' order; `yes` when all four hold in all six of
+/// the default's arms, and `control` when all four hold in all six of the control's, which
+/// splits the reading of a yes and is not the verdict.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OnDefault {
+    clauses: [[[[bool; 4]; 2]; 2]; 3],
+    yes: bool,
+    control: bool,
+}
+
+fn on_default_verdict(clauses: [[[[bool; 4]; 2]; 2]; 3]) -> OnDefault {
+    let all = |s: usize| {
+        clauses
+            .iter()
+            .all(|network| network[s].iter().flatten().all(|&c| c))
+    };
+    OnDefault {
+        clauses,
+        yes: all(0),
+        control: all(1),
+    }
+}
+
+/// What step 3 of ADR-0212's stopping rule reads a yes as: with the control no, what holds the
+/// share is the rule moving the gain through the arm (a); with the control yes, the network the
+/// default settles, and the rule is not needed for this share (b).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeldBy {
+    TheRule,
+    TheNetwork,
+}
+
+/// The step of ADR-0212's stopping rule a verdict reaches, with step 3's split where it is step
+/// 3: 3 at a yes; 4 at a no on clause 3 in any of the default's arms, whatever else failed;
+/// otherwise 5, a no on clause 1 or 2; otherwise 6, a no on clause 4 alone. The control's
+/// clauses split step 3 and move no step.
+fn on_default_stop(verdict: &OnDefault) -> (u8, Option<HeldBy>) {
+    if verdict.yes {
+        let by = if verdict.control {
+            HeldBy::TheNetwork
+        } else {
+            HeldBy::TheRule
+        };
+        return (3, Some(by));
+    }
+    let defaults = || verdict.clauses.iter().flat_map(|network| network[0].iter());
+    if defaults().any(|c| !c[2]) {
+        return (4, None);
+    }
+    if defaults().any(|c| !c[0] || !c[1]) {
+        return (5, None);
+    }
+    (6, None)
+}
+
+// ---------------------------------------------------------------- the rules (ADR-0213)
+
+/// What the three predicted readings read of one arm (ADR-0213), from its blocks: each mapping's
+/// correct trials over its last 128 (`mapping_correct`) and each mapping's crossing of 40 of 64
+/// (`crossings`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OnDefaultArm {
+    correct: [u32; 4],
+    crossings: [Option<usize>; 4],
+}
+
+fn on_default_arm_of(blocks: &[Block]) -> OnDefaultArm {
+    OnDefaultArm {
+        correct: mapping_correct(blocks),
+        crossings: crossings(blocks),
+    }
+}
+
+/// An arm's lowest mapping, its correct trials over its last 128.
+fn lowest_mapping(arm: &OnDefaultArm) -> u32 {
+    arm.correct.iter().copied().min().unwrap_or(0)
+}
+
+/// ADR-0212's three predicted readings as rules (ADR-0213), in its order, over every arm,
+/// `[network][start][arm]`:
+/// 1. the control no on clause 1: in at least one of the control's six arms a mapping below
+///    `REWARDED_MIN` of its last 128;
+/// 2. on each network and arm, the default's lowest mapping above the control's, strictly;
+/// 3. every reversal of the default's six arms crossing `CROSSING_MARK` inside its mapping's 32
+///    blocks (`crossings`), the first mapping not a reversal.
+///
+/// None until every arm is given.
+fn on_default_predicted(arms: [[[Option<OnDefaultArm>; 2]; 2]; 3]) -> [Option<bool>; 3] {
+    let all: Option<Vec<OnDefaultArm>> = arms.iter().flatten().flatten().copied().collect();
+    if all.is_none() {
+        return [None; 3];
+    }
+    let read = |n: usize, s: usize, k: usize| arms[n][s][k].expect("every arm is given");
+    let control_unlearned = (0..3usize)
+        .any(|n| (0..2usize).any(|k| read(n, 1, k).correct.iter().any(|&c| c < REWARDED_MIN)));
+    let above = (0..3usize).all(|n| {
+        (0..2usize).all(|k| lowest_mapping(&read(n, 0, k)) > lowest_mapping(&read(n, 1, k)))
+    });
+    let crossed = (0..3usize)
+        .all(|n| (0..2usize).all(|k| read(n, 0, k).crossings.iter().skip(1).all(Option::is_some)));
+    [Some(control_unlearned), Some(above), Some(crossed)]
+}
+
+// ------------------------------------------------------------------ the run (brief 081)
+
+/// What one run of H-44's harness reads (ADR-0213): the sight's blocks and its trace; every
+/// trial's value; the engine's value by block (`value_blocks`) and clause 4's counts
+/// (`stimulus_values`); the gain at every trial's end; and the controller beside the run, its
+/// windows by block (`GainBlock`) and its reading (`GainRead`).
+struct OnDefaultRun {
+    blocks: Vec<Block>,
+    trace: u64,
+    values: Vec<i32>,
+    valued: Vec<ValueBlock>,
+    stimulus: [[StimulusValue; 2]; 4],
+    gains: Vec<u32>,
+    gain_blocks: Vec<GainBlock>,
+    gain_read: GainRead,
+}
+
+/// A run of H-44's harness (ADR-0213; brief 081): H-25's arm `arm` on H-42's network as `made`
+/// holds it, from `image` — the default's or the control's — under `feedback` for the first
+/// `trials` trials of H-20's schedule: its stimuli and cancel, the drawn delivery, H-20's flips,
+/// the engine's critic and its window, the task carrying no critic. It is H-43's path
+/// (`kept_arm`) with no address kept, the reward the task's at every trial's end.
+///
+/// The engine is held to `made` at the load: its critic, window, target period, open window,
+/// draws, gain, sums and couplings. Through the run the controller is watched as H-42's arms
+/// watched it (`GainWatch`). After it, every trial's reward read back from the error the
+/// modulator received and the engine's value is the reward whole, its sign the outcome's unless
+/// `coin` misleads at the trial; every window's gain is the rule's from the one before; the
+/// train's count of each window is the record's; and no worker dropped an entry.
+fn on_default_run(
+    name: &str,
+    made: &Made,
+    image: &[u8],
+    arm: Reversal,
+    feedback: Feedback,
+    trials: usize,
+    coin: &[bool],
+) -> OnDefaultRun {
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = signed_from(image, units);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.istdp_target_period_ticks(),
+            exec.window_opened(),
+            exec.draws(),
+            exec.homeostasis().synaptic_gain_q16
+        ),
+        (
+            Some(made.critic),
+            made.window,
+            made.period,
+            exec.ticks(),
+            Ok(()),
+            made.gain
+        ),
+        "{name}: the configuration, the window open at the load, and the engine draws"
+    );
+    assert_eq!(
+        (weights_by_polarity(&exec), pair_couplings(&exec, &sets)),
+        (made.sums, made.couplings),
+        "{name}: the image's sums and couplings"
+    );
+    assert_eq!(coin.len(), trials, "{name}: a coin a trial");
+    let task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        feedback,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    let controller = (
+        exec.homeostasis().control_step_q0_16,
+        exec.rate_target_per_window(),
+    );
+    let mut watch = GainWatch::new(&exec);
+    // The tick the watch has counted to: the load's, then each trial's end, as `arm_on` counts.
+    let mut watched = exec.ticks();
+    let mut read: Vec<EarnedTrial> = Vec::with_capacity(trials);
+    let mut values: Vec<i32> = Vec::with_capacity(trials);
+    let mut gains: Vec<u32> = Vec::with_capacity(trials);
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        trials,
+        &SCHEDULE_FLIPS,
+        &mut |exec, _, _, outcome| {
+            let end = exec.ticks();
+            for &(tick, _) in exec.train().iter().rev() {
+                let tick = u64::from(tick);
+                if tick < watched {
+                    break;
+                }
+                watch.spike(tick);
+            }
+            watch.trial(exec);
+            watched = end;
+            read.push((
+                outcome.stimulus,
+                outcome.counts,
+                outcome.selection,
+                outcome.correct,
+                outcome.reward_q16,
+                [[0; 2]; 2],
+                0,
+                outcome.signal_q16,
+            ));
+            values.push(
+                outcome
+                    .value_q16
+                    .expect("the engine's critic reads at every trial's reward"),
+            );
+            gains.push(exec.homeostasis().synaptic_gain_q16);
+        },
+    );
+    assert_eq!(
+        (blocks.len(), read.len(), values.len(), gains.len()),
+        (trials / BLOCK, trials, trials, trials),
+        "{name}: a block of 64 trials, a reading a trial"
+    );
+    // The reward the task gave at every trial: the error the modulator received plus the
+    // engine's value is the reward, whole, its sign the outcome's where the coin is not
+    // misleading.
+    for (t, (trial, &value)) in read.iter().zip(&values).enumerate() {
+        let given = i64::from(trial.4).saturating_add(i64::from(value));
+        let expected = if trial.3 != coin[t] {
+            i64::from(REWARD_Q16)
+        } else {
+            i64::from(REWARD_Q16.saturating_neg())
+        };
+        assert_eq!(
+            given, expected,
+            "{name} trial {t}: the reward's sign is the outcome's unless the coin misleads"
+        );
+    }
+    let gain_windows = watch.windows();
+    let gain_by_block = gain_blocks(&gain_windows);
+    let gain_read = gain_read(&gain_windows, watch.loaded, controller.0, controller.1);
+    eprintln!(
+        "DUMP {name} the controller: step {:#06x}, target {:?} spikes a window, the image's gain {}; {} trials whose open window's count is not the record's; capacities: the train let go {} spikes over the run, of {} it holds",
+        controller.0,
+        controller.1,
+        watch.loaded,
+        watch.apart,
+        exec.train_overwritten(),
+        exec.train_capacity()
+    );
+    assert_eq!(
+        watch.apart, 0,
+        "{name}: each window's spikes are the record's"
+    );
+    assert_eq!(
+        (gain_windows.len(), gain_by_block.len()),
+        (blocks.len().saturating_mul(BLOCK_WINDOWS), blocks.len()),
+        "{name}: eight windows end in every block"
+    );
+    assert_eq!(
+        gain_read.unruled, 0,
+        "{name}: every window's gain is the controller's rule's"
+    );
+    let reports = exec.shutdown();
+    assert!(
+        !reports.is_empty() && reports.iter().all(|r| r.dropped == 0),
+        "{name}: no worker dropped a spike or a message"
+    );
+    OnDefaultRun {
+        valued: value_blocks(&read, &values),
+        stimulus: stimulus_values(&read, &values),
+        blocks,
+        trace,
+        values,
+        gains,
+        gain_blocks: gain_by_block,
+        gain_read,
+    }
+}
+
+/// H-44's calibration on network `n` (ADR-0212's stopping rule, step 2; ADR-0213): run in the
+/// calibration's dispatch, before any arm's log is read. The network's derivation under the
+/// probe, held to H-42's pinned tables (`probe_made`); the coin, H-35's (`on_default_coin`); the
+/// control's image made and held to the default's (`control_image`); and, in each of H-25's two
+/// arms, the first block under the true feedback from the default's image held to H-42's arm on
+/// the network — its blocks, its values by block and its gain by block — and from the control's
+/// image with its gain the image's at every trial's end.
+fn on_default_calibration(n: usize) {
+    let name = format!("{} calibration", ON_DEFAULT_NAMES[n]);
+    let made = probe_made(n, &name);
+    let sets = geometry(SCAN_UNITS, made.derived.rotation);
+    let probe = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        SCAN_UNITS,
+        IN_FOUR_FEEDBACK,
+        first_mapping(ON_DEFAULT_ARMS[0]),
+        DRAWN_DELIVERY,
+    );
+    on_default_coin(&name, &probe);
+    let control = control_image(n, &name, &made);
+    let truth = vec![false; BLOCK];
+    for (k, &arm) in ON_DEFAULT_ARMS.iter().enumerate() {
+        let on = format!("{name} {arm:?}");
+        let default = on_default_run(
+            &format!("{on} the default's first block"),
+            &made,
+            &made.windowed,
+            arm,
+            Feedback::Answer,
+            BLOCK,
+            &truth,
+        );
+        let held = on_default_run(
+            &format!("{on} the control's first block"),
+            &made,
+            &control,
+            arm,
+            Feedback::Answer,
+            BLOCK,
+            &truth,
+        );
+        eprintln!(
+            "DUMP {on} the first block under the true feedback, the default's {:?} values {:?} gains {:?}; the control's {:?} values {:?} gains {:?}",
+            default.blocks,
+            default.valued,
+            default.gain_blocks,
+            held.blocks,
+            held.valued,
+            held.gain_blocks
+        );
+        assert_eq!(
+            (
+                Some(default.blocks.as_slice()),
+                Some(default.valued.as_slice()),
+                Some(default.gain_blocks.as_slice())
+            ),
+            (
+                PROBE_ARM_BLOCKS[n][k].get(..1),
+                PROBE_ARM_VALUES[n][k].get(..1),
+                PROBE_ARM_GAIN_BLOCKS[n][k].get(..1)
+            ),
+            "{on}: the default's first block under the true feedback is H-42's arm's"
+        );
+        assert!(
+            held.gains.iter().all(|&gain| gain == made.gain)
+                && held.gain_read.band == Some((made.gain, made.gain)),
+            "{on}: the control's gain is the image's at every trial's end"
+        );
+    }
+    eprintln!(
+        "DUMP {name} calibration holds: the derivation under the probe is the one pinned, the coin H-35's, the control's image the default's but for the step, the default's first blocks H-42's and the control's gain held"
+    );
+}
+
+/// The pinned tables of H-44's arm on network `n` from the start of index `s` in
+/// `ON_DEFAULT_STARTS` and the arm of index `k`: its blocks, its trace, its values' hash, its
+/// values by block and its gain by block; empty until its one run.
+fn on_default_pins(
+    n: usize,
+    s: usize,
+    k: usize,
+) -> (
+    &'static [Block],
+    u64,
+    u64,
+    &'static [ValueBlock],
+    &'static [GainBlock],
+) {
+    (
+        ON_DEFAULT_ARM_BLOCKS[n][s][k],
+        ON_DEFAULT_ARM_TRACES[n][s][k],
+        ON_DEFAULT_ARM_VALUE_HASH[n][s][k],
+        ON_DEFAULT_ARM_VALUES[n][s][k],
+        ON_DEFAULT_ARM_GAINS[n][s][k],
+    )
+}
+
+/// One arm of H-44 on network `n` (ADR-0212, ADR-0213; brief 081): the network's derivation under
+/// the probe, held to H-42's pinned tables (`probe_made`); the coin, H-35's; then H-25's arm
+/// from the default's image or the control's (`control_image`, held to the default's), under
+/// `Feedback::ThreeInFour` for H-20's 7 680 trials (`on_default_run`).
+///
+/// Everything is dumped, and the clauses and the readings computed, before anything is held. The
+/// control's gain is held to the image's at every trial's end and in every window; an arm is held
+/// to its tables where its one run is pinned.
+fn on_default_arm(n: usize, start: Start, arm: Reversal) {
+    let s = ON_DEFAULT_STARTS
+        .iter()
+        .position(|&a| a == start)
+        .expect("the default's image or the control's");
+    let k = ON_DEFAULT_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{} {start:?} {arm:?}", ON_DEFAULT_NAMES[n]);
+    let made = probe_made(n, &name);
+    let sets = geometry(SCAN_UNITS, made.derived.rotation);
+    let probe = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        SCAN_UNITS,
+        IN_FOUR_FEEDBACK,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    let coin = on_default_coin(&name, &probe);
+    let image = match start {
+        Start::Default => made.windowed.clone(),
+        Start::Control => control_image(n, &name, &made),
+    };
+    let run = on_default_run(
+        &name,
+        &made,
+        &image,
+        arm,
+        IN_FOUR_FEEDBACK,
+        SCHEDULE_TRIALS,
+        &coin,
+    );
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
+    eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
+    eprintln!(
+        "DUMP {name} PIN value hash {:#018x}",
+        values_hash(&run.values)
+    );
+    eprintln!("DUMP {name} PIN values {:?}", run.valued);
+    eprintln!("DUMP {name} PIN gains {:?}", run.gain_blocks);
+    eprintln!("DUMP {name} gain read {:?}", run.gain_read);
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let clauses = on_default_clauses(&made.couplings, outside, &run.blocks, run.stimulus);
+    let read = on_default_arm_of(&run.blocks);
+    let expected = run
+        .stimulus
+        .map(|m| m.map(|v| holds_expected_reward_at(IN_FOUR_RELIABILITY, v)));
+    eprintln!(
+        "DUMP {name} clauses {clauses:?}: last 128 correct {:?} lowest {} over {:?} left {:?} stimulus values {:?} the expected reward held at a half {expected:?}",
+        read.correct,
+        lowest_mapping(&read),
+        first_over_of(&made.couplings, &run.blocks),
+        left_band(outside, &run.blocks),
+        run.stimulus
+    );
+    let twin = PROBE_ARM_BLOCKS[n][k];
+    let (round, held) = match n.checked_sub(1) {
+        None => ("H-35", IN_FOUR_BLOCKS_1024[k]),
+        Some(m) => ("H-36", OTHERS_BLOCKS[m][k]),
+    };
+    eprintln!(
+        "DUMP {name} crossings {:?}; beside H-42's arm on the network under the true reward: last 128 correct {:?} crossings {:?}; beside {round}'s arm with the gain held: last 128 correct {:?} crossings {:?}; correct by block {:?}",
+        read.crossings,
+        mapping_correct(twin),
+        crossings(twin),
+        mapping_correct(held),
+        crossings(held),
+        curve(&run.blocks)
+    );
+    eprintln!(
+        "DUMP {name} value by block, per mille of the reward {:?}; the gain at the end of every block {:?}; the sums after {:?} beside the image's {:?}",
+        value_means(&run.valued)
+            .iter()
+            .map(|b| b.map(|v| v
+                .saturating_mul(1_000)
+                .checked_div(i64::from(REWARD_Q16))
+                .unwrap_or(0)))
+            .collect::<Vec<[i64; 2]>>(),
+        run.gains
+            .iter()
+            .skip(BLOCK.saturating_sub(1))
+            .step_by(BLOCK)
+            .collect::<Vec<&u32>>(),
+        run.blocks.last().map(|b| (b.7, b.8)),
+        made.sums
+    );
+    assert_eq!(
+        stimulus_values_of(&run.valued),
+        run.stimulus,
+        "{name}: clause 4's counts are read from the values by block"
+    );
+    // Held: the control's gain the image's through the arm; an arm's pinned tables.
+    if start == Start::Control {
+        assert!(
+            run.gains.iter().all(|&gain| gain == made.gain)
+                && run.gain_read.band == Some((made.gain, made.gain)),
+            "{name}: the control's gain is the image's through the arm"
+        );
+    }
+    match on_default_pins(n, s, k) {
+        ([], 0, 0, [], []) => {
+            eprintln!(
+                "DUMP {name} not pinned: the arm's one run (ADR-0213), its tables written from this log"
+            );
+        }
+        (pin_blocks, pin_trace, pin_hash, pin_valued, pin_gains) => {
+            pinned(&name, &run.blocks, run.trace, pin_blocks, pin_trace);
+            assert_eq!(
+                values_hash(&run.values),
+                pin_hash,
+                "{name}: every trial's value"
+            );
+            assert_eq!(
+                run.valued.as_slice(),
+                pin_valued,
+                "{name}: the values by block"
+            );
+            assert_eq!(
+                run.gain_blocks.as_slice(),
+                pin_gains,
+                "{name}: the gain by block"
+            );
+        }
+    }
+}
+
+/// H-44's calibration on seed 22 (ADR-0213, brief 081): run in the calibration's dispatch.
+#[test]
+#[ignore]
+fn the_control_at_step_zero_and_the_default_s_first_blocks_on_seed_22_at_1024_units_exhaustive() {
+    on_default_calibration(0);
+}
+
+/// H-44's calibration on seed 23 (ADR-0213, brief 081).
+#[test]
+#[ignore]
+fn the_control_at_step_zero_and_the_default_s_first_blocks_on_seed_23_at_1024_units_exhaustive() {
+    on_default_calibration(1);
+}
+
+/// H-44's calibration on seed 24 (ADR-0213, brief 081).
+#[test]
+#[ignore]
+fn the_control_at_step_zero_and_the_default_s_first_blocks_on_seed_24_at_1024_units_exhaustive() {
+    on_default_calibration(2);
+}
+
+/// H-44's arm on seed 22 from the default's image, starting from the assignment (ADR-0212,
+/// brief 081).
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_on_the_default_on_seed_22_from_the_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(0, Start::Default, Reversal::AssignmentFirst);
+}
+
+/// H-44's arm on seed 22 from the default's image, starting from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_on_the_default_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(0, Start::Default, Reversal::MirroredFirst);
+}
+
+/// H-44's arm on seed 23 from the default's image, starting from the assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_on_the_default_on_seed_23_from_the_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(1, Start::Default, Reversal::AssignmentFirst);
+}
+
+/// H-44's arm on seed 23 from the default's image, starting from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_on_the_default_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(1, Start::Default, Reversal::MirroredFirst);
+}
+
+/// H-44's arm on seed 24 from the default's image, starting from the assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_on_the_default_on_seed_24_from_the_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(2, Start::Default, Reversal::AssignmentFirst);
+}
+
+/// H-44's arm on seed 24 from the default's image, starting from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_on_the_default_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(2, Start::Default, Reversal::MirroredFirst);
+}
+
+/// H-44's control on seed 22, the default's image at step zero, starting from the assignment
+/// (ADR-0212, brief 081).
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_at_step_zero_on_seed_22_from_the_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(0, Start::Control, Reversal::AssignmentFirst);
+}
+
+/// H-44's control on seed 22, starting from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_at_step_zero_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(0, Start::Control, Reversal::MirroredFirst);
+}
+
+/// H-44's control on seed 23, starting from the assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_at_step_zero_on_seed_23_from_the_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(1, Start::Control, Reversal::AssignmentFirst);
+}
+
+/// H-44's control on seed 23, starting from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_at_step_zero_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(1, Start::Control, Reversal::MirroredFirst);
+}
+
+/// H-44's control on seed 24, starting from the assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_at_step_zero_on_seed_24_from_the_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(2, Start::Control, Reversal::AssignmentFirst);
+}
+
+/// H-44's control on seed 24, starting from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_reward_right_three_times_in_four_at_step_zero_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    on_default_arm(2, Start::Control, Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 081): H-44's networks, arms, starts, prediction and
+/// predicted readings' constants, and its coin's count; the step's place in the homeostasis
+/// record, and the control's image's patch on an image of the instrument's prior — the step
+/// written touches its two bytes and the section's entry alone, the loader reads it, the old
+/// step written back undoes it, a byte moved elsewhere fails the check and a step past its bound
+/// is refused by the loader; clause 4's counts from a table of values by block; the four
+/// clauses, each failed alone at its edge, the three predicted readings' rules at their edges,
+/// and the verdict with the step it reaches and step 3's split, over tables written by hand;
+/// and, over H-44's pinned tables, the verdict, its step and the three readings as written
+/// (`on_default_tables`). It runs no trial. Nothing else added to the gate.
+#[test]
+fn the_reward_right_three_times_in_four_on_the_default_its_control_and_its_predicted_readings_rules()
+ {
+    assert_eq!(ON_DEFAULT_SEEDS, [22, 23, 24]);
+    assert_eq!(
+        ON_DEFAULT_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(ON_DEFAULT_STARTS, [Start::Default, Start::Control]);
+    assert_eq!(
+        (ON_DEFAULT_PREDICTED, ON_DEFAULT_READINGS_PREDICTED),
+        (true, [true; 3]),
+        "ADR-0212 predicts yes, and each of its three readings"
+    );
+    assert_eq!(
+        (IN_FOUR_FEEDBACK, IN_FOUR_RELIABILITY, CONTROL_STEP_Q0_16),
+        (Feedback::ThreeInFour, (1, 2), 0),
+        "H-35's feedback and its reliability's part, a half; the control's step zero"
+    );
+    // The coin, H-35's: 1 913 of 7 680, the task's at every trial.
+    let task = task_over(
+        geometry(SCAN_UNITS, 0),
+        SHAPE_F46,
+        None,
+        SCAN_UNITS,
+        IN_FOUR_FEEDBACK,
+        false,
+        DRAWN_DELIVERY,
+    );
+    assert_eq!(on_default_coin("the gate", &task).len(), SCHEDULE_TRIALS);
+    // The step's place in the record: bytes 20 and 21, little-endian, and no other.
+    let rest = HomeostaticDrivePool::new();
+    let stepped = HomeostaticDrivePool {
+        control_step_q0_16: 0x0436,
+        ..rest
+    }
+    .encode();
+    assert_eq!(stepped[STEP_AT..][..2], 0x0436u16.to_le_bytes());
+    assert_eq!(
+        differing(&stepped, &rest.encode()),
+        [STEP_AT, STEP_AT.saturating_add(1)]
+    );
+    // The control's patch on an image of the instrument's prior, whose step is zero.
+    let exec = at_gain(&prior(1024), config(1024, 2, 0), GAIN_1024);
+    let img = Image::encode(&exec).expect("quiescent");
+    assert_eq!(image_step(&img), 0);
+    let probed = with_step_bytes(&img, 1078);
+    let moved = differing(&img, &probed);
+    let (at, offset, _) = homeostasis_entry(&img);
+    let step_bytes =
+        offset.saturating_add(STEP_AT)..offset.saturating_add(STEP_AT.saturating_add(2));
+    let entry_bytes = at..at.saturating_add(64);
+    assert!(
+        !moved.is_empty()
+            && moved.len() <= 10
+            && moved
+                .iter()
+                .all(|p| step_bytes.contains(p) || entry_bytes.contains(p))
+            && moved.iter().any(|p| step_bytes.contains(p)),
+        "the step's bytes and the entry's seal: {moved:?}"
+    );
+    assert_eq!(image_step(&probed), 1078);
+    assert!(only_the_step(&probed, &img), "the step written zero");
+    assert!(only_the_step(&img, &probed), "and written back");
+    assert!(only_the_step(&img, &img), "nothing written, nothing moved");
+    assert_eq!(with_step_bytes(&probed, 0), img);
+    let decoded = Image::decode::<2048>(&probed, config(1024, 2, 0)).expect("a well-formed image");
+    assert_eq!(
+        (
+            decoded.homeostasis().control_step_q0_16,
+            decoded.homeostasis().synaptic_gain_q16
+        ),
+        (1078, GAIN_1024),
+        "the loader reads the step written, the gain the image's"
+    );
+    assert_eq!(weights_of(&decoded), weights_of(&exec));
+    let mut elsewhere = with_step_bytes(&probed, 0);
+    elsewhere[offset.saturating_add(STEP_AT.saturating_add(2))] ^= 1;
+    assert!(
+        !only_the_step(&probed, &elsewhere),
+        "the sleep shift's byte"
+    );
+    let mut unsealed = probed.clone();
+    unsealed[offset.saturating_add(STEP_AT)] = 0;
+    assert!(
+        matches!(
+            Image::decode::<2048>(&unsealed, config(1024, 2, 0)),
+            Err(ImageError::SectionCrc(SECTION_HOMEOSTASIS))
+        ),
+        "the step written and the section not re-sealed: the loader refuses it"
+    );
+    assert!(
+        matches!(
+            Image::decode::<2048>(
+                &with_step_bytes(&img, CONTROL_STEP_MAX_Q0_16.saturating_add(1)),
+                config(1024, 2, 0)
+            ),
+            Err(ImageError::Config(ConfigError::ControlStepOutOfRange))
+        ),
+        "a step past its bound is refused, so the bytes are the ones the loader reads"
+    );
+    drop((exec, decoded));
+    // Clause 4's counts from a table of values by block: each mapping's last two blocks summed.
+    let r = i64::from(REWARD_Q16);
+    let valued: Vec<ValueBlock> = (0..SCHEDULE_BLOCKS)
+        .map(|j| {
+            let v = (j as i64).saturating_mul(r);
+            [[32, v, 24, 0], [32, v.saturating_neg(), 30, 0]]
+        })
+        .collect();
+    let counts = stimulus_values_of(&valued);
+    for (m, &(_, to)) in MAPPINGS.iter().enumerate() {
+        let two = (to as i64)
+            .saturating_mul(2)
+            .saturating_sub(3)
+            .saturating_mul(r);
+        assert_eq!(
+            counts[m],
+            [(64, 48, two), (64, 60, two.saturating_neg())],
+            "mapping {m}"
+        );
+    }
+    assert_eq!(stimulus_values_of(&valued[..119]), [[(0, 0, 0); 2]; 4]);
+    // The four clauses over a hand table: 120 blocks, each mapping learned, each value at the
+    // centre of clause 4's band, (2c - n) r / 2 over 64 trials with 48 correct.
+    let image = [[10_000i64, 10_000], [10_000, 10_000]];
+    let excitatory = 140_000i64;
+    let outside = outside_image(&image, excitatory);
+    assert_eq!(outside, 100_000);
+    let blocks: Vec<Block> = (0..SCHEDULE_BLOCKS)
+        .map(|_| kept_hand_block(64, image, excitatory))
+        .collect();
+    let centre: StimulusValue = (64, 48, r.saturating_mul(16));
+    let values = [[centre; 2]; 4];
+    assert_eq!(
+        on_default_clauses(&image, outside, &blocks, values),
+        [true; 4]
+    );
+    let mut unlearned = blocks.clone();
+    unlearned[MAPPINGS[1].1.saturating_sub(1)].0 = 39;
+    unlearned[MAPPINGS[1].1.saturating_sub(2)].0 = 40;
+    assert_eq!(
+        on_default_clauses(&image, outside, &unlearned, values),
+        [false, true, true, true],
+        "79 of 128"
+    );
+    unlearned[MAPPINGS[1].1.saturating_sub(2)].0 = 41;
+    assert_eq!(
+        on_default_clauses(&image, outside, &unlearned, values),
+        [true; 4],
+        "80 of 128"
+    );
+    let mut over = blocks.clone();
+    over[70].10[0][1] = 13_001;
+    over[70].8 = excitatory.saturating_add(3_001);
+    assert_eq!(
+        on_default_clauses(&image, outside, &over, values),
+        [true, false, true, true],
+        "past 1.30"
+    );
+    over[70].10[0][1] = 13_000;
+    over[70].8 = excitatory.saturating_add(3_000);
+    assert_eq!(
+        on_default_clauses(&image, outside, &over, values),
+        [true; 4],
+        "at 1.30"
+    );
+    let mut left = blocks.clone();
+    left[30].8 = excitatory.saturating_add(25_001);
+    assert_eq!(
+        on_default_clauses(&image, outside, &left, values),
+        [true, true, false, true],
+        "above 1.25"
+    );
+    left[30].8 = excitatory.saturating_add(25_000);
+    assert_eq!(
+        on_default_clauses(&image, outside, &left, values),
+        [true; 4],
+        "at 1.25"
+    );
+    // Clause 4's band about a half of (2p - 1): |V - (2c - n) r / 2| at most r n / 4, both ends
+    // held, a stimulus with no trial failing.
+    let at = |v: i64| {
+        let mut values = values;
+        values[3][1] = (64, 48, v);
+        on_default_clauses(&image, outside, &blocks, values)
+    };
+    assert_eq!(at(r.saturating_mul(32)), [true; 4], "the band's top");
+    assert_eq!(at(0), [true; 4], "its foot");
+    assert_eq!(
+        at(r.saturating_mul(32).saturating_add(1)),
+        [true, true, true, false]
+    );
+    assert_eq!(at(-1), [true, true, true, false]);
+    let mut none = values;
+    none[0][0] = (0, 0, 0);
+    assert_eq!(
+        on_default_clauses(&image, outside, &blocks, none),
+        [true, true, true, false],
+        "a stimulus with no trial"
+    );
+    assert_eq!(
+        on_default_clauses(&image, outside, &blocks[..119], values),
+        [false, false, false, true],
+        "a run short of 120 blocks"
+    );
+    // An arm's reading and the three predicted readings at their edges.
+    let read = on_default_arm_of(&blocks);
+    assert_eq!(
+        read,
+        OnDefaultArm {
+            correct: [128; 4],
+            crossings: [Some(1); 4],
+        }
+    );
+    assert_eq!(lowest_mapping(&on_default_arm_of(&unlearned)), 80);
+    let arm = |correct: [u32; 4]| OnDefaultArm {
+        correct,
+        crossings: [Some(5), Some(20), Some(32), Some(1)],
+    };
+    let mut arms = [[
+        [Some(arm([110, 100, 120, 115])); 2],
+        [Some(arm([100, 99, 79, 120])); 2],
+    ]; 3];
+    assert_eq!(on_default_predicted(arms), [Some(true); 3]);
+    let mut learned = arms;
+    for network in &mut learned {
+        network[1] = [Some(arm([100, 99, 80, 120])); 2];
+    }
+    assert_eq!(
+        on_default_predicted(learned),
+        [Some(false), Some(true), Some(true)],
+        "every control mapping at 80 or more"
+    );
+    let mut level = arms;
+    level[2][0][1] = Some(arm([110, 79, 120, 115]));
+    assert_eq!(
+        on_default_predicted(level),
+        [Some(true), Some(false), Some(true)],
+        "the default's lowest at the control's"
+    );
+    level[2][0][1] = Some(arm([110, 80, 120, 115]));
+    assert_eq!(on_default_predicted(level), [Some(true); 3], "one above it");
+    let mut uncrossed = arms;
+    uncrossed[1][0][0] = Some(OnDefaultArm {
+        crossings: [Some(5), Some(20), None, Some(1)],
+        ..arm([110, 100, 120, 115])
+    });
+    assert_eq!(
+        on_default_predicted(uncrossed),
+        [Some(true), Some(true), Some(false)],
+        "a reversal of the default's not crossed"
+    );
+    let mut first = arms;
+    first[0][0][0] = Some(OnDefaultArm {
+        crossings: [None, Some(20), Some(32), Some(1)],
+        ..arm([110, 100, 120, 115])
+    });
+    first[0][1][0] = Some(OnDefaultArm {
+        crossings: [Some(5), None, None, None],
+        ..arm([100, 99, 79, 120])
+    });
+    assert_eq!(
+        on_default_predicted(first),
+        [Some(true); 3],
+        "the first mapping not a reversal, the control's reversals not read"
+    );
+    arms[1][1][1] = None;
+    assert_eq!(
+        on_default_predicted(arms),
+        [None; 3],
+        "none before every arm"
+    );
+    // The verdict and the stopping rule's steps, step 3 split by the control.
+    let mut all = [[[[true; 4]; 2]; 2]; 3];
+    assert_eq!(
+        on_default_verdict(all),
+        OnDefault {
+            clauses: all,
+            yes: true,
+            control: true
+        }
+    );
+    assert_eq!(
+        on_default_stop(&on_default_verdict(all)),
+        (3, Some(HeldBy::TheNetwork))
+    );
+    all[2][1][0][0] = false;
+    assert_eq!(
+        (
+            on_default_verdict(all).yes,
+            on_default_verdict(all).control,
+            on_default_stop(&on_default_verdict(all))
+        ),
+        (true, false, (3, Some(HeldBy::TheRule))),
+        "the control no on clause 1"
+    );
+    let mut no = all;
+    no[0][0][1][3] = false;
+    assert_eq!(
+        on_default_stop(&on_default_verdict(no)),
+        (6, None),
+        "clause 4 alone"
+    );
+    no[1][0][0][1] = false;
+    assert_eq!(
+        on_default_stop(&on_default_verdict(no)),
+        (5, None),
+        "clause 2"
+    );
+    let mut unlearned = all;
+    unlearned[2][0][1][0] = false;
+    assert_eq!(
+        on_default_stop(&on_default_verdict(unlearned)),
+        (5, None),
+        "clause 1"
+    );
+    no[2][0][1][2] = false;
+    assert_eq!(
+        on_default_stop(&on_default_verdict(no)),
+        (4, None),
+        "clause 3, whatever else failed"
+    );
+    let mut control = [[[[true; 4]; 2]; 2]; 3];
+    control[0][1][0][2] = false;
+    assert_eq!(
+        on_default_stop(&on_default_verdict(control)),
+        (3, Some(HeldBy::TheRule)),
+        "a control's clause 3 moves no step"
+    );
+    on_default_tables();
+}
+
+/// The gate's checks over H-44's pinned tables (ADR-0213), by the rules committed before any of
+/// them was run, each where it is pinned. An arm's blocks, trace, hash, values and gains are
+/// pinned whole or not at all; each pinned table is 120 blocks of 64 trials; and a control's
+/// gain, in every block's windows, is the image's, H-42's arm's on the network. Then, where every
+/// arm is pinned, the verdict by the four clauses against the image each network's derivation
+/// wrote, its step and the three readings, each as written; before that, none is.
+fn on_default_tables() {
+    let mut clauses = [[[[false; 4]; 2]; 2]; 3];
+    let mut arms: [[[Option<OnDefaultArm>; 2]; 2]; 3] = [[[None; 2]; 2]; 3];
+    for n in 0..3usize {
+        let pins = probe_rate_pins(n);
+        let couplings = pins.couplings.expect("H-42's derivation, pinned");
+        let (_, sums) = pins.quiet.expect("H-42's settled image's sums, pinned");
+        let outside = outside_image(&couplings, sums.1);
+        for (s, &start) in ON_DEFAULT_STARTS.iter().enumerate() {
+            for (k, &arm) in ON_DEFAULT_ARMS.iter().enumerate() {
+                let name = format!("{} {start:?} {arm:?}", ON_DEFAULT_NAMES[n]);
+                let (blocks, trace, hash, valued, gains) = on_default_pins(n, s, k);
+                if blocks.is_empty() {
+                    assert!(
+                        trace == 0 && hash == 0 && valued.is_empty() && gains.is_empty(),
+                        "{name}: an arm pinned whole or not at all"
+                    );
+                    continue;
+                }
+                assert_eq!(
+                    (blocks.len(), valued.len(), gains.len()),
+                    (SCHEDULE_BLOCKS, SCHEDULE_BLOCKS, SCHEDULE_BLOCKS),
+                    "{name}: 120 blocks"
+                );
+                assert!(trace != 0 && hash != 0, "{name}: a sequence and its values");
+                assert!(
+                    valued
+                        .iter()
+                        .all(|b| b[0][0].saturating_add(b[1][0]) == BLOCK as i64),
+                    "{name}: a value at every trial"
+                );
+                if start == Start::Control {
+                    let loaded = PROBE_ARM_GAIN[n][k]
+                        .and_then(|read| read.mean.1.checked_div(read.windows as u64))
+                        .expect("H-42's arm's gain read, pinned");
+                    assert!(
+                        gains.iter().all(|g| [g.0, g.1, g.2]
+                            .iter()
+                            .all(|&gain| u64::from(gain) == loaded)),
+                        "{name}: the control's gain, the image's in every window"
+                    );
+                }
+                clauses[n][s][k] =
+                    on_default_clauses(&couplings, outside, blocks, stimulus_values_of(valued));
+                arms[n][s][k] = Some(on_default_arm_of(blocks));
+            }
+        }
+    }
+    let complete = arms.iter().flatten().flatten().all(Option::is_some);
+    let verdict = complete.then(|| on_default_verdict(clauses));
+    let readings = verdict.map(|_| on_default_predicted(arms));
+    eprintln!(
+        "DUMP on default PIN verdict {verdict:?} step {:?} predicted readings {readings:?}; the arms' readings {arms:?}",
+        verdict.map(|verdict| on_default_stop(&verdict))
+    );
+    assert_eq!(verdict, ON_DEFAULT_1024, "H-44's verdict as written");
+    assert_eq!(
+        verdict.map(|verdict| on_default_stop(&verdict)),
+        ON_DEFAULT_STOP_1024,
+        "the step of the stopping rule reached, and step 3's split"
+    );
+    assert_eq!(
+        readings, ON_DEFAULT_READINGS_READ_1024,
+        "ADR-0212's three predicted readings, as read"
+    );
+}
+
+// ------------------------------------------------ as read from the one run (ADR-0213)
+
+/// H-44's verdict, as read: none until every arm has run.
+const ON_DEFAULT_1024: Option<OnDefault> = None;
+/// The step of ADR-0212's stopping rule the verdict reaches, with step 3's split: none until
+/// then.
+const ON_DEFAULT_STOP_1024: Option<(u8, Option<HeldBy>)> = None;
+/// ADR-0212's three predicted readings, as read: none until then.
+const ON_DEFAULT_READINGS_READ_1024: Option<[Option<bool>; 3]> = None;
+
+// ------------------------------------------------ pinned from the one run (brief 081)
+
+// The arms' tables, per network in `ON_DEFAULT_SEEDS`' order, per start in `ON_DEFAULT_STARTS`'
+// and per arm in `ON_DEFAULT_ARMS`', empty until their one run.
+const ON_DEFAULT_ARM_BLOCKS: [[[&[Block]; 2]; 2]; 3] = [
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+];
+const ON_DEFAULT_ARM_TRACES: [[[u64; 2]; 2]; 3] = [[[0; 2]; 2]; 3];
+const ON_DEFAULT_ARM_VALUE_HASH: [[[u64; 2]; 2]; 3] = [[[0; 2]; 2]; 3];
+const ON_DEFAULT_ARM_VALUES: [[[&[ValueBlock]; 2]; 2]; 3] = [
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+];
+const ON_DEFAULT_ARM_GAINS: [[[&[GainBlock]; 2]; 2]; 3] = [
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+];
