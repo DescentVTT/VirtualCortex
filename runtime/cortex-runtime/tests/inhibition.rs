@@ -448685,3 +448685,557 @@ const ON_DEFAULT_ARM_GAINS: [[[&[GainBlock]; 2]; 2]; 3] = [
         ],
     ],
 ];
+
+// ======================================================================= exploration 003
+//
+// A delay the engine is not told (ADR-0193, exploration 003). Trial t's sign comes at the end of
+// trial t + k, as in H-43, and the host keeps a critic of its own for every age the engine keeps an
+// address at, each predicting and learning from the counts its age's entry kept, and nothing else.
+// An age's score is the mean magnitude of its critic's errors over the last 64 rewards. No
+// prediction is written, nothing is pinned and nothing under `src/` changes. The arm told its delay
+// runs through the host's path and is held to H-43's pinned arm bit for bit, which is the path's
+// calibration.
+
+/// The ages the host's critics read (exploration 003): zero to `KEPT_ADDRESSES`, the entries the
+/// engine keeps.
+const UNTOLD_AGES: usize = KEPT_ADDRESSES as usize + 1;
+
+/// An age's score (exploration 003): its critic's errors' magnitudes over the last 64 rewards,
+/// summed, and the switch's run of rewards an age must lead.
+const UNTOLD_WINDOW: usize = 64;
+
+/// The leads, Q16.16 of the reward on the mean, at which the arms read when the switch would have
+/// first moved (exploration 003): none, a sixty-fourth, a thirty-second, a sixteenth, an eighth and
+/// a quarter of the reward.
+const UNTOLD_LEADS: [i32; 6] = [0, ONE / 64, ONE / 32, ONE / 16, ONE / 8, ONE / 4];
+
+/// How the host chooses the age each reward is consolidated at (exploration 003).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UntoldAge {
+    /// The delay told: every reward at the delay's age, H-43's arm.
+    Told,
+    /// The delay untold: every reward at age zero, exploration 001's case.
+    Zero,
+    /// The host's switch: age zero, until an age other than the one in use has had the lowest
+    /// score at `UNTOLD_WINDOW` consecutive rewards, below every other age's by at least
+    /// `lead_q16` on the mean at each; then that age. Its arms are written once the untold arms
+    /// are read, their lead chosen from them.
+    #[allow(dead_code)]
+    Switch { lead_q16: i32 },
+}
+
+/// When the switch would first have moved, at a lead of `UNTOLD_LEADS` (exploration 003): the
+/// lead, the trial and the age an age other than zero first completed the run at, and the trial
+/// the true age first did.
+type Would = (i32, Option<(usize, u8)>, Option<usize>);
+
+/// One age's critic on the host (exploration 003): its weights, the engine's at the arm's start,
+/// moved by `value_step` at every reward from its age's counts alone, and its last errors'
+/// magnitudes with their sum.
+struct AgeCritic {
+    weights: Vec<i16>,
+    errors: std::collections::VecDeque<i64>,
+    sum: i64,
+}
+
+impl AgeCritic {
+    fn new(weights: Vec<i16>) -> Self {
+        Self {
+            weights,
+            errors: std::collections::VecDeque::with_capacity(UNTOLD_WINDOW.saturating_add(1)),
+            sum: 0,
+        }
+    }
+
+    /// The value and the error at a reward of `reward_q16` from `counts`, the weights moved after,
+    /// as the engine's critic reads its own (`value_step`).
+    fn read(&mut self, counts: &[u32], critic: ValueCritic, reward_q16: i32) -> (i32, i32) {
+        let (value, error, moved) = value_step(&self.weights, counts, critic, reward_q16);
+        self.weights = moved;
+        let magnitude = i64::from(error).saturating_abs();
+        self.errors.push_back(magnitude);
+        self.sum = self.sum.saturating_add(magnitude);
+        if self.errors.len() > UNTOLD_WINDOW {
+            if let Some(old) = self.errors.pop_front() {
+                self.sum = self.sum.saturating_sub(old);
+            }
+        }
+        (value, error)
+    }
+
+    /// The score, the window's sum, once `UNTOLD_WINDOW` rewards are read.
+    fn score(&self) -> Option<i64> {
+        (self.errors.len() == UNTOLD_WINDOW).then_some(self.sum)
+    }
+}
+
+/// The age whose score is the lowest, strictly, and its lead over the next lowest, on the
+/// window's sum; none until every age has a score, and at a tie.
+fn untold_leader(critics: &[AgeCritic; UNTOLD_AGES]) -> Option<(u8, i64)> {
+    let scores: Vec<i64> = critics
+        .iter()
+        .map(AgeCritic::score)
+        .collect::<Option<Vec<i64>>>()?;
+    let (best, &low) = scores.iter().enumerate().min_by_key(|&(_, &s)| s)?;
+    let next = scores
+        .iter()
+        .enumerate()
+        .filter(|&(a, _)| a != best)
+        .map(|(_, &s)| s)
+        .min()?;
+    (next > low).then(|| (best as u8, next.saturating_sub(low)))
+}
+
+/// The switch's run over a reward (exploration 003): the age leading by at least `lead_q16` on the
+/// mean, and the consecutive rewards it has, or none.
+fn untold_run(
+    run: Option<(u8, usize)>,
+    leader: Option<(u8, i64)>,
+    lead_q16: i32,
+) -> Option<(u8, usize)> {
+    let bound = i64::from(lead_q16).saturating_mul(UNTOLD_WINDOW as i64);
+    match (leader, run) {
+        (Some((a, lead)), Some((b, r))) if lead >= bound && a == b => {
+            Some((a, r.saturating_add(1)))
+        }
+        (Some((a, lead)), _) if lead >= bound => Some((a, 1)),
+        _ => None,
+    }
+}
+
+/// When the switch would first have moved, at each of `UNTOLD_LEADS`, over the rewards scored
+/// (`(trial, leader)`), from age zero: the first trial at which an age other than zero completes
+/// `UNTOLD_WINDOW` consecutive leads, and the age; and the first at which `age` does.
+fn untold_would(scored: &[(usize, Option<(u8, i64)>)], age: u8) -> Vec<Would> {
+    UNTOLD_LEADS
+        .iter()
+        .map(|&lead| {
+            let mut run = None;
+            let mut first = None;
+            let mut own = None;
+            for &(trial, leader) in scored {
+                run = untold_run(run, leader, lead);
+                if let Some((a, r)) = run {
+                    if r >= UNTOLD_WINDOW {
+                        if a != 0 && first.is_none() {
+                            first = Some((trial, a));
+                        }
+                        if a == age && own.is_none() {
+                            own = Some(trial);
+                        }
+                    }
+                }
+            }
+            (lead, first, own)
+        })
+        .collect()
+}
+
+/// One arm of exploration 003 on network `n`: H-43's arm at the delay `delay` (H-25's arm from the
+/// image H-42's derivation under the probe wrote, H-20's schedule, the drawn delivery, the engine's
+/// critic and its window, two addresses kept), with the sign given by the host.
+///
+/// The task's feedback is withheld, so that it closes each trial by drawing and gives no reward.
+/// After each trial the host keeps the trial's address, as the task keeps it under the drawn
+/// delivery (`Executor::keep_address`), and copies the counts the entry kept (`Executor::kept_at`)
+/// into a ring of the last `UNTOLD_AGES`; wherever an entry is still live, the ring is held to it.
+/// When trial t − `delay`'s sign is due, every age's critic on the host reads it from the counts of
+/// trial t − a, its own age, before the engine's reward, and the scores are taken. The engine's
+/// reward is then given at the age `choice` names (`Executor::reward_kept`). A trial with no
+/// reward, the first `delay` and any whose age's entry is spent, writes back the address the last
+/// reward wrote, every unit before the first, as the task's path leaves it.
+///
+/// Told, the run is H-43's arm on the network, its blocks, its trace, its values and its table bit
+/// for bit, and the host's critic at the age the engine consolidates under is the engine's at every
+/// reward, as it is under age zero and before any switch. Everything is dumped before anything is
+/// held.
+fn untold_arm(n: usize, arm: Reversal, delay: u8, choice: UntoldAge) {
+    let k = KEPT_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let d = KEPT_DELAYS
+        .iter()
+        .position(|&x| x == delay)
+        .expect("a delay of H-43's");
+    let name = format!("untold{} delay {delay} {choice:?} {arm:?}", KEPT_SEEDS[n]);
+    let units = SCAN_UNITS;
+    let made = probe_made(n, &name);
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = kept_from(&made.windowed, units);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.draws(),
+            exec.kept_addresses(),
+            exec.modulation_baseline_q16(),
+            exec.homeostasis().synaptic_gain_q16
+        ),
+        (
+            Some(made.critic),
+            made.window,
+            Ok(()),
+            KEPT_ADDRESSES,
+            GATE_BASELINE_Q16,
+            made.gain
+        ),
+        "{name}: the configuration, the engine draws and keeps two addresses"
+    );
+    let critic = exec.critic().expect("the engine's critic");
+    let weights: Vec<i16> = exec.units().iter().map(|u| u.value_weight).collect();
+    let mut critics: [AgeCritic; UNTOLD_AGES] =
+        core::array::from_fn(|_| AgeCritic::new(weights.clone()));
+    let task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Withheld,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    let lag = usize::from(delay);
+    let mut age: u8 = if choice == UntoldAge::Told { delay } else { 0 };
+    let mut history: Vec<(u8, Option<u8>, bool)> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut ring: std::collections::VecDeque<Vec<u32>> =
+        std::collections::VecDeque::with_capacity(UNTOLD_AGES.saturating_add(1));
+    let mut address: Option<(Vec<bool>, Vec<bool>)> = None;
+    let mut run: Option<(u8, usize)> = None;
+    let mut switches: Vec<(usize, u8)> = Vec::new();
+    let mut lost: Vec<usize> = Vec::new();
+    let mut twin_rewards = 0usize;
+    let mut twin_unequal = 0usize;
+    let mut values: Vec<i32> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut table: Vec<KeptBlock> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let mut block: KeptBlock = (0, 0, 0);
+    let mut scored: Vec<(usize, Option<(u8, i64)>)> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut magnitudes: Vec<[(i64, u32); UNTOLD_AGES]> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let mut magnitude = [(0i64, 0u32); UNTOLD_AGES];
+    let mut leads: Vec<[u32; UNTOLD_AGES]> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let mut led = [0u32; UNTOLD_AGES];
+    let mut ungiven = 0usize;
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        &mut |exec, trial, _, outcome| {
+            history.push((outcome.stimulus, outcome.selection, outcome.correct));
+            // The close kept, as the task keeps it under the drawn delivery.
+            match outcome.selection {
+                Some(r) => exec.keep_address(sets[usize::from(r).saturating_add(2)].units()),
+                None => exec.keep_address(core::iter::empty()),
+            }
+            .expect("the close keeps its address");
+            let (kept, _) = exec.kept_at(0).expect("the entry the close just kept");
+            ring.push_back(kept.to_vec());
+            if ring.len() > UNTOLD_AGES {
+                ring.pop_front();
+            }
+            for a in 0..UNTOLD_AGES {
+                let copied = ring
+                    .len()
+                    .checked_sub(a.saturating_add(1))
+                    .and_then(|i| ring.get(i))
+                    .map(Vec::as_slice);
+                if let Some((counts, _)) = exec.kept_at(a as u8) {
+                    assert_eq!(
+                        Some(counts),
+                        copied,
+                        "{name}: the ring is the entry at age {a}"
+                    );
+                }
+            }
+            let mut given = false;
+            if let Some(&(stimulus, selection, positive)) =
+                trial.checked_sub(lag).and_then(|t| history.get(t))
+            {
+                let reward_q16 = if positive {
+                    REWARD_Q16
+                } else {
+                    REWARD_Q16.saturating_neg()
+                };
+                // Every age's critic, from its own age's counts, before the engine's reward.
+                let mut read: [Option<(i32, i32)>; UNTOLD_AGES] = [None; UNTOLD_AGES];
+                for (a, c) in critics.iter_mut().enumerate() {
+                    if let Some(counts) = ring
+                        .len()
+                        .checked_sub(a.saturating_add(1))
+                        .and_then(|i| ring.get(i))
+                    {
+                        let (value, error) = c.read(counts, critic, reward_q16);
+                        read[a] = Some((value, error));
+                        magnitude[a].0 = magnitude[a]
+                            .0
+                            .saturating_add(i64::from(error).saturating_abs());
+                        magnitude[a].1 = magnitude[a].1.saturating_add(1);
+                    }
+                }
+                let leader = untold_leader(&critics);
+                if critics.iter().all(|c| c.score().is_some()) {
+                    scored.push((trial, leader));
+                    if let Some((a, _)) = leader {
+                        led[usize::from(a)] = led[usize::from(a)].saturating_add(1);
+                    }
+                }
+                if let UntoldAge::Switch { lead_q16 } = choice {
+                    run = untold_run(run, leader, lead_q16);
+                    if let Some((a, r)) = run {
+                        if r >= UNTOLD_WINDOW && a != age {
+                            age = a;
+                            switches.push((trial, a));
+                        }
+                    }
+                }
+                // The engine's reward at the age chosen, where its entry is still live.
+                if exec.kept_at(age).is_some() {
+                    exec.reward_kept(reward_q16, age)
+                        .expect("a reward at an age kept");
+                    let prediction = exec.prediction().expect("the engine's critic read");
+                    values.push(prediction.value_q16);
+                    if switches.is_empty() {
+                        twin_rewards = twin_rewards.saturating_add(1);
+                        if read[usize::from(age)].map(|(v, _)| v) != Some(prediction.value_q16) {
+                            twin_unequal = twin_unequal.saturating_add(1);
+                        }
+                    }
+                    // H-43's reading 1: whether the address the reward wrote names the pair of
+                    // the trial the sign is for.
+                    let own = sets[usize::from(stimulus)];
+                    let other = sets[usize::from(stimulus ^ 1)];
+                    let exact = selection.is_some_and(|r| {
+                        let readout = sets[usize::from(r).saturating_add(2)];
+                        (0..units).all(|u| exec.is_target(u) == readout.contains(u))
+                    });
+                    let mut drawn = [0u32; 2];
+                    for u in (0..units).filter(|&u| exec.is_source(u)) {
+                        if own.contains(u) {
+                            drawn[0] = drawn[0].saturating_add(1);
+                        } else if other.contains(u) {
+                            drawn[1] = drawn[1].saturating_add(1);
+                        }
+                    }
+                    block.0 = block
+                        .0
+                        .saturating_add(u32::from(names_rewarded(exact, drawn)));
+                    block.1 = block.1.saturating_add(1);
+                    block.2 = block.2.saturating_add(i64::from(prediction.value_q16));
+                    address = Some((
+                        (0..units).map(|u| exec.is_source(u)).collect(),
+                        (0..units).map(|u| exec.is_target(u)).collect(),
+                    ));
+                    given = true;
+                } else {
+                    lost.push(trial);
+                }
+                let shown: Vec<String> = read
+                    .iter()
+                    .map(|r| r.map_or_else(|| "-".to_string(), |(_, e)| e.to_string()))
+                    .collect();
+                eprintln!("DUMP {name} R {trial} {age} {}", shown.join(" "));
+            }
+            if !given {
+                ungiven = ungiven.saturating_add(1);
+                match &address {
+                    None => exec.address_all(),
+                    Some((sources, targets)) => exec
+                        .address(
+                            (0..units).filter(|&u| sources.get(u as usize).copied() == Some(true)),
+                            (0..units).filter(|&u| targets.get(u as usize).copied() == Some(true)),
+                        )
+                        .expect("the address the last reward wrote"),
+                }
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                table.push(block);
+                block = (0, 0, 0);
+                magnitudes.push(magnitude);
+                magnitude = [(0, 0); UNTOLD_AGES];
+                leads.push(led);
+                led = [0; UNTOLD_AGES];
+            }
+        },
+    );
+    assert_eq!(
+        (blocks.len(), table.len(), magnitudes.len()),
+        (SCHEDULE_BLOCKS, SCHEDULE_BLOCKS, SCHEDULE_BLOCKS),
+        "{name}: 120 blocks"
+    );
+    // Everything dumped, before anything is held.
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let clauses = kept_clauses(&made.couplings, outside, &blocks);
+    let read = kept_arm_of(&blocks, &table);
+    let correct = mapping_correct(&blocks);
+    eprintln!(
+        "DUMP {name} learning: last 128 correct {correct:?}, learned {} of 4; H-43's clauses {clauses:?}; over {:?}; crossings {:?}; left {:?}",
+        correct.iter().filter(|&&c| c >= 80).count(),
+        first_over_of(&made.couplings, &blocks),
+        crossings(&blocks),
+        left_band(outside, &blocks)
+    );
+    eprintln!("DUMP {name} correct by block {:?}", curve(&blocks));
+    eprintln!(
+        "DUMP {name} reading 1: the address named the due trial's pair at {} of {} rewards; reversals summed {}",
+        read.named.0, read.named.1, read.reversals
+    );
+    eprintln!(
+        "DUMP {name} the engine's value by block, per mille of the reward {:?}",
+        table
+            .iter()
+            .map(|b| i64::from(b.1)
+                .checked_mul(i64::from(REWARD_Q16))
+                .and_then(|whole| b.2.saturating_mul(1_000).checked_div(whole))
+                .unwrap_or(0))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} each age's mean error magnitude by block, per mille of the reward {:?}",
+        magnitudes
+            .iter()
+            .map(|m| m.map(|(sum, n)| i64::from(n)
+                .checked_mul(i64::from(REWARD_Q16))
+                .and_then(|whole| sum.saturating_mul(1_000).checked_div(whole))
+                .unwrap_or(-1)))
+            .collect::<Vec<[i64; UNTOLD_AGES]>>()
+    );
+    eprintln!("DUMP {name} the rewards each age led by block {leads:?}");
+    for (m, &(from, to)) in SPANS.iter().enumerate() {
+        let within: Vec<&(usize, Option<(u8, i64)>)> = scored
+            .iter()
+            .filter(|(t, _)| (from..to).contains(t))
+            .collect();
+        let by_age: Vec<usize> = (0..UNTOLD_AGES)
+            .map(|a| {
+                within
+                    .iter()
+                    .filter(|(_, l)| l.is_some_and(|(b, _)| usize::from(b) == a))
+                    .count()
+            })
+            .collect();
+        eprintln!(
+            "DUMP {name} mapping {m}: the rewards each age led {by_age:?} of {} scored",
+            within.len()
+        );
+    }
+    let true_led = scored
+        .iter()
+        .filter(|(_, l)| l.is_some_and(|(a, _)| a == delay))
+        .count();
+    let first_led = scored
+        .iter()
+        .find(|(_, l)| l.is_some_and(|(a, _)| a == delay))
+        .map(|&(t, _)| t);
+    let last_not = scored
+        .iter()
+        .rev()
+        .find(|(_, l)| !l.is_some_and(|(a, _)| a == delay))
+        .map(|&(t, _)| t);
+    eprintln!(
+        "DUMP {name} the true age {delay}: led {true_led} of {} scored rewards; first led at trial {first_led:?}; last not led at trial {last_not:?}; the first scored at trial {:?}",
+        scored.len(),
+        scored.first().map(|&(t, _)| t)
+    );
+    eprintln!(
+        "DUMP {name} the switch from age zero would first move at (lead, (trial, age), the true age at) {:?}",
+        untold_would(&scored, delay)
+    );
+    eprintln!(
+        "DUMP {name} the host's choice {choice:?}: switches {switches:?}; rewards lost at a spent entry {lost:?}; the age at the end {age}; trials with no reward {ungiven}"
+    );
+    eprintln!(
+        "DUMP {name} the host's critic at the engine's age, before any switch: {} of {twin_rewards} rewards unequal to the engine's value",
+        twin_unequal
+    );
+    eprintln!(
+        "DUMP {name} capacities: entries let go {} ; the train let go {} spikes; the sums after {:?} beside the image's {:?}",
+        exec.kept_let_go(),
+        exec.train_overwritten(),
+        weights_by_polarity(&exec),
+        made.sums
+    );
+    // Held: the host's critic is the engine's at its age; told, H-43's arm bit for bit.
+    assert_eq!(
+        twin_unequal, 0,
+        "{name}: the host's critic at the engine's age is the engine's"
+    );
+    if choice == UntoldAge::Told {
+        let (pin_blocks, pin_trace, pin_hash, pin_table) = kept_pins(n, d, k);
+        pinned(&name, &blocks, trace, pin_blocks, pin_trace);
+        assert_eq!(
+            values_hash(&values),
+            pin_hash,
+            "{name}: every reward's value is H-43's"
+        );
+        assert_eq!(
+            table.as_slice(),
+            pin_table,
+            "{name}: the table by block is H-43's"
+        );
+        assert_eq!(
+            (exec.kept_let_go(), ungiven, lost.len()),
+            (0, lag, 0),
+            "{name}: told, no entry let go and a reward at every trial's end but the first `delay`"
+        );
+        eprintln!("DUMP {name} told, the host's path is H-43's arm on its network, bit for bit");
+    }
+}
+
+/// Exploration 003, told: seed 22, one trial late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_told_read_by_age_one_trial_late_on_seed_22_from_the_assignment_explore() {
+    untold_arm(0, Reversal::AssignmentFirst, 1, UntoldAge::Told);
+}
+
+/// Exploration 003, told: seed 22, one trial late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_told_read_by_age_one_trial_late_on_seed_22_from_the_mirrored_assignment_explore() {
+    untold_arm(0, Reversal::MirroredFirst, 1, UntoldAge::Told);
+}
+
+/// Exploration 003, told: seed 22, two trials late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_told_read_by_age_two_trials_late_on_seed_22_from_the_assignment_explore() {
+    untold_arm(0, Reversal::AssignmentFirst, 2, UntoldAge::Told);
+}
+
+/// Exploration 003, told: seed 22, two trials late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_told_read_by_age_two_trials_late_on_seed_22_from_the_mirrored_assignment_explore() {
+    untold_arm(0, Reversal::MirroredFirst, 2, UntoldAge::Told);
+}
+
+/// Exploration 003, untold, every reward at age zero: seed 22, one trial late, from the
+/// assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_read_by_age_one_trial_late_on_seed_22_from_the_assignment_explore() {
+    untold_arm(0, Reversal::AssignmentFirst, 1, UntoldAge::Zero);
+}
+
+/// Exploration 003, untold: seed 22, one trial late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_read_by_age_one_trial_late_on_seed_22_from_the_mirrored_assignment_explore() {
+    untold_arm(0, Reversal::MirroredFirst, 1, UntoldAge::Zero);
+}
+
+/// Exploration 003, untold: seed 22, two trials late, from the assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_read_by_age_two_trials_late_on_seed_22_from_the_assignment_explore() {
+    untold_arm(0, Reversal::AssignmentFirst, 2, UntoldAge::Zero);
+}
+
+/// Exploration 003, untold: seed 22, two trials late, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_untold_read_by_age_two_trials_late_on_seed_22_from_the_mirrored_assignment_explore() {
+    untold_arm(0, Reversal::MirroredFirst, 2, UntoldAge::Zero);
+}
