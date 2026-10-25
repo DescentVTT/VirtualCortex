@@ -421,8 +421,8 @@ jobs:
     # the completeness check below asserts rather than assumes.
     name: Weekly mutation sweep (${{ matrix.label }}, ADR-0058)
     # After the whole-domain shards (ADR-0166): a round's merge waits for those and not for
-    # this, and with twelve shards of the runtime here a dispatch at `scope=both` is twenty-five
-    # jobs for the account's twenty places. On run 38111246283 the last whole-domain shard
+    # this, and with sixteen shards of the runtime here (ADR-0207) a dispatch at `scope=both` is
+    # thirty-five jobs for the account's twenty places. On run 38111246283 the last whole-domain shard
     # started an hour after the dispatch. `needs` gives the shards the first places;
     # `!cancelled()` keeps the sweep running where they were skipped (`scope=mutants`) or one
     # of them failed.
@@ -449,54 +449,72 @@ jobs:
           # thirty hours of machine time, and six shards took 1 h 52 m to 3 h 11 m. A dispatch at
           # `scope=both` is then twenty-five jobs against the account's twenty at once, so five
           # of them wait for the first whole-domain shards to end.
+          # Sixteen since ADR-0207 (F-78): on run 40097581635 the twelve took 2 h 13 min to 5 h 31 min,
+          # and runtime-2 was cut at the job's 330 minutes with 18 of its 123 mutants untested.
           - label: runtime-0
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 0/12 --sharding round-robin
+            shard: --shard 0/16 --sharding round-robin
           - label: runtime-1
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 1/12 --sharding round-robin
+            shard: --shard 1/16 --sharding round-robin
           - label: runtime-2
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 2/12 --sharding round-robin
+            shard: --shard 2/16 --sharding round-robin
           - label: runtime-3
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 3/12 --sharding round-robin
+            shard: --shard 3/16 --sharding round-robin
           - label: runtime-4
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 4/12 --sharding round-robin
+            shard: --shard 4/16 --sharding round-robin
           - label: runtime-5
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 5/12 --sharding round-robin
+            shard: --shard 5/16 --sharding round-robin
           - label: runtime-6
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 6/12 --sharding round-robin
+            shard: --shard 6/16 --sharding round-robin
           - label: runtime-7
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 7/12 --sharding round-robin
+            shard: --shard 7/16 --sharding round-robin
           - label: runtime-8
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 8/12 --sharding round-robin
+            shard: --shard 8/16 --sharding round-robin
           - label: runtime-9
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 9/12 --sharding round-robin
+            shard: --shard 9/16 --sharding round-robin
           - label: runtime-10
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 10/12 --sharding round-robin
+            shard: --shard 10/16 --sharding round-robin
           - label: runtime-11
             area: runtime
             packages: -p cortex-runtime
-            shard: --shard 11/12 --sharding round-robin
+            shard: --shard 11/16 --sharding round-robin
+          - label: runtime-12
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 12/16 --sharding round-robin
+          - label: runtime-13
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 13/16 --sharding round-robin
+          - label: runtime-14
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 14/16 --sharding round-robin
+          - label: runtime-15
+            area: runtime
+            packages: -p cortex-runtime
+            shard: --shard 15/16 --sharding round-robin
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 

@@ -2967,7 +2967,7 @@ The blocks are the ones in `CLAUDE.md`, which is canonical ([ADR-0184](adr/0184-
 <!-- @assert-present file="scripts/arm-run.sh" reason="ADR-0184: a round's run finds its test from the listing and keeps its output" -->
 
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="mutants-weekly" min="1" reason="ADR-0058: the weekly sweep is one job per area" -->
-<!-- @assert-count target=".github/workflows/ci.yml" symbol="--shard 11/12 --sharding round-robin" min="1" reason="ADR-0158: the runtime's sweep is dealt to twelve shards" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="--shard 15/16 --sharding round-robin" min="1" reason="ADR-0158, ADR-0207: the runtime's sweep is dealt to sixteen shards (F-78)" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="needs: [weekly]" min="1" reason="ADR-0166: the sweep's jobs wait for the whole-domain shards" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="timeout-minutes: 180" min="1" reason="ADR-0176, ADR-0179: a weekly shard's bound, of which no shard's job reads past 60 per cent" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="an incomplete sweep is not a result" min="1" reason="ADR-0058: a sweep that did not cover its area fails the job" -->
