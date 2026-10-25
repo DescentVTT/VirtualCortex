@@ -1,29 +1,34 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-25
 affectedFiles: [runtime/cortex-runtime/src/**, runtime/cortex-runtime/tests/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
 protectedFiles: [crates/**, benches/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, scripts/check-archive.mjs, scripts/check-scope.mjs, scripts/check-explorations.mjs, scripts/check-doc-shape.mjs, scripts/adr-index.mjs, .spec-brief.json, package.json, package-lock.json, rust-toolchain.toml, Cargo.toml, Cargo.lock]
+integrity: sha256-0d4d565d70382dcac6e61ffef32f44d1036724bacccd8c59e925489d0121569f
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-25 (UTC) in pull request [#232](https://github.com/DescentVTT/VirtualCortex/pull/232).** Brief 080 built the kept addresses and the task's delay (ADR-0208: Config::kept_addresses, keep_address, reward_kept, Task::delay; unset or on time every run the run it was; F-79 recorded and resolved), committed H-43's protocol before any arm at a delay (ADR-0209), and ran H-43 once (ADR-0210): yes at step 3. On seeds 22, 23 and 24, in both arms, at one and two trials' delay, H-25's four clauses held; the six twins on time were H-42's arms bit for bit. Predicted readings 1 and 3 held, reading 2 missed on three network-arms of six. The reproduction, dispatch 40171928796 at scope=both, was green in its 18 shards; its sweep had not ended. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 080: A reward past the trial
 
 ## Mission
 
 **This brief builds one thing in the engine and runs one hypothesis once.**
-[ADR-0207](../docs/adr/0207-a-reward-past-the-trial-its-address-kept.md) takes M10:
+[ADR-0207](../../docs/adr/0207-a-reward-past-the-trial-its-address-kept.md) takes M10:
 - with `Config::kept_addresses` set, each trial's close keeps its drawn address and its critic counts;
 - a reward names the age of the trial it is for, and the engine consolidates under that trial's address.
 
-ADR-0207 wrote **H-43** before any run, in [H-43's report](../docs/research/H-43.md), and **predicts yes** with three readings.
+ADR-0207 wrote **H-43** before any run, in [H-43's report](../../docs/research/H-43.md), and **predicts yes** with three readings.
 
 When the round is done, the tree holds:
 - the kept addresses in the engine, unset bit for bit, and the task's delay;
 - on each of seeds 22, 23 and 24 at 1 024 units, H-25's two arms at a delay of one trial and of two, under the default's network, as weekly `exhaustive` tests: twelve arms;
 - H-43's verdict per network, arm, delay and clause, and the step of its stopping rule reached, with the next decision it names and does not take.
 
-Its readings go to H-43's report, its measured ADR is short, and it rewrites `docs/STATUS.md` ([briefs/README.md](README.md#a-rounds-documents)).
+Its readings go to H-43's report, its measured ADR is short, and it rewrites `docs/STATUS.md` ([briefs/README.md](../README.md#a-rounds-documents)).
 
-The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
+The scope is the front matter's ([ADR-0191](../../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
 
 **Do not run this round beside brief 065's**: both dispatch the weekly workflow.
 
@@ -52,11 +57,11 @@ The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eigh
 - **The prediction is ADR-0207's**: yes. The round reports it against what was read, and each predicted reading as held or missed.
 - **The engine and the harness are read before a description of them is trusted**, this brief's and ADR-0207's included. So is exploration 001's branch, `explore/001-the-old-noes-under-the-default`, whose tests ran the delay through the host.
 - **No capacity of a run's configuration is reached silently.**
-- No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name ([ADR-0029](../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
-- A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of `testkit/prop.rs`, and the mutation gate catches every mutant in the lines the change touches ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+- No `f32`/`f64`, oracles included; every operation on a state field saturates or wraps by name ([ADR-0029](../../docs/adr/0029-structural-enforcement.md)). Every loop ends by construction ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)). No `unsafe`.
+- A heavy run is an `#[ignore]`d test whose name contains `exhaustive`. The runtime's gate grows by at most one test ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)). A new rule carries a test over the lattice of `testkit/prop.rs`, and the mutation gate catches every mutant in the lines the change touches ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The documents are ADR-0197's and ADR-0201's**: new ADRs in their shape, the tables written by `node scripts/adr-index.mjs`, new text within `npm run spec:shape`'s limits and its math GitHub's.
 - **The pull request leaves draft with the commit that asks for the merge**, which sets the round's ADRs to `accepted`.
-- **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's minutes.
+- **No shard of the weekly job passes 60 per cent of its bound**, 180 minutes, at eighteen shards ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md), ADR-0191). One that does is reported with its job's minutes.
 - No pinned number of an earlier round moves.
 - Conventional Commits with a real body; never commit on `main`; the required checks keep their names.
 
@@ -71,14 +76,14 @@ Re-derived on 2026-10-25 against `main` at `045952a`. Line numbers move; the sym
 2. **The task** (`runtime/cortex-runtime/src/task.rs`): `Task::trial` injects the stimulus, runs 16 384 ticks, reads the counts and the selection, writes the address, then gives the reward. `Feedback` is `Answer`, `Shuffled`, `Withheld`, `SevenInEight` or `ThreeInFour`.
 3. **The trace** (`crates/cortex-core/src/dynamics/synapse.rs`, protected): `ELIGIBILITY_TAU_SHIFT` 16, τ = 65 536 ticks, four trials; a shift of 16 is the ceiling.
 4. **The default's network**: `UNDER_THE_PROBE` and `PROBE_RULES` in `tests/inhibition.rs`, H-42's derivations pinned; ADR-0206's default writes their candidate byte for byte.
-5. **Exploration 001** ([its note](../docs/explorations/001-the-old-noes-under-the-default.md)): on seed 22, a delay of one or two trials with no mechanism learned nothing; the address named the rewarded pair in 0.20 to 0.27 of rewards; the trace held 0.56 to 0.73. Its tests on `explore/001-the-old-noes-under-the-default` gave the reward through the host (`run_on_scheduled_over`, `Withheld`). Its figures are exploratory.
+5. **Exploration 001** ([its note](../../docs/explorations/001-the-old-noes-under-the-default.md)): on seed 22, a delay of one or two trials with no mechanism learned nothing; the address named the rewarded pair in 0.20 to 0.27 of rewards; the trace held 0.56 to 0.73. Its tests on `explore/001-the-old-noes-under-the-default` gave the reward through the host (`run_on_scheduled_over`, `Withheld`). Its figures are exploratory.
 6. **H-42's arms** (ADR-0204): mappings 120 to 127 of 128 correct, reversals in 10 to 14 blocks, the address naming the rewarded pair 0.94 to 0.96 on time.
 7. **The process** (ADR-0184, ADR-0191, ADR-0197, ADR-0201, `briefs/README.md`): eighteen weekly shards; the runtime's sweep over sixteen shards since ADR-0207; `spec-brief archive <NNN> --strict` measured from `origin/main`.
 8. **The sweep**: brief 079's, run 40097581635, ADR-0207 records. This round's own sweep is recorded by the first ADR that merges after it ends (ADR-0158), and a scheduled weekly run's sweep too.
 
 ## Deliverables
 
-- [ ] **The kept addresses and the task's delay, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The kept addresses and the task's delay, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - ADR-0207's `Config::kept_addresses`, the trial's close and the reward of an age, with their refusals.
   - The task's delay.
   - Unset, every run the run it was, bit for bit; kept and rewarded at age zero, the same.
@@ -87,27 +92,27 @@ Re-derived on 2026-10-25 against `main` at `045952a`. Line numbers move; the sym
     - over the lattice against an oracle;
     - the twin at age zero against the run without the addresses kept;
     - an entry spent once, and a reward of an age not kept refused.
-- [ ] **H-43's protocol, in a new ADR at the next free number, kind `protocol`, before any arm runs at a delay.**
+- [x] **H-43's protocol, in a new ADR at the next free number, kind `protocol`, before any arm runs at a delay.**
   - The networks, the delays, the arms.
   - H-43's clauses and constants, restated from ADR-0207 and pinned in the tests.
   - The three predicted readings as rules over the tables.
   - How the address each reward writes is read against the rewarded trial's pair.
-- [ ] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests, every pinned number held; and the twin at age zero on each network, H-42's arm bit for bit.
-- [ ] **The arms**: twelve, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
-- [ ] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
-- [ ] **H-43's report**, `docs/research/H-43.md`: its `verdict:` set, the readings' tables, each arm beside its on-time twin and exploration 001's arm at the same delay, and the dispatches that are their evidence.
-- [ ] **The measured ADR**, kind `measured`, short:
+- [x] **The calibration**, before any such run: a dispatch at `scope=exhaustive` excluding this round's own tests, every pinned number held; and the twin at age zero on each network, H-42's arm bit for bit.
+- [x] **The arms**: twelve, each a weekly `exhaustive` test, run once by a dispatch at `scope=arms`, their tables pinned per block.
+- [x] **The reproduction**, dispatched at `scope=both` as soon as the arms' tables are pinned. Its eighteen whole-domain shards are green and reproduce every pinned number, and the cost table is regenerated from them.
+- [x] **H-43's report**, `docs/research/H-43.md`: its `verdict:` set, the readings' tables, each arm beside its on-time twin and exploration 001's arm at the same delay, and the dispatches that are their evidence.
+- [x] **The measured ADR**, kind `measured`, short:
   - the verdict per network, arm, delay and clause, in one table;
   - each of the three predicted readings, held or missed, in a line;
   - the step of the stopping rule reached, and the next decision it names, not taken.
-- [ ] **The gate.** At most one runtime test: H-43's clauses and its predicted readings' rules at their edges, over tables written by hand.
-- [ ] **The documents, in the same pull request.**
+- [x] **The gate.** At most one runtime test: H-43's clauses and its predicted readings' rules at their edges, over tables written by hand.
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
   - Whitepaper: where the reward's path and the task are described, the kept addresses and the delay; and the tables written by `node scripts/adr-index.mjs`.
   - `CHANGELOG.md`, one entry of at most 400 characters a change.
   - `README.md` and `docs/zh-TW/README.md` as the result requires.
   - The whitepaper's version in both declarations, with its date.
-- [ ] **The brief archived** with `spec-brief archive 080 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 080 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
