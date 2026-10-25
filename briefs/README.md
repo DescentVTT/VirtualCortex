@@ -104,6 +104,14 @@ From brief 078, a round writes its result once, in the place [ADR-0197](../docs/
 - **The tables are written, not edited**: `node scripts/adr-index.mjs` writes the index, §9 and the hypotheses' tables from front matter, and `npm run spec:index` fails a hand edit.
 - **New text meets the limits** `npm run spec:shape` holds ([CONTRIBUTING.md](../CONTRIBUTING.md#where-each-fact-goes-and-the-shape-of-new-text)), and the `CHANGELOG.md` entry is at most 400 characters.
 
+## When the session needs the maintainer
+
+A round runs for hours, and the maintainer is often away from it.
+A session that executes a brief and cannot go on without the maintainer sends a push notification, Claude Code's `PushNotification`, in one line that names what it needs.
+- **It notifies** when a question only the maintainer can answer stops the round, when a permission or a sign-in waits for them, and when the pull request is ready for review.
+- **It does not notify** for progress, for a dispatch started or ended, or for a step it can take itself.
+- It waits for no reply it does not need: a step the brief or its empowerment already decides is taken.
+
 ## Evidencing a round
 
 How a round that measures reaches its merge ([ADR-0150](../docs/adr/0150-a-round-waits-for-what-it-checks.md)).

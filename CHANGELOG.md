@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A session that needs the maintainer notifies them.** `briefs/README.md` asks a session executing a brief to send a push notification when it cannot go on without the maintainer, or when its pull request is ready for review, and never for progress.
 - **A reward past the trial, its address kept ([ADR-0207](docs/adr/0207-a-reward-past-the-trial-its-address-kept.md)); H-43; brief 080; F-77, F-78; whitepaper 5.8.0.** M10 taken. The runtime's sweep is dealt over sixteen shards, and brief 079's sweep is recorded.
 - **The probe in the engine's default, built ([ADR-0206](docs/adr/0206-the-probe-in-the-engines-default-built.md)); brief 079; whitepaper 5.7.0.** `Config::reads_its_targets()` sets `step_probe` and nothing else. An engine born under it writes H-42's candidate's image byte for byte on seeds 22, 23 and 24. Dispatch 40097581635 at `scope=both` held every other pin.
 - **The probe in the engine's default ([ADR-0205](docs/adr/0205-the-probe-in-the-engines-default.md)); brief 079; F-76; whitepaper 5.6.0.** `Config::reads_its_targets()` is to set `step_probe`. The gate's release test step is bounded at 26 minutes, three times its longest of 516 s.
