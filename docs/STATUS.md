@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0212](adr/0212-three-in-four-on-the-default.md) wrote it on 2026-10-25, after brief 080 ([ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md)) and [ADR-0211](adr/0211-the-round-shortened.md) merged.
+Brief 081 wrote it on 2026-10-25, with H-44 read ([ADR-0214](adr/0214-three-in-four-on-the-default-measured.md)).
 
 ## The engine
 
@@ -20,12 +20,13 @@ Every hypothesis, with its report, is in [docs/research/](research/README.md).
 | The two-alternative task: learned, revised through three reversals with the couplings bounded, under a reward right 7 times in 8 | yes, under H-25's configuration | H-13 to H-28 |
 | A choice among three answers | no: the first mapping is learned, not every revision, and the line stops | H-29 to H-32 |
 | The task on seeds 23 and 24, and at 2 048 units | yes | H-33, H-34 |
-| A reward right 3 times in 4 | no: 21 mappings of 24 learned over three networks | H-35, H-36 |
+| A reward right 3 times in 4, with the gain held at 1.75 on the earlier networks | no: 21 mappings of 24 learned over three networks | H-35, H-36 |
 | The criticality controller's step | no: every step takes the network to 24.4 Hz a unit | H-37 |
 | The gain moved by a rate the controller holds | yes, at step = 1/8 on seed 22 and at 1/16 on three networks | H-38, H-39 |
 | A target the engine reads, then the inhibitory target by the same read | yes, on three networks | H-40, H-41 |
 | A step the engine makes from its own loop | yes, on three networks: S = 15.0 to 15.2, step = 1/61 to 1/60, the alternation 12 to 21 % lower | [H-42](research/H-42.md) |
 | A reward one or two trials late, its address kept | yes, on three networks under the default: 118 to 128 of 128, the address on the rewarded pair in 95 % of rewards | [H-43](research/H-43.md) |
+| A reward right 3 times in 4, on the default | yes, on three networks: 90 to 127 of 128; with the step zero, 80 to 127, so the network the default settles holds it | [H-44](research/H-44.md) |
 
 **The learning configuration** is H-25's ([ADR-0146](adr/0146-the-tag-the-address-already-is.md)): the excitatory synapses under the reward's gate with the signed gate set, the inhibitory ones under a baseline of their own, a critic of the engine's own over the shortest synaptic delay after a reward, and the reward's address drawn by the engine from that window's counts onto the readout its selection chose.
 
@@ -53,8 +54,7 @@ Per trial the host gives the reward's sign, and, under a delay, the trial's age.
 
 ## The next decision
 
-Brief 081 is live beside 065: H-44, a reward right three times in four on the default, beside a control whose step is zero ([ADR-0212](adr/0212-three-in-four-on-the-default.md)), predicted yes.
-A round runs under ADR-0211: its calibration with its arms, its reproduction of its own tests, and no sweep of its own.
-1. H-44, once, by brief 081.
-2. A delay the engine is not told, if H-44 reads yes.
-3. A re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
+H-44 read yes at step 3 of its stopping rule, split (b): with the rule's step zero, the default's networks learned the share too, running 24 to 26 % above their rate targets.
+1. A delay the engine is not told, as H-44's stopping rule names it. Brief 065 stays live, paused.
+2. A re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
+3. The schedule's sweep of 2026-10-26, recorded by the first ADR that merges after it ends.
