@@ -40,4 +40,7 @@ test("a script that takes an argument is not in `npm run spec`, because it canno
   // `mutants:timeouts` reads a sweep's output directory, which exists only after a weekly run.
   ok(!runs("mutants:timeouts"), "mutants:timeouts needs a directory and cannot be part of the gate");
   ok("mutants:timeouts:test" in scripts, "its tests, which need nothing, are");
+  // `round:additive` reads a round's change between two commits (ADR-0215).
+  ok(!runs("round:additive"), "round:additive needs a base and a head and cannot be part of the gate");
+  ok("round:additive:test" in scripts, "its tests, which need nothing, are");
 });

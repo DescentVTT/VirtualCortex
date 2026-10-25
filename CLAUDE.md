@@ -169,8 +169,10 @@ tests run by a dispatch at `scope=exhaustive`. A round's runs are dispatches too
 `scope=exhaustive` with its own tests excluded, made with its arms at `scope=arms`, and its
 reproduction at `scope=exhaustive` with only its own tests; the whole-tree sweep runs on the weekly
 schedule alone ([ADR-0211](docs/adr/0211-the-round-shortened.md),
-[briefs/README.md](briefs/README.md#evidencing-a-round)). A pull request of documents alone skips
-the gate's Rust jobs.
+[briefs/README.md](briefs/README.md#evidencing-a-round)). A round whose change only adds, by
+`npm run round:additive -- origin/main <commit>`, calibrates with its own calibration tests alone
+([ADR-0215](docs/adr/0215-the-calibration-a-change-needs.md)). A pull request of documents alone
+skips the gate's Rust jobs.
 
 The `cargo bench ... -- --test` line executes each benchmark once and asserts no timing. A number
 becomes Measured only through the protocol in `docs/benchmarks/README.md`; a developer-machine

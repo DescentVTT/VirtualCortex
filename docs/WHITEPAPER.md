@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.14.0
+version: 5.15.0
 status: active
 date: 2026-10-25
 ---
@@ -11,7 +11,7 @@ date: 2026-10-25
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.14.0 |
+| Version | 5.15.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-25 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2539,6 +2539,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0212](adr/0212-three-in-four-on-the-default.md) | A reward right three times in four, on the default | accepted |
 | [ADR-0213](adr/0213-three-in-four-on-the-default-its-protocol.md) | A reward right three times in four, on the default, its protocol | accepted |
 | [ADR-0214](adr/0214-three-in-four-on-the-default-measured.md) | A reward right three times in four, on the default, measured | accepted |
+| [ADR-0215](adr/0215-the-calibration-a-change-needs.md) | The calibration a change needs | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2997,6 +2998,10 @@ The blocks are the ones in `CLAUDE.md`, which is canonical ([ADR-0184](adr/0184-
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="ONLY: ${{ inputs.only }}" min="1" reason="ADR-0211: the dispatch's only input reaches the shards" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="needs.changes.outputs.rust != 'false'" min="4" reason="ADR-0211: the four Rust jobs skip a pull request of documents alone" -->
 <!-- @assert-absence target=".github/workflows/ci.yml" symbol="default: both" reason="ADR-0211: a dispatch that names no scope runs no sweep" -->
+
+A round whose change only adds calibrates with its own calibration tests alone, beside its arms ([ADR-0215](adr/0215-the-calibration-a-change-needs.md)). `scripts/check-additive.mjs` reads the change from `origin/main` to the protocol's commit: every line a Rust build reads must be whole items inserted at the top level of a package's `tests/`, under names its crate does not use. Any other change calibrates the whole tree.
+<!-- @assert-present file="scripts/check-additive.mjs,scripts/check-additive.test.mjs" reason="ADR-0215: a round's change read as only adding, and its tests" -->
+<!-- @assert-count target="package.json" symbol="npm run round:additive:test" min="1" reason="ADR-0215: the gate runs the check's tests" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="bash scripts/arm-run.sh" min="1" reason="ADR-0184: one job a test, its output kept" -->
 <!-- @assert-count target="scripts/exhaustive-shard.sh" symbol="EXCLUDE" min="1" reason="ADR-0184: a calibration excludes the round's own tests by name" -->
 <!-- @assert-present file="scripts/arm-run.sh" reason="ADR-0184: a round's run finds its test from the listing and keeps its output" -->
