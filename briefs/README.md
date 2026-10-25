@@ -121,13 +121,18 @@ section is the rule.
 
 1. **No whole-domain test runs on the developer machine**
    ([ADR-0184](../docs/adr/0184-the-runs-off-the-developer-machine.md)). A round's runs are dispatches on its branch:
-   - **The calibration**, before any rewarded run: `gh workflow run ci.yml --ref <branch> -f
-     scope=exhaustive -f exclude='<test> ...'`, naming every test of the round's own. A name the
-     listing lacks fails every shard before any test runs.
+   - **The calibration**: `gh workflow run ci.yml --ref <branch> -f scope=exhaustive -f
+     exclude='<test> ...'`, naming every test of the round's own. A name the listing lacks fails
+     every shard before any test runs.
    - **The arms run once**, and so do the round's lead-ins and any trial of its harness on an arm
      the tree pins: `gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'`.
      Each test runs in a job of its own on AArch64 with its output kept as the artifact
      `arm-<n>`; read it with `gh run download <run> -n arm-<n>`.
+   - **The calibration and the arms are dispatched together**, on the protocol's commit
+     ([ADR-0211](../docs/adr/0211-the-round-shortened.md)). The calibration is read first, with
+     any twin its stopping rule holds bit for bit to a pinned arm. No arm's log is read until
+     every calibration shard and every twin is green; one that fails stops the round as a
+     finding, and its arms are void.
    - **The tables are written from those logs and committed.** The ADR names the run, the commit
      it ran on, and the job each table came from. The run's commit holds the protocol.
    - **A change after the calibration** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): a change to a file
@@ -139,20 +144,25 @@ section is the rule.
      tables are pinned and pushed**; the readings, the documents and the archive are written while
      it runs, and after its commit no file under `runtime/`, `crates/` or `benches/` and no
      `Cargo.toml` or `Cargo.lock` changes (ADR-0191).
+   - **It runs the round's own tests alone** (ADR-0211): `gh workflow run ci.yml --ref <branch> -f
+     scope=exhaustive -f only='<test> ...'`, the names the calibration excluded. That holds when,
+     from the calibration's commit to its own, no file under `src/` changed and no test or helper
+     the calibration ran; the round reads it from `git diff`, and the merge's reviewer again.
+     Otherwise it runs every test, with no `only`.
    - Everything else before the arms is unchanged: the protocol committed first, the calibration
-     before any rewarded run, and constants that do not move after one.
+     read before any rewarded run, and constants that do not move after one.
 
    Before a push the developer machine runs only the first block of `CLAUDE.md`'s commands, and
    the pull request's gate runs the rest.
-2. **The reproduction's scope follows the diff**
-   ([ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): `scope=both` when a file
-   under `src/` changed, `scope=exhaustive` otherwise. The calibration is at `scope=exhaustive`
-   always.
+2. **A round never dispatches the sweep** (ADR-0211, amending
+   [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): its calibration and its
+   reproduction are at `scope=exhaustive`, whatever its diff. The schedule sweeps the whole tree
+   every Monday, and the pull request's mutation gate meets every line the round changed.
 3. **The round asks for its merge when the reproduction's whole-domain shards are green** and the
-   pull request's gate is green on its last commit. It does not wait for the sweep. Its ADR names
-   the dispatch and says the sweep had not ended.
-4. **The cost table** is regenerated from the reproduction's shards' artifacts, which the run gives
-   as each shard uploads them.
+   pull request's gate is green on its last commit. It waits for no sweep.
+4. **The cost table** is regenerated from the calibration's and the reproduction's shards'
+   artifacts together, downloaded under one directory: `node scripts/exhaustive-costs.mjs from
+   <dir> --run '<calibration> and <reproduction>'`. A reproduction of every test is enough alone.
 5. **The ADR cites the round's commits by their hashes, with the pull request's number**, and
    they are `main`'s once it merges: `main` takes a pull request by a merge commit
    ([ADR-0186](../docs/adr/0186-merge-commits.md)). A branch is brought up to date by merging `main` into it,
@@ -160,8 +170,8 @@ section is the rule.
    every commit a dispatch ran on stays in the history. No second pull request follows.
 6. **The commit that asks for the merge sets the round's ADRs to `accepted`**, in their files and in
    the index.
-7. **The sweep's outcome is read when it ends and written down by the first ADR that merges after
-   it has ended**, a decision's or a round's
+7. **The sweep's outcome, the schedule's since ADR-0211, is read when it ends and written down by
+   the first ADR that merges after it has ended**, a decision's or a round's
    ([ADR-0158](../docs/adr/0158-the-sweep-off-the-next-decisions-path.md)). No ADR waits for it: one
    written before it ends names the run and says so. The session that writes an ADR looks whether
    the last dispatched sweep has ended and whether an ADR has recorded it. A survivor is a finding

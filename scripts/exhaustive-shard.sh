@@ -29,6 +29,12 @@
 # must be one the listing holds, or the shard fails before any test runs, since a name misspelt
 # would leave its test in the calibration. A scheduled run excludes nothing.
 #
+# A dispatch may instead name the only tests it runs, in `ONLY` (ADR-0211): a round's
+# reproduction re-runs the round's own tests, since its calibration ran every other test at a
+# commit whose source the reproduction's still is (ADR-0191). Each name must be one the listing
+# holds, as with `EXCLUDE`, and a dispatch gives one of the two, never both. A shard the deal
+# gives no test passes with nothing run. A scheduled run names nothing.
+#
 # Writes `exhaustive-tests-<k>.tsv` (the binary's path and stem, the test, its seconds, its exit
 # status, the tests it reported passing), `exhaustive-times-<k>.txt` (per binary: its tests in
 # this shard and the sum of their seconds, ADR-0071's table) and `exhaustive-wall-<k>.txt` (the
@@ -48,6 +54,30 @@ fi
 
 listed=list.log
 : > excluded.txt
+: > only.txt
+if [ -n "${EXCLUDE:-}" ] && [ -n "${ONLY:-}" ]; then
+  echo "the dispatch names tests to exclude and tests to run alone; it gives one of the two"
+  exit 1
+fi
+if [ -n "${ONLY:-}" ]; then
+  printf '%s' "$ONLY" | tr -s ' ' '\n' | sed '/^$/d' | sort -u > only.txt
+  missing=$(awk '
+    NR == FNR { want[$0] = 1; next }
+    { sub(/\r$/, "") }
+    /: test$/ { t = $0; sub(/: test$/, "", t); if (t in want) seen[t] = 1 }
+    END { for (w in want) if (!(w in seen)) print w }
+  ' only.txt list.log)
+  if [ -n "$missing" ]; then
+    echo "the dispatch names tests to run that the listing does not name, so the reproduction would skip them:"
+    printf '%s\n' "$missing"
+    exit 1
+  fi
+  awk 'NR == FNR { on[$0 ": test"] = 1; next } { l = $0; sub(/\r$/, "", l) } (l in on) || l !~ /: test$/' \
+    only.txt list.log > list-kept.log
+  listed=list-kept.log
+  echo "run alone by the dispatch, $(wc -l < only.txt | tr -d ' ') test(s):"
+  cat only.txt
+fi
 if [ -n "${EXCLUDE:-}" ]; then
   printf '%s' "$EXCLUDE" | tr -s ' ' '\n' | sed '/^$/d' | sort -u > excluded.txt
   missing=$(awk '
@@ -102,8 +132,9 @@ parallel=$((cores / 2))
 if [ "$parallel" -lt 1 ]; then parallel=1; fi
 : > "results-$k.tsv"
 started=$SECONDS
-# `-d '\n'` so that a line is one argument and xargs reads no quote or backslash in it.
-xargs -a mine.txt -d '\n' -P "$parallel" -n 1 bash -c 'run_one "$0"'
+# `-d '\n'` so that a line is one argument and xargs reads no quote or backslash in it; `-r` so
+# that a shard dealt no test, which a dispatch naming few tests leaves, runs nothing.
+xargs -r -a mine.txt -d '\n' -P "$parallel" -n 1 bash -c 'run_one "$0"'
 elapsed=$((SECONDS - started))
 echo "$elapsed" > "exhaustive-wall-$k.txt"
 

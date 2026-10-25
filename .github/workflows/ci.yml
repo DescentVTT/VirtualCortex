@@ -1,6 +1,10 @@
 # CI for VirtualCortex.
 #
-# Nine jobs (one on pull requests only, two weekly or by hand, two by hand alone), nine questions:
+# Ten jobs (two on pull requests only, two weekly or by hand, two by hand alone), ten questions:
+#   changes - on a pull request: does it change anything but the documentation? A pull request
+#           whose every changed file is under docs/ or briefs/, or is a Markdown file at the
+#           repository's root, skips the four jobs below that build Rust; a job skipped by its
+#           condition reports success, so the required checks still pass (ADR-0211).
 #   rust  - does the workspace compile, do its layout assertions and tests hold,
 #           is it formatted and lint-clean (the workspace lints of ADR-0029 included),
 #           does rustdoc build without a warning, do the tests also hold in the release
@@ -30,7 +34,7 @@
 #           is a change to the ruleset first.
 #   weekly - on a schedule (or by hand): do the whole-domain tests still hold?
 #   mutants-weekly - on the same schedule: which mutants survive over the whole tree? One job
-#           per area, the runtime's in twelve shards, each deriving its per-mutant bound from its
+#           per area, the runtime's in sixteen shards, each deriving its per-mutant bound from its
 #           own suite timed on its runner and failing if it did not cover its slice (ADR-0058).
 #           Nothing is blocked; the survivors are the next round's list (ADR-0030).
 #   arms-plan, arms - by hand alone (`scope=arms`): what do the `#[ignore]`d tests a round
@@ -50,21 +54,22 @@ on:
     # (ADR-0030). Nothing to block; the survivors are the next round's list.
     - cron: "0 3 * * 1"
   # The weekly jobs by hand: `gh workflow run ci.yml --ref <branch> -f scope=<scope>`. A round
-  # dispatches `exhaustive`, where its own measurement lives, and `both` only when its own diff
-  # changes a file under a `src/` directory, deletes a test or takes one out of the suite the
-  # sweep runs, or changes `.cargo/mutants.toml` or the `mutants-weekly` job (ADR-0075, which
-  # amends ADR-0067). Adding a test never qualifies: it can only catch more. The executing
-  # round decides from the diff it has, not the brief. A scheduled run always does both.
+  # dispatches `exhaustive` and `arms` and never the sweep: the whole-tree sweep runs on the
+  # schedule, which always does both, and by hand at `mutants` or `both` alone (ADR-0211, which
+  # amends ADR-0075). The pull request's mutation gate still meets every line a round changes.
   # A round's own runs go by hand alone (ADR-0184): `gh workflow run ci.yml --ref <branch>
-  # -f scope=arms -f tests='<test> <test> ...'`, the names as `--list` prints them. The
-  # calibration before them is a dispatch at `exhaustive` on the same branch, with the round's
-  # own tests named in `-f exclude='<test> ...'` so that none of them runs there.
+  # -f scope=arms -f tests='<test> <test> ...'`, the names as `--list` prints them. Its
+  # calibration is a dispatch at `exhaustive` on the same commit, made with the arms (ADR-0211),
+  # the round's own tests named in `-f exclude='<test> ...'` so that none of them runs there.
+  # Its reproduction is a dispatch at `exhaustive` with the same names in `-f only='<test> ...'`,
+  # so that only they run there, when nothing the calibration ran has changed since its commit.
   workflow_dispatch:
     inputs:
       scope:
         description: Which weekly jobs to run
         type: choice
-        default: both
+        # Not `both`: a dispatch that names no scope runs no sweep (ADR-0211).
+        default: exhaustive
         options:
           - both
           - exhaustive
@@ -78,6 +83,10 @@ on:
         description: "With scope=exhaustive: the tests a round's calibration skips, separated by spaces"
         type: string
         default: ""
+      only:
+        description: "With scope=exhaustive: the only tests a round's reproduction runs, separated by spaces; never with exclude"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -87,16 +96,51 @@ concurrency:
   # and the scope, so a round's arms dispatched on its branch do not cancel its calibration
   # (ADR-0184). On a push or a pull request the scope is empty and the group is one per ref.
   # A dispatch at `arms` is a run made once, so it is a group of its own: no later dispatch
-  # cancels it, and it cancels none.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.scope }}-${{ github.ref }}${{ inputs.scope == 'arms' && format('-{0}', github.run_id) || '' }}
+  # cancels it, and it cancels none. So is a reproduction, a dispatch naming `only`: the arms end
+  # before the calibration made with them (ADR-0211), and a reproduction dispatched once their
+  # tables are pinned must not cancel the calibration still running at `exhaustive`.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.scope }}-${{ github.ref }}${{ (inputs.scope == 'arms' || inputs.only != '') && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    # Whether a pull request changes anything the four Rust jobs read (ADR-0211). A decision's
+    # pull request changes only documents, and paid for the Rust jobs all the same: on #233 the
+    # MSRV job took 25 minutes and the Rust job 17, for nothing they read. The list is narrow on purpose: a file
+    # anywhere else, this workflow and the scripts included, runs them all. On a push or a
+    # dispatch this job is skipped and the jobs below run as they did; if it fails, they run.
+    name: What the pull request changes (ADR-0211)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.diff.outputs.rust }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - id: diff
+        name: The changed files, and whether one lies outside the documentation
+        run: |
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > "$RUNNER_TEMP/changed.txt"
+          echo "the pull request changes $(wc -l < "$RUNNER_TEMP/changed.txt" | tr -d ' ') file(s):"
+          cat "$RUNNER_TEMP/changed.txt"
+          if grep -qvE '^(docs/|briefs/)|^[^/]+\.md$' "$RUNNER_TEMP/changed.txt"; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "a file outside the documentation changed: the Rust jobs run"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+            echo "only the documentation changed: the Rust jobs are skipped, and report success"
+          fi
+
   rust:
     # The name is a required status check of the repository's ruleset; the header above
-    # says what the job runs.
+    # says what the job runs. It runs unless `changes` read a pull request of documents alone
+    # (ADR-0211); `!cancelled()` runs it where `changes` was skipped or failed.
     name: Rust (check, test, fmt, clippy)
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    needs: [changes]
+    if: ${{ !cancelled() && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     # A bound of its own (ADR-0159, F-67): the job once sat in its test step until it was
     # cancelled by hand, and with no bound it would have run to the platform's six hours.
@@ -141,7 +185,8 @@ jobs:
 
   msrv:
     name: Rust (minimum supported version)
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    needs: [changes] # as the job above (ADR-0211)
+    if: ${{ !cancelled() && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60 # ADR-0159, as the job above
     steps:
@@ -166,7 +211,8 @@ jobs:
 
   arm64:
     name: Rust (AArch64 determinism, T-1)
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    needs: [changes] # as the rust job (ADR-0211)
+    if: ${{ !cancelled() && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60 # ADR-0159, as the job above
     steps:
@@ -185,7 +231,8 @@ jobs:
 
   mutants:
     name: Mutation gate on the changed lines (ADR-0030)
-    if: github.event_name == 'pull_request'
+    needs: [changes] # documents alone have no line to mutate (ADR-0211)
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -289,8 +336,10 @@ jobs:
 
       - name: This shard of the whole-domain tests, in the release profile (ADR-0073)
         env:
-          # Empty but on a dispatch that names them: a round's calibration (ADR-0184).
+          # Empty but on a dispatch that names them: a round's calibration (ADR-0184) and its
+          # reproduction (ADR-0211). The script fails a dispatch that names both.
           EXCLUDE: ${{ inputs.exclude }}
+          ONLY: ${{ inputs.only }}
         run: bash scripts/exhaustive-shard.sh ${{ matrix.shard }} 18
 
       # Each test's seconds, longest first, and each binary's sum (ADR-0071, ADR-0092): the
@@ -307,6 +356,10 @@ jobs:
             echo
             if [ -s excluded.txt ]; then
               echo "Excluded by the dispatch (ADR-0184): $(wc -l < excluded.txt | tr -d ' ') test(s)"
+              echo
+            fi
+            if [ -s only.txt ]; then
+              echo "Run alone by the dispatch (ADR-0211): $(wc -l < only.txt | tr -d ' ') test(s) over the eighteen shards"
               echo
             fi
             echo "| Binary | Test | Seconds | Exit | Passed |"
@@ -327,6 +380,7 @@ jobs:
             mine.txt
             list.log
             excluded.txt
+            only.txt
           retention-days: 90
 
   arms-plan:

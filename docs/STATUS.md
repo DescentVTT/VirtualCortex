@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-Brief 080 wrote it on 2026-10-25 ([ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md)), after [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) merged.
+[ADR-0211](adr/0211-the-round-shortened.md) wrote it on 2026-10-25, after brief 080 merged ([ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md)).
 
 ## The engine
 
@@ -54,6 +54,7 @@ Per trial the host gives the reward's sign, and, under a delay, the trial's age.
 ## The next decision
 
 H-43's stopping rule reached step 3 ([ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md)), and no brief is live but 065.
-1. The reward right three times in four asked again on the default, with a control at step zero ([exploration 001](explorations/001-the-old-noes-under-the-default.md)), in a decision ADR; then a delay the engine is not told.
-2. A re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
-3. Where the rounds' pinned tables live (F-76, F-78).
+From the next round, a round runs under ADR-0211: its calibration with its arms, its reproduction of its own tests, and no sweep of its own.
+1. Where the rounds' pinned tables live (F-76, F-78): an exploration that measures what they cost the test crates' build, then a decision ADR.
+2. The reward right three times in four asked again on the default, with a control at step zero ([exploration 001](explorations/001-the-old-noes-under-the-default.md)), in a decision ADR; then a delay the engine is not told.
+3. A re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
