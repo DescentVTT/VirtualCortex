@@ -54,7 +54,11 @@ The readings' tables and the dispatches are in [H-43's report](../research/H-43.
 
 **The evidence.**
 - The arms ran once each at `scope=arms` on AArch64, dispatch 40170518252 on `f87b02f`, and were pinned in `4bc7f7e`, pull request #232.
-- The reproduction is dispatch 40171928796 at `scope=both` on `4bc7f7e`.
+- The reproduction, dispatch 40171928796 at `scope=both` on `4bc7f7e`, ran 184 tests in 18 shards on x86-64, each green, and reproduced every pinned table, the twins' and the arms' among them.
+- Its jobs took 54.0 to 95.3 minutes, the longest 53 % of its 180-minute bound. The cost table is regenerated from it: 184 tests, 152 906 s.
+- No commit under `runtime/`, `crates/` or `benches/` follows `4bc7f7e`.
+
+**The sweep of that dispatch had not ended** when this ADR asked for the merge. The first ADR that merges after it ends records it ([ADR-0158](0158-the-sweep-off-the-next-decisions-path.md)). No earlier sweep is unrecorded: brief 079's is [ADR-0207](0207-a-reward-past-the-trial-its-address-kept.md)'s, and no weekly schedule has run since 2026-10-19.
 
 ## Consequences
 

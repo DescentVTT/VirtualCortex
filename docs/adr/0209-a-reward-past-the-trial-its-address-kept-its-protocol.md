@@ -44,6 +44,7 @@ Exploration 001's arm (`explore_arm`, on its branch) ran H-25's arm through `run
 ## Decision Outcome
 
 **Options 1(a), 2(a) and 3(a).**
+Committed in `e087b47`, pull request [#232](https://github.com/DescentVTT/VirtualCortex/pull/232), before any dispatch ran an arm at a delay.
 
 - *Why not 1(b)*: `arm_on`'s oracles model the reward at the delivering trial's end, its count and address. They would refuse a late reward by construction.
 - *Why not 2(b)*: an arm that is not H-42's in one arm on one network would go unseen. Six twins cost six jobs of one dispatch.

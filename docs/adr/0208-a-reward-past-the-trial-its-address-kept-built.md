@@ -58,6 +58,7 @@ What was read first (principle 2), on 2026-10-25 at `main` `97d0c0e`:
 ## Decision Outcome
 
 **Options 1(a), 2(a), 3(a) and 4(a).**
+Built in `6e0b4fd`, brief 080's one commit under `src/`, in pull request [#232](https://github.com/DescentVTT/VirtualCortex/pull/232). Its mutation gate caught 55 of the 61 mutants in the changed lines, the other 6 unviable.
 Brief 080's empowerment names each choice: the field, the calls and their errors, how the entries are held, and how the task carries its delay.
 
 - *Why not 1(b)*: it holds the same entries and gives the same runs, but its age is not the delay. A reward at age zero would then come before its own close.
