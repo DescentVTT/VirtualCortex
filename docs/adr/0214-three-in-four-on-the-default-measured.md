@@ -56,11 +56,13 @@ With the gain held, the same networks ran 24 to 26 % above their targets and lea
 **The calibration** held before any arm's log was read.
 - The trial of the harness, dispatch 40199691326 on `72959ae`, ran the three calibration tests on AArch64, each green.
 - Dispatch 40199683055 at `scope=exhaustive` on `72959ae` ran 187 tests in 18 shards, the twelve arms excluded and the three calibration tests among them, each green.
+- Its jobs took 52.9 to 104.6 minutes, the longest 58 % of its 180-minute bound.
 - On each network the derivation was H-42's, the coin H-35's, the control's image the default's but for the step's two bytes and the section's seal, and the default's first block under the true feedback H-42's arm's.
 
 **The evidence.**
 - The arms ran once each at `scope=arms` on AArch64, dispatch 40200561650 on `72959ae`, and were pinned in `55097b8`, pull request #237.
-- The reproduction, dispatch 40208314220 at `scope=exhaustive` with `only` the twelve arms on `55097b8`, ran on x86-64.
+- The reproduction, dispatch 40208314220 at `scope=exhaustive` with `only` the twelve arms on `55097b8`, ran them in 18 shards on x86-64, each green, and reproduced every pinned table.
+- Its jobs took 1.2 to 22.4 minutes. The cost table is regenerated from the calibration and the reproduction: 199 tests, 176 376 s.
 - From `72959ae` to `55097b8` only the pinned tables and the verdict as read changed, at the end of `tests/inhibition.rs`; no test the calibration ran and nothing under `src/` changed.
 - No commit under `runtime/`, `crates/` or `benches/` follows `55097b8`.
 
