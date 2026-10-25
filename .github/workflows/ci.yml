@@ -75,6 +75,12 @@ on:
           - exhaustive
           - mutants
           - arms
+          # Exploration 002 alone, on its branch (ADR-0193): what the test crates cost to build.
+          - build-cost
+      refs:
+        description: "With scope=build-cost: the commits to build, separated by spaces; empty is the dispatched commit"
+        type: string
+        default: ""
       tests:
         description: "With scope=arms: the #[ignore]d tests to run, whole-domain or paused, separated by spaces"
         type: string
@@ -99,7 +105,7 @@ concurrency:
   # cancels it, and it cancels none. So is a reproduction, a dispatch naming `only`: the arms end
   # before the calibration made with them (ADR-0211), and a reproduction dispatched once their
   # tables are pinned must not cancel the calibration still running at `exhaustive`.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.scope }}-${{ github.ref }}${{ (inputs.scope == 'arms' || inputs.only != '') && format('-{0}', github.run_id) || '' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.scope }}-${{ github.ref }}${{ (inputs.scope == 'arms' || inputs.scope == 'build-cost' || inputs.only != '') && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -462,6 +468,62 @@ jobs:
             arm.log
             arm.tsv
             list.log
+          retention-days: 90
+
+  build-cost-plan:
+    # Exploration 002, on `explore/002-what-the-pinned-tables-cost` alone (ADR-0193): the commits
+    # a dispatch at `scope=build-cost` names, as the matrix of the job below.
+    name: Build cost (the commits named, exploration 002)
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'build-cost'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      refs: ${{ steps.plan.outputs.refs }}
+    steps:
+      - id: plan
+        env:
+          REFS: ${{ inputs.refs }}
+          SHA: ${{ github.sha }}
+        run: |
+          refs=$(printf '%s' "${REFS:-$SHA}" | jq -R -c 'split(" ") | map(select(length > 0)) | unique')
+          echo "the commits: $refs"
+          echo "refs=$refs" >> "$GITHUB_OUTPUT"
+
+  build-cost:
+    # What every test binary costs to build on the hosted runner, cold and after one mutant-like
+    # change under runtime/cortex-runtime/src/, in debug and in release, with cargo's timing
+    # report kept (scripts/build-cost.sh). No cache: every build is from `cargo clean`.
+    name: Build cost ${{ matrix.ref }} ${{ matrix.profile }} (exploration 002)
+    needs: [build-cost-plan]
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'build-cost'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJSON(needs.build-cost-plan.outputs.refs) }}
+        profile: [debug, release]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ matrix.ref }}
+
+      - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+          nproc
+          free -g
+
+      - name: The test binaries built cold and after one mutant, twice
+        run: bash scripts/build-cost.sh ${{ matrix.profile }}
+
+      - name: Keep the timings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-cost-${{ matrix.ref }}-${{ matrix.profile }}
+          path: build-cost
           retention-days: 90
 
   mutants-weekly:
