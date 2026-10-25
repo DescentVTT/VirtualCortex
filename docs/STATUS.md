@@ -54,7 +54,7 @@ Per trial the host gives the reward's sign, and the readout sets are the body's 
 
 ## The next decision
 
-ADR-0205's default is built, and ADR-0200's stopping rule is done.
-1. M10, a reward past the trial ([Appendix C](WHITEPAPER.md#appendix-c-roadmap)): a decision ADR and a measured round.
-2. A re-read of the targets by evidence, at M12.
-3. Where the rounds' pinned tables live, so the gate's compile time stops growing (F-76).
+[ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) took M10: a reward past the trial, its address kept, H-43, which brief 080, the live brief in [briefs/](../briefs/README.md), runs.
+1. Then the reward right three times in four asked again on the default, with a control at step zero ([exploration 001](explorations/001-the-old-noes-under-the-default.md)).
+2. A re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
+3. Where the rounds' pinned tables live (F-76, F-78).
