@@ -46,7 +46,7 @@ What was read first (principle 2), on 2026-10-25 at `main` `e2d0f7d`:
 ## Decision Outcome
 
 **Options 1(a), 2(a), 3(a) and 4(a).**
-Built in `49cc45e`, brief 082's one commit under `src/`, in its pull request.
+Built in `49cc45e`, in brief 082's pull request.
 Brief 082's empowerment names each choice: the field, the call and their errors, how the critics, their windows and the counts of spent entries are held, how the task carries its delay, and how a score and a lead are computed.
 
 - *Why not 1(b)*: a reward that names its age moves the units' weights alone, so a copy of the age in use's critic would drift from the engine's. Under 1(a) it is the engine's by construction, and the rule costs two weights a unit at `kept_addresses` 2, 4 KiB at 1 024 units.
@@ -63,7 +63,7 @@ Brief 082's empowerment names each choice: the field, the call and their errors,
 | The scores | per age, the magnitudes of its last `DELAY_WINDOW` (64) errors in a ring, and their sum, a `u64`; a score once the ring is full |
 | `Executor::reward_untold(reward)` | every age a close has reached reads, records and moves; the move, from age zero only; then the age in use's live entry takes the reward as `reward_kept` takes it; returns the signal, or none where that entry is spent |
 | The leader (`delay_leader`) | the age below every other's score by at least the lead, $(\lvert r \rvert \cdot 64) \gg 5$, and strictly; none until every age has a score |
-| The run and the move | the rewards running at which one age other than zero leads; at `DELAY_RUN` (64) its weights and the units' are swapped, and it is the age in use for good |
+| The run (`delay_run_after`) and the move | the rewards running at which one age other than zero leads, one more when it leads again and one when another such age does; at `DELAY_RUN` (64) its weights and the units' are swapped, and it is the age in use for good |
 | `delay_age`, `delay_score`, `delay_run`, `delay_weight`, `reads_its_delay` | the readings: the age in use, each age's score, the run, each age's weight of a unit |
 | `KeptEntry::closed` | whether a close wrote the entry since the engine's start, its build or its load; an age whose entry no close wrote reads nothing |
 
@@ -87,11 +87,22 @@ Nothing of it is in the image, and the format stays 25.
 | `TaskError::DelayUnread` | an untold delay on an engine that does not read its delay |
 | `TaskError::DelayUndrawn`, `ExplorationWithDelay` | as for a delay past zero, and for an untold delay at zero too |
 
+### After the calibration's commit
+
+The mutation gate, run on the diff before the pull request, left three survivors of 81 mutants, 72 caught and 6 unviable.
+- `<` to `<=` in `delay_leader`'s search for the lowest score was equivalent: at a tie it picked the other tied age, and a tie is no leader either way.
+- Two in the run's step were not: no test moved the lead between two ages other than zero during a run.
+
+`a3840cf` rewrites `delay_leader` as a check of each age against every other, and moves the run's step into `delay_run_after`, held at its edges by hand.
+Their 31 mutants are caught.
+The arms ran on `b418b75`, and their code is the same rule; the reproduction runs every test on `a3840cf`'s code, so that every pinned number is read again on it.
+
 ### Its tests
 
 - **By hand at the edges** (`executor.rs`, `delay_prop`):
   - `the_delay_read_is_unset_by_default_and_refused_without_the_kept_addresses`, with a reward before any close reaching nothing;
   - `an_age_leads_below_every_other_by_the_lead_and_none_before_every_score`;
+  - `the_run_counts_one_age_leading_again_and_starts_again_at_another`;
   - `the_engine_moves_once_to_the_age_that_leads_and_never_again`: no move before 127 rewards, one move to age one losing its reward, and none in 1 000 rewards after, though age zero then leads.
 - **Over the lattice against an oracle** (`delay_prop`): `every_reward_given_without_its_age_is_the_oracle_s`, 48 walks of 400 trials, half learnable, every age's critic, score, the run, the move, the entries, the address, the reading and the signal after every call.
 - **The twins** (`delay_prop`):
@@ -112,5 +123,5 @@ Nothing of it is in the image, and the format stays 25.
 
 ## Confirmation
 
-- `runtime/cortex-runtime/src/executor.rs`: `Config::reads_its_delay`, `DELAY_WINDOW`, `DELAY_RUN`, `DELAY_LEAD_SHIFT`, `reward_untold`, `delay_leader`, the readings, and `delay_prop`.
+- `runtime/cortex-runtime/src/executor.rs`: `Config::reads_its_delay`, `DELAY_WINDOW`, `DELAY_RUN`, `DELAY_LEAD_SHIFT`, `reward_untold`, `delay_leader`, `delay_run_after`, the readings, and `delay_prop`.
 - `runtime/cortex-runtime/src/task.rs`: `Delay::untold`, `Delay::is_told`, `TaskError::DelayUnread` and the tests above.
