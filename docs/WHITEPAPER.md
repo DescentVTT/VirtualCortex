@@ -2532,9 +2532,9 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0205](adr/0205-the-probe-in-the-engines-default.md) | The probe in the engine's default | accepted |
 | [ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md) | The probe in the engine's default, built | accepted |
 | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) | A reward past the trial, its address kept | accepted |
-| [ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md) | A reward past the trial, its address kept, built | proposed |
-| [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md) | A reward past the trial, its address kept, its protocol | proposed |
-| [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | A reward past the trial, its address kept, measured | proposed |
+| [ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md) | A reward past the trial, its address kept, built | accepted |
+| [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md) | A reward past the trial, its address kept, its protocol | accepted |
+| [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | A reward past the trial, its address kept, measured | accepted |
 <!-- adr-index: end decisions -->
 
 ---

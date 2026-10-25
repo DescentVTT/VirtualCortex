@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-25
 depends-on: ADR-0208
 title: A reward past the trial, its address kept, its protocol
