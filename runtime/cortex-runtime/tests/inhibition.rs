@@ -233,7 +233,10 @@ use cortex_core::{
 };
 use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, SIGMA_MAX_Q16};
 use cortex_neuromod::{CRITIC_SCALE_MAX, CRITIC_SHIFT_MAX};
-use cortex_runtime::{ConfigError, ImageError, KEPT_ADDRESSES_MAX, TargetRead, shortest_delay};
+use cortex_runtime::{
+    ConfigError, DELAY_LEAD_SHIFT, DELAY_RUN, DELAY_WINDOW, ImageError, KEPT_ADDRESSES_MAX,
+    TargetRead, shortest_delay,
+};
 
 // ------------------------------------------- written before the run (ADR-0085, ADR-0086)
 
@@ -448685,3 +448688,1021 @@ const ON_DEFAULT_ARM_GAINS: [[[&[GainBlock]; 2]; 2]; 3] = [
         ],
     ],
 ];
+
+// =================================================================================== H-45
+
+// ------------------------------------------- written before the run (ADR-0216, ADR-0218)
+
+/// The networks of H-45 (ADR-0216): H-42's and H-43's, ADR-0044's generator at 1 024 units from
+/// seeds 22, 23 and 24, each from the image its derivation under the probe wrote, the network an
+/// engine born under `Config::reads_its_targets()` settles. No other network is run.
+const UNTOLD_SEEDS: [u64; 3] = KEPT_SEEDS;
+
+/// The delays of H-45's arms (ADR-0216), in their order: trial `t`'s sign at the end of trial
+/// `t + 1` and of trial `t + 2`, given without its age. Its controls give each sign on time,
+/// without its age. No other delay is run.
+const UNTOLD_DELAYS: [u8; 2] = KEPT_DELAYS;
+
+/// The arms of H-45 (ADR-0216): H-25's two on H-20's schedule, under the answer.
+const UNTOLD_ARMS: [Reversal; 2] = KEPT_ARMS;
+
+/// The ages the engine's critics read (ADR-0216): zero to `KEPT_ADDRESSES`.
+const UNTOLD_AGES: usize = KEPT_ADDRESSES as usize + 1;
+
+/// The names H-45's dumps carry, per network.
+const UNTOLD_NAMES: [&str; 3] = ["untold22", "untold23", "untold24"];
+
+/// ADR-0216's prediction for H-45, written before any run: yes.
+const UNTOLD_PREDICTED: bool = true;
+
+/// ADR-0216's three predicted readings (ADR-0218), in its order, each predicted to hold: the
+/// move inside the first mapping in at least eight arms of twelve (`moved_early`); in each such
+/// arm H-25's four clauses over the whole arm; in each such arm the reversals' summed blocks
+/// within 1.25 of H-43's told arm on its network at the same delay (`within_told`). A miss is
+/// recorded as one.
+const UNTOLD_READINGS_PREDICTED: [bool; 3] = [true; 3];
+
+/// Clause 1's bound (ADR-0216): the move before the last mapping begins, at trial 5 632, the
+/// schedule's third flip.
+const LAST_MAPPING_FROM: usize = SCHEDULE_FLIPS[2];
+
+/// Predicted reading 1's bounds (ADR-0216): the move inside the first mapping, before its flip
+/// at trial 1 536, in at least `EARLY_ARMS` of the twelve.
+const FIRST_MAPPING_TO: usize = SCHEDULE_FLIPS[0];
+const EARLY_ARMS: usize = 8;
+const _: () = assert!(LAST_MAPPING_FROM == 5_632 && FIRST_MAPPING_TO == 1_536);
+
+/// Predicted reading 3's bound (ADR-0216): an arm's reversals summed within 1.25 of its told
+/// arm's, read in integers as `untold × 4 ≤ told × 5`.
+const TOLD_QUARTERS: (u32, u32) = (5, 4);
+
+// ---------------------------------------------------------------- the rules (ADR-0218)
+
+/// The engine's move in one arm (ADR-0217, ADR-0218): the trial at whose end it came, the age
+/// moved to, and the score of every age at it, the sum of each age's last 64 errors' magnitudes.
+type Moved = (usize, u8, [u64; UNTOLD_AGES]);
+
+/// Clause 1's rule on one arm (ADR-0216): the engine moved, to the true age, before the last
+/// mapping begins. It moves at most once (ADR-0217), which each run counts.
+fn moved_right(moved: Option<Moved>, delay: u8) -> bool {
+    moved.is_some_and(|(trial, age, _)| age == delay && trial < LAST_MAPPING_FROM)
+}
+
+/// The mapping a trial lies in, by index; none past the run.
+fn mapping_of(trial: usize) -> Option<usize> {
+    SPANS
+        .iter()
+        .position(|&(from, to)| (from..to).contains(&trial))
+}
+
+/// Clause 2's four on one arm (ADR-0216), H-25's four over every mapping and reversal after the
+/// mapping the move came in: each such mapping learned (`mapping_correct` at least
+/// `REWARDED_MIN`); no coupling past 1.30 of its image's at the end of any block from the next
+/// mapping's first (`first_over_of`); each such reversal within 23 blocks of its flip
+/// (`reversals_within`); and the outside sum within the band at the end of every such block
+/// (`left_band`). All four false where the engine did not move before the last mapping, and in a
+/// run of any length but 120 blocks.
+fn after_clauses(
+    couplings: &[[i64; 2]; 2],
+    outside: i64,
+    blocks: &[Block],
+    moved: Option<Moved>,
+) -> [bool; 4] {
+    let next = moved
+        .and_then(|(trial, _, _)| mapping_of(trial))
+        .map(|m| m.saturating_add(1))
+        .filter(|&m| m < MAPPINGS.len());
+    let (Some(next), true) = (next, blocks.len() == SCHEDULE_BLOCKS) else {
+        return [false; 4];
+    };
+    let later = blocks.get(MAPPINGS[next].0..).unwrap_or(&[]);
+    [
+        mapping_correct(blocks)
+            .iter()
+            .skip(next)
+            .all(|&c| c >= REWARDED_MIN),
+        first_over_of(couplings, later).is_none(),
+        reversals_within(crossings(blocks))
+            .iter()
+            .skip(next.saturating_sub(1))
+            .all(|&r| r),
+        left_band(outside, later).is_none(),
+    ]
+}
+
+/// What a control of H-45 read (ADR-0216): its move, none where the engine never moved, and
+/// whether its run is H-42's arm on its network bit for bit, its blocks, its trace and every
+/// reward's value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UntoldControl {
+    moved: Option<Moved>,
+    h42: bool,
+}
+
+/// Clause 3's rule on one control (ADR-0216): the engine never moved, and the arm is H-42's bit
+/// for bit.
+fn control_held(control: &UntoldControl) -> bool {
+    control.moved.is_none() && control.h42
+}
+
+/// What predicted readings 1 to 3 read of one arm (ADR-0218): its move, H-25's four clauses over
+/// the whole arm (`kept_clauses`), and its reversals' blocks summed (`reversals_summed`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UntoldArm {
+    moved: Option<Moved>,
+    whole: [bool; 4],
+    reversals: u32,
+}
+
+/// Predicted reading 1's rule on one arm: the move came inside the first mapping.
+fn moved_early(arm: &UntoldArm) -> bool {
+    arm.moved
+        .is_some_and(|(trial, _, _)| trial < FIRST_MAPPING_TO)
+}
+
+/// Predicted reading 3's rule on one arm: its reversals summed within 1.25 of its told arm's.
+fn within_told(untold: u32, told: u32) -> bool {
+    untold.saturating_mul(TOLD_QUARTERS.1) <= told.saturating_mul(TOLD_QUARTERS.0)
+}
+
+/// ADR-0216's three predicted readings as rules (ADR-0218), in its order, over the arms of every
+/// network, `[network][delay][arm]` in `UNTOLD_DELAYS`' and `UNTOLD_ARMS`' order, and the told
+/// arms' reversals, H-43's, in the same order: reading 1, at least `EARLY_ARMS` arms moved early;
+/// reading 2, all four clauses over the whole arm in each arm that did; reading 3, its reversals
+/// within its told arm's 1.25 in each arm that did. Over no such arm readings 2 and 3 hold
+/// vacuously. None until every arm is given.
+fn untold_predicted(
+    arms: [[[Option<UntoldArm>; 2]; 2]; 3],
+    told: [[[u32; 2]; 2]; 3],
+) -> [Option<bool>; 3] {
+    if arms.iter().flatten().flatten().any(Option::is_none) {
+        return [None; 3];
+    }
+    let mut early = 0usize;
+    let (mut whole, mut faster) = (true, true);
+    for (n, network) in arms.iter().enumerate() {
+        for (d, delay) in network.iter().enumerate() {
+            for (k, arm) in delay.iter().enumerate() {
+                let Some(arm) = arm.filter(moved_early) else {
+                    continue;
+                };
+                early = early.saturating_add(1);
+                whole &= arm.whole.iter().all(|&c| c);
+                faster &= within_told(arm.reversals, told[n][d][k]);
+            }
+        }
+    }
+    [Some(early >= EARLY_ARMS), Some(whole), Some(faster)]
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0216)
+
+/// H-45's verdict (ADR-0216): clause 1 per network, delay and arm, `[network][delay][arm]` in
+/// `UNTOLD_DELAYS`' and `UNTOLD_ARMS`' order; clause 2's four in the same order; clause 3 per
+/// network and arm. `yes` when all three hold in every arm and control.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Untold {
+    moved: [[[bool; 2]; 2]; 3],
+    after: [[[[bool; 4]; 2]; 2]; 3],
+    controls: [[bool; 2]; 3],
+    yes: bool,
+}
+
+fn untold_verdict(
+    moved: [[[bool; 2]; 2]; 3],
+    after: [[[[bool; 4]; 2]; 2]; 3],
+    controls: [[bool; 2]; 3],
+) -> Untold {
+    Untold {
+        moved,
+        after,
+        controls,
+        yes: moved.iter().flatten().flatten().all(|&c| c)
+            && after.iter().flatten().flatten().flatten().all(|&c| c)
+            && controls.iter().flatten().all(|&c| c),
+    }
+}
+
+/// The step of ADR-0216's stopping rule a verdict reaches: 3, yes; 4, a no on clause 1; 5, a no
+/// on clause 3 with clause 1 whole; otherwise 6, a no on clause 2 alone.
+fn untold_stop(verdict: &Untold) -> u8 {
+    if verdict.yes {
+        return 3;
+    }
+    if !verdict.moved.iter().flatten().flatten().all(|&c| c) {
+        return 4;
+    }
+    if !verdict.controls.iter().flatten().all(|&c| c) {
+        return 5;
+    }
+    6
+}
+
+// ------------------------------------------------------------------ the run (brief 082)
+
+/// The engine an arm of H-45 decodes: H-43's (`kept_from`), the configuration reading its delay
+/// as well; nothing of either is in the image.
+fn untold_from(image: &[u8], units: u32) -> Engine {
+    let exec = Image::decode::<2048>(
+        image,
+        Config {
+            kept_addresses: KEPT_ADDRESSES,
+            reads_its_delay: true,
+            ..config(units, 2, 0)
+        },
+    )
+    .expect("a well-formed record");
+    assert!(
+        exec.signed_gate() && exec.inhibitory_baseline_q16() == Some(INHIBITORY_BASELINE_Q16),
+        "the image carries the signed gate and the inhibitory baseline"
+    );
+    exec
+}
+
+/// What one run of H-45's harness read: its blocks and trace, the value of every reward that
+/// reached the modulator, its table by block, the engine's first move, how many times the age
+/// in use changed, the rewards lost at an entry the age in use had spent, the entries let go,
+/// the spikes the train let go, and the sums by polarity after.
+struct UntoldRun {
+    blocks: Vec<Block>,
+    trace: u64,
+    values: Vec<i32>,
+    table: Vec<KeptBlock>,
+    moved: Option<Moved>,
+    moves: u32,
+    lost: u32,
+    let_go: u64,
+    overwritten: u64,
+    sums: (i64, i64),
+}
+
+/// One run of H-45's harness on network `n` (ADR-0218; brief 082): the network's derivation
+/// under the probe, run again and held to H-42's pinned tables (`probe_made`); then H-25's arm
+/// from the image it wrote — its stimuli and cancel, the drawn delivery, H-20's flips, the
+/// engine's critic and its window, the task carrying no critic — under the answer, on an engine
+/// keeping two addresses and reading its delay (`untold_from`), the task's delay `delay` told or
+/// given without its age.
+///
+/// After each trial the harness reads the age in use: where it changed, the first change is the
+/// move, with the trial and every age's score. After each trial whose reward reached the
+/// modulator it reads the address the reward wrote against the pair of the trial it was for,
+/// `delay` trials before (`names_rewarded`), as H-43's arm does, and sums per block the rewards
+/// that named it, the rewards and their values (`KeptBlock`). A trial from `delay` on whose
+/// reward reached no modulator is a reward lost.
+fn untold_run(n: usize, arm: Reversal, delay: u8, told: bool, name: &str) -> (Made, UntoldRun) {
+    let units = SCAN_UNITS;
+    let made = probe_made(n, name);
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = untold_from(&made.windowed, units);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.draws(),
+            exec.kept_addresses(),
+            exec.reads_its_delay(),
+            exec.delay_age(),
+            exec.modulation_baseline_q16(),
+            exec.homeostasis().synaptic_gain_q16
+        ),
+        (
+            Some(made.critic),
+            made.window,
+            Ok(()),
+            KEPT_ADDRESSES,
+            true,
+            Some(0),
+            GATE_BASELINE_Q16,
+            made.gain
+        ),
+        "{name}: the configuration, the engine keeps two addresses and reads its delay"
+    );
+    let mut task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Answer,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    task.delay = if told {
+        Delay::of(delay)
+    } else {
+        Delay::untold(delay)
+    };
+    let lag = usize::from(delay);
+    let mut history: Vec<(u8, Option<u8>)> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut values: Vec<i32> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut table: Vec<KeptBlock> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let mut block: KeptBlock = (0, 0, 0);
+    let mut age = exec.delay_age();
+    let mut moved: Option<Moved> = None;
+    let (mut moves, mut lost) = (0u32, 0u32);
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        &mut |exec, trial, _, outcome| {
+            history.push((outcome.stimulus, outcome.selection));
+            if exec.delay_age() != age {
+                age = exec.delay_age();
+                moves = moves.saturating_add(1);
+                if moved.is_none() {
+                    let scores: [u64; UNTOLD_AGES] =
+                        core::array::from_fn(|a| exec.delay_score(a as u8).unwrap_or(0));
+                    moved = Some((trial, age.unwrap_or(0), scores));
+                }
+            }
+            match outcome.value_q16 {
+                Some(value) => {
+                    let (stimulus, selection) = trial
+                        .checked_sub(lag)
+                        .and_then(|u| history.get(u))
+                        .copied()
+                        .unwrap_or((0, None));
+                    let own = sets[usize::from(stimulus)];
+                    let other = sets[usize::from(stimulus ^ 1)];
+                    let exact = selection.is_some_and(|r| {
+                        let readout = sets[usize::from(r).saturating_add(2)];
+                        (0..units).all(|u| exec.is_target(u) == readout.contains(u))
+                    });
+                    let mut drawn = [0u32; 2];
+                    for u in (0..units).filter(|&u| exec.is_source(u)) {
+                        if own.contains(u) {
+                            drawn[0] = drawn[0].saturating_add(1);
+                        } else if other.contains(u) {
+                            drawn[1] = drawn[1].saturating_add(1);
+                        }
+                    }
+                    block.0 = block
+                        .0
+                        .saturating_add(u32::from(names_rewarded(exact, drawn)));
+                    block.1 = block.1.saturating_add(1);
+                    block.2 = block.2.saturating_add(i64::from(value));
+                    values.push(value);
+                }
+                None if trial >= lag => lost = lost.saturating_add(1),
+                None => {}
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                table.push(block);
+                block = (0, 0, 0);
+            }
+        },
+    );
+    let run = UntoldRun {
+        blocks,
+        trace,
+        values,
+        table,
+        moved,
+        moves,
+        lost,
+        let_go: exec.kept_let_go(),
+        overwritten: exec.train_overwritten(),
+        sums: weights_by_polarity(&exec),
+    };
+    (made, run)
+}
+
+/// The pinned tables of H-45's arm on network `n` at the delay of index `d` in `UNTOLD_DELAYS`
+/// and the arm of index `k`: its blocks, its trace, its values' hash, its table by block, its
+/// move and its rewards lost; empty until its one run.
+type UntoldPins = (
+    &'static [Block],
+    u64,
+    u64,
+    &'static [KeptBlock],
+    Option<Moved>,
+    u32,
+);
+
+fn untold_pins(n: usize, d: usize, k: usize) -> UntoldPins {
+    (
+        UNTOLD_ARM_BLOCKS[n][d][k],
+        UNTOLD_ARM_TRACES[n][d][k],
+        UNTOLD_ARM_VALUE_HASH[n][d][k],
+        UNTOLD_ARM_TABLES[n][d][k],
+        UNTOLD_ARM_MOVES[n][d][k],
+        UNTOLD_ARM_LOST[n][d][k],
+    )
+}
+
+/// The calibration's check of H-45's stopping rule, step 2 (ADR-0218; brief 082): H-43's arm on
+/// network `n` at the delay `delay`, the reward naming its age, on an engine that reads its
+/// delay, held to H-43's pinned arm bit for bit — its blocks, its trace, every reward's value
+/// and its table — with no move, no reward lost and no entry let go.
+fn named_with_the_rule(n: usize, arm: Reversal, delay: u8) {
+    let k = UNTOLD_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let d = UNTOLD_DELAYS
+        .iter()
+        .position(|&x| x == delay)
+        .expect("a delay of H-43's");
+    let name = format!("{} told delay {delay} {arm:?}", UNTOLD_NAMES[n]);
+    let (_, run) = untold_run(n, arm, delay, true, &name);
+    eprintln!(
+        "DUMP {name} the move {:?}, {} changes; lost {}; let go {}; the train let go {}",
+        run.moved, run.moves, run.lost, run.let_go, run.overwritten
+    );
+    let (pin_blocks, pin_trace, pin_hash, pin_table) = kept_pins(n, d, k);
+    pinned(&name, &run.blocks, run.trace, pin_blocks, pin_trace);
+    assert_eq!(
+        values_hash(&run.values),
+        pin_hash,
+        "{name}: every reward's value is H-43's"
+    );
+    assert_eq!(run.table.as_slice(), pin_table, "{name}: H-43's table");
+    assert_eq!(
+        (run.moved, run.moves, run.lost, run.let_go),
+        (None, 0, 0, 0),
+        "{name}: told, no move, no reward lost, no entry let go"
+    );
+    eprintln!("DUMP {name} a reward that names its age is H-43's with the rule set, bit for bit");
+}
+
+/// One arm of H-45 on network `n` (ADR-0216, ADR-0218; brief 082), or its control on time at a
+/// delay of zero: `untold_run` with the delay given without its age. Everything is dumped, and
+/// the clauses and the readings computed, before anything is held. A control is read against
+/// H-42's arm on its network, bit for bit, and an arm or a control held to its pins where its
+/// one run is pinned.
+fn untold_arm(n: usize, arm: Reversal, delay: u8) {
+    let k = UNTOLD_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{} delay {delay} {arm:?}", UNTOLD_NAMES[n]);
+    let (made, run) = untold_run(n, arm, delay, false, &name);
+    let hash = values_hash(&run.values);
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
+    eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
+    eprintln!("DUMP {name} PIN value hash {hash:#018x}");
+    eprintln!("DUMP {name} PIN table {:?}", run.table);
+    eprintln!("DUMP {name} PIN moved {:?}", run.moved);
+    eprintln!("DUMP {name} PIN lost {}", run.lost);
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let whole = kept_clauses(&made.couplings, outside, &run.blocks);
+    let after = after_clauses(&made.couplings, outside, &run.blocks, run.moved);
+    let reversals = reversals_summed(crossings(&run.blocks));
+    eprintln!(
+        "DUMP {name} the move {:?}: {} changes of the age in use; clause 1 {}; clause 2 {after:?}; H-25's four over the whole arm {whole:?}",
+        run.moved,
+        run.moves,
+        moved_right(run.moved, delay)
+    );
+    eprintln!(
+        "DUMP {name} last 128 correct {:?} over {:?} crossings {:?} left {:?} reversals {reversals}",
+        mapping_correct(&run.blocks),
+        first_over_of(&made.couplings, &run.blocks),
+        crossings(&run.blocks),
+        left_band(outside, &run.blocks)
+    );
+    eprintln!("DUMP {name} correct by block {:?}", curve(&run.blocks));
+    eprintln!(
+        "DUMP {name} value by block, per mille of the reward {:?}",
+        run.table
+            .iter()
+            .map(|b| i64::from(b.1)
+                .checked_mul(i64::from(REWARD_Q16))
+                .and_then(|whole| b.2.saturating_mul(1_000).checked_div(whole))
+                .unwrap_or(0))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} capacities: rewards lost {}; entries let go {} of {} kept; the train let go {} spikes; the sums after {:?} beside the image's {:?}",
+        run.lost, run.let_go, KEPT_ADDRESSES, run.overwritten, run.sums, made.sums
+    );
+    match UNTOLD_DELAYS.iter().position(|&d| d == delay) {
+        None => {
+            let control = UntoldControl {
+                moved: run.moved,
+                h42: run.blocks.as_slice() == PROBE_ARM_BLOCKS[n][k]
+                    && run.trace == PROBE_ARM_TRACES[n][k]
+                    && hash == PROBE_ARM_VALUE_HASH[n][k],
+            };
+            eprintln!(
+                "DUMP {name} PIN control {control:?}: clause 3 {}",
+                control_held(&control)
+            );
+            assert_eq!(
+                delay, 0,
+                "{name}: a delay of H-45's, or the control on time"
+            );
+            match UNTOLD_CONTROLS[n][k] {
+                None => eprintln!("DUMP {name} not pinned: the control's one run (ADR-0218)"),
+                Some(pin) => assert_eq!(control, pin, "{name}: the control"),
+            }
+        }
+        Some(d) => {
+            let told = reversals_summed(crossings(KEPT_ARM_BLOCKS[n][d][k]));
+            eprintln!(
+                "DUMP {name} beside H-43's told arm: reversals {reversals} beside {told} (reading 3 {}); last 128 correct {:?} beside {:?}",
+                within_told(reversals, told),
+                mapping_correct(&run.blocks),
+                mapping_correct(KEPT_ARM_BLOCKS[n][d][k])
+            );
+            match untold_pins(n, d, k) {
+                ([], 0, 0, [], None, 0) => eprintln!(
+                    "DUMP {name} not pinned: the arm's one run (ADR-0218), its tables written from this log"
+                ),
+                (pin_blocks, pin_trace, pin_hash, pin_table, pin_moved, pin_lost) => {
+                    pinned(&name, &run.blocks, run.trace, pin_blocks, pin_trace);
+                    assert_eq!(hash, pin_hash, "{name}: every reward's value");
+                    assert_eq!(
+                        run.table.as_slice(),
+                        pin_table,
+                        "{name}: the table by block"
+                    );
+                    assert_eq!(
+                        (run.moved, run.lost),
+                        (pin_moved, pin_lost),
+                        "{name}: the move and the rewards lost"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The calibration's check of H-45's stopping rule, step 2, on seed 22 from the assignment, the
+/// reward one trial late and naming its age (ADR-0218, brief 082).
+#[test]
+#[ignore]
+fn a_reward_that_names_its_age_one_trial_late_with_the_delay_read_on_seed_22_from_the_assignment_at_1024_units_exhaustive()
+ {
+    named_with_the_rule(0, Reversal::AssignmentFirst, 1);
+}
+
+/// The calibration's check of H-45's stopping rule, step 2, on seed 22 from the assignment, the
+/// reward two trials late and naming its age (ADR-0218, brief 082).
+#[test]
+#[ignore]
+fn a_reward_that_names_its_age_two_trials_late_with_the_delay_read_on_seed_22_from_the_assignment_at_1024_units_exhaustive()
+ {
+    named_with_the_rule(0, Reversal::AssignmentFirst, 2);
+}
+
+/// H-45's control on seed 22 from the assignment: each sign on time, given without its age
+/// (ADR-0216, brief 082).
+#[test]
+#[ignore]
+fn a_delay_read_on_time_untold_on_seed_22_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(0, Reversal::AssignmentFirst, 0);
+}
+
+/// H-45's control on seed 22 from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_read_on_time_untold_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    untold_arm(0, Reversal::MirroredFirst, 0);
+}
+
+/// H-45's control on seed 23 from the assignment.
+#[test]
+#[ignore]
+fn a_delay_read_on_time_untold_on_seed_23_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(1, Reversal::AssignmentFirst, 0);
+}
+
+/// H-45's control on seed 23 from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_read_on_time_untold_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    untold_arm(1, Reversal::MirroredFirst, 0);
+}
+
+/// H-45's control on seed 24 from the assignment.
+#[test]
+#[ignore]
+fn a_delay_read_on_time_untold_on_seed_24_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(2, Reversal::AssignmentFirst, 0);
+}
+
+/// H-45's control on seed 24 from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_delay_read_on_time_untold_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    untold_arm(2, Reversal::MirroredFirst, 0);
+}
+
+/// H-45's arm on seed 22 from the assignment, the sign one trial late without its age
+/// (ADR-0216, brief 082).
+#[test]
+#[ignore]
+fn a_delay_read_one_trial_late_untold_on_seed_22_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(0, Reversal::AssignmentFirst, 1);
+}
+
+/// H-45's arm on seed 22 from the mirrored assignment, one trial late.
+#[test]
+#[ignore]
+fn a_delay_read_one_trial_late_untold_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    untold_arm(0, Reversal::MirroredFirst, 1);
+}
+
+/// H-45's arm on seed 23 from the assignment, one trial late.
+#[test]
+#[ignore]
+fn a_delay_read_one_trial_late_untold_on_seed_23_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(1, Reversal::AssignmentFirst, 1);
+}
+
+/// H-45's arm on seed 23 from the mirrored assignment, one trial late.
+#[test]
+#[ignore]
+fn a_delay_read_one_trial_late_untold_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    untold_arm(1, Reversal::MirroredFirst, 1);
+}
+
+/// H-45's arm on seed 24 from the assignment, one trial late.
+#[test]
+#[ignore]
+fn a_delay_read_one_trial_late_untold_on_seed_24_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(2, Reversal::AssignmentFirst, 1);
+}
+
+/// H-45's arm on seed 24 from the mirrored assignment, one trial late.
+#[test]
+#[ignore]
+fn a_delay_read_one_trial_late_untold_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    untold_arm(2, Reversal::MirroredFirst, 1);
+}
+
+/// H-45's arm on seed 22 from the assignment, two trials late.
+#[test]
+#[ignore]
+fn a_delay_read_two_trials_late_untold_on_seed_22_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(0, Reversal::AssignmentFirst, 2);
+}
+
+/// H-45's arm on seed 22 from the mirrored assignment, two trials late.
+#[test]
+#[ignore]
+fn a_delay_read_two_trials_late_untold_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    untold_arm(0, Reversal::MirroredFirst, 2);
+}
+
+/// H-45's arm on seed 23 from the assignment, two trials late.
+#[test]
+#[ignore]
+fn a_delay_read_two_trials_late_untold_on_seed_23_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(1, Reversal::AssignmentFirst, 2);
+}
+
+/// H-45's arm on seed 23 from the mirrored assignment, two trials late.
+#[test]
+#[ignore]
+fn a_delay_read_two_trials_late_untold_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    untold_arm(1, Reversal::MirroredFirst, 2);
+}
+
+/// H-45's arm on seed 24 from the assignment, two trials late.
+#[test]
+#[ignore]
+fn a_delay_read_two_trials_late_untold_on_seed_24_from_the_assignment_at_1024_units_exhaustive() {
+    untold_arm(2, Reversal::AssignmentFirst, 2);
+}
+
+/// H-45's arm on seed 24 from the mirrored assignment, two trials late.
+#[test]
+#[ignore]
+fn a_delay_read_two_trials_late_untold_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    untold_arm(2, Reversal::MirroredFirst, 2);
+}
+
+/// The gate's test (ADR-0061's class; brief 082): H-45's networks, delays, arms, constants,
+/// prediction and predicted readings; clause 1's, clause 2's and clause 3's rules, the mapping of
+/// a trial, the readings' rules and the verdict's steps at their edges over tables written by
+/// hand; and, over H-45's pinned tables, the verdict, its step and the three readings as written
+/// (`untold_tables`). It runs no trial. Nothing else added to the gate.
+#[test]
+fn the_delay_read_of_h_45_its_clauses_and_its_predicted_readings_rules() {
+    assert_eq!(UNTOLD_SEEDS, [22, 23, 24]);
+    assert_eq!(
+        (KEPT_ADDRESSES, UNTOLD_AGES, UNTOLD_DELAYS),
+        (2, 3, [1, 2]),
+        "ADR-0216's"
+    );
+    assert_eq!(
+        UNTOLD_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (DELAY_WINDOW, DELAY_RUN, DELAY_LEAD_SHIFT),
+        (64, 64, 5),
+        "ADR-0216's window, run and lead, a thirty-second"
+    );
+    assert_eq!(
+        (UNTOLD_PREDICTED, UNTOLD_READINGS_PREDICTED),
+        (true, [true; 3]),
+        "ADR-0216 predicts yes, and each of its three readings"
+    );
+    assert_eq!(
+        (
+            LAST_MAPPING_FROM,
+            FIRST_MAPPING_TO,
+            EARLY_ARMS,
+            TOLD_QUARTERS
+        ),
+        (5_632, 1_536, 8, (5, 4))
+    );
+    // Clause 1 at its edges.
+    let at = |trial: usize, age: u8| Some((trial, age, [0u64; UNTOLD_AGES]));
+    assert!(moved_right(at(5_631, 1), 1));
+    assert!(moved_right(at(0, 2), 2));
+    assert!(!moved_right(at(5_632, 1), 1), "the last mapping begun");
+    assert!(!moved_right(at(100, 2), 1), "a wrong age");
+    assert!(!moved_right(at(100, 0), 1), "age zero");
+    assert!(!moved_right(None, 1), "no move");
+    // The mapping of a trial.
+    assert_eq!(
+        [0, 1_535, 1_536, 3_583, 3_584, 5_631, 5_632, 7_679, 7_680].map(mapping_of),
+        [
+            Some(0),
+            Some(0),
+            Some(1),
+            Some(1),
+            Some(2),
+            Some(2),
+            Some(3),
+            Some(3),
+            None
+        ]
+    );
+    // Clause 2 over the hand table: every block at 64 correct, the image's couplings and sums.
+    let image = [[10_000i64, 10_000], [10_000, 10_000]];
+    let excitatory = 140_000i64;
+    let outside = outside_image(&image, excitatory);
+    let blocks: Vec<Block> = (0..SCHEDULE_BLOCKS)
+        .map(|_| kept_hand_block(64, image, excitatory))
+        .collect();
+    assert_eq!(
+        after_clauses(&image, outside, &blocks, at(100, 1)),
+        [true; 4]
+    );
+    assert_eq!(
+        after_clauses(&image, outside, &blocks, at(5_631, 1)),
+        [true; 4]
+    );
+    assert_eq!(
+        after_clauses(&image, outside, &blocks, at(5_632, 1)),
+        [false; 4],
+        "a move in the last mapping"
+    );
+    assert_eq!(after_clauses(&image, outside, &blocks, None), [false; 4]);
+    assert_eq!(
+        after_clauses(&image, outside, &blocks[..119], at(100, 1)),
+        [false; 4],
+        "a run short of 120 blocks"
+    );
+    // A mapping before the move's unlearned, and after it.
+    let mut unlearned = blocks.clone();
+    for block in unlearned.iter_mut().take(MAPPINGS[1].1).skip(MAPPINGS[1].0) {
+        block.0 = 20;
+    }
+    assert_eq!(
+        after_clauses(&image, outside, &unlearned, at(100, 1)),
+        [false, true, false, true],
+        "the second mapping, after the move, unlearned and its reversal never crossed"
+    );
+    assert_eq!(
+        after_clauses(&image, outside, &unlearned, at(1_536, 1)),
+        [true; 4],
+        "the move in the second mapping: neither counted"
+    );
+    // A coupling past 1.30 and the band left, before the next mapping's first block and in it.
+    let mut over = blocks.clone();
+    over[MAPPINGS[1].0.saturating_sub(1)].10[0][1] = 13_001;
+    assert_eq!(after_clauses(&image, outside, &over, at(100, 1)), [true; 4]);
+    over[MAPPINGS[1].0].10[0][1] = 13_001;
+    assert_eq!(
+        after_clauses(&image, outside, &over, at(100, 1)),
+        [true, false, true, true]
+    );
+    let mut left = blocks.clone();
+    left[MAPPINGS[2].0.saturating_sub(1)].8 = excitatory.saturating_sub(25_001);
+    assert_eq!(
+        after_clauses(&image, outside, &left, at(2_000, 1)),
+        [true; 4],
+        "left in the move's mapping"
+    );
+    assert_eq!(
+        after_clauses(&image, outside, &left, at(100, 1)),
+        [true, true, true, false]
+    );
+    // A reversal slow in the last mapping: the 24th block, then the 23rd.
+    let mut slow = blocks.clone();
+    for block in slow.iter_mut().skip(MAPPINGS[3].0).take(23) {
+        block.0 = 39;
+    }
+    assert_eq!(
+        after_clauses(&image, outside, &slow, at(4_000, 2)),
+        [true, true, false, true]
+    );
+    slow[MAPPINGS[3].0.saturating_add(22)].0 = 40;
+    assert_eq!(
+        after_clauses(&image, outside, &slow, at(4_000, 2)),
+        [true; 4]
+    );
+    // Clause 3.
+    assert!(control_held(&UntoldControl {
+        moved: None,
+        h42: true
+    }));
+    assert!(!control_held(&UntoldControl {
+        moved: at(7_000, 1),
+        h42: true
+    }));
+    assert!(!control_held(&UntoldControl {
+        moved: None,
+        h42: false
+    }));
+    // The readings' rules at their edges.
+    let arm = |trial: Option<usize>, whole: [bool; 4], reversals: u32| UntoldArm {
+        moved: trial.map(|t| (t, 1, [0u64; UNTOLD_AGES])),
+        whole,
+        reversals,
+    };
+    assert!(moved_early(&arm(Some(1_535), [true; 4], 40)));
+    assert!(!moved_early(&arm(Some(1_536), [true; 4], 40)));
+    assert!(!moved_early(&arm(None, [true; 4], 40)));
+    assert!(within_told(50, 40) && !within_told(51, 40));
+    assert!(within_told(0, 0) && !within_told(1, 0));
+    let early = Some(arm(Some(300), [true; 4], 40));
+    let mut arms = [[[early; 2]; 2]; 3];
+    let told = [[[40u32; 2]; 2]; 3];
+    assert_eq!(untold_predicted(arms, told), [Some(true); 3]);
+    // Eight early, four late with nothing else held: reading 1 at its edge.
+    for network in arms.iter_mut().skip(1) {
+        network[1] = [Some(arm(Some(1_536), [false; 4], 96)); 2];
+    }
+    assert_eq!(
+        untold_predicted(arms, told),
+        [Some(true); 3],
+        "eight of twelve"
+    );
+    arms[0][1][0] = Some(arm(None, [false; 4], 96));
+    assert_eq!(
+        untold_predicted(arms, told),
+        [Some(false), Some(true), Some(true)],
+        "seven of twelve"
+    );
+    let mut whole = [[[early; 2]; 2]; 3];
+    whole[2][0][1] = Some(arm(Some(300), [true, true, false, true], 40));
+    assert_eq!(untold_predicted(whole, told)[1], Some(false));
+    let mut slower = [[[early; 2]; 2]; 3];
+    slower[1][1][1] = Some(arm(Some(300), [true; 4], 51));
+    assert_eq!(untold_predicted(slower, told)[2], Some(false));
+    slower[1][1][1] = Some(arm(Some(300), [true; 4], 50));
+    assert_eq!(untold_predicted(slower, told)[2], Some(true), "at 1.25");
+    let none = [[[Some(arm(None, [false; 4], 96)); 2]; 2]; 3];
+    assert_eq!(
+        untold_predicted(none, told),
+        [Some(false), Some(true), Some(true)],
+        "over no arm moved early, readings 2 and 3 vacuous"
+    );
+    let mut short = [[[early; 2]; 2]; 3];
+    short[2][1][1] = None;
+    assert_eq!(untold_predicted(short, told), [None; 3]);
+    // The verdict and the stopping rule's steps.
+    let (moved, after, controls) = (
+        [[[true; 2]; 2]; 3],
+        [[[[true; 4]; 2]; 2]; 3],
+        [[true; 2]; 3],
+    );
+    let all = untold_verdict(moved, after, controls);
+    assert!(all.yes);
+    assert_eq!(untold_stop(&all), 3);
+    let mut one = moved;
+    one[1][0][1] = false;
+    assert_eq!(untold_stop(&untold_verdict(one, after, controls)), 4);
+    let mut three = controls;
+    three[2][0] = false;
+    let no_three = untold_verdict(moved, after, three);
+    assert_eq!((no_three.yes, untold_stop(&no_three)), (false, 5));
+    assert_eq!(
+        untold_stop(&untold_verdict(one, after, three)),
+        4,
+        "clause 1 first"
+    );
+    let mut two = after;
+    two[0][1][0][3] = false;
+    let no_two = untold_verdict(moved, two, controls);
+    assert_eq!((no_two.yes, untold_stop(&no_two)), (false, 6));
+    untold_tables();
+}
+
+/// The gate's checks over H-45's pinned tables (ADR-0218), by the rules committed before any of
+/// them was run, each where it is pinned. An arm's blocks, trace, hash, table, move and rewards
+/// lost are pinned together, its table of 120 blocks whose rewards are its trials less its delay
+/// and its rewards lost. Then, where every arm and control is pinned, the verdict by the three
+/// clauses against the image each network's derivation wrote, its step and the three readings,
+/// each as written; before that, none is.
+fn untold_tables() {
+    let mut moved = [[[false; 2]; 2]; 3];
+    let mut after = [[[[false; 4]; 2]; 2]; 3];
+    let mut controls = [[false; 2]; 3];
+    let mut arms: [[[Option<UntoldArm>; 2]; 2]; 3] = [[[None; 2]; 2]; 3];
+    let mut told = [[[0u32; 2]; 2]; 3];
+    let mut complete = true;
+    for n in 0..3usize {
+        let pins = probe_rate_pins(n);
+        let couplings = pins.couplings.expect("H-42's derivation, pinned");
+        let (_, sums) = pins.quiet.expect("H-42's settled image's sums, pinned");
+        let outside = outside_image(&couplings, sums.1);
+        for k in 0..2usize {
+            match UNTOLD_CONTROLS[n][k] {
+                Some(control) => controls[n][k] = control_held(&control),
+                None => complete = false,
+            }
+            for (d, &delay) in UNTOLD_DELAYS.iter().enumerate() {
+                let name = format!("{} delay {delay} {:?}", UNTOLD_NAMES[n], UNTOLD_ARMS[k]);
+                told[n][d][k] = reversals_summed(crossings(KEPT_ARM_BLOCKS[n][d][k]));
+                let (blocks, trace, hash, table, move_pin, lost) = untold_pins(n, d, k);
+                if blocks.is_empty() {
+                    assert!(
+                        trace == 0
+                            && hash == 0
+                            && table.is_empty()
+                            && move_pin.is_none()
+                            && lost == 0,
+                        "{name}: an arm pinned whole or not at all"
+                    );
+                    complete = false;
+                    continue;
+                }
+                assert_eq!(
+                    (blocks.len(), table.len()),
+                    (SCHEDULE_BLOCKS, SCHEDULE_BLOCKS),
+                    "{name}: 120 blocks"
+                );
+                assert!(trace != 0 && hash != 0, "{name}: a sequence and its values");
+                assert_eq!(
+                    table
+                        .iter()
+                        .fold(0usize, |sum, b| sum.saturating_add(b.1 as usize)),
+                    SCHEDULE_TRIALS
+                        .saturating_sub(usize::from(delay))
+                        .saturating_sub(lost as usize),
+                    "{name}: a reward at every trial's end but the first `delay` and those lost"
+                );
+                moved[n][d][k] = moved_right(move_pin, delay);
+                after[n][d][k] = after_clauses(&couplings, outside, blocks, move_pin);
+                arms[n][d][k] = Some(UntoldArm {
+                    moved: move_pin,
+                    whole: kept_clauses(&couplings, outside, blocks),
+                    reversals: reversals_summed(crossings(blocks)),
+                });
+            }
+        }
+    }
+    let verdict = complete.then(|| untold_verdict(moved, after, controls));
+    let readings = verdict.map(|_| untold_predicted(arms, told));
+    eprintln!(
+        "DUMP untold PIN verdict {verdict:?} step {:?} predicted readings {readings:?}; the arms' readings {arms:?}; the told arms' reversals {told:?}",
+        verdict.map(|verdict| untold_stop(&verdict))
+    );
+    assert_eq!(verdict, UNTOLD_1024, "H-45's verdict as written");
+    assert_eq!(
+        verdict.map(|verdict| untold_stop(&verdict)),
+        UNTOLD_STOP_1024,
+        "the step of the stopping rule reached"
+    );
+    assert_eq!(
+        readings, UNTOLD_READINGS_READ_1024,
+        "ADR-0216's three predicted readings, as read"
+    );
+}
+
+// ------------------------------------------------ as read from the one run (ADR-0218)
+
+/// H-45's verdict, as read: none before its one run.
+const UNTOLD_1024: Option<Untold> = None;
+/// The step of ADR-0216's stopping rule the verdict reaches: none before its one run.
+const UNTOLD_STOP_1024: Option<u8> = None;
+/// ADR-0216's three predicted readings, as read: none before its one run.
+const UNTOLD_READINGS_READ_1024: Option<[Option<bool>; 3]> = None;
+
+/// Each control's reading, `[network][arm]`: none before its one run.
+const UNTOLD_CONTROLS: [[Option<UntoldControl>; 2]; 3] = [[None; 2]; 3];
+
+/// Each arm's pinned tables, `[network][delay][arm]`: empty before its one run.
+const UNTOLD_ARM_BLOCKS: [[[&[Block]; 2]; 2]; 3] = [[[&[]; 2]; 2]; 3];
+const UNTOLD_ARM_TRACES: [[[u64; 2]; 2]; 3] = [[[0; 2]; 2]; 3];
+const UNTOLD_ARM_VALUE_HASH: [[[u64; 2]; 2]; 3] = [[[0; 2]; 2]; 3];
+const UNTOLD_ARM_TABLES: [[[&[KeptBlock]; 2]; 2]; 3] = [[[&[]; 2]; 2]; 3];
+const UNTOLD_ARM_MOVES: [[[Option<Moved>; 2]; 2]; 3] = [[[None; 2]; 2]; 3];
+const UNTOLD_ARM_LOST: [[[u32; 2]; 2]; 3] = [[[0; 2]; 2]; 3];
