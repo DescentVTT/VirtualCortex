@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-25
 depends-on: ADR-0212
 title: A reward right three times in four, on the default, its protocol

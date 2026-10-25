@@ -2537,8 +2537,8 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | A reward past the trial, its address kept, measured | accepted |
 | [ADR-0211](adr/0211-the-round-shortened.md) | The round shortened | accepted |
 | [ADR-0212](adr/0212-three-in-four-on-the-default.md) | A reward right three times in four, on the default | accepted |
-| [ADR-0213](adr/0213-three-in-four-on-the-default-its-protocol.md) | A reward right three times in four, on the default, its protocol | proposed |
-| [ADR-0214](adr/0214-three-in-four-on-the-default-measured.md) | A reward right three times in four, on the default, measured | proposed |
+| [ADR-0213](adr/0213-three-in-four-on-the-default-its-protocol.md) | A reward right three times in four, on the default, its protocol | accepted |
+| [ADR-0214](adr/0214-three-in-four-on-the-default-measured.md) | A reward right three times in four, on the default, measured | accepted |
 <!-- adr-index: end decisions -->
 
 ---
