@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A delay the engine reads, measured ([ADR-0219](docs/adr/0219-a-delay-the-engine-reads-measured.md)); H-45 = yes at step 3; F-82; whitepaper 5.17.0.** On seeds 22, 23 and 24, untold at one and two trials' delay, the engine moved once to the true age and learned every mapping after it, 118 to 127 of 128. The controls never moved. All three readings held. Readings in `docs/research/H-45.md`.
 - **A delay the engine reads, its protocol ([ADR-0218](docs/adr/0218-a-delay-the-engine-reads-its-protocol.md)); whitepaper 5.17.0.** H-45's constants, clauses and three readings are code in `tests/inhibition.rs` before any arm. Six controls on time are read against H-42's arms, and two checks hold H-43's arms with the rule set, bit for bit.
 - **A delay the engine reads, built ([ADR-0217](docs/adr/0217-a-delay-the-engine-reads-built.md)); whitepaper 5.17.0.** `Config::reads_its_delay`, `Executor::reward_untold` and `Delay::untold`: a critic per kept age, a score of 64 errors, one move latched at a lead of 1/32. Unset, told, or on time with no move, every run is the run it was.
 - **A delay the engine reads from its kept addresses ([ADR-0216](docs/adr/0216-a-delay-the-engine-reads.md)); H-45; brief 082; whitepaper 5.16.0.** A value critic per kept age and one latched move, at a lead of a thirty-second, asked at one and two trials' delay on seeds 22, 23 and 24 beside a control on time; predicted yes.
