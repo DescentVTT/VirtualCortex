@@ -78,7 +78,7 @@ on:
           # Exploration 002 alone, on its branch (ADR-0193): what the test crates cost to build.
           - build-cost
       refs:
-        description: "Exploration 002: with scope=build-cost the commits to build, separated by spaces; with scope=arms the one commit to run on; empty is the dispatched commit"
+        description: "Exploration 002: with scope=build-cost the commits to build in turn on each runner, separated by spaces; with scope=arms the one commit to run on; empty is the dispatched commit"
         type: string
         default: ""
       tests:
@@ -475,31 +475,14 @@ jobs:
             list.log
           retention-days: 90
 
-  build-cost-plan:
-    # Exploration 002, on `explore/002-what-the-pinned-tables-cost` alone (ADR-0193): the commits
-    # a dispatch at `scope=build-cost` names, as the matrix of the job below.
-    name: Build cost (the commits named, exploration 002)
-    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'build-cost'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      refs: ${{ steps.plan.outputs.refs }}
-    steps:
-      - id: plan
-        env:
-          REFS: ${{ inputs.refs }}
-          SHA: ${{ github.sha }}
-        run: |
-          refs=$(printf '%s' "${REFS:-$SHA}" | jq -R -c 'split(" ") | map(select(length > 0)) | unique')
-          echo "the commits: $refs"
-          echo "refs=$refs" >> "$GITHUB_OUTPUT"
-
   build-cost:
-    # What every test binary costs to build on the hosted runner, cold and after one mutant-like
-    # change under runtime/cortex-runtime/src/, in debug and in release, with cargo's timing
-    # report kept (scripts/build-cost.sh). No cache: every build is from `cargo clean`.
-    name: Build cost ${{ matrix.ref }} ${{ matrix.profile }} (exploration 002)
-    needs: [build-cost-plan]
+    # Exploration 002, on `explore/002-what-the-pinned-tables-cost` alone (ADR-0193): what every
+    # test binary costs to build on the hosted runner, cold and after one mutant-like change under
+    # runtime/cortex-runtime/src/, in debug and in release, with cargo's timing report kept
+    # (scripts/build-cost.sh). No cache: every build is from `cargo clean`. Each job builds every
+    # commit `-f refs=` names in turn, so that the commits are compared on one runner; two jobs a
+    # profile, on two runners.
+    name: Build cost ${{ matrix.profile }} on runner ${{ matrix.runner }} (exploration 002)
     if: github.event_name == 'workflow_dispatch' && inputs.scope == 'build-cost'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -510,13 +493,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ref: ${{ fromJSON(needs.build-cost-plan.outputs.refs) }}
         profile: [debug, release]
+        runner: [1, 2]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ matrix.ref }}
-          # The dispatched commit too, whose script measures every commit named.
+          # Every commit of the branch, which the script checks out in turn.
           fetch-depth: 0
 
       - name: Install the pinned toolchain (rust-toolchain.toml, ADR-0009)
@@ -526,17 +508,19 @@ jobs:
           nproc
           free -g
 
-      - name: The test binaries built cold and after one mutant, twice
+      - name: The test binaries built cold and after one mutant, each commit in turn, twice
+        env:
+          REFS: ${{ inputs.refs }}
         run: |
-          git show "$GITHUB_SHA:scripts/build-cost.sh" > "$RUNNER_TEMP/build-cost.sh"
-          echo "measuring $(git rev-parse HEAD) with the script of $GITHUB_SHA"
-          bash "$RUNNER_TEMP/build-cost.sh" ${{ matrix.profile }}
+          cp scripts/build-cost.sh "$RUNNER_TEMP/build-cost.sh"
+          # shellcheck disable=SC2086 # the commits are words
+          bash "$RUNNER_TEMP/build-cost.sh" ${{ matrix.profile }} $REFS
 
       - name: Keep the timings
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: build-cost-${{ matrix.ref }}-${{ matrix.profile }}
+          name: build-cost-${{ matrix.profile }}-${{ matrix.runner }}
           path: build-cost
           retention-days: 90
 
