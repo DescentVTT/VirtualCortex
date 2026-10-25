@@ -233,7 +233,7 @@ use cortex_core::{
 };
 use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, SIGMA_MAX_Q16};
 use cortex_neuromod::{CRITIC_SCALE_MAX, CRITIC_SHIFT_MAX};
-use cortex_runtime::{ConfigError, ImageError, TargetRead, shortest_delay};
+use cortex_runtime::{ConfigError, ImageError, KEPT_ADDRESSES_MAX, TargetRead, shortest_delay};
 
 // ------------------------------------------- written before the run (ADR-0085, ADR-0086)
 
@@ -400780,4 +400780,911 @@ const PROBE_ARM_OPPOSITE: [[Option<u32>; 2]; 3] = [
     [Some(509), Some(485)],
     [Some(527), Some(493)],
     [Some(497), Some(491)],
+];
+
+// =================================================================================== H-43
+
+// ------------------------------------------- written before the run (ADR-0207, ADR-0209)
+
+/// The networks of H-43 (ADR-0207): H-42's, ADR-0044's generator at 1 024 units from seeds 22, 23
+/// and 24, each from the image its derivation under the probe wrote, the network an engine born
+/// under `Config::reads_its_targets()` settles. No other network and no other size is run.
+const KEPT_SEEDS: [u64; 3] = PROBE_SEEDS;
+
+/// The oldest age the engine keeps an address for (ADR-0207): two trials, `kept_addresses`.
+const KEPT_ADDRESSES: u8 = 2;
+const _: () = assert!(KEPT_ADDRESSES <= KEPT_ADDRESSES_MAX);
+
+/// The delays of H-43 (ADR-0207), in their order: trial `t`'s sign at the end of trial `t + 1`,
+/// and at the end of trial `t + 2`. No other delay is run.
+const KEPT_DELAYS: [u8; 2] = [1, 2];
+
+/// The arms of H-43 (ADR-0207): H-25's two on H-20's schedule, H-42's, under the answer.
+const KEPT_ARMS: [Reversal; 2] = PROBE_ARMS;
+
+/// The names H-43's dumps carry, per network.
+const KEPT_NAMES: [&str; 3] = ["kept22", "kept23", "kept24"];
+
+/// ADR-0207's prediction for H-43, written before any run: yes.
+const KEPT_PREDICTED: bool = true;
+
+/// ADR-0207's three predicted readings (ADR-0209), in its order, each predicted to hold: in every
+/// arm the address each reward writes names the rewarded trial's pair in at least 0.94 of rewards
+/// (`names_rewarded`); on each network and arm the reversals' summed blocks at one trial's delay
+/// at least the on-time twin's, and at two at least at one (`reversals_summed`); in every arm each
+/// mapping's last block's mean value above half the reward. A miss is recorded as one.
+const KEPT_READINGS_PREDICTED: [bool; 3] = [true; 3];
+
+/// Predicted reading 1's bound (ADR-0207): at least 94 rewards of every 100, read in integers as
+/// `named × 100 ≥ rewards × 94`.
+const NAMED_PER_CENT: u64 = 94;
+
+/// Predicted reading 2's count of a reversal that never crosses (ADR-0209): its mapping's 32
+/// blocks, as ADR-0170 counted the one that did not.
+const UNCROSSED_BLOCKS: u32 = (LATER_MAPPING_TRIALS / BLOCK) as u32;
+
+// ---------------------------------------------------------------- the rules (ADR-0209)
+
+/// Predicted reading 1's rule for one reward (ADR-0209), of what the harness reads of the address
+/// the reward wrote: it names the rewarded trial's pair when that trial selected a readout and the
+/// addressed targets are exactly that readout's units (`exact`), and more of the addressed
+/// sources lie in the rewarded trial's stimulus set than in the other stimulus set (`sources`,
+/// `[in its own, in the other]`).
+fn names_rewarded(exact: bool, sources: [u32; 2]) -> bool {
+    exact && sources[0] > sources[1]
+}
+
+/// What one block of an arm under kept addresses reads (ADR-0209): the rewards given at its
+/// trials' ends whose address named the rewarded trial's pair, the rewards given, and the values
+/// the engine read at them, summed.
+type KeptBlock = (u32, u32, i64);
+
+/// Predicted reading 2's count over an arm's crossings (ADR-0209): the blocks of the three
+/// reversals summed, the crossing block counted, a reversal that never crossed at
+/// `UNCROSSED_BLOCKS`. The first mapping is not a reversal.
+fn reversals_summed(crossed: [Option<usize>; 4]) -> u32 {
+    crossed.iter().skip(1).fold(0u32, |sum, c| {
+        sum.saturating_add(c.map_or(UNCROSSED_BLOCKS, |n| n as u32))
+    })
+}
+
+/// What predicted readings 1 to 3 read of one arm (ADR-0209), from its blocks and its table:
+/// the rewards that named the rewarded pair and the rewards over the arm, the reversals' blocks
+/// summed (`reversals_summed`), and each mapping's last block's summed value and rewards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct KeptArm {
+    named: (u64, u64),
+    reversals: u32,
+    last: [(i64, u32); 4],
+}
+
+fn kept_arm_of(blocks: &[Block], table: &[KeptBlock]) -> KeptArm {
+    let named = table.iter().fold((0u64, 0u64), |(n, r), b| {
+        (
+            n.saturating_add(u64::from(b.0)),
+            r.saturating_add(u64::from(b.1)),
+        )
+    });
+    KeptArm {
+        named,
+        reversals: reversals_summed(crossings(blocks)),
+        last: MAPPINGS.map(|(_, to)| {
+            to.checked_sub(1)
+                .and_then(|j| table.get(j))
+                .map_or((0, 0), |b| (b.2, b.1))
+        }),
+    }
+}
+
+/// Predicted reading 1's rule over an arm: at least `NAMED_PER_CENT` of its rewards, and one
+/// reward at least.
+fn named_within(arm: &KeptArm) -> bool {
+    let (named, rewards) = arm.named;
+    rewards > 0 && named.saturating_mul(100) >= rewards.saturating_mul(NAMED_PER_CENT)
+}
+
+/// Predicted reading 3's rule over an arm: in each mapping's last block a reward at least, and
+/// the values summed above half the reward's magnitude times the rewards, strictly.
+fn values_above_half(arm: &KeptArm) -> bool {
+    arm.last.iter().all(|&(sum, rewards)| {
+        rewards > 0
+            && sum.saturating_mul(2) > i64::from(rewards).saturating_mul(i64::from(REWARD_Q16))
+    })
+}
+
+/// ADR-0207's three predicted readings as rules (ADR-0209), in its order, over the arms of every
+/// network, `[network][delay][arm]` in `KEPT_DELAYS`'s and `KEPT_ARMS`' order, and the on-time
+/// twins' reversals, `[network][arm]`: reading 1 over every arm; reading 2 on each network and
+/// arm, the first delay's sum at least the twin's and the second's at least the first's; reading 3
+/// over every arm. None until every arm is given.
+fn kept_predicted(arms: [[[Option<KeptArm>; 2]; 2]; 3], twins: [[u32; 2]; 3]) -> [Option<bool>; 3] {
+    let all: Option<Vec<KeptArm>> = arms.iter().flatten().flatten().copied().collect();
+    let Some(all) = all else {
+        return [None; 3];
+    };
+    let slower = (0..3usize).all(|n| {
+        (0..2usize).all(|k| match (arms[n][0][k], arms[n][1][k]) {
+            (Some(one), Some(two)) => {
+                one.reversals >= twins[n][k] && two.reversals >= one.reversals
+            }
+            _ => false,
+        })
+    });
+    [
+        Some(all.iter().all(named_within)),
+        Some(slower),
+        Some(all.iter().all(values_above_half)),
+    ]
+}
+
+// ------------------------------------------------------------ the criterion (ADR-0207)
+
+/// H-43's four clauses on one arm (ADR-0207), H-25's by H-25's rules (`drawn_of`) against the
+/// image its network's derivation wrote: (1) every mapping learned, (2) no coupling past 1.30 of
+/// its image's in a run of 120 blocks, (3) each reversal within 23 blocks of its flip, and (4)
+/// the excitatory sum outside the four couplings within the band at every block's end of a run
+/// of 120 blocks.
+fn kept_clauses(couplings: &[[i64; 2]; 2], outside: i64, blocks: &[Block]) -> [bool; 4] {
+    let read = drawn_of(couplings, outside, [blocks, blocks]);
+    [
+        read.learning.learned[0].iter().all(|&l| l),
+        read.learning.bounded[0],
+        read.revised[0].iter().all(|&r| r),
+        read.held[0],
+    ]
+}
+
+/// H-43's verdict (ADR-0207): the four clauses per network, delay and arm, `[network][delay][arm]`
+/// in `KEPT_DELAYS`'s and `KEPT_ARMS`' order; `yes` when all four hold in all twelve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Kept {
+    clauses: [[[[bool; 4]; 2]; 2]; 3],
+    yes: bool,
+}
+
+fn kept_verdict(clauses: [[[[bool; 4]; 2]; 2]; 3]) -> Kept {
+    Kept {
+        clauses,
+        yes: clauses.iter().flatten().flatten().flatten().all(|&c| c),
+    }
+}
+
+/// The step of ADR-0207's stopping rule a verdict reaches: 3, yes; 4, every arm at one trial's
+/// delay holds all four and an arm at two does not; otherwise 5, a no at one trial.
+fn kept_stop(verdict: &Kept) -> u8 {
+    if verdict.yes {
+        return 3;
+    }
+    if verdict
+        .clauses
+        .iter()
+        .all(|network| network[0].iter().flatten().all(|&c| c))
+    {
+        return 4;
+    }
+    5
+}
+
+// ------------------------------------------------------------------ the run (brief 080)
+
+/// The engine an arm of H-43 decodes: the image under H-25's configuration as `signed_from`
+/// decodes it, the configuration keeping `KEPT_ADDRESSES`; nothing of the kept addresses is in
+/// the image.
+fn kept_from(image: &[u8], units: u32) -> Engine {
+    let exec = Image::decode::<2048>(
+        image,
+        Config {
+            kept_addresses: KEPT_ADDRESSES,
+            ..config(units, 2, 0)
+        },
+    )
+    .expect("a well-formed record");
+    assert!(
+        exec.signed_gate() && exec.inhibitory_baseline_q16() == Some(INHIBITORY_BASELINE_Q16),
+        "the image carries the signed gate and the inhibitory baseline"
+    );
+    exec
+}
+
+/// The pinned tables of H-43's arm on network `n` at the delay of index `d` in `KEPT_DELAYS` and
+/// the arm of index `k`: its blocks, its trace, its values' hash and its table by block; empty
+/// until its one run.
+fn kept_pins(n: usize, d: usize, k: usize) -> (&'static [Block], u64, u64, &'static [KeptBlock]) {
+    (
+        KEPT_ARM_BLOCKS[n][d][k],
+        KEPT_ARM_TRACES[n][d][k],
+        KEPT_ARM_VALUE_HASH[n][d][k],
+        KEPT_ARM_TABLES[n][d][k],
+    )
+}
+
+/// One arm of H-43 on network `n` (ADR-0207, ADR-0209; brief 080), or its twin on time at a delay
+/// of zero. Its calibration is the network's derivation under the probe, run again and held to
+/// H-42's pinned tables (`probe_made`). Then H-25's arm from the image it wrote — its stimuli and
+/// cancel, the drawn delivery, H-20's flips, the engine's critic and its window, the task carrying
+/// no critic — under the answer, on an engine keeping two addresses, the task's delay `delay`.
+///
+/// After each trial whose end gave a reward, the harness reads the address the reward wrote
+/// against the pair of the trial it was for, `delay` trials before: whether that trial selected a
+/// readout and the addressed targets are exactly its units, and the addressed sources in its
+/// stimulus set and in the other (`names_rewarded`). A trial whose end gave none is one of the
+/// first `delay`, and records no value. Per block it sums the rewards that named the pair, the
+/// rewards and their values (`KeptBlock`).
+///
+/// Everything is dumped, and the clauses and the readings computed, before anything is held. The
+/// twin is held to H-42's arm on its network, its blocks, its trace and every trial's value bit for
+/// bit, and to its own table where that is pinned; an arm at a delay to its tables where its one
+/// run is pinned. No entry is let go in any.
+fn kept_arm(n: usize, arm: Reversal, delay: u8) {
+    let k = KEPT_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{} delay {delay} {arm:?}", KEPT_NAMES[n]);
+    let units = SCAN_UNITS;
+    let made = probe_made(n, &name);
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = kept_from(&made.windowed, units);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.draws(),
+            exec.kept_addresses(),
+            exec.modulation_baseline_q16(),
+            exec.homeostasis().synaptic_gain_q16
+        ),
+        (
+            Some(made.critic),
+            made.window,
+            Ok(()),
+            KEPT_ADDRESSES,
+            GATE_BASELINE_Q16,
+            made.gain
+        ),
+        "{name}: the configuration, the engine draws and keeps two addresses"
+    );
+    let mut task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Answer,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    task.delay = Delay::of(delay);
+    let lag = usize::from(delay);
+    let mut history: Vec<(u8, Option<u8>)> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut values: Vec<i32> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut table: Vec<KeptBlock> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let mut block: KeptBlock = (0, 0, 0);
+    let mut sources_by_block: Vec<[u64; 3]> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let mut sources: [u64; 3] = [0; 3];
+    let mut ungiven = 0usize;
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        &mut |exec, trial, _, outcome| {
+            history.push((outcome.stimulus, outcome.selection));
+            match outcome.value_q16 {
+                Some(value) => {
+                    let (stimulus, selection) = trial
+                        .checked_sub(lag)
+                        .and_then(|u| history.get(u))
+                        .copied()
+                        .expect("a reward is for a trial already run");
+                    let own = sets[usize::from(stimulus)];
+                    let other = sets[usize::from(stimulus ^ 1)];
+                    let exact = selection.is_some_and(|r| {
+                        let readout = sets[usize::from(r).saturating_add(2)];
+                        (0..units).all(|u| exec.is_target(u) == readout.contains(u))
+                    });
+                    let mut drawn = [0u32; 2];
+                    for u in (0..units).filter(|&u| exec.is_source(u)) {
+                        let at = if own.contains(u) {
+                            0
+                        } else if other.contains(u) {
+                            1
+                        } else {
+                            2
+                        };
+                        if let Some(d) = drawn.get_mut(at) {
+                            *d = d.saturating_add(1);
+                        }
+                        sources[at] = sources[at].saturating_add(1);
+                    }
+                    block.0 = block
+                        .0
+                        .saturating_add(u32::from(names_rewarded(exact, drawn)));
+                    block.1 = block.1.saturating_add(1);
+                    block.2 = block.2.saturating_add(i64::from(value));
+                    values.push(value);
+                }
+                None => ungiven = ungiven.saturating_add(1),
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                table.push(block);
+                block = (0, 0, 0);
+                sources_by_block.push(sources);
+                sources = [0; 3];
+            }
+        },
+    );
+    assert_eq!(
+        (blocks.len(), table.len(), values.len(), ungiven),
+        (
+            SCHEDULE_BLOCKS,
+            SCHEDULE_BLOCKS,
+            SCHEDULE_TRIALS.saturating_sub(lag),
+            lag
+        ),
+        "{name}: 120 blocks, a reward at every trial's end but the first `delay`"
+    );
+    // The run's tables dumped whole, as they are pinned, before anything is held or read.
+    eprintln!("DUMP {name} PIN blocks {blocks:?}");
+    eprintln!("DUMP {name} PIN trace {trace:#018x}");
+    eprintln!("DUMP {name} PIN value hash {:#018x}", values_hash(&values));
+    eprintln!("DUMP {name} PIN table {table:?}");
+    eprintln!(
+        "DUMP {name} sources by block [the rewarded trial's set, the other's, elsewhere] {sources_by_block:?}"
+    );
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let clauses = kept_clauses(&made.couplings, outside, &blocks);
+    let read = kept_arm_of(&blocks, &table);
+    let twin = PROBE_ARM_BLOCKS[n][k];
+    eprintln!(
+        "DUMP {name} clauses {clauses:?}: last 128 correct {:?} over {:?} crossings {:?} left {:?}",
+        mapping_correct(&blocks),
+        first_over_of(&made.couplings, &blocks),
+        crossings(&blocks),
+        left_band(outside, &blocks)
+    );
+    eprintln!(
+        "DUMP {name} reading {read:?}: named {} of {} ({:?}), reversals {} beside the on-time twin's {}, last blocks' values within reading 3 {}",
+        read.named.0,
+        read.named.1,
+        named_within(&read),
+        read.reversals,
+        reversals_summed(crossings(twin)),
+        values_above_half(&read)
+    );
+    eprintln!(
+        "DUMP {name} beside H-42's arm on the network: last 128 correct {:?} beside {:?}; crossings {:?} beside {:?}; correct by block {:?}",
+        mapping_correct(&blocks),
+        mapping_correct(twin),
+        crossings(&blocks),
+        crossings(twin),
+        curve(&blocks)
+    );
+    eprintln!(
+        "DUMP {name} value by block, per mille of the reward {:?}",
+        table
+            .iter()
+            .map(|b| i64::from(b.1)
+                .checked_mul(i64::from(REWARD_Q16))
+                .and_then(|whole| b.2.saturating_mul(1_000).checked_div(whole))
+                .unwrap_or(0))
+            .collect::<Vec<i64>>()
+    );
+    eprintln!(
+        "DUMP {name} capacities: entries let go {} of {} kept; the train let go {} spikes over the run; the sums after {:?} beside the image's {:?}",
+        exec.kept_let_go(),
+        exec.kept_addresses(),
+        exec.train_overwritten(),
+        weights_by_polarity(&exec),
+        made.sums
+    );
+    // Held: no entry let go; the twin H-42's arm bit for bit; an arm's pinned tables.
+    assert_eq!(
+        exec.kept_let_go(),
+        0,
+        "{name}: no entry written over before its reward"
+    );
+    match KEPT_DELAYS.iter().position(|&d| d == delay) {
+        None => {
+            assert_eq!(delay, 0, "{name}: a delay of H-43's, or the twin on time");
+            pinned(
+                &format!("{name} twin"),
+                &blocks,
+                trace,
+                PROBE_ARM_BLOCKS[n][k],
+                PROBE_ARM_TRACES[n][k],
+            );
+            assert_eq!(
+                values_hash(&values),
+                PROBE_ARM_VALUE_HASH[n][k],
+                "{name}: every trial's value is H-42's"
+            );
+            eprintln!("DUMP {name} the twin is H-42's arm on its network, bit for bit");
+            match KEPT_TWIN_TABLES[n][k] {
+                [] => eprintln!("DUMP {name} not pinned: the twin's table, written from this log"),
+                pin => assert_eq!(table.as_slice(), pin, "{name}: the twin's table"),
+            }
+        }
+        Some(d) => match kept_pins(n, d, k) {
+            ([], 0, 0, []) => {
+                eprintln!(
+                    "DUMP {name} not pinned: the arm's one run (ADR-0209), its tables written from this log"
+                );
+            }
+            (pin_blocks, pin_trace, pin_hash, pin_table) => {
+                pinned(&name, &blocks, trace, pin_blocks, pin_trace);
+                assert_eq!(
+                    values_hash(&values),
+                    pin_hash,
+                    "{name}: every reward's value"
+                );
+                assert_eq!(table.as_slice(), pin_table, "{name}: the table by block");
+            }
+        },
+    }
+}
+
+/// H-43's twin on time on seed 22, from the assignment (ADR-0209, brief 080): the arm with two
+/// addresses kept and each reward given at age zero, H-42's arm bit for bit.
+#[test]
+#[ignore]
+fn a_reward_kept_on_time_on_seed_22_from_the_assignment_at_1024_units_exhaustive() {
+    kept_arm(0, Reversal::AssignmentFirst, 0);
+}
+
+/// H-43's twin on time on seed 22, from the mirrored assignment (ADR-0209, brief 080).
+#[test]
+#[ignore]
+fn a_reward_kept_on_time_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    kept_arm(0, Reversal::MirroredFirst, 0);
+}
+
+/// H-43's twin on time on seed 23, from the assignment (ADR-0209, brief 080).
+#[test]
+#[ignore]
+fn a_reward_kept_on_time_on_seed_23_from_the_assignment_at_1024_units_exhaustive() {
+    kept_arm(1, Reversal::AssignmentFirst, 0);
+}
+
+/// H-43's twin on time on seed 23, from the mirrored assignment (ADR-0209, brief 080).
+#[test]
+#[ignore]
+fn a_reward_kept_on_time_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    kept_arm(1, Reversal::MirroredFirst, 0);
+}
+
+/// H-43's twin on time on seed 24, from the assignment (ADR-0209, brief 080).
+#[test]
+#[ignore]
+fn a_reward_kept_on_time_on_seed_24_from_the_assignment_at_1024_units_exhaustive() {
+    kept_arm(2, Reversal::AssignmentFirst, 0);
+}
+
+/// H-43's twin on time on seed 24, from the mirrored assignment (ADR-0209, brief 080).
+#[test]
+#[ignore]
+fn a_reward_kept_on_time_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive() {
+    kept_arm(2, Reversal::MirroredFirst, 0);
+}
+
+/// H-43's arm on seed 22 from the assignment, the reward one trial late (ADR-0207, brief 080).
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_its_address_kept_on_seed_22_from_the_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(0, Reversal::AssignmentFirst, 1);
+}
+
+/// H-43's arm on seed 22 from the mirrored assignment, the reward one trial late.
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_its_address_kept_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(0, Reversal::MirroredFirst, 1);
+}
+
+/// H-43's arm on seed 23 from the assignment, the reward one trial late.
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_its_address_kept_on_seed_23_from_the_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(1, Reversal::AssignmentFirst, 1);
+}
+
+/// H-43's arm on seed 23 from the mirrored assignment, the reward one trial late.
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_its_address_kept_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(1, Reversal::MirroredFirst, 1);
+}
+
+/// H-43's arm on seed 24 from the assignment, the reward one trial late.
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_its_address_kept_on_seed_24_from_the_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(2, Reversal::AssignmentFirst, 1);
+}
+
+/// H-43's arm on seed 24 from the mirrored assignment, the reward one trial late.
+#[test]
+#[ignore]
+fn a_reward_one_trial_late_its_address_kept_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(2, Reversal::MirroredFirst, 1);
+}
+
+/// H-43's arm on seed 22 from the assignment, the reward two trials late.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_its_address_kept_on_seed_22_from_the_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(0, Reversal::AssignmentFirst, 2);
+}
+
+/// H-43's arm on seed 22 from the mirrored assignment, the reward two trials late.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_its_address_kept_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(0, Reversal::MirroredFirst, 2);
+}
+
+/// H-43's arm on seed 23 from the assignment, the reward two trials late.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_its_address_kept_on_seed_23_from_the_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(1, Reversal::AssignmentFirst, 2);
+}
+
+/// H-43's arm on seed 23 from the mirrored assignment, the reward two trials late.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_its_address_kept_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(1, Reversal::MirroredFirst, 2);
+}
+
+/// H-43's arm on seed 24 from the assignment, the reward two trials late.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_its_address_kept_on_seed_24_from_the_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(2, Reversal::AssignmentFirst, 2);
+}
+
+/// H-43's arm on seed 24 from the mirrored assignment, the reward two trials late.
+#[test]
+#[ignore]
+fn a_reward_two_trials_late_its_address_kept_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    kept_arm(2, Reversal::MirroredFirst, 2);
+}
+
+/// A block of 120 by hand for the gate's test: `correct` of 64, the couplings `couplings`, the
+/// excitatory sum `excitatory`, every other field zero.
+fn kept_hand_block(correct: u32, couplings: [[i64; 2]; 2], excitatory: i64) -> Block {
+    (
+        correct,
+        0,
+        [[0; 2]; 2],
+        [0; 2],
+        [0; 2],
+        [0; 2],
+        0,
+        0,
+        excitatory,
+        0,
+        couplings,
+        0,
+    )
+}
+
+/// The gate's test (ADR-0061's class; brief 080): H-43's networks, delays, arms, prediction and
+/// predicted readings' constants; the rule of a reward's address, the reversals' sum, an arm's
+/// reading and the three predicted readings' rules at their edges; the four clauses and the
+/// verdict's steps over tables written by hand; and, over H-43's pinned tables, the twins' and
+/// the arms', the verdict, its step and the three readings as written (`kept_tables`). It runs no
+/// trial. Nothing else added to the gate.
+#[test]
+fn the_kept_addresses_of_h_43_its_clauses_and_its_predicted_readings_rules() {
+    assert_eq!(KEPT_SEEDS, [22, 23, 24]);
+    assert_eq!((KEPT_ADDRESSES, KEPT_DELAYS), (2, [1, 2]), "ADR-0207's");
+    assert_eq!(
+        KEPT_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (KEPT_PREDICTED, KEPT_READINGS_PREDICTED),
+        (true, [true; 3]),
+        "ADR-0207 predicts yes, and each of its three readings"
+    );
+    assert_eq!((NAMED_PER_CENT, UNCROSSED_BLOCKS), (94, 32));
+    // A reward's address at its edges.
+    assert!(names_rewarded(true, [3, 2]));
+    assert!(!names_rewarded(true, [2, 2]), "as many in the other set");
+    assert!(!names_rewarded(true, [0, 0]), "no source");
+    assert!(
+        !names_rewarded(false, [3, 0]),
+        "the targets not exactly the readout's"
+    );
+    // The reversals' sum: the first mapping not counted, one never crossed at 32.
+    assert_eq!(
+        reversals_summed([Some(7), Some(10), Some(12), Some(14)]),
+        36
+    );
+    assert_eq!(reversals_summed([None, Some(10), None, Some(1)]), 43);
+    assert_eq!(reversals_summed([None; 4]), 96);
+    // An arm's reading by hand: 120 blocks, each mapping's last block's values its own.
+    let image = [[10_000i64, 10_000], [10_000, 10_000]];
+    let excitatory = 140_000i64;
+    let outside = outside_image(&image, excitatory);
+    assert_eq!(outside, 100_000);
+    let mut blocks: Vec<Block> = (0..SCHEDULE_BLOCKS)
+        .map(|_| kept_hand_block(64, image, excitatory))
+        .collect();
+    for &(from, _) in MAPPINGS.iter().skip(1) {
+        for block in blocks.iter_mut().skip(from).take(10) {
+            block.0 = 20;
+        }
+    }
+    let table: Vec<KeptBlock> = (0..SCHEDULE_BLOCKS)
+        .map(|j| {
+            let value = if MAPPINGS.iter().any(|&(_, to)| to.wrapping_sub(1) == j) {
+                i64::from(REWARD_Q16).saturating_mul(33)
+            } else {
+                0
+            };
+            (61, 64, value)
+        })
+        .collect();
+    let read = kept_arm_of(&blocks, &table);
+    assert_eq!(
+        read,
+        KeptArm {
+            named: (7_320, 7_680),
+            reversals: 33,
+            last: [(i64::from(REWARD_Q16).saturating_mul(33), 64); 4],
+        }
+    );
+    assert!(named_within(&read) && values_above_half(&read));
+    assert_eq!(kept_clauses(&image, outside, &blocks), [true; 4]);
+    // Reading 1 at its edge: 94 of 100 holds, 93 does not, and no reward does not.
+    let with = |named: (u64, u64), last: [(i64, u32); 4]| KeptArm {
+        named,
+        reversals: 33,
+        last,
+    };
+    let half = i64::from(REWARD_Q16).saturating_mul(32);
+    assert!(named_within(&with((94, 100), read.last)));
+    assert!(named_within(&with((47, 50), read.last)));
+    assert!(!named_within(&with((93, 100), read.last)));
+    assert!(!named_within(&with((0, 0), read.last)), "no reward");
+    // Reading 3 at its edge: exactly half does not hold, one LSB above it does.
+    assert!(!values_above_half(&with((94, 100), [(half, 64); 4])));
+    assert!(values_above_half(&with(
+        (94, 100),
+        [(half.saturating_add(1), 64); 4]
+    )));
+    assert!(!values_above_half(&with(
+        (94, 100),
+        [
+            (1, 0),
+            (half.saturating_add(1), 64),
+            (half.saturating_add(1), 64),
+            (half.saturating_add(1), 64)
+        ]
+    )));
+    // The readings over twelve arms: each at its edge.
+    let arm = |reversals: u32| KeptArm { reversals, ..read };
+    let mut arms = [[[Some(arm(33)); 2]; 2]; 3];
+    for network in &mut arms {
+        network[1] = [Some(arm(34)); 2];
+    }
+    let twins = [[33u32; 2]; 3];
+    assert_eq!(kept_predicted(arms, twins), [Some(true); 3]);
+    assert_eq!(
+        kept_predicted(arms, [[33, 34], [33, 33], [33, 33]])[1],
+        Some(false),
+        "one trial's delay faster than its twin"
+    );
+    let mut faster = arms;
+    faster[2][1][0] = Some(arm(32));
+    assert_eq!(
+        kept_predicted(faster, twins)[1],
+        Some(false),
+        "two faster than one"
+    );
+    let mut missed = arms;
+    missed[1][0][1] = Some(with((93, 100), read.last));
+    assert_eq!(
+        kept_predicted(missed, twins),
+        [Some(false), Some(true), Some(true)]
+    );
+    let mut low = arms;
+    low[0][1][1] = Some(with((94, 100), [(half, 64); 4]));
+    assert_eq!(kept_predicted(low, twins)[2], Some(false));
+    let mut short = arms;
+    short[2][1][1] = None;
+    assert_eq!(
+        kept_predicted(short, twins),
+        [None; 3],
+        "none before every arm"
+    );
+    // The four clauses, each failed alone over the hand table.
+    let mut unlearned = blocks.clone();
+    unlearned[MAPPINGS[2].1.saturating_sub(1)].0 = 39;
+    unlearned[MAPPINGS[2].1.saturating_sub(2)].0 = 40;
+    assert_eq!(
+        kept_clauses(&image, outside, &unlearned),
+        [false, true, true, true],
+        "79 of 128"
+    );
+    unlearned[MAPPINGS[2].1.saturating_sub(2)].0 = 41;
+    assert_eq!(
+        kept_clauses(&image, outside, &unlearned),
+        [true; 4],
+        "80 of 128"
+    );
+    let mut over = blocks.clone();
+    over[50].10[1][0] = 13_001;
+    assert_eq!(
+        kept_clauses(&image, outside, &over),
+        [true, false, true, true],
+        "past 1.30"
+    );
+    over[50].10[1][0] = 13_000;
+    over[50].8 = excitatory.saturating_add(3_000);
+    assert_eq!(kept_clauses(&image, outside, &over), [true; 4], "at 1.30");
+    let mut slow = blocks.clone();
+    for block in slow.iter_mut().skip(MAPPINGS[3].0).take(23) {
+        block.0 = 39;
+    }
+    assert_eq!(
+        kept_clauses(&image, outside, &slow),
+        [true, true, false, true],
+        "the 24th block"
+    );
+    slow[MAPPINGS[3].0.saturating_add(22)].0 = 40;
+    assert_eq!(kept_clauses(&image, outside, &slow), [true; 4], "the 23rd");
+    let mut left = blocks.clone();
+    left[100].8 = excitatory.saturating_sub(25_001);
+    assert_eq!(
+        kept_clauses(&image, outside, &left),
+        [true, true, true, false],
+        "below 0.75"
+    );
+    left[100].8 = excitatory.saturating_sub(25_000);
+    assert_eq!(kept_clauses(&image, outside, &left), [true; 4], "at 0.75");
+    assert_eq!(
+        kept_clauses(&image, outside, &blocks[..119]),
+        [false, false, false, false],
+        "a run short of 120 blocks"
+    );
+    // The verdict and the stopping rule's steps.
+    let all = [[[[true; 4]; 2]; 2]; 3];
+    assert_eq!(
+        kept_verdict(all),
+        Kept {
+            clauses: all,
+            yes: true
+        }
+    );
+    assert_eq!(kept_stop(&kept_verdict(all)), 3);
+    let mut at_two = all;
+    at_two[1][1][0][2] = false;
+    assert_eq!(
+        (kept_verdict(at_two).yes, kept_stop(&kept_verdict(at_two))),
+        (false, 4)
+    );
+    let mut at_one = all;
+    at_one[2][0][1][3] = false;
+    assert_eq!(kept_stop(&kept_verdict(at_one)), 5);
+    at_one[0][1][0][0] = false;
+    assert_eq!(kept_stop(&kept_verdict(at_one)), 5, "a no at both delays");
+    kept_tables();
+}
+
+/// The gate's checks over H-43's pinned tables (ADR-0209), by the rules committed before any of
+/// them was run, each where it is pinned. A twin's table and an arm's are pinned whole or not at
+/// all, an arm's blocks, trace, hash and table together; each pinned table is 120 blocks, and an
+/// arm's rewards over its blocks are its trials less its delay. Then, where every arm is pinned,
+/// the verdict by the four clauses against the image each network's derivation wrote, its step
+/// and the three readings, each as written; before that, none is.
+fn kept_tables() {
+    let mut clauses = [[[[false; 4]; 2]; 2]; 3];
+    let mut arms: [[[Option<KeptArm>; 2]; 2]; 3] = [[[None; 2]; 2]; 3];
+    let mut twins = [[0u32; 2]; 3];
+    for n in 0..3usize {
+        let pins = probe_rate_pins(n);
+        let couplings = pins.couplings.expect("H-42's derivation, pinned");
+        let (_, sums) = pins.quiet.expect("H-42's settled image's sums, pinned");
+        let outside = outside_image(&couplings, sums.1);
+        for k in 0..2usize {
+            twins[n][k] = reversals_summed(crossings(PROBE_ARM_BLOCKS[n][k]));
+            let twin = KEPT_TWIN_TABLES[n][k];
+            assert!(
+                twin.is_empty() || twin.len() == SCHEDULE_BLOCKS,
+                "{} {:?}: a twin's table whole or not at all",
+                KEPT_NAMES[n],
+                KEPT_ARMS[k]
+            );
+            for (d, &delay) in KEPT_DELAYS.iter().enumerate() {
+                let name = format!("{} delay {delay} {:?}", KEPT_NAMES[n], KEPT_ARMS[k]);
+                let (blocks, trace, hash, table) = kept_pins(n, d, k);
+                if blocks.is_empty() {
+                    assert!(
+                        trace == 0 && hash == 0 && table.is_empty(),
+                        "{name}: an arm pinned whole or not at all"
+                    );
+                    continue;
+                }
+                assert_eq!(
+                    (blocks.len(), table.len()),
+                    (SCHEDULE_BLOCKS, SCHEDULE_BLOCKS),
+                    "{name}: 120 blocks"
+                );
+                assert!(trace != 0 && hash != 0, "{name}: a sequence and its values");
+                assert_eq!(
+                    table
+                        .iter()
+                        .fold(0usize, |sum, b| sum.saturating_add(b.1 as usize)),
+                    SCHEDULE_TRIALS.saturating_sub(usize::from(delay)),
+                    "{name}: a reward at every trial's end but the first `delay`"
+                );
+                clauses[n][d][k] = kept_clauses(&couplings, outside, blocks);
+                arms[n][d][k] = Some(kept_arm_of(blocks, table));
+            }
+        }
+    }
+    let complete = arms.iter().flatten().flatten().all(Option::is_some);
+    let verdict = complete.then(|| kept_verdict(clauses));
+    let readings = verdict.map(|_| kept_predicted(arms, twins));
+    eprintln!(
+        "DUMP kept PIN verdict {verdict:?} step {:?} predicted readings {readings:?}; the arms' readings {arms:?}; the twins' reversals {twins:?}",
+        verdict.map(|verdict| kept_stop(&verdict))
+    );
+    assert_eq!(verdict, KEPT_1024, "H-43's verdict as written");
+    assert_eq!(
+        verdict.map(|verdict| kept_stop(&verdict)),
+        KEPT_STOP_1024,
+        "the step of the stopping rule reached"
+    );
+    assert_eq!(
+        readings, KEPT_READINGS_READ_1024,
+        "ADR-0207's three predicted readings, as read"
+    );
+}
+
+// ------------------------------------------------ as read from the one run (ADR-0209)
+
+/// H-43's verdict, as read: none until every arm is pinned.
+const KEPT_1024: Option<Kept> = None;
+/// The step of ADR-0207's stopping rule the verdict reaches: none until then.
+const KEPT_STOP_1024: Option<u8> = None;
+/// ADR-0207's three predicted readings, as read: none until then.
+const KEPT_READINGS_READ_1024: Option<[Option<bool>; 3]> = None;
+
+// ------------------------------------------------ pinned from the one run (brief 080)
+
+// The twins' tables by block, per network in `KEPT_SEEDS`'s order and per arm in `KEPT_ARMS`',
+// empty until their one run.
+const KEPT_TWIN_TABLES: [[&[KeptBlock]; 2]; 3] = [[&[], &[]], [&[], &[]], [&[], &[]]];
+
+// The arms' tables, per network, per delay in `KEPT_DELAYS`' order and per arm, empty until their
+// one run.
+const KEPT_ARM_BLOCKS: [[[&[Block]; 2]; 2]; 3] = [
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+];
+const KEPT_ARM_TRACES: [[[u64; 2]; 2]; 3] = [[[0; 2]; 2]; 3];
+const KEPT_ARM_VALUE_HASH: [[[u64; 2]; 2]; 3] = [[[0; 2]; 2]; 3];
+const KEPT_ARM_TABLES: [[[&[KeptBlock]; 2]; 2]; 3] = [
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
+    [[&[], &[]], [&[], &[]]],
 ];

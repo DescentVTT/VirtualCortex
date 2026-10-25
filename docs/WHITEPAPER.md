@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.8.0
+version: 5.9.0
 status: active
 date: 2026-10-25
 ---
@@ -11,7 +11,7 @@ date: 2026-10-25
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.8.0 |
+| Version | 5.9.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-25 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2517,6 +2517,8 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0205](adr/0205-the-probe-in-the-engines-default.md) | The probe in the engine's default | accepted |
 | [ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md) | The probe in the engine's default, built | accepted |
 | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) | A reward past the trial, its address kept | accepted |
+| [ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md) | A reward past the trial, its address kept, built | proposed |
+| [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md) | A reward past the trial, its address kept, its protocol | proposed |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2643,6 +2645,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-76 | The gate's step *"Test in the release profile"* was bounded at 10 minutes with the comment *"192 s at the longest"* ([ADR-0159](adr/0159-the-gates-jobs-bounded.md)); the last twelve green runs took up to 516 s, and brief 078's pull request hit the bound once on a commit that changed only documents. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0205](adr/0205-the-probe-in-the-engines-default.md)): the bound is 26 minutes, three times 516 s by ADR-0159's rule; where the rounds' pinned tables live, which grows the test crates' compile time, is named and not taken. |
 | F-77 | [ADR-0054](adr/0054-the-causal-count-inside-the-loop.md)'s text says its rule held *"on the lattice at 1.75 at every size"*; its own table puts the lattice 0.19 and 0.22 below the gross ratio at 1 024 units and 0.18 and 0.22 at 4 096. Exploration 001 noticed it. | ADR-0054 | **Resolved** ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): recorded here; ADR-0054 is accepted and is not edited, and the rule's outcome does not depend on it. |
 | F-78 | The sweep of brief 079's dispatch, run 40097581635, had its runtime-2 job cut at its 330-minute bound, 16:58Z to 22:29Z on 2026-10-24, with 18 of its 123 mutants untested; at twelve shards the runtime's jobs took 2 h 13 min to 5 h 31 min. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): the runtime's sweep is dealt over sixteen shards; the cause, the test crates growing with the rounds' pinned tables, is F-76's. |
+| F-79 | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) bounds a reward's age *"below `kept_addresses`"*, and runs a delay of two at `kept_addresses` 2: its text refuses its own run. | ADR-0207 | **Resolved** ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)): `kept_addresses` is built as the oldest age a reward may name, with one entry more held; ADR-0207 is accepted and is not edited. |
 
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->
@@ -2704,7 +2707,7 @@ A hypothesis's text, its stopping rule and its rounds' readings are in its repor
 | H-40 | a target the engine reads, at a sixteenth, on three networks | yes | [ADR-0188](adr/0188-a-target-the-engine-reads.md), [ADR-0190](adr/0190-a-target-the-engine-reads-measured.md) | [H-40](research/H-40.md) |
 | H-41 | the inhibitory target by the same read, on three networks | yes | [ADR-0192](adr/0192-the-inhibitory-target-by-the-same-read.md), [ADR-0195](adr/0195-the-inhibitory-target-by-the-same-read-measured.md) | [H-41](research/H-41.md) |
 | H-42 | a step the engine makes from its own loop, on three networks | yes | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md), [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | [H-42](research/H-42.md) |
-| H-43 | a reward past the trial, its address kept, on three networks | open | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) | [H-43](research/H-43.md) |
+| H-43 | a reward past the trial, its address kept, on three networks | open | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md), [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md) | [H-43](research/H-43.md) |
 <!-- adr-index: end hypotheses -->
 
 **The open questions, and those settled,** that no hypothesis numbers:
