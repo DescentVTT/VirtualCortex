@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.13.0
+version: 5.14.0
 status: active
 date: 2026-10-25
 ---
@@ -11,7 +11,7 @@ date: 2026-10-25
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.13.0 |
+| Version | 5.14.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-25 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2538,6 +2538,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0211](adr/0211-the-round-shortened.md) | The round shortened | accepted |
 | [ADR-0212](adr/0212-three-in-four-on-the-default.md) | A reward right three times in four, on the default | accepted |
 | [ADR-0213](adr/0213-three-in-four-on-the-default-its-protocol.md) | A reward right three times in four, on the default, its protocol | proposed |
+| [ADR-0214](adr/0214-three-in-four-on-the-default-measured.md) | A reward right three times in four, on the default, measured | proposed |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2729,7 +2730,7 @@ A hypothesis's text, its stopping rule and its rounds' readings are in its repor
 | H-41 | the inhibitory target by the same read, on three networks | yes | [ADR-0192](adr/0192-the-inhibitory-target-by-the-same-read.md), [ADR-0195](adr/0195-the-inhibitory-target-by-the-same-read-measured.md) | [H-41](research/H-41.md) |
 | H-42 | a step the engine makes from its own loop, on three networks | yes | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md), [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | [H-42](research/H-42.md) |
 | H-43 | a reward past the trial, its address kept, on three networks | yes | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md), [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md), [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | [H-43](research/H-43.md) |
-| H-44 | a reward right three times in four, on the default, beside a control at step zero | open | [ADR-0212](adr/0212-three-in-four-on-the-default.md), [ADR-0213](adr/0213-three-in-four-on-the-default-its-protocol.md) | [H-44](research/H-44.md) |
+| H-44 | a reward right three times in four, on the default, beside a control at step zero | yes | [ADR-0212](adr/0212-three-in-four-on-the-default.md), [ADR-0213](adr/0213-three-in-four-on-the-default-its-protocol.md), [ADR-0214](adr/0214-three-in-four-on-the-default-measured.md) | [H-44](research/H-44.md) |
 <!-- adr-index: end hypotheses -->
 
 **The open questions, and those settled,** that no hypothesis numbers:
