@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A reward past the trial, its address kept ([ADR-0207](docs/adr/0207-a-reward-past-the-trial-its-address-kept.md)); H-43; brief 080; F-77, F-78; whitepaper 5.8.0.** M10 taken. The runtime's sweep is dealt over sixteen shards, and brief 079's sweep is recorded.
 - **The probe in the engine's default, built ([ADR-0206](docs/adr/0206-the-probe-in-the-engines-default-built.md)); brief 079; whitepaper 5.7.0.** `Config::reads_its_targets()` sets `step_probe` and nothing else. An engine born under it writes H-42's candidate's image byte for byte on seeds 22, 23 and 24. Dispatch 40097581635 at `scope=both` held every other pin.
 - **The probe in the engine's default ([ADR-0205](docs/adr/0205-the-probe-in-the-engines-default.md)); brief 079; F-76; whitepaper 5.6.0.** `Config::reads_its_targets()` is to set `step_probe`. The gate's release test step is bounded at 26 minutes, three times its longest of 516 s.
 - **A step the engine makes from its own loop, measured ([ADR-0204](docs/adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)); H-42 = yes at step 3; whitepaper 5.5.0.** On seeds 22, 23 and 24 the probe read S = 15.0 to 15.2 and made step = 1/61 to 1/60, and both arms held H-25's four clauses. All four predicted readings held. Readings in `docs/research/H-42.md`; F-75.

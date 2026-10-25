@@ -1,8 +1,8 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.7.0
+version: 5.8.0
 status: active
-date: 2026-10-24
+date: 2026-10-25
 ---
 
 # VirtualCortex Architecture Whitepaper
@@ -11,9 +11,9 @@ date: 2026-10-24
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.7.0 |
+| Version | 5.8.0 |
 | Status | Active (living document; amended by ADR) |
-| Date | 2026-10-24 |
+| Date | 2026-10-25 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
@@ -2516,6 +2516,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | A step the engine makes from its own loop, measured | accepted |
 | [ADR-0205](adr/0205-the-probe-in-the-engines-default.md) | The probe in the engine's default | accepted |
 | [ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md) | The probe in the engine's default, built | accepted |
+| [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) | A reward past the trial, its address kept | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2640,6 +2641,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-74 | `README.md`'s Status said the repository *"is at the state-model stage"*, where `CLAUDE.md` said it *"is past the state-model stage"*. | `README.md` | **Resolved** ([ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)): README's Status links `docs/STATUS.md` and names no stage. |
 | F-75 | The Traditional Chinese guide's row for §11 counted the hypotheses as *"H-1 至 H-41"*; §11.1 has listed H-42 since [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), whitepaper 5.1.0. | `docs/zh-TW/README.md` | **Resolved** ([ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md)): the row reads H-1 至 H-42. |
 | F-76 | The gate's step *"Test in the release profile"* was bounded at 10 minutes with the comment *"192 s at the longest"* ([ADR-0159](adr/0159-the-gates-jobs-bounded.md)); the last twelve green runs took up to 516 s, and brief 078's pull request hit the bound once on a commit that changed only documents. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0205](adr/0205-the-probe-in-the-engines-default.md)): the bound is 26 minutes, three times 516 s by ADR-0159's rule; where the rounds' pinned tables live, which grows the test crates' compile time, is named and not taken. |
+| F-77 | [ADR-0054](adr/0054-the-causal-count-inside-the-loop.md)'s text says its rule held *"on the lattice at 1.75 at every size"*; its own table puts the lattice 0.19 and 0.22 below the gross ratio at 1 024 units and 0.18 and 0.22 at 4 096. Exploration 001 noticed it. | ADR-0054 | **Resolved** ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): recorded here; ADR-0054 is accepted and is not edited, and the rule's outcome does not depend on it. |
+| F-78 | The sweep of brief 079's dispatch, run 40097581635, had its runtime-2 job cut at its 330-minute bound, 16:58Z to 22:29Z on 2026-10-24, with 18 of its 123 mutants untested; at twelve shards the runtime's jobs took 2 h 13 min to 5 h 31 min. | `.github/workflows/ci.yml` | **Open** in part ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md)): the runtime's sweep is dealt over sixteen shards; the cause, the test crates growing with the rounds' pinned tables, is F-76's. |
 
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->
@@ -2701,6 +2704,7 @@ A hypothesis's text, its stopping rule and its rounds' readings are in its repor
 | H-40 | a target the engine reads, at a sixteenth, on three networks | yes | [ADR-0188](adr/0188-a-target-the-engine-reads.md), [ADR-0190](adr/0190-a-target-the-engine-reads-measured.md) | [H-40](research/H-40.md) |
 | H-41 | the inhibitory target by the same read, on three networks | yes | [ADR-0192](adr/0192-the-inhibitory-target-by-the-same-read.md), [ADR-0195](adr/0195-the-inhibitory-target-by-the-same-read-measured.md) | [H-41](research/H-41.md) |
 | H-42 | a step the engine makes from its own loop, on three networks | yes | [ADR-0200](adr/0200-a-step-the-engine-makes-from-its-own-loop.md), [ADR-0203](adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md), [ADR-0204](adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | [H-42](research/H-42.md) |
+| H-43 | a reward past the trial, its address kept, on three networks | open | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) | [H-43](research/H-43.md) |
 <!-- adr-index: end hypotheses -->
 
 **The open questions, and those settled,** that no hypothesis numbers:
@@ -2967,7 +2971,7 @@ The blocks are the ones in `CLAUDE.md`, which is canonical ([ADR-0184](adr/0184-
 <!-- @assert-present file="scripts/arm-run.sh" reason="ADR-0184: a round's run finds its test from the listing and keeps its output" -->
 
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="mutants-weekly" min="1" reason="ADR-0058: the weekly sweep is one job per area" -->
-<!-- @assert-count target=".github/workflows/ci.yml" symbol="--shard 11/12 --sharding round-robin" min="1" reason="ADR-0158: the runtime's sweep is dealt to twelve shards" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="--shard 15/16 --sharding round-robin" min="1" reason="ADR-0158, ADR-0207: the runtime's sweep is dealt to sixteen shards (F-78)" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="needs: [weekly]" min="1" reason="ADR-0166: the sweep's jobs wait for the whole-domain shards" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="timeout-minutes: 180" min="1" reason="ADR-0176, ADR-0179: a weekly shard's bound, of which no shard's job reads past 60 per cent" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="an incomplete sweep is not a result" min="1" reason="ADR-0058: a sweep that did not cover its area fails the job" -->
@@ -2997,9 +3001,9 @@ Milestones follow the founding design note; each ends with an exit test.
 | M7 Measurement | Benchmarks for T-3, T-8; differential test for T-1. | Targets become Measured or are revised. | Harness and the existing T-3 components benchmarked (brief 006); no admissible run yet; T-8 has no subject; T-1's two-architecture form runs in CI at 20 000 ticks ([ADR-0030](adr/0030-verification-governance.md)), the $10^6$-tick reference-image form not started; the idle tick on one, two and four workers is benchmarked ([ADR-0035](adr/0035-cadence-and-the-population-tally.md)), with no admissible run. |
 | M8 Digital embodiment, language and the brokered pipelines | Tool ring and broker; hypervector unbinding and the lexicon behind `cortex-linguistic`; the veto gate in the dispatch path; the relay table behind `cortex-thalamus`; the prover and document-engine services (R-10, R-11); a term arena for unification; second records for the crates of [ADR-0016](adr/0016-thirty-two-crate-architecture.md) that need one. | A tool call round trip through the broker under the veto gate, denied and permitted; a frame realised as tokens in both lexicon languages; a two-step refutation certified through the broker and consolidated; a document audit that re-computes a stated figure and flags a contradiction. | Frames, rules, the two categories' opcodes, the resolution step and certification done (ADR-0016); induction, the continued-fraction search and the discovery path's record side done (brief 021, [ADR-0041](adr/0041-induction-on-the-term-arena.md), [ADR-0042](adr/0042-continued-fractions.md), [ADR-0043](adr/0043-discovery-path.md)); broker, rings, stub and dispatch path open; unification done (brief 014, [ADR-0025](adr/0025-term-arena-and-unification.md)); the hypervector body and its algebra, categorial reduction, and the frame's round trip through both on ids done (brief 020, [ADR-0039](adr/0039-hypervector-body.md), [ADR-0040](adr/0040-categorial-reduction.md)); the clause search and a bounded proof search done (brief 022, [ADR-0045](adr/0045-clause-search.md)); the lexicon on ids in both directions done (brief 023, [ADR-0046](adr/0046-lexicon.md)); the words of a language the host's. |
 | M9 Self-amendment | A registry of the parameters the engine may amend; the amendment record and its gates; the trial in two forks of the image; the commit; persistence and replay; the amendment register behind the broker. | A proposal trialled in a fork, committed only with the forks' behaviour hashes equal, persisted, reloaded with the policy derived; a forged record refused by the loader. | Done for the sweep's two parameters ([ADR-0031](adr/0031-policy-amendment.md)): the exit test passes as `runtime/cortex-runtime/tests/amendment.rs`; the other rules' parameters join as the runtime composes them; the register open. |
-| M10 A reward past the trial | A decision and a measured round on a reward that arrives trials after the choice; candidate: options and a critic over several timescales (UPG-03). | A hypothesis written before any run reads yes. | Planned, first ([ADR-0187](adr/0187-the-upgrade-suite-planned.md)); after the default ([ADR-0196](adr/0196-the-engines-default.md)) and the rate's rule's step from the engine's own loop, which it names. |
+| M10 A reward past the trial | A decision and a measured round on a reward that arrives trials after the choice; candidate: options and a critic over several timescales (UPG-03). | A hypothesis written before any run reads yes. | Taken ([ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md), H-43): the engine keeps each trial's address until its reward, after exploration 001 read the address, not the trace, as what a delay breaks. |
 | M11 Learning that sleep keeps | A learned mapping held through a sleep with replay, against one without; candidate: chained episodes compiled in sleep (UPG-04). | A hypothesis written before any run reads yes. | Planned, second (ADR-0187). |
-| M12 Couplings over long runs | The couplings and the inhibitory sum bounded over many schedules; candidate: a sliding threshold (UPG-02), its layout decided first, since the bytes it asked for are `v_slow`'s. | A hypothesis written before any run reads yes. | Planned, third (ADR-0187). |
+| M12 Couplings over long runs | The couplings and the inhibitory sum bounded over many schedules; candidate: a sliding threshold (UPG-02), its layout decided first, since the bytes it asked for are `v_slow`'s; and for the rate's rule, a step adapted every window by its error's whiteness, a sign rule, explored first (2026-10-24). | A hypothesis written before any run reads yes. | Planned, third (ADR-0187). |
 | M13 Lookahead | A choice made by an imagined rollout, against the reflexive one, on a task that needs it; candidate: a counterfactual rollout (UPG-08), the lookahead [ADR-0099](adr/0099-the-engines-speed.md) ordered. | A hypothesis written before any run reads yes. | Planned, fourth (ADR-0187). |
 | M14 Synthesis in sleep | A REM pass that proposes a term shortening the ledger's description; candidate: combinators under minimum description length (UPG-09). | A hypothesis written before any run reads yes. | Planned, fifth (ADR-0187); M8's remainder sixth. |
 | M15 Language that says what it does not know | A frame's confidence deciding whether an answer is given; candidates UPG-05 and UPG-06. | A hypothesis written before any run reads yes. | Planned, seventh (ADR-0187); after M8's lexicon and broker. |

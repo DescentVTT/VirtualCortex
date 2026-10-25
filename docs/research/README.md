@@ -56,6 +56,7 @@ The question is the hypothesis's own name, as §11.1 wrote it.
 | H-40 | a target the engine reads, at a sixteenth, on three networks | yes | [ADR-0188](../adr/0188-a-target-the-engine-reads.md), [ADR-0190](../adr/0190-a-target-the-engine-reads-measured.md) | [H-40](H-40.md) |
 | H-41 | the inhibitory target by the same read, on three networks | yes | [ADR-0192](../adr/0192-the-inhibitory-target-by-the-same-read.md), [ADR-0195](../adr/0195-the-inhibitory-target-by-the-same-read-measured.md) | [H-41](H-41.md) |
 | H-42 | a step the engine makes from its own loop, on three networks | yes | [ADR-0200](../adr/0200-a-step-the-engine-makes-from-its-own-loop.md), [ADR-0203](../adr/0203-a-step-the-engine-makes-from-its-own-loop-protocol.md), [ADR-0204](../adr/0204-a-step-the-engine-makes-from-its-own-loop-measured.md) | [H-42](H-42.md) |
+| H-43 | a reward past the trial, its address kept, on three networks | open | [ADR-0207](../adr/0207-a-reward-past-the-trial-its-address-kept.md) | [H-43](H-43.md) |
 <!-- adr-index: end hypotheses -->
 
 ## Lines with no number
