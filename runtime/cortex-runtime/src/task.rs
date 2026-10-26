@@ -680,9 +680,14 @@ const DELAY_SIGNS: usize = KEPT_ADDRESSES_MAX as usize + 1;
 /// them from trial to trial as it carries its mapping, a flip included: a sign is the one its
 /// own trial earned. On time, every trial's sign is given at its own end, the task before
 /// ADR-0208. [`Task::check`] refuses a delay the engine keeps no address for.
+///
+/// A delay may be given without its age ([`Delay::untold`], ADR-0216, ADR-0217): the signs come
+/// as late, and each is given through `Executor::reward_untold`, the engine reading the age
+/// itself; `check` refuses it on an engine that does not read its delay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Delay {
     trials: u8,
+    told: bool,
     signs: [bool; DELAY_SIGNS],
     pending: u8,
 }
@@ -691,10 +696,22 @@ impl Delay {
     /// On time: every trial's sign at its own end.
     pub const ON_TIME: Self = Self::of(0);
 
-    /// A delay of `trials` trials, no sign yet to come.
+    /// A delay of `trials` trials, each sign given at its age, no sign yet to come.
     pub const fn of(trials: u8) -> Self {
         Self {
             trials,
+            told: true,
+            signs: [false; DELAY_SIGNS],
+            pending: 0,
+        }
+    }
+
+    /// A delay of `trials` trials given without its age (ADR-0216, ADR-0217), no sign yet to
+    /// come: each sign as late as `of` gives it, through `Executor::reward_untold`.
+    pub const fn untold(trials: u8) -> Self {
+        Self {
+            trials,
+            told: false,
             signs: [false; DELAY_SIGNS],
             pending: 0,
         }
@@ -703,6 +720,12 @@ impl Delay {
     /// The trials a sign comes late.
     pub const fn trials(&self) -> u8 {
         self.trials
+    }
+
+    /// Whether each sign is given at its age, the delay before ADR-0217; false when it is
+    /// given without its age.
+    pub const fn is_told(&self) -> bool {
+        self.told
     }
 
     /// The signs earned and not yet given.
@@ -886,8 +909,13 @@ pub enum TaskError {
     /// (ADR-0208): only an address the engine drew from its counts is kept.
     DelayUndrawn,
     /// A delay with the exploration (ADR-0208): the exploration reads the value the trial's own
-    /// reward would be taken against, and a late reward is taken against another trial's.
+    /// reward would be taken against, and a late reward is taken against another trial's. Since
+    /// ADR-0217 also a delay given without its age, on time too: its reward is taken at the age
+    /// the engine reads.
     ExplorationWithDelay,
+    /// A delay given without its age on an engine that does not read its delay
+    /// (`Config::reads_its_delay`, ADR-0217).
+    DelayUnread,
 }
 
 impl From<InjectError> for TaskError {
@@ -917,8 +945,10 @@ pub struct Outcome<const N: usize = 2> {
     /// Whether the selection was the stimulus's rewarded readout, whatever reward the trial
     /// then received (ADR-0148).
     pub correct: bool,
-    /// The reward delivered, signed; zero when withheld, and under a delay (ADR-0208) where no
-    /// sign was due. Under a delay it is the reward of the trial the delay names, given at this
+    /// The reward delivered, signed; zero when withheld, under a delay (ADR-0208) where no sign
+    /// was due, and under a delay given without its age where the age the engine reads kept no
+    /// live entry, so that the reward reached no modulator (ADR-0217). Under a delay it is the
+    /// reward of the trial the delay names, given at this
     /// trial's end, and the signal and the value are that reward's. Under a critic, the
     /// prediction error
     /// the modulator received (ADR-0107); under the engine's critic with the whole punishment
@@ -1197,13 +1227,17 @@ impl<const N: usize> Task<N> {
         if self.delay.trials() > exec.kept_addresses() {
             return Err(TaskError::DelayNotKept);
         }
-        if self.delay.trials() != 0 {
+        if self.delay.trials() != 0 || !self.delay.is_told() {
             if !matches!(self.delivery, Delivery::Drawn | Delivery::Released) {
                 return Err(TaskError::DelayUndrawn);
             }
             if self.exploration != Exploration::Unset {
                 return Err(TaskError::ExplorationWithDelay);
             }
+        }
+        // Given without its age, on time too, the engine reads the age (ADR-0217).
+        if !self.delay.is_told() && !exec.reads_its_delay() {
+            return Err(TaskError::DelayUnread);
         }
         Ok(())
     }
@@ -1223,9 +1257,10 @@ impl<const N: usize> Task<N> {
     /// addresses (ADR-0208), the drawn and the released deliveries keep the trial's address at
     /// its close in place of drawing it, the trial's sign joins those its delay holds, and the
     /// sign that is the delay's age, where one is, is given through the address kept for its
-    /// trial; under the withheld feedback the close draws as before. On time it is the trial it
-    /// was, bit for bit, under every feedback. Refused as `check` refuses, and when the injector
-    /// refuses a message.
+    /// trial, or, given without its age, through `Executor::reward_untold` (ADR-0217); under the
+    /// withheld feedback the close draws as before. On time it is the trial it was, bit for bit,
+    /// under every feedback. Refused as `check` refuses, and when the injector refuses a
+    /// message.
     pub fn trial<const CAP: usize>(
         &mut self,
         exec: &mut Executor<CAP>,
@@ -1330,25 +1365,27 @@ impl<const N: usize> Task<N> {
             Feedback::ThreeInFour => Some(correct != self.misleading_in_four_at(trial)),
             Feedback::Withheld => None,
         };
+        // A trial that gives no reward records none, as a withheld one does.
+        let unrewarded = |exec: &Executor<CAP>, expected_q16: Option<[i32; 2]>| Outcome {
+            trial,
+            stimulus,
+            counts,
+            selection,
+            correct,
+            reward_q16: 0,
+            signal_q16: exec.modulator().dopamine_rpe,
+            expected_q16,
+            value_q16: None,
+            held,
+            drawn,
+        };
         // The delay (ADR-0208): the trial's sign joins those still to come, and the one that is
-        // the delay's age, where one is, is given; on time, the trial's own. A trial that gives
-        // none records no reward, as a withheld one does.
+        // the delay's age, where one is, is given; on time, the trial's own.
         let Some(positive) = earned.and_then(|positive| self.delay.passed(positive)) else {
-            return Ok(Outcome {
-                trial,
-                stimulus,
-                counts,
-                selection,
-                correct,
-                reward_q16: 0,
-                signal_q16: exec.modulator().dopamine_rpe,
-                expected_q16: self
-                    .critic
-                    .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]),
-                value_q16: None,
-                held,
-                drawn,
-            });
+            let expected_q16 = self
+                .critic
+                .map(|c| [c.expected_q16[usize::from(stimulus)]; 2]);
+            return Ok(unrewarded(exec, expected_q16));
         };
         let outcome_q16 = if positive {
             self.reward_q16
@@ -1365,11 +1402,18 @@ impl<const N: usize> Task<N> {
             None => (outcome_q16, None),
         };
         // Under kept addresses through the address its trial's close kept, at the delay's age
-        // (ADR-0208); otherwise into the address written above.
-        let signal_q16 = if kept {
+        // (ADR-0208), or, given without its age, at the age the engine reads (ADR-0217), where
+        // the reward reaches no modulator when that age's entry is spent; otherwise into the
+        // address written above.
+        let signal_q16 = if !kept {
+            exec.reward(delivered_q16)
+        } else if self.delay.is_told() {
             exec.reward_kept(delivered_q16, self.delay.trials())?
         } else {
-            exec.reward(delivered_q16)
+            match exec.reward_untold(delivered_q16)? {
+                Some(signal_q16) => signal_q16,
+                None => return Ok(unrewarded(exec, expected_q16)),
+            }
         };
         // Under the engine's critic (ADR-0131) the modulator received the reward less the
         // engine's value, or the reward whole where a punishment met a value below zero while
@@ -7050,6 +7094,309 @@ mod tests {
             (0, None),
             "withheld: nothing held, nothing kept"
         );
+    }
+
+    /// `kept_network` reading its delay (ADR-0217).
+    fn reading_network(window: u16, kept: u8) -> Executor<8> {
+        let mut exec = Executor::<8>::new(Config {
+            workers: 2,
+            units: 16,
+            injector_capacity: 64,
+            train_capacity: spikes_per_unit(TICKS).saturating_mul(16) as usize,
+            modulation_baseline_q16: ONE / 2,
+            critic: Some(ValueCritic { shift: 9, scale: 2 }),
+            critic_window_ticks: window,
+            kept_addresses: kept,
+            reads_its_delay: true,
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+        exec
+    }
+
+    /// A delay given without its age (ADR-0217): a delay of its own, `of`'s with the age untold,
+    /// whose signs come as late; refused, before any tick, on an engine that does not read its
+    /// delay, an engine that keeps addresses included; on one that does, at zero too, under the
+    /// global and the addressed deliveries and with the exploration, and beyond the oldest age
+    /// kept; taken at every delay up to it under the drawn and the released deliveries.
+    #[test]
+    fn a_delay_given_without_its_age_is_refused_on_an_engine_that_does_not_read_it() {
+        for k in 0..=KEPT_ADDRESSES_MAX {
+            let untold = Delay::untold(k);
+            assert_eq!(
+                (untold.trials(), untold.pending(), untold.is_told()),
+                (k, 0, false)
+            );
+            assert!(Delay::of(k).is_told());
+            assert_ne!(untold, Delay::of(k));
+        }
+        let mut late = Delay::untold(2);
+        let passed: Vec<Option<bool>> = [true, false, false, true]
+            .iter()
+            .map(|&s| late.passed(s))
+            .collect();
+        assert_eq!(passed, [None, None, Some(true), Some(false)], "as late");
+        let with = |delivery, delay, exploration| Task {
+            delivery,
+            delay: Delay::untold(delay),
+            exploration,
+            ..task(Feedback::Answer)
+        };
+        let reading = reading_network(30, 2);
+        for delay in 0..=2u8 {
+            for exec in [&kept_network(30, 2), &windowed_network(30)] {
+                for delivery in [Delivery::Drawn, Delivery::Released] {
+                    assert_eq!(
+                        with(delivery, delay, Exploration::Unset).check(exec),
+                        Err(if exec.kept_addresses() < delay {
+                            TaskError::DelayNotKept
+                        } else {
+                            TaskError::DelayUnread
+                        }),
+                        "{delivery:?} {delay}"
+                    );
+                }
+            }
+            for delivery in [Delivery::Global, Delivery::Addressed] {
+                assert_eq!(
+                    with(delivery, delay, Exploration::Unset).check(&reading),
+                    Err(TaskError::DelayUndrawn),
+                    "{delivery:?} {delay}"
+                );
+            }
+            for delivery in [Delivery::Drawn, Delivery::Released] {
+                assert_eq!(
+                    with(delivery, delay, Exploration::Unset).check(&reading),
+                    Ok(())
+                );
+                assert_eq!(
+                    with(delivery, delay, Exploration::ValueGated).check(&reading),
+                    Err(TaskError::ExplorationWithDelay)
+                );
+            }
+        }
+        assert_eq!(
+            with(Delivery::Drawn, 3, Exploration::Unset).check(&reading),
+            Err(TaskError::DelayNotKept)
+        );
+        let told = Task {
+            delivery: Delivery::Drawn,
+            delay: Delay::of(2),
+            ..task(Feedback::Answer)
+        };
+        assert_eq!(
+            told.check(&reading),
+            Ok(()),
+            "a told delay on a reading engine"
+        );
+        let mut refused = with(Delivery::Drawn, 1, Exploration::Unset);
+        let mut exec = kept_network(30, 2);
+        assert_eq!(refused.trial(&mut exec, 0), Err(TaskError::DelayUnread));
+        assert_eq!(exec.ticks(), 0, "before any tick");
+    }
+
+    /// A late sign given without its age (ADR-0217), each number from an oracle written from the
+    /// rule's text: on an engine that keeps two addresses and reads its delay, under the drawn
+    /// delivery and the answer, on time and at a delay of one trial and of two, with a flip
+    /// before the sixth trial, over fewer trials than a score takes, so at age zero throughout.
+    /// Its twin runs the same trials withheld, the counts read at each close, then keeps the close
+    /// and is given the sign without its age by hand. The first `k` trials give no reward, record
+    /// none and leave the address and the reading as they were, the close kept and live. Trial `t`
+    /// from `k` on gives the sign trial `t - k` earned, at the age in use: its value is the
+    /// engine's weights after trial `t - 1` times the counts trial `t`'s own close kept, over
+    /// four; the error is the sign's reward less it; the address is trial `t`'s own — its counted
+    /// units onto its selection — and its entry is spent. Each trial ends with the twin's weights.
+    /// The first `k` closes, whose signs came at later closes, are never spent and are let go.
+    #[test]
+    fn a_sign_given_without_its_age_is_given_at_the_age_the_engine_reads() {
+        let critic = ValueCritic { shift: 9, scale: 2 };
+        for k in [0u8, 1, 2] {
+            let mut t = Task {
+                delivery: Delivery::Drawn,
+                delay: Delay::untold(k),
+                ..task(Feedback::Answer)
+            };
+            let mut by_hand = Task {
+                delivery: Delivery::Drawn,
+                ..task(Feedback::Withheld)
+            };
+            let mut exec = reading_network(30, 2);
+            let mut twin = reading_network(30, 2);
+            let mut outcomes: Vec<Outcome> = Vec::new();
+            let mut given = 0u32;
+            let sides = |exec: &Executor<8>| {
+                (
+                    (0..16).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                    (0..16).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+                )
+            };
+            let weights = |exec: &Executor<8>| -> Vec<i16> {
+                exec.units().iter().map(|u| u.value_weight).collect()
+            };
+            for trial in 0..14u64 {
+                let at = format!("delay {k} trial {trial}");
+                if trial == 5 {
+                    t.flip();
+                    by_hand.flip();
+                }
+                let before = (weights(&exec), sides(&exec), exec.prediction());
+                cued(&exec, &t, trial);
+                cued(&twin, &by_hand, trial);
+                let outcome = t.trial(&mut exec, trial).unwrap();
+                let withheld = by_hand.trial(&mut twin, trial).unwrap();
+                assert_eq!(
+                    (withheld.stimulus, withheld.selection, withheld.correct),
+                    (outcome.stimulus, outcome.selection, outcome.correct),
+                    "{at}: the same trial"
+                );
+                let counts = twin.features().to_vec();
+                let targets: Vec<bool> = (0..16)
+                    .map(|u| {
+                        outcome
+                            .selection
+                            .is_some_and(|r| t.readout.sets()[usize::from(r)].contains(u))
+                    })
+                    .collect();
+                twin.keep_address((0..16).filter(|&u| targets[u as usize]))
+                    .unwrap();
+                assert_eq!(exec.delay_age(), Some(0), "{at}");
+                match (trial as usize).checked_sub(usize::from(k)) {
+                    None => {
+                        assert_eq!(
+                            (outcome.reward_q16, outcome.value_q16),
+                            (0, None),
+                            "{at}: none given"
+                        );
+                        assert_eq!(outcome.signal_q16, exec.modulator().dopamine_rpe, "{at}");
+                        assert_eq!(
+                            (weights(&exec), sides(&exec), exec.prediction()),
+                            before,
+                            "{at}"
+                        );
+                        assert_eq!(
+                            exec.kept_at(0),
+                            Some((&counts[..], &targets[..])),
+                            "{at}: the close kept, live"
+                        );
+                    }
+                    Some(u) => {
+                        given = given.wrapping_add(1);
+                        // On time the sign is the trial's own.
+                        let earned = outcomes.get(u).unwrap_or(&outcome).correct;
+                        let reward = if earned { REWARD } else { -REWARD };
+                        let value =
+                            critic.value_q16(before.0.iter().copied().zip(counts.iter().copied()));
+                        let exact: i64 = before
+                            .0
+                            .iter()
+                            .zip(&counts)
+                            .map(|(&w, &c)| i64::from(w) * i64::from(c))
+                            .sum();
+                        assert_eq!(i64::from(value), exact.div_euclid(4), "{at}: over four");
+                        let error = ValueCritic::error_q16(reward, value);
+                        assert_eq!(
+                            (outcome.reward_q16, outcome.value_q16),
+                            (error, Some(value)),
+                            "{at}: trial {u}'s sign at age zero"
+                        );
+                        assert_eq!(outcome.signal_q16, exec.modulator().dopamine_rpe, "{at}");
+                        assert_eq!(
+                            sides(&exec),
+                            (counts.iter().map(|&c| c != 0).collect(), targets),
+                            "{at}: the newest close's address"
+                        );
+                        assert_eq!(exec.kept_at(0), None, "{at}: spent");
+                        assert!(
+                            matches!(twin.reward_untold(reward), Ok(Some(_))),
+                            "{at}: the twin's"
+                        );
+                    }
+                }
+                assert_eq!(weights(&exec), weights(&twin), "{at}: the twin's weights");
+                outcomes.push(outcome);
+            }
+            assert_eq!(given, 14 - u32::from(k));
+            assert!(
+                outcomes.iter().any(|o| o.correct) && outcomes.iter().any(|o| !o.correct),
+                "delay {k}: signs of both kinds"
+            );
+            assert_eq!(
+                (exec.kept_let_go(), exec.delay_score(0)),
+                (u64::from(k), None),
+                "delay {k}: the first {k} closes, given no sign at age zero, let go"
+            );
+        }
+    }
+
+    /// On time and given without its age, with no move (ADR-0217): under every feedback, under the
+    /// drawn and the released deliveries, an engine that keeps one address or four and reads its
+    /// delay runs the trials of the engine that keeps none, bit for bit, over fewer trials than a
+    /// score takes — each outcome, and after each trial the weights, the counts, the window, the
+    /// reading, the signal and the addressed set; the age in use zero, none let go.
+    #[test]
+    fn on_time_given_without_its_age_with_no_move_a_trial_is_the_trial_it_was_bit_for_bit() {
+        let state = |exec: &Executor<8>| {
+            (
+                exec.units()
+                    .iter()
+                    .map(|u| u.value_weight)
+                    .collect::<Vec<i16>>(),
+                exec.features().to_vec(),
+                exec.window_opened(),
+                exec.prediction(),
+                *exec.modulator(),
+                (0..16).map(|u| exec.is_source(u)).collect::<Vec<bool>>(),
+                (0..16).map(|u| exec.is_target(u)).collect::<Vec<bool>>(),
+            )
+        };
+        let mut rewarded = 0u32;
+        for feedback in [
+            Feedback::Answer,
+            Feedback::Shuffled,
+            Feedback::Withheld,
+            Feedback::SevenInEight,
+            Feedback::ThreeInFour,
+        ] {
+            for delivery in [Delivery::Drawn, Delivery::Released] {
+                for kept in [1, KEPT_ADDRESSES_MAX] {
+                    let case = format!("{feedback:?} {delivery:?} {kept}");
+                    let t = Task {
+                        delivery,
+                        ..task(feedback)
+                    };
+                    let mut tasks = [
+                        t,
+                        Task {
+                            delay: Delay::untold(0),
+                            ..t
+                        },
+                    ];
+                    let mut engines = [windowed_network(30), reading_network(30, kept)];
+                    for trial in 0..12u64 {
+                        let mut outcomes = Vec::new();
+                        for (t, exec) in tasks.iter_mut().zip(engines.iter_mut()) {
+                            cued(exec, t, trial);
+                            outcomes.push(t.trial(exec, trial).unwrap());
+                        }
+                        assert_eq!(outcomes[0], outcomes[1], "{case} trial {trial}");
+                        assert_eq!(
+                            state(&engines[0]),
+                            state(&engines[1]),
+                            "{case} trial {trial}"
+                        );
+                        rewarded = rewarded.wrapping_add(u32::from(outcomes[0].reward_q16 != 0));
+                    }
+                    assert_eq!(engines[1].delay_age(), Some(0), "{case}");
+                    assert_eq!(engines[1].kept_let_go(), 0, "{case}");
+                }
+            }
+        }
+        assert!(rewarded > 150, "the trials were rewarded: {rewarded}");
     }
 }
 

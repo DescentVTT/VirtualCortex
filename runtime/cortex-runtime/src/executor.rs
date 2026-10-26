@@ -285,11 +285,37 @@ pub struct Config {
     /// window, from which the address is drawn (ADR-0139). Not in the image, as the counts are
     /// not: for an engine built from an image, the configuration's.
     pub kept_addresses: u8,
+    /// The delay read (ADR-0216, ADR-0217): while set, a reward given without its age
+    /// ([`Executor::reward_untold`]) is read by a value critic per kept age, each predicting
+    /// from and learning on the counts of the trial its age closes before the newest, and the
+    /// engine consolidates it at the age in use: zero until another age's score leads for
+    /// `DELAY_RUN` rewards running, then that age, once and for good. Unset (the default), every
+    /// run is the run it was, bit for bit; a reward that names its age
+    /// ([`Executor::reward_kept`]) is ADR-0208's, set or not. Refused without the kept
+    /// addresses, which need the critic and its window. Not in the image, as the entries are
+    /// not: for an engine built from an image, the configuration's.
+    pub reads_its_delay: bool,
 }
 
 /// The oldest age a reward may name (ADR-0207): four trials, the eligibility trace's τ of
 /// $2^{16}$ ticks over a trial of $2^{14}$.
 pub const KEPT_ADDRESSES_MAX: u8 = 4;
+
+/// The rewards an age's score sums (ADR-0216): the magnitudes of its critic's errors at its
+/// last 64 rewards. Scores are compared once every age has as many.
+pub const DELAY_WINDOW: usize = 64;
+
+/// The rewards running at which one age other than zero must lead for the engine to move to it
+/// (ADR-0216).
+pub const DELAY_RUN: u8 = 64;
+
+/// The lead's shift (ADR-0216): an age leads when its score is below every other age's by at
+/// least `DELAY_WINDOW` times a thirty-second of the reward's magnitude, $64 \cdot |r| / 2^5$,
+/// the mean error a thirty-second of the reward lower over the window.
+pub const DELAY_LEAD_SHIFT: u32 = 5;
+
+/// The ages a delay read can hold a critic for: zero to the oldest an engine keeps.
+const DELAY_AGES: usize = KEPT_ADDRESSES_MAX as usize + 1;
 
 impl Default for Config {
     fn default() -> Self {
@@ -326,6 +352,7 @@ impl Default for Config {
             istdp_target_read: false,
             step_probe: false,
             kept_addresses: 0,
+            reads_its_delay: false,
         }
     }
 }
@@ -515,6 +542,9 @@ pub enum ConfigError {
     /// `kept_addresses` is set without the critic or without its window: the address kept is
     /// the one drawn from the window's counts (ADR-0139, ADR-0208).
     KeptAddressesWithoutWindow,
+    /// `reads_its_delay` is set without `kept_addresses`: each age's critic reads the counts its
+    /// age's entry kept (ADR-0216, ADR-0217).
+    DelayReadWithoutKept,
 }
 
 /// The read of the rate's target (ADR-0188, ADR-0189), between ticks: `Executor::target_read`.
@@ -601,16 +631,113 @@ pub enum AddressError {
     /// A reward of an age at which no address is kept (ADR-0208): fewer trials have closed since
     /// the engine's start, its build or its load, or that trial's reward was given already.
     NoKeptAddress,
+    /// A reward given without its age while `Config::reads_its_delay` is unset (ADR-0217): the
+    /// engine reads no age to give it at.
+    DelayUnread,
 }
 
 /// One trial's address kept (ADR-0208): the critic's counts as the trial's close found them,
-/// whose units not zero are the address's sources, the targets given by unit, and whether its
-/// reward is still to come.
+/// whose units not zero are the address's sources, the targets given by unit, whether its
+/// reward is still to come, and whether a close has written it since the engine's start, its
+/// build or its load (ADR-0217): a spent entry's counts are still its trial's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct KeptEntry {
     counts: Vec<u32>,
     targets: Vec<bool>,
     live: bool,
+    closed: bool,
+}
+
+/// One age's score (ADR-0216, ADR-0217): the magnitudes of its critic's errors at its last
+/// `DELAY_WINDOW` rewards, a ring, the slot the next is written at, how many it holds, and
+/// their sum.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AgeScore {
+    errors: [u32; DELAY_WINDOW],
+    next: usize,
+    held: usize,
+    sum: u64,
+}
+
+impl AgeScore {
+    const fn new() -> Self {
+        Self {
+            errors: [0; DELAY_WINDOW],
+            next: 0,
+            held: 0,
+            sum: 0,
+        }
+    }
+
+    /// An error's magnitude recorded, the oldest of a full window let go.
+    fn record(&mut self, magnitude: u32) {
+        if let Some(slot) = self.errors.get_mut(self.next) {
+            if self.held == DELAY_WINDOW {
+                self.sum = self.sum.saturating_sub(u64::from(*slot));
+            } else {
+                self.held = self.held.saturating_add(1);
+            }
+            *slot = magnitude;
+            self.sum = self.sum.saturating_add(u64::from(magnitude));
+        }
+        self.next = self
+            .next
+            .wrapping_add(1)
+            .checked_rem(DELAY_WINDOW)
+            .unwrap_or(0);
+    }
+
+    /// The score, once the window is full: the sum of its `DELAY_WINDOW` magnitudes.
+    fn score(&self) -> Option<u64> {
+        (self.held == DELAY_WINDOW).then_some(self.sum)
+    }
+}
+
+/// The age whose score leads (ADR-0216): the age whose score is below every other age's by at
+/// least `lead`, and so strictly the lowest; none until every age has a score, and none where
+/// no age leads by as much.
+fn delay_leader(scores: &[Option<u64>], lead: u64) -> Option<u8> {
+    (0..scores.len())
+        .find(|&age| {
+            let Some(low) = scores.get(age).copied().flatten() else {
+                return false;
+            };
+            scores
+                .iter()
+                .enumerate()
+                .filter(|&(other, _)| other != age)
+                .all(|(_, &score)| {
+                    score
+                        .and_then(|s| s.checked_sub(low))
+                        .is_some_and(|gap| gap > 0 && gap >= lead)
+                })
+        })
+        .map(|age| age as u8)
+}
+
+/// The run after a reward read from age zero (ADR-0216): one more where the same age other than
+/// zero leads again, one where another such age leads, and none where age zero or no age leads.
+fn delay_run_after(run: Option<(u8, u8)>, leader: Option<u8>) -> Option<(u8, u8)> {
+    match (leader, run) {
+        (Some(age), Some((leading, running))) if age != 0 && age == leading => {
+            Some((age, running.saturating_add(1)))
+        }
+        (Some(age), _) if age != 0 => Some((age, 1)),
+        _ => None,
+    }
+}
+
+/// The delay read (ADR-0216, ADR-0217): the age the engine consolidates at, whether its first
+/// reward has been read, every age's critic but the one in use — whose weights are the units',
+/// the engine's critic — each age's score, and the age other than zero leading at the last
+/// rewards with how many running.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DelayRead {
+    in_use: u8,
+    started: bool,
+    weights: Vec<Vec<i16>>,
+    scores: Vec<AgeScore>,
+    run: Option<(u8, u8)>,
 }
 
 /// The modulations of a tick (ADR-0068, ADR-0086): the one an addressed synapse consolidates
@@ -1330,6 +1457,8 @@ pub struct Executor<const CAP: usize> {
     kept_newest: usize,
     /// Entries a trial's close wrote over while their reward was still to come.
     kept_let_go: u64,
+    /// The delay read (ADR-0217): the configuration's, none while unset.
+    delay: Option<DelayRead>,
     /// The engine's homeostasis record (ADR-0036, ADR-0037): the population tally, the
     /// branching-ratio estimator's window, the synaptic gain, the sleep pressure and the
     /// stage; one for the engine until macro-columns exist.
@@ -1454,6 +1583,9 @@ impl<const CAP: usize> Executor<CAP> {
             && (config.critic.is_none() || config.critic_window_ticks == 0)
         {
             return Err(ConfigError::KeptAddressesWithoutWindow);
+        }
+        if config.reads_its_delay && config.kept_addresses == 0 {
+            return Err(ConfigError::DelayReadWithoutKept);
         }
         let rate_target = rate_target_of(config.units, config.rate_target_period_ticks)?;
         // The read (ADR-0189): unset at zero; refused short of the windows it sums, and beside a
@@ -1608,10 +1740,30 @@ impl<const CAP: usize> Executor<CAP> {
                     counts: vec![0; config.units],
                     targets: vec![false; config.units],
                     live: false,
+                    closed: false,
                 })
                 .collect(),
             kept_newest: 0,
             kept_let_go: 0,
+            // A critic for every age but zero's, whose weights are the units'; each sized here and
+            // started from the units' weights at the rule's first reward.
+            delay: config.reads_its_delay.then(|| DelayRead {
+                in_use: 0,
+                started: false,
+                weights: (0..=config.kept_addresses)
+                    .map(|age| {
+                        if age == 0 {
+                            Vec::new()
+                        } else {
+                            vec![0; config.units]
+                        }
+                    })
+                    .collect(),
+                scores: (0..=config.kept_addresses)
+                    .map(|_| AgeScore::new())
+                    .collect(),
+                run: None,
+            }),
             // The gain the configuration starts the engine at (ADR-0196), 1.0 by default.
             homeostasis: HomeostaticDrivePool {
                 control_step_q0_16: config.control_step_q0_16,
@@ -1985,6 +2137,7 @@ impl<const CAP: usize> Executor<CAP> {
             }
         }
         entry.live = true;
+        entry.closed = true;
         self.kept_newest = slot;
         self.window_opened = self.tick;
         Ok(())
@@ -2023,6 +2176,192 @@ impl<const CAP: usize> Executor<CAP> {
             entry.counts = counts;
         }
         Ok(signal)
+    }
+
+    /// A reward given without its age, between ticks (ADR-0216, ADR-0217). Each age's critic, from
+    /// zero to the oldest kept, reads the value of its weights times the counts of the trial its
+    /// age closes before the newest, spent or not, takes the error, records its magnitude in its
+    /// score and moves its weights by the error times those counts; an age no close has reached
+    /// yet reads nothing. The rule starts at its first such reward: every age's critic starts
+    /// there from the engine's weights. While the age in use is zero, one other age leading
+    /// (`delay_leader`, by `DELAY_WINDOW` times the reward's magnitude over $2^5$) at
+    /// `DELAY_RUN` rewards running moves the engine to it, its critic becoming the engine's, and
+    /// the engine never moves again. Then the age in use's entry, where it is live, is the
+    /// reward's: its address written as `reward_kept` writes it, that age's error sent — or the
+    /// reward where the whole punishment takes it — and the entry spent; returns the signal.
+    /// Where it is not live the reward reaches no address and no modulator, and returns none.
+    /// The live counts and the window are not touched. Refused while the rule is unset, nothing
+    /// changed.
+    pub fn reward_untold(&mut self, reward_q16: i32) -> Result<Option<i32>, AddressError> {
+        let Some(mut delay) = self.delay.take() else {
+            return Err(AddressError::DelayUnread);
+        };
+        let result = self.read_untold(&mut delay, reward_q16);
+        self.delay = Some(delay);
+        result
+    }
+
+    /// `reward_untold` with the rule's state lent out of the executor.
+    fn read_untold(
+        &mut self,
+        delay: &mut DelayRead,
+        reward_q16: i32,
+    ) -> Result<Option<i32>, AddressError> {
+        let Some(critic) = self.critic else {
+            return Err(AddressError::NoCritic);
+        };
+        if !delay.started {
+            let units = self.units();
+            for weights in &mut delay.weights {
+                for (weight, unit) in weights.iter_mut().zip(units) {
+                    *weight = unit.value_weight;
+                }
+            }
+            delay.started = true;
+        }
+        // Every age's critic, from the counts its age's entry holds.
+        let mut read = [None; DELAY_AGES];
+        for age in 0..=self.kept_addresses {
+            let slot = self.kept_slot(age)?;
+            let Some(entry) = self.kept.get_mut(slot).filter(|entry| entry.closed) else {
+                continue;
+            };
+            let counts = std::mem::take(&mut entry.counts);
+            let reading = if age == delay.in_use {
+                let units = self.units_mut();
+                let value_q16 = critic.value_q16(
+                    units
+                        .iter()
+                        .zip(&counts)
+                        .map(|(unit, &count)| (unit.value_weight, count)),
+                );
+                let error_q16 = ValueCritic::error_q16(reward_q16, value_q16);
+                for (unit, &count) in units.iter_mut().zip(&counts) {
+                    unit.value_weight = critic.step(unit.value_weight, error_q16, count);
+                }
+                Some((value_q16, error_q16))
+            } else {
+                delay.weights.get_mut(usize::from(age)).map(|weights| {
+                    let value_q16 =
+                        critic.value_q16(weights.iter().copied().zip(counts.iter().copied()));
+                    let error_q16 = ValueCritic::error_q16(reward_q16, value_q16);
+                    for (weight, &count) in weights.iter_mut().zip(&counts) {
+                        *weight = critic.step(*weight, error_q16, count);
+                    }
+                    (value_q16, error_q16)
+                })
+            };
+            if let Some(entry) = self.kept.get_mut(slot) {
+                entry.counts = counts;
+            }
+            if let (Some((_, error_q16)), Some(score)) =
+                (reading, delay.scores.get_mut(usize::from(age)))
+            {
+                score.record(error_q16.unsigned_abs());
+            }
+            if let Some(at) = read.get_mut(usize::from(age)) {
+                *at = reading;
+            }
+        }
+        // The move (ADR-0216): from age zero, once, to an age other than zero that has led at
+        // `DELAY_RUN` rewards running.
+        if delay.in_use == 0 {
+            let mut scores = [None; DELAY_AGES];
+            for (at, score) in scores.iter_mut().zip(&delay.scores) {
+                *at = score.score();
+            }
+            let lead = u64::from(reward_q16.unsigned_abs()).saturating_mul(DELAY_WINDOW as u64)
+                >> DELAY_LEAD_SHIFT;
+            let ages = usize::from(self.kept_addresses).saturating_add(1);
+            delay.run = delay_run_after(
+                delay.run,
+                delay_leader(scores.get(..ages).unwrap_or(&[]), lead),
+            );
+            if let Some((age, DELAY_RUN)) = delay.run {
+                if let Some(mut weights) =
+                    delay.weights.get_mut(usize::from(age)).map(std::mem::take)
+                {
+                    for (unit, weight) in self.units_mut().iter_mut().zip(weights.iter_mut()) {
+                        core::mem::swap(&mut unit.value_weight, weight);
+                    }
+                    if let Some(zero) = delay.weights.first_mut() {
+                        *zero = weights;
+                    }
+                    delay.in_use = age;
+                }
+            }
+        }
+        // The age in use's entry, where it is live, takes the reward.
+        let slot = self.kept_slot(delay.in_use)?;
+        let Some(entry) = self.kept.get_mut(slot).filter(|entry| entry.live) else {
+            return Ok(None);
+        };
+        let Some((value_q16, error_q16)) = read.get(usize::from(delay.in_use)).copied().flatten()
+        else {
+            return Ok(None);
+        };
+        entry.live = false;
+        for (flag, &count) in self.shared.sources.iter().zip(&entry.counts) {
+            flag.store(count != 0, Ordering::Relaxed);
+        }
+        for (flag, &target) in self.shared.targets.iter().zip(&entry.targets) {
+            flag.store(target, Ordering::Relaxed);
+        }
+        let received_q16 = if self.whole_punishment {
+            ValueCritic::received_q16(reward_q16, value_q16)
+        } else {
+            error_q16
+        };
+        self.prediction = Some(Prediction {
+            value_q16,
+            error_q16,
+            received_q16,
+        });
+        Ok(Some(self.modulator.reward(received_q16)))
+    }
+
+    /// Whether the engine reads the delay of a reward given without its age (ADR-0217), from the
+    /// configuration.
+    pub fn reads_its_delay(&self) -> bool {
+        self.delay.is_some()
+    }
+
+    /// The age a reward given without its age is consolidated at (ADR-0217): zero until the
+    /// move, the age moved to after it; none while the rule is unset.
+    pub fn delay_age(&self) -> Option<u8> {
+        self.delay.as_ref().map(|delay| delay.in_use)
+    }
+
+    /// The score of `age` (ADR-0216, ADR-0217): the sum of the magnitudes of its critic's errors
+    /// at its last `DELAY_WINDOW` rewards, once it has read as many; none before, above the
+    /// oldest age kept and while the rule is unset.
+    pub fn delay_score(&self, age: u8) -> Option<u64> {
+        self.delay
+            .as_ref()?
+            .scores
+            .get(usize::from(age))
+            .and_then(AgeScore::score)
+    }
+
+    /// The age other than zero that led at the last rewards read from age zero, and at how many
+    /// running (ADR-0216, ADR-0217): `DELAY_RUN` at the move, and as it stood then from there on;
+    /// none where no such age led at the last, and while the rule is unset.
+    pub fn delay_run(&self) -> Option<(u8, u8)> {
+        self.delay.as_ref()?.run
+    }
+
+    /// The weight of `unit` in `age`'s critic (ADR-0217): the unit's own value weight for the
+    /// age in use, whose critic is the engine's, and for every age before the rule's first
+    /// reward; none above the oldest age kept, outside the arena and while the rule is unset.
+    pub fn delay_weight(&self, age: u8, unit: usize) -> Option<i16> {
+        let delay = self.delay.as_ref()?;
+        if age > self.kept_addresses {
+            return None;
+        }
+        if age == delay.in_use || !delay.started {
+            return self.units().get(unit).map(|u| u.value_weight);
+        }
+        delay.weights.get(usize::from(age))?.get(unit).copied()
     }
 
     /// Between ticks: the addressed set becomes the synapses from a unit of `sources` onto a
@@ -7505,5 +7844,744 @@ mod kept_prop {
             }
         }
         assert!(moved > 1_000, "the rewards moved the reading: {moved}");
+    }
+}
+
+/// The delay read (ADR-0216, ADR-0217): its refusals, its leader and its move by hand, and three
+/// walks over the lattice.
+///
+/// By hand: unset by default, where a reward given without its age is refused and nothing
+/// changes, and refused without the kept addresses; the leader at its edges; and on two armed
+/// units whose reward follows unit 0's spikes a trial before, no move until every age has
+/// `DELAY_WINDOW` rewards and one has led for `DELAY_RUN` running, then one move, to age one,
+/// losing the one reward whose entry age zero spent, and none after, though age zero then leads.
+///
+/// Against an oracle written from ADR-0216's text: over a seeded walk of trials, closes, rewards
+/// given without their age and rewards of an age, under critics, windows, oldest ages and the
+/// whole punishment drawn, the rewards following a drawn age's counts, every call is the
+/// oracle's. The oracle keeps a critic for every age, the engine's the age in use's; after every
+/// call each age's weights, its score, the run, the age in use, the entries, the addressed set,
+/// the reading and the signal are the oracle's.
+///
+/// The twins: over seeded walks too short for a move, an engine that reads its delay, given each
+/// trial's reward without its age at its close, is the engine that draws and rewards, bit for
+/// bit; and an engine given each reward at its age is the same engine with the rule unset, bit
+/// for bit.
+#[cfg(test)]
+mod delay_prop {
+    use super::*;
+    use cortex_core::{STP_MAX, STP_U, synaptic_efficacy_q16};
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    const UNITS: u32 = 6;
+    const ONE: i32 = 0x1_0000;
+
+    /// An engine under `config`, its units armed and their value weights drawn.
+    fn armed(config: Config, rng: &mut Lcg) -> Executor<8> {
+        let mut exec = Executor::<8>::new(config).unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+            unit.value_weight = match rng.below(3) {
+                0 => rng.pick(&I16_LATTICE),
+                _ => rng.next_i16() >> rng.below(12),
+            };
+        }
+        exec
+    }
+
+    /// A configuration drawn: a critic the rule resolves, half the time one that learns within a
+    /// walk; a window; the whole punishment or not; `kept` addresses; the rule or not.
+    fn drawn(rng: &mut Lcg, kept: u8, reads: bool) -> Config {
+        let critic = if rng.below(2) == 0 {
+            ValueCritic {
+                shift: 2u8.saturating_add(rng.below(8) as u8),
+                scale: rng.below(3) as u8,
+            }
+        } else {
+            ValueCritic {
+                shift: rng.below(31) as u8,
+                scale: rng.below(15) as u8,
+            }
+        };
+        Config {
+            units: UNITS as usize,
+            nodes_per_worker: 256,
+            injector_capacity: 128,
+            train_capacity: 256,
+            critic: Some(critic),
+            critic_window_ticks: rng.pick(&[1u16, 3, 20, 400, u16::MAX]),
+            whole_punishment: rng.below(2) == 0,
+            kept_addresses: kept,
+            reads_its_delay: reads,
+            ..Config::default()
+        }
+    }
+
+    /// A trial: the units of `kicked` kicked, then `ticks` ticks run.
+    fn kicked(exec: &mut Executor<8>, kicked: &[bool], ticks: u32) {
+        let strong = spike_message(synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX), false);
+        let inject = exec.injector();
+        for (unit, _) in kicked.iter().enumerate().filter(|&(_, &k)| k) {
+            for _ in 0..14 {
+                inject.inject(unit as u32, strong).unwrap();
+            }
+        }
+        for _ in 0..ticks {
+            exec.tick();
+        }
+    }
+
+    /// A trial drawn: each unit kicked with a chance of a half, then one to 40 ticks run.
+    fn trial(exec: &mut Executor<8>, rng: &mut Lcg) {
+        let pattern: Vec<bool> = (0..UNITS).map(|_| rng.below(2) == 0).collect();
+        let ticks = 1u32.saturating_add(rng.below(40));
+        kicked(exec, &pattern, ticks);
+    }
+
+    fn reward_of(rng: &mut Lcg) -> i32 {
+        match rng.below(3) {
+            0 => rng.pick(&I32_LATTICE),
+            1 => rng.pick(&[ONE, -ONE]),
+            _ => rng.next_i32() >> rng.below(16),
+        }
+    }
+
+    fn weights(exec: &Executor<8>) -> Vec<i16> {
+        exec.units().iter().map(|u| u.value_weight).collect()
+    }
+
+    fn sides(exec: &Executor<8>) -> (Vec<bool>, Vec<bool>) {
+        (
+            (0..UNITS).map(|u| exec.is_source(u)).collect(),
+            (0..UNITS).map(|u| exec.is_target(u)).collect(),
+        )
+    }
+
+    /// Unset by default, the rule refuses a reward given without its age and changes nothing, and
+    /// every reading of it is none; set, it is refused without the kept addresses, and taken at
+    /// every oldest age from one to four, the age in use zero, no score and no run, every age's
+    /// critic the engine's before its first reward, and a reward before any close reaching
+    /// nothing.
+    #[test]
+    fn the_delay_read_is_unset_by_default_and_refused_without_the_kept_addresses() {
+        assert!(!Config::default().reads_its_delay, "unset by default");
+        assert_eq!(
+            (DELAY_WINDOW, DELAY_RUN, DELAY_LEAD_SHIFT),
+            (64, 64, 5),
+            "ADR-0216's window, run and lead"
+        );
+        let critic = Some(ValueCritic { shift: 9, scale: 2 });
+        let with = |kept, reads, critic, window| {
+            Executor::<8>::new(Config {
+                units: 3,
+                train_capacity: 8,
+                critic,
+                critic_window_ticks: window,
+                kept_addresses: kept,
+                reads_its_delay: reads,
+                ..Config::default()
+            })
+        };
+        for (kept, critic, window) in [(0, None, 0), (0, critic, 20), (2, critic, 20)] {
+            let mut exec = with(kept, false, critic, window).unwrap();
+            assert!(!exec.reads_its_delay());
+            assert_eq!(
+                (exec.delay_age(), exec.delay_score(0), exec.delay_run()),
+                (None, None, None)
+            );
+            assert_eq!(exec.delay_weight(0, 0), None);
+            if kept != 0 {
+                exec.keep_address([0u32]).unwrap();
+            }
+            let before = (weights(&exec), *exec.modulator(), exec.kept_at(0).is_some());
+            assert_eq!(exec.reward_untold(ONE), Err(AddressError::DelayUnread));
+            assert_eq!(
+                (weights(&exec), *exec.modulator(), exec.kept_at(0).is_some()),
+                before,
+                "refused, nothing changed"
+            );
+        }
+        for (critic, window) in [(None, 0), (critic, 0), (critic, 20)] {
+            assert!(
+                matches!(
+                    with(0, true, critic, window),
+                    Err(ConfigError::DelayReadWithoutKept)
+                ),
+                "{critic:?} {window}"
+            );
+        }
+        for kept in 1..=KEPT_ADDRESSES_MAX {
+            let mut exec = with(kept, true, critic, 20).unwrap();
+            for (unit, weight) in exec.units_mut().iter_mut().zip([5i16, -7, 300]) {
+                unit.value_weight = weight;
+            }
+            assert!(exec.reads_its_delay());
+            assert_eq!((exec.delay_age(), exec.delay_run()), (Some(0), None));
+            for age in 0..=kept {
+                assert_eq!(exec.delay_score(age), None, "{kept} {age}");
+                assert_eq!(
+                    (0..3)
+                        .map(|u| exec.delay_weight(age, u))
+                        .collect::<Vec<_>>(),
+                    [Some(5), Some(-7), Some(300)],
+                    "{kept} {age}: the engine's before the first reward"
+                );
+            }
+            assert_eq!(exec.delay_weight(0, 3), None, "outside the arena");
+            assert_eq!(exec.delay_weight(kept.saturating_add(1), 0), None);
+            assert_eq!(exec.delay_score(kept.saturating_add(1)), None);
+            // Before any close no age reads, and the reward reaches nothing.
+            assert_eq!(exec.reward_untold(ONE), Ok(None));
+            assert_eq!(
+                (exec.modulator().dopamine_rpe, exec.prediction()),
+                (0, None)
+            );
+            assert_eq!(weights(&exec), [5, -7, 300], "no weight moved");
+        }
+        assert!(matches!(
+            with(KEPT_ADDRESSES_MAX.saturating_add(1), true, critic, 20),
+            Err(ConfigError::KeptAddressesOutOfRange)
+        ));
+    }
+
+    /// The leader at its edges (ADR-0216): below every other score by the lead exactly leads, one
+    /// short does not; a tie at the lowest is no leader, at a lead of zero too; no leader until
+    /// every age has a score.
+    #[test]
+    fn an_age_leads_below_every_other_by_the_lead_and_none_before_every_score() {
+        assert_eq!(delay_leader(&[Some(100), Some(90), Some(100)], 10), Some(1));
+        assert_eq!(delay_leader(&[Some(100), Some(91), Some(100)], 10), None);
+        assert_eq!(delay_leader(&[Some(100), Some(90), Some(99)], 10), None);
+        assert_eq!(delay_leader(&[Some(5), Some(90), Some(99)], 10), Some(0));
+        assert_eq!(delay_leader(&[Some(90), Some(90), Some(200)], 10), None);
+        assert_eq!(delay_leader(&[Some(90), Some(90), Some(200)], 0), None);
+        assert_eq!(delay_leader(&[Some(200), Some(90), Some(90)], 0), None);
+        assert_eq!(delay_leader(&[Some(89), Some(90)], 0), Some(0));
+        assert_eq!(delay_leader(&[Some(90), Some(89)], 1), Some(1));
+        assert_eq!(delay_leader(&[Some(200), Some(90), None], 10), None);
+        assert_eq!(delay_leader(&[None, Some(0)], 0), None);
+        assert_eq!(delay_leader(&[Some(0), None], 0), None);
+        assert_eq!(delay_leader(&[None], 0), None);
+        assert_eq!(delay_leader(&[], 0), None);
+        assert_eq!(delay_leader(&[Some(u64::MAX - 1), Some(u64::MAX)], 2), None);
+        assert_eq!(
+            delay_leader(&[Some(u64::MAX - 2), Some(u64::MAX)], 2),
+            Some(0)
+        );
+        assert_eq!(
+            delay_leader(&[Some(0), Some(u64::MAX), Some(1)], 1),
+            Some(0),
+            "one other at the lead's edge"
+        );
+    }
+
+    /// The run at its edges (ADR-0216): the same age other than zero leading again adds one, to
+    /// its width's end; another such age leading starts again at one; age zero leading, or no
+    /// age, ends it, a run of 63 included.
+    #[test]
+    fn the_run_counts_one_age_leading_again_and_starts_again_at_another() {
+        assert_eq!(delay_run_after(None, Some(1)), Some((1, 1)));
+        assert_eq!(delay_run_after(None, Some(4)), Some((4, 1)));
+        assert_eq!(delay_run_after(Some((1, 5)), Some(1)), Some((1, 6)));
+        assert_eq!(
+            delay_run_after(Some((2, 63)), Some(2)),
+            Some((2, DELAY_RUN))
+        );
+        assert_eq!(
+            delay_run_after(Some((1, u8::MAX)), Some(1)),
+            Some((1, u8::MAX))
+        );
+        assert_eq!(
+            delay_run_after(Some((1, 5)), Some(2)),
+            Some((2, 1)),
+            "another age"
+        );
+        assert_eq!(
+            delay_run_after(Some((2, 63)), Some(1)),
+            Some((1, 1)),
+            "another age"
+        );
+        assert_eq!(delay_run_after(Some((2, 63)), Some(0)), None, "age zero");
+        assert_eq!(delay_run_after(None, Some(0)), None, "age zero");
+        assert_eq!(delay_run_after(Some((1, 5)), None), None, "no leader");
+        assert_eq!(delay_run_after(None, None), None);
+    }
+
+    /// The move made once (ADR-0216). Two armed units under one kept address: unit 1 kicked at
+    /// every trial and unit 0 by a coin, the reward at each close after the first the sign of
+    /// the coin of the trial before. Age one's critic reads that trial's counts and learns the
+    /// reward; age zero's reads an independent coin. No move comes before every age has
+    /// `DELAY_WINDOW` rewards and age one has led at `DELAY_RUN` running; then the engine moves
+    /// to age one at the reward that completes the run, whose entry age zero had spent, so that
+    /// reward reaches nothing. Then the reward follows each trial's own coin, age zero's critic
+    /// takes the lead, and the engine does not move again.
+    #[test]
+    fn the_engine_moves_once_to_the_age_that_leads_and_never_again() {
+        let mut exec = Executor::<8>::new(Config {
+            units: 2,
+            nodes_per_worker: 128,
+            train_capacity: 64,
+            critic: Some(ValueCritic { shift: 4, scale: 0 }),
+            critic_window_ticks: 400,
+            kept_addresses: 1,
+            reads_its_delay: true,
+            ..Config::default()
+        })
+        .unwrap();
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+        let earliest = DELAY_WINDOW + usize::from(DELAY_RUN) - 1;
+        let mut rng = Lcg::new(0x0217);
+        let mut coins: Vec<bool> = Vec::new();
+        let mut moved_at = None;
+        for t in 0..1_000usize {
+            let coin = rng.below(2) == 0;
+            coins.push(coin);
+            kicked(&mut exec, &[coin, true], 400);
+            exec.keep_address([0u32]).unwrap();
+            let Some(&before) = t.checked_sub(1).and_then(|u| coins.get(u)) else {
+                continue;
+            };
+            let got = exec.reward_untold(if before { ONE } else { -ONE });
+            if exec.delay_age() == Some(1) {
+                assert!(t >= earliest, "{t}: no move before {earliest} rewards");
+                assert_eq!(exec.delay_run(), Some((1, DELAY_RUN)), "{t}");
+                assert_eq!(got, Ok(None), "{t}: age one's entry spent at age zero");
+                moved_at = Some(t);
+                break;
+            }
+            assert_eq!(exec.delay_age(), Some(0), "{t}");
+            assert!(matches!(got, Ok(Some(_))), "{t}");
+            if t < DELAY_WINDOW {
+                assert_eq!(
+                    (exec.delay_score(0), exec.delay_score(1), exec.delay_run()),
+                    (None, None, None),
+                    "{t}: no score before {DELAY_WINDOW} rewards"
+                );
+            }
+        }
+        let moved_at = moved_at.expect("the engine moved to age one");
+        assert!(moved_at < 400, "it moved early: {moved_at}");
+        // From here the reward follows each trial's own coin, age zero's to read.
+        let mut zero_led = 0u32;
+        for t in 0..1_000usize {
+            let coin = rng.below(2) == 0;
+            kicked(&mut exec, &[coin, true], 400);
+            exec.keep_address([0u32]).unwrap();
+            let got = exec.reward_untold(if coin { ONE } else { -ONE });
+            assert!(matches!(got, Ok(Some(_))), "{t}: age one's entry is live");
+            assert_eq!(exec.delay_age(), Some(1), "{t}: never moves again");
+            assert_eq!(exec.delay_run(), Some((1, DELAY_RUN)), "{t}: as it stood");
+            if let (Some(zero), Some(one)) = (exec.delay_score(0), exec.delay_score(1)) {
+                if zero.saturating_add(2 * ONE as u64) <= one {
+                    zero_led = zero_led.saturating_add(1);
+                }
+            }
+        }
+        assert!(zero_led > 500, "age zero led by the lead: {zero_led}");
+    }
+
+    /// The oracle's entry: the counts a close found, the targets it was given, whether its reward
+    /// is still to come, and whether a close wrote it.
+    type Entry = (Vec<u32>, Vec<bool>, bool, bool);
+
+    /// The oracle's score of an age: the sum of its last 64 errors' magnitudes, once it has 64.
+    fn score_of(errors: &[u32]) -> Option<u64> {
+        let last = errors.get(errors.len().checked_sub(64)?..)?;
+        Some(
+            last.iter()
+                .fold(0u64, |sum, &e| sum.saturating_add(u64::from(e))),
+        )
+    }
+
+    #[test]
+    fn every_reward_given_without_its_age_is_the_oracle_s() {
+        let mut rng = Lcg::new(0x0216);
+        let (mut read_short, mut lost, mut told, mut broken) = (0u32, 0u32, 0u32, 0u32);
+        let mut moves = [0u32; DELAY_AGES];
+        for walk in 0..48u32 {
+            let kept = 1u8.saturating_add(rng.below(u32::from(KEPT_ADDRESSES_MAX)) as u8);
+            // Half the walks learnable: a unit kicked at every trial, 400 ticks a trial, a critic
+            // that learns within the walk, and the reward following an age above zero.
+            let learnable = walk % 2 == 0;
+            let mut config = drawn(&mut rng, kept, true);
+            if learnable {
+                config.critic = Some(ValueCritic {
+                    shift: 4u8.saturating_add(rng.below(2) as u8),
+                    scale: 0,
+                });
+                config.critic_window_ticks = 400;
+            }
+            let (critic, whole) = (config.critic.unwrap(), config.whole_punishment);
+            let due = if learnable {
+                1usize.saturating_add(rng.below(u32::from(kept)) as usize)
+            } else {
+                rng.below(u32::from(kept) + 1) as usize
+            };
+            let mut exec = armed(config, &mut rng);
+            let len = usize::from(kept) + 1;
+            let blank: Entry = (
+                vec![0; UNITS as usize],
+                vec![false; UNITS as usize],
+                false,
+                false,
+            );
+            let mut ring: Vec<Entry> = vec![blank; len];
+            let mut newest = 0usize;
+            let mut gone = 0u64;
+            let mut engine = weights(&exec);
+            let mut side: Vec<Vec<i16>> = vec![engine.clone(); len];
+            let mut started = false;
+            let mut in_use = 0usize;
+            let mut errors: Vec<Vec<u32>> = vec![Vec::new(); len];
+            let mut run: Option<(u8, u8)> = None;
+            let mut address = (vec![true; UNITS as usize], vec![true; UNITS as usize]);
+            for step in 0..400u32 {
+                let at = format!("walk {walk} step {step}");
+                // A trial and its close, the targets drawn, one past the arena at times.
+                if learnable {
+                    let pattern: Vec<bool> =
+                        (0..UNITS).map(|u| u == 1 || rng.below(2) == 0).collect();
+                    kicked(&mut exec, &pattern, 400);
+                } else {
+                    trial(&mut exec, &mut rng);
+                }
+                let targets: Vec<u32> = (0..=UNITS)
+                    .filter(|&u| match u {
+                        UNITS => rng.below(32) == 0,
+                        _ => rng.below(2) == 0,
+                    })
+                    .collect();
+                let counts = exec.features().to_vec();
+                if targets.contains(&UNITS) {
+                    assert_eq!(
+                        exec.keep_address(targets.iter().copied()),
+                        Err(AddressError::NoSuchUnit),
+                        "{at}"
+                    );
+                } else {
+                    assert_eq!(exec.keep_address(targets.iter().copied()), Ok(()), "{at}");
+                    newest = (newest + 1) % len;
+                    if ring[newest].2 {
+                        gone += 1;
+                    }
+                    ring[newest] = (
+                        counts,
+                        (0..UNITS).map(|u| targets.contains(&u)).collect(),
+                        true,
+                        true,
+                    );
+                }
+                // Its reward, or two, and at times one of an age.
+                for _ in 0..if rng.below(16) == 0 { 2 } else { 1 } {
+                    let mut modulator = *exec.modulator();
+                    let reading = exec.prediction();
+                    let live = exec.features().to_vec();
+                    let opened = exec.window_opened();
+                    if rng.below(12) == 0 {
+                        told += 1;
+                        let age = rng.below(u32::from(kept) + 1) as usize;
+                        let reward = reward_of(&mut rng);
+                        let slot = (newest + len - age) % len;
+                        let got = exec.reward_kept(reward, age as u8);
+                        if ring[slot].2 {
+                            ring[slot].2 = false;
+                            let (counts, targets) = (ring[slot].0.clone(), ring[slot].1.clone());
+                            let value = critic
+                                .value_q16(engine.iter().copied().zip(counts.iter().copied()));
+                            let error = ValueCritic::error_q16(reward, value);
+                            engine = engine
+                                .iter()
+                                .zip(&counts)
+                                .map(|(&w, &c)| critic.step(w, error, c))
+                                .collect();
+                            let received = if whole {
+                                ValueCritic::received_q16(reward, value)
+                            } else {
+                                error
+                            };
+                            assert_eq!(got, Ok(modulator.reward(received)), "{at}: told");
+                            address = (counts.iter().map(|&c| c != 0).collect(), targets);
+                        } else {
+                            assert_eq!(got, Err(AddressError::NoKeptAddress), "{at}: told");
+                            assert_eq!(exec.prediction(), reading, "{at}: refused");
+                        }
+                    } else {
+                        let due_entry = &ring[(newest + len - due) % len];
+                        let reward = if rng.below(64) == 0 {
+                            reward_of(&mut rng)
+                        } else if due_entry.3 && due_entry.0[0] != 0 {
+                            ONE
+                        } else {
+                            -ONE
+                        };
+                        let got = exec.reward_untold(reward);
+                        if !started {
+                            for weights in &mut side {
+                                weights.clone_from(&engine);
+                            }
+                            started = true;
+                        }
+                        let mut read: Vec<Option<(i32, i32)>> = vec![None; len];
+                        for age in 0..len {
+                            let entry = &ring[(newest + len - age) % len];
+                            if !entry.3 {
+                                read_short += 1;
+                                continue;
+                            }
+                            let w = if age == in_use {
+                                &mut engine
+                            } else {
+                                &mut side[age]
+                            };
+                            let value =
+                                critic.value_q16(w.iter().copied().zip(entry.0.iter().copied()));
+                            let error = ValueCritic::error_q16(reward, value);
+                            *w = w
+                                .iter()
+                                .zip(&entry.0)
+                                .map(|(&w, &c)| critic.step(w, error, c))
+                                .collect();
+                            errors[age].push(error.unsigned_abs());
+                            read[age] = Some((value, error));
+                        }
+                        if in_use == 0 {
+                            // The leader from the text: every age scored, one strictly lowest and
+                            // below every other by 64 times a thirty-second of the reward.
+                            let scores: Option<Vec<u64>> =
+                                errors.iter().map(|e| score_of(e)).collect();
+                            let lead = u64::from(reward.unsigned_abs()) * 64 / 32;
+                            let leader = scores.and_then(|scores| {
+                                (0..len).find(|&a| {
+                                    (0..len).filter(|&b| b != a).all(|b| {
+                                        scores[b] > scores[a] && scores[b] - scores[a] >= lead
+                                    })
+                                })
+                            });
+                            let before = run;
+                            run = match (leader, run) {
+                                (Some(a), Some((b, n))) if a != 0 && a == usize::from(b) => {
+                                    Some((b, n + 1))
+                                }
+                                (Some(a), _) if a != 0 => Some((a as u8, 1)),
+                                _ => None,
+                            };
+                            if before.is_some() && run.is_none_or(|(_, n)| n == 1) {
+                                broken += 1;
+                            }
+                            if let Some((a, 64)) = run {
+                                moves[usize::from(a)] += 1;
+                                side[0] = engine.clone();
+                                engine = side[usize::from(a)].clone();
+                                in_use = usize::from(a);
+                            }
+                        }
+                        let slot = (newest + len - in_use) % len;
+                        if ring[slot].2 {
+                            ring[slot].2 = false;
+                            let (value, error) = read[in_use].unwrap();
+                            let received = if whole {
+                                ValueCritic::received_q16(reward, value)
+                            } else {
+                                error
+                            };
+                            assert_eq!(got, Ok(Some(modulator.reward(received))), "{at}");
+                            assert_eq!(
+                                exec.prediction(),
+                                Some(Prediction {
+                                    value_q16: value,
+                                    error_q16: error,
+                                    received_q16: received
+                                }),
+                                "{at}"
+                            );
+                            address = (
+                                ring[slot].0.iter().map(|&c| c != 0).collect(),
+                                ring[slot].1.clone(),
+                            );
+                        } else {
+                            lost += 1;
+                            assert_eq!(got, Ok(None), "{at}: no live entry at the age in use");
+                            assert_eq!(exec.prediction(), reading, "{at}: no reading");
+                        }
+                    }
+                    assert_eq!(exec.modulator(), &modulator, "{at}: the signal");
+                    assert_eq!(
+                        (exec.features(), exec.window_opened()),
+                        (&live[..], opened),
+                        "{at}: the live counts and the window untouched"
+                    );
+                }
+                assert_eq!(weights(&exec), engine, "{at}: the engine's critic");
+                for age in 0..len {
+                    let expected: Vec<Option<i16>> = (0..UNITS as usize)
+                        .map(|u| {
+                            Some(if age == in_use || !started {
+                                engine[u]
+                            } else {
+                                side[age][u]
+                            })
+                        })
+                        .collect();
+                    assert_eq!(
+                        (0..UNITS as usize)
+                            .map(|u| exec.delay_weight(age as u8, u))
+                            .collect::<Vec<_>>(),
+                        expected,
+                        "{at}: age {age}'s critic"
+                    );
+                    assert_eq!(
+                        exec.delay_score(age as u8),
+                        score_of(&errors[age]),
+                        "{at}: age {age}'s score"
+                    );
+                    let entry = &ring[(newest + len - age) % len];
+                    assert_eq!(
+                        exec.kept_at(age as u8),
+                        entry.2.then_some((entry.0.as_slice(), entry.1.as_slice())),
+                        "{at}: age {age}'s entry"
+                    );
+                }
+                assert_eq!(
+                    (exec.delay_age(), exec.delay_run()),
+                    (Some(in_use as u8), run),
+                    "{at}: the age in use and the run"
+                );
+                assert_eq!(sides(&exec), address, "{at}: the addressed set");
+                assert_eq!(exec.kept_let_go(), gone, "{at}: let go");
+            }
+        }
+        assert!(
+            read_short > 20
+                && lost > 50
+                && told > 200
+                && moves.iter().skip(1).take(2).all(|&m| m > 0)
+                && moves.iter().sum::<u32>() > 8
+                && broken > 20
+                && moves[0] == 0,
+            "the walk met every case: {read_short} ages unread, {lost} rewards lost, {told} told, moves {moves:?}, {broken} runs broken"
+        );
+    }
+
+    #[test]
+    fn on_time_with_no_move_a_reward_given_without_its_age_is_the_drawn_reward_bit_for_bit() {
+        let mut rng = Lcg::new(0x2170);
+        let mut moved = 0u32;
+        for walk in 0..48u32 {
+            let kept = 1u8.saturating_add(rng.below(u32::from(KEPT_ADDRESSES_MAX)) as u8);
+            let config = drawn(&mut rng, kept, true);
+            let twin = Config {
+                kept_addresses: 0,
+                reads_its_delay: false,
+                ..config.clone()
+            };
+            let seed = rng.next_u64();
+            let mut engines = [
+                armed(twin, &mut Lcg::new(seed)),
+                armed(config, &mut Lcg::new(seed)),
+            ];
+            // Fewer rewards than a score and a run take: no move can come.
+            for step in 0..usize::from(DELAY_RUN) + DELAY_WINDOW - 2 {
+                let at = format!("walk {walk} step {step}");
+                let draw = rng.next_u64();
+                for exec in &mut engines {
+                    trial(exec, &mut Lcg::new(draw));
+                }
+                let targets: Vec<u32> = (0..UNITS).filter(|_| rng.below(2) == 0).collect();
+                let reward = reward_of(&mut rng);
+                let [drawing, reading] = &mut engines;
+                drawing.address_drawn(targets.iter().copied()).unwrap();
+                let signal = drawing.reward(reward);
+                reading.keep_address(targets.iter().copied()).unwrap();
+                assert_eq!(reading.reward_untold(reward), Ok(Some(signal)), "{at}");
+                assert_eq!(reading.delay_age(), Some(0), "{at}");
+                let state = |exec: &Executor<8>| {
+                    (
+                        weights(exec),
+                        exec.features().to_vec(),
+                        exec.window_opened(),
+                        exec.prediction(),
+                        *exec.modulator(),
+                        sides(exec),
+                        exec.ticks(),
+                    )
+                };
+                assert_eq!(state(&engines[0]), state(&engines[1]), "{at}");
+                if engines[0].prediction().is_some_and(|p| p.error_q16 != 0) {
+                    moved = moved.wrapping_add(1);
+                }
+            }
+        }
+        assert!(moved > 2_000, "the rewards moved the reading: {moved}");
+    }
+
+    #[test]
+    fn a_reward_that_names_its_age_is_the_one_without_the_rule_bit_for_bit() {
+        let mut rng = Lcg::new(0x0812);
+        let (mut given, mut refused) = (0u32, 0u32);
+        for walk in 0..48u32 {
+            let kept = 1u8.saturating_add(rng.below(u32::from(KEPT_ADDRESSES_MAX)) as u8);
+            let config = drawn(&mut rng, kept, true);
+            let unset = Config {
+                reads_its_delay: false,
+                ..config.clone()
+            };
+            let seed = rng.next_u64();
+            let mut engines = [
+                armed(unset, &mut Lcg::new(seed)),
+                armed(config, &mut Lcg::new(seed)),
+            ];
+            for step in 0..48u32 {
+                let at = format!("walk {walk} step {step}");
+                let draw = rng.next_u64();
+                for exec in &mut engines {
+                    trial(exec, &mut Lcg::new(draw));
+                }
+                let targets: Vec<u32> = (0..UNITS).filter(|_| rng.below(2) == 0).collect();
+                let reward = reward_of(&mut rng);
+                let age = rng.below(u32::from(kept) + 2) as u8;
+                let got: Vec<Result<i32, AddressError>> = engines
+                    .iter_mut()
+                    .map(|exec| {
+                        exec.keep_address(targets.iter().copied()).unwrap();
+                        exec.reward_kept(reward, age)
+                    })
+                    .collect();
+                assert_eq!(got[0], got[1], "{at}");
+                if got[0].is_ok() {
+                    given = given.wrapping_add(1);
+                } else {
+                    refused = refused.wrapping_add(1);
+                }
+                let state = |exec: &Executor<8>| {
+                    (
+                        weights(exec),
+                        exec.features().to_vec(),
+                        exec.window_opened(),
+                        exec.prediction(),
+                        *exec.modulator(),
+                        sides(exec),
+                        exec.kept_let_go(),
+                        (0..=kept)
+                            .map(|a| exec.kept_at(a).map(|(c, t)| (c.to_vec(), t.to_vec())))
+                            .collect::<Vec<_>>(),
+                    )
+                };
+                assert_eq!(state(&engines[0]), state(&engines[1]), "{at}");
+                assert_eq!(engines[1].delay_age(), Some(0), "{at}");
+            }
+        }
+        assert!(
+            given > 1_000 && refused > 200,
+            "{given} given, {refused} refused"
+        );
     }
 }

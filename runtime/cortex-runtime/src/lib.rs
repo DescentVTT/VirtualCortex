@@ -63,8 +63,9 @@ pub use episode::{
     tag_burst_in, tag_discovery, tag_discovery_recent, tag_from_trace, tag_recent,
 };
 pub use executor::{
-    ACTIVATE, AddressError, AmendError, Config, ConfigError, Executor, Inject, InjectError,
-    KEPT_ADDRESSES_MAX, Modulations, Policy, Prediction, TagError, TargetRead, WorkerReport,
+    ACTIVATE, AddressError, AmendError, Config, ConfigError, DELAY_LEAD_SHIFT, DELAY_RUN,
+    DELAY_WINDOW, Executor, Inject, InjectError, KEPT_ADDRESSES_MAX, Modulations, Policy,
+    Prediction, TagError, TargetRead, WorkerReport,
 };
 pub use image::{Image, ImageError, WriteAheadLog, shortest_delay};
 pub use language::{
