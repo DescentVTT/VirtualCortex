@@ -472293,3 +472293,46 @@ fn a_step_by_its_error_s_sign_a_thirty_second_within_four_on_seed_24_from_the_mi
  {
     sign_arm_on(2, Reversal::MirroredFirst, 1, 0);
 }
+
+/// Exploration 004, the long run on seeds 23 and 24 (exploration 004's rule: the drift and the
+/// stale target read on seed 22 differ from one schedule's clauses, so the long run extends):
+/// network `n` from the arm `arm`.
+fn long_runs_on(n: usize, arm: Reversal) {
+    let made = probe_made(n, &format!("long{} {arm:?}", PROBE_SEEDS[n]));
+    long_runs(
+        &made,
+        n,
+        arm,
+        LONG_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// Exploration 004, the long run: seed 23, from the assignment.
+#[test]
+#[ignore]
+fn long_runs_under_the_default_on_seed_23_from_the_assignment_explore() {
+    long_runs_on(1, Reversal::AssignmentFirst);
+}
+
+/// Exploration 004, the long run: seed 23, from the mirrored assignment.
+#[test]
+#[ignore]
+fn long_runs_under_the_default_on_seed_23_from_the_mirrored_assignment_explore() {
+    long_runs_on(1, Reversal::MirroredFirst);
+}
+
+/// Exploration 004, the long run: seed 24, from the assignment.
+#[test]
+#[ignore]
+fn long_runs_under_the_default_on_seed_24_from_the_assignment_explore() {
+    long_runs_on(2, Reversal::AssignmentFirst);
+}
+
+/// Exploration 004, the long run: seed 24, from the mirrored assignment.
+#[test]
+#[ignore]
+fn long_runs_under_the_default_on_seed_24_from_the_mirrored_assignment_explore() {
+    long_runs_on(2, Reversal::MirroredFirst);
+}
