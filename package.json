@@ -1,8 +1,8 @@
 {
-  "name": "virtualcortex-specs",
+  "name": "menteion-specs",
   "version": "0.0.0",
   "private": true,
-  "description": "Documentation verification for VirtualCortex: executable architecture assertions (spec-guard), cross-document consistency (spec-graph), and the briefs' contract and archive (spec-brief). The engine itself is a Rust workspace; see Cargo.toml.",
+  "description": "Documentation verification for Menteion: executable architecture assertions (spec-guard), cross-document consistency (spec-graph), and the briefs' contract and archive (spec-brief). The engine itself is a Rust workspace; see Cargo.toml.",
   "license": "(Apache-2.0 OR MIT)",
   "engines": {
     "node": ">=22"

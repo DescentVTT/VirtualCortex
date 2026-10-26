@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 import { checkAdditive, hunks, implType, inserted, insertsAtTop, readByRust, scan, underTests, wordsIn } from "./check-additive.mjs";
 
-const TESTS = "runtime/cortex-runtime/tests/inhibition.rs";
+const TESTS = "runtime/menteion-runtime/tests/inhibition.rs";
 
 // A `-U0` diff of one hunk inserting `lines` after base line `after`.
 const insertion = (after, lines) => [`diff --git a/${TESTS} b/${TESTS}`, `@@ -${after},0 +${after + 1},${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n");
@@ -17,15 +17,15 @@ const BASE = ["use super::*;", "", "fn existing() -> u32 {", "    let x = 1;", "
 const none = () => new Set();
 
 test("a Rust build reads the crates, the runtime, the benches, the kit and the manifests, and not the documents", () => {
-  for (const p of ["runtime/cortex-runtime/src/executor.rs", "crates/cortex-core/src/lib.rs", "benches/cortex-bench/benches/hot_path.rs", "testkit/prop.rs", ".cargo/mutants.toml", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "elsewhere/x.rs"]) {
+  for (const p of ["runtime/menteion-runtime/src/executor.rs", "crates/menteion-core/src/lib.rs", "benches/menteion-bench/benches/hot_path.rs", "testkit/prop.rs", ".cargo/mutants.toml", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "elsewhere/x.rs"]) {
     assert.ok(readByRust(p), p);
   }
   for (const p of ["docs/WHITEPAPER.md", "briefs/README.md", "scripts/exhaustive-costs.tsv", ".github/workflows/ci.yml", "package.json", "CHANGELOG.md"]) {
     assert.ok(!readByRust(p), p);
   }
   assert.ok(underTests(TESTS));
-  assert.ok(underTests("crates/cortex-core/tests/x.rs"));
-  assert.ok(!underTests("runtime/cortex-runtime/src/task.rs"));
+  assert.ok(underTests("crates/menteion-core/tests/x.rs"));
+  assert.ok(!underTests("runtime/menteion-runtime/src/task.rs"));
   assert.ok(!underTests("testkit/prop.rs"));
 });
 
@@ -138,13 +138,13 @@ test("whole items under new names inserted into a test file only add", () => {
 });
 
 test("a new file under a package's tests/ only adds, whatever it holds", () => {
-  const got = checkAdditive([{ status: "A", path: "runtime/cortex-runtime/tests/data/new.tables", diff: "" }, { status: "A", path: "runtime/cortex-runtime/tests/fresh.rs", diff: "" }], () => "", none);
+  const got = checkAdditive([{ status: "A", path: "runtime/menteion-runtime/tests/data/new.tables", diff: "" }, { status: "A", path: "runtime/menteion-runtime/tests/fresh.rs", diff: "" }], () => "", none);
   assert.equal(got.additive, true);
   assert.equal(got.files, 2);
 });
 
 test("a change under src/, to a manifest or to the kit does not only add", () => {
-  for (const path of ["runtime/cortex-runtime/src/executor.rs", "Cargo.lock", "testkit/prop.rs", "crates/cortex-core/src/lib.rs"]) {
+  for (const path of ["runtime/menteion-runtime/src/executor.rs", "Cargo.lock", "testkit/prop.rs", "crates/menteion-core/src/lib.rs"]) {
     const got = checkAdditive([{ status: "M", path, diff: "" }], () => "", none);
     assert.equal(got.additive, false, path);
     assert.match(got.problems[0], /outside a package's tests/);
@@ -185,8 +185,8 @@ test("a use, or an impl for a type the base names, does not only add", () => {
 test("a test file deleted, renamed, or a data file changed does not only add", () => {
   for (const [status, path, why] of [
     ["D", TESTS, /deleted/],
-    ["R100", "runtime/cortex-runtime/tests/moved.rs", /renamed/],
-    ["M", "runtime/cortex-runtime/tests/data/old.tables", /changed/],
+    ["R100", "runtime/menteion-runtime/tests/moved.rs", /renamed/],
+    ["M", "runtime/menteion-runtime/tests/data/old.tables", /changed/],
   ]) {
     const got = checkAdditive([{ status, path, diff: "" }], () => "", none);
     assert.equal(got.additive, false, status);

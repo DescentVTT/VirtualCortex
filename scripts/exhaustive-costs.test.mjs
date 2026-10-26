@@ -8,12 +8,12 @@ import { test } from "node:test";
 import { DEFAULT_COST, fromArtifacts, parseCosts, parseList, pick, plan, stale, stemOf } from "./exhaustive-costs.mjs";
 
 const LIST = [
-  "   Compiling cortex-runtime v0.1.0",
-  "     Running unittests src/lib.rs (target/release/deps/cortex_core-026c8fc3cc426559)",
+  "   Compiling menteion-runtime v0.1.0",
+  "     Running unittests src/lib.rs (target/release/deps/menteion_core-026c8fc3cc426559)",
   "dynamics::plasticity::prop::exhaustive_the_efficacy_is_bounded_by_one_for_every_input: test",
   "",
   "1 test, 0 benchmarks",
-  "     Running unittests src/lib.rs (target/release/deps/cortex_neuromod-9a83c9f77989b9bc)",
+  "     Running unittests src/lib.rs (target/release/deps/menteion_neuromod-9a83c9f77989b9bc)",
   "",
   "0 tests, 0 benchmarks",
   "     Running tests/inhibition.rs (target/release/deps/inhibition-1e70ed1bbc1ad67d)",
@@ -21,7 +21,7 @@ const LIST = [
   "the_mirrored_reversed_first_exhaustive: test",
   "",
   "2 tests, 0 benchmarks",
-  "   Doc-tests cortex_core",
+  "   Doc-tests menteion_core",
   "src/lib.rs - Thing (line 3): test",
   "",
   "1 test, 0 benchmarks",
@@ -30,21 +30,21 @@ const LIST = [
 test("a binary's stem drops the directory, `.exe` and cargo's hash, on either separator", () => {
   equal(stemOf("target/release/deps/instrument-1e70ed1bbc1ad67d"), "instrument");
   equal(stemOf("target\\release\\deps\\instrument-1e70ed1bbc1ad67d.exe"), "instrument");
-  equal(stemOf("target/release/deps/cortex_core-026c8fc3cc426559"), "cortex_core");
+  equal(stemOf("target/release/deps/menteion_core-026c8fc3cc426559"), "menteion_core");
 });
 
 test("the listing's tests are read under their binary, and a doc-test section is dropped", () => {
   deepEqual(
     parseList(LIST).map((t) => `${t.stem} ${t.name}`),
     [
-      "cortex_core dynamics::plasticity::prop::exhaustive_the_efficacy_is_bounded_by_one_for_every_input",
+      "menteion_core dynamics::plasticity::prop::exhaustive_the_efficacy_is_bounded_by_one_for_every_input",
       "inhibition the_assignment_reversed_first_exhaustive",
       "inhibition the_mirrored_reversed_first_exhaustive",
     ],
   );
   equal(parseList(LIST)[1].path, "target/release/deps/inhibition-1e70ed1bbc1ad67d");
   deepEqual(parseList(LIST.replace(/\r?\n/g, "\r\n")), parseList(LIST), "a Windows listing reads the same");
-  deepEqual(parseList("error: could not compile `cortex-runtime`"), [], "a failed build lists nothing");
+  deepEqual(parseList("error: could not compile `menteion-runtime`"), [], "a failed build lists nothing");
 });
 
 test("the table reads its lines, skips comments and blanks, and refuses a malformed or repeated line", () => {
@@ -107,7 +107,7 @@ test("a line of the table that names no test function in the tree is stale, and 
   const table = [
     "# header",
     "inhibition\tthe_assignment_reversed_first_exhaustive\t860",
-    "cortex_core\tdynamics::plasticity::prop::exhaustive_the_efficacy_is_bounded_by_one_for_every_input\t2",
+    "menteion_core\tdynamics::plasticity::prop::exhaustive_the_efficacy_is_bounded_by_one_for_every_input\t2",
     "instrument\ta_test_that_was_renamed_exhaustive\t400",
   ].join("\n");
   deepEqual(stale(table, sources), [
