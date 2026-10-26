@@ -96,13 +96,13 @@ These are checked; the whitepaper §2.2 lists the constraint ids.
   slot and whether its test run was still finishing tests
   ([ADR-0063](docs/adr/0063-the-sweep-reads-its-own-timeouts.md), F-42); `npm run mutants:timeouts`
   is the same reading on a downloaded artifact.
-- State crates declare no dependencies (`npm run spec:deps` holds it). The runtime crate `runtime/cortex-runtime` composes
+- State crates declare no dependencies (`npm run spec:deps` holds it). The runtime crate `runtime/menteion-runtime` composes
   them ([ADR-0023](docs/adr/0023-executor.md)) and is the only place `unsafe` is allowed, under
   that ADR's invariant: a `&mut` to a record never overlaps another reference to it.
-- Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version`,
+- Changing any field of any record, including reserved bytes, bumps `MenteionFileHeader::version`,
   updates the record's table in whitepaper §5.2, and gets a changelog entry.
 - The engine never amends its own code. What it may amend by itself is a parameter in
-  `cortex-executive`'s `REGISTRY`, through the four gates of `PolicyAmendment` and a trial in two
+  `menteion-executive`'s `REGISTRY`, through the four gates of `PolicyAmendment` and a trial in two
   forks of the image whose behaviour hashes must be equal ([ADR-0031](docs/adr/0031-policy-amendment.md));
   a registry entry is an ADR, and the veto gate's parameters are never one.
 - Edition 2024 and MSRV 1.85 are decided by [ADR-0009](docs/adr/0009-rust-edition-and-msrv.md)
@@ -148,7 +148,7 @@ npm run spec
 ```bash
 # 2. The pull request's gate alone, with the tests again on AArch64
 cargo test --workspace --release --locked
-cargo bench -p cortex-bench --bench hot_path --locked -- --test
+cargo bench -p menteion-bench --bench hot_path --locked -- --test
 cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor
 cargo +1.85 test --workspace --locked
 git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # cargo-mutants 27.1.0

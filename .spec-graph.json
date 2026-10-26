@@ -20,7 +20,12 @@
   "ignoreReferences": [
     "LICENSE-*",
     "../LICENSE-*",
-    "**/LICENSE-*"
+    "**/LICENSE-*",
+    "../../docs/WHITEPAPER.md#521-cortex-core--neural-state-and-dispatch",
+    "../../docs/WHITEPAPER.md#524-cortex-embodiment--sensorimotor-loop",
+    "../../docs/WHITEPAPER.md#526-cortex-cerebellum--forward-models",
+    "../../docs/WHITEPAPER.md#529-cortex-symbolic--vector-symbolic-bridge",
+    "../../docs/WHITEPAPER.md#67-scenario-r-7-cold-boot-from-a-cortex-image"
   ],
   "strict": true
 }

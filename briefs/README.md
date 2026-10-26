@@ -51,8 +51,8 @@ spec-brief's globs, what the round may write, `affectedFiles`, and what it may n
 each with at least one pattern:
 
 ```yaml
-affectedFiles: [runtime/cortex-runtime/tests/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
-protectedFiles: [crates/**/src/**, runtime/cortex-runtime/src/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, rust-toolchain.toml]
+affectedFiles: [runtime/menteion-runtime/tests/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
+protectedFiles: [crates/**/src/**, runtime/menteion-runtime/src/**, .github/workflows/**, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, rust-toolchain.toml]
 ```
 
 A test-only round protects the sources, as above. Every round protects the workflow, the run
