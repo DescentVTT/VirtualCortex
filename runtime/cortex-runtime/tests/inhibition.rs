@@ -472215,3 +472215,81 @@ fn a_step_by_its_error_s_sign_an_eighth_within_sixteen_on_seed_22_from_the_mirro
  {
     sign_arm_22(Reversal::MirroredFirst, 2, 1);
 }
+
+/// One sign arm of exploration 004 on network `n`, seeds 23 and 24 (exploration 004's rule: a
+/// reading that differs from what was expected extends to them): H-20's schedule from H-42's
+/// image on that network.
+fn sign_arm_on(n: usize, arm: Reversal, factor: usize, bound: usize) {
+    let made = probe_made(n, &format!("sign{}", PROBE_SEEDS[n]));
+    sign_arm(
+        &made,
+        n,
+        arm,
+        SIGN_FACTORS[factor],
+        SIGN_BOUNDS[bound],
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// Exploration 004, the sign rule at one: seed 23, from the assignment, H-42's arm bit for bit.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_at_one_on_seed_23_from_the_assignment_explore() {
+    sign_arm_on(1, Reversal::AssignmentFirst, 0, 1);
+}
+
+/// Exploration 004, the sign rule at one: seed 23, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_at_one_on_seed_23_from_the_mirrored_assignment_explore() {
+    sign_arm_on(1, Reversal::MirroredFirst, 0, 1);
+}
+
+/// Exploration 004, the sign rule at one: seed 24, from the assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_at_one_on_seed_24_from_the_assignment_explore() {
+    sign_arm_on(2, Reversal::AssignmentFirst, 0, 1);
+}
+
+/// Exploration 004, the sign rule at one: seed 24, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_at_one_on_seed_24_from_the_mirrored_assignment_explore() {
+    sign_arm_on(2, Reversal::MirroredFirst, 0, 1);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within four times: seed 23, from the
+/// assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_four_on_seed_23_from_the_assignment_explore() {
+    sign_arm_on(1, Reversal::AssignmentFirst, 1, 0);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within four times: seed 23, from the
+/// mirrored assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_four_on_seed_23_from_the_mirrored_assignment_explore()
+ {
+    sign_arm_on(1, Reversal::MirroredFirst, 1, 0);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within four times: seed 24, from the
+/// assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_four_on_seed_24_from_the_assignment_explore() {
+    sign_arm_on(2, Reversal::AssignmentFirst, 1, 0);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within four times: seed 24, from the
+/// mirrored assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_four_on_seed_24_from_the_mirrored_assignment_explore()
+ {
+    sign_arm_on(2, Reversal::MirroredFirst, 1, 0);
+}
