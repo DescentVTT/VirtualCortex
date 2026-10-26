@@ -7,21 +7,24 @@
 //   node scripts/exhaustive-costs.mjs check [costs.tsv]
 //       Fails on a line of the cost table that names no test function in the tree, or on a
 //       malformed or repeated line (`npm run spec:costs`).
-//   node scripts/exhaustive-costs.mjs from <dir> [--run <id>]
-//       Prints a cost table from a weekly run's `exhaustive-tests-*.tsv` artifacts under <dir>.
+//   node scripts/exhaustive-costs.mjs from <dir> [--run <id>] [--keep <costs.tsv>]
+//       Prints a cost table from a weekly run's `exhaustive-tests-*.tsv` artifacts under <dir>,
+//       with `--keep` the given table's line for every test the artifacts did not measure. A
+//       shard whose dispatch named `only` -- its `only.txt` beside its table, not empty -- is not
+//       read: it ran its tests alone, at about half their seconds in a full deal (F-82, ADR-0220).
 //
 // Which tests run is always what `--list` names (F-44, F-45, ADR-0073): the table decides the
 // balance and never the coverage, so a stale or missing line costs a shard's margin and not a
-// test. A test with no line is costed at DEFAULT_COST, which assumes a new test is a heavy one,
-// because every round that has added a whole-domain test since ADR-0077 added one of five to
-// twenty minutes.
+// test. A test with no line is costed at DEFAULT_COST, which assumes a new test is a heavy one:
+// the arms of H-44 and H-45 took 1 128 to 2 385 s in a full deal, and costed at 900 four of them
+// shared one shard (F-82).
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The seconds a test with no line in the table is assumed to take. */
-export const DEFAULT_COST = 900;
+/** The seconds a test with no line in the table is assumed to take (ADR-0220). */
+export const DEFAULT_COST = 2400;
 
 /** A test binary's stem: its file name without the directory, `.exe` or cargo's hash. */
 export function stemOf(path) {
@@ -134,8 +137,30 @@ export function stale(costsText, sources, file = "scripts/exhaustive-costs.tsv")
   return problems;
 }
 
-/** A cost table from a weekly run's `exhaustive-tests-*.tsv` files, the passing tests only. */
-export function fromArtifacts(texts, run) {
+/**
+ * The per-test tables of a run's artifacts that a cost table may be made from: `files` is
+ * `{ path, text }` for each `exhaustive-tests-*.tsv` and `only.txt` found. A table beside an
+ * `only.txt` that is not empty came from a dispatch that ran its tests alone, and is skipped.
+ * Returns `{ texts, skipped }`, the skipped by path.
+ */
+export function pick(files) {
+  const alone = new Set(files.filter((f) => /(^|[\\/])only\.txt$/.test(f.path) && f.text.trim() !== "").map((f) => dirname(f.path)));
+  const texts = [];
+  const skipped = [];
+  for (const f of files) {
+    if (!/(^|[\\/])exhaustive-tests-\d+\.tsv$/.test(f.path)) continue;
+    if (alone.has(dirname(f.path))) skipped.push(f.path);
+    else texts.push(f.text);
+  }
+  return { texts, skipped };
+}
+
+/**
+ * A cost table from a weekly run's `exhaustive-tests-*.tsv` files, the passing tests only, each
+ * at the most seconds it read; with `kept`, a table's costs, its line for each test the files did
+ * not measure.
+ */
+export function fromArtifacts(texts, run, kept = new Map()) {
   const seconds = new Map();
   for (const text of texts) {
     for (const line of text.split(/\r?\n/)) {
@@ -146,6 +171,7 @@ export function fromArtifacts(texts, run) {
       seconds.set(k, Math.max(seconds.get(k) ?? 0, Number(secs)));
     }
   }
+  for (const [k, s] of kept) if (!seconds.has(k)) seconds.set(k, s);
   const rows = [...seconds.entries()].sort((a, b) => byteOrder(a[0], b[0]));
   const header = [
     "# The seconds each whole-domain (`exhaustive`) test took on the hosted runner, one test to a",
@@ -154,7 +180,8 @@ export function fromArtifacts(texts, run) {
     "# (ADR-0092). Advisory: which tests run is always what `--list` names, so a stale or missing",
     `# line changes the balance and never the coverage; a test with no line is costed at ${DEFAULT_COST} s.`,
     "# `npm run spec:costs` fails on a line that names no test in the tree. Regenerate from a",
-    "# weekly run's `exhaustive-tests-*` artifacts: `node scripts/exhaustive-costs.mjs from <dir> --run <id>`.",
+    "# weekly run's `exhaustive-tests-*` artifacts, a shard that ran its tests alone not read (ADR-0220):",
+    "# `node scripts/exhaustive-costs.mjs from <dir> --run <id> --keep scripts/exhaustive-costs.tsv`.",
     `# Source: ${run ? `run ${run}` : "not recorded"}.`,
   ];
   return [...header, ...rows.map(([k, s]) => `${k}\t${s}`)].join("\n") + "\n";
@@ -204,23 +231,27 @@ function main(argv) {
     const dir = args[0];
     const at = args.indexOf("--run");
     const run = at < 0 ? null : args[at + 1];
-    const texts = [];
+    const keepAt = args.indexOf("--keep");
+    const kept = keepAt < 0 ? new Map() : parseCosts(readFileSync(args[keepAt + 1], "utf8"), args[keepAt + 1]).costs;
+    const files = [];
     const walk = (d) => {
       for (const entry of readdirSync(d)) {
         const p = join(d, entry);
         if (statSync(p).isDirectory()) walk(p);
-        else if (/^exhaustive-tests-\d+\.tsv$/.test(entry)) texts.push(readFileSync(p, "utf8"));
+        else if (/^exhaustive-tests-\d+\.tsv$/.test(entry) || entry === "only.txt") files.push({ path: p, text: readFileSync(p, "utf8") });
       }
     };
     walk(dir);
-    if (texts.length === 0) {
-      console.error(`no exhaustive-tests-*.tsv under ${dir}`);
+    const { texts, skipped } = pick(files);
+    for (const p of skipped) console.error(`not read, its dispatch ran its tests alone (only.txt): ${p}`);
+    if (texts.length === 0 && kept.size === 0) {
+      console.error(`no exhaustive-tests-*.tsv under ${dir} that ran in a full deal`);
       return 1;
     }
-    process.stdout.write(fromArtifacts(texts, run));
+    process.stdout.write(fromArtifacts(texts, run, kept));
     return 0;
   }
-  console.error("usage: exhaustive-costs.mjs plan <list.log> <costs.tsv> <k> <n> | check [costs.tsv] | from <dir> [--run <id>]");
+  console.error("usage: exhaustive-costs.mjs plan <list.log> <costs.tsv> <k> <n> | check [costs.tsv] | from <dir> [--run <id>] [--keep <costs.tsv>]");
   return 2;
 }
 

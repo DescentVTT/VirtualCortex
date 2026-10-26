@@ -2,9 +2,10 @@
 # line: the binary's stem, the test's name as `--list` prints it, the seconds. Read by
 # `scripts/exhaustive-shard.sh` to deal the tests to the weekly shards longest first
 # (ADR-0092). Advisory: which tests run is always what `--list` names, so a stale or missing
-# line changes the balance and never the coverage; a test with no line is costed at 900 s.
+# line changes the balance and never the coverage; a test with no line is costed at 2400 s.
 # `npm run spec:costs` fails on a line that names no test in the tree. Regenerate from a
-# weekly run's `exhaustive-tests-*` artifacts: `node scripts/exhaustive-costs.mjs from <dir> --run <id>`.
+# weekly run's `exhaustive-tests-*` artifacts, a shard that ran its tests alone not read (ADR-0220):
+# `node scripts/exhaustive-costs.mjs from <dir> --run <id> --keep scripts/exhaustive-costs.tsv`.
 # Source: run 40226374616 and 40237389553.
 active	a_drive_256_times_sparser_at_1024_units_timed_with_no_census_exhaustive	2
 active	a_drive_256_times_sparser_at_1024_units_timed_with_no_census_on_one_worker_exhaustive	2

@@ -1,6 +1,6 @@
 ---
 title: VirtualCortex Architecture Whitepaper
-version: 5.17.0
+version: 5.18.0
 status: active
 date: 2026-10-25
 ---
@@ -11,7 +11,7 @@ date: 2026-10-25
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.17.0 |
+| Version | 5.18.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-25 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2562,6 +2562,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0217](adr/0217-a-delay-the-engine-reads-built.md) | A delay the engine reads from its kept addresses, built | accepted |
 | [ADR-0218](adr/0218-a-delay-the-engine-reads-its-protocol.md) | A delay the engine reads from its kept addresses, its protocol | accepted |
 | [ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md) | A delay the engine reads from its kept addresses, measured | accepted |
+| [ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md) | The cost of a test run alone, and a bound of 240 minutes | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2691,7 +2692,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-79 | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) bounds a reward's age *"below `kept_addresses`"*, and runs a delay of two at `kept_addresses` 2: its text refuses its own run. | ADR-0207 | **Resolved** ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)): `kept_addresses` is built as the oldest age a reward may name, with one entry more held; ADR-0207 is accepted and is not edited. |
 | F-80 | The workflow's header said the runtime's sweep ran *"in twelve shards"* after [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) dealt it over sixteen. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0211](adr/0211-the-round-shortened.md)): the header says sixteen. |
 | F-81 | F-76 and F-78 name the rounds' pinned tables, growing the test crates' compile time, as the cause of the release step's growth and of the sweep's length. Exploration 002 read, exploratory, the release build no slower with the tables in the source than in a data file, and a sweep's machine time 12 % builds and the rest tests. | F-76, F-78 | **Resolved** ([ADR-0212](adr/0212-three-in-four-on-the-default.md)): recorded; the tables stay in the test sources. |
-| F-82 | Brief 082's calibration, dispatch 40226374616, read shard 10 of 18 at 128.1 minutes, 71 % of the 180-minute bound: past ADR-0179's 60 %. The table had costed H-44's arms at 634 to 1 257 s where they took 2 100 to 2 400 s. Dealt from a table written from that run, the reproduction, 40237389553, read ten shards past 60 %, the longest 127.1 minutes. | `scripts/exhaustive-costs.tsv`, `.github/workflows/ci.yml` | **Open** ([ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md)): the table is written from the calibration and the reproduction; whether the bound or the deal moves is the workflow's decision, which brief 082 does not reach. |
+| F-82 | Brief 082's calibration, dispatch 40226374616, read shard 10 of 18 at 128.1 minutes, 71 % of the 180-minute bound: past ADR-0179's 60 %. The table had costed H-44's arms at 634 to 1 257 s where they took 2 100 to 2 400 s. Dealt from a table written from that run, the reproduction, 40237389553, read ten shards past 60 %, the longest 127.1 minutes. | `scripts/exhaustive-costs.tsv`, `.github/workflows/ci.yml` | **Resolved** ([ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md)): a shard that ran its tests alone is not read into the table, a test with no line is costed at 2 400 s, and the bound is 240 minutes by ADR-0179's rule. |
 
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->
@@ -3033,7 +3034,9 @@ A round whose change only adds calibrates with its own calibration tests alone, 
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="mutants-weekly" min="1" reason="ADR-0058: the weekly sweep is one job per area" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="--shard 15/16 --sharding round-robin" min="1" reason="ADR-0158, ADR-0207: the runtime's sweep is dealt to sixteen shards (F-78)" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="needs: [weekly]" min="1" reason="ADR-0166: the sweep's jobs wait for the whole-domain shards" -->
-<!-- @assert-count target=".github/workflows/ci.yml" symbol="timeout-minutes: 180" min="1" reason="ADR-0176, ADR-0179: a weekly shard's bound, of which no shard's job reads past 60 per cent" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="timeout-minutes: 240" min="2" reason="ADR-0176, ADR-0179, ADR-0220: a weekly shard's bound and an arm's, of which no job reads past 60 per cent" -->
+<!-- @assert-count target="scripts/exhaustive-costs.mjs" symbol="export const DEFAULT_COST = 2400;" min="1" reason="ADR-0220: a test with no line is costed above every arm the last rounds measured" -->
+<!-- @assert-count target="scripts/exhaustive-costs.mjs" symbol="only.txt" min="1" reason="ADR-0220: a shard that ran its tests alone is not read into the cost table" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="an incomplete sweep is not a result" min="1" reason="ADR-0058: a sweep that did not cover its area fails the job" -->
 
 <!-- @assert-present file="testkit/prop.rs,.cargo/mutants.toml" -->
