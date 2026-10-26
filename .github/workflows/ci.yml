@@ -305,13 +305,16 @@ jobs:
     # ADR-0191: at twelve, brief 074's reproduction read 111.3 and 108.1 minutes, past that line
     # with none of its own tests in either shard; at eighteen a shard plans 6 365 s of the
     # table's 114 511 against the longest test's 3 674 s, and the sweep's jobs still wait for
-    # these (ADR-0166), so eighteen fit the account's twenty at once.
+    # these (ADR-0166), so eighteen fit the account's twenty at once. 240 minutes since ADR-0220
+    # (F-82), by ADR-0179's rule: brief 082's calibration read 128.1 minutes, and by its table's
+    # 244 578 s over eighteen shards, two tests at a time, the shards' mean is 113 minutes, past
+    # the 108 of 180 that no deal can bring the slowest under.
     name: Weekly (exhaustive tests ${{ matrix.shard }}/18, ADR-0073)
     # `inputs` is empty on a push or a pull request, so those skip this as before; on a
     # schedule the first clause carries it, whatever `inputs.scope` is (ADR-0067).
     if: github.event_name == 'schedule' || inputs.scope == 'both' || inputs.scope == 'exhaustive'
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     strategy:
       # One shard that fails must not hide what the others found.
       fail-fast: false
@@ -418,7 +421,7 @@ jobs:
     needs: [arms-plan]
     if: github.event_name == 'workflow_dispatch' && inputs.scope == 'arms'
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 180
+    timeout-minutes: 240 # the weekly shard's (ADR-0220)
     strategy:
       # One arm that fails must not stop the others.
       fail-fast: false

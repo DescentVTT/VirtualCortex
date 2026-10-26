@@ -5,7 +5,7 @@
 
 import { deepEqual, equal, ok, throws } from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_COST, fromArtifacts, parseCosts, parseList, plan, stale, stemOf } from "./exhaustive-costs.mjs";
+import { DEFAULT_COST, fromArtifacts, parseCosts, parseList, pick, plan, stale, stemOf } from "./exhaustive-costs.mjs";
 
 const LIST = [
   "   Compiling cortex-runtime v0.1.0",
@@ -124,4 +124,29 @@ test("a table is written from a run's per-test files, the passing tests only, so
   deepEqual(rows, ["inhibition\tb_exhaustive\t860", "instrument\ta_exhaustive\t1500"]);
   ok(out.includes("# Source: run 12345."));
   deepEqual(parseCosts(out).costs.size, 2, "the table it writes reads back");
+});
+
+test("a shard whose dispatch named `only` ran its tests alone, and its table is not read (F-82)", () => {
+  const files = [
+    { path: "run/exhaustive-times-0/exhaustive-tests-0.tsv", text: "p/inhibition-0a\tinhibition\ta_exhaustive\t2100\t0\t1\n" },
+    { path: "run/exhaustive-times-0/only.txt", text: "" },
+    { path: "run/exhaustive-times-1/exhaustive-tests-1.tsv", text: "p/inhibition-0a\tinhibition\tb_exhaustive\t700\t0\t1\n" },
+    { path: "run/exhaustive-times-1/only.txt", text: "b_exhaustive\n" },
+    { path: "old/exhaustive-times-2/exhaustive-tests-2.tsv", text: "p/instrument-0a\tinstrument\tc_exhaustive\t40\t0\t1\n" },
+  ];
+  const { texts, skipped } = pick(files);
+  deepEqual(texts.length, 2, "an empty only.txt and none at all are a full deal's");
+  deepEqual(skipped, ["run/exhaustive-times-1/exhaustive-tests-1.tsv"]);
+});
+
+test("with a table kept, a test the artifacts did not measure keeps its line, and one they did takes theirs", () => {
+  const kept = new Map([["inhibition\ta_exhaustive", 1000], ["inhibition\tb_exhaustive", 2300]]);
+  const out = fromArtifacts(["p/inhibition-0a\tinhibition\ta_exhaustive\t2100\t0\t1\n"], "1 and 2", kept);
+  const rows = out.split("\n").filter((l) => l !== "" && !l.startsWith("#"));
+  deepEqual(rows, ["inhibition\ta_exhaustive\t2100", "inhibition\tb_exhaustive\t2300"]);
+  ok(out.includes("# Source: run 1 and 2."));
+});
+
+test("a test with no line is costed as a heavy one, above every arm the last rounds measured", () => {
+  ok(DEFAULT_COST >= 2385, "H-44's and H-45's arms took up to 2 385 s in a full deal (F-82)");
 });

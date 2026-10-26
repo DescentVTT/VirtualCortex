@@ -167,7 +167,10 @@ section is the rule.
    pull request's gate is green on its last commit. It waits for no sweep.
 4. **The cost table** is regenerated from the calibration's and the reproduction's shards'
    artifacts together, downloaded under one directory: `node scripts/exhaustive-costs.mjs from
-   <dir> --run '<calibration> and <reproduction>'`. A reproduction of every test is enough alone.
+   <dir> --run '<calibration> and <reproduction>' --keep scripts/exhaustive-costs.tsv`, written to
+   a new file and moved over the table. A shard whose dispatch named `only` ran its tests alone
+   and is not read, so the round's own tests keep the table's default until a full deal measures
+   them ([ADR-0220](../docs/adr/0220-the-cost-of-a-test-run-alone.md), F-82).
 5. **The ADR cites the round's commits by their hashes, with the pull request's number**, and
    they are `main`'s once it merges: `main` takes a pull request by a merge commit
    ([ADR-0186](../docs/adr/0186-merge-commits.md)). A branch is brought up to date by merging `main` into it,

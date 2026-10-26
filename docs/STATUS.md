@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-Brief 082 wrote it on 2026-10-25, after it read H-45 ([ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md)).
+[ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md) wrote it on 2026-10-26, after brief 082 read H-45 ([ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md)).
 
 ## The engine
 
@@ -56,5 +56,5 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 
 H-45 read yes at step 3 of its stopping rule: the engine reads a delay of one or two trials it is not told.
 1. Step 3's next decision: the re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
-2. F-82: the weekly shards read past 60 % of their 180-minute bound, ten of eighteen in the reproduction with every test costed, the longest at 127.1 minutes; the bound or the shard count is the workflow's to decide.
+2. What the weekly job holds: 219 tests at 113 minutes a shard, 47 % of its 240-minute bound since ADR-0220, and about 12 minutes more with each round of eighteen arms.
 3. The schedule's sweep of 2026-10-26, recorded by the first ADR that merges after it ends. Brief 065 stays paused.
