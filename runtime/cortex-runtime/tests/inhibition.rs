@@ -235,7 +235,7 @@ use cortex_homeostasis::{CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, SIG
 use cortex_neuromod::{CRITIC_SCALE_MAX, CRITIC_SHIFT_MAX};
 use cortex_runtime::{
     ConfigError, DELAY_LEAD_SHIFT, DELAY_RUN, DELAY_WINDOW, ImageError, KEPT_ADDRESSES_MAX,
-    TargetRead, shortest_delay,
+    SignRule, TargetRead, shortest_delay,
 };
 
 // ------------------------------------------- written before the run (ADR-0085, ADR-0086)
@@ -471490,3 +471490,728 @@ const UNTOLD_ARM_MOVES: [[[Option<Moved>; 2]; 2]; 3] = [
     ],
 ];
 const UNTOLD_ARM_LOST: [[[u32; 2]; 2]; 3] = [[[1, 1], [2, 2]], [[1, 1], [2, 2]], [[1, 1], [2, 2]]];
+
+// ======================================================================= exploration 004
+//
+// Long runs under the default (ADR-0193, exploration 004). From the image H-42's derivation
+// under the probe wrote on a network, H-25's arm on H-20's schedule four times over, each
+// schedule from the image the one before left: the engine run quiet at a schedule's end, its
+// image written, and the next schedule's engine decoded from it, so nothing is derived again.
+// The first schedule is H-42's arm on its network bit for bit, which is the path's calibration.
+// Every image is forked twice and its targets read again as the default reads them — 128
+// windows under the drive alone with the gain held, both targets set at the last, and the probe
+// of the step after — once at the default's gain and once at the gain the engine held. Beside
+// it, the first schedule again with the rate's step moved every window by its error's sign
+// (`SignRule`, a change under `src/` on this branch alone). No prediction is written, nothing
+// is pinned, and everything is dumped before anything is held.
+
+/// The schedules a long run repeats (exploration 004).
+const LONG_SCHEDULES: usize = 4;
+
+/// One schedule of a long run (exploration 004): its blocks and trace, the value of every
+/// reward, the windows that ended inside it — each one's spikes and the gain and the step its
+/// rule left — the gain and the step at every block's end, the trials whose open window's count
+/// was not the record's, and the rate's target the engine held through it.
+struct LongSchedule {
+    blocks: Vec<Block>,
+    trace: u64,
+    values: Vec<i32>,
+    windows: Vec<(u64, u32, u32)>,
+    ends: Vec<(u32, u16)>,
+    apart: u32,
+    target: Option<u32>,
+}
+
+/// One schedule of a long run from `image` (exploration 004): H-43's twin on time — H-25's arm
+/// under the answer, the drawn delivery, `flips`, the engine's critic and its window, two
+/// addresses kept and every reward at age zero, which is H-42's arm bit for bit — with the sign
+/// rule set on the rate's step where `rule` gives one. The engine is returned as the schedule
+/// left it, for its image.
+fn long_schedule(
+    made: &Made,
+    image: &[u8],
+    arm: Reversal,
+    trials: usize,
+    flips: &[usize],
+    rule: Option<SignRule>,
+) -> (Engine, LongSchedule) {
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = kept_from(image, units);
+    if let Some(rule) = rule {
+        exec.set_sign_rule(rule);
+    }
+    let task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Answer,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    let target = exec.rate_target_per_window();
+    let mut watch = GainWatch::new(&exec);
+    let mut steps: Vec<u32> = Vec::with_capacity(trials);
+    let mut watched = exec.ticks();
+    let mut values: Vec<i32> = Vec::with_capacity(trials);
+    let mut ends: Vec<(u32, u16)> = Vec::with_capacity(trials / BLOCK);
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        trials,
+        flips,
+        &mut |exec, trial, _, outcome| {
+            let end = exec.ticks();
+            for &(tick, _) in exec.train().iter().rev() {
+                let tick = u64::from(tick);
+                if tick < watched {
+                    break;
+                }
+                watch.spike(tick);
+            }
+            watch.trial(exec);
+            steps.push(u32::from(exec.homeostasis().control_step_q0_16));
+            watched = end;
+            if let Some(value) = outcome.value_q16 {
+                values.push(value);
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                let h = exec.homeostasis();
+                ends.push((h.synaptic_gain_q16, h.control_step_q0_16));
+            }
+        },
+    );
+    let windows: Vec<(u64, u32, u32)> = watch
+        .windows()
+        .iter()
+        .zip(windows_of(watch.first, &watch.counts, &watch.ends, &steps))
+        .map(|(&(count, gain), (_, step))| (count, gain, step))
+        .collect();
+    let run = LongSchedule {
+        blocks,
+        trace,
+        values,
+        windows,
+        ends,
+        apart: watch.apart,
+        target,
+    };
+    (exec, run)
+}
+
+/// What a schedule's windows read of the rate's error (exploration 004), `e` a window's spikes
+/// less the target: the windows; the pairs of consecutive windows on opposite sides of the target
+/// (`opposite_pairs`); the mean count over the target and the variance of `e` over the target's
+/// square, in parts of ten thousand and of a hundred million; the autocorrelation of `e` at lags
+/// one and two in thousandths; and the largest `|e|` over the target in parts of ten thousand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Whiteness {
+    windows: usize,
+    opposite: u32,
+    mean: i128,
+    variance: i128,
+    lag1: Option<i128>,
+    lag2: Option<i128>,
+    largest: i128,
+}
+
+fn whiteness(windows: &[(u64, u32, u32)], target: u32) -> Whiteness {
+    let t = i128::from(target);
+    let e: Vec<i128> = windows
+        .iter()
+        .map(|w| i128::from(w.0).saturating_sub(t))
+        .collect();
+    let n = e.len() as i128;
+    let sum = e.iter().fold(0i128, |s, &x| s.saturating_add(x));
+    // n times each error's distance from the mean, so that no division comes before the last.
+    let d: Vec<i128> = e
+        .iter()
+        .map(|&x| x.saturating_mul(n).saturating_sub(sum))
+        .collect();
+    let squares = d
+        .iter()
+        .fold(0i128, |s, &x| s.saturating_add(x.saturating_mul(x)));
+    let lag = |k: usize| {
+        d.iter()
+            .zip(d.iter().skip(k))
+            .fold(0i128, |s, (&a, &b)| s.saturating_add(a.saturating_mul(b)))
+            .saturating_mul(1_000)
+            .checked_div(squares)
+    };
+    let pairs: Vec<(u64, u32)> = windows.iter().map(|w| (w.0, w.1)).collect();
+    Whiteness {
+        windows: e.len(),
+        opposite: opposite_pairs(&pairs, target),
+        mean: sum
+            .saturating_add(n.saturating_mul(t))
+            .saturating_mul(10_000)
+            .checked_div(n.saturating_mul(t))
+            .unwrap_or(0),
+        variance: squares
+            .saturating_mul(100_000_000)
+            .checked_div(
+                n.saturating_mul(n)
+                    .saturating_mul(n)
+                    .saturating_mul(t)
+                    .saturating_mul(t),
+            )
+            .unwrap_or(0),
+        lag1: lag(1),
+        lag2: lag(2),
+        largest: e
+            .iter()
+            .map(|&x| {
+                x.saturating_abs()
+                    .saturating_mul(10_000)
+                    .checked_div(t)
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0),
+    }
+}
+
+/// What `long_dump` returns of a schedule: H-25's four clauses, each mapping's last 128 correct,
+/// and each mapping's crossing.
+type LongRead = ([bool; 4], [u32; 4], [Option<usize>; 4]);
+
+/// A block of a long run as `long_dump` reads it (exploration 004): its index, its correct
+/// trials, the four couplings, the inhibitory sum and the outside sum over the image's in parts
+/// of ten thousand, and the gain and the step at its end.
+type LongBlock = (usize, u32, [i64; 4], i64, i64, u32, u16);
+
+/// What a re-read's hand rules make (exploration 004): the target, D, S in hundredths and the
+/// step.
+type RereadByHand = (Option<(u32, u32)>, Option<i64>, Option<i64>, Option<u16>);
+
+/// A schedule's learning and drift, read and dumped (exploration 004): H-25's four clauses
+/// against the image the long run started from, each mapping's last 128 correct and its
+/// crossing, the highest coupling, the first block past the band; per block the four couplings
+/// over the image's, the inhibitory sum over the image's and the outside sum over the image's, in
+/// parts of ten thousand, and the gain and the step at the block's end; per eight windows the
+/// mean count over the target; and the error's whiteness over the schedule.
+fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let blocks = &run.blocks;
+    let clauses = kept_clauses(&made.couplings, outside, blocks);
+    let correct = mapping_correct(blocks);
+    let crossed = crossings(blocks);
+    eprintln!("DUMP {name} blocks {blocks:?}");
+    eprintln!(
+        "DUMP {name} trace {:#018x} value hash {:#018x}",
+        run.trace,
+        values_hash(&run.values)
+    );
+    eprintln!("DUMP {name} windows {:?}", run.windows);
+    eprintln!(
+        "DUMP {name} learning: last 128 correct {correct:?}, learned {} of 4; crossings {crossed:?}; H-25's clauses {clauses:?}; highest {:?}; over {:?}; left {:?}; correct by block {:?}",
+        correct.iter().filter(|&&c| c >= 80).count(),
+        highest_of(&made.couplings, blocks),
+        first_over_of(&made.couplings, blocks),
+        left_band(outside, blocks),
+        curve(blocks)
+    );
+    let rows: Vec<LongBlock> = blocks
+        .iter()
+        .zip(&run.ends)
+        .enumerate()
+        .map(|(j, (b, &(gain, step)))| {
+            let c = |s: usize, r: usize| per_myriad(b.10[s][r], made.couplings[s][r]);
+            (
+                j,
+                b.0,
+                [c(0, 0), c(0, 1), c(1, 0), c(1, 1)],
+                per_myriad(b.7, made.sums.0),
+                per_myriad(outside_of(b), outside),
+                gain,
+                step,
+            )
+        })
+        .collect();
+    eprintln!(
+        "DUMP {name} by block (block, correct, couplings over the image's, inhibitory, outside, gain, step) {rows:?}"
+    );
+    if let Some(target) = run.target {
+        let by_eight: Vec<i64> = run
+            .windows
+            .chunks_exact(BLOCK_WINDOWS)
+            .map(|w| {
+                let spikes = w.iter().fold(0u64, |s, x| s.saturating_add(x.0));
+                per_myriad(
+                    i64::try_from(spikes).unwrap_or(i64::MAX),
+                    i64::from(target).saturating_mul(BLOCK_WINDOWS as i64),
+                )
+            })
+            .collect();
+        eprintln!(
+            "DUMP {name} the count over the target by eight windows, per myriad {by_eight:?}"
+        );
+        eprintln!(
+            "DUMP {name} whiteness at the target {target}: {:?}; trials apart {}",
+            whiteness(&run.windows, target),
+            run.apart
+        );
+    }
+    (clauses, correct, crossed)
+}
+
+/// The image with a read of both targets and the probe after it under way from its first window,
+/// as the default's engine is born with them (exploration 004): the modulator section's rate's
+/// target cleared, 128 windows left at `[39]`, its sum zero, the inhibitory target's flag at
+/// `[26]` and the probe's at `[27]` set; and where `gain` gives one, the homeostasis record's
+/// gain written. Each section re-sealed; every other byte the image's.
+fn with_reread_bytes(image: &[u8], gain: Option<u32>) -> Vec<u8> {
+    let mut img = image.to_vec();
+    let (at, offset, length) = modulator_entry(&img);
+    {
+        let m = &mut img[offset..][..length];
+        m[56..60].fill(0);
+        m[39] = PROBE_SPAN;
+        m[54..56].fill(0);
+        m[60..64].fill(0);
+        m[26] = 1;
+        m[27] = 1;
+    }
+    let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+    entry.crc64 = crc64(&img[offset..][..length]);
+    img[at..][..64].copy_from_slice(&entry.encode());
+    if let Some(gain) = gain {
+        let (at, offset, length) = homeostasis_entry(&img);
+        img[offset..][28..32].copy_from_slice(&gain.to_le_bytes());
+        let mut entry = SectionEntry::decode(img[at..][..64].try_into().unwrap());
+        entry.crc64 = crc64(&img[offset..][..length]);
+        img[at..][..64].copy_from_slice(&entry.encode());
+    }
+    img
+}
+
+/// What a fork read again (exploration 004): what the engine held before it — the rate's target
+/// period and count, the inhibitory period, the step and the gain — the gain the read held, the
+/// read's state after the window open at the load closed, the spikes of every window after it —
+/// the read's second to its 128th and the probe's sixteen — and what the engine made of them, the
+/// period and the count, the inhibitory period, the step and the state it ended in; and the
+/// target, D, S in hundredths and the step by hand.
+#[derive(Debug)]
+struct Reread {
+    held_before: (u32, Option<u32>, u32, u16, u32),
+    gain: u32,
+    after_align: Option<TargetRead>,
+    counts: Vec<u64>,
+    engine: (u32, Option<u32>, u32, u16, Option<TargetRead>),
+    by_hand: RereadByHand,
+}
+
+/// A fork of `image` read again as the default reads (exploration 004), under the drive alone.
+fn reread(image: &[u8], gain: Option<u32>, sets: [Set; 4], name: &str) -> Reread {
+    let units = SCAN_UNITS;
+    let own = signed_from(image, units);
+    let held_before = (
+        own.rate_target_period_ticks(),
+        own.rate_target_per_window(),
+        own.istdp_target_period_ticks(),
+        own.homeostasis().control_step_q0_16,
+        own.homeostasis().synaptic_gain_q16,
+    );
+    undropped(own, name);
+    let mut exec = signed_from(&with_reread_bytes(image, gain), units);
+    let held = exec.homeostasis().synaptic_gain_q16;
+    let drive = drive(units);
+    // The window open at the load closes as the read's first; each window after it is one.
+    let boundary = (exec.ticks() >> WINDOW_SHIFT).saturating_add(1) << WINDOW_SHIFT;
+    run_driven(&mut exec, &drive, boundary).expect("the drive runs");
+    let after_align = exec.target_read();
+    let mut counts: Vec<u64> = Vec::with_capacity(PROBE_LEAD);
+    for _ in 1..PROBE_LEAD {
+        counts.push(lead_in_window(&mut exec, &drive, [sets[2], sets[3]]).0);
+    }
+    let span = usize::from(PROBE_SPAN);
+    let sixteen =
+        counts.get(span.saturating_sub(READ_LAST).saturating_sub(1)..span.saturating_sub(1));
+    let target = sixteen.and_then(|s| read_target_by_hand(units, s));
+    let probe = counts.get(span.saturating_sub(1)..);
+    let sum = probe.map(probe_sum_by_hand);
+    let count = target.map(|(_, c)| c);
+    let engine = (
+        exec.rate_target_period_ticks(),
+        exec.rate_target_per_window(),
+        exec.istdp_target_period_ticks(),
+        exec.homeostasis().control_step_q0_16,
+        exec.target_read(),
+    );
+    undropped(exec, name);
+    Reread {
+        held_before,
+        gain: held,
+        after_align,
+        counts,
+        engine,
+        by_hand: (
+            target,
+            sum,
+            sum.zip(count).and_then(|(d, c)| steepness_by_hand(d, c)),
+            sum.zip(count).and_then(|(d, c)| probe_step_by_hand(c, d)),
+        ),
+    }
+}
+
+/// Whether a re-read's engine made what its hand rules made: the read's second window the first
+/// after the alignment, the target's period and count, the inhibitory period the same, and the
+/// step, the read and the probe ended.
+fn reread_by_hand_held(read: &Reread) -> bool {
+    read.by_hand.0.is_some_and(|(period, count)| {
+        read.engine.0 == period && read.engine.1 == Some(count) && read.engine.2 == period
+    }) && read.by_hand.3 == Some(read.engine.3)
+        && read.engine.4.is_none()
+        && read.after_align
+            == Some(TargetRead::Reading {
+                left: PROBE_SPAN.saturating_sub(1),
+                sum: 0,
+            })
+}
+
+/// A long run on network `n` (exploration 004): `schedules` schedules of `trials` trials and
+/// `flips`, each from the image the one before left, from the image H-42's derivation under the
+/// probe wrote; then every image, the first and each schedule's, read again at the default's gain
+/// and at its own. Everything dumped, then held: the first schedule H-42's arm on the network bit
+/// for bit (as far as it runs, where it is shorter than H-20's), no worker dropping an entry, and
+/// each re-read's engine its hand rules'.
+fn long_runs(
+    made: &Made,
+    n: usize,
+    arm: Reversal,
+    schedules: usize,
+    trials: usize,
+    flips: &[usize],
+) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("long{} {arm:?}", PROBE_SEEDS[n]);
+    let sets = geometry(SCAN_UNITS, made.derived.rotation);
+    let mut images: Vec<Vec<u8>> = vec![made.windowed.clone()];
+    let mut first: Option<(Vec<Block>, u64, u64)> = None;
+    let mut readings: Vec<LongRead> = Vec::new();
+    for s in 0..schedules {
+        let at = format!("{name} schedule {s}");
+        let image = images.last().expect("an image to run from").clone();
+        let (mut exec, run) = long_schedule(made, &image, arm, trials, flips, None);
+        readings.push(long_dump(&at, made, &run));
+        if s == 0 {
+            first = Some((run.blocks.clone(), run.trace, values_hash(&run.values)));
+        }
+        let quiet_ticks = quiet(&mut exec);
+        let written = Image::encode(&exec).expect("quiescent");
+        eprintln!(
+            "DUMP {at} quiet in {quiet_ticks} ticks, the image written at tick {}; the sums after {:?} beside the image's {:?}; the train let go {}",
+            exec.ticks(),
+            weights_by_polarity(&exec),
+            made.sums,
+            exec.train_overwritten()
+        );
+        undropped(exec, &at);
+        images.push(written);
+    }
+    eprintln!("DUMP {name} by schedule (clauses, last 128 correct, crossings) {readings:?}");
+    let mut held = Vec::new();
+    for (s, image) in images.iter().enumerate() {
+        for (label, gain) in [
+            ("the default's gain", Some(GAIN_1024)),
+            ("its own gain", None),
+        ] {
+            let at = format!("{name} re-read of image {s} at {label}");
+            let read = reread(image, gain, sets, &at);
+            eprintln!("DUMP {at} {read:?}");
+            let ratio = read
+                .engine
+                .1
+                .zip(read.held_before.1)
+                .map(|(fresh, own)| per_myriad(i64::from(fresh), i64::from(own)));
+            eprintln!(
+                "DUMP {at} summary: held {:?}, read at gain {}: period {} count {:?} ({ratio:?} per myriad of the held), step {} (S {:?} hundredths) over {} windows; by hand {}",
+                read.held_before,
+                read.gain,
+                read.engine.0,
+                read.engine.1,
+                read.engine.3,
+                read.by_hand.2,
+                read.counts.len(),
+                reread_by_hand_held(&read)
+            );
+            held.push((at, reread_by_hand_held(&read)));
+        }
+    }
+    // Held: the first schedule H-42's arm; every re-read its hand rules'.
+    let (blocks, trace, hash) = first.expect("a first schedule");
+    let pin = PROBE_ARM_BLOCKS[n][k];
+    if trials == SCHEDULE_TRIALS && flips == SCHEDULE_FLIPS {
+        pinned(
+            &format!("{name} schedule 0"),
+            &blocks,
+            trace,
+            pin,
+            PROBE_ARM_TRACES[n][k],
+        );
+        assert_eq!(
+            hash, PROBE_ARM_VALUE_HASH[n][k],
+            "{name}: every value H-42's"
+        );
+        eprintln!("DUMP {name} the first schedule is H-42's arm on the network, bit for bit");
+    } else {
+        assert_eq!(
+            Some(blocks.as_slice()),
+            pin.get(..blocks.len()),
+            "{name}: the first schedule's blocks H-42's as far as they run"
+        );
+    }
+    for (at, ok) in held {
+        assert!(ok, "{at}: the engine's re-read is its hand rules'");
+    }
+}
+
+/// The sign rule's grid (exploration 004): the factor `f`, as `(numerator, divisor)`, with up
+/// `1 + f` and down `1/(1 + f)`, so that the step stands still in the mean where a window lies on
+/// the side of the target the one before did as often as not; and the bounds as divisors and
+/// multiples of the probe's step. A factor of zero is the rule at one, which moves nothing.
+const SIGN_FACTORS: [(u32, u32); 3] = [(0, 1), (1, 32), (1, 8)];
+const SIGN_BOUNDS: [u16; 2] = [4, 16];
+
+/// The sign rule of a factor and a bound (exploration 004), from the probe's step `step`: up and
+/// down in Q16.16 to nearest, and the bounds `step / bound` and `step × bound`, at least one and
+/// at most the record's.
+fn sign_rule_of(step: u16, factor: (u32, u32), bound: u16) -> SignRule {
+    let one = u64::from(ONE.unsigned_abs());
+    let up = one
+        .saturating_mul(u64::from(factor.1).saturating_add(u64::from(factor.0)))
+        .checked_div(u64::from(factor.1))
+        .unwrap_or(one);
+    let down = one
+        .saturating_mul(one)
+        .saturating_add(up >> 1)
+        .checked_div(up)
+        .unwrap_or(one);
+    SignRule {
+        up_q16: u32::try_from(up).unwrap_or(u32::MAX),
+        down_q16: u32::try_from(down).unwrap_or(u32::MAX),
+        least: step.checked_div(bound).unwrap_or(step).max(1),
+        most: step.saturating_mul(bound).min(CONTROL_STEP_MAX_Q0_16),
+    }
+}
+
+/// The step's course under a sign rule (exploration 004), over the windows: its least, greatest,
+/// first and last, its mean, and the windows at either bound.
+type StepCourse = (u32, u32, u32, u32, u64, usize, usize);
+
+fn step_course(windows: &[(u64, u32, u32)], rule: SignRule) -> StepCourse {
+    let steps = || windows.iter().map(|w| w.2);
+    let sum = steps().fold(0u64, |s, x| s.saturating_add(u64::from(x)));
+    (
+        steps().min().unwrap_or(0),
+        steps().max().unwrap_or(0),
+        steps().next().unwrap_or(0),
+        steps().next_back().unwrap_or(0),
+        sum.checked_div(windows.len() as u64).unwrap_or(0),
+        steps().filter(|&x| x == u32::from(rule.least)).count(),
+        steps().filter(|&x| x == u32::from(rule.most)).count(),
+    )
+}
+
+/// The first schedule under a sign rule on network `n` (exploration 004): the long run's first
+/// schedule from the same image with the rule set from the probe's step, dumped beside H-42's
+/// arm. At a factor of zero the rule moves nothing, and the arm is held to H-42's bit for bit.
+fn sign_arm(
+    made: &Made,
+    n: usize,
+    arm: Reversal,
+    factor: (u32, u32),
+    bound: u16,
+    trials: usize,
+    flips: &[usize],
+) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let step = image_step(&made.windowed);
+    let rule = sign_rule_of(step, factor, bound);
+    let name = format!(
+        "sign{} {}/{} within {bound} {arm:?}",
+        PROBE_SEEDS[n], factor.0, factor.1
+    );
+    eprintln!("DUMP {name} the rule {rule:?} from the probe's step {step}");
+    let (exec, run) = long_schedule(made, &made.windowed, arm, trials, flips, Some(rule));
+    long_dump(&name, made, &run);
+    eprintln!(
+        "DUMP {name} the step's course (least, greatest, first, last, mean, windows at the least, at the greatest) {:?}",
+        step_course(&run.windows, rule)
+    );
+    let pin = PROBE_ARM_BLOCKS[n][k];
+    eprintln!(
+        "DUMP {name} beside H-42's arm: last 128 correct {:?} beside {:?}; crossings {:?} beside {:?}; opposite beside {:?}",
+        mapping_correct(&run.blocks),
+        mapping_correct(pin),
+        crossings(&run.blocks),
+        crossings(pin),
+        PROBE_ARM_OPPOSITE[n][k]
+    );
+    undropped(exec, &name);
+    if factor.0 == 0 {
+        if trials == SCHEDULE_TRIALS && flips == SCHEDULE_FLIPS {
+            pinned(&name, &run.blocks, run.trace, pin, PROBE_ARM_TRACES[n][k]);
+            assert_eq!(
+                values_hash(&run.values),
+                PROBE_ARM_VALUE_HASH[n][k],
+                "{name}: every value H-42's"
+            );
+        } else {
+            assert_eq!(
+                Some(run.blocks.as_slice()),
+                pin.get(..run.blocks.len()),
+                "{name}"
+            );
+        }
+        eprintln!("DUMP {name} the rule at one is H-42's arm, bit for bit");
+    }
+}
+
+/// Exploration 004's harness, short: on seed 22 from the assignment, the first schedule under the
+/// sign rule at an eighth within sixteen times and two schedules of the long run, each two blocks
+/// long, every image read again. Its blocks are H-42's arm's first two where no rule moves.
+#[test]
+#[ignore]
+fn long_runs_under_the_default_short_on_seed_22_explore() {
+    let made = probe_made(0, "long22 short");
+    let short = 2 * BLOCK;
+    sign_arm(
+        &made,
+        0,
+        Reversal::AssignmentFirst,
+        SIGN_FACTORS[2],
+        SIGN_BOUNDS[1],
+        short,
+        &[],
+    );
+    long_runs(&made, 0, Reversal::AssignmentFirst, 2, short, &[]);
+}
+
+/// Exploration 004, the long run: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn long_runs_under_the_default_on_seed_22_from_the_assignment_explore() {
+    let made = probe_made(0, "long22 AssignmentFirst");
+    long_runs(
+        &made,
+        0,
+        Reversal::AssignmentFirst,
+        LONG_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// Exploration 004, the long run: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn long_runs_under_the_default_on_seed_22_from_the_mirrored_assignment_explore() {
+    let made = probe_made(0, "long22 MirroredFirst");
+    long_runs(
+        &made,
+        0,
+        Reversal::MirroredFirst,
+        LONG_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// One sign arm of exploration 004 on seed 22: H-20's schedule from H-42's image.
+fn sign_arm_22(arm: Reversal, factor: usize, bound: usize) {
+    let made = probe_made(0, "sign22");
+    sign_arm(
+        &made,
+        0,
+        arm,
+        SIGN_FACTORS[factor],
+        SIGN_BOUNDS[bound],
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// Exploration 004, the sign rule at one: seed 22, from the assignment, H-42's arm bit for bit.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_at_one_on_seed_22_from_the_assignment_explore() {
+    sign_arm_22(Reversal::AssignmentFirst, 0, 1);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within four times: seed 22, from the
+/// assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_four_on_seed_22_from_the_assignment_explore() {
+    sign_arm_22(Reversal::AssignmentFirst, 1, 0);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within sixteen times: seed 22, from the
+/// assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_sixteen_on_seed_22_from_the_assignment_explore()
+ {
+    sign_arm_22(Reversal::AssignmentFirst, 1, 1);
+}
+
+/// Exploration 004, the sign rule at an eighth within four times: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_an_eighth_within_four_on_seed_22_from_the_assignment_explore() {
+    sign_arm_22(Reversal::AssignmentFirst, 2, 0);
+}
+
+/// Exploration 004, the sign rule at an eighth within sixteen times: seed 22, from the
+/// assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_an_eighth_within_sixteen_on_seed_22_from_the_assignment_explore() {
+    sign_arm_22(Reversal::AssignmentFirst, 2, 1);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within four times: seed 22, from the
+/// mirrored assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_four_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    sign_arm_22(Reversal::MirroredFirst, 1, 0);
+}
+
+/// Exploration 004, the sign rule at a thirty-second within sixteen times: seed 22, from the
+/// mirrored assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_a_thirty_second_within_sixteen_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    sign_arm_22(Reversal::MirroredFirst, 1, 1);
+}
+
+/// Exploration 004, the sign rule at an eighth within four times: seed 22, from the mirrored
+/// assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_an_eighth_within_four_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    sign_arm_22(Reversal::MirroredFirst, 2, 0);
+}
+
+/// Exploration 004, the sign rule at an eighth within sixteen times: seed 22, from the mirrored
+/// assignment.
+#[test]
+#[ignore]
+fn a_step_by_its_error_s_sign_an_eighth_within_sixteen_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    sign_arm_22(Reversal::MirroredFirst, 2, 1);
+}
