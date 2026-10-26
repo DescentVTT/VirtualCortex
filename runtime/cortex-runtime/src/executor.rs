@@ -547,6 +547,24 @@ pub enum ConfigError {
     DelayReadWithoutKept,
 }
 
+/// Exploration 004 (ADR-0193), on its branch alone and in no image: the rate's step moved at
+/// every window's close under the rate's rule by whether that window and the one before it lay
+/// on the same side of the target, a window at the target not above it — the step times
+/// `up_q16` where they did and times `down_q16` where they did not, both Q16.16, the product to
+/// nearest, then held within `[least, most]` and at most `CONTROL_STEP_MAX_Q0_16`. The step it
+/// moves is the one the window's own rule used; the next window's rule reads the new one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SignRule {
+    /// The step's factor after two windows on the same side, Q16.16.
+    pub up_q16: u32,
+    /// The step's factor after two windows on opposite sides, Q16.16.
+    pub down_q16: u32,
+    /// The least step the rule leaves, Q0.16.
+    pub least: u16,
+    /// The greatest step the rule leaves, Q0.16.
+    pub most: u16,
+}
+
 /// The read of the rate's target (ADR-0188, ADR-0189), between ticks: `Executor::target_read`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetRead {
@@ -1448,6 +1466,11 @@ pub struct Executor<const CAP: usize> {
     /// (ADR-0202): the configuration's or the image's, set only beside a read or a probe under
     /// way and spent when the probe ends or the read ends refused.
     step_probe: bool,
+    /// Exploration 004 (ADR-0193): the sign rule on the rate's step, none while unset, where
+    /// every window is ADR-0180's rule bit for bit; and whether the last window it read lay
+    /// above the target, none before its first.
+    sign_rule: Option<SignRule>,
+    above_before: Option<bool>,
     /// The kept addresses (ADR-0208): the configuration's oldest age a reward may name, zero
     /// while unset.
     kept_addresses: u8,
@@ -1728,6 +1751,8 @@ impl<const CAP: usize> Executor<CAP> {
             target_read,
             istdp_target_read: config.istdp_target_read,
             step_probe: config.step_probe,
+            sign_rule: None,
+            above_before: None,
             kept_addresses: config.kept_addresses,
             // The newest entry and as many before it as a reward's age may reach, each sized
             // here; none while unset.
@@ -1957,6 +1982,38 @@ impl<const CAP: usize> Executor<CAP> {
     /// record's `control_step_q0_16`.
     pub fn step_probe(&self) -> bool {
         self.step_probe
+    }
+
+    /// Exploration 004 (ADR-0193): sets the sign rule on the rate's step, between ticks, from the
+    /// next window's close; the window before it is not read.
+    pub fn set_sign_rule(&mut self, rule: SignRule) {
+        self.sign_rule = Some(rule);
+        self.above_before = None;
+    }
+
+    /// The sign rule after a window the rate's rule read (exploration 004): the record's step
+    /// moved by `SignRule` from whether the window lay above the target and the one before did,
+    /// and the window remembered; nothing while the rule is unset.
+    fn sign_step(&mut self, above: bool) {
+        let Some(rule) = self.sign_rule else {
+            return;
+        };
+        if let Some(before) = self.above_before {
+            let factor = if before == above {
+                rule.up_q16
+            } else {
+                rule.down_q16
+            };
+            let moved = u64::from(self.homeostasis.control_step_q0_16)
+                .saturating_mul(u64::from(factor))
+                .saturating_add(0x8000)
+                >> 16;
+            self.homeostasis.control_step_q0_16 = u16::try_from(moved)
+                .unwrap_or(u16::MAX)
+                .clamp(rule.least, rule.most.max(rule.least))
+                .min(CONTROL_STEP_MAX_Q0_16);
+        }
+        self.above_before = Some(above);
     }
 
     /// The gain the workers are given at the next tick (ADR-0202): the record's
@@ -3021,11 +3078,17 @@ impl<const CAP: usize> Executor<CAP> {
                     self.read_close(read);
                 } else {
                     match self.rate_target {
-                        Some(target) => self.homeostasis.regulate_rate(target),
-                        None => self
-                            .homeostasis
-                            .regulate(saturation_ceiling(self.shared.units.len())),
-                    };
+                        Some(target) => {
+                            // Read before the rule clears the window (exploration 004).
+                            let above = self.homeostasis.window_spikes() > u64::from(target);
+                            self.homeostasis.regulate_rate(target);
+                            self.sign_step(above);
+                        }
+                        None => {
+                            self.homeostasis
+                                .regulate(saturation_ceiling(self.shared.units.len()));
+                        }
+                    }
                 }
                 let before = self.homeostasis.sleep_stage;
                 self.homeostasis.step_sleep();

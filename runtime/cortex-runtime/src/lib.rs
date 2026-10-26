@@ -65,7 +65,7 @@ pub use episode::{
 pub use executor::{
     ACTIVATE, AddressError, AmendError, Config, ConfigError, DELAY_LEAD_SHIFT, DELAY_RUN,
     DELAY_WINDOW, Executor, Inject, InjectError, KEPT_ADDRESSES_MAX, Modulations, Policy,
-    Prediction, TagError, TargetRead, WorkerReport,
+    Prediction, SignRule, TagError, TargetRead, WorkerReport,
 };
 pub use image::{Image, ImageError, WriteAheadLog, shortest_delay};
 pub use language::{
