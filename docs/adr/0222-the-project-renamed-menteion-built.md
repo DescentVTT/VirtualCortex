@@ -99,7 +99,36 @@ Kept, as the table leaves them: the anatomy's *cortex*, the ADRs' files, every t
 
 ### The run
 
-To be read from the dispatch.
+- **What the change needs.** `npm run round:additive -- origin/main 0216043` exits 1: *"d29760e...0216043 does not only add, 132 reason(s): the calibration runs every test (ADR-0215)"*. So the run is every test, with no `exclude` and no `only`.
+- **The dispatch.** Run [40371343923](https://github.com/Menteion/Menteion/actions/runs/40371343923) at `scope=exhaustive` on `0216043`, at 17:43:52Z on 2026-10-26. That is the round's last commit under `crates/`, `runtime/`, `benches/`, `testkit/` or `.cargo/`, or to a Cargo file. None of them changes after it.
+- **Every shard is green, and every pinned number held** on x86-64. All 219 whole-domain tests passed, each exit 0 with one test reported, none excluded, 229 444 s summed.
+
+| Shard | Job | Of its bound | Tests | Their seconds summed | Tests' wall time |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 121.8 min | 51 % | 10 | 14 173 | 7 201 s |
+| 1 | 122.5 min | 51 % | 12 | 14 101 | 7 251 s |
+| 2 | 120.1 min | 50 % | 10 | 13 635 | 7 098 s |
+| 3 | 75.7 min | 32 % | 10 | 8 902 | 4 466 s |
+| 4 | 89.2 min | 37 % | 13 | 10 055 | 5 268 s |
+| 5 | 125.7 min | 52 % | 13 | 13 642 | 7 447 s |
+| 6 | 94.5 min | 39 % | 12 | 10 978 | 5 596 s |
+| 7 | 119.1 min | 50 % | 13 | 13 589 | 7 041 s |
+| 8 | 125.3 min | 52 % | 13 | 13 845 | 7 425 s |
+| 9 | 119.4 min | 50 % | 12 | 13 675 | 7 061 s |
+| 10 | 112.7 min | 47 % | 13 | 13 298 | 6 670 s |
+| 11 | 117.8 min | 49 % | 12 | 13 441 | 6 972 s |
+| 12 | 90.4 min | 38 % | 13 | 10 657 | 5 330 s |
+| 13 | 121.8 min | 51 % | 11 | 14 096 | 7 221 s |
+| 14 | 122.7 min | 51 % | 13 | 14 155 | 7 273 s |
+| 15 | 112.3 min | 47 % | 13 | 12 875 | 6 644 s |
+| 16 | 114.0 min | 48 % | 13 | 13 343 | 6 741 s |
+| 17 | 95.3 min | 40 % | 13 | 10 984 | 5 642 s |
+
+- The bound is 240 minutes a job ([ADR-0220](0220-the-cost-of-a-test-run-alone.md)). **No job passed 60 % of it**: the longest, shard 5's, took 125.7 minutes, 52 %.
+- **The organisation ran six of the shards at once at first and never more than ten**, where GitHub's Free plan gives 20 jobs at once. The others waited for a place, so the last shard ended at 23:05:56Z, 5 h 22 min after the dispatch. What holds the organisation's places is not read here.
+- **The cost table** is regenerated from this run's artifacts with `--keep`: 219 lines, 229 444 s, where it held 244 578 s.
+- **The pull request's gate** on `9195f31`, run 40373092433: the Rust checks, the minimum version, AArch64 and the mutation gate green. The gate found 7 mutants, 3 caught and 4 unviable, no survivor. The documentation check failed on brief 083's precondition alone, until the archive.
+- **The sweep.** The last one, the schedule's of 2026-10-26, is recorded by ADR-0221, and none has run since. This round dispatches none ([ADR-0211](0211-the-round-shortened.md)).
 
 ## Consequences
 

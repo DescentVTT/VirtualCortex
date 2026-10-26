@@ -79,21 +79,21 @@ Re-derived on 2026-10-27 against `main` at `cda0e52`. Line numbers move; the sym
 
 ## Deliverables
 
-- [ ] **The rename, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The rename, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - The crates, their directories, the workspace, `Cargo.lock`, the workflow, `.cargo/mutants.toml`, the scripts and their tests, `package.json` and its lock.
   - `MenteionFileHeader`, the magic `MENTEION`, the format 26, its tests and the whitepaper's §5.2.2 with the format's new version in its list.
   - What `git grep` finds of each old name after the round, file by file, each one frozen, history, ADR-0221 or an anchor.
-- [ ] **The documents' checks.**
+- [x] **The documents' checks.**
   - Every directive naming a crate's path renamed, and every one of them run by `npm run spec`.
   - `scripts/check-doc-shape.mjs` reading a block whose only change is ADR-0221's table as the base's text, with cases in `spec:shape:test`.
   - The five old anchors kept as HTML anchors before their headings, and named in `.spec-graph.json`'s `ignoreReferences`.
-- [ ] **The dispatch at `scope=exhaustive`**, every test, on the round's last code commit, every shard green: every pinned number held. The cost table regenerated from its artifacts.
-- [ ] **The documents, in the same pull request.**
+- [x] **The dispatch at `scope=exhaustive`**, every test, on the round's last code commit, every shard green: every pinned number held. The cost table regenerated from its artifacts.
+- [x] **The documents, in the same pull request.**
   - The living documents renamed, as ADR-0221 lists them; brief 065's paths among them.
   - `docs/STATUS.md` rewritten whole.
   - `CHANGELOG.md`, one entry of at most 400 characters; the earlier entries as they are.
   - The whitepaper's version in both declarations, with its date; the tables written by `node scripts/adr-index.mjs`.
-- [ ] **The brief archived** with `spec-brief archive 083 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 083 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
