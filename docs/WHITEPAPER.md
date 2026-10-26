@@ -2563,7 +2563,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0218](adr/0218-a-delay-the-engine-reads-its-protocol.md) | A delay the engine reads from its kept addresses, its protocol | accepted |
 | [ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md) | A delay the engine reads from its kept addresses, measured | accepted |
 | [ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md) | The cost of a test run alone, and a bound of 240 minutes | accepted |
-| [ADR-0221](adr/0221-the-project-renamed-menteion.md) | The project renamed Menteion | proposed |
+| [ADR-0221](adr/0221-the-project-renamed-menteion.md) | The project renamed Menteion | accepted |
 <!-- adr-index: end decisions -->
 
 ---
