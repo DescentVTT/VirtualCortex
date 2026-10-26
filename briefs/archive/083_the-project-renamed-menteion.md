@@ -1,9 +1,14 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-27
 affectedFiles: [crates/**, runtime/**, benches/**, testkit/**, Cargo.toml, Cargo.lock, .cargo/**, .github/workflows/**, scripts/check-deps.mjs, scripts/check-doc-shape.mjs, scripts/*.test.mjs, scripts/exhaustive-costs.tsv, package.json, package-lock.json, .spec-graph.json, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, CONTRIBUTING.md, README.md, SECURITY.md]
 protectedFiles: [docs/explorations/0*.md, docs/benchmarks/results/**, rust-toolchain.toml, clippy.toml, .spec-brief.json, LICENSE-APACHE, LICENSE-MIT, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, scripts/check-additive.mjs, scripts/check-archive.mjs, scripts/check-scope.mjs, scripts/check-explorations.mjs, scripts/adr-index.mjs, scripts/read-timeouts.mjs]
+integrity: sha256-67f8054746c7c60c19fc46ca3bcdd1a16944bfeed84ed8f65960e3094ed16a6e
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-26 (UTC) in pull request [#246](https://github.com/Menteion/Menteion/pull/246).** ADR-0222 built ADR-0221's rename: the 34 crates moved to menteion-*, MenteionFileHeader, the magic MENTEION at format 26 with no reader of 25, and every living document, the five old anchors kept and the shape check reading the rename back. The tree's whole-image pins are read with their headers written back to format 25, so no pinned number moved; F-83 is resolved and F-84, a stale cell of §5.2.2, opened. One dispatch at scope=exhaustive on 0216043, run 40371343923, ran all 219 whole-domain tests green, the longest shard at 52 % of its bound. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 083: The project renamed Menteion
 
@@ -12,7 +17,7 @@ protectedFiles: [docs/explorations/0*.md, docs/benchmarks/results/**, rust-toolc
 ## Mission
 
 **This brief renames the tree and runs every test once.**
-[ADR-0221](../docs/adr/0221-the-project-renamed-menteion.md) renamed the project Menteion. The repository moved to `Menteion/Menteion` on 2026-10-26; the tree still says VirtualCortex.
+[ADR-0221](../../docs/adr/0221-the-project-renamed-menteion.md) renamed the project Menteion. The repository moved to `Menteion/Menteion` on 2026-10-26; the tree still says VirtualCortex.
 
 When the round is done, the tree holds:
 - the names of ADR-0221's table in the code, the workspace, the workflow, the scripts and every living document;
@@ -20,9 +25,9 @@ When the round is done, the tree holds:
 - the old names only in the files a check freezes, in the history, in ADR-0221 and in five HTML anchors;
 - one dispatch at `scope=exhaustive` on the round's last code commit, every shard green, every pinned number held.
 
-It writes a built ADR and rewrites `docs/STATUS.md` ([briefs/README.md](README.md#a-rounds-documents)).
+It writes a built ADR and rewrites `docs/STATUS.md` ([briefs/README.md](../README.md#a-rounds-documents)).
 
-The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
+The scope is the front matter's ([ADR-0191](../../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): `spec-brief archive --strict` refuses the round outside it.
 
 **Do not run this round beside another round's**: every path in the tree moves.
 
@@ -38,18 +43,18 @@ The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eigh
 - **The history keeps what it said**: `CHANGELOG.md`'s entries before this round's, the exploration notes and `docs/benchmarks/results/`. The last two are protected.
 - **The magic is `MENTEION` and the format 26**, ADR-0221's. A reader of format 25 is not kept.
 - **No number moves.** No record's layout, no rule, no constant and no test's assertion changes beyond the names, the magic and the version.
-- **The run is one dispatch** ([ADR-0215](../docs/adr/0215-the-calibration-a-change-needs.md), [ADR-0211](../docs/adr/0211-the-round-shortened.md)).
+- **The run is one dispatch** ([ADR-0215](../../docs/adr/0215-the-calibration-a-change-needs.md), [ADR-0211](../../docs/adr/0211-the-round-shortened.md)).
   - The round runs `npm run round:additive -- origin/main <its last code commit>` and quotes it in its ADR.
   - It dispatches `scope=exhaustive` with every test, on its last commit that changes a file under `crates/`, `runtime/`, `benches/`, `testkit/` or `.cargo/`, or a Cargo file. After that commit, none of them changes.
   - No arm, no reproduction and no sweep. No whole-domain test runs on the developer machine.
 - **The branch is named `claude/brief-083-…`**, never rebased or force-pushed once a dispatch has run on it. Every commit is signed.
 - **Directories move by `git mv`**, so the history follows each file.
 - **The engine and the documents are read before a description of them is trusted**, this brief's and ADR-0221's included.
-- No `f32`/`f64`; every loop ends by construction ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)); no `unsafe` outside the runtime's one, under ADR-0023.
-- The mutation gate catches every mutant in the lines the change touches ([ADR-0030](../docs/adr/0030-verification-governance.md)).
+- No `f32`/`f64`; every loop ends by construction ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)); no `unsafe` outside the runtime's one, under ADR-0023.
+- The mutation gate catches every mutant in the lines the change touches ([ADR-0030](../../docs/adr/0030-verification-governance.md)).
 - **The documents are ADR-0197's and ADR-0201's**: the new ADR in its shape, the tables written by `node scripts/adr-index.mjs`, new text within `npm run spec:shape`'s limits.
 - **The pull request leaves draft with the commit that asks for the merge**, which sets the round's ADR to `accepted`.
-- **No shard of the weekly job passes 60 per cent of its bound**, 240 minutes ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md)). One that does is reported with its job's minutes.
+- **No shard of the weekly job passes 60 per cent of its bound**, 240 minutes ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md)). One that does is reported with its job's minutes.
 - **The maintainer is notified** as `briefs/README.md` says: when a question only they can answer stops the round, and when the pull request is ready for review.
 - Conventional Commits with a real body; never commit on `main`.
 
@@ -74,7 +79,7 @@ Re-derived on 2026-10-27 against `main` at `cda0e52`. Line numbers move; the sym
 6. **What keeps the old name**: every accepted ADR's body and every archived brief, held by `spec:shape` and `spec:briefs`; the history, `spec-graph`'s `historyPatterns` among it. None of the history holds a directive or a link into a crate.
 7. **Brief 065**, live and paused, names `cortex-runtime` four times. It has no scope of its own.
 8. **The mutation gate** reads `git diff origin/main...HEAD`. Git reads a moved file whose lines mostly stay as a rename, and the 129 files under `crates/`, `runtime/`, `benches/` and `testkit/` are within its limit for that. `Image::encode` and `Image::decode` name the header's type. The round lists the gate's mutants with `cargo mutants --list --in-diff` on that diff before it pushes.
-9. **The process** ([briefs/README.md](README.md#evidencing-a-round)): one dispatch at `scope=exhaustive`; the cost table regenerated from its artifacts with `--keep`; `spec-brief archive <NNN> --strict` measured from `origin/main`.
+9. **The process** ([briefs/README.md](../README.md#evidencing-a-round)): one dispatch at `scope=exhaustive`; the cost table regenerated from its artifacts with `--keep`; `spec-brief archive <NNN> --strict` measured from `origin/main`.
 10. **The sweep of 2026-10-26** is recorded by ADR-0221. The schedule runs every Monday at 03:00Z and holds most of the organisation's twenty places for hours; a dispatch made then waits.
 
 ## Deliverables

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-27
 depends-on: ADR-0221
 title: The project renamed Menteion, built
