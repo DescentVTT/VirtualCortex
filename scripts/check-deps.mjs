@@ -48,21 +48,21 @@ for (const crate of stateCrates) {
 }
 
 // The runtime: workspace crates by path, nothing else, normal dependencies only.
-const runtime = join("runtime", "cortex-runtime", "Cargo.toml");
+const runtime = join("runtime", "menteion-runtime", "Cargo.toml");
 for (const entry of dependencyEntries(runtime)) {
   if (entry.table !== "dependencies") {
     fail(runtime, entry, "the runtime carries normal dependencies only (ADR-0023)");
-  } else if (!/^cortex-[a-z-]+\s*=\s*\{\s*path\s*=/.test(entry.text)) {
+  } else if (!/^menteion-[a-z-]+\s*=\s*\{\s*path\s*=/.test(entry.text)) {
     fail(runtime, entry, "the runtime depends on workspace crates by path and on nothing else (ADR-0023)");
   }
 }
 
 // The benchmark crate: workspace crates by path; exactly one dev-dependency, the harness.
-const bench = join("benches", "cortex-bench", "Cargo.toml");
+const bench = join("benches", "menteion-bench", "Cargo.toml");
 const dev = [];
 for (const entry of dependencyEntries(bench)) {
   if (entry.table === "dependencies") {
-    if (!/^cortex-[a-z-]+\s*=\s*\{\s*path\s*=/.test(entry.text)) {
+    if (!/^menteion-[a-z-]+\s*=\s*\{\s*path\s*=/.test(entry.text)) {
       fail(bench, entry, "the benchmark crate's normal dependencies are workspace crates by path (ADR-0014)");
     }
   } else if (entry.table === "dev-dependencies") {

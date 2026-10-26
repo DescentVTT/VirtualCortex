@@ -19,9 +19,9 @@ additional_cargo_test_args = ["--locked"]
 exclude_re = [
     # `a | b` on disjoint bit fields is `a ^ b`: a packed word or a token whose fields never
     # overlap (the shift moved them apart, or the mask cleared the bit first).
-    "cortex-arithmetic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in join",
+    "menteion-arithmetic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in join",
     "wheel\\.rs:\\d+:\\d+: replace \\| with \\^ in FlatTimingWheel<CAP>::schedule",
-    "cortex-cerebellum/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in CerebellarMicrozone::step_forward_model",
+    "menteion-cerebellum/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in CerebellarMicrozone::step_forward_model",
     "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in synapse_token",
     # The chain word's low 28 bits are cleared before the index + 1 is written into them
     # (ADR-0032).
@@ -29,7 +29,7 @@ exclude_re = [
     "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in spike_message",
     "synapse\\.rs:\\d+:\\d+: replace \\| with \\^ in synaptic_message",
     # A clamp compared at its own bound: `if v > MAX { MAX } else { v }` and `>=` agree at
-    # `v == MAX`, and likewise `<` and `<=` at `MIN`. (`cortex-cerebellum`'s clamps left this
+    # `v == MAX`, and likewise `<` and `<=` at `MIN`. (`menteion-cerebellum`'s clamps left this
     # class under ADR-0062: a `min`, or a range pattern where a `const fn` cannot call one.)
     "membrane\\.rs:\\d+:\\d+: replace > with >= in add",
     "membrane\\.rs:\\d+:\\d+: replace < with <= in add",
@@ -38,7 +38,7 @@ exclude_re = [
     # The period's clamp in `istdp_alpha_q1_15`, compared at both its bounds.
     "synapse\\.rs:\\d+:\\d+: replace < with <= in istdp_alpha_q1_15",
     "synapse\\.rs:\\d+:\\d+: replace > with >= in istdp_alpha_q1_15",
-    "cortex-linguistic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in required_roles",
+    "menteion-linguistic/src/lib\\.rs:\\d+:\\d+: replace \\| with \\^ in required_roles",
     "term\\.rs:\\d+:\\d+: replace \\| with \\^ in literal_of_term",
     # A rotation joins the high bits of one word with the low bits of the next, which the two
     # shifts put in disjoint positions; and a bit-sliced comparison joins "above" with

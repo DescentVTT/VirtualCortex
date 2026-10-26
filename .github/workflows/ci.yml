@@ -1,4 +1,4 @@
-# CI for VirtualCortex.
+# CI for Menteion.
 #
 # Ten jobs (two on pull requests only, two weekly or by hand, two by hand alone), ten questions:
 #   changes - on a pull request: does it change anything but the documentation? A pull request
@@ -181,7 +181,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
       - name: Benchmarks execute (one iteration each, no timing asserted)
-        run: cargo bench -p cortex-bench --bench hot_path --locked -- --test
+        run: cargo bench -p menteion-bench --bench hot_path --locked -- --test
 
   msrv:
     name: Rust (minimum supported version)
@@ -280,7 +280,7 @@ jobs:
     # One job per shard of the whole-domain tests (ADR-0073). They were one job, which read
     # 1 h 43 m of its 120-minute bound on 2026-09-21 with half of it in one binary
     # (`instrument` 22 tests in 3 007 s, `reference` 7 in 2 081, `learning` 11 in 1 084,
-    # `cortex-core` 1 in 2; ADR-0071's table, run 35548410926). The shards are taken from the
+    # `menteion-core` 1 in 2; ADR-0071's table, run 35548410926). The shards are taken from the
     # tests `--list` names at run time, never from a list written here, because a list here
     # and a list in the tree drift (F-44, F-45); each shard checks what it ran against what the
     # list gave it, as ADR-0058's completeness check does for the sweep. The unit is a test, not
@@ -496,7 +496,7 @@ jobs:
           # 2 417 mutants, swept in 24 minutes: one job (run 35252449360).
           - label: crates
             area: crates
-            packages: --workspace --exclude cortex-runtime --exclude cortex-bench
+            packages: --workspace --exclude menteion-runtime --exclude menteion-bench
             shard: ""
           # 979 mutants against a suite of 359 s on a hosted runner: 590 of them took 5 h 23 m,
           # so the area is about nine hours and is sharded at ceil(9 h / 90 min). Round-robin,
@@ -510,67 +510,67 @@ jobs:
           # and runtime-2 was cut at the job's 330 minutes with 18 of its 123 mutants untested.
           - label: runtime-0
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 0/16 --sharding round-robin
           - label: runtime-1
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 1/16 --sharding round-robin
           - label: runtime-2
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 2/16 --sharding round-robin
           - label: runtime-3
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 3/16 --sharding round-robin
           - label: runtime-4
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 4/16 --sharding round-robin
           - label: runtime-5
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 5/16 --sharding round-robin
           - label: runtime-6
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 6/16 --sharding round-robin
           - label: runtime-7
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 7/16 --sharding round-robin
           - label: runtime-8
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 8/16 --sharding round-robin
           - label: runtime-9
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 9/16 --sharding round-robin
           - label: runtime-10
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 10/16 --sharding round-robin
           - label: runtime-11
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 11/16 --sharding round-robin
           - label: runtime-12
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 12/16 --sharding round-robin
           - label: runtime-13
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 13/16 --sharding round-robin
           - label: runtime-14
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 14/16 --sharding round-robin
           - label: runtime-15
             area: runtime
-            packages: -p cortex-runtime
+            packages: -p menteion-runtime
             shard: --shard 15/16 --sharding round-robin
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

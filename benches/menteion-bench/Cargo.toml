@@ -1,0 +1,36 @@
+[package]
+name = "menteion-bench"
+description = "Benchmarks for the Menteion state crates (ADR-0014). Not a state crate; never published."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+# The crates under measurement. Normal dependencies flow from this crate to the state crates,
+# never the other way (ADR-0005).
+[dependencies]
+menteion-core = { path = "../../crates/menteion-core" }
+menteion-embodiment = { path = "../../crates/menteion-embodiment" }
+menteion-runtime = { path = "../../runtime/menteion-runtime" }
+menteion-basal-ganglia = { path = "../../crates/menteion-basal-ganglia" }
+menteion-workspace = { path = "../../crates/menteion-workspace" }
+
+# The harness. Exact pin; the only third-party dependency in the workspace, confined to this
+# crate's dev-dependencies. Default features (plotters, rayon, HTML reports) are off: the
+# statistical core and `cargo bench` argument parsing are all that is needed.
+[dev-dependencies]
+criterion = { version = "=0.7.0", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "hot_path"
+harness = false
+
+# Inherited from [workspace.lints]: no `unsafe`, no `f32`/`f64` (ADR-0029).
+[lints]
+workspace = true
