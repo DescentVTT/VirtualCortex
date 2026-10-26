@@ -2559,9 +2559,9 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0214](adr/0214-three-in-four-on-the-default-measured.md) | A reward right three times in four, on the default, measured | accepted |
 | [ADR-0215](adr/0215-the-calibration-a-change-needs.md) | The calibration a change needs | accepted |
 | [ADR-0216](adr/0216-a-delay-the-engine-reads.md) | A delay the engine reads from its kept addresses | accepted |
-| [ADR-0217](adr/0217-a-delay-the-engine-reads-built.md) | A delay the engine reads from its kept addresses, built | proposed |
-| [ADR-0218](adr/0218-a-delay-the-engine-reads-its-protocol.md) | A delay the engine reads from its kept addresses, its protocol | proposed |
-| [ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md) | A delay the engine reads from its kept addresses, measured | proposed |
+| [ADR-0217](adr/0217-a-delay-the-engine-reads-built.md) | A delay the engine reads from its kept addresses, built | accepted |
+| [ADR-0218](adr/0218-a-delay-the-engine-reads-its-protocol.md) | A delay the engine reads from its kept addresses, its protocol | accepted |
+| [ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md) | A delay the engine reads from its kept addresses, measured | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2691,7 +2691,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-79 | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) bounds a reward's age *"below `kept_addresses`"*, and runs a delay of two at `kept_addresses` 2: its text refuses its own run. | ADR-0207 | **Resolved** ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)): `kept_addresses` is built as the oldest age a reward may name, with one entry more held; ADR-0207 is accepted and is not edited. |
 | F-80 | The workflow's header said the runtime's sweep ran *"in twelve shards"* after [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) dealt it over sixteen. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0211](adr/0211-the-round-shortened.md)): the header says sixteen. |
 | F-81 | F-76 and F-78 name the rounds' pinned tables, growing the test crates' compile time, as the cause of the release step's growth and of the sweep's length. Exploration 002 read, exploratory, the release build no slower with the tables in the source than in a data file, and a sweep's machine time 12 % builds and the rest tests. | F-76, F-78 | **Resolved** ([ADR-0212](adr/0212-three-in-four-on-the-default.md)): recorded; the tables stay in the test sources. |
-| F-82 | Brief 082's calibration, dispatch 40226374616, read shard 10 of 18 at 128.1 minutes, 71 % of the 180-minute bound, and three more at 108.3 to 111.7: past ADR-0179's 60 %. The cost table had costed H-44's arms at 634 to 1 257 s where they took 2 100 to 2 400 s, so its deal put four in one shard. | `scripts/exhaustive-costs.tsv`, `.github/workflows/ci.yml` | **Open** ([ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md)): the table is written from the calibration and the reproduction; whether the bound or the deal moves is the workflow's decision, which brief 082 does not reach. |
+| F-82 | Brief 082's calibration, dispatch 40226374616, read shard 10 of 18 at 128.1 minutes, 71 % of the 180-minute bound: past ADR-0179's 60 %. The table had costed H-44's arms at 634 to 1 257 s where they took 2 100 to 2 400 s. Dealt from a table written from that run, the reproduction, 40237389553, read ten shards past 60 %, the longest 127.1 minutes. | `scripts/exhaustive-costs.tsv`, `.github/workflows/ci.yml` | **Open** ([ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md)): the table is written from the calibration and the reproduction; whether the bound or the deal moves is the workflow's decision, which brief 082 does not reach. |
 
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/cortex-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-25
 depends-on: ADR-0216
 title: A delay the engine reads from its kept addresses, built
@@ -95,7 +95,8 @@ The mutation gate, run on the diff before the pull request, left three survivors
 
 `a3840cf` rewrites `delay_leader` as a check of each age against every other, and moves the run's step into `delay_run_after`, held at its edges by hand.
 Their 31 mutants are caught.
-The arms ran on `b418b75`, and their code is the same rule; the reproduction runs every test on `a3840cf`'s code, so that every pinned number is read again on it.
+The arms ran on `b418b75`, and their code is the same rule; the reproduction ran every test on `a3840cf`'s code, and every pinned number held on it.
+The pull request's gate on `210f009` made 83 mutants in the changed lines: 77 caught, 6 unviable, no survivor.
 
 ### Its tests
 

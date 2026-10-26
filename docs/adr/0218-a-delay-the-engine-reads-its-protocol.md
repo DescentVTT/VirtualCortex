@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-25
 depends-on: ADR-0217
 title: A delay the engine reads from its kept addresses, its protocol

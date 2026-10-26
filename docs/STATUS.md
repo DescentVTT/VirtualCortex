@@ -56,5 +56,5 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 
 H-45 read yes at step 3 of its stopping rule: the engine reads a delay of one or two trials it is not told.
 1. Step 3's next decision: the re-read of the targets by evidence, at M12, with a step by its error's whiteness explored first.
-2. F-82: the weekly shards read past 60 % of their bound under a cost table that under-costed H-44's arms; the bound or the deal is the workflow's to decide.
+2. F-82: the weekly shards read past 60 % of their 180-minute bound, ten of eighteen in the reproduction with every test costed, the longest at 127.1 minutes; the bound or the shard count is the workflow's to decide.
 3. The schedule's sweep of 2026-10-26, recorded by the first ADR that merges after it ends. Brief 065 stays paused.

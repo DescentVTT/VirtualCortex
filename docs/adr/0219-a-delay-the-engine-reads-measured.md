@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-25
 depends-on: ADR-0218
 title: A delay the engine reads from its kept addresses, measured
@@ -61,10 +61,12 @@ Each move lost one reward per age moved, the move's own among them.
 - **F-82**: the calibration's shard 10 of 18 took 128.1 minutes, 71 % of its 180-minute bound, and shards 3, 13 and 6 took 108.3 to 111.7.
 
 **The evidence.**
-- The arms ran once each at `scope=arms` on AArch64, dispatch 40226384795 on `b418b75`, and were pinned in `0694e76`.
-- `a3840cf`, after the calibration's commit, rewrites two rules of the delay read for the mutation gate, their behaviour the same ([ADR-0217](0217-a-delay-the-engine-reads-built.md)). So the reproduction runs every test.
+- The arms ran once each at `scope=arms` on AArch64, dispatch 40226384795 on `b418b75`, and were pinned in `0694e76`, pull request #241.
+- `a3840cf`, after the calibration's commit, rewrites two rules of the delay read for the mutation gate, their behaviour the same ([ADR-0217](0217-a-delay-the-engine-reads-built.md)). So the reproduction ran every test, with no `only`.
 - `989ae23` writes the cost table from the calibration, so that the reproduction is dealt from what its tests take.
-- The reproduction is dispatch 40237389553 at `scope=exhaustive` on `989ae23`, every test, on x86-64.
+- The reproduction, dispatch 40237389553 at `scope=exhaustive` on `989ae23`, ran all 219 tests in 18 shards on x86-64, each green, and reproduced every pinned table, H-45's among them.
+- Its jobs took 70.7 to 127.1 minutes, ten of them past 60 % of the bound (F-82). The cost table is written from the calibration and the reproduction: 219 tests, 244 578 s.
+- No commit under `runtime/`, `crates/` or `benches/` follows `989ae23`.
 
 **No sweep is left unrecorded** that had ended when this ADR was written. This round dispatched none ([ADR-0211](0211-the-round-shortened.md)). The schedule's next runs on 2026-10-26 at 03:00Z; the first ADR that merges after it ends records it.
 
