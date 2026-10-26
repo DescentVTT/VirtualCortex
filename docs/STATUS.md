@@ -1,11 +1,11 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0221](adr/0221-the-project-renamed-menteion.md) wrote it on 2026-10-27, after the repository moved to `Menteion/Menteion` and brief 082 read H-45 ([ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md)).
+[ADR-0222](adr/0222-the-project-renamed-menteion-built.md) wrote it on 2026-10-27, after brief 083 carried the name Menteion into the tree ([ADR-0221](adr/0221-the-project-renamed-menteion.md)).
 
 ## The engine
 
-- **It runs.** The records with their layout assertions, the update rules, synaptic fan-out with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena, the `.menteion` image (format 25), the criticality controller, sleep with the episodic ledger and its replay, and the symbolic layer are Implemented ([§1.6](WHITEPAPER.md#16-implementation-status-at-a-glance)).
+- **It runs.** The records with their layout assertions, the update rules, synaptic fan-out with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena, the `.menteion` image (format 26, its magic `MENTEION`), the criticality controller, sleep with the episodic ledger and its replay, and the symbolic layer are Implemented ([§1.6](WHITEPAPER.md#16-implementation-status-at-a-glance)).
 - **Its default** for an image no derivation has settled is `Config::reads_its_targets()`: `Config::default()` with the modulation at rest 0.5, the gain 1.75, the read of 128 windows, both targets by it, and the probe, so the rate's rule runs at the step the engine makes in step = 1/16's place ([ADR-0196](adr/0196-the-engines-default.md), [ADR-0205](adr/0205-the-probe-in-the-engines-default.md)).
 - **An engine born under it** writes H-42's candidate's image byte for byte on seeds 22, 23 and 24 ([ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md)). `Config::default()` stays the bare engine every pin runs.
 - **It can keep its addresses** ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)): with `Config::kept_addresses` set, each trial's close keeps the address, and a reward that names its trial's age consolidates under it.
@@ -55,6 +55,6 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 ## The next decision
 
 H-45 read yes at step 3 of its stopping rule: the engine reads a delay of one or two trials it is not told.
-1. Brief 083 is live: the tree renamed Menteion, every test run once and no number moved ([ADR-0221](adr/0221-the-project-renamed-menteion.md)). Brief 065 stays paused.
+1. The tree is renamed Menteion: the crates `menteion-*` and the image at format 26, every whole-image pin read at 25, and one dispatch of every test held every pin ([ADR-0222](adr/0222-the-project-renamed-menteion-built.md)). Brief 065 stays paused, its paths renamed.
 2. Step 3's next decision, at M12: the re-read of the targets by evidence. Explorations [004](explorations/004-long-runs-under-the-default.md) and [005](explorations/005-eight-schedules-under-the-default.md) read the couplings rising through eight schedules and the inhibitory sum stopping near 0.55.
 3. What the weekly job holds: on 2026-10-26 its shards took 66.8 to 143.5 minutes, the longest 59.8 % of its 240-minute bound, and each round of eighteen arms adds about 12 minutes.

@@ -1,6 +1,6 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.19.0
+version: 5.20.0
 status: active
 date: 2026-10-27
 ---
@@ -11,7 +11,7 @@ date: 2026-10-27
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.19.0 |
+| Version | 5.20.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-27 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2576,6 +2576,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md) | A delay the engine reads from its kept addresses, measured | accepted |
 | [ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md) | The cost of a test run alone, and a bound of 240 minutes | accepted |
 | [ADR-0221](adr/0221-the-project-renamed-menteion.md) | The project renamed Menteion | accepted |
+| [ADR-0222](adr/0222-the-project-renamed-menteion-built.md) | The project renamed Menteion, built | proposed |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2706,6 +2707,8 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-80 | The workflow's header said the runtime's sweep ran *"in twelve shards"* after [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md) dealt it over sixteen. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0211](adr/0211-the-round-shortened.md)): the header says sixteen. |
 | F-81 | F-76 and F-78 name the rounds' pinned tables, growing the test crates' compile time, as the cause of the release step's growth and of the sweep's length. Exploration 002 read, exploratory, the release build no slower with the tables in the source than in a data file, and a sweep's machine time 12 % builds and the rest tests. | F-76, F-78 | **Resolved** ([ADR-0212](adr/0212-three-in-four-on-the-default.md)): recorded; the tables stay in the test sources. |
 | F-82 | Brief 082's calibration, dispatch 40226374616, read shard 10 of 18 at 128.1 minutes, 71 % of the 180-minute bound: past ADR-0179's 60 %. The table had costed H-44's arms at 634 to 1 257 s where they took 2 100 to 2 400 s. Dealt from a table written from that run, the reproduction, 40237389553, read ten shards past 60 %, the longest 127.1 minutes. | `scripts/exhaustive-costs.tsv`, `.github/workflows/ci.yml` | **Resolved** ([ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md)): a shard that ran its tests alone is not read into the table, a test with no line is costed at 2 400 s, and the bound is 240 minutes by ADR-0179's rule. |
+| F-83 | [ADR-0221](adr/0221-the-project-renamed-menteion.md) predicted that no pinned number would move, since an image changes only in its header. Seven pins are CRC-64s of whole images at the current format, the header included, and the derivations' `crcs` are held to them: the version alone moves each, as every format since [ADR-0095](adr/0095-an-image-pin-moves-with-its-format.md) re-pinned them. | ADR-0221, `runtime/menteion-runtime/tests/` | **Resolved** ([ADR-0222](adr/0222-the-project-renamed-menteion-built.md)): each is read with its image's header written back to format 25, the magic `VCORTEX1` and the seal (`pinned_crc`), and none moved. |
+| F-84 | §5.2.2's Public API cell says `FORMAT_VERSION` (21). The format moved to 22 with [ADR-0180](adr/0180-a-rate-the-controller-holds-built.md) and is 26; no directive holds the number in that cell, as none held §8.7's before F-60. | this document | **Open**: the cell is 1 180 characters, so a change to it is new text over the limit of 400 ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)). Brief 083 only renamed it; the next round that writes §5.2.2 splits it. |
 
 <!-- @assert-count target="runtime/menteion-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/menteion-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->
