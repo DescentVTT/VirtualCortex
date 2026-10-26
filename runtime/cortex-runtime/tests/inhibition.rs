@@ -471490,3 +471490,732 @@ const UNTOLD_ARM_MOVES: [[[Option<Moved>; 2]; 2]; 3] = [
     ],
 ];
 const UNTOLD_ARM_LOST: [[[u32; 2]; 2]; 3] = [[[1, 1], [2, 2]], [[1, 1], [2, 2]], [[1, 1], [2, 2]]];
+
+// ======================================================================= exploration 005
+//
+// Eight schedules under the default (ADR-0193, exploration 005). Exploration 004's long run,
+// eight of H-20's schedules where it ran four, each from the image the one before left: the
+// engine run quiet at a schedule's end, its image written, and the next schedule's engine
+// decoded from it. The first schedule is H-42's arm on its network bit for bit, which is the
+// path's calibration; no target is read again. Beside each block's readings, the four
+// couplings' synapses against Q1.15's rail and the arena's synapses summed by the group of the
+// unit they reach: each stimulus set, each readout set's excitatory and inhibitory units, and
+// the units outside the four sets. At each schedule's end, each unit's spikes over the schedule
+// and in the task's ticks of its trials, and every inhibitory synapse's weight. Beside it, the
+// first schedule again from the image with the homeostasis record's step written half the
+// probe's, the probe's λ an eighth where it is a quarter, as H-44's control wrote its step
+// (ADR-0213). Nothing under `src/` moves, no prediction is written, nothing is pinned, and
+// everything is dumped before anything is held.
+
+/// The schedules a long run repeats (exploration 005).
+const EIGHT_SCHEDULES: usize = 8;
+
+/// The windows of a schedule's start that exploration 004 read as the first mapping's transient:
+/// the error is read from the 120th window on.
+const AFTER_THE_TRANSIENT: usize = 120;
+
+/// The ticks of a trial that are the task's (exploration 005): from the injection to the readout
+/// window's close.
+const TASK_TICKS: u32 = WINDOW.from + WINDOW.ticks;
+
+/// The groups a synapse's target falls in (exploration 005), in this order: stimulus A,
+/// stimulus B, readout 0's excitatory and inhibitory units, readout 1's, and the units outside the
+/// four sets, excitatory and inhibitory.
+const TARGET_GROUPS: usize = 8;
+const TARGET_GROUP_NAMES: [&str; TARGET_GROUPS] = [
+    "A",
+    "B",
+    "R0 excitatory",
+    "R0 inhibitory",
+    "R1 excitatory",
+    "R1 inhibitory",
+    "outside excitatory",
+    "outside inhibitory",
+];
+
+/// The group of unit `id` under `sets` (exploration 005), `inhibitory` its polarity; a stimulus
+/// set is one group whatever its units' polarity.
+fn group_of(sets: &[Set; 4], id: u32, inhibitory: bool) -> usize {
+    if sets[0].contains(id) {
+        return 0;
+    }
+    if sets[1].contains(id) {
+        return 1;
+    }
+    let (excitatory, inhibitory_group) = if sets[2].contains(id) {
+        (2, 3)
+    } else if sets[3].contains(id) {
+        (4, 5)
+    } else {
+        (6, 7)
+    };
+    if inhibitory {
+        inhibitory_group
+    } else {
+        excitatory
+    }
+}
+
+/// Every unit's group on `exec` (exploration 005), by index.
+fn unit_groups(exec: &Engine, sets: &[Set; 4]) -> Vec<usize> {
+    exec.units()
+        .iter()
+        .map(|u| group_of(sets, u.id as u32, u.flags & FLAG_INHIBITORY != 0))
+        .collect()
+}
+
+/// A coupling's synapses against Q1.15's rail (exploration 005): their number, the highest
+/// weight, and the synapses at or above three quarters of the rail, at or above seven eighths of
+/// it, and at the rail itself, `i16::MAX`.
+type Rail = (u32, i16, u32, u32, u32);
+
+/// Three quarters and seven eighths of Q1.15's rail.
+const RAIL_THREE_QUARTERS: i16 = 0x6000;
+const RAIL_SEVEN_EIGHTHS: i16 = 0x7000;
+
+/// The four couplings' synapses on `exec`, A→R0, A→R1, B→R0 and B→R1, each against the rail,
+/// and each one's weights counted by sixteenths of the width (exploration 005).
+fn rails_of(exec: &Engine, sets: &[Set; 4]) -> ([Rail; 4], [[u32; 16]; 4]) {
+    let mut rails: [Rail; 4] = [(0, 0, 0, 0, 0); 4];
+    let mut bins = [[0u32; 16]; 4];
+    for unit in exec.units() {
+        let id = unit.id as u32;
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        let from = if sets[0].contains(id) {
+            0usize
+        } else if sets[1].contains(id) {
+            2
+        } else {
+            continue;
+        };
+        for s in unit.fan_out(exec.blocks()) {
+            let pair = if sets[2].contains(s.target) {
+                from
+            } else if sets[3].contains(s.target) {
+                from.saturating_add(1)
+            } else {
+                continue;
+            };
+            let w = s.weight_q1_15;
+            let r = &mut rails[pair];
+            r.0 = r.0.saturating_add(1);
+            r.1 = r.1.max(w);
+            r.2 = r.2.saturating_add(u32::from(w >= RAIL_THREE_QUARTERS));
+            r.3 = r.3.saturating_add(u32::from(w >= RAIL_SEVEN_EIGHTHS));
+            r.4 = r.4.saturating_add(u32::from(w == i16::MAX));
+            let bin = usize::try_from(w.max(0) >> 11).unwrap_or(0);
+            if let Some(b) = bins[pair].get_mut(bin) {
+                *b = b.saturating_add(1);
+            }
+        }
+    }
+    (rails, bins)
+}
+
+/// The arena's synapses summed by the group of the unit they reach (exploration 005): the
+/// inhibitory magnitudes, the inhibitory synapses at a magnitude of zero, and the excitatory
+/// weights.
+type Onto = (
+    [i64; TARGET_GROUPS],
+    [u32; TARGET_GROUPS],
+    [i64; TARGET_GROUPS],
+);
+
+fn onto_of(exec: &Engine, groups: &[usize]) -> Onto {
+    let mut out: Onto = ([0; TARGET_GROUPS], [0; TARGET_GROUPS], [0; TARGET_GROUPS]);
+    for unit in exec.units() {
+        let inhibitory = unit.flags & FLAG_INHIBITORY != 0;
+        for s in unit.fan_out(exec.blocks()) {
+            let Some(&g) = groups.get(s.target as usize) else {
+                continue;
+            };
+            let w = i64::from(s.weight_q1_15);
+            if inhibitory {
+                out.0[g] = out.0[g].saturating_sub(w);
+                out.1[g] = out.1[g].saturating_add(u32::from(w == 0));
+            } else {
+                out.2[g] = out.2[g].saturating_add(w);
+            }
+        }
+    }
+    out
+}
+
+/// Every inhibitory synapse of the arena in the walk's order (exploration 005): its presynaptic
+/// unit, its target and its weight.
+fn inhibitory_synapses(exec: &Engine) -> Vec<(u32, u32, i16)> {
+    let mut out = Vec::new();
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY == 0 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            out.push((unit.id as u32, s.target, s.weight_q1_15));
+        }
+    }
+    out
+}
+
+/// One schedule of a long run (exploration 005): exploration 004's readings — its blocks and
+/// trace, the value of every reward, the windows that ended inside it with each one's spikes and
+/// the gain and the step its rule left, the gain and the step at every block's end, the trials
+/// whose open window's count was not the record's, and the rate's target — and beside them the
+/// four couplings against the rail at every block's end, the synapses by the group they reach at
+/// the load and at every block's end, each unit's spikes over the schedule and in the task's
+/// ticks of its trials, the schedule's ticks from the load, and the inhibitory rule's target
+/// period.
+struct LongSchedule {
+    blocks: Vec<Block>,
+    trace: u64,
+    values: Vec<i32>,
+    windows: Vec<(u64, u32, u32)>,
+    ends: Vec<(u32, u16)>,
+    apart: u32,
+    target: Option<u32>,
+    rails: Vec<[Rail; 4]>,
+    onto_start: Onto,
+    onto: Vec<Onto>,
+    spikes: Vec<u32>,
+    in_task: Vec<u32>,
+    ticks: u64,
+    period: u32,
+}
+
+/// One schedule of a long run from `image` (exploration 005): exploration 004's path, H-43's twin
+/// on time — H-25's arm under the answer, the drawn delivery, `flips`, the engine's critic and its
+/// window, two addresses kept and every reward at age zero, which is H-42's arm bit for bit from
+/// H-42's image. The engine is returned as the schedule left it, for its image.
+fn long_schedule(
+    made: &Made,
+    image: &[u8],
+    arm: Reversal,
+    trials: usize,
+    flips: &[usize],
+) -> (Engine, LongSchedule) {
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = kept_from(image, units);
+    let groups = unit_groups(&exec, &sets);
+    let task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Answer,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    let target = exec.rate_target_per_window();
+    let period = exec.istdp_target_period_ticks();
+    let onto_start = onto_of(&exec, &groups);
+    let loaded = exec.ticks();
+    let mut watch = GainWatch::new(&exec);
+    let mut steps: Vec<u32> = Vec::with_capacity(trials);
+    let mut watched = loaded;
+    let mut values: Vec<i32> = Vec::with_capacity(trials);
+    let mut ends: Vec<(u32, u16)> = Vec::with_capacity(trials / BLOCK);
+    let mut rails: Vec<[Rail; 4]> = Vec::with_capacity(trials / BLOCK);
+    let mut onto: Vec<Onto> = Vec::with_capacity(trials / BLOCK);
+    let mut spikes = vec![0u32; groups.len()];
+    let mut in_task = vec![0u32; groups.len()];
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        trials,
+        flips,
+        &mut |exec, trial, start, outcome| {
+            let end = exec.ticks();
+            for &(tick, unit) in exec.train().iter().rev() {
+                let at = u64::from(tick);
+                if at < watched {
+                    break;
+                }
+                watch.spike(at);
+                if let Some(n) = spikes.get_mut(unit as usize) {
+                    *n = n.saturating_add(1);
+                }
+                if tick.wrapping_sub(start) < TASK_TICKS {
+                    if let Some(n) = in_task.get_mut(unit as usize) {
+                        *n = n.saturating_add(1);
+                    }
+                }
+            }
+            watch.trial(exec);
+            steps.push(u32::from(exec.homeostasis().control_step_q0_16));
+            watched = end;
+            if let Some(value) = outcome.value_q16 {
+                values.push(value);
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                let h = exec.homeostasis();
+                ends.push((h.synaptic_gain_q16, h.control_step_q0_16));
+                rails.push(rails_of(exec, &sets).0);
+                onto.push(onto_of(exec, &groups));
+            }
+        },
+    );
+    let windows: Vec<(u64, u32, u32)> = watch
+        .windows()
+        .iter()
+        .zip(windows_of(watch.first, &watch.counts, &watch.ends, &steps))
+        .map(|(&(count, gain), (_, step))| (count, gain, step))
+        .collect();
+    let run = LongSchedule {
+        blocks,
+        trace,
+        values,
+        windows,
+        ends,
+        apart: watch.apart,
+        target,
+        rails,
+        onto_start,
+        onto,
+        spikes,
+        in_task,
+        ticks: exec.ticks().saturating_sub(loaded),
+        period,
+    };
+    (exec, run)
+}
+
+/// What a schedule's windows read of the rate's error (exploration 004), `e` a window's spikes
+/// less the target: the windows; the pairs of consecutive windows on opposite sides of the target
+/// (`opposite_pairs`); the mean count over the target and the variance of `e` over the target's
+/// square, in parts of ten thousand and of a hundred million; the autocorrelation of `e` at lags
+/// one and two in thousandths; and the largest `|e|` over the target in parts of ten thousand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Whiteness {
+    windows: usize,
+    opposite: u32,
+    mean: i128,
+    variance: i128,
+    lag1: Option<i128>,
+    lag2: Option<i128>,
+    largest: i128,
+}
+
+fn whiteness(windows: &[(u64, u32, u32)], target: u32) -> Whiteness {
+    let t = i128::from(target);
+    let e: Vec<i128> = windows
+        .iter()
+        .map(|w| i128::from(w.0).saturating_sub(t))
+        .collect();
+    let n = e.len() as i128;
+    let sum = e.iter().fold(0i128, |s, &x| s.saturating_add(x));
+    // n times each error's distance from the mean, so that no division comes before the last.
+    let d: Vec<i128> = e
+        .iter()
+        .map(|&x| x.saturating_mul(n).saturating_sub(sum))
+        .collect();
+    let squares = d
+        .iter()
+        .fold(0i128, |s, &x| s.saturating_add(x.saturating_mul(x)));
+    let lag = |k: usize| {
+        d.iter()
+            .zip(d.iter().skip(k))
+            .fold(0i128, |s, (&a, &b)| s.saturating_add(a.saturating_mul(b)))
+            .saturating_mul(1_000)
+            .checked_div(squares)
+    };
+    let pairs: Vec<(u64, u32)> = windows.iter().map(|w| (w.0, w.1)).collect();
+    Whiteness {
+        windows: e.len(),
+        opposite: opposite_pairs(&pairs, target),
+        mean: sum
+            .saturating_add(n.saturating_mul(t))
+            .saturating_mul(10_000)
+            .checked_div(n.saturating_mul(t))
+            .unwrap_or(0),
+        variance: squares
+            .saturating_mul(100_000_000)
+            .checked_div(
+                n.saturating_mul(n)
+                    .saturating_mul(n)
+                    .saturating_mul(t)
+                    .saturating_mul(t),
+            )
+            .unwrap_or(0),
+        lag1: lag(1),
+        lag2: lag(2),
+        largest: e
+            .iter()
+            .map(|&x| {
+                x.saturating_abs()
+                    .saturating_mul(10_000)
+                    .checked_div(t)
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0),
+    }
+}
+
+/// What `long_dump` returns of a schedule: H-25's four clauses, each mapping's last 128 correct,
+/// and each mapping's crossing.
+type LongRead = ([bool; 4], [u32; 4], [Option<usize>; 4]);
+
+/// A block of a long run as `long_dump` reads it (exploration 004): its index, its correct
+/// trials, the four couplings, the inhibitory sum and the outside sum over the image's in parts
+/// of ten thousand, and the gain and the step at its end.
+type LongBlock = (usize, u32, [i64; 4], i64, i64, u32, u16);
+
+/// A group's reading over a schedule (exploration 005): its name, its units, their spikes over
+/// the schedule and in the task's ticks, the ticks a unit of it took per spike (the schedule's
+/// ticks times its units over its spikes, to compare with the inhibitory rule's target period),
+/// and the inhibitory magnitudes onto it at the load and at the last block's end, the second over
+/// the first in parts of ten thousand.
+type GroupRead = (&'static str, u32, u64, u64, Option<u64>, i64, i64, i64);
+
+/// The groups' readings over a schedule (exploration 005).
+fn group_reads(run: &LongSchedule, groups: &[usize]) -> Vec<GroupRead> {
+    let last = run.onto.last().copied().unwrap_or(run.onto_start);
+    (0..TARGET_GROUPS)
+        .map(|g| {
+            let members = || {
+                groups
+                    .iter()
+                    .enumerate()
+                    .filter(move |&(_, &of)| of == g)
+                    .map(|(u, _)| u)
+            };
+            let units = members().count() as u32;
+            let spikes = members().fold(0u64, |s, u| {
+                s.saturating_add(u64::from(run.spikes.get(u).copied().unwrap_or(0)))
+            });
+            let in_task = members().fold(0u64, |s, u| {
+                s.saturating_add(u64::from(run.in_task.get(u).copied().unwrap_or(0)))
+            });
+            (
+                TARGET_GROUP_NAMES[g],
+                units,
+                spikes,
+                in_task,
+                run.ticks
+                    .saturating_mul(u64::from(units))
+                    .checked_div(spikes),
+                run.onto_start.0[g],
+                last.0[g],
+                per_myriad(last.0[g], run.onto_start.0[g]),
+            )
+        })
+        .collect()
+}
+
+/// A schedule's learning and drift, read and dumped (exploration 005): exploration 004's — H-25's
+/// four clauses against the image the long run started from, each mapping's last 128 correct and
+/// its crossing, the highest coupling, the first block past the band; per block the four
+/// couplings, the inhibitory sum and the outside sum over the image's and the gain and the step;
+/// per eight windows the mean count over the target; the error's whiteness over the schedule —
+/// and the error's whiteness from the 120th window, the couplings against the rail and the
+/// synapses by group per block, each unit's spikes, and the groups' readings.
+fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let blocks = &run.blocks;
+    let clauses = kept_clauses(&made.couplings, outside, blocks);
+    let correct = mapping_correct(blocks);
+    let crossed = crossings(blocks);
+    eprintln!("DUMP {name} blocks {blocks:?}");
+    eprintln!(
+        "DUMP {name} trace {:#018x} value hash {:#018x}",
+        run.trace,
+        values_hash(&run.values)
+    );
+    eprintln!("DUMP {name} windows {:?}", run.windows);
+    eprintln!(
+        "DUMP {name} learning: last 128 correct {correct:?}, learned {} of 4; crossings {crossed:?}; H-25's clauses {clauses:?}; highest {:?}; over {:?}; left {:?}; correct by block {:?}",
+        correct.iter().filter(|&&c| c >= 80).count(),
+        highest_of(&made.couplings, blocks),
+        first_over_of(&made.couplings, blocks),
+        left_band(outside, blocks),
+        curve(blocks)
+    );
+    let rows: Vec<LongBlock> = blocks
+        .iter()
+        .zip(&run.ends)
+        .enumerate()
+        .map(|(j, (b, &(gain, step)))| {
+            let c = |s: usize, r: usize| per_myriad(b.10[s][r], made.couplings[s][r]);
+            (
+                j,
+                b.0,
+                [c(0, 0), c(0, 1), c(1, 0), c(1, 1)],
+                per_myriad(b.7, made.sums.0),
+                per_myriad(outside_of(b), outside),
+                gain,
+                step,
+            )
+        })
+        .collect();
+    eprintln!(
+        "DUMP {name} by block (block, correct, couplings over the image's, inhibitory, outside, gain, step) {rows:?}"
+    );
+    eprintln!(
+        "DUMP {name} rails by block (A→R0, A→R1, B→R0, B→R1: synapses, highest, at 3/4 of the rail, at 7/8, at the rail) {:?}",
+        run.rails
+    );
+    eprintln!(
+        "DUMP {name} onto at the load (inhibitory by group, drained by group, excitatory by group) {:?}",
+        run.onto_start
+    );
+    eprintln!(
+        "DUMP {name} onto by block (inhibitory by group, drained by group, excitatory by group) {:?}",
+        run.onto
+    );
+    eprintln!(
+        "DUMP {name} spikes by unit over {} ticks {:?}",
+        run.ticks, run.spikes
+    );
+    eprintln!(
+        "DUMP {name} spikes by unit in the task's ticks {:?}",
+        run.in_task
+    );
+    if let Some(target) = run.target {
+        let by_eight: Vec<i64> = run
+            .windows
+            .chunks_exact(BLOCK_WINDOWS)
+            .map(|w| {
+                let spikes = w.iter().fold(0u64, |s, x| s.saturating_add(x.0));
+                per_myriad(
+                    i64::try_from(spikes).unwrap_or(i64::MAX),
+                    i64::from(target).saturating_mul(BLOCK_WINDOWS as i64),
+                )
+            })
+            .collect();
+        eprintln!(
+            "DUMP {name} the count over the target by eight windows, per myriad {by_eight:?}"
+        );
+        eprintln!(
+            "DUMP {name} whiteness at the target {target}: {:?}; from window {AFTER_THE_TRANSIENT}: {:?}; trials apart {}",
+            whiteness(&run.windows, target),
+            run.windows
+                .get(AFTER_THE_TRANSIENT..)
+                .map(|w| whiteness(w, target)),
+            run.apart
+        );
+    }
+    (clauses, correct, crossed)
+}
+
+/// A long run of exploration 005 on network `n`: `schedules` schedules of `trials` trials and
+/// `flips`, each from the image the one before left, from the image H-42's derivation under the
+/// probe wrote. At every image, the first and each schedule's, the four couplings' weights by
+/// sixteenths of the width and every inhibitory synapse's weight. Everything dumped, then held:
+/// the first schedule H-42's arm on the network bit for bit (as far as it runs, where it is
+/// shorter than H-20's), and no worker dropping an entry.
+fn eight_schedules(
+    made: &Made,
+    n: usize,
+    arm: Reversal,
+    schedules: usize,
+    trials: usize,
+    flips: &[usize],
+) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("eight{} {arm:?}", PROBE_SEEDS[n]);
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    {
+        let exec = kept_from(&made.windowed, units);
+        let groups = unit_groups(&exec, &sets);
+        let synapses = inhibitory_synapses(&exec);
+        let pairs: Vec<(u32, u32)> = synapses.iter().map(|&(p, t, _)| (p, t)).collect();
+        eprintln!(
+            "DUMP {name} groups by unit {groups:?}; rotation {}; the inhibitory rule's period {}; the rate's target {:?}",
+            made.derived.rotation,
+            exec.istdp_target_period_ticks(),
+            exec.rate_target_per_window()
+        );
+        eprintln!(
+            "DUMP {name} inhibitory synapses (presynaptic, target) {} {pairs:?}",
+            pairs.len()
+        );
+        let weights: Vec<i16> = synapses.iter().map(|s| s.2).collect();
+        eprintln!("DUMP {name} image 0 inhibitory weights {weights:?}");
+        eprintln!(
+            "DUMP {name} image 0 couplings by sixteenths of the width {:?}",
+            rails_of(&exec, &sets)
+        );
+        undropped(exec, &name);
+    }
+    let mut image = made.windowed.clone();
+    let mut first: Option<(Vec<Block>, u64, u64)> = None;
+    let mut readings: Vec<LongRead> = Vec::new();
+    for s in 0..schedules {
+        let at = format!("{name} schedule {s}");
+        let (mut exec, run) = long_schedule(made, &image, arm, trials, flips);
+        readings.push(long_dump(&at, made, &run));
+        eprintln!(
+            "DUMP {at} groups (name, units, spikes, in the task's ticks, ticks per spike a unit, inhibitory onto at the load, at the last block, over the load per myriad) at the inhibitory rule's period {}: {:?}",
+            run.period,
+            group_reads(&run, &unit_groups(&exec, &sets))
+        );
+        if s == 0 {
+            first = Some((run.blocks.clone(), run.trace, values_hash(&run.values)));
+        }
+        let quiet_ticks = quiet(&mut exec);
+        let written = Image::encode(&exec).expect("quiescent");
+        eprintln!(
+            "DUMP {at} quiet in {quiet_ticks} ticks, the image written at tick {}; the sums after {:?} beside the image's {:?}; the train let go {}",
+            exec.ticks(),
+            weights_by_polarity(&exec),
+            made.sums,
+            exec.train_overwritten()
+        );
+        let weights: Vec<i16> = inhibitory_synapses(&exec).iter().map(|s| s.2).collect();
+        eprintln!(
+            "DUMP {name} image {} inhibitory weights {weights:?}",
+            s.saturating_add(1)
+        );
+        eprintln!(
+            "DUMP {name} image {} couplings by sixteenths of the width {:?}",
+            s.saturating_add(1),
+            rails_of(&exec, &sets)
+        );
+        undropped(exec, &at);
+        image = written;
+    }
+    eprintln!("DUMP {name} by schedule (clauses, last 128 correct, crossings) {readings:?}");
+    // Held: the first schedule H-42's arm.
+    let (blocks, trace, hash) = first.expect("a first schedule");
+    let pin = PROBE_ARM_BLOCKS[n][k];
+    if trials == SCHEDULE_TRIALS && flips == SCHEDULE_FLIPS {
+        pinned(
+            &format!("{name} schedule 0"),
+            &blocks,
+            trace,
+            pin,
+            PROBE_ARM_TRACES[n][k],
+        );
+        assert_eq!(
+            hash, PROBE_ARM_VALUE_HASH[n][k],
+            "{name}: every value H-42's"
+        );
+        eprintln!("DUMP {name} the first schedule is H-42's arm on the network, bit for bit");
+    } else {
+        assert_eq!(
+            Some(blocks.as_slice()),
+            pin.get(..blocks.len()),
+            "{name}: the first schedule's blocks H-42's as far as they run"
+        );
+    }
+}
+
+/// The first schedule with the probe's step halved on network `n` (exploration 005): from H-42's
+/// image with the homeostasis record's step written half the probe's, to nearest with a half
+/// going up, and every other byte but the section's seal the image's (`only_the_step`, H-44's
+/// control's check), dumped beside H-42's arm. Held: the image so written, the step half the
+/// probe's in every window, and no worker dropping an entry.
+fn halved_step_arm(made: &Made, n: usize, arm: Reversal, trials: usize, flips: &[usize]) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let step = image_step(&made.windowed);
+    let half = step.saturating_add(1) >> 1;
+    let image = with_step_bytes(&made.windowed, half);
+    let name = format!("halved{} {arm:?}", PROBE_SEEDS[n]);
+    eprintln!(
+        "DUMP {name} the step {half} where the probe made {step}; the image moved at {:?}",
+        differing(&made.windowed, &image)
+    );
+    assert!(
+        only_the_step(&made.windowed, &image),
+        "{name}: the image is H-42's in every byte but the step's and the seal"
+    );
+    let (exec, run) = long_schedule(made, &image, arm, trials, flips);
+    long_dump(&name, made, &run);
+    let pin = PROBE_ARM_BLOCKS[n][k];
+    eprintln!(
+        "DUMP {name} beside H-42's arm: last 128 correct {:?} beside {:?}; crossings {:?} beside {:?}; opposite beside {:?}",
+        mapping_correct(&run.blocks),
+        mapping_correct(pin),
+        crossings(&run.blocks),
+        crossings(pin),
+        PROBE_ARM_OPPOSITE[n][k]
+    );
+    let held = exec.homeostasis().control_step_q0_16;
+    undropped(exec, &name);
+    assert_eq!(held, half, "{name}: the step half the probe's at the end");
+    assert!(
+        run.windows.iter().all(|w| w.2 == u32::from(half)),
+        "{name}: the step half the probe's in every window"
+    );
+}
+
+/// Exploration 005's harness, short: on seed 22 from the assignment, the first schedule with the
+/// probe's step halved, and two schedules of the long run, each two blocks long. The long run's
+/// blocks are H-42's arm's first two.
+#[test]
+#[ignore]
+fn eight_schedules_under_the_default_short_on_seed_22_explore() {
+    let made = probe_made(0, "eight22 short");
+    let short = 2 * BLOCK;
+    halved_step_arm(&made, 0, Reversal::AssignmentFirst, short, &[]);
+    eight_schedules(&made, 0, Reversal::AssignmentFirst, 2, short, &[]);
+}
+
+/// Exploration 005, the long run: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn eight_schedules_under_the_default_on_seed_22_from_the_assignment_explore() {
+    let made = probe_made(0, "eight22 AssignmentFirst");
+    eight_schedules(
+        &made,
+        0,
+        Reversal::AssignmentFirst,
+        EIGHT_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// Exploration 005, the long run: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn eight_schedules_under_the_default_on_seed_22_from_the_mirrored_assignment_explore() {
+    let made = probe_made(0, "eight22 MirroredFirst");
+    eight_schedules(
+        &made,
+        0,
+        Reversal::MirroredFirst,
+        EIGHT_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// Exploration 005, the probe's step halved: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_probe_step_halved_on_seed_22_from_the_assignment_explore() {
+    let made = probe_made(0, "halved22 AssignmentFirst");
+    halved_step_arm(
+        &made,
+        0,
+        Reversal::AssignmentFirst,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
+
+/// Exploration 005, the probe's step halved: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_probe_step_halved_on_seed_22_from_the_mirrored_assignment_explore() {
+    let made = probe_made(0, "halved22 MirroredFirst");
+    halved_step_arm(
+        &made,
+        0,
+        Reversal::MirroredFirst,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+}
