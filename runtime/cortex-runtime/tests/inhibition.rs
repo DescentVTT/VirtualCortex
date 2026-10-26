@@ -471501,7 +471501,9 @@ const UNTOLD_ARM_LOST: [[[u32; 2]; 2]; 3] = [[[1, 1], [2, 2]], [[1, 1], [2, 2]],
 // couplings' synapses against Q1.15's rail and the arena's synapses summed by the group of the
 // unit they reach: each stimulus set, each readout set's excitatory and inhibitory units, and
 // the units outside the four sets. At each schedule's end, each unit's spikes over the schedule
-// and in the task's ticks of its trials, and every inhibitory synapse's weight. Beside it, the
+// and in the task's ticks of its trials, and every inhibitory synapse's weight; and the
+// inhibitory rule replayed on the host from the spike train, synapse by synapse, its every term
+// summed and the replay held to the engine's blocks at every block's end. Beside it, the
 // first schedule again from the image with the homeostasis record's step written half the
 // probe's, the probe's λ an eighth where it is a quarter, as H-44's control wrote its step
 // (ADR-0213). Nothing under `src/` moves, no prediction is written, nothing is pinned, and
@@ -471658,6 +471660,256 @@ fn inhibitory_synapses(exec: &Engine) -> Vec<(u32, u32, i16)> {
     out
 }
 
+/// One inhibitory synapse as the replay holds it (exploration 005): its target, its block's
+/// presynaptic stamp, its trace and its magnitude; and what the rule did to it since the load —
+/// its presynaptic spikes, the trace's gain by the pairing with a target spike after the previous
+/// presynaptic spike and by the pairing with one before this spike, its loss by the depression
+/// at every presynaptic spike and by the decay between them, and what consolidation moved from
+/// the trace into the magnitude. Each amount is what the saturating step moved, signed: a gain
+/// and a loss above zero, the decay above zero where it took a trace above zero toward zero.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct IstdpSynapse {
+    target: u32,
+    stamp: u32,
+    trace: i16,
+    magnitude: i32,
+    pre: u32,
+    after_previous: i64,
+    before_this: i64,
+    depressed: i64,
+    decayed: i64,
+    moved: i64,
+}
+
+/// What a replayed synapse reports of its schedule: the presynaptic spikes, the two pairings'
+/// gains, the depression's and the decay's losses, and what moved into the magnitude.
+type IstdpRead = (u32, i64, i64, i64, i64, i64);
+
+/// The inhibitory rule replayed on the host from the spike train (exploration 005), in the
+/// rule's integers as `cortex-core` states them (ADR-0049, ADR-0053, ADR-0086): at an inhibitory
+/// unit's spike, for every synapse of its chain, the trace decays by $(1 - 2^{-16})^{\Delta}$
+/// since the block's stamp; loses the depression of the engine's target period; gains $A_+ (1 -
+/// 2^{-11})^{q - p}$ where its target's last spike $q$ lies after the previous presynaptic spike
+/// $p$ and not after this one, and $A_+ (1 - 2^{-11})^{t - q}$ where it lies before this spike
+/// $t$; and half of it, the inhibitory baseline, moves into the magnitude, within $[0, 1)$. A
+/// target's last spike is the train's, a spike at the tick itself among them, as phase 1 stamps
+/// it before phase 2 reads it. Held against the engine's blocks at every block's end
+/// (`apart_from`), so that what it reports is what the engine's rule did.
+struct IstdpReplay {
+    alpha: i16,
+    modulation: i64,
+    last: Vec<u32>,
+    chains: Vec<(usize, usize)>,
+    synapses: Vec<IstdpSynapse>,
+}
+
+impl IstdpReplay {
+    /// At the load, from the engine's units and blocks.
+    fn new(exec: &Engine) -> Self {
+        let alpha = istdp_alpha_q1_15(exec.istdp_target_period_ticks());
+        let modulation = i64::from(
+            exec.inhibitory_baseline_q16()
+                .expect("the image carries the inhibitory baseline")
+                .clamp(0, MODULATION_ONE_Q16),
+        );
+        let last: Vec<u32> = exec
+            .units()
+            .iter()
+            .map(|u| u.last_soma_spike_tick)
+            .collect();
+        let mut chains = Vec::with_capacity(exec.units().len());
+        let mut synapses = Vec::new();
+        for unit in exec.units() {
+            let first = synapses.len();
+            if unit.flags & FLAG_INHIBITORY != 0 {
+                for s in unit.fan_out(exec.blocks()) {
+                    let block = &exec.blocks()[s.block_idx as usize];
+                    synapses.push(IstdpSynapse {
+                        target: s.target,
+                        stamp: block.last_spike_tick,
+                        trace: block.eligibility_q1_15[usize::from(s.slot)],
+                        magnitude: i32::from(s.weight_q1_15).saturating_neg().max(0),
+                        ..IstdpSynapse::default()
+                    });
+                }
+            }
+            chains.push((first, synapses.len()));
+        }
+        Self {
+            alpha,
+            modulation,
+            last,
+            chains,
+            synapses,
+        }
+    }
+
+    /// The spikes of one tick, `spikes` the train's entries at `tick`: every unit's last spike
+    /// first, then the rule at each inhibitory unit's.
+    fn tick(&mut self, tick: u32, spikes: &[(u32, u32)]) {
+        for &(_, unit) in spikes {
+            if let Some(last) = self.last.get_mut(unit as usize) {
+                *last = tick;
+            }
+        }
+        for &(_, unit) in spikes {
+            let Some(&(first, end)) = self.chains.get(unit as usize) else {
+                continue;
+            };
+            for k in first..end {
+                let post = self
+                    .last
+                    .get(self.synapses[k].target as usize)
+                    .copied()
+                    .unwrap_or(NO_SPIKE_ON_RECORD);
+                istdp_spike(
+                    &mut self.synapses[k],
+                    tick,
+                    post,
+                    self.alpha,
+                    self.modulation,
+                );
+            }
+        }
+    }
+
+    /// The synapses whose stamp, trace or magnitude is not the engine's, walked in the order
+    /// `new` walked them.
+    fn apart_from(&self, exec: &Engine) -> u32 {
+        let mut apart = 0u32;
+        let mut k = 0usize;
+        for unit in exec.units() {
+            if unit.flags & FLAG_INHIBITORY == 0 {
+                continue;
+            }
+            for s in unit.fan_out(exec.blocks()) {
+                let block = &exec.blocks()[s.block_idx as usize];
+                let engine = (
+                    s.target,
+                    block.last_spike_tick,
+                    block.eligibility_q1_15[usize::from(s.slot)],
+                    i32::from(s.weight_q1_15).saturating_neg().max(0),
+                );
+                let held = self
+                    .synapses
+                    .get(k)
+                    .map(|r| (r.target, r.stamp, r.trace, r.magnitude));
+                apart = apart.saturating_add(u32::from(held != Some(engine)));
+                k = k.saturating_add(1);
+            }
+        }
+        apart.saturating_add(u32::try_from(self.synapses.len().abs_diff(k)).unwrap_or(u32::MAX))
+    }
+
+    /// Every synapse's report, in the walk's order.
+    fn reads(&self) -> Vec<IstdpRead> {
+        self.synapses
+            .iter()
+            .map(|r| {
+                (
+                    r.pre,
+                    r.after_previous,
+                    r.before_this,
+                    r.depressed,
+                    r.decayed,
+                    r.moved,
+                )
+            })
+            .collect()
+    }
+
+    /// The reports summed by the group of the synapse's target, and the trace and the magnitude
+    /// summed by it now.
+    fn by_group(&self, groups: &[usize]) -> Vec<(IstdpRead, i64, i64)> {
+        let mut out = vec![((0u32, 0i64, 0i64, 0i64, 0i64, 0i64), 0i64, 0i64); TARGET_GROUPS];
+        for r in &self.synapses {
+            let Some(g) = groups.get(r.target as usize).and_then(|&g| out.get_mut(g)) else {
+                continue;
+            };
+            let sum = &mut g.0;
+            sum.0 = sum.0.saturating_add(r.pre);
+            sum.1 = sum.1.saturating_add(r.after_previous);
+            sum.2 = sum.2.saturating_add(r.before_this);
+            sum.3 = sum.3.saturating_add(r.depressed);
+            sum.4 = sum.4.saturating_add(r.decayed);
+            sum.5 = sum.5.saturating_add(r.moved);
+            g.1 = g.1.saturating_add(i64::from(r.trace));
+            g.2 = g.2.saturating_add(i64::from(r.magnitude));
+        }
+        out
+    }
+}
+
+/// The rule at one presynaptic spike at `now` on one replayed synapse, its target's last spike
+/// `post` (`IstdpReplay`'s rule).
+fn istdp_spike(r: &mut IstdpSynapse, now: u32, post: u32, alpha: i16, modulation: i64) {
+    let mut e = r.trace;
+    let elapsed = now.wrapping_sub(r.stamp);
+    if elapsed != 0 && e != 0 {
+        let factor = i64::from(stp_decay_factor_q16(elapsed, ELIGIBILITY_TAU_SHIFT));
+        let size = i64::from(e).abs();
+        let kept = (size.saturating_mul(factor).saturating_add(0x8000) >> 16)
+            .min(size.saturating_sub(1))
+            .saturating_mul(i64::from(e).signum());
+        let kept = i16::try_from(kept).unwrap_or(e);
+        r.decayed = r
+            .decayed
+            .saturating_add(i64::from(e).saturating_sub(i64::from(kept)));
+        e = kept;
+    }
+    let depressed = e.saturating_sub(alpha);
+    r.depressed = r
+        .depressed
+        .saturating_add(i64::from(e).saturating_sub(i64::from(depressed)));
+    e = depressed;
+    if post != NO_SPIKE_ON_RECORD {
+        let since_post = now.wrapping_sub(post) as i32;
+        if r.stamp != NO_SPIKE_ON_RECORD {
+            let after_prev = post.wrapping_sub(r.stamp) as i32;
+            if after_prev > 0 && since_post >= 0 {
+                let gained = e.saturating_add(istdp_window(after_prev as u32));
+                r.after_previous = r
+                    .after_previous
+                    .saturating_add(i64::from(gained).saturating_sub(i64::from(e)));
+                e = gained;
+            }
+        }
+        if since_post > 0 {
+            let gained = e.saturating_add(istdp_window(since_post as u32));
+            r.before_this = r
+                .before_this
+                .saturating_add(i64::from(gained).saturating_sub(i64::from(e)));
+            e = gained;
+        }
+    }
+    let trace = i64::from(e);
+    let amount = trace
+        .abs()
+        .saturating_mul(modulation)
+        .saturating_add(0x8000)
+        >> 16;
+    let before = i64::from(r.magnitude);
+    let after = before
+        .saturating_add(amount.saturating_mul(trace.signum()))
+        .clamp(0, i64::from(i16::MAX));
+    let absorbed = after.saturating_sub(before);
+    r.moved = r.moved.saturating_add(absorbed);
+    r.magnitude = i32::try_from(after).unwrap_or(r.magnitude);
+    r.trace = i16::try_from(trace.saturating_sub(absorbed)).unwrap_or(e);
+    r.stamp = now;
+    r.pre = r.pre.saturating_add(1);
+}
+
+/// $A_+ (1 - 2^{-11})^{\Delta}$ in Q1.15, to nearest (`IstdpReplay`'s rule).
+fn istdp_window(delta: u32) -> i16 {
+    let factor = i64::from(stp_decay_factor_q16(delta, STDP_TAU_SHIFT));
+    let w = i64::from(STDP_A_PLUS_Q1_15)
+        .saturating_mul(factor)
+        .saturating_add(0x8000)
+        >> 16;
+    i16::try_from(w).unwrap_or(i16::MAX)
+}
+
 /// One schedule of a long run (exploration 005): exploration 004's readings — its blocks and
 /// trace, the value of every reward, the windows that ended inside it with each one's spikes and
 /// the gain and the step its rule left, the gain and the step at every block's end, the trials
@@ -471665,7 +471917,9 @@ fn inhibitory_synapses(exec: &Engine) -> Vec<(u32, u32, i16)> {
 /// four couplings against the rail at every block's end, the synapses by the group they reach at
 /// the load and at every block's end, each unit's spikes over the schedule and in the task's
 /// ticks of its trials, the schedule's ticks from the load, and the inhibitory rule's target
-/// period.
+/// period; and the inhibitory rule's replay — every synapse's report and the reports by the group
+/// of the synapse's target, and at every block's end the synapses the replay held apart from the
+/// engine's.
 struct LongSchedule {
     blocks: Vec<Block>,
     trace: u64,
@@ -471681,6 +471935,9 @@ struct LongSchedule {
     in_task: Vec<u32>,
     ticks: u64,
     period: u32,
+    replayed: Vec<IstdpRead>,
+    replayed_by_group: Vec<(IstdpRead, i64, i64)>,
+    replay_apart: Vec<u32>,
 }
 
 /// One schedule of a long run from `image` (exploration 005): exploration 004's path, H-43's twin
@@ -471720,6 +471977,8 @@ fn long_schedule(
     let mut onto: Vec<Onto> = Vec::with_capacity(trials / BLOCK);
     let mut spikes = vec![0u32; groups.len()];
     let mut in_task = vec![0u32; groups.len()];
+    let mut replay = IstdpReplay::new(&exec);
+    let mut replay_apart: Vec<u32> = Vec::with_capacity(trials / BLOCK);
     let (blocks, trace) = run_on_scheduled_over(
         sets,
         &mut exec,
@@ -471729,12 +471988,15 @@ fn long_schedule(
         flips,
         &mut |exec, trial, start, outcome| {
             let end = exec.ticks();
-            for &(tick, unit) in exec.train().iter().rev() {
-                let at = u64::from(tick);
-                if at < watched {
-                    break;
-                }
-                watch.spike(at);
+            let train = exec.train();
+            let fresh = train
+                .iter()
+                .rev()
+                .take_while(|&&(tick, _)| u64::from(tick) >= watched)
+                .count();
+            let fresh = &train[train.len().saturating_sub(fresh)..];
+            for &(tick, unit) in fresh {
+                watch.spike(u64::from(tick));
                 if let Some(n) = spikes.get_mut(unit as usize) {
                     *n = n.saturating_add(1);
                 }
@@ -471742,6 +472004,11 @@ fn long_schedule(
                     if let Some(n) = in_task.get_mut(unit as usize) {
                         *n = n.saturating_add(1);
                     }
+                }
+            }
+            for at_tick in fresh.chunk_by(|a, b| a.0 == b.0) {
+                if let Some(&(tick, _)) = at_tick.first() {
+                    replay.tick(tick, at_tick);
                 }
             }
             watch.trial(exec);
@@ -471755,6 +472022,7 @@ fn long_schedule(
                 ends.push((h.synaptic_gain_q16, h.control_step_q0_16));
                 rails.push(rails_of(exec, &sets).0);
                 onto.push(onto_of(exec, &groups));
+                replay_apart.push(replay.apart_from(exec));
             }
         },
     );
@@ -471779,6 +472047,9 @@ fn long_schedule(
         in_task,
         ticks: exec.ticks().saturating_sub(loaded),
         period,
+        replayed: replay.reads(),
+        replayed_by_group: replay.by_group(&groups),
+        replay_apart,
     };
     (exec, run)
 }
@@ -471974,6 +472245,18 @@ fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
         "DUMP {name} spikes by unit in the task's ticks {:?}",
         run.in_task
     );
+    eprintln!(
+        "DUMP {name} the inhibitory rule replayed, the synapses apart from the engine's by block {:?}",
+        run.replay_apart
+    );
+    eprintln!(
+        "DUMP {name} the inhibitory rule replayed by the target's group ((presynaptic spikes, after the previous, before this, depressed, decayed, moved), trace, magnitude) {:?}",
+        run.replayed_by_group
+    );
+    eprintln!(
+        "DUMP {name} the inhibitory rule replayed by synapse (presynaptic spikes, after the previous, before this, depressed, decayed, moved) {:?}",
+        run.replayed
+    );
     if let Some(target) = run.target {
         let by_eight: Vec<i64> = run
             .windows
@@ -472006,7 +472289,8 @@ fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
 /// probe wrote. At every image, the first and each schedule's, the four couplings' weights by
 /// sixteenths of the width and every inhibitory synapse's weight. Everything dumped, then held:
 /// the first schedule H-42's arm on the network bit for bit (as far as it runs, where it is
-/// shorter than H-20's), and no worker dropping an entry.
+/// shorter than H-20's), no worker dropping an entry, and the inhibitory rule's replay the
+/// engine's at every block's end of every schedule.
 fn eight_schedules(
     made: &Made,
     n: usize,
@@ -472048,10 +472332,12 @@ fn eight_schedules(
     let mut image = made.windowed.clone();
     let mut first: Option<(Vec<Block>, u64, u64)> = None;
     let mut readings: Vec<LongRead> = Vec::new();
+    let mut replay_apart: Vec<u32> = Vec::new();
     for s in 0..schedules {
         let at = format!("{name} schedule {s}");
         let (mut exec, run) = long_schedule(made, &image, arm, trials, flips);
         readings.push(long_dump(&at, made, &run));
+        replay_apart.extend_from_slice(&run.replay_apart);
         eprintln!(
             "DUMP {at} groups (name, units, spikes, in the task's ticks, ticks per spike a unit, inhibitory onto at the load, at the last block, over the load per myriad) at the inhibitory rule's period {}: {:?}",
             run.period,
@@ -472083,7 +472369,11 @@ fn eight_schedules(
         image = written;
     }
     eprintln!("DUMP {name} by schedule (clauses, last 128 correct, crossings) {readings:?}");
-    // Held: the first schedule H-42's arm.
+    // Held: the replay the engine's rule, and the first schedule H-42's arm.
+    assert!(
+        replay_apart.iter().all(|&apart| apart == 0),
+        "{name}: the inhibitory rule's replay the engine's at every block's end: {replay_apart:?}"
+    );
     let (blocks, trace, hash) = first.expect("a first schedule");
     let pin = PROBE_ARM_BLOCKS[n][k];
     if trials == SCHEDULE_TRIALS && flips == SCHEDULE_FLIPS {
@@ -472112,7 +472402,8 @@ fn eight_schedules(
 /// image with the homeostasis record's step written half the probe's, to nearest with a half
 /// going up, and every other byte but the section's seal the image's (`only_the_step`, H-44's
 /// control's check), dumped beside H-42's arm. Held: the image so written, the step half the
-/// probe's in every window, and no worker dropping an entry.
+/// probe's in every window, no worker dropping an entry, and the inhibitory rule's replay the
+/// engine's at every block's end.
 fn halved_step_arm(made: &Made, n: usize, arm: Reversal, trials: usize, flips: &[usize]) {
     let k = PROBE_ARMS
         .iter()
@@ -472147,6 +472438,11 @@ fn halved_step_arm(made: &Made, n: usize, arm: Reversal, trials: usize, flips: &
     assert!(
         run.windows.iter().all(|w| w.2 == u32::from(half)),
         "{name}: the step half the probe's in every window"
+    );
+    assert!(
+        run.replay_apart.iter().all(|&apart| apart == 0),
+        "{name}: the inhibitory rule's replay the engine's at every block's end: {:?}",
+        run.replay_apart
     );
 }
 
