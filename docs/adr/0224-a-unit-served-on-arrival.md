@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-28
 amends: [ADR-0098, ADR-0105]
 title: A unit served on arrival
