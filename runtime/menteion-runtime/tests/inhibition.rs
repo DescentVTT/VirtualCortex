@@ -471518,3 +471518,1482 @@ const UNTOLD_ARM_MOVES: [[[Option<Moved>; 2]; 2]; 3] = [
     ],
 ];
 const UNTOLD_ARM_LOST: [[[u32; 2]; 2]; 3] = [[[1, 1], [2, 2]], [[1, 1], [2, 2]], [[1, 1], [2, 2]]];
+
+// ======================================================================= exploration 005
+//
+// Exploration 005's harness as its tag `explore/005-eight-schedules-under-the-default` holds it
+// (`056c76b`), carried by exploration 007 up to its long run and from 007's tag
+// `explore/007-sixteen-schedules-and-a-soft-bound` (`0bbccf7`) by exploration 009, whose
+// `long_run` replaces 005's; `long_schedule` takes 009's bounds and reads, at every trial's end,
+// where the couplings' synapses rise (`RailPaths`, exploration 007's).
+//
+// Eight schedules under the default (ADR-0193, exploration 005). Exploration 004's long run,
+// eight of H-20's schedules where it ran four, each from the image the one before left: the
+// engine run quiet at a schedule's end, its image written, and the next schedule's engine
+// decoded from it. The first schedule is H-42's arm on its network bit for bit, which is the
+// path's calibration; no target is read again. Beside each block's readings, the four
+// couplings' synapses against Q1.15's rail and the arena's synapses summed by the group of the
+// unit they reach: each stimulus set, each readout set's excitatory and inhibitory units, and
+// the units outside the four sets. At each schedule's end, each unit's spikes over the schedule
+// and in the task's ticks of its trials, and every inhibitory synapse's weight; and the
+// inhibitory rule replayed on the host from the spike train, synapse by synapse, its every term
+// summed and the replay held to the engine's blocks at every block's end. Beside it, the
+// first schedule again from the image with the homeostasis record's step written half the
+// probe's, the probe's λ an eighth where it is a quarter, as H-44's control wrote its step
+// (ADR-0213). Nothing under `src/` moves, no prediction is written, nothing is pinned, and
+// everything is dumped before anything is held.
+
+/// The windows of a schedule's start that exploration 004 read as the first mapping's transient:
+/// the error is read from the 120th window on.
+const AFTER_THE_TRANSIENT: usize = 120;
+
+/// The ticks of a trial that are the task's (exploration 005): from the injection to the readout
+/// window's close.
+const TASK_TICKS: u32 = WINDOW.from + WINDOW.ticks;
+
+/// The groups a synapse's target falls in (exploration 005), in this order: stimulus A,
+/// stimulus B, readout 0's excitatory and inhibitory units, readout 1's, and the units outside the
+/// four sets, excitatory and inhibitory.
+const TARGET_GROUPS: usize = 8;
+const TARGET_GROUP_NAMES: [&str; TARGET_GROUPS] = [
+    "A",
+    "B",
+    "R0 excitatory",
+    "R0 inhibitory",
+    "R1 excitatory",
+    "R1 inhibitory",
+    "outside excitatory",
+    "outside inhibitory",
+];
+
+/// The group of unit `id` under `sets` (exploration 005), `inhibitory` its polarity; a stimulus
+/// set is one group whatever its units' polarity.
+fn group_of(sets: &[Set; 4], id: u32, inhibitory: bool) -> usize {
+    if sets[0].contains(id) {
+        return 0;
+    }
+    if sets[1].contains(id) {
+        return 1;
+    }
+    let (excitatory, inhibitory_group) = if sets[2].contains(id) {
+        (2, 3)
+    } else if sets[3].contains(id) {
+        (4, 5)
+    } else {
+        (6, 7)
+    };
+    if inhibitory {
+        inhibitory_group
+    } else {
+        excitatory
+    }
+}
+
+/// Every unit's group on `exec` (exploration 005), by index.
+fn unit_groups(exec: &Engine, sets: &[Set; 4]) -> Vec<usize> {
+    exec.units()
+        .iter()
+        .map(|u| group_of(sets, u.id as u32, u.flags & FLAG_INHIBITORY != 0))
+        .collect()
+}
+
+/// A coupling's synapses against Q1.15's rail (exploration 005): their number, the highest
+/// weight, and the synapses at or above three quarters of the rail, at or above seven eighths of
+/// it, and at the rail itself, `i16::MAX`.
+type Rail = (u32, i16, u32, u32, u32);
+
+/// Three quarters and seven eighths of Q1.15's rail.
+const RAIL_THREE_QUARTERS: i16 = 0x6000;
+const RAIL_SEVEN_EIGHTHS: i16 = 0x7000;
+
+/// The four couplings' synapses on `exec`, A→R0, A→R1, B→R0 and B→R1, each against the rail,
+/// and each one's weights counted by sixteenths of the width (exploration 005).
+fn rails_of(exec: &Engine, sets: &[Set; 4]) -> ([Rail; 4], [[u32; 16]; 4]) {
+    let mut rails: [Rail; 4] = [(0, 0, 0, 0, 0); 4];
+    let mut bins = [[0u32; 16]; 4];
+    for unit in exec.units() {
+        let id = unit.id as u32;
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        let from = if sets[0].contains(id) {
+            0usize
+        } else if sets[1].contains(id) {
+            2
+        } else {
+            continue;
+        };
+        for s in unit.fan_out(exec.blocks()) {
+            let pair = if sets[2].contains(s.target) {
+                from
+            } else if sets[3].contains(s.target) {
+                from.saturating_add(1)
+            } else {
+                continue;
+            };
+            let w = s.weight_q1_15;
+            let r = &mut rails[pair];
+            r.0 = r.0.saturating_add(1);
+            r.1 = r.1.max(w);
+            r.2 = r.2.saturating_add(u32::from(w >= RAIL_THREE_QUARTERS));
+            r.3 = r.3.saturating_add(u32::from(w >= RAIL_SEVEN_EIGHTHS));
+            r.4 = r.4.saturating_add(u32::from(w == i16::MAX));
+            let bin = usize::try_from(w.max(0) >> 11).unwrap_or(0);
+            if let Some(b) = bins[pair].get_mut(bin) {
+                *b = b.saturating_add(1);
+            }
+        }
+    }
+    (rails, bins)
+}
+
+/// The arena's synapses summed by the group of the unit they reach (exploration 005): the
+/// inhibitory magnitudes, the inhibitory synapses at a magnitude of zero, and the excitatory
+/// weights.
+type Onto = (
+    [i64; TARGET_GROUPS],
+    [u32; TARGET_GROUPS],
+    [i64; TARGET_GROUPS],
+);
+
+fn onto_of(exec: &Engine, groups: &[usize]) -> Onto {
+    let mut out: Onto = ([0; TARGET_GROUPS], [0; TARGET_GROUPS], [0; TARGET_GROUPS]);
+    for unit in exec.units() {
+        let inhibitory = unit.flags & FLAG_INHIBITORY != 0;
+        for s in unit.fan_out(exec.blocks()) {
+            let Some(&g) = groups.get(s.target as usize) else {
+                continue;
+            };
+            let w = i64::from(s.weight_q1_15);
+            if inhibitory {
+                out.0[g] = out.0[g].saturating_sub(w);
+                out.1[g] = out.1[g].saturating_add(u32::from(w == 0));
+            } else {
+                out.2[g] = out.2[g].saturating_add(w);
+            }
+        }
+    }
+    out
+}
+
+/// Every inhibitory synapse of the arena in the walk's order (exploration 005): its presynaptic
+/// unit, its target and its weight.
+fn inhibitory_synapses(exec: &Engine) -> Vec<(u32, u32, i16)> {
+    let mut out = Vec::new();
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY == 0 {
+            continue;
+        }
+        for s in unit.fan_out(exec.blocks()) {
+            out.push((unit.id as u32, s.target, s.weight_q1_15));
+        }
+    }
+    out
+}
+
+/// One inhibitory synapse as the replay holds it (exploration 005): its target, its block's
+/// presynaptic stamp, its trace and its magnitude; and what the rule did to it since the load —
+/// its presynaptic spikes, the trace's gain by the pairing with a target spike after the previous
+/// presynaptic spike and by the pairing with one before this spike, its loss by the depression
+/// at every presynaptic spike and by the decay between them, and what consolidation moved from
+/// the trace into the magnitude. Each amount is what the saturating step moved, signed: a gain
+/// and a loss above zero, the decay above zero where it took a trace above zero toward zero.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct IstdpSynapse {
+    target: u32,
+    stamp: u32,
+    trace: i16,
+    magnitude: i32,
+    pre: u32,
+    after_previous: i64,
+    before_this: i64,
+    depressed: i64,
+    decayed: i64,
+    moved: i64,
+}
+
+/// What a replayed synapse reports of its schedule: the presynaptic spikes, the two pairings'
+/// gains, the depression's and the decay's losses, and what moved into the magnitude.
+type IstdpRead = (u32, i64, i64, i64, i64, i64);
+
+/// The inhibitory rule replayed on the host from the spike train (exploration 005), in the
+/// rule's integers as `menteion-core` states them (ADR-0049, ADR-0053, ADR-0086): at an inhibitory
+/// unit's spike, for every synapse of its chain, the trace decays by $(1 - 2^{-16})^{\Delta}$
+/// since the block's stamp; loses the depression of the engine's target period; gains $A_+ (1 -
+/// 2^{-11})^{q - p}$ where its target's last spike $q$ lies after the previous presynaptic spike
+/// $p$ and not after this one, and $A_+ (1 - 2^{-11})^{t - q}$ where it lies before this spike
+/// $t$; and half of it, the inhibitory baseline, moves into the magnitude, within $[0, 1)$. A
+/// target's last spike is the train's, a spike at the tick itself among them, as phase 1 stamps
+/// it before phase 2 reads it. Held against the engine's blocks at every block's end
+/// (`apart_from`), so that what it reports is what the engine's rule did.
+struct IstdpReplay {
+    alpha: i16,
+    modulation: i64,
+    last: Vec<u32>,
+    chains: Vec<(usize, usize)>,
+    synapses: Vec<IstdpSynapse>,
+}
+
+impl IstdpReplay {
+    /// At the load, from the engine's units and blocks.
+    fn new(exec: &Engine) -> Self {
+        let alpha = istdp_alpha_q1_15(exec.istdp_target_period_ticks());
+        let modulation = i64::from(
+            exec.inhibitory_baseline_q16()
+                .expect("the image carries the inhibitory baseline")
+                .clamp(0, MODULATION_ONE_Q16),
+        );
+        let last: Vec<u32> = exec
+            .units()
+            .iter()
+            .map(|u| u.last_soma_spike_tick)
+            .collect();
+        let mut chains = Vec::with_capacity(exec.units().len());
+        let mut synapses = Vec::new();
+        for unit in exec.units() {
+            let first = synapses.len();
+            if unit.flags & FLAG_INHIBITORY != 0 {
+                for s in unit.fan_out(exec.blocks()) {
+                    let block = &exec.blocks()[s.block_idx as usize];
+                    synapses.push(IstdpSynapse {
+                        target: s.target,
+                        stamp: block.last_spike_tick,
+                        trace: block.eligibility_q1_15[usize::from(s.slot)],
+                        magnitude: i32::from(s.weight_q1_15).saturating_neg().max(0),
+                        ..IstdpSynapse::default()
+                    });
+                }
+            }
+            chains.push((first, synapses.len()));
+        }
+        Self {
+            alpha,
+            modulation,
+            last,
+            chains,
+            synapses,
+        }
+    }
+
+    /// The spikes of one tick, `spikes` the train's entries at `tick`: every unit's last spike
+    /// first, then the rule at each inhibitory unit's.
+    fn tick(&mut self, tick: u32, spikes: &[(u32, u32)]) {
+        for &(_, unit) in spikes {
+            if let Some(last) = self.last.get_mut(unit as usize) {
+                *last = tick;
+            }
+        }
+        for &(_, unit) in spikes {
+            let Some(&(first, end)) = self.chains.get(unit as usize) else {
+                continue;
+            };
+            for k in first..end {
+                let post = self
+                    .last
+                    .get(self.synapses[k].target as usize)
+                    .copied()
+                    .unwrap_or(NO_SPIKE_ON_RECORD);
+                istdp_spike(
+                    &mut self.synapses[k],
+                    tick,
+                    post,
+                    self.alpha,
+                    self.modulation,
+                );
+            }
+        }
+    }
+
+    /// The synapses whose stamp, trace or magnitude is not the engine's, walked in the order
+    /// `new` walked them.
+    fn apart_from(&self, exec: &Engine) -> u32 {
+        let mut apart = 0u32;
+        let mut k = 0usize;
+        for unit in exec.units() {
+            if unit.flags & FLAG_INHIBITORY == 0 {
+                continue;
+            }
+            for s in unit.fan_out(exec.blocks()) {
+                let block = &exec.blocks()[s.block_idx as usize];
+                let engine = (
+                    s.target,
+                    block.last_spike_tick,
+                    block.eligibility_q1_15[usize::from(s.slot)],
+                    i32::from(s.weight_q1_15).saturating_neg().max(0),
+                );
+                let held = self
+                    .synapses
+                    .get(k)
+                    .map(|r| (r.target, r.stamp, r.trace, r.magnitude));
+                apart = apart.saturating_add(u32::from(held != Some(engine)));
+                k = k.saturating_add(1);
+            }
+        }
+        apart.saturating_add(u32::try_from(self.synapses.len().abs_diff(k)).unwrap_or(u32::MAX))
+    }
+
+    /// Every synapse's report, in the walk's order.
+    fn reads(&self) -> Vec<IstdpRead> {
+        self.synapses
+            .iter()
+            .map(|r| {
+                (
+                    r.pre,
+                    r.after_previous,
+                    r.before_this,
+                    r.depressed,
+                    r.decayed,
+                    r.moved,
+                )
+            })
+            .collect()
+    }
+
+    /// The reports summed by the group of the synapse's target, and the trace and the magnitude
+    /// summed by it now.
+    fn by_group(&self, groups: &[usize]) -> Vec<(IstdpRead, i64, i64)> {
+        let mut out = vec![((0u32, 0i64, 0i64, 0i64, 0i64, 0i64), 0i64, 0i64); TARGET_GROUPS];
+        for r in &self.synapses {
+            let Some(g) = groups.get(r.target as usize).and_then(|&g| out.get_mut(g)) else {
+                continue;
+            };
+            let sum = &mut g.0;
+            sum.0 = sum.0.saturating_add(r.pre);
+            sum.1 = sum.1.saturating_add(r.after_previous);
+            sum.2 = sum.2.saturating_add(r.before_this);
+            sum.3 = sum.3.saturating_add(r.depressed);
+            sum.4 = sum.4.saturating_add(r.decayed);
+            sum.5 = sum.5.saturating_add(r.moved);
+            g.1 = g.1.saturating_add(i64::from(r.trace));
+            g.2 = g.2.saturating_add(i64::from(r.magnitude));
+        }
+        out
+    }
+}
+
+/// The rule at one presynaptic spike at `now` on one replayed synapse, its target's last spike
+/// `post` (`IstdpReplay`'s rule).
+fn istdp_spike(r: &mut IstdpSynapse, now: u32, post: u32, alpha: i16, modulation: i64) {
+    let mut e = r.trace;
+    let elapsed = now.wrapping_sub(r.stamp);
+    if elapsed != 0 && e != 0 {
+        let factor = i64::from(stp_decay_factor_q16(elapsed, ELIGIBILITY_TAU_SHIFT));
+        let size = i64::from(e).abs();
+        let kept = (size.saturating_mul(factor).saturating_add(0x8000) >> 16)
+            .min(size.saturating_sub(1))
+            .saturating_mul(i64::from(e).signum());
+        let kept = i16::try_from(kept).unwrap_or(e);
+        r.decayed = r
+            .decayed
+            .saturating_add(i64::from(e).saturating_sub(i64::from(kept)));
+        e = kept;
+    }
+    let depressed = e.saturating_sub(alpha);
+    r.depressed = r
+        .depressed
+        .saturating_add(i64::from(e).saturating_sub(i64::from(depressed)));
+    e = depressed;
+    if post != NO_SPIKE_ON_RECORD {
+        let since_post = now.wrapping_sub(post) as i32;
+        if r.stamp != NO_SPIKE_ON_RECORD {
+            let after_prev = post.wrapping_sub(r.stamp) as i32;
+            if after_prev > 0 && since_post >= 0 {
+                let gained = e.saturating_add(istdp_window(after_prev as u32));
+                r.after_previous = r
+                    .after_previous
+                    .saturating_add(i64::from(gained).saturating_sub(i64::from(e)));
+                e = gained;
+            }
+        }
+        if since_post > 0 {
+            let gained = e.saturating_add(istdp_window(since_post as u32));
+            r.before_this = r
+                .before_this
+                .saturating_add(i64::from(gained).saturating_sub(i64::from(e)));
+            e = gained;
+        }
+    }
+    let trace = i64::from(e);
+    let amount = trace
+        .abs()
+        .saturating_mul(modulation)
+        .saturating_add(0x8000)
+        >> 16;
+    let before = i64::from(r.magnitude);
+    let after = before
+        .saturating_add(amount.saturating_mul(trace.signum()))
+        .clamp(0, i64::from(i16::MAX));
+    let absorbed = after.saturating_sub(before);
+    r.moved = r.moved.saturating_add(absorbed);
+    r.magnitude = i32::try_from(after).unwrap_or(r.magnitude);
+    r.trace = i16::try_from(trace.saturating_sub(absorbed)).unwrap_or(e);
+    r.stamp = now;
+    r.pre = r.pre.saturating_add(1);
+}
+
+/// $A_+ (1 - 2^{-11})^{\Delta}$ in Q1.15, to nearest (`IstdpReplay`'s rule).
+fn istdp_window(delta: u32) -> i16 {
+    let factor = i64::from(stp_decay_factor_q16(delta, STDP_TAU_SHIFT));
+    let w = i64::from(STDP_A_PLUS_Q1_15)
+        .saturating_mul(factor)
+        .saturating_add(0x8000)
+        >> 16;
+    i16::try_from(w).unwrap_or(i16::MAX)
+}
+
+/// One schedule of a long run (exploration 005): exploration 004's readings — its blocks and
+/// trace, the value of every reward, the windows that ended inside it with each one's spikes and
+/// the gain and the step its rule left, the gain and the step at every block's end, the trials
+/// whose open window's count was not the record's, and the rate's target — and beside them the
+/// four couplings against the rail at every block's end, the synapses by the group they reach at
+/// the load and at every block's end, each unit's spikes over the schedule and in the task's
+/// ticks of its trials, the schedule's ticks from the load, and the inhibitory rule's target
+/// period; and the inhibitory rule's replay — every synapse's report and the reports by the group
+/// of the synapse's target, and at every block's end the synapses the replay held apart from the
+/// engine's. Exploration 009 adds the couplings' moves by the signal's sign (`RailPaths`).
+struct LongSchedule {
+    blocks: Vec<Block>,
+    trace: u64,
+    values: Vec<i32>,
+    windows: Vec<(u64, u32, u32)>,
+    ends: Vec<(u32, u16)>,
+    apart: u32,
+    target: Option<u32>,
+    rails: Vec<[Rail; 4]>,
+    onto_start: Onto,
+    onto: Vec<Onto>,
+    spikes: Vec<u32>,
+    in_task: Vec<u32>,
+    ticks: u64,
+    period: u32,
+    replayed: Vec<IstdpRead>,
+    replayed_by_group: Vec<(IstdpRead, i64, i64)>,
+    replay_apart: Vec<u32>,
+    paths: RailPaths,
+}
+
+/// One schedule of a long run from `image` (exploration 005): exploration 004's path, H-43's twin
+/// on time — H-25's arm under the answer, the drawn delivery, `flips`, the engine's critic and its
+/// window, two addresses kept and every reward at age zero, which is H-42's arm bit for bit from
+/// H-42's image. The engine is returned as the schedule left it, for its image. Exploration 009
+/// sets `bounds` on the engine before its first trial (`Bounds::set_on`), since no image holds
+/// them, and reads the four couplings' synapses at every trial's end against the sign of the
+/// signal the trial before left (`RailPaths`, exploration 007's reading); unbounded, the
+/// schedule is exploration 005's.
+fn long_schedule(
+    made: &Made,
+    image: &[u8],
+    arm: Reversal,
+    trials: usize,
+    flips: &[usize],
+    bounds: Bounds,
+) -> (Engine, LongSchedule) {
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = kept_from(image, units);
+    bounds.set_on(&mut exec);
+    let groups = unit_groups(&exec, &sets);
+    let task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Answer,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    let target = exec.rate_target_per_window();
+    let period = exec.istdp_target_period_ticks();
+    let onto_start = onto_of(&exec, &groups);
+    let loaded = exec.ticks();
+    let mut watch = GainWatch::new(&exec);
+    let mut steps: Vec<u32> = Vec::with_capacity(trials);
+    let mut watched = loaded;
+    let mut values: Vec<i32> = Vec::with_capacity(trials);
+    let mut ends: Vec<(u32, u16)> = Vec::with_capacity(trials / BLOCK);
+    let mut rails: Vec<[Rail; 4]> = Vec::with_capacity(trials / BLOCK);
+    let mut onto: Vec<Onto> = Vec::with_capacity(trials / BLOCK);
+    let mut spikes = vec![0u32; groups.len()];
+    let mut in_task = vec![0u32; groups.len()];
+    let mut replay = IstdpReplay::new(&exec);
+    let mut replay_apart: Vec<u32> = Vec::with_capacity(trials / BLOCK);
+    let mut couplings = coupling_weights(&exec, &sets);
+    let mut sign = SIGN_NONE;
+    let mut paths = RailPaths::default();
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        trials,
+        flips,
+        &mut |exec, trial, start, outcome| {
+            let end = exec.ticks();
+            let train = exec.train();
+            let fresh = train
+                .iter()
+                .rev()
+                .take_while(|&&(tick, _)| u64::from(tick) >= watched)
+                .count();
+            let fresh = &train[train.len().saturating_sub(fresh)..];
+            for &(tick, unit) in fresh {
+                watch.spike(u64::from(tick));
+                if let Some(n) = spikes.get_mut(unit as usize) {
+                    *n = n.saturating_add(1);
+                }
+                if tick.wrapping_sub(start) < TASK_TICKS {
+                    if let Some(n) = in_task.get_mut(unit as usize) {
+                        *n = n.saturating_add(1);
+                    }
+                }
+            }
+            for at_tick in fresh.chunk_by(|a, b| a.0 == b.0) {
+                if let Some(&(tick, _)) = at_tick.first() {
+                    replay.tick(tick, at_tick);
+                }
+            }
+            watch.trial(exec);
+            steps.push(u32::from(exec.homeostasis().control_step_q0_16));
+            watched = end;
+            if let Some(value) = outcome.value_q16 {
+                values.push(value);
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                let h = exec.homeostasis();
+                ends.push((h.synaptic_gain_q16, h.control_step_q0_16));
+                rails.push(rails_of(exec, &sets).0);
+                onto.push(onto_of(exec, &groups));
+                replay_apart.push(replay.apart_from(exec));
+            }
+            let now = coupling_weights(exec, &sets);
+            paths.trial(sign, &couplings, &now);
+            couplings = now;
+            sign = sign_of(outcome.signal_q16);
+        },
+    );
+    let windows: Vec<(u64, u32, u32)> = watch
+        .windows()
+        .iter()
+        .zip(windows_of(watch.first, &watch.counts, &watch.ends, &steps))
+        .map(|(&(count, gain), (_, step))| (count, gain, step))
+        .collect();
+    let run = LongSchedule {
+        blocks,
+        trace,
+        values,
+        windows,
+        ends,
+        apart: watch.apart,
+        target,
+        rails,
+        onto_start,
+        onto,
+        spikes,
+        in_task,
+        ticks: exec.ticks().saturating_sub(loaded),
+        period,
+        replayed: replay.reads(),
+        replayed_by_group: replay.by_group(&groups),
+        replay_apart,
+        paths,
+    };
+    (exec, run)
+}
+
+/// What a schedule's windows read of the rate's error (exploration 004), `e` a window's spikes
+/// less the target: the windows; the pairs of consecutive windows on opposite sides of the target
+/// (`opposite_pairs`); the mean count over the target and the variance of `e` over the target's
+/// square, in parts of ten thousand and of a hundred million; the autocorrelation of `e` at lags
+/// one and two in thousandths; and the largest `|e|` over the target in parts of ten thousand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Whiteness {
+    windows: usize,
+    opposite: u32,
+    mean: i128,
+    variance: i128,
+    lag1: Option<i128>,
+    lag2: Option<i128>,
+    largest: i128,
+}
+
+fn whiteness(windows: &[(u64, u32, u32)], target: u32) -> Whiteness {
+    let t = i128::from(target);
+    let e: Vec<i128> = windows
+        .iter()
+        .map(|w| i128::from(w.0).saturating_sub(t))
+        .collect();
+    let n = e.len() as i128;
+    let sum = e.iter().fold(0i128, |s, &x| s.saturating_add(x));
+    // n times each error's distance from the mean, so that no division comes before the last.
+    let d: Vec<i128> = e
+        .iter()
+        .map(|&x| x.saturating_mul(n).saturating_sub(sum))
+        .collect();
+    let squares = d
+        .iter()
+        .fold(0i128, |s, &x| s.saturating_add(x.saturating_mul(x)));
+    let lag = |k: usize| {
+        d.iter()
+            .zip(d.iter().skip(k))
+            .fold(0i128, |s, (&a, &b)| s.saturating_add(a.saturating_mul(b)))
+            .saturating_mul(1_000)
+            .checked_div(squares)
+    };
+    let pairs: Vec<(u64, u32)> = windows.iter().map(|w| (w.0, w.1)).collect();
+    Whiteness {
+        windows: e.len(),
+        opposite: opposite_pairs(&pairs, target),
+        mean: sum
+            .saturating_add(n.saturating_mul(t))
+            .saturating_mul(10_000)
+            .checked_div(n.saturating_mul(t))
+            .unwrap_or(0),
+        variance: squares
+            .saturating_mul(100_000_000)
+            .checked_div(
+                n.saturating_mul(n)
+                    .saturating_mul(n)
+                    .saturating_mul(t)
+                    .saturating_mul(t),
+            )
+            .unwrap_or(0),
+        lag1: lag(1),
+        lag2: lag(2),
+        largest: e
+            .iter()
+            .map(|&x| {
+                x.saturating_abs()
+                    .saturating_mul(10_000)
+                    .checked_div(t)
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0),
+    }
+}
+
+/// What `long_dump` returns of a schedule: H-25's four clauses, each mapping's last 128 correct,
+/// and each mapping's crossing.
+type LongRead = ([bool; 4], [u32; 4], [Option<usize>; 4]);
+
+/// A block of a long run as `long_dump` reads it (exploration 004): its index, its correct
+/// trials, the four couplings, the inhibitory sum and the outside sum over the image's in parts
+/// of ten thousand, and the gain and the step at its end.
+type LongBlock = (usize, u32, [i64; 4], i64, i64, u32, u16);
+
+/// A group's reading over a schedule (exploration 005): its name, its units, their spikes over
+/// the schedule and in the task's ticks, the ticks a unit of it took per spike (the schedule's
+/// ticks times its units over its spikes, to compare with the inhibitory rule's target period),
+/// and the inhibitory magnitudes onto it at the load and at the last block's end, the second over
+/// the first in parts of ten thousand.
+type GroupRead = (&'static str, u32, u64, u64, Option<u64>, i64, i64, i64);
+
+/// The groups' readings over a schedule (exploration 005).
+fn group_reads(run: &LongSchedule, groups: &[usize]) -> Vec<GroupRead> {
+    let last = run.onto.last().copied().unwrap_or(run.onto_start);
+    (0..TARGET_GROUPS)
+        .map(|g| {
+            let members = || {
+                groups
+                    .iter()
+                    .enumerate()
+                    .filter(move |&(_, &of)| of == g)
+                    .map(|(u, _)| u)
+            };
+            let units = members().count() as u32;
+            let spikes = members().fold(0u64, |s, u| {
+                s.saturating_add(u64::from(run.spikes.get(u).copied().unwrap_or(0)))
+            });
+            let in_task = members().fold(0u64, |s, u| {
+                s.saturating_add(u64::from(run.in_task.get(u).copied().unwrap_or(0)))
+            });
+            (
+                TARGET_GROUP_NAMES[g],
+                units,
+                spikes,
+                in_task,
+                run.ticks
+                    .saturating_mul(u64::from(units))
+                    .checked_div(spikes),
+                run.onto_start.0[g],
+                last.0[g],
+                per_myriad(last.0[g], run.onto_start.0[g]),
+            )
+        })
+        .collect()
+}
+
+/// A schedule's learning and drift, read and dumped (exploration 005): exploration 004's — H-25's
+/// four clauses against the image the long run started from, each mapping's last 128 correct and
+/// its crossing, the highest coupling, the first block past the band; per block the four
+/// couplings, the inhibitory sum and the outside sum over the image's and the gain and the step;
+/// per eight windows the mean count over the target; the error's whiteness over the schedule —
+/// and the error's whiteness from the 120th window, the couplings against the rail and the
+/// synapses by group per block, each unit's spikes, and the groups' readings.
+fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let blocks = &run.blocks;
+    let clauses = kept_clauses(&made.couplings, outside, blocks);
+    let correct = mapping_correct(blocks);
+    let crossed = crossings(blocks);
+    eprintln!("DUMP {name} blocks {blocks:?}");
+    eprintln!(
+        "DUMP {name} trace {:#018x} value hash {:#018x}",
+        run.trace,
+        values_hash(&run.values)
+    );
+    eprintln!("DUMP {name} windows {:?}", run.windows);
+    eprintln!(
+        "DUMP {name} learning: last 128 correct {correct:?}, learned {} of 4; crossings {crossed:?}; H-25's clauses {clauses:?}; highest {:?}; over {:?}; left {:?}; correct by block {:?}",
+        correct.iter().filter(|&&c| c >= 80).count(),
+        highest_of(&made.couplings, blocks),
+        first_over_of(&made.couplings, blocks),
+        left_band(outside, blocks),
+        curve(blocks)
+    );
+    let rows: Vec<LongBlock> = blocks
+        .iter()
+        .zip(&run.ends)
+        .enumerate()
+        .map(|(j, (b, &(gain, step)))| {
+            let c = |s: usize, r: usize| per_myriad(b.10[s][r], made.couplings[s][r]);
+            (
+                j,
+                b.0,
+                [c(0, 0), c(0, 1), c(1, 0), c(1, 1)],
+                per_myriad(b.7, made.sums.0),
+                per_myriad(outside_of(b), outside),
+                gain,
+                step,
+            )
+        })
+        .collect();
+    eprintln!(
+        "DUMP {name} by block (block, correct, couplings over the image's, inhibitory, outside, gain, step) {rows:?}"
+    );
+    eprintln!(
+        "DUMP {name} rails by block (A→R0, A→R1, B→R0, B→R1: synapses, highest, at 3/4 of the rail, at 7/8, at the rail) {:?}",
+        run.rails
+    );
+    eprintln!(
+        "DUMP {name} onto at the load (inhibitory by group, drained by group, excitatory by group) {:?}",
+        run.onto_start
+    );
+    eprintln!(
+        "DUMP {name} onto by block (inhibitory by group, drained by group, excitatory by group) {:?}",
+        run.onto
+    );
+    eprintln!(
+        "DUMP {name} spikes by unit over {} ticks {:?}",
+        run.ticks, run.spikes
+    );
+    eprintln!(
+        "DUMP {name} spikes by unit in the task's ticks {:?}",
+        run.in_task
+    );
+    eprintln!(
+        "DUMP {name} the inhibitory rule replayed, the synapses apart from the engine's by block {:?}",
+        run.replay_apart
+    );
+    eprintln!(
+        "DUMP {name} the inhibitory rule replayed by the target's group ((presynaptic spikes, after the previous, before this, depressed, decayed, moved), trace, magnitude) {:?}",
+        run.replayed_by_group
+    );
+    eprintln!(
+        "DUMP {name} the inhibitory rule replayed by synapse (presynaptic spikes, after the previous, before this, depressed, decayed, moved) {:?}",
+        run.replayed
+    );
+    if let Some(target) = run.target {
+        let by_eight: Vec<i64> = run
+            .windows
+            .chunks_exact(BLOCK_WINDOWS)
+            .map(|w| {
+                let spikes = w.iter().fold(0u64, |s, x| s.saturating_add(x.0));
+                per_myriad(
+                    i64::try_from(spikes).unwrap_or(i64::MAX),
+                    i64::from(target).saturating_mul(BLOCK_WINDOWS as i64),
+                )
+            })
+            .collect();
+        eprintln!(
+            "DUMP {name} the count over the target by eight windows, per myriad {by_eight:?}"
+        );
+        eprintln!(
+            "DUMP {name} whiteness at the target {target}: {:?}; from window {AFTER_THE_TRANSIENT}: {:?}; trials apart {}",
+            whiteness(&run.windows, target),
+            run.windows
+                .get(AFTER_THE_TRANSIENT..)
+                .map(|w| whiteness(w, target)),
+            run.apart
+        );
+    }
+    (clauses, correct, crossed)
+}
+
+// ======================================================================= exploration 009
+//
+// A bound at consolidation (ADR-0193, exploration 009). Exploration 007's long run, its carry
+// and its summary, as its tag holds them (`0bbccf7`), with 007's reading of where the couplings'
+// synapses rise folded into every schedule and widened to the synapses that reach seven eighths
+// of the rail and to where a synapse stood before it moved. Eight schedules from H-42's image on
+// seed 22, from both of H-25's arms, under each of two bounds of this branch's `src/`, set on
+// every schedule's engine since no image holds them: the bound at consolidation, every rise of
+// an excitatory magnitude at consolidation scaled by the room below the rail whichever the
+// signal's sign (`SynapseBlock::consolidate_signed_bounded`, `Executor::set_consolidation_bound`);
+// and exploration 007's soft bound on an excitatory pairing's potentiation begun at ADR-0055's
+// reference magnitude (`SoftBound::AboveReference`). Each prints its eighth image whole, for a
+// second half. Beside them four schedules under the default, held to exploration 005's. No
+// prediction is written, nothing is pinned, and everything is dumped before anything is held.
+
+use menteion_core::SoftBound;
+
+/// The bounds a run of exploration 009 sets on every schedule's engine, neither in any image:
+/// exploration 007's soft bound on an excitatory pairing's potentiation, and the bound at
+/// consolidation on every excitatory synapse.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Bounds {
+    pairing: Option<SoftBound>,
+    consolidation: bool,
+}
+
+impl Bounds {
+    /// The rule as it is.
+    const NONE: Self = Self {
+        pairing: None,
+        consolidation: false,
+    };
+    /// The bound at consolidation (exploration 009's first).
+    const CONSOLIDATION: Self = Self {
+        pairing: None,
+        consolidation: true,
+    };
+    /// The soft bound on the pairing's potentiation above the reference magnitude (exploration
+    /// 009's second).
+    const ABOVE_REFERENCE: Self = Self {
+        pairing: Some(SoftBound::AboveReference),
+        consolidation: false,
+    };
+
+    /// Sets both on `exec`, from its next tick.
+    fn set_on(self, exec: &mut Engine) {
+        exec.set_soft_bound(self.pairing);
+        exec.set_consolidation_bound(self.consolidation);
+    }
+
+    /// The bounds `exec`'s workers read.
+    fn of(exec: &Engine) -> Self {
+        Self {
+            pairing: exec.soft_bound(),
+            consolidation: exec.consolidation_bound(),
+        }
+    }
+}
+
+/// The schedules of a half of a long run (exploration 007's).
+const HALF_SCHEDULES: usize = 8;
+
+/// Where the images a long run carries from one job to the next are kept (exploration 009).
+const CARRIED_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/explore-009");
+
+/// Exploration 005's eight schedules on seed 22, each one's trace and value hash, from the
+/// assignment and from the mirrored assignment, as run 40300651755 on `056c76b` printed them.
+const EXPLORATION_005_RUNS: [[(u64, u64); HALF_SCHEDULES]; 2] = [
+    [
+        (0x0d18_71b8_f7ae_466c, 0xa864_650f_53e5_e682),
+        (0xbfbf_a1db_d3d2_d2a4, 0xc08f_5f4b_efe1_e539),
+        (0xa687_4fa7_fb8b_fce0, 0xec6e_5d29_da06_918b),
+        (0x2638_f1dc_609f_e98a, 0xa888_22b1_1a26_5c67),
+        (0xdf9a_89e8_1f49_a1e2, 0x5184_94a9_e728_0623),
+        (0x422f_a14b_2c59_eb0a, 0xcfcf_8463_4cb8_ce08),
+        (0xf9a8_243c_9563_bac0, 0x9c59_e3c9_8352_b345),
+        (0xbcc5_06c2_c9c9_afee, 0x46e4_0c8b_f746_708f),
+    ],
+    [
+        (0x3b65_097e_cbd8_cb48, 0x01fd_b837_5c0c_93b8),
+        (0x1158_ea9d_b764_a9ac, 0x7ee6_541c_88a2_3eb0),
+        (0xf168_ae65_d282_3e84, 0x5bd7_6a1c_22cb_6ba1),
+        (0x1eb5_4609_6bb2_94ae, 0x0c0b_530b_89af_79b1),
+        (0x5ff9_a217_883c_cd4c, 0xfa0f_4e6f_4263_4693),
+        (0x00cc_3d1c_2558_ccc6, 0xeca9_ba46_8bd8_fb9f),
+        (0xef04_5af9_4b04_a066, 0x08a5_af8d_6806_9fb4),
+        (0x7c6e_928a_16a6_81a8, 0xb632_8841_e246_5d1c),
+    ],
+];
+
+/// Where a long run of exploration 009 starts (exploration 007's).
+#[derive(Clone, Copy, Debug)]
+enum LongStart {
+    /// H-42's image, the derivation's, at schedule 0.
+    Derived,
+    /// An image a run before it wrote: the schedule it starts, the file in `CARRIED_DIR`, and
+    /// the CRC-64 the run that wrote it printed, none until it is written down here.
+    Carried {
+        schedule: usize,
+        file: &'static str,
+        crc: Option<u64>,
+    },
+}
+
+/// `bytes` in lowercase hexadecimal, two digits a byte.
+fn to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(bytes.len().saturating_mul(2));
+    for b in bytes {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
+/// What exploration 007 reads of a schedule beside exploration 005's lines (exploration 009 reads
+/// it as 007 did), for each coupling
+/// in the order A→R0, A→R1, B→R0, B→R1: the highest and the lowest coupling over the blocks'
+/// ends, over the image's in parts of ten thousand; the most synapses at the rail at a block's
+/// end and those at the last; the most at or above seven eighths of it; and the mean weight at
+/// the last block over the rail, in parts of ten thousand. Beside them the inhibitory sum at
+/// the last block over the image's, the gain the last block's end held, the three reversals'
+/// crossings summed, H-25's four clauses and each mapping's last 128 correct.
+fn summary(made: &Made, run: &LongSchedule, read: &LongRead) -> String {
+    let blocks = &run.blocks;
+    let rail = i64::from(i16::MAX);
+    let coupling =
+        |b: &Block, p: usize| per_myriad(b.10[p >> 1][p & 1], made.couplings[p >> 1][p & 1]);
+    let pairs = [0usize, 1, 2, 3];
+    let highest = pairs.map(|p| blocks.iter().map(|b| coupling(b, p)).max());
+    let lowest = pairs.map(|p| blocks.iter().map(|b| coupling(b, p)).min());
+    let at_rail_most = pairs.map(|p| run.rails.iter().map(|r| r[p].4).max());
+    let at_rail_last = pairs.map(|p| run.rails.last().map(|r| r[p].4));
+    let seven_eighths_most = pairs.map(|p| run.rails.iter().map(|r| r[p].3).max());
+    let mean_last = pairs.map(|p| {
+        let (b, r) = (blocks.last()?, run.rails.last()?);
+        Some(per_myriad(
+            b.10[p >> 1][p & 1],
+            i64::from(r[p].0).saturating_mul(rail),
+        ))
+    });
+    let inhibitory = blocks.last().map(|b| per_myriad(b.7, made.sums.0));
+    let gain = run.ends.last().map(|e| e.0);
+    let (clauses, correct, crossed) = read;
+    let reversals = crossed[1..]
+        .iter()
+        .try_fold(0usize, |s, c| c.map(|c| s.saturating_add(c)));
+    format!(
+        "highest {highest:?}; lowest {lowest:?}; at the rail most {at_rail_most:?}, at the last block {at_rail_last:?}; at or above 7/8 most {seven_eighths_most:?}; mean over the rail at the last block {mean_last:?}; inhibitory at the last block {inhibitory:?}; gain {gain:?}; reversals summed {reversals:?}; first mapping {:?}; clauses {clauses:?}; last 128 correct {correct:?}; learned {} of 4",
+        crossed[0],
+        correct.iter().filter(|&&c| c >= 80).count()
+    )
+}
+
+/// A long run of exploration 009 on network `n` (exploration 007's, its bound made `bounds`):
+/// `schedules` schedules of `trials` trials and `flips` from `start`, each from the image the
+/// one before left, every schedule's engine under `bounds`; exploration 005's readings and lines
+/// at every schedule and image, each image's CRC-64, a summary of each schedule and its
+/// couplings' moves by the signal's sign, and, where `carry`, the last image whole in
+/// hexadecimal. Everything dumped, then held: a carried image its CRC-64; the bounds the ones
+/// each engine read; the inhibitory rule's replay the engine's at every block's end of every
+/// schedule; and from H-42's image unbounded, the first schedule H-42's arm on the network bit
+/// for bit (as far as it runs, where it is shorter than H-20's), and on H-20's schedule every
+/// schedule exploration 005's in its trace and its values. Returns the last image.
+#[allow(clippy::too_many_arguments)]
+fn long_run(
+    made: &Made,
+    n: usize,
+    name: &str,
+    arm: Reversal,
+    start: LongStart,
+    schedules: usize,
+    trials: usize,
+    flips: &[usize],
+    bounds: Bounds,
+    carry: bool,
+) -> Vec<u8> {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let (first_schedule, mut image) = match start {
+        LongStart::Derived => (0usize, made.windowed.clone()),
+        LongStart::Carried {
+            schedule,
+            file,
+            crc,
+        } => {
+            let path = format!("{CARRIED_DIR}/{file}");
+            let image = std::fs::read(&path).unwrap_or_else(|e| panic!("{name}: {path}: {e}"));
+            eprintln!(
+                "DUMP {name} the carried image {file}: CRC-64 {:#018x}, {} bytes, beside the one written down {:?}",
+                crc64(&image),
+                image.len(),
+                crc.map(|c| format!("{c:#018x}"))
+            );
+            assert_eq!(
+                Some(crc64(&image)),
+                crc,
+                "{name}: the carried image is the one its run printed"
+            );
+            (schedule, image)
+        }
+    };
+    eprintln!(
+        "DUMP {name} from schedule {first_schedule}, the image's CRC-64 {:#018x}, {} bytes; H-42's image's {:#018x}, at its pinned format {:#018x}; the bounds {bounds:?}",
+        crc64(&image),
+        image.len(),
+        crc64(&made.windowed),
+        pinned_crc(&made.windowed)
+    );
+    if matches!(start, LongStart::Derived) {
+        let exec = kept_from(&made.windowed, units);
+        let groups = unit_groups(&exec, &sets);
+        let synapses = inhibitory_synapses(&exec);
+        let pairs: Vec<(u32, u32)> = synapses.iter().map(|&(p, t, _)| (p, t)).collect();
+        eprintln!(
+            "DUMP {name} groups by unit {groups:?}; rotation {}; the inhibitory rule's period {}; the rate's target {:?}",
+            made.derived.rotation,
+            exec.istdp_target_period_ticks(),
+            exec.rate_target_per_window()
+        );
+        eprintln!(
+            "DUMP {name} inhibitory synapses (presynaptic, target) {} {pairs:?}",
+            pairs.len()
+        );
+        let weights: Vec<i16> = synapses.iter().map(|s| s.2).collect();
+        eprintln!("DUMP {name} image 0 inhibitory weights {weights:?}");
+        eprintln!(
+            "DUMP {name} image 0 couplings by sixteenths of the width {:?}",
+            rails_of(&exec, &sets)
+        );
+        undropped(exec, name);
+    }
+    let mut first: Option<(Vec<Block>, u64, u64)> = None;
+    let mut runs: Vec<(u64, u64)> = Vec::new();
+    let mut readings: Vec<LongRead> = Vec::new();
+    let mut replay_apart: Vec<u32> = Vec::new();
+    let mut read_bounds: Vec<Bounds> = Vec::new();
+    for s in first_schedule..first_schedule.saturating_add(schedules) {
+        let at = format!("{name} schedule {s}");
+        let (mut exec, run) = long_schedule(made, &image, arm, trials, flips, bounds);
+        read_bounds.push(Bounds::of(&exec));
+        let read = long_dump(&at, made, &run);
+        readings.push(read);
+        replay_apart.extend_from_slice(&run.replay_apart);
+        runs.push((run.trace, values_hash(&run.values)));
+        eprintln!(
+            "DUMP {at} groups (name, units, spikes, in the task's ticks, ticks per spike a unit, inhibitory onto at the load, at the last block, over the load per myriad) at the inhibitory rule's period {}: {:?}",
+            run.period,
+            group_reads(&run, &unit_groups(&exec, &sets))
+        );
+        eprintln!("DUMP {at} summary {}", summary(made, &run, &read));
+        eprintln!(
+            "DUMP {at} paths by the signal's sign (above zero, below zero, zero), each by pair A→R0, A→R1, B→R0, B→R1: trials {:?}; gained {:?}; lost {:?}; to the rail {:?}; off the rail {:?}; to 7/8 {:?}; off 7/8 {:?}; by the band before the move (under the reference, to 3/4, at or above 3/4): gained {:?}; lost {:?}",
+            run.paths.trials,
+            run.paths.gained,
+            run.paths.lost,
+            run.paths.to_rail,
+            run.paths.off_rail,
+            run.paths.to_seven_eighths,
+            run.paths.off_seven_eighths,
+            run.paths.gained_by_band,
+            run.paths.lost_by_band
+        );
+        if s == 0 {
+            first = Some((run.blocks.clone(), run.trace, values_hash(&run.values)));
+        }
+        let quiet_ticks = quiet(&mut exec);
+        let written = Image::encode(&exec).expect("quiescent");
+        eprintln!(
+            "DUMP {at} quiet in {quiet_ticks} ticks, the image written at tick {}; the sums after {:?} beside the image's {:?}; the train let go {}",
+            exec.ticks(),
+            weights_by_polarity(&exec),
+            made.sums,
+            exec.train_overwritten()
+        );
+        let weights: Vec<i16> = inhibitory_synapses(&exec).iter().map(|s| s.2).collect();
+        let next = s.saturating_add(1);
+        eprintln!("DUMP {name} image {next} inhibitory weights {weights:?}");
+        eprintln!(
+            "DUMP {name} image {next} couplings by sixteenths of the width {:?}",
+            rails_of(&exec, &sets)
+        );
+        eprintln!(
+            "DUMP {name} image {next} CRC-64 {:#018x}, {} bytes",
+            crc64(&written),
+            written.len()
+        );
+        undropped(exec, &at);
+        image = written;
+    }
+    if carry {
+        eprintln!(
+            "DUMP {name} image {} hex {}",
+            first_schedule.saturating_add(schedules),
+            to_hex(&image)
+        );
+    }
+    eprintln!("DUMP {name} by schedule (clauses, last 128 correct, crossings) {readings:?}");
+    eprintln!(
+        "DUMP {name} by schedule (trace, value hash) [{}]",
+        runs.iter()
+            .map(|(t, v)| format!("({t:#018x}, {v:#018x})"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    // Held: the bounds each engine read, the replay the engine's rule, and from H-42's image
+    // unbounded, the first schedule H-42's arm and every schedule exploration 005's.
+    assert!(
+        read_bounds.iter().all(|&b| b == bounds),
+        "{name}: every schedule's engine under {bounds:?}: {read_bounds:?}"
+    );
+    assert!(
+        replay_apart.iter().all(|&apart| apart == 0),
+        "{name}: the inhibitory rule's replay the engine's at every block's end: {replay_apart:?}"
+    );
+    if let (Some((blocks, trace, hash)), true) = (first, bounds == Bounds::NONE) {
+        let pin = PROBE_ARM_BLOCKS[n][k];
+        if trials == SCHEDULE_TRIALS && flips == SCHEDULE_FLIPS {
+            pinned(
+                &format!("{name} schedule 0"),
+                &blocks,
+                trace,
+                pin,
+                PROBE_ARM_TRACES[n][k],
+            );
+            assert_eq!(
+                hash, PROBE_ARM_VALUE_HASH[n][k],
+                "{name}: every value H-42's"
+            );
+            eprintln!("DUMP {name} the first schedule is H-42's arm on the network, bit for bit");
+        } else {
+            assert_eq!(
+                Some(blocks.as_slice()),
+                pin.get(..blocks.len()),
+                "{name}: the first schedule's blocks H-42's as far as they run"
+            );
+        }
+    }
+    if bounds == Bounds::NONE && n == 0 && trials == SCHEDULE_TRIALS && flips == SCHEDULE_FLIPS {
+        let earlier = EXPLORATION_005_RUNS[k].get(first_schedule..).unwrap_or(&[]);
+        let shared = runs.len().min(earlier.len());
+        assert_eq!(
+            runs.get(..shared),
+            earlier.get(..shared),
+            "{name}: every schedule exploration 005 ran is that run's, its trace and its values"
+        );
+        if shared > 0 {
+            eprintln!(
+                "DUMP {name} schedules {first_schedule} to {} are exploration 005's, their traces and values bit for bit",
+                first_schedule.saturating_add(shared).saturating_sub(1)
+            );
+        }
+    }
+    image
+}
+
+/// The four couplings' synapses on `exec` in the walk's order (exploration 007): each one's
+/// pair, A→R0, A→R1, B→R0 or B→R1 as 0 to 3, and its weight.
+fn coupling_weights(exec: &Engine, sets: &[Set; 4]) -> Vec<(usize, i16)> {
+    let mut out = Vec::new();
+    for unit in exec.units() {
+        let id = unit.id as u32;
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        let from = if sets[0].contains(id) {
+            0usize
+        } else if sets[1].contains(id) {
+            2
+        } else {
+            continue;
+        };
+        for s in unit.fan_out(exec.blocks()) {
+            if sets[2].contains(s.target) {
+                out.push((from, s.weight_q1_15));
+            } else if sets[3].contains(s.target) {
+                out.push((from.saturating_add(1), s.weight_q1_15));
+            }
+        }
+    }
+    out
+}
+
+/// The index in `RailPaths` of a signal above zero, below zero, and of none or zero.
+const SIGN_ABOVE: usize = 0;
+const SIGN_BELOW: usize = 1;
+const SIGN_NONE: usize = 2;
+
+/// The index in `RailPaths` of the sign of `signal_q16` (exploration 007's).
+fn sign_of(signal_q16: i32) -> usize {
+    match signal_q16 {
+        1.. => SIGN_ABOVE,
+        ..0 => SIGN_BELOW,
+        0 => SIGN_NONE,
+    }
+}
+
+/// Where a synapse stood before it moved (exploration 009): below ADR-0055's reference magnitude,
+/// from it to three quarters of the rail, and at or above three quarters.
+const PATH_BANDS: [i16; 2] = [0x2000, RAIL_THREE_QUARTERS];
+
+/// What the four couplings' synapses did over a schedule (exploration 007), by the sign of the
+/// dopamine signal the trial before left — above zero, below zero, none or zero — and by pair: the
+/// trials of each sign, and for each sign and pair the weight gained, the weight lost, the
+/// synapses that arrived at the rail and those that left it. Exploration 009 adds, by sign and
+/// pair, the synapses that arrived at or above seven eighths of the rail from below it and those
+/// that fell below it, and by sign the weight gained and lost over the four pairs by where the
+/// synapse stood before the move (`PATH_BANDS`). A reward is given at a trial's end and its
+/// signal reaches the synapses over the next trial's ticks, so what moved between two trials'
+/// ends is set against the earlier trial's signal; the first trial of a schedule follows the
+/// lead-in, and counts as none.
+#[derive(Clone, Copy, Debug, Default)]
+struct RailPaths {
+    trials: [u32; 3],
+    gained: [[i64; 4]; 3],
+    lost: [[i64; 4]; 3],
+    to_rail: [[u32; 4]; 3],
+    off_rail: [[u32; 4]; 3],
+    to_seven_eighths: [[u32; 4]; 3],
+    off_seven_eighths: [[u32; 4]; 3],
+    gained_by_band: [[i64; 3]; 3],
+    lost_by_band: [[i64; 3]; 3],
+}
+
+impl RailPaths {
+    /// The moves between two trials' ends, `before` and `now` the couplings' synapses in the
+    /// walk's order (`coupling_weights`), set against `sign`.
+    fn trial(&mut self, sign: usize, before: &[(usize, i16)], now: &[(usize, i16)]) {
+        self.trials[sign] = self.trials[sign].saturating_add(1);
+        for (&(pair, was), &(_, is)) in before.iter().zip(now) {
+            let moved = i64::from(is).saturating_sub(i64::from(was));
+            let up = moved.max(0);
+            let down = moved.min(0).saturating_neg();
+            let band = PATH_BANDS.iter().filter(|&&b| was >= b).count();
+            let g = &mut self.gained[sign][pair];
+            *g = g.saturating_add(up);
+            let l = &mut self.lost[sign][pair];
+            *l = l.saturating_add(down);
+            let g = &mut self.gained_by_band[sign][band];
+            *g = g.saturating_add(up);
+            let l = &mut self.lost_by_band[sign][band];
+            *l = l.saturating_add(down);
+            let t = &mut self.to_rail[sign][pair];
+            *t = t.saturating_add(u32::from(was < i16::MAX && is == i16::MAX));
+            let o = &mut self.off_rail[sign][pair];
+            *o = o.saturating_add(u32::from(was == i16::MAX && is < i16::MAX));
+            let t = &mut self.to_seven_eighths[sign][pair];
+            *t = t.saturating_add(u32::from(
+                was < RAIL_SEVEN_EIGHTHS && is >= RAIL_SEVEN_EIGHTHS,
+            ));
+            let o = &mut self.off_seven_eighths[sign][pair];
+            *o = o.saturating_add(u32::from(
+                was >= RAIL_SEVEN_EIGHTHS && is < RAIL_SEVEN_EIGHTHS,
+            ));
+        }
+    }
+}
+
+/// Exploration 009, short: one schedule of two blocks from H-42's image on seed 22 from the
+/// assignment, unbounded — held to H-42's arm as far as it runs, the branch's `src/` unset — and
+/// under each bound.
+#[test]
+#[ignore]
+fn a_bound_at_consolidation_short_on_seed_22_explore() {
+    let made = probe_made(0, "bound22 short");
+    for (name, bounds) in [
+        ("bound22 short unbounded", Bounds::NONE),
+        ("bound22 short consolidation", Bounds::CONSOLIDATION),
+        ("bound22 short above the reference", Bounds::ABOVE_REFERENCE),
+    ] {
+        long_run(
+            &made,
+            0,
+            name,
+            Reversal::AssignmentFirst,
+            LongStart::Derived,
+            1,
+            2 * BLOCK,
+            &[],
+            bounds,
+            false,
+        );
+    }
+}
+
+/// Exploration 009's eight schedules from H-42's image on seed 22 from `arm`, every schedule's
+/// engine under `bounds`, the eighth image printed whole for a second half.
+fn bounded_run(label: &str, arm: Reversal, bounds: Bounds) {
+    let name = format!("{label} {arm:?}");
+    let made = probe_made(0, &name);
+    long_run(
+        &made,
+        0,
+        &name,
+        arm,
+        LongStart::Derived,
+        HALF_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        bounds,
+        true,
+    );
+}
+
+/// The images the bounds' runs wrote at their eighth schedule's end, by bound (at consolidation,
+/// above the reference) and arm (the assignment, the mirrored assignment), kept in
+/// `CARRIED_DIR` for a second half; and their CRC-64s as their runs printed them, none until
+/// written down here, so that a second half refuses to start before.
+const HALF_IMAGES_8: [[&str; 2]; 2] = [
+    [
+        "consolidation22-assignment-image-8.image",
+        "consolidation22-mirrored-image-8.image",
+    ],
+    [
+        "reference22-assignment-image-8.image",
+        "reference22-mirrored-image-8.image",
+    ],
+];
+const HALF_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [[None, None], [None, None]];
+
+/// Exploration 009's second half under bound `b` (0 at consolidation, 1 above the reference):
+/// schedules 9 to 16 from the image the first half printed at its eighth schedule's end, every
+/// schedule's engine under `bounds`, the last image printed whole.
+fn bounded_second_half(label: &str, b: usize, arm: Reversal, bounds: Bounds) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{label} {arm:?}");
+    let made = probe_made(0, &name);
+    long_run(
+        &made,
+        0,
+        &name,
+        arm,
+        LongStart::Carried {
+            schedule: HALF_SCHEDULES,
+            file: HALF_IMAGES_8[b][k],
+            crc: HALF_IMAGES_8_CRC[b][k],
+        },
+        HALF_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        bounds,
+        true,
+    );
+}
+
+/// Exploration 009, the bound at consolidation: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_bound_at_consolidation_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "consolidation22",
+        Reversal::AssignmentFirst,
+        Bounds::CONSOLIDATION,
+    );
+}
+
+/// Exploration 009, the bound at consolidation: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_bound_at_consolidation_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run(
+        "consolidation22",
+        Reversal::MirroredFirst,
+        Bounds::CONSOLIDATION,
+    );
+}
+
+/// Exploration 009, the soft bound on the pairing's potentiation above the reference magnitude:
+/// seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_bound_above_the_reference_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "reference22",
+        Reversal::AssignmentFirst,
+        Bounds::ABOVE_REFERENCE,
+    );
+}
+
+/// Exploration 009, the soft bound on the pairing's potentiation above the reference magnitude:
+/// seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_bound_above_the_reference_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run(
+        "reference22",
+        Reversal::MirroredFirst,
+        Bounds::ABOVE_REFERENCE,
+    );
+}
+
+/// Exploration 009, the bound at consolidation's second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_bound_at_consolidation_second_half_on_seed_22_from_the_assignment_explore() {
+    bounded_second_half(
+        "consolidation22",
+        0,
+        Reversal::AssignmentFirst,
+        Bounds::CONSOLIDATION,
+    );
+}
+
+/// Exploration 009, the bound at consolidation's second half: seed 22, from the mirrored
+/// assignment.
+#[test]
+#[ignore]
+fn a_bound_at_consolidation_second_half_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_second_half(
+        "consolidation22",
+        0,
+        Reversal::MirroredFirst,
+        Bounds::CONSOLIDATION,
+    );
+}
+
+/// Exploration 009, the bound above the reference's second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_bound_above_the_reference_second_half_on_seed_22_from_the_assignment_explore() {
+    bounded_second_half(
+        "reference22",
+        1,
+        Reversal::AssignmentFirst,
+        Bounds::ABOVE_REFERENCE,
+    );
+}
+
+/// Exploration 009, the bound above the reference's second half: seed 22, from the mirrored
+/// assignment.
+#[test]
+#[ignore]
+fn a_bound_above_the_reference_second_half_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_second_half(
+        "reference22",
+        1,
+        Reversal::MirroredFirst,
+        Bounds::ABOVE_REFERENCE,
+    );
+}
+
+/// Exploration 009, where the couplings' rise comes from under the default, read as the bounds'
+/// arms read it: four schedules from H-42's image on seed 22 from the assignment, exploration
+/// 007's rail paths again, each schedule held to exploration 005's.
+#[test]
+#[ignore]
+fn where_the_couplings_rise_under_the_default_on_seed_22_explore() {
+    let made = probe_made(0, "default22");
+    long_run(
+        &made,
+        0,
+        "default22",
+        Reversal::AssignmentFirst,
+        LongStart::Derived,
+        4,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        Bounds::NONE,
+        false,
+    );
+}
