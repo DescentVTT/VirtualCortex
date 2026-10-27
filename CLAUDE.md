@@ -171,8 +171,11 @@ reproduction at `scope=exhaustive` with only its own tests; the whole-tree sweep
 schedule alone ([ADR-0211](docs/adr/0211-the-round-shortened.md),
 [briefs/README.md](briefs/README.md#evidencing-a-round)). A round whose change only adds, by
 `npm run round:additive -- origin/main <commit>`, calibrates with its own calibration tests alone
-([ADR-0215](docs/adr/0215-the-calibration-a-change-needs.md)). A pull request of documents alone
-skips the gate's Rust jobs.
+([ADR-0215](docs/adr/0215-the-calibration-a-change-needs.md)).
+
+A pull request of documents alone skips the gate's Rust jobs, and so does one whose two trees, its
+base's and its merge's as those jobs read them, a green gate already tested; the mutation gate runs
+in three shards ([ADR-0223](docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)).
 
 The `cargo bench ... -- --test` line executes each benchmark once and asserts no timing. A number
 becomes Measured only through the protocol in `docs/benchmarks/README.md`; a developer-machine
@@ -199,9 +202,10 @@ CI runs `npm run spec`, one step and the same command, so a check inside it is e
   it or its pull request is open ([ADR-0186](docs/adr/0186-merge-commits.md)).
 - A change to a record and the change to its documentation travel in the same PR.
 - A rule change is an ADR first (`status: proposed`), accepted on merge.
-- A question with no prediction is an exploration, not a round: `…_explore` tests on a kept
+- A question with no prediction is an exploration, not a round: `…_explore` tests on an
   `explore/NNN-…` branch, dispatched at `scope=arms`, written down as a note in `docs/explorations/`
-  that decides nothing ([ADR-0193](docs/adr/0193-an-exploration-lane.md)).
+  that decides nothing ([ADR-0193](docs/adr/0193-an-exploration-lane.md)). When the note merges, the
+  branch becomes a tag of its name, which a ruleset keeps ([ADR-0223](docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)).
 - To execute a brief: read `briefs/README.md`, then the brief, then the files it names. When done,
   archive it as that README says, with the frozen banner and every deliverable dispositioned.
 - From brief 075 a round writes inside its brief's `affectedFiles` and never into its

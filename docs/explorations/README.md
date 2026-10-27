@@ -9,21 +9,31 @@ not evidence.** A verdict rests only on a hypothesis written before its runs and
 | :--- | :--- | :--- |
 | Written first | a decision ADR, a hypothesis and its prediction | the question, in the note |
 | Its runs | once, after the protocol is committed | as many as the question needs |
-| Its code | merged, its numbers pinned in the weekly job | on its branch; merged only if a later round takes it |
+| Its code | merged, its numbers pinned in the weekly job | on its branch, then a tag of the same name; merged only if a later round takes it |
 | Its record | an ADR, accepted on merge | a note here, `status: exploratory` |
 | What it can decide | a verdict, a stopping rule's step | nothing: it can only suggest the next question |
 
 ## Running one
 
-1. **Branch** as `explore/NNN-<slug>` from `main`, NNN the note's number (`ls docs/explorations`). The branch is kept,
-   never deleted, so that the commits its runs name stay in a branch.
+1. **Branch** as `explore/NNN-<slug>` from `main`, NNN the note's number (`ls docs/explorations`). The commits its
+   runs name must stay reachable, so the branch is never rebased or force-pushed.
 2. **Write the runs as `#[ignore]`d tests whose names end in `_explore`.** Neither `--ignored exhaustive`, the weekly
    job's listing, nor `--ignored paused` names them; `scope=arms` runs any `#[ignore]`d test by name:
    `gh workflow run ci.yml --ref explore/NNN-<slug> -f scope=arms -f tests='<test>_explore ...'`. Each test runs in a
    job of its own on AArch64, its output kept as the artifact `arm-<n>`.
 3. **A change under `src/` stays on the branch.** A rule changes only by an ADR and a measured round; an exploration
    may try one, and its note says so.
-4. **Write the note** as `docs/explorations/NNN-<slug>.md` and merge it alone, a documents-only pull request:
+4. **Write the note** as `docs/explorations/NNN-<slug>.md` and merge it alone, a documents-only pull request (the
+   template is below).
+5. **When the note merges, the branch becomes a tag of the same name**, in one push that makes the tag and deletes
+   the branch ([ADR-0223](../adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)). A tag ruleset on
+   `refs/tags/explore/*` refuses its deletion and its update. An exploration taken up again branches from its tag.
+
+```bash
+git push --atomic origin refs/remotes/origin/explore/NNN-<slug>:refs/tags/explore/NNN-<slug> :refs/heads/explore/NNN-<slug>
+```
+
+The note:
 
 ```markdown
 ---
