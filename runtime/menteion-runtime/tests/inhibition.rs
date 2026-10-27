@@ -449556,11 +449556,17 @@ fn timed_untold_run(
 }
 
 /// Exploration 008: FNV-1a over every unit's 64 bytes and every block's, as `encode` writes them,
-/// atomics as plain values: the gate byte and the mailbox head beside every potential, window,
-/// threshold and weight. The same engine state gives the same hash on either build.
+/// atomics as plain values: the gate byte beside every potential, window, threshold and weight.
+/// The mailbox head is a node index from a worker's pool, whose order the two workers' frees in
+/// one phase set (ADR-0099's scheduler bytes); it is hashed as whether the mailbox holds a
+/// message. The same engine state gives the same hash on either build.
 fn arena_hash(exec: &Engine) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    let units = exec.units().iter().map(|u| u.encode());
+    let units = exec.units().iter().map(|u| {
+        let mut bytes = u.encode();
+        bytes[8..16].copy_from_slice(&u64::from(!u.mailbox_is_empty()).to_le_bytes());
+        bytes
+    });
     let blocks = exec.blocks().iter().map(|b| b.encode());
     for record in units.chain(blocks) {
         for byte in record {
