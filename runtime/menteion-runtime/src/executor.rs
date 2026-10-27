@@ -1300,29 +1300,21 @@ impl Shared {
 
     /// The word of the schedule that holds `unit`'s bit, and the bit (ADR-0100): the unit's
     /// place in its owner's range, `unit − owner·share`, is bit `place mod 64` of the owner's
-    /// word `place / 64`. None for a unit outside the arena.
+    /// word `place / 64`. None for a unit outside the arena. The tests' view of `word_of`.
+    #[cfg(test)]
     fn place(&self, unit: u32) -> Option<(&AtomicU64, u64)> {
         let (word, bit) = self.word_of(unit)?;
         Some((self.scheduled.get(word)?, bit))
     }
 
-    /// The index of the word that holds `unit`'s bit in a map laid out as the schedule is, and
-    /// the bit; none for a unit outside the arena.
+    /// The index of the word that holds `unit`'s bit in a map laid out as the schedule is, the
+    /// schedule and the asleep map, and the bit; none for a unit outside the arena.
     fn word_of(&self, unit: u32) -> Option<(usize, u64)> {
         let owner = self.owner(unit)?;
         // Below the share: `owner·share` is at most `unit`, which `owner` is the quotient of.
         let at = (unit as usize).wrapping_sub(owner.wrapping_mul(self.share));
         let word = owner.wrapping_mul(self.stride).wrapping_add(at >> 6);
         Some((word, 1u64 << (at & 63)))
-    }
-
-    /// True while `unit` is asleep (ADR-0224); false for a unit outside the arena.
-    fn is_asleep(&self, unit: u32) -> bool {
-        self.word_of(unit).is_some_and(|(word, bit)| {
-            self.asleep
-                .get(word)
-                .is_some_and(|asleep| asleep.load(Ordering::Relaxed) & bit == bit)
-        })
     }
 
     /// The unit of bit `bit` of the word `word` of a map laid out as the schedule is (ADR-0100):
@@ -1345,14 +1337,21 @@ impl Shared {
     /// unit's gate is recorded scheduled, as per-tick service records it while the unit is not
     /// at rest, and its bit is clear (ADR-0224): it is marked as an idle one is.
     fn mark(&self, unit: u32, u: &DendriticSuperNeuron) {
-        if u.gate() == Some(GateState::Scheduled) && !self.is_asleep(unit) {
+        let Some((word, bit)) = self.word_of(unit) else {
+            abort("a marked unit is outside the arena");
+        };
+        let asleep = self
+            .asleep
+            .get(word)
+            .is_some_and(|asleep| asleep.load(Ordering::Relaxed) & bit == bit);
+        if u.gate() == Some(GateState::Scheduled) && !asleep {
             return;
         }
         u.set_gate(GateState::Scheduled);
-        let Some((word, bit)) = self.place(unit) else {
+        let Some(scheduled) = self.scheduled.get(word) else {
             abort("a marked unit is outside the arena");
         };
-        word.fetch_or(bit, Ordering::Relaxed);
+        scheduled.fetch_or(bit, Ordering::Relaxed);
     }
 }
 
