@@ -149,7 +149,31 @@ case "$mode" in
     cat "$out/perf-version.txt"
     export CARGO_PROFILE_RELEASE_DEBUG=line-tables-only CARGO_PROFILE_RELEASE_STRIP=none
     build release inhibition || exit 1
-    run_one 1 perf "$perf" record -q -e cpu-clock -F 49 --call-graph dwarf,8192 -o perf.data -- "$bin"
+    # The event and its call chains: the first of these that perf opens for sampling here. On the
+    # AArch64 runner of run 40439977283, perf 6.17 refused `cpu-clock` with DWARF chains
+    # ("cpu-clock:H: PMU Hardware doesn't support sampling/overflow-interrupts").
+    event=
+    for pair in cpu-clock/dwarf,8192 cpu-clock:u/dwarf,8192 task-clock:u/dwarf,8192 \
+      task-clock/dwarf,8192 software/cpu-clock/u/dwarf,8192 cpu-clock:u/fp cpu-clock:u/none; do
+      ev=${pair%/*}
+      cg=${pair##*/}
+      chains=(--call-graph "$cg")
+      [ "$cg" = none ] && chains=()
+      echo "--- $ev, call graph $cg" >> "$out/perf-probe.txt"
+      if "$perf" record -q -e "$ev" -F 49 "${chains[@]}" -o probe.data -- "$bin" --list \
+        >> "$out/perf-probe.txt" 2>&1; then
+        event=$ev
+        break
+      fi
+    done
+    grep -v ': test$' "$out/perf-probe.txt" | tail -n 40
+    if [ -z "$event" ]; then
+      echo "no event samples here"
+      exit 1
+    fi
+    echo "the event: $event, call graph $cg"
+    echo "event: $event, call graph $cg" >> "$out/perf-version.txt"
+    run_one 1 perf "$perf" record -q -e "$event" -F 49 "${chains[@]}" -o perf.data -- "$bin"
     ls -l perf.data
     started=$SECONDS
     "$perf" report -i perf.data --no-children --sort dso,sym --stdio -g none --percent-limit 0.1 \
