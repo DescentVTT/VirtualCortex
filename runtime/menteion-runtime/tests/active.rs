@@ -315,25 +315,28 @@ fn read(exec: &mut Engine, drive: &Drive, lengths: &[u64], census: Census) -> (V
 const WORKERS: usize = 2;
 
 /// The reference network at `units` on `workers`: ADR-0044's prior synthesized at the
-/// instrument's gain, the controller off and the modulation baseline zero.
+/// instrument's gain, the controller off and the modulation baseline zero. Served per tick, the
+/// tests' reference (ADR-0224): the active set this binary reads tick by tick is per-tick
+/// service's, which service on arrival carries out with fewer turns.
 fn network(units: u32, workers: usize) -> Engine {
-    let exec = at_gain(&prior(units), config(units, workers, 0), GAIN_1024);
+    let exec = at_gain(&prior(units), config(units, workers, 0), GAIN_1024).per_tick();
     assert_eq!(exec.modulation_baseline_q16(), 0, "no weight moves");
     exec
 }
 
 /// The control at `units` on `workers`: the same executor and gain, every unit armed at its
-/// base threshold and wired to nothing, so that what serves a unit is the drive alone.
+/// base threshold and wired to nothing, so that what serves a unit is the drive alone. Served
+/// per tick, as `network` is.
 fn unwired(units: u32, workers: usize) -> Engine {
     let config = config(units, workers, 0);
     let mut exec = Engine::new(config.clone()).unwrap();
     for u in exec.units_mut() {
         u.v_thresh = THRESHOLD_BASE;
     }
-    reload_with(&exec, config, |h| h.synaptic_gain_q16 = GAIN_1024)
+    reload_with(&exec, config, |h| h.synaptic_gain_q16 = GAIN_1024).per_tick()
 }
 
-/// One armed unit at rest with no synapse, at `gain`.
+/// One armed unit at rest with no synapse, at `gain`. Served per tick, as `network` is.
 fn one_unit(gain: u32) -> Engine {
     let config = Config {
         units: 1,
@@ -344,7 +347,7 @@ fn one_unit(gain: u32) -> Engine {
     };
     let mut exec = Engine::new(config.clone()).unwrap();
     exec.units_mut()[0].v_thresh = THRESHOLD_BASE;
-    reload_with(&exec, config, |h| h.synaptic_gain_q16 = gain)
+    reload_with(&exec, config, |h| h.synaptic_gain_q16 = gain).per_tick()
 }
 
 /// A row's turns as parts per million of every unit on every tick.
