@@ -2577,7 +2577,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md) | The cost of a test run alone, and a bound of 240 minutes | accepted |
 | [ADR-0221](adr/0221-the-project-renamed-menteion.md) | The project renamed Menteion | accepted |
 | [ADR-0222](adr/0222-the-project-renamed-menteion-built.md) | The project renamed Menteion, built | accepted |
-| [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | proposed |
+| [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | accepted |
 <!-- adr-index: end decisions -->
 
 ---

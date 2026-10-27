@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-27
 amends: [ADR-0193, ADR-0211]
 title: The gate shortened, the schedule moved, and explorations kept as tags
