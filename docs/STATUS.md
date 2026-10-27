@@ -56,5 +56,5 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 ## The next decision
 
 Brief 084 built service on arrival: every pin held, and the weekly job's longest shard took 62 of its 240 minutes.
-1. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning. Exploration 010, a readout's sum held, is next. F-86 is open.
+1. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning, and [010](explorations/010-a-readouts-sum-held.md) held a readout's sum and not its couplings. F-86 is open.
 2. A read of the arena on every tick catches every asleep unit up a tick, so a test that reads it so takes longer ([ADR-0225](adr/0225-a-unit-served-on-arrival-built.md)): what such a reading should pay is not decided.

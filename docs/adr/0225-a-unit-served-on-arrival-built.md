@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-28
 depends-on: ADR-0224
 title: A unit served on arrival, built

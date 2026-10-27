@@ -2600,7 +2600,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0222](adr/0222-the-project-renamed-menteion-built.md) | The project renamed Menteion, built | accepted |
 | [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | accepted |
 | [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | accepted |
-| [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | proposed |
+| [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
 <!-- adr-index: end decisions -->
 
 ---
