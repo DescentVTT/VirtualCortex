@@ -1,11 +1,12 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0224](adr/0224-a-unit-served-on-arrival.md) wrote it on 2026-10-28, after explorations 006 to 009 and before brief 084.
+[ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) wrote it on 2026-10-28, at the end of brief 084.
 
 ## The engine
 
 - **It runs.** The records with their layout assertions, the update rules, synaptic fan-out with three-factor STDP, the executor on a pool of workers that each own a range of the unit arena, the `.menteion` image (format 26, its magic `MENTEION`), the criticality controller, sleep with the episodic ledger and its replay, and the symbolic layer are Implemented ([§1.6](WHITEPAPER.md#16-implementation-status-at-a-glance)).
+- **It serves a unit on arrival** ([ADR-0225](adr/0225-a-unit-served-on-arrival-built.md)): a unit that cannot fire with no input sleeps off the schedule and is caught up bit for bit at its next message or when the arena is read. Per-tick service stays the model and the tests' reference, `Executor::per_tick`. The weekly job's tests took 0.417 of their seconds before on x86-64, and the 16-block workload 0.74 on AArch64.
 - **Its default** for an image no derivation has settled is `Config::reads_its_targets()`: `Config::default()` with the modulation at rest 0.5, the gain 1.75, the read of 128 windows, both targets by it, and the probe, so the rate's rule runs at the step the engine makes in step = 1/16's place ([ADR-0196](adr/0196-the-engines-default.md), [ADR-0205](adr/0205-the-probe-in-the-engines-default.md)).
 - **An engine born under it** writes H-42's candidate's image byte for byte on seeds 22, 23 and 24 ([ADR-0206](adr/0206-the-probe-in-the-engines-default-built.md)). `Config::default()` stays the bare engine every pin runs.
 - **It can keep its addresses** ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)): with `Config::kept_addresses` set, each trial's close keeps the address, and a reward that names its trial's age consolidates under it.
@@ -41,12 +42,12 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 - The controller's step under its estimate is zero in every run that learns (ADR-0077, ADR-0177).
 - The rate's rule, the read of its target, the read's flag and the probe are each set in the default; no network but H-42's three has run under it.
 - The kept addresses and the delay read are parameters of the configuration that no default sets; H-43 and H-45 ran them at `kept_addresses` 2.
-- The speed line was closed with the sweep kept and the lanes reverted ([ADR-0105](adr/0105-the-speed-line-closed.md)); ADR-0224 takes service on arrival from it.
+- Of the speed line ([ADR-0105](adr/0105-the-speed-line-closed.md)), the sweep and service on arrival are kept, and the lanes reverted.
 
 ## What does not exist
 
 - Every subsystem's real dynamics beyond these rules.
-- The lookahead ADR-0099 ordered, and a lever on the rest of the turn.
+- The lookahead ADR-0099 ordered, a lever on the rest of the turn, and a catch-up in fewer steps than ticks.
 - The real-time mode's reach, measured on the reference platform.
 - The `mmap` path, the shared-memory mappings, core pinning, the tool broker and standardising apart.
 - A delay that changes during a run, a delay past two trials, and a mapping kept through a late move: the first is lost at age zero.
@@ -54,7 +55,6 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 
 ## The next decision
 
-H-45 read yes at step 3 of its stopping rule: the engine reads a delay of one or two trials it is not told.
-1. Brief 084 builds [ADR-0224](adr/0224-a-unit-served-on-arrival.md): the executor serves a unit on arrival, per-tick service bit for bit, every pin held. [Exploration 008](explorations/008-a-unit-served-on-arrival.md) read a heavy arm at 0.581 of its time on x86-64 and 0.771 on AArch64.
-2. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning. Exploration 010, a readout's sum held, is the next beside brief 084. F-86 is open.
-3. What the weekly job holds: on 2026-10-26 its longest shard took 59.8 % of its 240-minute bound, and each round of eighteen arms adds about 12 minutes.
+Brief 084 built service on arrival: every pin held, and the weekly job's longest shard took 62 of its 240 minutes.
+1. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning. Exploration 010, a readout's sum held, is next. F-86 is open.
+2. A read of the arena on every tick catches every asleep unit up a tick, so a test that reads it so takes longer ([ADR-0225](adr/0225-a-unit-served-on-arrival-built.md)): what such a reading should pay is not decided.

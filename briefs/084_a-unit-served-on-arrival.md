@@ -67,7 +67,7 @@ Re-derived on 2026-10-28 against `main` at `e33e0ed`. Line numbers move; the sym
 
 ## Deliverables
 
-- [ ] **The service, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The service, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - The condition and the catch-up in `menteion-core`, with their property tests over the lattice and a driven walk.
   - The executor: a unit off the schedule under the condition, back on it at a message or an activation, brought up to date at its next turn and before any read of the arena, `Executor::sweep`'s included, and brought up to date and put back on the schedule before any write.
   - A unit marked `FLAG_SLOW` under the image's slow current never sleeps.
@@ -76,13 +76,13 @@ Re-derived on 2026-10-28 against `main` at `e33e0ed`. Line numbers move; the sym
   - `Executor::turns` counting the turns served, as each worker's count does, and a second count of the steps caught up at a turn and at a read; over a run, once a read has brought every asleep unit up to date, the two together held to per-tick service's turns by the differential test.
   - ADR-0097's tests run on the per-tick reference, their assertions unchanged.
   - How the arena is brought up to date between ticks: under `&mut self`, or under ADR-0023's invariant restated with its test.
-- [ ] **The dispatch at `scope=exhaustive`**, every test, on the round's last code commit, every shard green: every pinned number held. The cost table regenerated from its artifacts, and its seconds read beside the table before it, test by test.
-- [ ] **The alternation on AArch64**, at `scope=arms`: exploration 008's 16-block workload, and the reference network at 1 024 units under ADR-0097's drive 256 times sparser, each under both services on one runner, three rounds, inside one test since an arms job runs one. The test's name holds neither `exhaustive`, which would put it in the weekly job, nor `_explore`, the exploration lane's ([ADR-0193](../docs/adr/0193-an-exploration-lane.md)).
-- [ ] **The documents, in the same pull request.**
+- [x] **The dispatch at `scope=exhaustive`**, every test, on the round's last code commit, every shard green: every pinned number held. The cost table regenerated from its artifacts, and its seconds read beside the table before it, test by test.
+- [x] **The alternation on AArch64**, at `scope=arms`: exploration 008's 16-block workload, and the reference network at 1 024 units under ADR-0097's drive 256 times sparser, each under both services on one runner, three rounds, inside one test since an arms job runs one. The test's name holds neither `exhaustive`, which would put it in the weekly job, nor `_explore`, the exploration lane's ([ADR-0193](../docs/adr/0193-an-exploration-lane.md)).
+- [x] **The documents, in the same pull request.**
   - The whitepaper's sentences on per-tick service, the active set and the integration model, saying per-tick service carried out on arrival; its version in both declarations, with its date; the tables written by `node scripts/adr-index.mjs`.
   - `docs/STATUS.md` rewritten whole.
   - `CHANGELOG.md`, one entry of at most 400 characters.
-- [ ] **The brief archived** with `spec-brief archive 084 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 084 --strict`, every deliverable dispositioned. The round's ADR is set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
