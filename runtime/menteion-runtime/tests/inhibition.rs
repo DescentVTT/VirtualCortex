@@ -472382,7 +472382,7 @@ enum LongStart {
 
 /// The image the short run's first half wrote at its one schedule's end, and its CRC-64.
 const SHORT_IMAGE_1: &str = "short22-image-1.image";
-const SHORT_IMAGE_1_CRC: Option<u64> = None;
+const SHORT_IMAGE_1_CRC: Option<u64> = Some(0x841f_164e_b6fd_efb2);
 
 /// The images the long run's first halves wrote at their eighth schedule's end, from the
 /// assignment and from the mirrored assignment, and their CRC-64s.
