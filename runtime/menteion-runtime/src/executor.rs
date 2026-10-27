@@ -830,12 +830,14 @@ fn inhibitory_of_word(word: i32) -> Option<i32> {
 }
 
 /// The word the coordinator publishes for the soft bound (exploration 007): zero while unset,
-/// one for `SoftBound::Width` and two for `SoftBound::TopEighth`.
+/// one for `SoftBound::Width`, two for `SoftBound::TopEighth` and three for
+/// `SoftBound::AboveReference` (exploration 009).
 const fn soft_bound_word(bound: Option<SoftBound>) -> u8 {
     match bound {
         None => 0,
         Some(SoftBound::Width) => 1,
         Some(SoftBound::TopEighth) => 2,
+        Some(SoftBound::AboveReference) => 3,
     }
 }
 
@@ -844,6 +846,7 @@ const fn soft_bound_of_word(word: u8) -> Option<SoftBound> {
     match word {
         1 => Some(SoftBound::Width),
         2 => Some(SoftBound::TopEighth),
+        3 => Some(SoftBound::AboveReference),
         _ => None,
     }
 }
@@ -854,14 +857,17 @@ const fn soft_bound_of_word(word: u8) -> Option<SoftBound> {
 /// `consolidate_each_is_consolidate_signed_slot_by_slot_and_consolidate_all_above_zero` holds
 /// with the previous call as its oracle; only an addressed excitatory slot under the signed
 /// gate is ever given one below zero (`Modulations::for_synapse`). An empty slot's modulation
-/// is not read, since neither rule moves anything there.
+/// is not read, since neither rule moves anything there. Exploration 009 (ADR-0193): under
+/// `bound`, every slot's [`SynapseBlock::consolidate_signed_bounded`] instead; unset, it is
+/// `consolidate_signed`'s bit for bit.
 fn consolidate_each(
     block: &mut SynapseBlock,
     modulations: &[i32; SYNAPSES_PER_BLOCK],
     polarity: Polarity,
+    bound: bool,
 ) {
     for (slot, &modulation) in modulations.iter().enumerate() {
-        block.consolidate_signed(slot, modulation, polarity);
+        block.consolidate_signed_bounded(slot, modulation, polarity, bound);
     }
 }
 
@@ -1266,6 +1272,10 @@ struct Shared {
     /// stored between ticks by `Executor::set_soft_bound`, read by every worker in the fan-out
     /// phase.
     soft_bound: AtomicU8,
+    /// Exploration 009 (ADR-0193), on its branch alone and in no image: the bound at
+    /// consolidation on every excitatory synapse, false while unset; stored between ticks by
+    /// `Executor::set_consolidation_bound`, read by every worker in the fan-out phase.
+    consolidation_bound: AtomicBool,
     /// The units that fired this tick, one slot per unit, appended by every worker at the
     /// spike through `fired_len` and taken by the coordinator after the tick into the train
     /// (ADR-0050); empty when the executor keeps no train.
@@ -1673,6 +1683,7 @@ impl<const CAP: usize> Executor<CAP> {
                 config.istdp_target_period_ticks,
             ))),
             soft_bound: AtomicU8::new(soft_bound_word(None)),
+            consolidation_bound: AtomicBool::new(false),
             fired: (0..fired_slots).map(|_| AtomicU32::new(0)).collect(),
             fired_len: AtomicUsize::new(0),
             episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
@@ -1835,6 +1846,21 @@ impl<const CAP: usize> Executor<CAP> {
     /// The soft bound the workers read (exploration 007), none while unset.
     pub fn soft_bound(&self) -> Option<SoftBound> {
         soft_bound_of_word(self.shared.soft_bound.load(Ordering::Relaxed))
+    }
+
+    /// Exploration 009 (ADR-0193): sets the bound at consolidation on every excitatory synapse
+    /// (`SynapseBlock::consolidate_signed_bounded`), between ticks, from the next tick; `false`
+    /// unsets it. An inhibitory synapse consolidates under the rule. It is in no image, so an
+    /// engine decoded from one starts unset.
+    pub fn set_consolidation_bound(&mut self, bound: bool) {
+        self.shared
+            .consolidation_bound
+            .store(bound, Ordering::Relaxed);
+    }
+
+    /// The bound at consolidation the workers read (exploration 009), false while unset.
+    pub fn consolidation_bound(&self) -> bool {
+        self.shared.consolidation_bound.load(Ordering::Relaxed)
     }
 
     /// The loader's: the target period an image holds, which outranks the configuration's
@@ -3855,6 +3881,9 @@ impl<const CAP: usize> Worker<CAP> {
         // The soft bound on an excitatory pairing's potentiation (exploration 007), none
         // while unset, where every pairing is `step_stdp_all`'s bit for bit.
         let bound = soft_bound_of_word(shared.soft_bound.load(Ordering::Relaxed));
+        // The bound at consolidation (exploration 009), false while unset, where every
+        // consolidation is `consolidate_signed`'s bit for bit.
+        let consolidation_bound = shared.consolidation_bound.load(Ordering::Relaxed);
         for k in 0..self.spiked.len() {
             let (unit, release_u, release_r) = self.spiked[k];
             // SAFETY (phase 2): every turn ended at the barrier, so no `&mut` to any unit
@@ -3868,6 +3897,8 @@ impl<const CAP: usize> Worker<CAP> {
             // Whether the chain's synapses are from an addressed source (ADR-0068), read once
             // for the whole chain; the target side is read per slot below.
             let from_source = shared.is_source(unit);
+            // The bound at consolidation on an excitatory chain alone (exploration 009).
+            let bounded = consolidation_bound && matches!(polarity, Polarity::Excitatory);
             let mut next = pre.synapse_slab_idx;
             let mut remaining = shared.blocks.len();
             while next != CHAIN_END && remaining > 0 {
@@ -3901,7 +3932,7 @@ impl<const CAP: usize> Worker<CAP> {
                     )
                 });
                 block.step_stdp_all_bounded(now, posts, polarity, istdp_alpha, bound);
-                consolidate_each(block, &per_slot, polarity);
+                consolidate_each(block, &per_slot, polarity, bounded);
                 let released = block.release_all(release_u, release_r);
                 for (slot, &efficacy) in released.iter().enumerate() {
                     let Some(target) = block.target(slot) else {
@@ -6995,7 +7026,12 @@ mod prop {
             };
             let modulation = lcg.i32_edge_biased();
             let mut each = block;
-            consolidate_each(&mut each, &[modulation; SYNAPSES_PER_BLOCK], polarity);
+            consolidate_each(
+                &mut each,
+                &[modulation; SYNAPSES_PER_BLOCK],
+                polarity,
+                false,
+            );
             let mut oracle = block;
             let weights = oracle.consolidate_all(modulation.max(0), polarity);
             if modulation >= 0 {
@@ -7015,8 +7051,17 @@ mod prop {
                 expected.consolidate_signed(slot, m, polarity);
             }
             let mut each = block;
-            consolidate_each(&mut each, &per_slot, polarity);
+            consolidate_each(&mut each, &per_slot, polarity, false);
             assert_eq!(each, expected, "round {round}: slot by slot");
+            // Exploration 009: under the bound at consolidation, every slot is its own
+            // `consolidate_signed_bounded`, in order.
+            let mut expected = block;
+            for (slot, &m) in per_slot.iter().enumerate() {
+                expected.consolidate_signed_bounded(slot, m, polarity, true);
+            }
+            let mut each = block;
+            consolidate_each(&mut each, &per_slot, polarity, true);
+            assert_eq!(each, expected, "round {round}: slot by slot, bounded");
         }
         assert!(
             below > 100,
