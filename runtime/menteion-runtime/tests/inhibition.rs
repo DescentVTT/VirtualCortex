@@ -472843,3 +472843,166 @@ fn a_soft_bound_in_the_top_eighth_on_seed_22_from_the_assignment_explore() {
 fn a_soft_bound_in_the_top_eighth_on_seed_22_from_the_mirrored_assignment_explore() {
     soft_bound_run(Reversal::MirroredFirst, SoftBound::TopEighth);
 }
+
+/// The four couplings' synapses on `exec` in the walk's order (exploration 007): each one's
+/// pair, A→R0, A→R1, B→R0 or B→R1 as 0 to 3, and its weight.
+fn coupling_weights(exec: &Engine, sets: &[Set; 4]) -> Vec<(usize, i16)> {
+    let mut out = Vec::new();
+    for unit in exec.units() {
+        let id = unit.id as u32;
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        let from = if sets[0].contains(id) {
+            0usize
+        } else if sets[1].contains(id) {
+            2
+        } else {
+            continue;
+        };
+        for s in unit.fan_out(exec.blocks()) {
+            if sets[2].contains(s.target) {
+                out.push((from, s.weight_q1_15));
+            } else if sets[3].contains(s.target) {
+                out.push((from.saturating_add(1), s.weight_q1_15));
+            }
+        }
+    }
+    out
+}
+
+/// What the four couplings' synapses did over a schedule (exploration 007), by the sign of the
+/// dopamine signal the trial before left — above zero, below zero, zero — and by pair: the trials
+/// of each sign, and for each sign and pair the weight gained, the weight lost, the synapses
+/// that arrived at the rail and those that left it.
+#[derive(Clone, Copy, Debug, Default)]
+struct RailPaths {
+    trials: [u32; 3],
+    gained: [[i64; 4]; 3],
+    lost: [[i64; 4]; 3],
+    to_rail: [[u32; 4]; 3],
+    off_rail: [[u32; 4]; 3],
+}
+
+/// Exploration 007's reading of where the couplings' rise and their synapses at the rail come
+/// from: `schedules` of H-20's schedules from H-42's image on seed 22, every schedule's engine
+/// under `bound`, each from the image the one before left, as `long_run` runs them. A reward is
+/// given at a trial's end and its signal reaches the synapses over the next trial's ticks, so
+/// what the couplings' synapses did between two trials' ends is set against the sign of the
+/// signal the earlier trial's reward left (none for the first trial, the lead-in's). Dumped per
+/// schedule with its trace and value hash; held, unbounded, to exploration 005's.
+fn rail_paths(name: &str, arm: Reversal, schedules: usize, bound: Option<SoftBound>) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let made = probe_made(0, name);
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let mut image = made.windowed.clone();
+    let mut runs: Vec<(u64, u64)> = Vec::new();
+    for s in 0..schedules {
+        let mut exec = kept_from(&image, units);
+        exec.set_soft_bound(bound);
+        let task = task_over(
+            sets,
+            SHAPE_F46,
+            Some(made.derived.cancel),
+            units,
+            Feedback::Answer,
+            first_mapping(arm),
+            DRAWN_DELIVERY,
+        );
+        let mut before = coupling_weights(&exec, &sets);
+        let mut sign = 2usize;
+        let mut paths = RailPaths::default();
+        let mut values: Vec<i32> = Vec::with_capacity(SCHEDULE_TRIALS);
+        let (_, trace) = run_on_scheduled_over(
+            sets,
+            &mut exec,
+            task,
+            units,
+            SCHEDULE_TRIALS,
+            &SCHEDULE_FLIPS,
+            &mut |exec, _, _, outcome| {
+                let now = coupling_weights(exec, &sets);
+                paths.trials[sign] = paths.trials[sign].saturating_add(1);
+                for (&(pair, was), &(_, is)) in before.iter().zip(&now) {
+                    let moved = i64::from(is).saturating_sub(i64::from(was));
+                    let g = &mut paths.gained[sign][pair];
+                    *g = g.saturating_add(moved.max(0));
+                    let l = &mut paths.lost[sign][pair];
+                    *l = l.saturating_add(moved.min(0).saturating_neg());
+                    let t = &mut paths.to_rail[sign][pair];
+                    *t = t.saturating_add(u32::from(was < i16::MAX && is == i16::MAX));
+                    let o = &mut paths.off_rail[sign][pair];
+                    *o = o.saturating_add(u32::from(was == i16::MAX && is < i16::MAX));
+                }
+                before = now;
+                sign = match outcome.signal_q16 {
+                    1.. => 0,
+                    ..0 => 1,
+                    0 => 2,
+                };
+                if let Some(value) = outcome.value_q16 {
+                    values.push(value);
+                }
+            },
+        );
+        runs.push((trace, values_hash(&values)));
+        eprintln!(
+            "DUMP {name} schedule {s} trace {trace:#018x} value hash {:#018x}; by the signal's sign (above zero, below zero, zero): trials {:?}; gained {:?}; lost {:?}; to the rail {:?}; off the rail {:?}",
+            values_hash(&values),
+            paths.trials,
+            paths.gained,
+            paths.lost,
+            paths.to_rail,
+            paths.off_rail
+        );
+        quiet(&mut exec);
+        image = Image::encode(&exec).expect("quiescent");
+        undropped(exec, name);
+    }
+    if bound.is_none() {
+        let shared = runs.len().min(HALF_SCHEDULES);
+        assert_eq!(
+            runs.get(..shared),
+            EXPLORATION_005_RUNS[k].get(..shared),
+            "{name}: every schedule exploration 005's, its trace and its values"
+        );
+    }
+}
+
+/// Exploration 007, where the couplings' rise comes from: four schedules under the default,
+/// seed 22, from the assignment.
+#[test]
+#[ignore]
+fn where_the_couplings_rise_on_seed_22_explore() {
+    rail_paths("paths22", Reversal::AssignmentFirst, 4, None);
+}
+
+/// Exploration 007, where the couplings' rise comes from: four schedules under the soft bound
+/// over the width, seed 22, from the assignment.
+#[test]
+#[ignore]
+fn where_the_couplings_rise_under_the_soft_bound_over_the_width_on_seed_22_explore() {
+    rail_paths(
+        "paths22 width",
+        Reversal::AssignmentFirst,
+        4,
+        Some(SoftBound::Width),
+    );
+}
+
+/// Exploration 007, where the couplings' rise comes from: four schedules under the soft bound in
+/// the top eighth, seed 22, from the assignment.
+#[test]
+#[ignore]
+fn where_the_couplings_rise_under_the_soft_bound_in_the_top_eighth_on_seed_22_explore() {
+    rail_paths(
+        "paths22 top eighth",
+        Reversal::AssignmentFirst,
+        4,
+        Some(SoftBound::TopEighth),
+    );
+}
