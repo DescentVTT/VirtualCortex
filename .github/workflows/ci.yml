@@ -503,7 +503,10 @@ jobs:
     name: Arm ${{ matrix.test }} (ADR-0184)
     needs: [arms-plan]
     if: github.event_name == 'workflow_dispatch' && inputs.scope == 'arms'
-    runs-on: ubuntu-24.04-arm
+    # Exploration 008, on its branch alone (ADR-0193): a test named `x86-64/<mode>/<test>` runs on
+    # the weekly shards' runner and is run by scripts/explore-008/run.sh, as is `aarch64/<mode>/<test>`
+    # here; any other name runs as before.
+    runs-on: ${{ startsWith(matrix.test, 'x86-64/') && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     timeout-minutes: 240 # the weekly shard's (ADR-0220)
     strategy:
       # One arm that fails must not stop the others.
@@ -525,7 +528,11 @@ jobs:
       - name: The test, in the release profile, its output kept (ADR-0184)
         env:
           TEST: ${{ matrix.test }}
-        run: bash scripts/arm-run.sh "$TEST"
+        run: |
+          case "$TEST" in
+            */*) bash scripts/explore-008/run.sh "$TEST" ;;
+            *) bash scripts/arm-run.sh "$TEST" ;;
+          esac
 
       - name: What the test took
         if: always()
@@ -548,6 +555,7 @@ jobs:
             arm.log
             arm.tsv
             list.log
+            explore-008/
           retention-days: 90
 
   mutants-weekly:

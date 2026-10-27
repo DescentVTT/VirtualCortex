@@ -449411,6 +449411,231 @@ fn a_delay_read_two_trials_late_untold_on_seed_24_from_the_mirrored_assignment_a
     untold_arm(2, Reversal::MirroredFirst, 2);
 }
 
+// ------------------------------------- exploration 008 (on its branch alone, ADR-0193)
+
+/// Exploration 008 (`explore/008-a-unit-served-on-arrival`), its workload exploration 006's
+/// (`explore/006-where-an-arm-spends-its-time`), copied whole: `untold_run` over the first
+/// `trials` of the schedule, with the clock read after the derivation, after the engine is
+/// decoded and at the end of each block, each reading printed as a `TIME` line in milliseconds
+/// since `clock`. Nothing else differs from `untold_run`. At the end it prints the turns the
+/// arm's engine served and its ticks, as `COUNT` lines; the derivation's engines are not counted.
+fn timed_untold_run(
+    n: usize,
+    arm: Reversal,
+    delay: u8,
+    told: bool,
+    name: &str,
+    trials: usize,
+    clock: &std::time::Instant,
+) -> (Made, UntoldRun) {
+    let units = SCAN_UNITS;
+    let made = probe_made(n, name);
+    eprintln!("TIME derivation {}", clock.elapsed().as_millis());
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = untold_from(&made.windowed, units);
+    assert_eq!(
+        (
+            exec.critic(),
+            exec.critic_window_ticks(),
+            exec.draws(),
+            exec.kept_addresses(),
+            exec.reads_its_delay(),
+            exec.delay_age(),
+            exec.modulation_baseline_q16(),
+            exec.homeostasis().synaptic_gain_q16
+        ),
+        (
+            Some(made.critic),
+            made.window,
+            Ok(()),
+            KEPT_ADDRESSES,
+            true,
+            Some(0),
+            GATE_BASELINE_Q16,
+            made.gain
+        ),
+        "{name}: the configuration, the engine keeps two addresses and reads its delay"
+    );
+    let mut task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Answer,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    task.delay = if told {
+        Delay::of(delay)
+    } else {
+        Delay::untold(delay)
+    };
+    let lag = usize::from(delay);
+    let mut history: Vec<(u8, Option<u8>)> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut values: Vec<i32> = Vec::with_capacity(SCHEDULE_TRIALS);
+    let mut table: Vec<KeptBlock> = Vec::with_capacity(SCHEDULE_BLOCKS);
+    let mut block: KeptBlock = (0, 0, 0);
+    let mut age = exec.delay_age();
+    let mut moved: Option<Moved> = None;
+    let (mut moves, mut lost) = (0u32, 0u32);
+    let mut closed = 0usize;
+    eprintln!("TIME decoded {}", clock.elapsed().as_millis());
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        trials,
+        &SCHEDULE_FLIPS,
+        &mut |exec, trial, _, outcome| {
+            history.push((outcome.stimulus, outcome.selection));
+            if exec.delay_age() != age {
+                age = exec.delay_age();
+                moves = moves.saturating_add(1);
+                if moved.is_none() {
+                    let scores: [u64; UNTOLD_AGES] =
+                        core::array::from_fn(|a| exec.delay_score(a as u8).unwrap_or(0));
+                    moved = Some((trial, age.unwrap_or(0), scores));
+                }
+            }
+            match outcome.value_q16 {
+                Some(value) => {
+                    let (stimulus, selection) = trial
+                        .checked_sub(lag)
+                        .and_then(|u| history.get(u))
+                        .copied()
+                        .unwrap_or((0, None));
+                    let own = sets[usize::from(stimulus)];
+                    let other = sets[usize::from(stimulus ^ 1)];
+                    let exact = selection.is_some_and(|r| {
+                        let readout = sets[usize::from(r).saturating_add(2)];
+                        (0..units).all(|u| exec.is_target(u) == readout.contains(u))
+                    });
+                    let mut drawn = [0u32; 2];
+                    for u in (0..units).filter(|&u| exec.is_source(u)) {
+                        if own.contains(u) {
+                            drawn[0] = drawn[0].saturating_add(1);
+                        } else if other.contains(u) {
+                            drawn[1] = drawn[1].saturating_add(1);
+                        }
+                    }
+                    block.0 = block
+                        .0
+                        .saturating_add(u32::from(names_rewarded(exact, drawn)));
+                    block.1 = block.1.saturating_add(1);
+                    block.2 = block.2.saturating_add(i64::from(value));
+                    values.push(value);
+                }
+                None if trial >= lag => lost = lost.saturating_add(1),
+                None => {}
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                table.push(block);
+                block = (0, 0, 0);
+                closed = closed.saturating_add(1);
+                eprintln!("TIME block {closed} {}", clock.elapsed().as_millis());
+                eprintln!("ARENA block {closed} {:#018x}", arena_hash(exec));
+            }
+        },
+    );
+    eprintln!("COUNT turns {}", exec.turns());
+    eprintln!("COUNT ticks {}", exec.ticks());
+    let run = UntoldRun {
+        blocks,
+        trace,
+        values,
+        table,
+        moved,
+        moves,
+        lost,
+        let_go: exec.kept_let_go(),
+        overwritten: exec.train_overwritten(),
+        sums: weights_by_polarity(&exec),
+    };
+    (made, run)
+}
+
+/// Exploration 008: FNV-1a over every unit's 64 bytes and every block's, as `encode` writes them,
+/// atomics as plain values: the gate byte and the mailbox head beside every potential, window,
+/// threshold and weight. The same engine state gives the same hash on either build.
+fn arena_hash(exec: &Engine) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let units = exec.units().iter().map(|u| u.encode());
+    let blocks = exec.blocks().iter().map(|b| b.encode());
+    for record in units.chain(blocks) {
+        for byte in record {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    hash
+}
+
+/// Exploration 008, as 006 wrote it: H-45's control on seed 22 from the assignment, `untold_arm(0,
+/// Reversal::AssignmentFirst, 0)`, run by `timed_untold_run` over the first `blocks` of the
+/// schedule's 120. Over all 120 it is held as `untold_arm` holds the control: to H-42's arm bit for
+/// bit, its blocks, its trace and every reward's value, and to `UNTOLD_CONTROLS`. Over fewer, the
+/// derivation is held whole, as `probe_made` holds it, and the blocks run are the first of H-42's
+/// arm's, with no move. The control's readings, which hold nothing, are not computed.
+fn timed_control(blocks: usize) {
+    let clock = std::time::Instant::now();
+    let (n, arm, delay) = (0usize, Reversal::AssignmentFirst, 0u8);
+    let k = UNTOLD_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!(
+        "{} delay {delay} {arm:?} timed over {blocks} blocks",
+        UNTOLD_NAMES[n]
+    );
+    let trials = blocks.saturating_mul(BLOCK);
+    let (_, run) = timed_untold_run(n, arm, delay, false, &name, trials, &clock);
+    eprintln!("TIME run {}", clock.elapsed().as_millis());
+    let hash = values_hash(&run.values);
+    eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
+    eprintln!("DUMP {name} PIN trace {:#018x}", run.trace);
+    eprintln!("DUMP {name} PIN value hash {hash:#018x}");
+    eprintln!("DUMP {name} PIN moved {:?}", run.moved);
+    let pins = PROBE_ARM_BLOCKS[n][k];
+    if blocks == SCHEDULE_BLOCKS {
+        let control = UntoldControl {
+            moved: run.moved,
+            h42: run.blocks.as_slice() == pins
+                && run.trace == PROBE_ARM_TRACES[n][k]
+                && hash == PROBE_ARM_VALUE_HASH[n][k],
+        };
+        eprintln!(
+            "DUMP {name} PIN control {control:?}: clause 3 {}",
+            control_held(&control)
+        );
+        assert_eq!(Some(control), UNTOLD_CONTROLS[n][k], "{name}: the control");
+    } else {
+        assert_eq!(
+            Some(run.blocks.as_slice()),
+            pins.get(..blocks),
+            "{name}: the blocks run are the first of H-42's arm's"
+        );
+        assert_eq!(run.moved, None, "{name}: no move");
+    }
+    eprintln!("DUMP {name} held bit for bit");
+    eprintln!("TIME end {}", clock.elapsed().as_millis());
+}
+
+/// Exploration 008, 006's arm: H-45's control on seed 22 from the assignment, whole and timed.
+#[test]
+#[ignore]
+fn the_control_on_time_on_seed_22_from_the_assignment_timed_explore() {
+    timed_control(SCHEDULE_BLOCKS);
+}
+
+/// Exploration 008, 006's arm: the same control over its derivation and the first 16 of its 120
+/// blocks, the workload the builds are alternated on.
+#[test]
+#[ignore]
+fn the_control_on_time_on_seed_22_from_the_assignment_over_16_blocks_timed_explore() {
+    timed_control(16);
+}
+
 /// The gate's test (ADR-0061's class; brief 082): H-45's networks, delays, arms, constants,
 /// prediction and predicted readings; clause 1's, clause 2's and clause 3's rules, the mapping of
 /// a trial, the readings' rules and the verdict's steps at their edges over tables written by
