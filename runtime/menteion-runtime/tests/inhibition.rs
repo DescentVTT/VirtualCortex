@@ -472390,7 +472390,8 @@ const HALF_IMAGES_8: [&str; 2] = [
     "sixteen22-assignment-image-8.image",
     "sixteen22-mirrored-image-8.image",
 ];
-const HALF_IMAGES_8_CRC: [Option<u64>; 2] = [None, None];
+const HALF_IMAGES_8_CRC: [Option<u64>; 2] =
+    [Some(0xc4a4_465d_974f_b445), Some(0x4d8c_c100_30ff_6f31)];
 
 /// `bytes` in lowercase hexadecimal, two digits a byte.
 fn to_hex(bytes: &[u8]) -> String {
