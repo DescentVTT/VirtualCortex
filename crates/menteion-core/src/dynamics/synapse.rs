@@ -407,10 +407,17 @@ pub enum SoftBound {
     /// [`SOFT_BOUND_TOP_EIGHTH_Q1_15`] to the rail, and 1 below it: the amount whole at $T$ and
     /// nothing at the rail.
     TopEighth,
+    /// Exploration 009: $(R - M) / (R - M_{\text{ref}})$ above ADR-0055's reference magnitude
+    /// $M_{\text{ref}}$ = [`STDP_DEPRESSION_REFERENCE_Q1_15`], and 1 below it: the amount whole
+    /// at the reference, where the rule's $A_- / A_+$ is 1.05, and nothing at the rail.
+    AboveReference,
 }
 
 /// Where [`SoftBound::TopEighth`] begins: seven eighths of the width, 0x7000.
 pub const SOFT_BOUND_TOP_EIGHTH_Q1_15: i32 = 0x7000;
+
+/// Where [`SoftBound::AboveReference`] begins: ADR-0055's reference magnitude, 0x2000.
+const SOFT_BOUND_REFERENCE_Q1_15: i32 = STDP_DEPRESSION_REFERENCE_Q1_15 as i32;
 
 /// An excitatory potentiation at a magnitude under a soft bound (exploration 007):
 /// `amount × (R − M) / D`, rounded to nearest with a half going up, `D` the room the bound
@@ -427,6 +434,10 @@ fn potentiation_at(amount_q1_15: i16, magnitude: i32, bound: Option<SoftBound>) 
             return amount_q1_15;
         }
         Some(SoftBound::TopEighth) => rail.saturating_sub(SOFT_BOUND_TOP_EIGHTH_Q1_15) as i64,
+        Some(SoftBound::AboveReference) if magnitude < SOFT_BOUND_REFERENCE_Q1_15 => {
+            return amount_q1_15;
+        }
+        Some(SoftBound::AboveReference) => rail.saturating_sub(SOFT_BOUND_REFERENCE_Q1_15) as i64,
     };
     let room = rail.saturating_sub(magnitude).clamp(0, rail) as i64;
     (amount_q1_15 as i64)
@@ -434,6 +445,28 @@ fn potentiation_at(amount_q1_15: i16, magnitude: i32, bound: Option<SoftBound>) 
         .saturating_add(span >> 1)
         .checked_div(span)
         .unwrap_or(0) as i16
+}
+
+/// Exploration 009 (ADR-0193), on its branch alone and in no image: the bound at
+/// consolidation. What a consolidation adds to a slot's magnitude, `moved` above zero from the
+/// magnitude `before`, scaled by the room below the rail $R$ = `i16::MAX`,
+/// `moved × (R − before) / R`, rounded to nearest (no half arises, $R$ being odd); a move that
+/// is not a rise is the move itself. The rise is at most the room, so the product is below
+/// $2^{30}$ and the quotient at most the rise.
+#[inline]
+fn bounded_rise(moved: i32, before: i32) -> i32 {
+    let rail = i16::MAX as i32;
+    match moved {
+        1.. => {
+            let room = rail.saturating_sub(before).clamp(0, rail) as i64;
+            (moved as i64)
+                .saturating_mul(room)
+                .saturating_add((rail >> 1) as i64)
+                .checked_div(rail as i64)
+                .unwrap_or(0) as i32
+        }
+        _ => moved,
+    }
 }
 
 /// `trace × factor` (a Q16.16 factor below 1.0), rounded to nearest, and at least one LSB
@@ -736,6 +769,22 @@ impl SynapseBlock {
     /// differs from ADR-0022's sequence (which saturated after each term). Returns the weight;
     /// zero for an empty slot.
     pub fn consolidate(&mut self, slot: usize, modulation_q16: i32, polarity: Polarity) -> i16 {
+        self.consolidate_bounded(slot, modulation_q16, polarity, false)
+    }
+
+    /// [`consolidate`](Self::consolidate) under exploration 009's bound at consolidation where
+    /// `bound` is set (ADR-0193, on its branch alone and in no image): a rise of the magnitude
+    /// lands scaled by the room below the rail, `rise × (R − M) / R` with $M$ the magnitude
+    /// before it, rounded to nearest, and the trace is spent by the rise the rule would have
+    /// made, so the rest of it is lost rather than kept pending; a fall is the rule's. Unset, it
+    /// is `consolidate` bit for bit.
+    pub fn consolidate_bounded(
+        &mut self,
+        slot: usize,
+        modulation_q16: i32,
+        polarity: Polarity,
+        bound: bool,
+    ) -> i16 {
         if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
             return 0;
         }
@@ -752,7 +801,11 @@ impl SynapseBlock {
         let before = polarity.magnitude(self.weights_q1_15[slot]);
         let after = before.saturating_add(transfer).clamp(0, i16::MAX as i32);
         let absorbed = after.saturating_sub(before);
-        let weight = polarity.weight(after);
+        let landed = match bound {
+            true => before.saturating_add(bounded_rise(absorbed, before)),
+            false => after,
+        };
+        let weight = polarity.weight(landed);
         self.weights_q1_15[slot] = weight;
         self.eligibility_q1_15[slot] = trace.saturating_sub(absorbed) as i16;
         weight
@@ -777,16 +830,38 @@ impl SynapseBlock {
         modulation_q16: i32,
         polarity: Polarity,
     ) -> i16 {
+        self.consolidate_signed_bounded(slot, modulation_q16, polarity, false)
+    }
+
+    /// [`consolidate_signed`](Self::consolidate_signed) under exploration 009's bound at
+    /// consolidation where `bound` is set ([`consolidate_bounded`](Self::consolidate_bounded)):
+    /// every rise of the magnitude, whichever the modulation's sign, lands scaled by the room
+    /// below the rail, and the trace is spent as the rule spends it. Unset, it is
+    /// `consolidate_signed` bit for bit.
+    pub fn consolidate_signed_bounded(
+        &mut self,
+        slot: usize,
+        modulation_q16: i32,
+        polarity: Polarity,
+        bound: bool,
+    ) -> i16 {
         // A range pattern, not a comparison: at zero both branches move nothing, which no
         // test could tell from a bound.
         match modulation_q16 {
-            i32::MIN..0 => self.consolidate_against(slot, modulation_q16, polarity),
-            _ => self.consolidate(slot, modulation_q16, polarity),
+            i32::MIN..0 => self.consolidate_against(slot, modulation_q16, polarity, bound),
+            _ => self.consolidate_bounded(slot, modulation_q16, polarity, bound),
         }
     }
 
-    /// The branch of [`consolidate_signed`](Self::consolidate_signed) below zero.
-    fn consolidate_against(&mut self, slot: usize, modulation_q16: i32, polarity: Polarity) -> i16 {
+    /// The branch of [`consolidate_signed`](Self::consolidate_signed) below zero, under the
+    /// bound at consolidation where `bound` is set.
+    fn consolidate_against(
+        &mut self,
+        slot: usize,
+        modulation_q16: i32,
+        polarity: Polarity,
+        bound: bool,
+    ) -> i16 {
         if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
             return 0;
         }
@@ -811,7 +886,11 @@ impl SynapseBlock {
         // What the magnitude moved: the sign opposite the trace's, or zero, and at most the
         // trace in size, so the trace moves toward zero by it and never past zero.
         let moved = after.saturating_sub(before);
-        let weight = polarity.weight(after);
+        let landed = match bound {
+            true => before.saturating_add(bounded_rise(moved, before)),
+            false => after,
+        };
+        let weight = polarity.weight(landed);
         self.weights_q1_15[slot] = weight;
         self.eligibility_q1_15[slot] = trace.saturating_add(moved) as i16;
         weight
@@ -2065,10 +2144,27 @@ mod tests {
         for m in [0, 1, 0x2000, 0x7000, rail] {
             assert_eq!(potentiation_at(328, m, None), 328);
         }
+        // Exploration 009: whole at and below the reference magnitude, nothing at the rail.
+        let above = Some(SoftBound::AboveReference);
+        for m in [0, 1, 0x1FFF, 0x2000] {
+            assert_eq!(potentiation_at(328, m, above), 328);
+        }
+        assert_eq!(potentiation_at(328, rail, above), 0);
+        // Half the room above the reference: 328 × 12 287 / 24 575 = 163.99 → 164; one LSB
+        // above it, 328 × 24 574 / 24 575 = 327.99 → 328.
+        assert_eq!(potentiation_at(328, 0x5000, above), 164);
+        assert_eq!(potentiation_at(328, 0x2001, above), 328);
+        // 328 × 0x1000 / 24 575 = 54.67 → 55.
+        assert_eq!(potentiation_at(328, rail - 0x1000, above), 55);
         // A pairing with both terms: the target fired after the previous presynaptic spike
         // and before this one, on every slot.
         for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
-            for bound in [None, Some(SoftBound::Width), Some(SoftBound::TopEighth)] {
+            for bound in [
+                None,
+                Some(SoftBound::Width),
+                Some(SoftBound::TopEighth),
+                Some(SoftBound::AboveReference),
+            ] {
                 let mut plain = full_block(0, 1);
                 plain.weights_q1_15 = match polarity {
                     Polarity::Excitatory => [0, 0x4000, 0x7800, i16::MAX],
@@ -2095,6 +2191,115 @@ mod tests {
                     assert_eq!(plain, bounded, "{polarity:?} {bound:?}: bit for bit");
                 }
             }
+        }
+    }
+
+    /// Exploration 009: the bound at consolidation scales every rise of a magnitude by the room
+    /// below the rail, under a modulation above zero and below it, spends the trace as the rule
+    /// does, and leaves a fall as it is.
+    #[test]
+    fn a_bound_at_consolidation_scales_every_rise_and_spends_the_trace_as_the_rule_does() {
+        let rail = i32::from(i16::MAX);
+        assert_eq!(bounded_rise(1_000, 0), 1_000);
+        assert_eq!(bounded_rise(1_000, rail), 0);
+        // 1 000 × 24 575 / 32 767 = 749.99 → 750; 1 000 × 8 191 / 32 767 = 249.98 → 250.
+        assert_eq!(bounded_rise(1_000, 0x2000), 750);
+        assert_eq!(bounded_rise(1_000, 0x6000), 250);
+        // One LSB at half the width and above it: 16 384 / 32 767 = 0.50002 → 1 and
+        // 16 383 / 32 767 = 0.49998 → 0.
+        assert_eq!(bounded_rise(1, 0x3FFF), 1);
+        assert_eq!(bounded_rise(1, 0x4000), 0);
+        for before in [0, 0x2000, rail] {
+            assert_eq!(bounded_rise(0, before), 0);
+            assert_eq!(bounded_rise(-500, before), -500);
+        }
+        let one = MODULATION_ONE_Q16;
+        let minus_one = MODULATION_MINUS_ONE_Q16;
+        // (polarity, weight, trace, modulation, the bounded weight, the trace left)
+        let cases: [(Polarity, i16, i16, i32, i16, i16); 10] = [
+            // A reward on a positive trace: 0x2000 + 750, the trace spent whole.
+            (Polarity::Excitatory, 0x2000, 1_000, one, 0x2000 + 750, 0),
+            // Half the modulation: 500 × 24 575 / 32 767 = 374.99 → 375, half the trace left.
+            (
+                Polarity::Excitatory,
+                0x2000,
+                1_000,
+                one / 2,
+                0x2000 + 375,
+                500,
+            ),
+            // A punishment on a negative trace: 0x6000 + 250, the trace spent whole.
+            (
+                Polarity::Excitatory,
+                0x6000,
+                -1_000,
+                minus_one,
+                0x6000 + 250,
+                0,
+            ),
+            // A fall either way is the rule's.
+            (Polarity::Excitatory, 0x6000, -1_000, one, 0x6000 - 1_000, 0),
+            (
+                Polarity::Excitatory,
+                0x6000,
+                1_000,
+                minus_one,
+                0x6000 - 1_000,
+                0,
+            ),
+            // At the rail nothing lands and the rule keeps the trace pending.
+            (Polarity::Excitatory, i16::MAX, 1_000, one, i16::MAX, 1_000),
+            (
+                Polarity::Excitatory,
+                i16::MAX,
+                -1_000,
+                minus_one,
+                i16::MAX,
+                -1_000,
+            ),
+            // One below the rail: the rule absorbs one, 1 × 1 / 32 767 → 0 lands.
+            (
+                Polarity::Excitatory,
+                i16::MAX - 1,
+                1_000,
+                one,
+                i16::MAX - 1,
+                999,
+            ),
+            // An inhibitory magnitude rises the same way.
+            (
+                Polarity::Inhibitory,
+                -0x2000,
+                1_000,
+                one,
+                -(0x2000 + 750),
+                0,
+            ),
+            (
+                Polarity::Inhibitory,
+                -0x6000,
+                -1_000,
+                minus_one,
+                -(0x6000 + 250),
+                0,
+            ),
+        ];
+        for (polarity, weight, trace, m, expected, left) in cases {
+            let mut bounded = one_synapse(weight, NO_SPIKE_ON_RECORD);
+            bounded.eligibility_q1_15[0] = trace;
+            let mut plain = bounded;
+            let w = bounded.consolidate_signed_bounded(0, m, polarity, true);
+            plain.consolidate_signed(0, m, polarity);
+            assert_eq!(w, expected, "{polarity:?} {weight} {trace} {m}");
+            assert_eq!(bounded.weights_q1_15[0], expected);
+            assert_eq!(
+                bounded.eligibility_q1_15[0], left,
+                "{polarity:?} {weight} {trace} {m}"
+            );
+            assert_eq!(
+                bounded.eligibility_q1_15, plain.eligibility_q1_15,
+                "the trace spent as the rule spends it"
+            );
         }
     }
 }
@@ -2313,6 +2518,76 @@ mod prop {
                 let m = match rng.below(3) {
                     0 => rng.i32_edge_biased(),
                     // The domain the executor passes: [−1, 1].
+                    _ => (rng.next_i32() >> 15).clamp(MODULATION_MINUS_ONE_Q16, MODULATION_ONE_Q16),
+                };
+                check(rng.next_i16(), rng.next_i16(), m, polarity);
+            }
+        }
+    }
+
+    /// Exploration 009's bound at consolidation over the lattice and a seeded walk: unset it is
+    /// `consolidate_signed` bit for bit; set, the trace is the rule's, a magnitude that the rule
+    /// does not raise is the rule's, and one it raises rises by an oracle's
+    /// `round(rise × (R − M) / R)` in `i64`, at most the rule's rise, on its polarity's side.
+    #[test]
+    fn a_bound_at_consolidation_is_the_rule_unset_and_scales_every_rise_set() {
+        let rail = i64::from(i16::MAX);
+        let check = |weight: i16, trace: i16, m: i32, polarity: Polarity| {
+            let mut plain = SynapseBlock::new();
+            assert!(plain.set_synapse(0, 1, weight, 1, false));
+            plain.eligibility_q1_15[0] = trace;
+            let mut unset = plain;
+            let mut set = plain;
+            let w = plain.consolidate_signed(0, m, polarity);
+            assert_eq!(unset.consolidate_signed_bounded(0, m, polarity, false), w);
+            assert_eq!(
+                unset, plain,
+                "{polarity:?} {weight} {trace} {m}: unset, bit for bit"
+            );
+            let b = set.consolidate_signed_bounded(0, m, polarity, true);
+            assert_eq!(b, set.weights_q1_15[0]);
+            assert_eq!(
+                set.eligibility_q1_15, plain.eligibility_q1_15,
+                "{polarity:?} {weight} {trace} {m}: the trace is the rule's"
+            );
+            assert_eq!(
+                polarity.weight(polarity.magnitude(b)),
+                b,
+                "{polarity:?}: its side"
+            );
+            let read = i64::from(polarity.magnitude(weight).min(i32::from(i16::MAX)));
+            let rise = i64::from(polarity.magnitude(w)).saturating_sub(read);
+            if rise <= 0 {
+                assert_eq!(
+                    set, plain,
+                    "{polarity:?} {weight} {trace} {m}: no rise, the rule's"
+                );
+                return;
+            }
+            let landed = rise
+                .saturating_mul(rail.saturating_sub(read))
+                .saturating_add(rail >> 1)
+                .checked_div(rail)
+                .unwrap_or(0);
+            assert!(landed <= rise);
+            assert_eq!(
+                i64::from(polarity.magnitude(b)),
+                read.saturating_add(landed),
+                "{polarity:?} {weight} {trace} {m}: the oracle's rise"
+            );
+        };
+        let mut rng = Lcg::new(0x09);
+        for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
+            for &weight in I16_LATTICE.iter() {
+                for &trace in I16_LATTICE.iter() {
+                    for &m in I32_LATTICE.iter() {
+                        check(weight, trace, m, polarity);
+                    }
+                }
+            }
+            for _ in 0..200_000 {
+                let m = match rng.below(3) {
+                    0 => rng.i32_edge_biased(),
                     _ => (rng.next_i32() >> 15).clamp(MODULATION_MINUS_ONE_Q16, MODULATION_ONE_Q16),
                 };
                 check(rng.next_i16(), rng.next_i16(), m, polarity);
