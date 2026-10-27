@@ -41,7 +41,7 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 - The controller's step under its estimate is zero in every run that learns (ADR-0077, ADR-0177).
 - The rate's rule, the read of its target, the read's flag and the probe are each set in the default; no network but H-42's three has run under it.
 - The kept addresses and the delay read are parameters of the configuration that no default sets; H-43 and H-45 ran them at `kept_addresses` 2.
-- The speed line is closed, the sweep kept and the lanes reverted ([ADR-0105](adr/0105-the-speed-line-closed.md)).
+- The speed line was closed with the sweep kept and the lanes reverted ([ADR-0105](adr/0105-the-speed-line-closed.md)); ADR-0224 takes service on arrival from it.
 
 ## What does not exist
 
@@ -56,5 +56,5 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 
 H-45 read yes at step 3 of its stopping rule: the engine reads a delay of one or two trials it is not told.
 1. Brief 084 builds [ADR-0224](adr/0224-a-unit-served-on-arrival.md): the executor serves a unit on arrival, per-tick service bit for bit, every pin held. [Exploration 008](explorations/008-a-unit-served-on-arrival.md) read a heavy arm at 0.581 of its time on x86-64 and 0.771 on AArch64.
-2. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning. Exploration 010, a readout's sum held, runs beside brief 084. F-86 is open.
+2. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning. Exploration 010, a readout's sum held, is the next beside brief 084. F-86 is open.
 3. What the weekly job holds: on 2026-10-26 its longest shard took 59.8 % of its 240-minute bound, and each round of eighteen arms adds about 12 minutes.
