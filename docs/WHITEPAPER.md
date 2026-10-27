@@ -1,8 +1,8 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.21.0
+version: 5.22.0
 status: active
-date: 2026-10-27
+date: 2026-10-28
 ---
 
 # Menteion Architecture Whitepaper
@@ -11,9 +11,9 @@ date: 2026-10-27
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.21.0 |
+| Version | 5.22.0 |
 | Status | Active (living document; amended by ADR) |
-| Date | 2026-10-27 |
+| Date | 2026-10-28 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
@@ -586,8 +586,14 @@ Because the record contains atomics it is not `Copy` and cannot derive `Pod`; it
 | :--- | :--- |
 | Responsibility | The on-disk container whose layout equals the in-memory arenas, and the laminar microcolumn priors that populate it. |
 | Source | `crates/menteion-connectome/src/lib.rs` |
-| Public API | `MenteionFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`MENTEION`), `FORMAT_VERSION` (21), `HeaderError`; `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39), `SECTION_TERM` (40), `SECTION_AMENDMENT` (41, [ADR-0031](adr/0031-policy-amendment.md)), `SECTION_MODULATOR` (42, [ADR-0032](adr/0032-three-factor-plasticity.md)), `SECTION_HOMEOSTASIS` (43, [ADR-0036](adr/0036-criticality-control.md)), `SECTION_HIPPOCAMPUS` (44) and `SECTION_EPISODE` (45, [ADR-0038](adr/0038-episodic-ledger-and-replay.md)), `SECTION_AFFECT` (47), `SECTION_INDUCTION` (48) and `SECTION_CLAUSE` (49, [ADR-0052](adr/0052-the-term-arena-in-the-image.md)); `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); the anatomical prior ([ADR-0044](adr/0044-reference-network.md)): `Prior::{is_well_formed, is_inhibitory, synapses, census}`, `Synapse`, `Synapses::position`, `Census::count`, `Lcg::{new, next_u64, next_u32, below, between}`, `ring_distance` |
+| Public API: the header | `MenteionFileHeader::{new, encode, decode, checksum, validate}`, `MAGIC` (`MENTEION`), `FORMAT_VERSION` (26), `HeaderError` |
+| Public API: the directory | `SectionEntry::{new, record_count, is_well_formed, encode, decode}`; `SECTION_MACRO_COLUMN` (1), `SECTION_NEURON` (2), `SECTION_SYNAPSE` (3), `SECTION_PLASTIC_DELTA` (37), `SECTION_LAMINAR` (38), `SECTION_ROUTING` (39), `SECTION_TERM` (40), `SECTION_AMENDMENT` (41, [ADR-0031](adr/0031-policy-amendment.md)) |
+| Public API: the directory's later sections | `SECTION_MODULATOR` (42, [ADR-0032](adr/0032-three-factor-plasticity.md)), `SECTION_HOMEOSTASIS` (43, [ADR-0036](adr/0036-criticality-control.md)), `SECTION_HIPPOCAMPUS` (44) and `SECTION_EPISODE` (45, [ADR-0038](adr/0038-episodic-ledger-and-replay.md)), `SECTION_AFFECT` (47), `SECTION_INDUCTION` (48) and `SECTION_CLAUSE` (49, [ADR-0052](adr/0052-the-term-arena-in-the-image.md)) |
+| Public API: the checksum | `crc64`, `Crc64::{new, update, finish}`, `CRC64_POLY_REFLECTED` ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) |
+| Public API: the prior | The anatomical prior ([ADR-0044](adr/0044-reference-network.md)): `Prior::{is_well_formed, is_inhibitory, synapses, census}`, `Synapse`, `Synapses::position`, `Census::count`, `Lcg::{new, next_u64, next_u32, below, between}`, `ring_distance` |
 | Status | Header, directory record and CRC: Implemented ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)) · Writer and loader: Implemented in `runtime/menteion-runtime` (`Image::{write, open}`, read-into-arenas; `mmap` Specified) · The anatomical prior of a synthesized network (a seeded ring lattice with a local window, a rewired fraction, every $k$-th unit inhibitory, a local and a far delay band), yielded synapse by synapse: Implemented ([ADR-0044](adr/0044-reference-network.md); written into the arenas by the runtime's `synthesize`) · Atlas-derived laminar priors and the laminar and routing sections: Specified |
+
+<!-- @assert-count target="crates/menteion-connectome" symbol="FORMAT_VERSION: u32 = 26" min="1" reason="F-84: §5.2.2's Public API names the current format version; update it with the header table's" -->
 
 **`MenteionFileHeader`** — 64 B, align 64. The first 64 bytes of every `.menteion` file.
 
@@ -2578,6 +2584,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0221](adr/0221-the-project-renamed-menteion.md) | The project renamed Menteion | accepted |
 | [ADR-0222](adr/0222-the-project-renamed-menteion-built.md) | The project renamed Menteion, built | accepted |
 | [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | accepted |
+| [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | proposed |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2709,8 +2716,9 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-81 | F-76 and F-78 name the rounds' pinned tables, growing the test crates' compile time, as the cause of the release step's growth and of the sweep's length. Exploration 002 read, exploratory, the release build no slower with the tables in the source than in a data file, and a sweep's machine time 12 % builds and the rest tests. | F-76, F-78 | **Resolved** ([ADR-0212](adr/0212-three-in-four-on-the-default.md)): recorded; the tables stay in the test sources. |
 | F-82 | Brief 082's calibration, dispatch 40226374616, read shard 10 of 18 at 128.1 minutes, 71 % of the 180-minute bound: past ADR-0179's 60 %. The table had costed H-44's arms at 634 to 1 257 s where they took 2 100 to 2 400 s. Dealt from a table written from that run, the reproduction, 40237389553, read ten shards past 60 %, the longest 127.1 minutes. | `scripts/exhaustive-costs.tsv`, `.github/workflows/ci.yml` | **Resolved** ([ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md)): a shard that ran its tests alone is not read into the table, a test with no line is costed at 2 400 s, and the bound is 240 minutes by ADR-0179's rule. |
 | F-83 | [ADR-0221](adr/0221-the-project-renamed-menteion.md) predicted that no pinned number would move, since an image changes only in its header. Seven pins are CRC-64s of whole images at the current format, the header included, and the derivations' `crcs` are held to them: the version alone moves each, as every format since [ADR-0095](adr/0095-an-image-pin-moves-with-its-format.md) re-pinned them. | ADR-0221, `runtime/menteion-runtime/tests/` | **Resolved** ([ADR-0222](adr/0222-the-project-renamed-menteion-built.md)): each is read with its image's header written back to format 25, the magic `VCORTEX1` and the seal (`pinned_crc`), and none moved. |
-| F-84 | §5.2.2's Public API cell says `FORMAT_VERSION` (21). The format moved to 22 with [ADR-0180](adr/0180-a-rate-the-controller-holds-built.md) and is 26; no directive holds the number in that cell, as none held §8.7's before F-60. | this document | **Open**: the cell is 1 180 characters, so a change to it is new text over the limit of 400 ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)). Brief 083 only renamed it; the next round that writes §5.2.2 splits it. |
+| F-84 | §5.2.2's Public API cell says `FORMAT_VERSION` (21). The format moved to 22 with [ADR-0180](adr/0180-a-rate-the-controller-holds-built.md) and is 26; no directive holds the number in that cell, as none held §8.7's before F-60. | this document | **Resolved** ([ADR-0224](adr/0224-a-unit-served-on-arrival.md)): the cell is split into five rows under the limit of 400 ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)), the first names format 26, and a directive under the table holds the number. |
 | F-85 | `ci.yml` asks each of its three uploads to be kept 90 days. The repository allowed 14, already so before its move, and GitHub keeps the lesser without a warning: every run's artifacts and logs expired after two weeks, and so did the link to one in an ADR, a note or a report. F-45 and the first sweep's item below say the artifacts keep ninety days. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)): on 2026-10-27 the organisation's limit and the repository's were set to 90 days. An artifact uploaded before keeps its 14, and the committed tables are the evidence. |
+| F-86 | [ADR-0037](adr/0037-sleep-regulation.md) gave, among its reasons not to adopt synaptic downscaling, that nothing in the tree showed weight saturation under a rule whose depression exceeds its potentiation. Under the default over long runs, excitatory synapses of the couplings stand at the rail: up to 100 of a coupling's 800 by the eighth schedule, 186 by the sixteenth. | ADR-0037 | **Open** ([ADR-0224](adr/0224-a-unit-served-on-arrival.md)): the decision stands on its other reasons. Explorations [005](explorations/005-eight-schedules-under-the-default.md), [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read it; M12's decision resolves it. |
 
 <!-- @assert-count target="runtime/menteion-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/menteion-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->

@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) wrote it on 2026-10-27, after brief 083 carried the name Menteion into the tree ([ADR-0222](adr/0222-the-project-renamed-menteion-built.md)).
+[ADR-0224](adr/0224-a-unit-served-on-arrival.md) wrote it on 2026-10-28, after explorations 006 to 009 and before brief 084.
 
 ## The engine
 
@@ -55,6 +55,6 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 ## The next decision
 
 H-45 read yes at step 3 of its stopping rule: the engine reads a delay of one or two trials it is not told.
-1. The tree is renamed Menteion: the crates `menteion-*` and the image at format 26, every whole-image pin read at 25, and one dispatch of every test held every pin ([ADR-0222](adr/0222-the-project-renamed-menteion-built.md)). Brief 065 stays paused, its paths renamed.
-2. Step 3's next decision, at M12: the re-read of the targets by evidence. Explorations [004](explorations/004-long-runs-under-the-default.md) and [005](explorations/005-eight-schedules-under-the-default.md) read the couplings rising through eight schedules and the inhibitory sum stopping near 0.55.
-3. What the weekly job holds: on 2026-10-26 its shards took 66.8 to 143.5 minutes, the longest 59.8 % of its 240-minute bound, and each round of eighteen arms adds about 12 minutes.
+1. Brief 084 builds [ADR-0224](adr/0224-a-unit-served-on-arrival.md): the executor serves a unit on arrival, per-tick service bit for bit, every pin held. [Exploration 008](explorations/008-a-unit-served-on-arrival.md) read a heavy arm at 0.581 of its time on x86-64 and 0.771 on AArch64.
+2. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning. Exploration 010, a readout's sum held, runs beside brief 084. F-86 is open.
+3. What the weekly job holds: on 2026-10-26 its longest shard took 59.8 % of its 240-minute bound, and each round of eighteen arms adds about 12 minutes.
