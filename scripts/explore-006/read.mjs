@@ -88,6 +88,24 @@ for (const root of process.argv.slice(2)) {
         const fmt = (f) => rs.map(([a, b]) => (f(a) / f(b)).toFixed(3)).join(" ");
         console.log(`    ${label.padEnd(8)} ${fmt((x) => x.ms)} | ${fmt((x) => x.p.d)} | ${fmt((x) => x.p.sched)}`);
       }
+      // Each profile's means over its rounds, and the whole arm they give: the derivation and
+      // 120 blocks at the mean block, beside release's.
+      const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+      const est = new Map();
+      console.log("  means over the rounds (run, derivation, a block) and the whole arm they give:");
+      for (const label of labels) {
+        const xs = [...byRound.entries()].filter(([k]) => k.endsWith(`\t${label}`)).map(([, v]) => v);
+        const run = mean(xs.map((x) => x.ms));
+        const d = mean(xs.map((x) => x.p.d));
+        const per = mean(xs.map((x) => x.p.per));
+        const whole = d + 120 * per;
+        est.set(label, { run, d, per, whole });
+        const r = est.get("release");
+        const vs = r && label !== "release"
+          ? `; beside release: run ${(run / r.run).toFixed(3)}, derivation ${(d / r.d).toFixed(3)}, block ${(per / r.per).toFixed(3)}, whole ${(whole / r.whole).toFixed(3)}`
+          : "";
+        console.log(`    ${label.padEnd(8)} run ${s1(run)} s, derivation ${s1(d)} s, block ${(per / 1000).toFixed(3)} s, whole arm ${s1(whole)} s${vs}`);
+      }
     }
     // The block times of a whole run: the slowest and fastest block, and the first 16's mean.
     for (const [round, label] of runs) {
@@ -111,11 +129,11 @@ for (const root of process.argv.slice(2)) {
       const part = (cls, owner) => {
         if (cls === "harness") return "the test crate";
         if (cls === "engine-wait" || /SpinBarrier>?::wait/.test(owner)) return "the barrier, waiting";
-        if (/integrate|phase_turns|MailboxDrain|Pools>::free|turn<|^turn:|clamp|unit_at/.test(owner))
+        if (/integrate|phase_turns|MailboxDrain|Pools>::free|turn<|^turn:|clamp/.test(owner))
           return "phase 1, the turns";
         if (/phase_fan_out|step_stdp|decay_eligibility|consolidate|release_all|step_stp|stp_decay/.test(owner))
           return "phase 2, the fan-out, STDP, iSTDP and plasticity";
-        if (/Injector|mailbox_push|Pools>::alloc|deliver|Drive>::step|Shared>::mark|^push:|wheel/i.test(owner))
+        if (/Injector|mailbox_push|Pools>::alloc|deliver|Drive>::step|Shared>::mark|^push:|^mix64:|^unit_at:|wheel/i.test(owner))
           return "phase 3, the deliveries, and the drive injected";
         if (/Image|crc|encode|decode/i.test(owner)) return "the image, encoded or decoded";
         if (cls === "engine") return "the coordinator, the task and the rest of the engine";
