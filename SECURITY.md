@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-VirtualCortex is pre-1.0. Only the `main` branch receives fixes.
+Menteion is pre-1.0. Only the `main` branch receives fixes.
 
 ## Reporting a vulnerability
 
@@ -16,9 +16,9 @@ You can expect an acknowledgement within seven days and a decision on severity a
 
 In scope:
 
-- Memory-safety or determinism defects in any crate under `crates/` or `runtime/` (the executor's arena holds the workspace's one `unsafe`, and the `.cortex` loader lives there).
-- A way for a policy amendment to be committed past one of its four gates, for the loader to accept an amendment record the state machine could not have produced, or for the engine to amend a parameter outside `cortex-executive`'s registry, the veto gate's among them (ADR-0031).
-- Parsing of untrusted input: `.cortex` images, fabric packets, sensory event batches.
+- Memory-safety or determinism defects in any crate under `crates/` or `runtime/` (the executor's arena holds the workspace's one `unsafe`, and the `.menteion` loader lives there).
+- A way for a policy amendment to be committed past one of its four gates, for the loader to accept an amendment record the state machine could not have produced, or for the engine to amend a parameter outside `menteion-executive`'s registry, the veto gate's among them (ADR-0031).
+- Parsing of untrusted input: `.menteion` images, fabric packets, sensory event batches.
 - The embodiment interface, where a defect could produce an unsafe actuator command.
 - The CI and documentation tooling configuration in this repository.
 

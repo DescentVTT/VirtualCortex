@@ -11,13 +11,13 @@ import { checkBump, checkVersion, compare, declarations, parseArgs } from "./che
 const paper = (frontVersion, frontDate, tableVersion = frontVersion, tableDate = frontDate, body = "body") =>
   [
     "---",
-    "title: VirtualCortex Architecture Whitepaper",
+    "title: Menteion Architecture Whitepaper",
     `version: ${frontVersion}`,
     "status: active",
     `date: ${frontDate}`,
     "---",
     "",
-    "# VirtualCortex Architecture Whitepaper",
+    "# Menteion Architecture Whitepaper",
     "",
     "| Document control | |",
     "| :--- | :--- |",

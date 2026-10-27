@@ -1,12 +1,12 @@
-# VirtualCortex
+# Menteion
 
 **A deterministic, single-node neuromorphic virtual-actor engine for spiking neural computation, written in Rust.**
 
-[![CI](https://github.com/DescentVTT/VirtualCortex/actions/workflows/ci.yml/badge.svg)](https://github.com/DescentVTT/VirtualCortex/actions/workflows/ci.yml)
+[![CI](https://github.com/Menteion/Menteion/actions/workflows/ci.yml/badge.svg)](https://github.com/Menteion/Menteion/actions/workflows/ci.yml)
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![Rust: 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](docs/adr/0009-rust-edition-and-msrv.md)
 
-VirtualCortex builds a spiking neural network on the virtual-actor model and constrains it to one physical server. Neural units are passive 64-byte records that occupy memory only while active; a fixed pool of core-pinned workers services them; ownership per tick is decided by a single atomic gate; axonal delay is an index into a timing wheel; and inactive tissue is evicted to local storage. Every quantity is Q16.16 fixed point, so that a run is bit-identical on x86-64 and AArch64: CI checks a seeded 128-unit network's arena hash after 20 000 ticks on both (ADR-0030); the full form, a reference image over 10⁶ ticks, is Target T-1. The founding rule is **"Latest ≠ Newest"**: only technologies with a stable specification, years of production use and known failure modes are admitted to the hot path.
+Menteion builds a spiking neural network on the virtual-actor model and constrains it to one physical server. Neural units are passive 64-byte records that occupy memory only while active; a fixed pool of core-pinned workers services them; ownership per tick is decided by a single atomic gate; axonal delay is an index into a timing wheel; and inactive tissue is evicted to local storage. Every quantity is Q16.16 fixed point, so that a run is bit-identical on x86-64 and AArch64: CI checks a seeded 128-unit network's arena hash after 20 000 ticks on both (ADR-0030); the full form, a reference image over 10⁶ ticks, is Target T-1. The founding rule is **"Latest ≠ Newest"**: only technologies with a stable specification, years of production use and known failure modes are admitted to the hot path.
 
 ## Status
 
@@ -14,7 +14,7 @@ Where the work stands, and the next decision, is in [docs/STATUS.md](docs/STATUS
 
 | Label | Meaning | Today |
 | :--- | :--- | :--- |
-| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates and 43 `#[repr(C)]` records with compile-time size and alignment assertions, the executor, the `.cortex` image and the learning loop of [docs/STATUS.md](docs/STATUS.md). Subsystem by subsystem in whitepaper [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance). |
+| **Implemented** | In `crates/`, checked by the compiler, a test or an executable assertion. | 32 `#![no_std]` crates and 43 `#[repr(C)]` records with compile-time size and alignment assertions, the executor, the `.menteion` image and the learning loop of [docs/STATUS.md](docs/STATUS.md). Subsystem by subsystem in whitepaper [§1.6](docs/WHITEPAPER.md#16-implementation-status-at-a-glance). |
 | **Specified** | Designed in the whitepaper or an ADR; no code yet. | Core pinning, the `mmap` path of the image loader, slot reclamation, the shared-memory mappings of the embodiment and tool rings, the tool broker and its amendment register, reclamation, fabric transport, subsystem dynamics beyond the rules in §5. |
 | **Target** | A measurable goal with a protocol; **not yet measured**. | Every performance figure. A benchmark harness exists; no admissible run on the reference platform does. |
 | **Hypothesis** | A research assumption that must be validated first. | The condensation ratio behind any whole-brain-scale claim. Every hypothesis asked of the engine, with its verdict, is in [docs/research/](docs/research/README.md). |
@@ -27,42 +27,42 @@ Thirty-two crates, one per subsystem, with no dependencies between them ([ADR-00
 
 | Layer | Crate | Primary record | Size |
 | :--- | :--- | :--- | ---: |
-| Foundation | `cortex-core` | `DendriticSuperNeuron`, `SynapseBlock`, `PlasticDelta`, `FlatTimingWheel` (`WorkerWheel`) | 64 B, 64 B, 16 B, 4.2 MB |
-| Structure | `cortex-connectome` | `CortexFileHeader`, `SectionEntry` | 64 B each |
-| Periphery | `cortex-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B |
-| Periphery | `cortex-thalamus` | `ThalamicRelayNode` | 64 B |
-| Periphery | `cortex-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame`, `VocalFrame` | 64 B each |
-| Periphery | `cortex-linguistic` | `LinguisticFrameSlot` | 64 B |
-| Periphery | `cortex-tools` | `ToolInvocationFrame` | 64 B |
-| Subcortical | `cortex-basal-ganglia` | `BasalGangliaChannelState` | 64 B |
-| Subcortical | `cortex-cerebellum` | `CerebellarMicrozone` | 64 B |
-| Subcortical | `cortex-salience` | `SalienceNodeState` | 64 B |
-| Subcortical | `cortex-neuromod` | `NeuromodulatorState` | 16 B |
-| Subcortical | `cortex-hippocampus` | `HippocampalAttractorState`, `Episode` | 64 B each |
-| Subcortical | `cortex-homeostasis` | `HomeostaticDrivePool` | 64 B |
-| Subcortical | `cortex-affect` | `InteroceptiveState` | 64 B |
-| Subcortical | `cortex-autonomic` | `AutonomicVitalsState` | 64 B |
-| Subcortical | `cortex-spatial` | `SpatialGridCoordinate` | 64 B |
-| Subcortical | `cortex-curiosity` | `CuriosityExplorationVector` | 64 B |
-| Subcortical | `cortex-attention` | `FovealAttentionFocus` | 64 B |
-| Cognitive | `cortex-workspace` | `GlobalWorkspaceSlot` | 64 B |
-| Cognitive | `cortex-symbolic` | `SymbolicHypervectorHeader`, `HypervectorBody` | 64 B, 1 280 B |
-| Cognitive | `cortex-executive` | `ExecutivePlanNode`, `PolicyAmendment` | 64 B each |
-| Cognitive | `cortex-predictive` | `PredictiveErrorState` | 64 B |
-| Cognitive | `cortex-agency` | `AgentPerspectiveState` | 64 B |
-| Cognitive | `cortex-social` | `SocialPerspectiveNode` | 64 B |
-| Cognitive | `cortex-ethics` | `EthicalEvaluationGate` | 64 B |
-| Cognitive | `cortex-knowledge` | `SemanticOntologyNode` | 64 B |
-| Cognitive | `cortex-reasoning` | `SymbolicRuleNode`, `TermNode` | 64 B each |
-| Cognitive | `cortex-arithmetic` | `ArithmeticScratchpadSlot` | 64 B |
-| Cognitive | `cortex-imagination` | `MentalCanvasFrame` | 64 B |
-| Systems | `cortex-immune` | `ImmuneScrubNode` | 64 B |
-| Systems | `cortex-fabric` | `FabricPacketHeader` | 64 B |
-| Systems | `cortex-telemetry` | `LfpSamplePacket` | 64 B |
+| Foundation | `menteion-core` | `DendriticSuperNeuron`, `SynapseBlock`, `PlasticDelta`, `FlatTimingWheel` (`WorkerWheel`) | 64 B, 64 B, 16 B, 4.2 MB |
+| Structure | `menteion-connectome` | `MenteionFileHeader`, `SectionEntry` | 64 B each |
+| Periphery | `menteion-sensory` | `SensoryEvent`, `trait SensoryPeripheral` | 8 B |
+| Periphery | `menteion-thalamus` | `ThalamicRelayNode` | 64 B |
+| Periphery | `menteion-embodiment` | `EmbodimentRingBuffer`, `TorqueFrame`, `JointStateFrame`, `VocalFrame` | 64 B each |
+| Periphery | `menteion-linguistic` | `LinguisticFrameSlot` | 64 B |
+| Periphery | `menteion-tools` | `ToolInvocationFrame` | 64 B |
+| Subcortical | `menteion-basal-ganglia` | `BasalGangliaChannelState` | 64 B |
+| Subcortical | `menteion-cerebellum` | `CerebellarMicrozone` | 64 B |
+| Subcortical | `menteion-salience` | `SalienceNodeState` | 64 B |
+| Subcortical | `menteion-neuromod` | `NeuromodulatorState` | 16 B |
+| Subcortical | `menteion-hippocampus` | `HippocampalAttractorState`, `Episode` | 64 B each |
+| Subcortical | `menteion-homeostasis` | `HomeostaticDrivePool` | 64 B |
+| Subcortical | `menteion-affect` | `InteroceptiveState` | 64 B |
+| Subcortical | `menteion-autonomic` | `AutonomicVitalsState` | 64 B |
+| Subcortical | `menteion-spatial` | `SpatialGridCoordinate` | 64 B |
+| Subcortical | `menteion-curiosity` | `CuriosityExplorationVector` | 64 B |
+| Subcortical | `menteion-attention` | `FovealAttentionFocus` | 64 B |
+| Cognitive | `menteion-workspace` | `GlobalWorkspaceSlot` | 64 B |
+| Cognitive | `menteion-symbolic` | `SymbolicHypervectorHeader`, `HypervectorBody` | 64 B, 1 280 B |
+| Cognitive | `menteion-executive` | `ExecutivePlanNode`, `PolicyAmendment` | 64 B each |
+| Cognitive | `menteion-predictive` | `PredictiveErrorState` | 64 B |
+| Cognitive | `menteion-agency` | `AgentPerspectiveState` | 64 B |
+| Cognitive | `menteion-social` | `SocialPerspectiveNode` | 64 B |
+| Cognitive | `menteion-ethics` | `EthicalEvaluationGate` | 64 B |
+| Cognitive | `menteion-knowledge` | `SemanticOntologyNode` | 64 B |
+| Cognitive | `menteion-reasoning` | `SymbolicRuleNode`, `TermNode` | 64 B each |
+| Cognitive | `menteion-arithmetic` | `ArithmeticScratchpadSlot` | 64 B |
+| Cognitive | `menteion-imagination` | `MentalCanvasFrame` | 64 B |
+| Systems | `menteion-immune` | `ImmuneScrubNode` | 64 B |
+| Systems | `menteion-fabric` | `FabricPacketHeader` | 64 B |
+| Systems | `menteion-telemetry` | `LfpSamplePacket` | 64 B |
 
-Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8. Two members sit outside `crates/`: `runtime/cortex-runtime`, the executor that composes the state crates ([ADR-0023](docs/adr/0023-executor.md)), and `benches/cortex-bench`, which holds the benchmarks and the workspace's only third-party dependency (the harness, as a dev-dependency; [ADR-0014](docs/adr/0014-benchmark-harness.md)); see [docs/benchmarks/README.md](docs/benchmarks/README.md) for what makes a run admissible.
+Exact field layouts, the numeric model, the concurrency rules and the status of every subsystem are in the whitepaper, §5 and §8. Two members sit outside `crates/`: `runtime/menteion-runtime`, the executor that composes the state crates ([ADR-0023](docs/adr/0023-executor.md)), and `benches/menteion-bench`, which holds the benchmarks and the workspace's only third-party dependency (the harness, as a dev-dependency; [ADR-0014](docs/adr/0014-benchmark-harness.md)); see [docs/benchmarks/README.md](docs/benchmarks/README.md) for what makes a run admissible.
 
-<!-- @assert-count target="Cargo.toml" symbol="crates/cortex-" expected="32" reason="the table above lists thirty-two crates" -->
+<!-- @assert-count target="Cargo.toml" symbol="crates/menteion-" expected="32" reason="the table above lists thirty-two crates" -->
 
 ## Documentation
 

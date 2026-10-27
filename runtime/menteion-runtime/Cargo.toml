@@ -1,0 +1,43 @@
+[package]
+name = "menteion-runtime"
+description = "The Menteion executor: worker threads, work-stealing deques, barrier-separated ticks, mailbox delivery and synaptic fan-out over the state crates (whitepaper §6.1; ADR-0023). Not a state crate; never published."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Dependencies flow from the runtime downward to the state crates, never the other way
+# (ADR-0005). No third-party dependency: the deque, the barrier and the injector are in-house
+# (ADR-0023).
+[dependencies]
+menteion-core = { path = "../../crates/menteion-core" }
+menteion-connectome = { path = "../../crates/menteion-connectome" }
+# The amendment record and the veto gate it is admitted through (ADR-0031).
+menteion-executive = { path = "../../crates/menteion-executive" }
+menteion-ethics = { path = "../../crates/menteion-ethics" }
+# The modulator of three-factor plasticity (ADR-0032).
+menteion-neuromod = { path = "../../crates/menteion-neuromod" }
+# The homeostasis record: the branching-ratio estimator and the synaptic gain (ADR-0036).
+menteion-hippocampus = { path = "../../crates/menteion-hippocampus" }
+menteion-homeostasis = { path = "../../crates/menteion-homeostasis" }
+# The language composition: the hypervector body (ADR-0039), categorial reduction on the
+# term arena (ADR-0040) and the frame they meet in (brief 020).
+menteion-symbolic = { path = "../../crates/menteion-symbolic" }
+menteion-reasoning = { path = "../../crates/menteion-reasoning" }
+menteion-linguistic = { path = "../../crates/menteion-linguistic" }
+# The discovery path: an invention's description-length drop as the valence and the reward,
+# and a prover frame's certificate into a theorem (ADR-0043, brief 021).
+menteion-affect = { path = "../../crates/menteion-affect" }
+menteion-tools = { path = "../../crates/menteion-tools" }
+menteion-knowledge = { path = "../../crates/menteion-knowledge" }
+# The readout of a task: the gating rule that turns a trial's spike counts into an action
+# (ADR-0059, brief 027).
+menteion-basal-ganglia = { path = "../../crates/menteion-basal-ganglia" }
+
+# Not the workspace table: the runtime holds the one `unsafe` (ADR-0023). The float rule
+# still applies (ADR-0029).
+[lints.clippy]
+disallowed_types = "deny"

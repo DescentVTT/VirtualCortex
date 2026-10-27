@@ -1,0 +1,15 @@
+[package]
+name = "menteion-telemetry"
+description = "Local-field-potential telemetry sample record for non-invasive observability of Menteion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+# Inherited from [workspace.lints]: no `unsafe`, no `f32`/`f64` (ADR-0029).
+[lints]
+workspace = true

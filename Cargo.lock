@@ -94,166 +94,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "cortex-affect"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-agency"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-arithmetic"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-attention"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-autonomic"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-basal-ganglia"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-bench"
-version = "0.1.0"
-dependencies = [
- "cortex-basal-ganglia",
- "cortex-core",
- "cortex-embodiment",
- "cortex-runtime",
- "cortex-workspace",
- "criterion",
-]
-
-[[package]]
-name = "cortex-cerebellum"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-connectome"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-core"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-curiosity"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-embodiment"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-ethics"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-executive"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-fabric"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-hippocampus"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-homeostasis"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-imagination"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-immune"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-knowledge"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-linguistic"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-neuromod"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-predictive"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-reasoning"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-runtime"
-version = "0.1.0"
-dependencies = [
- "cortex-affect",
- "cortex-basal-ganglia",
- "cortex-connectome",
- "cortex-core",
- "cortex-ethics",
- "cortex-executive",
- "cortex-hippocampus",
- "cortex-homeostasis",
- "cortex-knowledge",
- "cortex-linguistic",
- "cortex-neuromod",
- "cortex-reasoning",
- "cortex-symbolic",
- "cortex-tools",
-]
-
-[[package]]
-name = "cortex-salience"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-sensory"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-social"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-spatial"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-symbolic"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-telemetry"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-thalamus"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-tools"
-version = "0.1.0"
-
-[[package]]
-name = "cortex-workspace"
-version = "0.1.0"
-
-[[package]]
 name = "criterion"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -327,6 +167,166 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "menteion-affect"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-agency"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-arithmetic"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-attention"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-autonomic"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-basal-ganglia"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-bench"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "menteion-basal-ganglia",
+ "menteion-core",
+ "menteion-embodiment",
+ "menteion-runtime",
+ "menteion-workspace",
+]
+
+[[package]]
+name = "menteion-cerebellum"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-connectome"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-core"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-curiosity"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-embodiment"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-ethics"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-executive"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-fabric"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-hippocampus"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-homeostasis"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-imagination"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-immune"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-knowledge"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-linguistic"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-neuromod"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-predictive"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-reasoning"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-runtime"
+version = "0.1.0"
+dependencies = [
+ "menteion-affect",
+ "menteion-basal-ganglia",
+ "menteion-connectome",
+ "menteion-core",
+ "menteion-ethics",
+ "menteion-executive",
+ "menteion-hippocampus",
+ "menteion-homeostasis",
+ "menteion-knowledge",
+ "menteion-linguistic",
+ "menteion-neuromod",
+ "menteion-reasoning",
+ "menteion-symbolic",
+ "menteion-tools",
+]
+
+[[package]]
+name = "menteion-salience"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-sensory"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-social"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-spatial"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-symbolic"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-telemetry"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-thalamus"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-tools"
+version = "0.1.0"
+
+[[package]]
+name = "menteion-workspace"
+version = "0.1.0"
 
 [[package]]
 name = "num-traits"

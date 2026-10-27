@@ -1,43 +1,43 @@
 [workspace]
 members = [
-    "crates/cortex-core",
-    "crates/cortex-connectome",
-    "crates/cortex-sensory",
-    "crates/cortex-embodiment",
-    "crates/cortex-basal-ganglia",
-    "crates/cortex-cerebellum",
-    "crates/cortex-salience",
-    "crates/cortex-workspace",
-    "crates/cortex-symbolic",
-    "crates/cortex-executive",
-    "crates/cortex-predictive",
-    "crates/cortex-agency",
-    "crates/cortex-immune",
-    "crates/cortex-neuromod",
-    "crates/cortex-hippocampus",
-    "crates/cortex-homeostasis",
-    "crates/cortex-fabric",
-    "crates/cortex-telemetry",
+    "crates/menteion-core",
+    "crates/menteion-connectome",
+    "crates/menteion-sensory",
+    "crates/menteion-embodiment",
+    "crates/menteion-basal-ganglia",
+    "crates/menteion-cerebellum",
+    "crates/menteion-salience",
+    "crates/menteion-workspace",
+    "crates/menteion-symbolic",
+    "crates/menteion-executive",
+    "crates/menteion-predictive",
+    "crates/menteion-agency",
+    "crates/menteion-immune",
+    "crates/menteion-neuromod",
+    "crates/menteion-hippocampus",
+    "crates/menteion-homeostasis",
+    "crates/menteion-fabric",
+    "crates/menteion-telemetry",
     # Admitted by ADR-0016 (2026-09-10); whitepaper §5.2.19 to §5.2.32.
-    "crates/cortex-thalamus",
-    "crates/cortex-linguistic",
-    "crates/cortex-tools",
-    "crates/cortex-attention",
-    "crates/cortex-affect",
-    "crates/cortex-autonomic",
-    "crates/cortex-spatial",
-    "crates/cortex-curiosity",
-    "crates/cortex-social",
-    "crates/cortex-ethics",
-    "crates/cortex-knowledge",
-    "crates/cortex-reasoning",
-    "crates/cortex-arithmetic",
-    "crates/cortex-imagination",
+    "crates/menteion-thalamus",
+    "crates/menteion-linguistic",
+    "crates/menteion-tools",
+    "crates/menteion-attention",
+    "crates/menteion-affect",
+    "crates/menteion-autonomic",
+    "crates/menteion-spatial",
+    "crates/menteion-curiosity",
+    "crates/menteion-social",
+    "crates/menteion-ethics",
+    "crates/menteion-knowledge",
+    "crates/menteion-reasoning",
+    "crates/menteion-arithmetic",
+    "crates/menteion-imagination",
     # Not a state crate: the executor, never published (ADR-0023). Outside `crates/`, so the
     # TC-4, TC-5 and TC-9 directives that hold the state crates do not reach it; ADR-0023 holds it.
-    "runtime/cortex-runtime",
+    "runtime/menteion-runtime",
     # Not a state crate: benchmarks only, never published (ADR-0014).
-    "benches/cortex-bench",
+    "benches/menteion-bench",
 ]
 # Resolver 3 (Rust 1.84+) is MSRV-aware: it prefers dependency versions whose rust-version
 # is within the workspace's (ADR-0009).
@@ -61,6 +61,6 @@ disallowed_types = "deny"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-authors = ["VirtualCortex maintainers"]
+authors = ["Menteion maintainers"]
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/DescentVTT/VirtualCortex"
+repository = "https://github.com/Menteion/Menteion"

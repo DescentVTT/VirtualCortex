@@ -1,6 +1,6 @@
 # Benchmarks
 
-`benches/cortex-bench` measures the parts of whitepaper target **T-3** that exist ([ADR-0014](../adr/0014-benchmark-harness.md)). This file says how to run them, what makes a run **admissible**, and how a result is recorded. The rule it serves is [ADR-0010](../adr/0010-measured-or-target.md): a figure enters whitepaper §10.2's Measured column only from an admissible run.
+`benches/menteion-bench` measures the parts of whitepaper target **T-3** that exist ([ADR-0014](../adr/0014-benchmark-harness.md)). This file says how to run them, what makes a run **admissible**, and how a result is recorded. The rule it serves is [ADR-0010](../adr/0010-measured-or-target.md): a figure enters whitepaper §10.2's Measured column only from an admissible run.
 
 ## What is measured
 
@@ -23,20 +23,20 @@
 | `executor/push_to_turn` | one injected message through the delivery phase into a mailbox and the turn that drains and integrates it, on one worker: two ticks of the three-phase loop | R-1 steps 2–5, ADR-0023 |
 | `executor/idle_tick/{1,2,4}` | one tick with every unit at rest, on one, two and four workers: the four barrier waits, the coordinator's publication of the modulation and the gain, and the population tally; the subject of whitepaper §11.1's conservative-lookahead question | §8.5, ADR-0035 |
 
-Inputs come from `cortex_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: the loop across several workers under load (`idle_tick` measures the barriers without contention), and T-8 throughput, which has no subject yet.
+Inputs come from `menteion_bench::Lcg` seeded with `Lcg::SEED`, so every run measures the same sequence. What is **not** measured: the loop across several workers under load (`idle_tick` measures the barriers without contention), and T-8 throughput, which has no subject yet.
 
 ## Running
 
 Anywhere, for a developer's own information (never admissible):
 
 ```bash
-cargo bench -p cortex-bench --bench hot_path
+cargo bench -p menteion-bench --bench hot_path
 ```
 
 Smoke mode, what CI runs (one iteration per benchmark, no timing asserted):
 
 ```bash
-cargo bench -p cortex-bench --bench hot_path -- --test
+cargo bench -p menteion-bench --bench hot_path -- --test
 ```
 
 ## An admissible run

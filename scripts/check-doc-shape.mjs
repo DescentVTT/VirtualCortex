@@ -14,7 +14,8 @@
 //    Markdown file, is not new text and passes whatever its length: a line left as it was, and a
 //    sentence moved verbatim from one document to another. Links are compared by the file they
 //    reach, so a moved sentence whose relative links were rewritten for its new place is the
-//    sentence it was.
+//    sentence it was. So is a block whose only change is ADR-0221's rename: the new names are read
+//    back to the old before the comparison (ADR-0222).
 // 2. docs/STATUS.md is at most 60 lines.
 // 3. A CHANGELOG.md entry, a top-level item under a version's heading, is at most 400 characters
 //    when the base does not hold it.
@@ -283,13 +284,32 @@ export function blocks(body, firstLine = 1) {
 }
 
 /**
- * Text compared by what it says and where its links lead: every relative link resolved from the
- * file it is in to a path from the repository's root, an anchor alone to the file's own, and every
- * run of whitespace one space.
+ * Text with ADR-0221's names read back, each new name to the old one, the longer first: the
+ * address, the npm package, the header's type, the project, the magic, the image's extension and
+ * a crate's prefix (ADR-0222). A block whose only change is the project's rename reads as the
+ * text it was, as math moved into GitHub's forms does (ADR-0201); a block changed otherwise is
+ * still new text.
+ */
+export function renamedBack(text) {
+  return text
+    .replace(/Menteion\/Menteion/g, "DescentVTT/VirtualCortex")
+    .replace(/menteion-specs/g, "virtualcortex-specs")
+    .replace(/MenteionFileHeader/g, "CortexFileHeader")
+    .replace(/Menteion/g, "VirtualCortex")
+    .replace(/MENTEION/g, "VCORTEX1")
+    .replace(/\.menteion\b/g, ".cortex")
+    .replace(/\bmenteion-/g, "cortex-")
+    .replace(/\bmenteion_/g, "cortex_");
+}
+
+/**
+ * Text compared by what it says and where its links lead: ADR-0221's names read back
+ * (`renamedBack`), every relative link resolved from the file it is in to a path from the
+ * repository's root, an anchor alone to the file's own, and every run of whitespace one space.
  */
 export function normalise(text, path) {
   const dir = posix.dirname(path);
-  return rendered(text)
+  return renamedBack(rendered(text))
     .replace(/\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g, (all, target, title) => {
       if (/^[a-z][a-z0-9+.-]*:/i.test(target)) return all;
       if (target.startsWith("#")) return `](/${path}${target}${title})`;

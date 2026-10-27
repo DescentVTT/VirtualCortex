@@ -35,7 +35,7 @@ date: YYYY-MM-DD
 
 **Branch**: `explore/NNN-<slug>`
 **Commit**: `<the commit the runs ran on>`
-**Runs**: [<run id>](https://github.com/DescentVTT/VirtualCortex/actions/runs/<run id>)
+**Runs**: [<run id>](https://github.com/Menteion/Menteion/actions/runs/<run id>)
 
 What was asked, what ran, what it printed, and what it suggests. Every figure is exploratory.
 ```

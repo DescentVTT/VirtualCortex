@@ -1,4 +1,4 @@
-# Contributing to VirtualCortex
+# Contributing to Menteion
 
 Thank you for considering a contribution. This file is the map; the reasoning behind each rule lives in the [whitepaper](docs/WHITEPAPER.md) and in the [ADRs](docs/adr/README.md).
 
@@ -18,7 +18,7 @@ Thank you for considering a contribution. This file is the map; the reasoning be
 
 ### Commit messages
 
-[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): summary`, where `type` is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci` and `scope` is a crate name without the `cortex-` prefix (`core`, `hippocampus`), or `whitepaper`, `adr`, `briefs`, `workspace`, `specs`, `ci`.
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): summary`, where `type` is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci` and `scope` is a crate name without the `menteion-` prefix (`core`, `hippocampus`), or `whitepaper`, `adr`, `briefs`, `workspace`, `specs`, `ci`.
 
 ```text
 docs(whitepaper): transcribe SynapseBlock layout from source
@@ -43,10 +43,10 @@ These are the technical constraints of whitepaper §2.2. They are checked where 
 | A record without atomics derives `Clone, Copy, Debug, PartialEq, Eq`; a control record derives `Debug` only. | Review; whitepaper §8.2 rule L-5. |
 | No `unsafe` without an ADR naming the invariant and the test. | `unsafe_code = "forbid"` under `[workspace.lints]` in every state crate and the benchmark crate (ADR-0029); `spec-guard` directives for the runtime's one `unsafe`; review. |
 | Arithmetic on Q16.16 state fields is saturating, or explicitly wrapping for phase counters; no plain `+`, `-`, `*`, `/` or `%` on any integer anywhere in the workspace. | `#![deny(clippy::arithmetic_side_effects)]` in every crate and in every integration-test crate root ([ADR-0029](docs/adr/0029-structural-enforcement.md), brief 016; finding F-4 resolved): a build error. A site that cannot be written by name is a finding, not an exemption; `#[allow]` is not used. |
-| A parameter the engine may amend by itself is an entry of `cortex-executive`'s `REGISTRY` with an owner and bounds, added by an ADR; the veto gate's parameters never are; the amendment passes the four gates of `PolicyAmendment` and its trial ([ADR-0031](docs/adr/0031-policy-amendment.md)). | The registry test in `cortex-executive`; `spec-guard` holds `OWNER_VETO_GATE` and the record; the loader's `is_well_formed`; review of the ADR that adds an entry. |
+| A parameter the engine may amend by itself is an entry of `menteion-executive`'s `REGISTRY` with an owner and bounds, added by an ADR; the veto gate's parameters never are; the amendment passes the four gates of `PolicyAmendment` and its trial ([ADR-0031](docs/adr/0031-policy-amendment.md)). | The registry test in `menteion-executive`; `spec-guard` holds `OWNER_VETO_GATE` and the record; the loader's `is_well_formed`; review of the ADR that adds an entry. |
 | Every loop ends by construction (a `for` over a range or a slice, a countdown by one tested for zero, a scan by `get`, a recursion depth that falls to a bound), never by an ordering comparison alone on a value the body moves; a test's loop never ends by the function it tests ([ADR-0062](docs/adr/0062-the-first-complete-sweeps-list.md)). | The weekly sweep's `timeout.txt`, read by ADR-0062's triage rule: a directive-class timeout is rewritten as a range and held to its previous form by a property test in `mod prop`; an inherent one (a wait on another thread, a bound the mutant removed) is a detection and stays; review. |
 | Trailing padding is an explicit `_reserved` or `padding` byte array. | Review. |
-| Changing any field of any record, including reserved bytes, bumps `CortexFileHeader::version` and gets a changelog entry. | Review. |
+| Changing any field of any record, including reserved bytes, bumps `MenteionFileHeader::version` and gets a changelog entry. | Review. |
 
 Formatting (`cargo fmt`) and lints (`cargo clippy -D warnings`) run in CI as blocking checks. Run them before pushing.
 
@@ -129,7 +129,7 @@ npm run spec
 ```bash
 # 2. The pull request's gate alone, with the tests again on AArch64
 cargo test --workspace --release --locked
-cargo bench -p cortex-bench --bench hot_path --locked -- --test
+cargo bench -p menteion-bench --bench hot_path --locked -- --test
 cargo +1.85 check --workspace --all-targets --locked   # the MSRV floor
 cargo +1.85 test --workspace --locked
 git diff main...HEAD > target/pr.diff && cargo mutants --workspace --in-diff target/pr.diff   # cargo-mutants 27.1.0

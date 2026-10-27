@@ -16,7 +16,7 @@ const NOTE_TEXT = [
   "",
   "**Branch**: `explore/001-a-scan`",
   "**Commit**: `0123abc`",
-  "**Runs**: [39153149745](https://github.com/DescentVTT/VirtualCortex/actions/runs/39153149745)",
+  "**Runs**: [39153149745](https://github.com/Menteion/Menteion/actions/runs/39153149745)",
   "",
 ].join("\n");
 

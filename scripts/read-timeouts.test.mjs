@@ -12,8 +12,8 @@ import { test } from "node:test";
 
 import { moduleOf, overlap, ownModuleHung, readLog, readTimeouts } from "./read-timeouts.mjs";
 
-const MUTANT = "runtime/cortex-runtime/src/injector.rs:81:34: replace < with > in Injector::push";
-const OTHER = "runtime/cortex-runtime/src/image.rs:564:13: delete field clauses in Image::decode";
+const MUTANT = "runtime/menteion-runtime/src/injector.rs:81:34: replace < with > in Injector::push";
+const OTHER = "runtime/menteion-runtime/src/image.rs:564:13: delete field clauses in Image::decode";
 
 // One `Apply` or `Revert` line as cargo-mutants' debug.log writes it.
 const span = (at, slot, kind, name) =>
@@ -22,7 +22,7 @@ const span = (at, slot, kind, name) =>
 
 // A per-mutant log: the tests that warned, and the ones that reported afterwards.
 const log = (warned, after) =>
-  ["     Running `/tmp/x/target/debug/deps/cortex_runtime-ff09`", "", "running 4 tests"]
+  ["     Running `/tmp/x/target/debug/deps/menteion_runtime-ff09`", "", "running 4 tests"]
     .concat(warned.map((t) => `test ${t} has been running for over 60 seconds`))
     .concat(after.map((t) => `test ${t} ... ok`))
     .concat(["", "*** result: Timeout"])
@@ -119,7 +119,7 @@ test("a run still finishing tests with no test of its own module hung is F-42's 
 test("a run finishing another thread's tests while its own module's test hangs is not F-42's kind", () => {
   // The real case: `Injector::pop` replaced, `deque`'s test finishes after the warning, and
   // `injector`'s own test -- the one that would catch it -- never returns.
-  const name = "runtime/cortex-runtime/src/injector.rs:91:9: replace Injector::pop with Some((0, 1))";
+  const name = "runtime/menteion-runtime/src/injector.rs:91:9: replace Injector::pop with Some((0, 1))";
   const dir = sweep({
     timeouts: [name],
     spans: [span(10, "/tmp/a.tmp", "Apply", name), span(1010, "/tmp/a.tmp", "Revert", name)],
@@ -156,7 +156,7 @@ test("overlap is the shared seconds, and zero for windows that do not meet or ar
 
 test("the module is the mutant's file, and a mutant with no file has none", () => {
   strictEqual(moduleOf(MUTANT), "injector");
-  strictEqual(moduleOf("crates/cortex-core/src/dynamics/synapse.rs:358:9: replace next"), "synapse");
+  strictEqual(moduleOf("crates/menteion-core/src/dynamics/synapse.rs:358:9: replace next"), "synapse");
   strictEqual(moduleOf("not a mutant name"), null);
   strictEqual(ownModuleHung(MUTANT, ["injector::tests::ring"]), true);
   strictEqual(ownModuleHung(MUTANT, ["deque::tests::thieves"]), false);
@@ -165,7 +165,7 @@ test("the module is the mutant's file, and a mutant with no file has none", () =
 
 test("the log names the binary it was inside and the tests that warned and never reported", () => {
   const read = readLog(log(["a::b", "c::d"], ["a::b"]));
-  strictEqual(read.binary, "cortex_runtime-ff09");
+  strictEqual(read.binary, "menteion_runtime-ff09");
   deepStrictEqual(read.unfinished, ["c::d"]);
   strictEqual(read.warnings, 2);
 });

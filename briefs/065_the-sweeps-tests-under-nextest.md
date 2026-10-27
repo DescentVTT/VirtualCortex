@@ -70,9 +70,9 @@ and the quoted sentences are what to re-derive.
    `image` 3; 16 timeouts, 393 minutes.
 5. **The inherent timeouts** ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)): the injector, the
    barrier's wait and the workers' stop and run. Their evidence reads *"the run had stopped finishing tests"*.
-6. **The runtime's suite**: `cargo test -p cortex-runtime --locked`, the library's tests and nineteen test binaries
-   under `runtime/cortex-runtime/tests/`. `tests/no_alloc.rs` installs a global allocator and holds one test
-   function (F-64). No doctest is written under `runtime/cortex-runtime/src`.
+6. **The runtime's suite**: `cargo test -p menteion-runtime --locked`, the library's tests and nineteen test binaries
+   under `runtime/menteion-runtime/tests/`. `tests/no_alloc.rs` installs a global allocator and holds one test
+   function (F-64). No doctest is written under `runtime/menteion-runtime/src`.
 7. **The toolchain**: `rust-toolchain.toml` pins 1.97.1.
 8. **What the tool's documentation says** (read 2026-10-09; ADR-0160 quotes it): nextest runs each test in a process
    of its own and tests of several binaries at once; it fails fast by default; straggling tests run to completion;
@@ -93,7 +93,7 @@ and the quoted sentences are what to re-derive.
   - The job's own bound for a mutant derived as now, from the suite timed under the tool the shard uses.
 - [ ] **The unmutated suite under nextest, before any mutant.**
   - It passes.
-  - It runs the tests `cargo test -p cortex-runtime` runs: both lists counted and compared by name, with whatever
+  - It runs the tests `cargo test -p menteion-runtime` runs: both lists counted and compared by name, with whatever
     nextest does not run named. A test that is not a doctest and is not run stops the round.
 - [ ] **Two dispatches at `scope=mutants` on one commit of this round's branch**, one under each tool, with the same
   twelve shards. Both green by the sweep's own rule, which lists survivors and blocks nothing.

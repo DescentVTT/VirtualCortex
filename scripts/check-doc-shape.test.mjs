@@ -16,6 +16,7 @@ import {
   checkShape,
   fencedOperatorname,
   normalise,
+  renamedBack,
   rendered,
 } from "./check-doc-shape.mjs";
 
@@ -190,6 +191,27 @@ test("cells split at the pipes that are not escaped, and the delimiter row is no
 
 test("normalise resolves a relative link and an anchor to the root, and leaves a URL", () => {
   assert.equal(normalise("[a](../adr/x.md#s) [b](#c) [d](https://e.org/f)", "docs/research/H-1.md"), "[a](/docs/adr/x.md#s) [b](/docs/research/H-1.md#c) [d](https://e.org/f)");
+});
+
+// --- the project renamed (ADR-0221, ADR-0222) --------------------------------------------------
+
+test("renamedBack reads every name of ADR-0221's table back to the old one", () => {
+  assert.equal(
+    renamedBack(
+      "Menteion at github.com/Menteion/Menteion, menteion-specs, `MenteionFileHeader`, MENTEION, a .menteion image, `menteion-core` and `menteion_core`",
+    ),
+    "VirtualCortex at github.com/DescentVTT/VirtualCortex, virtualcortex-specs, `CortexFileHeader`, VCORTEX1, a .cortex image, `cortex-core` and `cortex_core`",
+  );
+  assert.equal(renamedBack("the cerebral cortex, cortical columns"), "the cerebral cortex, cortical columns");
+});
+
+test("a block whose only change is the rename is not new text, however long; another change is", () => {
+  const before = `VirtualCortex runs \`cortex-core\` ([tests](../../runtime/cortex-runtime/tests/a.rs), [§5.2.1](#521-cortex-core--state)) ${words(1300)}.\n`;
+  const after = `Menteion runs \`menteion-core\` ([tests](../../runtime/menteion-runtime/tests/a.rs), [§5.2.1](#521-menteion-core--state)) ${words(1300)}.\n`;
+  const path = "docs/research/H-13.md";
+  assert.deepEqual(shape({ [path]: after }, { [path]: before }), []);
+  assert.equal(shape({ [path]: after.replace("runs", "ran") }, { [path]: before }).length, 1);
+  assert.equal(shape({ [path]: after.replace("menteion-core`", "menteion-cores`") }, { [path]: before }).length, 1);
 });
 
 // --- math GitHub renders (ADR-0201) ---------------------------------------------------------------
