@@ -64,3 +64,19 @@ rust-version = "1.85"
 authors = ["Menteion maintainers"]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/Menteion/Menteion"
+
+# Exploration 006, on `explore/006-where-an-arm-spends-its-time` alone (ADR-0193): the release
+# profile with whole-program optimisation, and two partial forms of it, for the test binaries an
+# arm runs (`cargo test --profile <name>`). Never on `main`, which has no `[profile]`.
+[profile.lto-fat]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+[profile.lto-thin]
+inherits = "release"
+lto = "thin"
+
+[profile.cgu1]
+inherits = "release"
+codegen-units = 1

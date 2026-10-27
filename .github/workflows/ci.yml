@@ -503,7 +503,10 @@ jobs:
     name: Arm ${{ matrix.test }} (ADR-0184)
     needs: [arms-plan]
     if: github.event_name == 'workflow_dispatch' && inputs.scope == 'arms'
-    runs-on: ubuntu-24.04-arm
+    # Exploration 006, on its branch alone (ADR-0193): a test named `x86-64/<mode>/<test>` runs on
+    # the weekly shards' runner and is run by scripts/explore-006/run.sh, as is `aarch64/<mode>/<test>`
+    # here; any other name runs as before.
+    runs-on: ${{ startsWith(matrix.test, 'x86-64/') && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     timeout-minutes: 240 # the weekly shard's (ADR-0220)
     strategy:
       # One arm that fails must not stop the others.
@@ -518,14 +521,25 @@ jobs:
           rustup toolchain install
           rustup show active-toolchain
 
+      # Exploration 006 builds from nothing, so that every profile's build is timed cold.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: ${{ !contains(matrix.test, '/') }}
         with:
           shared-key: arms
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        if: ${{ contains(matrix.test, '/') }}
+        with:
+          node-version: "22"
 
       - name: The test, in the release profile, its output kept (ADR-0184)
         env:
           TEST: ${{ matrix.test }}
-        run: bash scripts/arm-run.sh "$TEST"
+        run: |
+          case "$TEST" in
+            */*) bash scripts/explore-006/run.sh "$TEST" ;;
+            *) bash scripts/arm-run.sh "$TEST" ;;
+          esac
 
       - name: What the test took
         if: always()
@@ -548,6 +562,7 @@ jobs:
             arm.log
             arm.tsv
             list.log
+            explore-006/
           retention-days: 90
 
   mutants-weekly:
