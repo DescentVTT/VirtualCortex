@@ -395,6 +395,47 @@ fn depression_at(amount_q1_15: i16, magnitude: i32) -> i16 {
         >> STDP_DEPRESSION_REFERENCE_SHIFT) as i16
 }
 
+/// Exploration 007 (ADR-0193), on its branch alone and in no image: a soft bound on an
+/// excitatory pairing's potentiation, the amount $A_+ (1 - 2^{-11})^{q - p}$ scaled by the room
+/// the slot's magnitude $M$ before the pairing leaves below the rail $R$ = `i16::MAX`, the
+/// magnitude ADR-0055's depression reads. The depression and the inhibitory rule do not move.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SoftBound {
+    /// $(R - M) / R$ over the whole width (the $\mu = 1$ potentiation of Gütig et al. 2003).
+    Width,
+    /// $(R - M) / (R - T)$ in the width's top eighth, from $T$ =
+    /// [`SOFT_BOUND_TOP_EIGHTH_Q1_15`] to the rail, and 1 below it: the amount whole at $T$ and
+    /// nothing at the rail.
+    TopEighth,
+}
+
+/// Where [`SoftBound::TopEighth`] begins: seven eighths of the width, 0x7000.
+pub const SOFT_BOUND_TOP_EIGHTH_Q1_15: i32 = 0x7000;
+
+/// An excitatory potentiation at a magnitude under a soft bound (exploration 007):
+/// `amount × (R − M) / D`, rounded to nearest with a half going up, `D` the room the bound
+/// spans; the amount itself where the bound is unset or the magnitude below where it begins.
+/// The amount is at most $A_+$ and the room at most the width, so the product is below
+/// $2^{24}$ and the quotient at most the amount.
+#[inline]
+fn potentiation_at(amount_q1_15: i16, magnitude: i32, bound: Option<SoftBound>) -> i16 {
+    let rail = i16::MAX as i32;
+    let span: i64 = match bound {
+        None => return amount_q1_15,
+        Some(SoftBound::Width) => rail as i64,
+        Some(SoftBound::TopEighth) if magnitude < SOFT_BOUND_TOP_EIGHTH_Q1_15 => {
+            return amount_q1_15;
+        }
+        Some(SoftBound::TopEighth) => rail.saturating_sub(SOFT_BOUND_TOP_EIGHTH_Q1_15) as i64,
+    };
+    let room = rail.saturating_sub(magnitude).clamp(0, rail) as i64;
+    (amount_q1_15 as i64)
+        .saturating_mul(room)
+        .saturating_add(span >> 1)
+        .checked_div(span)
+        .unwrap_or(0) as i16
+}
+
 /// `trace × factor` (a Q16.16 factor below 1.0), rounded to nearest, and at least one LSB
 /// toward zero for a trace that is not zero, so that a trace reaches zero exactly.
 #[inline]
@@ -601,6 +642,28 @@ impl SynapseBlock {
         polarity: Polarity,
         istdp_alpha_q1_15: i16,
     ) -> i16 {
+        self.step_stdp_bounded(
+            slot,
+            pre_now_tick,
+            post_last_tick,
+            polarity,
+            istdp_alpha_q1_15,
+            None,
+        )
+    }
+
+    /// [`step_stdp`](Self::step_stdp) with an excitatory block's potentiation under `bound`
+    /// (exploration 007, [`SoftBound`]), at the magnitude before the pairing; unset, it is
+    /// `step_stdp` bit for bit.
+    pub fn step_stdp_bounded(
+        &mut self,
+        slot: usize,
+        pre_now_tick: u32,
+        post_last_tick: u32,
+        polarity: Polarity,
+        istdp_alpha_q1_15: i16,
+        bound: Option<SoftBound>,
+    ) -> i16 {
         if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
             return 0;
         }
@@ -613,7 +676,15 @@ impl SynapseBlock {
             if self.last_spike_tick != NO_SPIKE_ON_RECORD {
                 let post_after_prev = post_last_tick.wrapping_sub(self.last_spike_tick) as i32;
                 if post_after_prev > 0 && since_post >= 0 {
-                    e = e.saturating_add(window(STDP_A_PLUS_Q1_15, post_after_prev as u32));
+                    let amount = window(STDP_A_PLUS_Q1_15, post_after_prev as u32);
+                    e = e.saturating_add(match polarity {
+                        Polarity::Excitatory => potentiation_at(
+                            amount,
+                            polarity.magnitude(self.weights_q1_15[slot]),
+                            bound,
+                        ),
+                        Polarity::Inhibitory => amount,
+                    });
                 }
             }
             if since_post > 0 {
@@ -779,15 +850,30 @@ impl SynapseBlock {
         polarity: Polarity,
         istdp_alpha_q1_15: i16,
     ) -> [i16; SYNAPSES_PER_BLOCK] {
+        self.step_stdp_all_bounded(now_tick, post_last_ticks, polarity, istdp_alpha_q1_15, None)
+    }
+
+    /// [`step_stdp_all`](Self::step_stdp_all) with every slot's pairing by
+    /// [`step_stdp_bounded`](Self::step_stdp_bounded) under `bound` (exploration 007); unset, it
+    /// is `step_stdp_all` bit for bit.
+    pub fn step_stdp_all_bounded(
+        &mut self,
+        now_tick: u32,
+        post_last_ticks: [u32; SYNAPSES_PER_BLOCK],
+        polarity: Polarity,
+        istdp_alpha_q1_15: i16,
+        bound: Option<SoftBound>,
+    ) -> [i16; SYNAPSES_PER_BLOCK] {
         self.decay_eligibility(now_tick.wrapping_sub(self.last_spike_tick));
         let mut out = [0; SYNAPSES_PER_BLOCK];
         for (slot, e) in out.iter_mut().enumerate() {
-            *e = self.step_stdp(
+            *e = self.step_stdp_bounded(
                 slot,
                 now_tick,
                 post_last_ticks[slot],
                 polarity,
                 istdp_alpha_q1_15,
+                bound,
             );
         }
         self.stamp_presynaptic(now_tick);
@@ -1945,6 +2031,70 @@ mod tests {
             );
             assert_eq!(a.release_all(STP_U, STP_MAX), b.release_all(STP_U, STP_MAX));
             assert_eq!(a, b);
+        }
+    }
+
+    /// Exploration 007: the soft bound scales an excitatory pairing's potentiation by the room
+    /// below the rail, leaves the depression and the inhibitory rule as they are, and unset is
+    /// `step_stdp` bit for bit.
+    #[test]
+    fn a_soft_bound_scales_the_excitatory_potentiation_alone() {
+        let rail = i16::MAX as i32;
+        assert_eq!(potentiation_at(328, 0, Some(SoftBound::Width)), 328);
+        assert_eq!(potentiation_at(328, rail, Some(SoftBound::Width)), 0);
+        // 328 × 16 383 / 32 767 = 163.995 → 164; 328 × 8 192 / 32 767 = 82.0 → 82.
+        assert_eq!(potentiation_at(328, 16_384, Some(SoftBound::Width)), 164);
+        assert_eq!(
+            potentiation_at(328, rail - 8_192, Some(SoftBound::Width)),
+            82
+        );
+        assert_eq!(
+            potentiation_at(328, 0x6FFF, Some(SoftBound::TopEighth)),
+            328
+        );
+        assert_eq!(
+            potentiation_at(328, 0x7000, Some(SoftBound::TopEighth)),
+            328
+        );
+        assert_eq!(potentiation_at(328, rail, Some(SoftBound::TopEighth)), 0);
+        // Half the top eighth's room: 328 × 2 047 / 4 095 = 163.96 → 164.
+        assert_eq!(
+            potentiation_at(328, rail - 2_047, Some(SoftBound::TopEighth)),
+            164
+        );
+        for m in [0, 1, 0x2000, 0x7000, rail] {
+            assert_eq!(potentiation_at(328, m, None), 328);
+        }
+        // A pairing with both terms: the target fired after the previous presynaptic spike
+        // and before this one, on every slot.
+        for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
+            for bound in [None, Some(SoftBound::Width), Some(SoftBound::TopEighth)] {
+                let mut plain = full_block(0, 1);
+                plain.weights_q1_15 = match polarity {
+                    Polarity::Excitatory => [0, 0x4000, 0x7800, i16::MAX],
+                    Polarity::Inhibitory => [0, -0x4000, -0x7800, -i16::MAX],
+                };
+                plain.stamp_presynaptic(1_000);
+                let mut bounded = plain;
+                let posts = [1_100; SYNAPSES_PER_BLOCK];
+                let a = plain.step_stdp_all(1_200, posts, polarity, ISTDP_ALPHA_Q1_15);
+                let b =
+                    bounded.step_stdp_all_bounded(1_200, posts, polarity, ISTDP_ALPHA_Q1_15, bound);
+                let gain = window(STDP_A_PLUS_Q1_15, 100);
+                for slot in 0..SYNAPSES_PER_BLOCK {
+                    let magnitude = polarity.magnitude(plain.weights_q1_15[slot]);
+                    let expected = match polarity {
+                        Polarity::Excitatory => a[slot]
+                            .saturating_sub(gain)
+                            .saturating_add(potentiation_at(gain, magnitude, bound)),
+                        Polarity::Inhibitory => a[slot],
+                    };
+                    assert_eq!(b[slot], expected, "{polarity:?} {bound:?} slot {slot}");
+                }
+                if bound.is_none() || polarity == Polarity::Inhibitory {
+                    assert_eq!(plain, bounded, "{polarity:?} {bound:?}: bit for bit");
+                }
+            }
         }
     }
 }

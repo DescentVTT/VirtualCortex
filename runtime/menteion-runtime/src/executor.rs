@@ -54,9 +54,9 @@ use menteion_core::{
     BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FLAG_FACILITATING, FLAG_SLOW,
     FlatTimingWheel, GateState, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS,
     ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity,
-    REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SlowCurrent, StpClass, SynapseBlock, THRESHOLD_BASE,
-    WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical, message_is_synaptic,
-    spike_message, synapse_token, synaptic_message, token_block, token_slot,
+    REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SlowCurrent, SoftBound, StpClass, SynapseBlock,
+    THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical,
+    message_is_synaptic, spike_message, synapse_token, synaptic_message, token_block, token_slot,
 };
 use menteion_ethics::EthicalEvaluationGate;
 use menteion_executive::{
@@ -74,7 +74,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{
-    AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+    AtomicBool, AtomicI32, AtomicI64, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
 };
 use std::thread::{self, JoinHandle};
 
@@ -829,6 +829,25 @@ fn inhibitory_of_word(word: i32) -> Option<i32> {
     if word < 0 { None } else { Some(word) }
 }
 
+/// The word the coordinator publishes for the soft bound (exploration 007): zero while unset,
+/// one for `SoftBound::Width` and two for `SoftBound::TopEighth`.
+const fn soft_bound_word(bound: Option<SoftBound>) -> u8 {
+    match bound {
+        None => 0,
+        Some(SoftBound::Width) => 1,
+        Some(SoftBound::TopEighth) => 2,
+    }
+}
+
+/// The soft bound a published word names: none for a word it does not write.
+const fn soft_bound_of_word(word: u8) -> Option<SoftBound> {
+    match word {
+        1 => Some(SoftBound::Width),
+        2 => Some(SoftBound::TopEighth),
+        _ => None,
+    }
+}
+
 /// [`SynapseBlock::consolidate_signed`] for every slot in order, each under its own modulation
 /// (ADR-0068, ADR-0094). A modulation at or above zero is `consolidate`'s, bit for bit, so under
 /// one such modulation for every slot it is `consolidate_all`, call for call, which
@@ -1242,6 +1261,11 @@ struct Shared {
     /// The inhibitory rule's depression per spike at the engine's target period (ADR-0053),
     /// read by every worker in the fan-out phase.
     istdp_alpha: AtomicI32,
+    /// Exploration 007 (ADR-0193), on its branch alone and in no image: the soft bound on an
+    /// excitatory pairing's potentiation as `soft_bound_word` writes it, zero while unset;
+    /// stored between ticks by `Executor::set_soft_bound`, read by every worker in the fan-out
+    /// phase.
+    soft_bound: AtomicU8,
     /// The units that fired this tick, one slot per unit, appended by every worker at the
     /// spike through `fired_len` and taken by the coordinator after the tick into the train
     /// (ADR-0050); empty when the executor keeps no train.
@@ -1648,6 +1672,7 @@ impl<const CAP: usize> Executor<CAP> {
             istdp_alpha: AtomicI32::new(i32::from(istdp_alpha_q1_15(
                 config.istdp_target_period_ticks,
             ))),
+            soft_bound: AtomicU8::new(soft_bound_word(None)),
             fired: (0..fired_slots).map(|_| AtomicU32::new(0)).collect(),
             fired_len: AtomicUsize::new(0),
             episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
@@ -1796,6 +1821,20 @@ impl<const CAP: usize> Executor<CAP> {
     /// or the image's for an engine built from one.
     pub fn istdp_target_period_ticks(&self) -> u32 {
         self.istdp_target_period_ticks
+    }
+
+    /// Exploration 007 (ADR-0193): sets the soft bound on every excitatory pairing's
+    /// potentiation (`SoftBound`), between ticks, from the next tick; `None` unsets it. It is in
+    /// no image, so an engine decoded from one starts unset.
+    pub fn set_soft_bound(&mut self, bound: Option<SoftBound>) {
+        self.shared
+            .soft_bound
+            .store(soft_bound_word(bound), Ordering::Relaxed);
+    }
+
+    /// The soft bound the workers read (exploration 007), none while unset.
+    pub fn soft_bound(&self) -> Option<SoftBound> {
+        soft_bound_of_word(self.shared.soft_bound.load(Ordering::Relaxed))
     }
 
     /// The loader's: the target period an image holds, which outranks the configuration's
@@ -3813,6 +3852,9 @@ impl<const CAP: usize> Worker<CAP> {
         // (ADR-0053), published by the coordinator; within `i16`, as `istdp_alpha_q1_15`
         // bounds it.
         let istdp_alpha = shared.istdp_alpha.load(Ordering::Relaxed) as i16;
+        // The soft bound on an excitatory pairing's potentiation (exploration 007), none
+        // while unset, where every pairing is `step_stdp_all`'s bit for bit.
+        let bound = soft_bound_of_word(shared.soft_bound.load(Ordering::Relaxed));
         for k in 0..self.spiked.len() {
             let (unit, release_u, release_r) = self.spiked[k];
             // SAFETY (phase 2): every turn ended at the barrier, so no `&mut` to any unit
@@ -3858,7 +3900,7 @@ impl<const CAP: usize> Worker<CAP> {
                         polarity,
                     )
                 });
-                block.step_stdp_all(now, posts, polarity, istdp_alpha);
+                block.step_stdp_all_bounded(now, posts, polarity, istdp_alpha, bound);
                 consolidate_each(block, &per_slot, polarity);
                 let released = block.release_all(release_u, release_r);
                 for (slot, &efficacy) in released.iter().enumerate() {
