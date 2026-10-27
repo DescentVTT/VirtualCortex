@@ -328,6 +328,185 @@ impl DendriticSuperNeuron {
     }
 }
 
+// ------------------------------------- exploration 008 (on its branch alone, ADR-0193)
+
+/// Exploration 008 (`explore/008-a-unit-served-on-arrival`): a unit served on arrival. A unit
+/// that is not at rest may leave the schedule when the rule shows it cannot fire before its next
+/// message ([`quiet_cannot_fire`](DendriticSuperNeuron::quiet_cannot_fire)), and is brought up to
+/// date when one arrives or its state is read: by `integrate(0, 0, t)` once a skipped tick, or by
+/// [`quiet_catch_up`](DendriticSuperNeuron::quiet_catch_up), which gives the same fields in fewer
+/// operations. `integrate` is not touched.
+impl DendriticSuperNeuron {
+    /// True when the unit, given no input from now on, never fires again: by every
+    /// `integrate(0, 0, t)` from this state on, at rest or not. Sufficient, not necessary:
+    ///
+    /// - **A threshold at or below zero** never fires, and a quiet tick does not move it (it
+    ///   decays only above its base).
+    /// - **Otherwise the threshold never falls below** $\theta_\min = \min(\theta, \theta_0)$,
+    ///   $\theta_0$ the base: above the base it moves down by $\max(e \gg 12, 1) \le e$ of its
+    ///   excess $e$, so not past the base, and at or below it a quiet tick leaves it.
+    /// - **The compartments never rise above** $B = \max(b, 0)$ and $A = \max(a, 0)$: a leak moves
+    ///   a potential toward zero and never past it, and no input arrives.
+    /// - **The soma never rises above** $M = \max(s, 0, \lceil (B + A)/2 \rceil)$, and while the
+    ///   burst bit is set $\lceil (B + 4A)/5 \rceil$ too. With $s \le M$ and $d = M - s \ge 0$,
+    ///   the couplings take $\lfloor (b' - s)/16 \rfloor + \lfloor (a' - s)/2^k \rfloor \le
+    ///   \lfloor (B + 2^{4-k} A - (1 + 2^{4-k}) s)/16 \rfloor$, at most $\lfloor d/8 \rfloor$ at
+    ///   $k = 4$ ($2M \ge B + A$) and $\lfloor 5d/16 \rfloor$ at $k = 2$ ($5M \ge B + 4A$). The
+    ///   soma's leak takes $s \ge 0$ no higher, and $s < 0$ up by $\max(|s| \gg 11, 1)$, where
+    ///   $d \ge |s| \ge 1$: either way $s' \le M$, and the clamp to `i32` keeps it there. The
+    ///   burst's coupling holds while the bit is set and the resting one after it is cleared, so
+    ///   both bounds are taken while it is set.
+    ///
+    /// So $M < \theta_\min$ is never crossed: the refractory window and the plateau's length need
+    /// no term of their own, the window only forbidding a spike the bound already forbids.
+    pub fn quiet_cannot_fire(&self) -> bool {
+        if self.v_thresh <= 0 {
+            return true;
+        }
+        let floor = i64::from(self.v_thresh.min(THRESHOLD_BASE));
+        let basal = i64::from(self.v_basal.max(0));
+        let apical = i64::from(self.v_apical.max(0));
+        // ⌈(B + A) / 2⌉ and ⌈(B + 4A) / 5⌉, both within `i64` for `i32` potentials.
+        let resting = basal.saturating_add(apical).saturating_add(1) >> 1;
+        let bound = if self.flags & FLAG_BURST_MODE != 0 {
+            let burst = basal
+                .saturating_add(apical << 2)
+                .saturating_add(4)
+                .checked_div(5)
+                .unwrap_or(i64::MAX);
+            resting.max(burst)
+        } else {
+            resting
+        };
+        i64::from(self.v_soma).max(bound) < floor
+    }
+
+    /// `ticks` quiet ticks at once, for a unit that cannot fire in them (`quiet_cannot_fire`):
+    /// every field as `ticks` calls of `integrate(0, 0, t)` would leave it, bit for bit, and the
+    /// ticks the executor would have served the unit in them, from the first, until the tick
+    /// after which it was at rest. A unit not at rest is served at the first.
+    ///
+    /// - **The potentials** are stepped as `integrate` steps them with no input, the basal and
+    ///   apical leaks and the soma's coupling, the burst's coupling for the plateau's ticks; once
+    ///   all three are zero they stay zero, and the loop stops. No closed form of the soma was
+    ///   found: its two couplings floor a difference of two potentials a tick.
+    /// - **The plateau and the refractory window** count down by `ticks`; the burst bit is
+    ///   cleared on the tick the plateau reaches zero, as `integrate` clears it.
+    /// - **The threshold** is [`threshold_after`]: by segments of a constant step, each in one
+    ///   division.
+    pub fn quiet_catch_up(&mut self, ticks: u32) -> u32 {
+        let plateau = u32::from(self.bac_plateau_ticks);
+        // The ticks, from the first, whose coupling is the burst's: the bit is set and the
+        // plateau, counted down before the coupling, has not yet reached zero.
+        let burst_ticks = match (self.flags & FLAG_BURST_MODE != 0, plateau.checked_sub(1)) {
+            (false, _) => 0,
+            (true, None) => u32::MAX,
+            (true, Some(left)) => left,
+        };
+        let (mut s, mut b, mut a) = (self.v_soma, self.v_basal, self.v_apical);
+        let mut moving = 0u32;
+        if a == 0 {
+            // The apical potential stays at zero: its coupling is the soma's alone.
+            for t in 0..ticks {
+                if s == 0 && b == 0 {
+                    break;
+                }
+                b = leak(b, BASAL_LEAK_SHIFT);
+                let apical_shift = if t < burst_ticks {
+                    PLATEAU_COUPLING_SHIFT
+                } else {
+                    COUPLING_SHIFT
+                };
+                let from_basal = (b as i64).saturating_sub(s as i64) >> COUPLING_SHIFT;
+                let from_apical = (s as i64).saturating_neg() >> apical_shift;
+                s = add(
+                    leak(s, SOMA_LEAK_SHIFT),
+                    from_basal.saturating_add(from_apical),
+                );
+                moving = t.wrapping_add(1);
+            }
+        } else {
+            for t in 0..ticks {
+                if s == 0 && b == 0 && a == 0 {
+                    break;
+                }
+                b = leak(b, BASAL_LEAK_SHIFT);
+                a = leak(a, APICAL_LEAK_SHIFT);
+                let apical_shift = if t < burst_ticks {
+                    PLATEAU_COUPLING_SHIFT
+                } else {
+                    COUPLING_SHIFT
+                };
+                let from_basal = (b as i64).saturating_sub(s as i64) >> COUPLING_SHIFT;
+                let from_apical = (a as i64).saturating_sub(s as i64) >> apical_shift;
+                s = add(
+                    leak(s, SOMA_LEAK_SHIFT),
+                    from_basal.saturating_add(from_apical),
+                );
+                moving = t.wrapping_add(1);
+            }
+        }
+        (self.v_soma, self.v_basal, self.v_apical) = (s, b, a);
+        if plateau > 0 {
+            if ticks >= plateau {
+                self.bac_plateau_ticks = 0;
+                self.flags &= !FLAG_BURST_MODE;
+            } else {
+                // Below the plateau, which is a `u16`.
+                self.bac_plateau_ticks = plateau.wrapping_sub(ticks) as u16;
+            }
+        }
+        let refractory = u32::from(self.refractory_ticks);
+        self.refractory_ticks = refractory.saturating_sub(ticks) as u16;
+        let (thresh, decaying) = threshold_after(self.v_thresh, ticks);
+        self.v_thresh = thresh;
+        // At rest after the tick that ends the last of the four: the potentials, the window,
+        // the plateau and the threshold's excess; served from the first. A unit not at rest has
+        // one of the four above zero after a tick, and one at rest none.
+        moving.max(refractory).max(plateau).max(decaying).min(ticks)
+    }
+}
+
+/// Exploration 008: the threshold after `ticks` quiet ticks, and the ticks it took to reach its
+/// base, or `ticks` if it did not. Above the base the excess $e$ falls by $q = \max(e \gg 12, 1)$
+/// a tick. While $q \ge 2$ it holds for $\lfloor (e - 2^{12} q)/q \rfloor + 1$ ticks, after
+/// which $e < 2^{12} q$; at $q = 1$, from $e < 2^{13}$, it holds until $e$ is zero. Each segment
+/// is one step of the loop, and $q$ falls at every segment, so the loop is at most $q + 1$
+/// steps long.
+pub fn threshold_after(v_thresh: i32, ticks: u32) -> (i32, u32) {
+    let excess = v_thresh.saturating_sub(THRESHOLD_BASE);
+    if excess <= 0 {
+        return (v_thresh, 0);
+    }
+    // Above zero and below `i32::MAX`.
+    let mut e = excess as u32;
+    let mut left = ticks;
+    for _ in 0..=(e >> THRESHOLD_DECAY_SHIFT) {
+        if left == 0 || e == 0 {
+            break;
+        }
+        let step = (e >> THRESHOLD_DECAY_SHIFT).max(1);
+        let segment = if step == 1 {
+            e
+        } else {
+            // `step << 12` is at most `e`, and the quotient at most `e`.
+            e.wrapping_sub(step << THRESHOLD_DECAY_SHIFT)
+                .checked_div(step)
+                .unwrap_or(0)
+                .wrapping_add(1)
+        };
+        let n = segment.min(left);
+        // At most `e`: `n` is at most the segment, whose steps the excess holds.
+        e = e.wrapping_sub(n.wrapping_mul(step));
+        left = left.wrapping_sub(n);
+    }
+    // The excess and the base sum to at most the threshold.
+    (
+        THRESHOLD_BASE.wrapping_add(e as i32),
+        ticks.wrapping_sub(left),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1338,6 +1517,356 @@ mod prop {
                 rng.next_u32(),
                 c,
             );
+        }
+    }
+
+    // --------------------------------- exploration 008 (on its branch alone, ADR-0193)
+
+    /// The potentials the quiet tests start from: the lattice without the extremes' neighbours,
+    /// whose tails are the extremes' to within a tick.
+    const QUIET_POTENTIALS: [i32; 13] = [
+        i32::MIN,
+        -0x0002_0000,
+        -0x0001_0000,
+        -0x8000,
+        -0x4000,
+        -1,
+        0,
+        1,
+        0x4000,
+        0x8000,
+        0x0001_0000,
+        0x0002_0000,
+        i32::MAX,
+    ];
+
+    /// What a lattice triple of potentials is tried beside: the threshold, the plateau with the
+    /// burst bit, and the refractory window. Between them: a threshold at and below zero, at
+    /// one LSB, at half the base, at the base, a spike's step above it (the one-LSB tail of its
+    /// decay) and one whose decay runs by segments; no plateau, one that ends on the first tick,
+    /// one that runs, one of a spike's length, the bit with no plateau (the burst's coupling for
+    /// good) and a plateau with the bit clear; no window, one tick of it and a spike's.
+    const QUIET_REST: [(i32, (u8, u16), u16); 9] = [
+        (THRESHOLD_BASE, (0, 0), 0),
+        (
+            THRESHOLD_BASE + THRESHOLD_STEP,
+            (FLAG_BURST_MODE, BAC_PLATEAU_TICKS),
+            BURST_REFRACTORY_TICKS,
+        ),
+        (THRESHOLD_BASE + THRESHOLD_STEP, (0, 0), REFRACTORY_TICKS),
+        (1, (FLAG_BURST_MODE, 0), 0),
+        (0x8000, (0, 0), 0),
+        (THRESHOLD_BASE + 0x2_9000, (0, BAC_PLATEAU_TICKS), 1),
+        (THRESHOLD_BASE + 1, (FLAG_BURST_MODE, 1), 0),
+        (0, (FLAG_BURST_MODE, 2), REFRACTORY_TICKS),
+        (i32::MIN, (0, 0), 0),
+    ];
+
+    /// The unit's state: three potentials, then the threshold, the plateau and the window. The
+    /// inhibitory bit is set, and the burst bit is the only one a quiet tick may move.
+    fn quiet_state(
+        (s, b, a): (i32, i32, i32),
+        (thresh, (flags, plateau), refractory): (i32, (u8, u16), u16),
+    ) -> DendriticSuperNeuron {
+        let mut u = DendriticSuperNeuron::new(1);
+        (u.v_soma, u.v_basal, u.v_apical) = (s, b, a);
+        u.v_thresh = thresh;
+        u.flags = flags | FLAG_INHIBITORY;
+        u.bac_plateau_ticks = plateau;
+        u.refractory_ticks = refractory;
+        u.last_soma_spike_tick = 0xABCD;
+        u
+    }
+
+    /// Every quiet test's starting states: each lattice triple beside each of `QUIET_REST`.
+    fn quiet_states() -> impl Iterator<Item = DendriticSuperNeuron> {
+        QUIET_POTENTIALS.iter().flat_map(|&s| {
+            QUIET_POTENTIALS.iter().flat_map(move |&b| {
+                QUIET_POTENTIALS.iter().flat_map(move |&a| {
+                    QUIET_REST
+                        .iter()
+                        .map(move |&rest| quiet_state((s, b, a), rest))
+                })
+            })
+        })
+    }
+
+    /// The executor's rest (`executor::at_rest` but for the slow potential).
+    fn membrane_at_rest(f: &Fields) -> bool {
+        f.0 == 0 && f.1 == 0 && f.2 == 0 && f.3 <= THRESHOLD_BASE && f.4 == 0 && f.5 == 0
+    }
+
+    /// The soma's bound $M$ of `quiet_cannot_fire`, written again from its documentation, for
+    /// the quiet ticks to hold the soma under.
+    fn soma_bound(u: &DendriticSuperNeuron) -> i64 {
+        let b = i64::from(u.v_basal.max(0));
+        let a = i64::from(u.v_apical.max(0));
+        // ⌈(B + A)/2⌉ and ⌈(B + 4A)/5⌉: the `i32` potentials keep every sum within `i64`.
+        let resting = b.saturating_add(a).saturating_add(1) >> 1;
+        let burst = b
+            .saturating_add(a.saturating_mul(4))
+            .saturating_add(4)
+            .checked_div(5)
+            .unwrap_or(i64::MAX);
+        let m = i64::from(u.v_soma).max(0).max(resting);
+        if u.flags & FLAG_BURST_MODE != 0 {
+            m.max(burst)
+        } else {
+            m
+        }
+    }
+
+    /// `integrate(0, 0, t)` from a copy of `u` until its potentials are all zero (after which no
+    /// tick can fire) or `limit` ticks: the tick of the first spike, if one, and the ticks run.
+    /// Each tick also holds the soma at or under `bound`, where one is given.
+    fn quietly(u: &DendriticSuperNeuron, limit: u32, bound: Option<i64>) -> (Option<u32>, u32) {
+        let mut v = DendriticSuperNeuron::new(u.id);
+        v.restore_plain_fields(u);
+        for t in 0..limit {
+            if v.v_soma == 0 && v.v_basal == 0 && v.v_apical == 0 {
+                return (None, t);
+            }
+            if v.integrate(0, 0, t) {
+                return (Some(t), t.wrapping_add(1));
+            }
+            if let Some(m) = bound {
+                assert!(
+                    i64::from(v.v_soma) <= m,
+                    "the soma {} past its bound {m} at quiet tick {t} from {:?}",
+                    v.v_soma,
+                    fields(u)
+                );
+            }
+        }
+        (None, limit)
+    }
+
+    #[test]
+    fn a_unit_the_bound_admits_never_fires_with_no_input_and_its_soma_stays_under_the_bound() {
+        // From the lattice's ends the potentials reach zero within 17 000 ticks, the apical
+        // compartment's leak the slowest.
+        let (mut admitted, mut refused, mut refused_and_fired) = (0u32, 0u32, 0u32);
+        let mut closest = i64::MAX;
+        let mut reached = [false; 7];
+        for u in quiet_states() {
+            if u.quiet_cannot_fire() {
+                admitted = admitted.saturating_add(1);
+                let bound = soma_bound(&u);
+                let (spike, ran) = quietly(&u, 1 << 16, Some(bound));
+                assert_eq!(spike, None, "admitted and fired: {:?}", fields(&u));
+                assert!(ran < 1 << 16, "the potentials rest: {:?}", fields(&u));
+                if u.v_thresh > 0 {
+                    let floor = i64::from(u.v_thresh.min(THRESHOLD_BASE));
+                    closest = closest.min(floor.saturating_sub(bound));
+                }
+                // The cases the bound's derivation names, each reached by a unit it admits.
+                reached[0] |= u.refractory_ticks > 0;
+                reached[1] |= u.flags & FLAG_BURST_MODE != 0 && u.v_apical > 0;
+                reached[2] |= u.v_thresh > THRESHOLD_BASE && u.v_basal > 0;
+                reached[3] |= u.v_soma < 0 && (u.v_basal > 0 || u.v_apical > 0);
+                reached[4] |= u.v_soma > 0 && u.v_basal > u.v_soma;
+                reached[5] |= u.v_thresh <= 0;
+                reached[6] |= u.v_thresh > 0 && u.v_thresh < THRESHOLD_BASE && u.v_basal > 0;
+            } else {
+                refused = refused.saturating_add(1);
+                if quietly(&u, 1 << 16, None).0.is_some() {
+                    refused_and_fired = refused_and_fired.saturating_add(1);
+                }
+            }
+        }
+        assert_eq!(reached, [true; 7], "every case reached");
+        assert!(
+            admitted > 5_000 && refused > 5_000,
+            "the bound admits {admitted} and refuses {refused}"
+        );
+        assert!(
+            refused_and_fired > 1_000,
+            "the bound refuses units that fire: {refused_and_fired}"
+        );
+        assert!(
+            closest < 0x1000,
+            "the lattice comes near the bound's edge: {closest}"
+        );
+    }
+
+    /// A driven unit's walk in the reference network's working range: a basal message of
+    /// 0.21875 (0.125 at the gain 1.75) about one tick in 85, an apical one now and then, an
+    /// inhibitory one now and then, and an edge-biased input one tick in 4 096.
+    fn walk_input(rng: &mut Lcg) -> (i32, i32) {
+        match rng.below(4096) {
+            0 => (rng.i32_edge_biased(), rng.i32_edge_biased()),
+            1..=48 => (0x3800, 0),
+            49..=52 => (0, 0x6000),
+            53..=60 => (-0x3800, 0),
+            _ => (0, 0),
+        }
+    }
+
+    #[test]
+    fn a_driven_unit_whenever_the_bound_admits_it_never_fires_with_no_input() {
+        // Every 37th tick the state is taken, and where the bound admits it, it is run to rest
+        // with no input.
+        let mut rng = Lcg::new(0x0008_5EED_A881_7A1E);
+        let mut u = DendriticSuperNeuron::new(1);
+        u.v_thresh = THRESHOLD_BASE;
+        let (mut admitted, mut taken, mut fired) = (0u32, 0u32, 0u32);
+        for t in 0..(1u32 << 18) {
+            let (basal, apical) = walk_input(&mut rng);
+            fired = fired.saturating_add(u32::from(u.integrate(basal, apical, t)));
+            if t % 37 != 0 {
+                continue;
+            }
+            taken = taken.saturating_add(1);
+            if u.quiet_cannot_fire() {
+                admitted = admitted.saturating_add(1);
+                let (spike, ran) = quietly(&u, 1 << 16, Some(soma_bound(&u)));
+                assert_eq!(
+                    spike,
+                    None,
+                    "admitted at tick {t} and fired: {:?}",
+                    fields(&u)
+                );
+                assert!(ran < 1 << 16);
+            }
+        }
+        assert!(fired > 50, "the walk fires: {fired}");
+        assert!(
+            admitted > taken >> 1,
+            "the bound admits most of the walk: {admitted} of {taken}"
+        );
+    }
+
+    /// `at(t, (fields, served))` for the fields `integrate(0, 0, t)` leaves after each count
+    /// `t` of quiet ticks from `u`, from none (`u`'s own) up to `limit` or to the tick before
+    /// the first spike, with the turns the executor would have served in them: one a tick while
+    /// the unit was not at rest before it. Returns the ticks stepped.
+    fn stepped(
+        u: &DendriticSuperNeuron,
+        limit: u32,
+        mut at: impl FnMut(u32, (Fields, u32)),
+    ) -> u32 {
+        let mut v = DendriticSuperNeuron::new(u.id);
+        v.restore_plain_fields(u);
+        let mut served = 0u32;
+        at(0, (fields(&v), 0));
+        for t in 0..limit {
+            if !membrane_at_rest(&fields(&v)) {
+                served = served.saturating_add(1);
+            }
+            if v.integrate(0, 0, t) {
+                return t;
+            }
+            at(t.wrapping_add(1), (fields(&v), served));
+        }
+        limit
+    }
+
+    fn caught_up(u: &DendriticSuperNeuron, ticks: u32) -> (Fields, u32) {
+        let mut v = DendriticSuperNeuron::new(u.id);
+        v.restore_plain_fields(u);
+        let served = v.quiet_catch_up(ticks);
+        (fields(&v), served)
+    }
+
+    /// The counts of quiet ticks `quiet_catch_up` is held to the stepped rule at: around the
+    /// plateau's and the windows' lengths, the leaks' shifts and their one-LSB tails, and the
+    /// reference unit's 2 503 ticks to rest.
+    const CATCH_UP_TICKS: [u32; 23] = [
+        0, 1, 2, 3, 4, 15, 16, 17, 49, 50, 51, 199, 200, 201, 511, 512, 513, 1023, 1024, 1025,
+        2047, 2503, 4096,
+    ];
+
+    #[test]
+    fn quiet_catch_up_is_integrate_with_no_input_bit_for_bit_and_counts_the_turns_served() {
+        // From every starting state, admitted or not, until it would fire.
+        let (mut compared, mut past_rest) = (0u32, 0u32);
+        for u in quiet_states() {
+            let mut last = None;
+            let ran = stepped(&u, 4_096, |t, expected| {
+                if CATCH_UP_TICKS.contains(&t) {
+                    assert_eq!(
+                        caught_up(&u, t),
+                        expected,
+                        "{t} ticks from {:?}",
+                        fields(&u)
+                    );
+                    compared = compared.saturating_add(1);
+                }
+                last = Some(expected);
+            });
+            // Past rest the state is the rest it reached, however many ticks more.
+            if let (4_096, Some(last)) = (ran, last) {
+                if membrane_at_rest(&last.0) {
+                    assert_eq!(caught_up(&u, u32::MAX), last, "{:?}", fields(&u));
+                    past_rest = past_rest.saturating_add(1);
+                }
+            }
+        }
+        assert!(
+            compared > 100_000 && past_rest > 2_000,
+            "{compared}, {past_rest}"
+        );
+    }
+
+    #[test]
+    fn quiet_catch_up_over_a_driven_unit_s_states_is_integrate_bit_for_bit() {
+        // Every 13th tick of the walk, a gap of up to 4 096 quiet ticks.
+        let mut rng = Lcg::new(0x0008_CA7C_0000_0001);
+        let mut u = DendriticSuperNeuron::new(1);
+        u.v_thresh = THRESHOLD_BASE;
+        let mut compared = 0u32;
+        for t in 0..(1u32 << 17) {
+            let (basal, apical) = walk_input(&mut rng);
+            u.integrate(basal, apical, t);
+            if t % 13 != 0 {
+                continue;
+            }
+            let ticks = rng.below(4097);
+            stepped(&u, ticks, |k, expected| {
+                if k == ticks {
+                    assert_eq!(caught_up(&u, ticks), expected, "tick {t}, {ticks} quiet");
+                    compared = compared.saturating_add(1);
+                }
+            });
+        }
+        assert!(compared > 5_000, "compared: {compared}");
+    }
+
+    #[test]
+    fn the_threshold_after_quiet_ticks_is_the_rule_s_by_segments() {
+        // The thresholds the rule's segments turn on and the lattice's, against the rule's decay
+        // a tick: the value after each count of ticks, and the ticks to the base.
+        let edges = [1i32, 2, 3, 15, 16, 4_095, 4_096, 32_767].map(|q| {
+            let edge = THRESHOLD_BASE.saturating_add(q.saturating_mul(1 << 12));
+            [
+                edge.saturating_sub(1),
+                edge,
+                edge.saturating_add(1),
+                edge.saturating_add(q).saturating_sub(1),
+                edge.saturating_add(q),
+            ]
+        });
+        let thresholds = I32_LATTICE
+            .iter()
+            .chain(edges.iter().flatten())
+            .chain([THRESHOLD_BASE + THRESHOLD_STEP, i32::MAX - 1].iter());
+        for &start in thresholds {
+            let mut thresh = start;
+            let mut to_base = None;
+            for t in 0..=200_000u32 {
+                if thresh <= THRESHOLD_BASE && to_base.is_none() {
+                    to_base = Some(t);
+                }
+                if t.is_power_of_two() || t % 997 == 0 || to_base == Some(t) {
+                    let expected = (thresh, to_base.unwrap_or(t));
+                    assert_eq!(threshold_after(start, t), expected, "{start:#x} after {t}");
+                }
+                if thresh > THRESHOLD_BASE {
+                    let excess = thresh.saturating_sub(THRESHOLD_BASE);
+                    thresh = thresh.saturating_sub((excess >> THRESHOLD_DECAY_SHIFT).max(1));
+                }
+            }
+            assert!(to_base.is_some(), "{start:#x} reaches its base");
         }
     }
 

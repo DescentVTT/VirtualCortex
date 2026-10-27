@@ -73,8 +73,9 @@ use menteion_reasoning::{Compaction, InductionState, SEARCH_SHIFT_MAX, TermNode}
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{
-    AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+    AtomicBool, AtomicI32, AtomicI64, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
 };
 use std::thread::{self, JoinHandle};
 
@@ -1254,6 +1255,19 @@ struct Shared {
     /// stored by the coordinator before the tick's first barrier (ADR-0038).
     replay: AtomicU32,
     stop: AtomicBool,
+    /// Exploration 008: the mode, an `OnArrival` byte, stored between ticks and read by every
+    /// worker at the start of its turns phase.
+    on_arrival: AtomicU8,
+    /// Exploration 008: one bit per unit, in the schedule's layout, set while the unit is
+    /// asleep: not at rest, off the schedule, its gate recorded scheduled, and its state that of
+    /// the tick in `since`. Written by the unit's owner in the turns phase and by the coordinator
+    /// between ticks; read by a marker in phases 2 and 3.
+    dormant: Box<[AtomicU64]>,
+    /// Exploration 008: per unit, the first tick an asleep unit was not served.
+    since: Box<[AtomicU32]>,
+    /// Exploration 008: per worker, its `ARRIVAL_WORDS` counts, stored at the end of the
+    /// deliveries phase beside `turns`.
+    arrival: Box<[AtomicU64]>,
 }
 
 impl Shared {
@@ -1298,7 +1312,9 @@ impl Shared {
     /// one has its gate byte recorded scheduled and its bit set. Two markers that both find the
     /// unit idle store the same byte and set the same bit, so no claim is needed.
     fn mark(&self, unit: u32, u: &DendriticSuperNeuron) {
-        if u.gate() == Some(GateState::Scheduled) {
+        // Exploration 008: an asleep unit's gate is recorded scheduled, as it would be on the
+        // schedule, and it is marked all the same.
+        if u.gate() == Some(GateState::Scheduled) && !self.is_dormant(unit) {
             return;
         }
         u.set_gate(GateState::Scheduled);
@@ -1307,6 +1323,218 @@ impl Shared {
         };
         word.fetch_or(bit, Ordering::Relaxed);
     }
+
+    /// Exploration 008: the word of `dormant` that holds `unit`'s bit, and the bit, in the
+    /// schedule's layout (`place`).
+    fn dormant_place(&self, unit: u32) -> Option<(&AtomicU64, u64)> {
+        let owner = self.owner(unit)?;
+        let at = (unit as usize).wrapping_sub(owner.wrapping_mul(self.share));
+        let word = owner.wrapping_mul(self.stride).wrapping_add(at >> 6);
+        Some((self.dormant.get(word)?, 1u64 << (at & 63)))
+    }
+
+    /// Exploration 008: true while `unit` is asleep.
+    fn is_dormant(&self, unit: u32) -> bool {
+        self.dormant_place(unit)
+            .is_some_and(|(word, bit)| word.load(Ordering::Relaxed) & bit != 0)
+    }
+
+    /// Exploration 008: the unit of `dormant`'s word `word` and bit `bit`: bit `b` of word
+    /// `w·stride + k` is unit `w·share + 64k + b`.
+    fn dormant_unit(&self, word: usize, bit: u32) -> u32 {
+        let owner = word.checked_div(self.stride).unwrap_or(0);
+        let k = word.wrapping_sub(owner.wrapping_mul(self.stride));
+        // Below the unit count, which `Executor::new` bounds below `u32::MAX`: a bit is set only
+        // for a unit of the arena.
+        owner
+            .wrapping_mul(self.share)
+            .wrapping_add(k << 6)
+            .wrapping_add(bit as usize) as u32
+    }
+}
+
+// ------------------------------------- exploration 008 (on its branch alone, ADR-0193)
+
+/// Exploration 008 (`explore/008-a-unit-served-on-arrival`): how the executor serves a unit
+/// that is not at rest. `integrate` is not touched in either mode, and every reading of the
+/// engine's state is the per-tick service's: an asleep unit is brought up to date before its
+/// next turn, and every asleep unit before the arena is read between ticks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OnArrival {
+    /// Every tick until it is at rest, as built (ADR-0023, ADR-0100).
+    Off = 0,
+    /// A unit that cannot fire with no input (`DendriticSuperNeuron::quiet_cannot_fire`) leaves
+    /// the schedule at the end of its turn, asleep, and is brought up to date by
+    /// `integrate(0, 0, t)` once a tick it skipped, until it is at rest.
+    Integrate = 1,
+    /// The same, brought up to date by `DendriticSuperNeuron::quiet_catch_up`.
+    Quiet = 2,
+}
+
+impl OnArrival {
+    fn of(byte: u8) -> Self {
+        match byte {
+            1 => Self::Integrate,
+            2 => Self::Quiet,
+            _ => Self::Off,
+        }
+    }
+
+    /// The mode the environment names, `MENTEION_EXPLORE_008=integrate` or `=quiet`, and `Off`
+    /// otherwise: every executor of a process starts in it.
+    pub fn from_env() -> Self {
+        match std::env::var("MENTEION_EXPLORE_008").as_deref() {
+            Ok("integrate") => Self::Integrate,
+            Ok("quiet") => Self::Quiet,
+            _ => Self::Off,
+        }
+    }
+}
+
+/// Exploration 008: the buckets of the steps a woken unit's catch-up took: 0, 1, 2–3, 4–7, …
+/// and $2^{14}$ or more.
+pub const STEP_BUCKETS: usize = 16;
+
+/// Exploration 008: the buckets of the units served in a tick, by $32 \cdot$ served / units.
+pub const SERVED_BUCKETS: usize = 33;
+
+/// Exploration 008: a worker's counts in `Shared::arrival`: the units it put to sleep, the
+/// asleep units it woke, the messages those drained, the ticks they had slept and the steps of
+/// their catch-up, then `STEP_BUCKETS` of steps.
+const ARRIVAL_WORDS: usize = 5 + STEP_BUCKETS;
+
+/// Exploration 008: what the executor counted of its service.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArrivalCounts {
+    /// Ticks counted.
+    pub ticks: u64,
+    /// The turns served in them: a turn for each unit on the schedule.
+    pub served: u64,
+    /// The fewest units served in a tick (`u64::MAX` before one).
+    pub served_min: u64,
+    /// The most units served in a tick.
+    pub served_max: u64,
+    /// Ticks by the units served in them, bucket `32 · served / units`.
+    pub served_hist: [u64; SERVED_BUCKETS],
+    /// Units put to sleep at the end of a turn.
+    pub slept: u64,
+    /// Asleep units served again: woken by a message, an activation or a write of the arena.
+    pub woken: u64,
+    /// The messages the woken units drained at that turn.
+    pub woken_messages: u64,
+    /// The ticks those units had slept.
+    pub gap: u64,
+    /// The steps of their catch-up: the turns the per-tick service would have served them in
+    /// those ticks, until rest.
+    pub caught_up: u64,
+    /// Woken units by the steps of their catch-up, `STEP_BUCKETS`.
+    pub steps_hist: [u64; STEP_BUCKETS],
+    /// Reads of the arena between ticks that brought the asleep units up to date.
+    pub settles: u64,
+    /// The asleep units they found.
+    pub settled_units: u64,
+    /// Their catch-up's steps.
+    pub settled_steps: u64,
+}
+
+impl ArrivalCounts {
+    const EMPTY: Self = Self {
+        ticks: 0,
+        served: 0,
+        served_min: u64::MAX,
+        served_max: 0,
+        served_hist: [0; SERVED_BUCKETS],
+        slept: 0,
+        woken: 0,
+        woken_messages: 0,
+        gap: 0,
+        caught_up: 0,
+        steps_hist: [0; STEP_BUCKETS],
+        settles: 0,
+        settled_units: 0,
+        settled_steps: 0,
+    };
+
+    fn add(&mut self, other: &Self) {
+        self.ticks = self.ticks.saturating_add(other.ticks);
+        self.served = self.served.saturating_add(other.served);
+        self.served_min = self.served_min.min(other.served_min);
+        self.served_max = self.served_max.max(other.served_max);
+        for (a, b) in self.served_hist.iter_mut().zip(other.served_hist) {
+            *a = a.saturating_add(b);
+        }
+        self.slept = self.slept.saturating_add(other.slept);
+        self.woken = self.woken.saturating_add(other.woken);
+        self.woken_messages = self.woken_messages.saturating_add(other.woken_messages);
+        self.gap = self.gap.saturating_add(other.gap);
+        self.caught_up = self.caught_up.saturating_add(other.caught_up);
+        for (a, b) in self.steps_hist.iter_mut().zip(other.steps_hist) {
+            *a = a.saturating_add(b);
+        }
+        self.settles = self.settles.saturating_add(other.settles);
+        self.settled_units = self.settled_units.saturating_add(other.settled_units);
+        self.settled_steps = self.settled_steps.saturating_add(other.settled_steps);
+    }
+
+    /// A worker's counts, from its `ARRIVAL_WORDS`.
+    fn of_worker(words: &[u64]) -> Self {
+        let at = |i: usize| words.get(i).copied().unwrap_or(0);
+        Self {
+            slept: at(0),
+            woken: at(1),
+            woken_messages: at(2),
+            gap: at(3),
+            caught_up: at(4),
+            steps_hist: core::array::from_fn(|k| at(k.wrapping_add(5))),
+            ..Self::EMPTY
+        }
+    }
+}
+
+impl Default for ArrivalCounts {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
+/// Exploration 008: the counts of every executor of the process that has been dropped.
+static ARRIVAL_TOTALS: Mutex<ArrivalCounts> = Mutex::new(ArrivalCounts::EMPTY);
+
+/// Exploration 008: the counts of every executor of the process dropped so far.
+pub fn arrival_totals() -> ArrivalCounts {
+    ARRIVAL_TOTALS.lock().map(|c| *c).unwrap_or_default()
+}
+
+/// Exploration 008: the bucket of a catch-up of `steps`.
+fn step_bucket(steps: u32) -> usize {
+    match steps.checked_ilog2() {
+        None => 0,
+        Some(log) => (log as usize)
+            .saturating_add(1)
+            .min(STEP_BUCKETS.wrapping_sub(1)),
+    }
+}
+
+/// Exploration 008: brings an asleep unit from the tick `since` to `since + gap`, as the per-tick
+/// service would have served it with no input; returns the steps, the turns that service would
+/// have served it until rest. Under `Integrate` it is `integrate(0, 0, t)` once a tick until the
+/// unit is at rest, and a spike there, which `quiet_cannot_fire` excludes, stops the process;
+/// under `Quiet` it is `quiet_catch_up`.
+fn catch_up(u: &mut DendriticSuperNeuron, since: u32, gap: u32, mode: OnArrival) -> u32 {
+    if mode == OnArrival::Quiet {
+        return u.quiet_catch_up(gap);
+    }
+    let mut steps = 0u32;
+    for k in 0..gap {
+        if membrane_at_rest(u) {
+            break;
+        }
+        if u.integrate(0, 0, since.wrapping_add(k)) {
+            abort("exploration 008: an asleep unit fired with no input");
+        }
+        steps = steps.wrapping_add(1);
+    }
+    steps
 }
 
 /// One worker's private state.
@@ -1337,6 +1565,8 @@ struct Worker<const CAP: usize> {
     /// The slow current a marked unit integrates under (ADR-0123): the executor's, copied at
     /// `Executor::new` and never written after, as `stp_class` is.
     slow_current: Option<SlowCurrent>,
+    /// Exploration 008: this worker's counts, in `ARRIVAL_WORDS`' order.
+    arrival: [u64; ARRIVAL_WORDS],
 }
 
 /// What a worker kept.
@@ -1489,6 +1719,13 @@ pub struct Executor<const CAP: usize> {
     istdp_target_period_ticks: u32,
     /// Descendants tallied so far (ADR-0054).
     descendants: u64,
+    /// Exploration 008: the coordinator's counts of the ticks, those of the reads that brought
+    /// the asleep units up to date (taken under `&self`), the turns summed after the last tick,
+    /// and whether a tick has run since the asleep units were last brought up to date.
+    served: ArrivalCounts,
+    arrival: Mutex<ArrivalCounts>,
+    turns_after_last: u64,
+    unsettled: AtomicBool,
 }
 
 /// The cadence of a search shift: none at zero.
@@ -1653,6 +1890,14 @@ impl<const CAP: usize> Executor<CAP> {
             episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
             replay: AtomicU32::new(0),
             stop: AtomicBool::new(false),
+            on_arrival: AtomicU8::new(OnArrival::from_env() as u8),
+            dormant: (0..workers.saturating_mul(stride))
+                .map(|_| AtomicU64::new(0))
+                .collect(),
+            since: (0..config.units).map(|_| AtomicU32::new(0)).collect(),
+            arrival: (0..workers.saturating_mul(ARRIVAL_WORDS))
+                .map(|_| AtomicU64::new(0))
+                .collect(),
         });
         // Saturates for a pool that would not fit the address space; `Pools::new` refused that
         // above (a capacity overflow) before this sizes a buffer.
@@ -1678,6 +1923,7 @@ impl<const CAP: usize> Executor<CAP> {
                 descended: 0,
                 stp_class: config.stp_class,
                 slow_current: config.slow_current,
+                arrival: [0; ARRIVAL_WORDS],
             })
             .collect();
         let worker0 = states.remove(0);
@@ -1789,6 +2035,10 @@ impl<const CAP: usize> Executor<CAP> {
             search_cadence: search_cadence_of(config.search_shift),
             istdp_target_period_ticks: config.istdp_target_period_ticks,
             descendants: 0,
+            served: ArrivalCounts::EMPTY,
+            arrival: Mutex::new(ArrivalCounts::EMPTY),
+            turns_after_last: 0,
+            unsettled: AtomicBool::new(false),
         })
     }
 
@@ -3152,23 +3402,119 @@ impl<const CAP: usize> Executor<CAP> {
             .sum()
     }
 
-    /// The unit arena, between ticks.
+    /// The unit arena, between ticks. Exploration 008: every asleep unit is brought up to date
+    /// first, so the arena is the per-tick service's.
     pub fn units(&self) -> &[DendriticSuperNeuron] {
+        if self.unsettled.swap(false, Ordering::Relaxed) {
+            self.settle(false);
+        }
         // SAFETY: `&self` excludes `tick` (which takes `&mut self`); between ticks every worker
         // thread is spinning at the barrier and holds no reference into an arena.
         unsafe { self.shared.units.as_slice() }
     }
 
     /// The unit arena, exclusively, between ticks: for wiring a network before it runs.
+    /// Exploration 008: every asleep unit is brought up to date and put back on the schedule
+    /// first, since a write may move it out of `quiet_cannot_fire`.
     pub fn units_mut(&mut self) -> &mut [DendriticSuperNeuron] {
+        self.settle(true);
+        self.unsettled.store(false, Ordering::Relaxed);
         // SAFETY: as in `units`, with `&mut self` excluding every other reference this
         // executor hands out.
         unsafe { self.shared.units.as_mut_slice() }
     }
 
+    /// Exploration 008: the units an asleep unit's read or write between ticks finds, brought
+    /// from the tick each fell asleep at to the next tick's, as the per-tick service would have
+    /// left them: a unit at rest wakes, its gate recorded idle unless a message has marked it; one
+    /// not at rest sleeps on from the next tick, or under `wake` is put back on the schedule.
+    fn settle(&self, wake: bool) {
+        let mode = OnArrival::of(self.shared.on_arrival.load(Ordering::Relaxed));
+        let next = self.tick as u32;
+        let (mut units, mut steps) = (0u64, 0u64);
+        for (w, word) in self.shared.dormant.iter().enumerate() {
+            let asleep = word.load(Ordering::Relaxed);
+            let mut left = asleep;
+            let mut keep = asleep;
+            for _ in 0..asleep.count_ones() {
+                let bit = left.trailing_zeros();
+                left &= left.wrapping_sub(1);
+                let unit = self.shared.dormant_unit(w, bit);
+                // SAFETY: between ticks every worker is parked at the barrier, and no reference
+                // into the unit arena that this executor handed out is alive: `units` hands one
+                // out only after it has settled the arena, which a tick unsettles and only a
+                // tick, under `&mut self`, which ends every such reference; `units_mut` and
+                // `arenas_mut` hold `&mut self`. This is the one exclusive reference to `unit`.
+                let Some(u) = (unsafe { self.shared.units.get_mut(unit as usize) }) else {
+                    abort("an asleep unit is outside the arena");
+                };
+                let Some(since) = self.shared.since.get(unit as usize) else {
+                    abort("an asleep unit is outside the arena");
+                };
+                let from = since.load(Ordering::Relaxed);
+                let took = catch_up(u, from, next.wrapping_sub(from), mode);
+                units = units.saturating_add(1);
+                steps = steps.saturating_add(u64::from(took));
+                let Some((scheduled, mask)) = self.shared.place(unit) else {
+                    abort("an asleep unit is outside the arena");
+                };
+                let marked = scheduled.load(Ordering::Relaxed) & mask != 0;
+                if membrane_at_rest(u) {
+                    keep &= !(1u64 << bit);
+                    u.set_gate(if marked {
+                        GateState::Scheduled
+                    } else {
+                        GateState::Idle
+                    });
+                } else if wake {
+                    keep &= !(1u64 << bit);
+                    scheduled.fetch_or(mask, Ordering::Relaxed);
+                } else {
+                    since.store(next, Ordering::Relaxed);
+                }
+            }
+            word.store(keep, Ordering::Relaxed);
+        }
+        if units > 0 {
+            if let Ok(mut c) = self.arrival.lock() {
+                c.settles = c.settles.saturating_add(1);
+                c.settled_units = c.settled_units.saturating_add(units);
+                c.settled_steps = c.settled_steps.saturating_add(steps);
+            }
+        }
+    }
+
+    /// Exploration 008: the service's mode.
+    pub fn on_arrival(&self) -> OnArrival {
+        OnArrival::of(self.shared.on_arrival.load(Ordering::Relaxed))
+    }
+
+    /// Exploration 008: sets the service's mode between ticks; every asleep unit is brought up to
+    /// date and put back on the schedule first.
+    pub fn set_on_arrival(&mut self, mode: OnArrival) {
+        self.settle(true);
+        self.shared.on_arrival.store(mode as u8, Ordering::Relaxed);
+    }
+
+    /// Exploration 008: what this executor counted of its service so far: the coordinator's
+    /// counts and every worker's.
+    pub fn arrival_counts(&self) -> ArrivalCounts {
+        let mut counts = self.served;
+        counts.add(&self.arrival.lock().map(|c| *c).unwrap_or_default());
+        for words in self.shared.arrival.chunks(ARRIVAL_WORDS) {
+            let words: [u64; ARRIVAL_WORDS] =
+                core::array::from_fn(|i| words.get(i).map_or(0, |w| w.load(Ordering::Relaxed)));
+            counts.add(&ArrivalCounts::of_worker(&words));
+        }
+        counts
+    }
+
     /// The unit and synapse arenas together, exclusively, between ticks: for a rule that
-    /// writes both, such as the synthesis of a network from a prior (ADR-0044).
+    /// writes both, such as the synthesis of a network from a prior (ADR-0044). Exploration 008:
+    /// the asleep units as in `units_mut`.
     pub fn arenas_mut(&mut self) -> (&mut [DendriticSuperNeuron], &mut [SynapseBlock]) {
+        self.settle(true);
+        self.unsettled.store(false, Ordering::Relaxed);
         // SAFETY: as in `units_mut`; the two arenas are distinct allocations, so the two
         // exclusive slices do not overlap.
         unsafe {
@@ -3260,6 +3606,11 @@ impl<const CAP: usize> Executor<CAP> {
     /// re-hydrates it after the tick
     /// that delivered the message. Returns the number evicted.
     pub fn sweep(&mut self, quiet_ticks: u32, budget: usize) -> Result<usize, ImageError> {
+        // Exploration 008: the asleep units brought up to date, so that rest is read as the
+        // per-tick service leaves it.
+        if self.unsettled.swap(false, Ordering::Relaxed) {
+            self.settle(false);
+        }
         let Some(log) = self.log.as_mut() else {
             return Err(ImageError::NoLog);
         };
@@ -3534,12 +3885,37 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.barrier.wait();
         self.worker0.phase_deliveries(&self.shared);
         self.shared.barrier.wait();
+        if self.on_arrival() != OnArrival::Off {
+            self.count_served();
+        }
         self.merge_spikes(now);
         // A clock wraps by name (§8.1): the dynamics already see it as `tick as u32`.
         self.tick = self.tick.wrapping_add(1);
         self.rehydrate_pending();
         self.tally();
         self.search_on_cadence();
+    }
+
+    /// Exploration 008, after a tick: the units it served, counted, and the arena marked for its
+    /// asleep units to be brought up to date before it is read.
+    fn count_served(&mut self) {
+        let turns = self.turns();
+        let served = turns.wrapping_sub(self.turns_after_last);
+        self.turns_after_last = turns;
+        let bucket = served
+            .saturating_mul(32)
+            .checked_div(self.shared.units.len() as u64)
+            .unwrap_or(0)
+            .min(SERVED_BUCKETS.wrapping_sub(1) as u64) as usize;
+        let c = &mut self.served;
+        c.ticks = c.ticks.saturating_add(1);
+        c.served = c.served.saturating_add(served);
+        c.served_min = c.served_min.min(served);
+        c.served_max = c.served_max.max(served);
+        if let Some(slot) = c.served_hist.get_mut(bucket) {
+            *slot = slot.saturating_add(1);
+        }
+        self.unsettled.store(true, Ordering::Relaxed);
     }
 
     /// `ticks` fine ticks.
@@ -3570,6 +3946,13 @@ impl<const CAP: usize> Executor<CAP> {
 
 impl<const CAP: usize> Drop for Executor<CAP> {
     fn drop(&mut self) {
+        // Exploration 008: this executor's counts, into the process's.
+        let counts = self.arrival_counts();
+        if counts != ArrivalCounts::EMPTY {
+            if let Ok(mut totals) = ARRIVAL_TOTALS.lock() {
+                totals.add(&counts);
+            }
+        }
         self.stop_workers();
         for handle in self.threads.drain(..) {
             let _ = handle.join();
@@ -3662,6 +4045,7 @@ impl<const CAP: usize> Worker<CAP> {
     /// loaded and stored back with the bits of the units that stay awake.
     fn phase_turns(&mut self, shared: &Shared, now: u32) {
         let gain = shared.gain.load(Ordering::Relaxed);
+        let mode = OnArrival::of(shared.on_arrival.load(Ordering::Relaxed));
         self.descended = 0;
         for w in 0..self.words {
             let Some(word) = shared.scheduled.get(self.region.wrapping_add(w)) else {
@@ -3677,7 +4061,7 @@ impl<const CAP: usize> Worker<CAP> {
             for _ in 0..due.count_ones() {
                 let bit = due.trailing_zeros();
                 due &= due.wrapping_sub(1); // the lowest set bit, served now, cleared
-                if self.turn(shared, base.wrapping_add(bit), now, gain) {
+                if self.turn(shared, base.wrapping_add(bit), now, gain, mode) {
                     // A bit not yet in `awake`: the sum is the union.
                     awake = awake.wrapping_add(1u64 << bit);
                 }
@@ -3693,7 +4077,9 @@ impl<const CAP: usize> Worker<CAP> {
     }
 
     /// One unit's turn; true when the unit is not at rest after it and stays on the schedule.
-    fn turn(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32) -> bool {
+    /// Exploration 008: an asleep unit is brought up to date first, and a unit that cannot fire
+    /// with no input falls asleep at the end, leaving the schedule.
+    fn turn(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32, mode: OnArrival) -> bool {
         // SAFETY (phase 1): `unit` is a set bit of this worker's region of the schedule, and so
         // in this worker's range, which no other worker's range overlaps: the ranges partition
         // the arena and are fixed in `Executor::new` (ADR-0100). In phase 1 a worker references
@@ -3702,6 +4088,8 @@ impl<const CAP: usize> Worker<CAP> {
         let Some(u) = (unsafe { shared.units.get_mut(unit as usize) }) else {
             abort("a scheduled unit index is outside the arena");
         };
+        // Exploration 008: the unit's own bit, which only its owner writes in this phase.
+        let woken = mode != OnArrival::Off && self.wake_asleep(shared, unit, u, now, mode);
         self.batch.clear();
         // A unit with no mail takes no swap: no push happens in this phase, so an empty head
         // stays empty through the turn (ADR-0100).
@@ -3720,6 +4108,9 @@ impl<const CAP: usize> Worker<CAP> {
                     self.trace_dropped = self.trace_dropped.saturating_add(1);
                 }
             }
+        }
+        if woken {
+            self.arrival[2] = self.arrival[2].saturating_add(self.batch.len() as u64);
         }
         // §8.3: the batch is applied in message order, never in arrival order.
         self.batch.sort_unstable();
@@ -3798,7 +4189,55 @@ impl<const CAP: usize> Worker<CAP> {
         } else {
             GateState::Idle
         });
+        // Exploration 008: a unit not at rest that cannot fire with no input sleeps from the next
+        // tick, its gate recorded scheduled as above; a unit under the slow current never does.
+        let slow = self.slow_current.is_some() && u.flags & FLAG_SLOW != 0;
+        if awake && mode != OnArrival::Off && !slow && u.quiet_cannot_fire() {
+            let (Some((word, bit)), Some(since)) =
+                (shared.dormant_place(unit), shared.since.get(unit as usize))
+            else {
+                abort("a unit put to sleep is outside the arena");
+            };
+            since.store(now.wrapping_add(1), Ordering::Relaxed);
+            word.store(word.load(Ordering::Relaxed) | bit, Ordering::Relaxed);
+            self.arrival[0] = self.arrival[0].saturating_add(1);
+            return false;
+        }
         awake
+    }
+
+    /// Exploration 008, at the start of `unit`'s turn: if it is asleep, it wakes, brought from the
+    /// tick it fell asleep at to this one's as the per-tick service would have left it, and is
+    /// counted. True if it was asleep.
+    fn wake_asleep(
+        &mut self,
+        shared: &Shared,
+        unit: u32,
+        u: &mut DendriticSuperNeuron,
+        now: u32,
+        mode: OnArrival,
+    ) -> bool {
+        let (Some((word, bit)), Some(since)) =
+            (shared.dormant_place(unit), shared.since.get(unit as usize))
+        else {
+            abort("a scheduled unit index is outside the arena");
+        };
+        let asleep = word.load(Ordering::Relaxed);
+        if asleep & bit == 0 {
+            return false;
+        }
+        word.store(asleep & !bit, Ordering::Relaxed);
+        let from = since.load(Ordering::Relaxed);
+        let gap = now.wrapping_sub(from);
+        let steps = catch_up(u, from, gap, mode);
+        let a = &mut self.arrival;
+        a[1] = a[1].saturating_add(1);
+        a[3] = a[3].saturating_add(u64::from(gap));
+        a[4] = a[4].saturating_add(u64::from(steps));
+        if let Some(slot) = a.get_mut(step_bucket(steps).wrapping_add(5)) {
+            *slot = slot.saturating_add(1);
+        }
+        true
     }
 
     // ---------------------------------------------------------------- phase 2: fan-out
@@ -3942,6 +4381,16 @@ impl<const CAP: usize> Worker<CAP> {
         shared.delivered[self.id].store(self.delivered, Ordering::Relaxed);
         shared.turns[self.id].store(self.turns, Ordering::Relaxed);
         shared.in_flight[self.id].store(self.in_flight, Ordering::Relaxed);
+        // Exploration 008: this worker's counts, beside its turns, while units are served on
+        // arrival.
+        if shared.on_arrival.load(Ordering::Relaxed) != OnArrival::Off as u8 {
+            let at = self.id.wrapping_mul(ARRIVAL_WORDS);
+            if let Some(words) = shared.arrival.get(at..at.wrapping_add(ARRIVAL_WORDS)) {
+                for (word, &count) in words.iter().zip(&self.arrival) {
+                    word.store(count, Ordering::Relaxed);
+                }
+            }
+        }
     }
 
     /// Phases 2 and 3: a message into a unit's mailbox, and the unit marked on the schedule

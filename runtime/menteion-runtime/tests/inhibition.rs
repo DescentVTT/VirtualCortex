@@ -449418,7 +449418,9 @@ fn a_delay_read_two_trials_late_untold_on_seed_24_from_the_mirrored_assignment_a
 /// `trials` of the schedule, with the clock read after the derivation, after the engine is
 /// decoded and at the end of each block, each reading printed as a `TIME` line in milliseconds
 /// since `clock`. Nothing else differs from `untold_run`. At the end it prints the turns the
-/// arm's engine served and its ticks, as `COUNT` lines; the derivation's engines are not counted.
+/// arm's engine served and its ticks, as `COUNT` lines; the derivation's engines are not counted
+/// there. On the build whose engine serves units on arrival it also prints that engine's counts
+/// of its service, and the derivation's engines' after the derivation.
 fn timed_untold_run(
     n: usize,
     arm: Reversal,
@@ -449431,6 +449433,9 @@ fn timed_untold_run(
     let units = SCAN_UNITS;
     let made = probe_made(n, name);
     eprintln!("TIME derivation {}", clock.elapsed().as_millis());
+    // The derivation's engines, dropped by now, served on arrival or not by the environment's
+    // mode (exploration 008's engine).
+    eprintln!("COUNT derivation {:?}", menteion_runtime::arrival_totals());
     let sets = geometry(units, made.derived.rotation);
     let mut exec = untold_from(&made.windowed, units);
     assert_eq!(
@@ -449540,6 +449545,8 @@ fn timed_untold_run(
     );
     eprintln!("COUNT turns {}", exec.turns());
     eprintln!("COUNT ticks {}", exec.ticks());
+    eprintln!("COUNT mode {:?}", exec.on_arrival());
+    eprintln!("COUNT arm {:?}", exec.arrival_counts());
     let run = UntoldRun {
         blocks,
         trace,
