@@ -21,7 +21,8 @@ pub use synapse::{
     CHAIN_END, CHAIN_MASK, Chain, ELIGIBILITY_TAU_SHIFT, FanOut, ISTDP_ALPHA_Q1_15,
     ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MAX_CHAIN_INDEX,
     MAX_TOKEN_BLOCK, MESSAGE_APICAL, MESSAGE_SYNAPTIC, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
-    Polarity, SLOT_EMPTY, STDP_A_MINUS_Q1_15, STDP_A_PLUS_Q1_15, STDP_TAU_SHIFT,
-    SYNAPSES_PER_BLOCK, Synapse, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical,
-    message_is_synaptic, spike_message, synapse_token, synaptic_message, token_block, token_slot,
+    Polarity, SLOT_EMPTY, SOFT_BOUND_TOP_EIGHTH_Q1_15, STDP_A_MINUS_Q1_15, STDP_A_PLUS_Q1_15,
+    STDP_TAU_SHIFT, SYNAPSES_PER_BLOCK, SoftBound, Synapse, istdp_alpha_q1_15,
+    message_efficacy_q16, message_is_apical, message_is_synaptic, spike_message, synapse_token,
+    synaptic_message, token_block, token_slot,
 };
