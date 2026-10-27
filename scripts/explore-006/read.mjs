@@ -104,5 +104,36 @@ for (const root of process.argv.slice(2)) {
     }
     const summary = path.join(dir, "classify-summary.txt");
     if (fs.existsSync(summary)) console.log(fs.readFileSync(summary, "utf8"));
+    const owners = tsv(path.join(dir, "classify-owners.tsv")).slice(1);
+    if (owners.length) {
+      // Each owner by the part of the tick it runs in (executor.rs's three phases, the barrier
+      // between them, the coordinator's work between ticks), or the test crate's.
+      const part = (cls, owner) => {
+        if (cls === "harness") return "the test crate";
+        if (cls === "engine-wait" || /SpinBarrier>?::wait/.test(owner)) return "the barrier, waiting";
+        if (/integrate|phase_turns|MailboxDrain|Pools>::free|turn<|^turn:|clamp|unit_at/.test(owner))
+          return "phase 1, the turns";
+        if (/phase_fan_out|step_stdp|decay_eligibility|consolidate|release_all|step_stp|stp_decay/.test(owner))
+          return "phase 2, the fan-out, STDP, iSTDP and plasticity";
+        if (/Injector|mailbox_push|Pools>::alloc|deliver|Drive>::step|Shared>::mark|^push:|wheel/i.test(owner))
+          return "phase 3, the deliveries, and the drive injected";
+        if (/Image|crc|encode|decode/i.test(owner)) return "the image, encoded or decoded";
+        if (cls === "engine") return "the coordinator, the task and the rest of the engine";
+        return "other: libraries, the kernel, frames with no crate";
+      };
+      for (const role of ["test", "worker"]) {
+        const rows = owners.filter((r) => r[0] === role);
+        const n = rows.reduce((s, r) => s + Number(r[3]), 0);
+        const by = new Map();
+        for (const r of rows) {
+          const k = part(r[1], r[2]);
+          by.set(k, (by.get(k) ?? 0) + Number(r[3]));
+        }
+        console.log(`  ${role} thread, ${n} samples, by part of the tick:`);
+        for (const [k, m] of [...by.entries()].sort((a, b) => b[1] - a[1])) {
+          console.log(`    ${((100 * m) / n).toFixed(2).padStart(6)} %  ${String(m).padStart(6)}  ${k}`);
+        }
+      }
+    }
   }
 }

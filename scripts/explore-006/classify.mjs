@@ -36,7 +36,7 @@ function crateOf(sym, dso) {
 
 const isProject = (c) => c === "inhibition" || c.startsWith("menteion_");
 const classOf = (c, sym) =>
-  /SpinBarrier::wait/.test(sym) ? "engine-wait" : c.startsWith("menteion_") ? "engine" : "harness";
+  /SpinBarrier>?::wait/.test(sym) ? "engine-wait" : c.startsWith("menteion_") ? "engine" : "harness";
 
 // The module of a function: its path without the last segment, generic arguments dropped.
 function moduleOf(sym) {
