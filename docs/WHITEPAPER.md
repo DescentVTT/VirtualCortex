@@ -1,6 +1,6 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.20.0
+version: 5.21.0
 status: active
 date: 2026-10-27
 ---
@@ -11,7 +11,7 @@ date: 2026-10-27
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.20.0 |
+| Version | 5.21.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-27 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2577,6 +2577,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md) | The cost of a test run alone, and a bound of 240 minutes | accepted |
 | [ADR-0221](adr/0221-the-project-renamed-menteion.md) | The project renamed Menteion | accepted |
 | [ADR-0222](adr/0222-the-project-renamed-menteion-built.md) | The project renamed Menteion, built | accepted |
+| [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2709,6 +2710,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 | F-82 | Brief 082's calibration, dispatch 40226374616, read shard 10 of 18 at 128.1 minutes, 71 % of the 180-minute bound: past ADR-0179's 60 %. The table had costed H-44's arms at 634 to 1 257 s where they took 2 100 to 2 400 s. Dealt from a table written from that run, the reproduction, 40237389553, read ten shards past 60 %, the longest 127.1 minutes. | `scripts/exhaustive-costs.tsv`, `.github/workflows/ci.yml` | **Resolved** ([ADR-0220](adr/0220-the-cost-of-a-test-run-alone.md)): a shard that ran its tests alone is not read into the table, a test with no line is costed at 2 400 s, and the bound is 240 minutes by ADR-0179's rule. |
 | F-83 | [ADR-0221](adr/0221-the-project-renamed-menteion.md) predicted that no pinned number would move, since an image changes only in its header. Seven pins are CRC-64s of whole images at the current format, the header included, and the derivations' `crcs` are held to them: the version alone moves each, as every format since [ADR-0095](adr/0095-an-image-pin-moves-with-its-format.md) re-pinned them. | ADR-0221, `runtime/menteion-runtime/tests/` | **Resolved** ([ADR-0222](adr/0222-the-project-renamed-menteion-built.md)): each is read with its image's header written back to format 25, the magic `VCORTEX1` and the seal (`pinned_crc`), and none moved. |
 | F-84 | §5.2.2's Public API cell says `FORMAT_VERSION` (21). The format moved to 22 with [ADR-0180](adr/0180-a-rate-the-controller-holds-built.md) and is 26; no directive holds the number in that cell, as none held §8.7's before F-60. | this document | **Open**: the cell is 1 180 characters, so a change to it is new text over the limit of 400 ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)). Brief 083 only renamed it; the next round that writes §5.2.2 splits it. |
+| F-85 | `ci.yml` asks each of its three uploads to be kept 90 days. The repository allowed 14, already so before its move, and GitHub keeps the lesser without a warning: every run's artifacts and logs expired after two weeks, and so did the link to one in an ADR, a note or a report. F-45 and the first sweep's item below say the artifacts keep ninety days. | `.github/workflows/ci.yml` | **Resolved** ([ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)): on 2026-10-27 the organisation's limit and the repository's were set to 90 days. An artifact uploaded before keeps its 14, and the committed tables are the evidence. |
 
 <!-- @assert-count target="runtime/menteion-runtime/tests/assembly.rs" symbol="fn frozen_again" min="1" reason="F-56: the drained image is frozen with its dopamine signal at rest" -->
 <!-- @assert-count target="runtime/menteion-runtime/tests/assembly.rs" symbol="fn context_geometry" min="1" reason="F-54, ADR-0117: the geometry beside the task's, readouts at eight places each" -->
@@ -3026,7 +3028,9 @@ gh workflow run ci.yml --ref <branch> -f scope=arms -f tests='<test> ...'   # a 
 gh workflow run ci.yml --ref explore/NNN-<slug> -f scope=arms -f tests='<test>_explore ...'   # an exploration's runs, as often as it needs (docs/explorations/)
 ```
 
-The whole-domain tests run by dispatch alone, as eighteen shards in the weekly job ([ADR-0191](adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md), [ADR-0088](adr/0088-a-fourth-shard.md), [ADR-0118](adr/0118-a-fifth-shard.md), [ADR-0121](adr/0121-a-sixth-shard.md), [ADR-0150](adr/0150-a-round-waits-for-what-it-checks.md)), taken from the tests `--list` names at run time and dealt longest first to the least-loaded shard by the seconds `scripts/exhaustive-costs.tsv` records for each ([ADR-0092](adr/0092-the-shards-dealt-by-cost.md); a test it does not know costed as a heavy one), each test run in a process of its own and checked to have exited 0 with one test passed ([ADR-0084](adr/0084-the-shards-take-tests.md), [ADR-0073](adr/0073-the-whole-domain-tests-sharded.md)); a listing that fails or names nothing fails the shard (F-48); each shard reports every test's seconds ([ADR-0071](adr/0071-the-exhaustive-job-times-its-own-binaries.md), F-45), from which the table is regenerated, and `npm run spec:costs` fails on a line of it that names no test in the tree. A paused line's whole-domain runs end in `_paused` rather than `_exhaustive` ([ADR-0127](adr/0127-the-paused-line-leaves-the-weekly.md)): `#[ignore]`d with their pins, outside the weekly job and `--ignored exhaustive`, run by name in a dispatch at `scope=arms`. An exploration's runs end in `_explore` ([ADR-0193](adr/0193-an-exploration-lane.md)): on a kept `explore/NNN-…` branch, never in the weekly job, dispatched by name as often as the question needs, and written down as a note in `docs/explorations/` marked exploratory, which an ADR may cite only in its Context; `scripts/check-explorations.mjs` holds both.
+The whole-domain tests run by dispatch alone, as eighteen shards in the weekly job ([ADR-0191](adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md), [ADR-0088](adr/0088-a-fourth-shard.md), [ADR-0118](adr/0118-a-fifth-shard.md), [ADR-0121](adr/0121-a-sixth-shard.md), [ADR-0150](adr/0150-a-round-waits-for-what-it-checks.md)), taken from the tests `--list` names at run time and dealt longest first to the least-loaded shard by the seconds `scripts/exhaustive-costs.tsv` records for each ([ADR-0092](adr/0092-the-shards-dealt-by-cost.md); a test it does not know costed as a heavy one), each test run in a process of its own and checked to have exited 0 with one test passed ([ADR-0084](adr/0084-the-shards-take-tests.md), [ADR-0073](adr/0073-the-whole-domain-tests-sharded.md)); a listing that fails or names nothing fails the shard (F-48); each shard reports every test's seconds ([ADR-0071](adr/0071-the-exhaustive-job-times-its-own-binaries.md), F-45), from which the table is regenerated, and `npm run spec:costs` fails on a line of it that names no test in the tree. A paused line's whole-domain runs end in `_paused` rather than `_exhaustive` ([ADR-0127](adr/0127-the-paused-line-leaves-the-weekly.md)): `#[ignore]`d with their pins, outside the weekly job and `--ignored exhaustive`, run by name in a dispatch at `scope=arms`.
+
+An exploration's runs end in `_explore` ([ADR-0193](adr/0193-an-exploration-lane.md)): on an `explore/NNN-…` branch, never in the weekly job, dispatched by name as often as the question needs, and written down as a note in `docs/explorations/` marked exploratory, which an ADR may cite only in its Context; `scripts/check-explorations.mjs` holds both. When the note merges, the branch becomes a tag of its name, which a tag ruleset on `refs/tags/explore/*` keeps from deletion and update, a setting of the repository and not of the tree ([ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)).
 <!-- @assert-present file="docs/explorations/README.md,scripts/check-explorations.mjs" reason="ADR-0193: the exploration lane's rules and its check" -->
 <!-- @assert-count target="package.json" symbol="scripts/check-explorations.mjs" min="1" reason="ADR-0193: the gate holds the lane" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="exhaustive-shard.sh" min="1" reason="ADR-0073: the weekly job runs the whole-domain tests in shards" -->
@@ -3039,6 +3043,15 @@ The blocks are the ones in `CLAUDE.md`, which is canonical ([ADR-0184](adr/0184-
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="ONLY: ${{ inputs.only }}" min="1" reason="ADR-0211: the dispatch's only input reaches the shards" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="needs.changes.outputs.rust != 'false'" min="4" reason="ADR-0211: the four Rust jobs skip a pull request of documents alone" -->
 <!-- @assert-absence target=".github/workflows/ci.yml" symbol="default: both" reason="ADR-0211: a dispatch that names no scope runs no sweep" -->
+
+The four Rust jobs also skip a pull request whose two trees, its base's and its merge's as those jobs read them, a green gate of this repository already tested ([ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)). `scripts/gate-fingerprint.mjs` hashes the two, the `changes` job looks for an artifact `gate-green-<hash>` kept by a run on the repository's own branches, and the `gate-green` job keeps one when all four passed. The mutation gate runs in three shards of one list, round-robin, each with its own baseline. The schedule runs on Wednesday at 20:17 UTC, off the hour.
+<!-- @assert-present file="scripts/gate-fingerprint.mjs,scripts/gate-fingerprint.test.mjs" reason="ADR-0223: the two trees hashed, and its tests" -->
+<!-- @assert-count target="package.json" symbol="npm run gate:fingerprint:test" min="1" reason="ADR-0223: the gate runs the fingerprint's tests" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="node scripts/gate-fingerprint.mjs" min="1" reason="ADR-0223: the changes job hashes the two trees the Rust jobs test" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="name: gate-green-${{ needs.changes.outputs.fingerprint }}" min="1" reason="ADR-0223: a green gate keeps its fingerprint" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="--shard ${{ matrix.shard }}/3 --sharding round-robin" min="1" reason="ADR-0223: the mutation gate in three shards" -->
+<!-- @assert-count target=".github/workflows/ci.yml" symbol="17 20 * * 3" min="1" reason="ADR-0223: the schedule on Wednesday at 20:17 UTC" -->
+<!-- @assert-absence target=".github/workflows/ci.yml" symbol="0 3 * * 1" reason="ADR-0223: the schedule left Monday 03:00, the hour GitHub delays most" -->
 
 A round whose change only adds calibrates with its own calibration tests alone, beside its arms ([ADR-0215](adr/0215-the-calibration-a-change-needs.md)). `scripts/check-additive.mjs` reads the change from `origin/main` to the protocol's commit: every line a Rust build reads must be whole items inserted at the top level of a package's `tests/`, under names its crate does not use. Any other change calibrates the whole tree.
 <!-- @assert-present file="scripts/check-additive.mjs,scripts/check-additive.test.mjs" reason="ADR-0215: a round's change read as only adding, and its tests" -->

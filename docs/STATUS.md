@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0222](adr/0222-the-project-renamed-menteion-built.md) wrote it on 2026-10-27, after brief 083 carried the name Menteion into the tree ([ADR-0221](adr/0221-the-project-renamed-menteion.md)).
+[ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) wrote it on 2026-10-27, after brief 083 carried the name Menteion into the tree ([ADR-0222](adr/0222-the-project-renamed-menteion-built.md)).
 
 ## The engine
 

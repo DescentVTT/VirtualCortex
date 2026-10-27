@@ -114,6 +114,7 @@ Rounds of work are written as numbered, self-contained prompts in [`briefs/`](br
 ## Verification
 
 All of these must pass before a change is called done. They run in three places ([ADR-0184](docs/adr/0184-the-runs-off-the-developer-machine.md)): the first block on your machine before a push and again in the pull request's gate, the second in the gate alone, and the third, the whole-domain tests, only by dispatch. A round's calibration, arms and reproduction are dispatches ([briefs/README.md](briefs/README.md#evidencing-a-round)). A pull request whose every file is under `docs/` or `briefs/`, or is a Markdown file at the root, skips the gate's four Rust jobs, which report success ([ADR-0211](docs/adr/0211-the-round-shortened.md)).
+So does one whose two trees, its base's and its merge's as those jobs read them, a green gate of this repository already tested (`scripts/gate-fingerprint.mjs`, [ADR-0223](docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)).
 
 ```bash
 # 1. Before a push, on the developer machine; the pull request's gate runs these too

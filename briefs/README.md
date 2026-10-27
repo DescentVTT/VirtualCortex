@@ -138,6 +138,12 @@ section is the rule.
      any twin its stopping rule holds bit for bit to a pinned arm. No arm's log is read until
      every calibration shard or test and every twin is green; one that fails stops the round as
      a finding, and its arms are void.
+   - **The pull request opens as a draft with the round's first push**, and at the latest with
+     the protocol's commit ([ADR-0223](../docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)),
+     so that its gate, the mutation gate included, runs while the calibration does. A survivor
+     found before the protocol's commit may be killed under `src/`; one found after it is killed
+     by a new test where one can catch it, since a change under `src/` then is the change after
+     the calibration below.
    - **The tables are written from those logs and committed.** The ADR names the run, the commit
      it ran on, and the job each table came from. The run's commit holds the protocol.
    - **A change after the calibration** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): a change to a file
@@ -162,7 +168,8 @@ section is the rule.
 2. **A round never dispatches the sweep** (ADR-0211, amending
    [ADR-0075](../docs/adr/0075-the-dispatch-scope-follows-the-diff.md)): its calibration and its
    reproduction are at `scope=exhaustive`, whatever its diff. The schedule sweeps the whole tree
-   every Monday, and the pull request's mutation gate meets every line the round changed.
+   every week, on Wednesday at 20:17 UTC (ADR-0223), and the pull request's mutation gate meets
+   every line the round changed.
 3. **The round asks for its merge when the reproduction's whole-domain shards are green** and the
    pull request's gate is green on its last commit. It waits for no sweep.
 4. **The cost table** is regenerated from the calibration's and the reproduction's shards'

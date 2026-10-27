@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "spec": "npm run spec:guard && npm run spec:prove && npm run spec:graph && npm run spec:briefs && npm run spec:archive && npm run spec:archive:test && npm run spec:scope && npm run spec:scope:test && npm run spec:explorations && npm run spec:explorations:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:index && npm run spec:index:test && npm run spec:shape && npm run spec:shape:test && npm run spec:version && npm run spec:version:test && npm run spec:scripts:test && npm run spec:deps && npm run spec:costs && npm run spec:costs:test && npm run mutants:timeouts:test && npm run round:additive:test",
+    "spec": "npm run spec:guard && npm run spec:prove && npm run spec:graph && npm run spec:briefs && npm run spec:archive && npm run spec:archive:test && npm run spec:scope && npm run spec:scope:test && npm run spec:explorations && npm run spec:explorations:test && npm run spec:decisions && npm run spec:decisions:test && npm run spec:index && npm run spec:index:test && npm run spec:shape && npm run spec:shape:test && npm run spec:version && npm run spec:version:test && npm run spec:scripts:test && npm run spec:deps && npm run spec:costs && npm run spec:costs:test && npm run mutants:timeouts:test && npm run round:additive:test && npm run gate:fingerprint:test",
     "spec:guard": "spec-guard \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --verbose --ignore-status",
     "spec:prove": "spec-guard prove \"docs/**/*.md\" \"briefs/*.md\" README.md CONTRIBUTING.md CLAUDE.md --ignore-status",
     "spec:graph": "spec-graph check",
@@ -34,7 +34,9 @@
     "mutants:timeouts": "node scripts/read-timeouts.mjs",
     "mutants:timeouts:test": "node --test scripts/read-timeouts.test.mjs",
     "round:additive": "node scripts/check-additive.mjs",
-    "round:additive:test": "node --test scripts/check-additive.test.mjs"
+    "round:additive:test": "node --test scripts/check-additive.test.mjs",
+    "gate:fingerprint": "node scripts/gate-fingerprint.mjs",
+    "gate:fingerprint:test": "node --test scripts/gate-fingerprint.test.mjs"
   },
   "devDependencies": {
     "@descent-vtt/spec-brief": "0.8.0",

@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **The gate shortened, the schedule moved, and explorations kept as tags ([ADR-0223](docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)); F-85; whitepaper 5.21.0.** The Rust jobs skip two trees a green gate tested, the mutation gate runs in three shards, the schedule runs Wednesday at 20:17 UTC, and a finished exploration's branch becomes a tag.
 - **The project renamed Menteion, built ([ADR-0222](docs/adr/0222-the-project-renamed-menteion-built.md)); brief 083; F-83, F-84; whitepaper 5.20.0.** The crates are `menteion-*`, the image's magic `MENTEION` at format 26, and every living document takes the names. The whole-image pins are read at format 25, and one dispatch of every test held every pin.
 - **The project renamed Menteion ([ADR-0221](docs/adr/0221-the-project-renamed-menteion.md)); brief 083; whitepaper 5.19.0.** The repository moved to `Menteion/Menteion` on 2026-10-26. Brief 083 carries the name into the tree: the crates `menteion-*`, `MenteionFileHeader`, the magic `MENTEION` at format 26 and `.menteion`. The schedule's sweep of 2026-10-26 is recorded: no survivor.
 - **The cost of a test run alone, and a bound of 240 minutes ([ADR-0220](docs/adr/0220-the-cost-of-a-test-run-alone.md)); F-82; whitepaper 5.18.0.** `exhaustive-costs.mjs from` skips a shard that ran its tests alone (`only`) and keeps the table's other lines (`--keep`); a test with no line is costed at 2 400 s; the weekly shard's and an arm's bound is 240 minutes.

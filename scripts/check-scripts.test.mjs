@@ -43,4 +43,7 @@ test("a script that takes an argument is not in `npm run spec`, because it canno
   // `round:additive` reads a round's change between two commits (ADR-0215).
   ok(!runs("round:additive"), "round:additive needs a base and a head and cannot be part of the gate");
   ok("round:additive:test" in scripts, "its tests, which need nothing, are");
+  // `gate:fingerprint` hashes the two trees the gate tests, a base and a head (ADR-0223).
+  ok(!runs("gate:fingerprint"), "gate:fingerprint needs a base and a head and cannot be part of the gate");
+  ok("gate:fingerprint:test" in scripts, "its tests, which need nothing, are");
 });
