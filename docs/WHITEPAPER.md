@@ -2601,7 +2601,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | accepted |
 | [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | accepted |
 | [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
-| [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | A zero sum at the stimulus, and a gentler depression | proposed |
+| [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | A zero sum at the stimulus, and a gentler depression | accepted |
 <!-- adr-index: end decisions -->
 
 ---

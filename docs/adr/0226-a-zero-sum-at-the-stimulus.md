@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-28
 title: A zero sum at the stimulus, and a gentler depression
 kind: decision
