@@ -474239,8 +474239,8 @@ const CARRIED_DIR_013: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/explor
 /// The images exploration 012's second halves under the zero sum carried printed at their
 /// sixteenth schedule's end, by arm (the assignment, the mirrored assignment), kept in
 /// `CARRIED_DIR_013`, and their CRC-64s as run 40653304865 on `96ca056` printed them; and the
-/// images this exploration's third quarters write at their 24th schedule's end, none until
-/// written down here, so that a fourth quarter refuses to start before.
+/// images this exploration's third quarters wrote at their 24th schedule's end, and their CRC-64s
+/// as run 40671679938 on `795b1b8` printed them.
 const CARRIED_IMAGES: [[&str; 2]; 2] = [
     [
         "zerocarried22-assignment-image-16.image",
@@ -474253,12 +474253,12 @@ const CARRIED_IMAGES: [[&str; 2]; 2] = [
 ];
 const CARRIED_IMAGES_CRC: [[Option<u64>; 2]; 2] = [
     [Some(0xfbcd_9607_cdbf_4163), Some(0xf12c_021f_1ea1_7f31)],
-    [None, None],
+    [Some(0x3770_6516_82e3_cce3), Some(0xfd58_2a08_fcee_cff8)],
 ];
 
-/// The images this exploration's first halves under an exponent write at their eighth
+/// The images this exploration's first halves under an exponent wrote at their eighth
 /// schedule's end, by exponent (1/2, 1/4) and arm, kept in `CARRIED_DIR_013` for a second half;
-/// and their CRC-64s as their runs printed them, none until written down here.
+/// and their CRC-64s as run 40671679938 on `795b1b8` printed them.
 const EXPONENT_IMAGES_8: [[&str; 2]; 2] = [
     [
         "zerohalf22-assignment-image-8.image",
@@ -474269,7 +474269,10 @@ const EXPONENT_IMAGES_8: [[&str; 2]; 2] = [
         "zeroquarter22-mirrored-image-8.image",
     ],
 ];
-const EXPONENT_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [[None, None], [None, None]];
+const EXPONENT_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [
+    [Some(0xf0ae_08e0_8d40_8815), Some(0xeca6_8211_6db1_2a8d)],
+    [Some(0xedcd_0f2e_2d3f_e331), Some(0x07da_b225_9bdb_a1f9)],
+];
 
 /// Eight schedules of exploration 013 under `bounds` from schedule `schedule`'s image `file`,
 /// held to `crc`, every schedule's engine under `bounds` at H-42's values, the last image
