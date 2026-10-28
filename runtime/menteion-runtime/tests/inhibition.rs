@@ -472153,7 +472153,10 @@ fn istdp_window(delta: u32) -> i16 {
 /// ticks of its trials, the schedule's ticks from the load, and the inhibitory rule's target
 /// period; and the inhibitory rule's replay — every synapse's report and the reports by the group
 /// of the synapse's target, and at every block's end the synapses the replay held apart from the
-/// engine's. Exploration 009 adds the couplings' moves by the signal's sign (`RailPaths`).
+/// engine's. Exploration 009 adds the couplings' moves by the signal's sign (`RailPaths`);
+/// exploration 010 the readouts' sums against their values and what holding them cost;
+/// exploration 011 the stimulus groups' sums against their values at every block's end, and what
+/// holding them at a zero sum cost.
 struct LongSchedule {
     blocks: Vec<Block>,
     trace: u64,
@@ -472175,6 +472178,8 @@ struct LongSchedule {
     paths: RailPaths,
     hold: Vec<HoldRead>,
     cost: SumHoldCost,
+    zero: Vec<ZeroSumRead>,
+    zero_cost: ZeroSumCost,
 }
 
 /// One schedule of a long run from `image` (exploration 005): exploration 004's path, H-43's twin
@@ -472184,7 +472189,8 @@ struct LongSchedule {
 /// sets `bounds` on the engine before its first trial (`Bounds::set_on`), since no image holds
 /// them, and reads the four couplings' synapses at every trial's end against the sign of the
 /// signal the trial before left (`RailPaths`, exploration 007's reading); unbounded, the
-/// schedule is exploration 005's.
+/// schedule is exploration 005's. The sums `holds` gives are H-42's image's (explorations 010
+/// and 011).
 fn long_schedule(
     made: &Made,
     image: &[u8],
@@ -472192,12 +472198,13 @@ fn long_schedule(
     trials: usize,
     flips: &[usize],
     bounds: Bounds,
-    held: &[(u32, i64)],
+    holds: &Holds,
 ) -> (Engine, LongSchedule) {
     let units = SCAN_UNITS;
     let sets = geometry(units, made.derived.rotation);
     let mut exec = kept_from(image, units);
-    bounds.set_on(&mut exec, held);
+    bounds.set_on(&mut exec, holds);
+    let held = holds.readouts.as_slice();
     let groups = unit_groups(&exec, &sets);
     let task = task_over(
         sets,
@@ -472227,6 +472234,7 @@ fn long_schedule(
     let mut sign = SIGN_NONE;
     let mut paths = RailPaths::default();
     let mut hold: Vec<HoldRead> = Vec::with_capacity(trials / BLOCK);
+    let mut zero: Vec<ZeroSumRead> = Vec::with_capacity(trials / BLOCK);
     let (blocks, trace) = run_on_scheduled_over(
         sets,
         &mut exec,
@@ -472272,6 +472280,7 @@ fn long_schedule(
                 onto.push(onto_of(exec, &groups));
                 replay_apart.push(replay.apart_from(exec));
                 hold.push(hold_read(exec, held));
+                zero.push(zero_sum_read(exec, holds));
             }
             let now = coupling_weights(exec, &sets);
             paths.trial(sign, &couplings, &now);
@@ -472306,6 +472315,8 @@ fn long_schedule(
         paths,
         hold,
         cost: exec.sum_hold_cost(),
+        zero,
+        zero_cost: exec.zero_sum_cost(),
     };
     (exec, run)
 }
@@ -472556,16 +472567,18 @@ fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
 // prediction is written, nothing is pinned, and everything is dumped before anything is held.
 
 use menteion_core::SoftBound;
-use menteion_runtime::{SumHold, SumHoldCost};
+use menteion_runtime::{SumHold, SumHoldCost, ZeroSum, ZeroSumCost};
 
 /// The bounds a run of exploration 009 sets on every schedule's engine, neither in any image:
 /// exploration 007's soft bound on an excitatory pairing's potentiation, and the bound at
-/// consolidation on every excitatory synapse.
+/// consolidation on every excitatory synapse; exploration 010's readouts' sums held, and
+/// exploration 011's zero sum at the stimulus.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Bounds {
     pairing: Option<SoftBound>,
     consolidation: bool,
     sums: Option<SumHold>,
+    zero_sum: Option<ZeroSum>,
 }
 
 impl Bounds {
@@ -472574,43 +472587,61 @@ impl Bounds {
         pairing: None,
         consolidation: false,
         sums: None,
+        zero_sum: None,
     };
     /// The bound at consolidation (exploration 009's first).
     const CONSOLIDATION: Self = Self {
-        pairing: None,
         consolidation: true,
-        sums: None,
+        ..Self::NONE
     };
     /// The soft bound on the pairing's potentiation above the reference magnitude (exploration
     /// 009's second).
     const ABOVE_REFERENCE: Self = Self {
         pairing: Some(SoftBound::AboveReference),
-        consolidation: false,
-        sums: None,
+        ..Self::NONE
     };
     /// Each readout unit's excitatory sum held under its value in H-42's image (exploration
     /// 010's first).
     const CEILING: Self = Self {
-        pairing: None,
-        consolidation: false,
         sums: Some(SumHold::Ceiling),
+        ..Self::NONE
     };
     /// Each readout unit's excitatory sum held at its value in H-42's image both ways
     /// (exploration 010's second).
     const BOTH: Self = Self {
-        pairing: None,
-        consolidation: false,
         sums: Some(SumHold::Both),
+        ..Self::NONE
+    };
+    /// Each stimulus set's couplings to the two readout sets, summed, held at their sum in H-42's
+    /// image both ways: a zero sum (exploration 011's first).
+    const ZERO_SUM_BOTH: Self = Self {
+        zero_sum: Some(ZeroSum::Both),
+        ..Self::NONE
+    };
+    /// The same held under it alone (exploration 011's second).
+    const ZERO_SUM_CEILING: Self = Self {
+        zero_sum: Some(ZeroSum::Ceiling),
+        ..Self::NONE
     };
 
-    /// Sets them on `exec`, from its next tick; the sums, where held, at `held`, each readout
-    /// unit's value (exploration 010).
-    fn set_on(self, exec: &mut Engine, held: &[(u32, i64)]) {
+    /// Sets them on `exec`, from its next tick; the sums, where held, at `holds`'s values, H-42's
+    /// image's: each readout unit's (exploration 010), and each stimulus set's couplings
+    /// (exploration 011).
+    fn set_on(self, exec: &mut Engine, holds: &Holds) {
         exec.set_soft_bound(self.pairing);
         exec.set_consolidation_bound(self.consolidation);
         assert!(
-            exec.set_sum_hold(self.sums, held),
+            exec.set_sum_hold(self.sums, &holds.readouts),
             "every held unit in the arena, once"
+        );
+        let groups: Vec<(&[u32], i64)> = holds
+            .stimulus
+            .iter()
+            .map(|(sources, value)| (sources.as_slice(), *value))
+            .collect();
+        assert!(
+            exec.set_zero_sum(self.zero_sum, &groups, &holds.targets),
+            "every source excitatory and in the arena, once, and every target in the arena"
         );
     }
 
@@ -472620,6 +472651,7 @@ impl Bounds {
             pairing: exec.soft_bound(),
             consolidation: exec.consolidation_bound(),
             sums: exec.sum_hold(),
+            zero_sum: exec.zero_sum(),
         }
     }
 }
@@ -472803,8 +472835,13 @@ fn long_run(
         undropped(exec, name);
     }
     // Each readout unit's excitatory sum in H-42's image, the value exploration 010 holds it at.
-    let held = held_values(made, name);
+    // Each stimulus set's couplings summed in H-42's image, the value exploration 011 holds them at.
+    let holds = Holds {
+        readouts: held_values(made, name),
+        ..zero_sum_values(made, name)
+    };
     let mut held_over: Vec<u32> = Vec::new();
+    let mut zero_over: Vec<u32> = Vec::new();
     let mut first: Option<(Vec<Block>, u64, u64)> = None;
     let mut runs: Vec<(u64, u64)> = Vec::new();
     let mut readings: Vec<LongRead> = Vec::new();
@@ -472812,7 +472849,7 @@ fn long_run(
     let mut read_bounds: Vec<Bounds> = Vec::new();
     for s in first_schedule..first_schedule.saturating_add(schedules) {
         let at = format!("{name} schedule {s}");
-        let (mut exec, run) = long_schedule(made, &image, arm, trials, flips, bounds, &held);
+        let (mut exec, run) = long_schedule(made, &image, arm, trials, flips, bounds, &holds);
         read_bounds.push(Bounds::of(&exec));
         let read = long_dump(&at, made, &run);
         readings.push(read);
@@ -472852,7 +472889,29 @@ fn long_run(
             "DUMP {at} mappings at their last block (block, A→R0, A→R1, B→R0, B→R1 over the image's; A→R0 − A→R1, B→R1 − B→R0; A→R0 / A→R1, B→R1 / B→R0, per myriad) {:?}",
             mapping_margins(made, &run.blocks, flips)
         );
+        eprintln!(
+            "DUMP {at} zero sum {:?}: at every block's end (stimulus A's couplings summed, over its value per myriad; B's; groups above their value; the readouts' excitatory input summed; the four couplings summed, their share of it per myriad) {:?}",
+            bounds.zero_sum,
+            run.zero
+                .iter()
+                .map(|z| (
+                    z.0[0],
+                    per_myriad(z.0[0], z.1[0]),
+                    z.0[1],
+                    per_myriad(z.0[1], z.1[1]),
+                    z.2,
+                    z.3,
+                    z.4,
+                    per_myriad(z.4, z.3)
+                ))
+                .collect::<Vec<_>>()
+        );
+        eprintln!(
+            "DUMP {at} the zero sum's cost over {} ticks: {:?}",
+            run.ticks, run.zero_cost
+        );
         held_over.extend(run.hold.iter().map(|h| h.0));
+        zero_over.extend(run.zero.iter().map(|z| z.2));
         if s == 0 {
             first = Some((run.blocks.clone(), run.trace, values_hash(&run.values)));
         }
@@ -472909,6 +472968,12 @@ fn long_run(
         assert!(
             held_over.iter().all(|&over| over == 0),
             "{name}: no readout unit's sum above its value at a block's end: {held_over:?}"
+        );
+    }
+    if bounds.zero_sum.is_some() {
+        assert!(
+            zero_over.iter().all(|&over| over == 0),
+            "{name}: no stimulus set's couplings above their value at a block's end: {zero_over:?}"
         );
     }
     if let (Some((blocks, trace, hash)), true) = (first, bounds == Bounds::NONE) {
@@ -473515,4 +473580,295 @@ fn a_readouts_sum_held_both_ways_second_half_on_seed_22_from_the_assignment_expl
 #[ignore]
 fn a_readouts_sum_held_both_ways_second_half_on_seed_22_from_the_mirrored_assignment_explore() {
     held_second_half("both22", 1, Reversal::MirroredFirst, Bounds::BOTH);
+}
+
+// ======================================================================= exploration 011
+//
+// A zero sum at the stimulus (ADR-0193, exploration 011). Exploration 010's harness, its long
+// run, rail paths and carry, with each stimulus set's couplings to the two readout sets, summed,
+// held at their sum in H-42's image, on this branch alone (`Executor::set_zero_sum`): the
+// synapses from a stimulus set's excitatory units onto the readout units, excitatory and
+// inhibitory, of both readout sets. After every tick whose consolidations moved one of a set's
+// synapses, the set's sum is read by a walk of its units' chains and every one of those synapses
+// is scaled by the value over the sum, rounded down, so that what one readout's coupling gains
+// the set's couplings to both readouts pay for: above the value and below it, at most the rail
+// (`ZeroSum::Both`), or above it alone (`ZeroSum::Ceiling`). No other synapse moves. Neither is in
+// any image, so the test sets it on every schedule's engine with H-42's values. Beside 010's
+// readings, at every block's end each set's sum against its value and the couplings' share of
+// the readouts' excitatory input; and what the zero sum cost. No prediction is written, nothing is
+// pinned, and everything is dumped before anything is held.
+
+/// The values explorations 010 and 011 hold their sums at, H-42's image's: each readout unit's
+/// excitatory input (exploration 010, `held_values`); and each stimulus set's excitatory units
+/// with their couplings to the two readout sets summed, and the readout units of both sets,
+/// excitatory and inhibitory, onto which those couplings are held (exploration 011,
+/// `zero_sum_values`).
+struct Holds {
+    readouts: Vec<(u32, i64)>,
+    stimulus: Vec<(Vec<u32>, i64)>,
+    targets: Vec<u32>,
+}
+
+/// What the zero sum reads at a block's end (exploration 011): stimulus A's and B's couplings to
+/// the two readout sets, summed; their values; the sets whose sum stood above its value; the
+/// readout units' excitatory input summed, the couplings' and every other excitatory unit's; and
+/// the four couplings summed.
+type ZeroSumRead = ([i64; 2], [i64; 2], u32, i64, i64);
+
+/// Each stimulus set's excitatory units and their couplings to the two readout sets summed in
+/// H-42's image on seed `made`'s network, and the readout units (exploration 011). Dumps the
+/// groups, their values beside the image's couplings as `Made` holds them, and the synapses a
+/// group's walk reads.
+fn zero_sum_values(made: &Made, name: &str) -> Holds {
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let exec = kept_from(&made.windowed, units);
+    let targets: Vec<u32> = (0..units)
+        .filter(|&id| sets[2].contains(id) || sets[3].contains(id))
+        .collect();
+    let mut stimulus: Vec<(Vec<u32>, i64)> = Vec::with_capacity(2);
+    let mut walked: Vec<(u32, u32)> = Vec::with_capacity(2);
+    for set in &sets[..2] {
+        let mut sources = Vec::new();
+        let (mut value, mut read, mut onto) = (0i64, 0u32, 0u32);
+        for unit in exec.units() {
+            let id = unit.id as u32;
+            if unit.flags & FLAG_INHIBITORY != 0 || !set.contains(id) {
+                continue;
+            }
+            sources.push(id);
+            for s in unit.fan_out(exec.blocks()) {
+                read = read.saturating_add(1);
+                if sets[2].contains(s.target) || sets[3].contains(s.target) {
+                    onto = onto.saturating_add(1);
+                    value = value.saturating_add(i64::from(s.weight_q1_15));
+                }
+            }
+        }
+        stimulus.push((sources, value));
+        walked.push((read, onto));
+    }
+    eprintln!(
+        "DUMP {name} the zero sum at the stimulus: A's and B's excitatory units {:?}, their values {:?} beside the image's couplings summed {:?}, the synapses a walk reads and those onto the readouts {walked:?}; {} readout units",
+        stimulus.iter().map(|g| g.0.len()).collect::<Vec<_>>(),
+        stimulus.iter().map(|g| g.1).collect::<Vec<_>>(),
+        made.couplings
+            .iter()
+            .map(|c| c[0].saturating_add(c[1]))
+            .collect::<Vec<_>>(),
+        targets.len()
+    );
+    eprintln!(
+        "DUMP {name} the zero sum's sources by set {:?}",
+        stimulus.iter().map(|g| &g.0).collect::<Vec<_>>()
+    );
+    undropped(exec, name);
+    Holds {
+        readouts: Vec::new(),
+        stimulus,
+        targets,
+    }
+}
+
+/// The stimulus sets' sums on `exec` against their values in `holds`, and the readouts' input
+/// (exploration 011).
+fn zero_sum_read(exec: &Engine, holds: &Holds) -> ZeroSumRead {
+    let mut target = vec![false; exec.units().len()];
+    for &t in &holds.targets {
+        if let Some(x) = target.get_mut(t as usize) {
+            *x = true;
+        }
+    }
+    let mut sums = [0i64; 2];
+    let mut values = [0i64; 2];
+    for (g, (sources, value)) in holds.stimulus.iter().enumerate().take(2) {
+        values[g] = *value;
+        for &id in sources {
+            let Some(unit) = exec.units().get(id as usize) else {
+                continue;
+            };
+            for s in unit.fan_out(exec.blocks()) {
+                if target.get(s.target as usize).copied().unwrap_or(false) {
+                    sums[g] = sums[g].saturating_add(i64::from(s.weight_q1_15));
+                }
+            }
+        }
+    }
+    let (onto, _) = excitatory_onto(exec);
+    let readouts = holds.targets.iter().fold(0i64, |a, &t| {
+        a.saturating_add(onto.get(t as usize).copied().unwrap_or(0))
+    });
+    let over = sums.iter().zip(&values).filter(|(s, v)| s > v).count() as u32;
+    (
+        sums,
+        values,
+        over,
+        readouts,
+        sums[0].saturating_add(sums[1]),
+    )
+}
+
+/// Exploration 011, short: one schedule of two blocks from H-42's image on seed 22 from the
+/// assignment, unheld — held to H-42's arm as far as it runs, the branch's `src/` unset — and under
+/// each zero sum.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_short_on_seed_22_explore() {
+    let made = probe_made(0, "zero22 short");
+    for (name, bounds) in [
+        ("zero22 short unheld", Bounds::NONE),
+        ("zero22 short both ways", Bounds::ZERO_SUM_BOTH),
+        ("zero22 short ceiling", Bounds::ZERO_SUM_CEILING),
+    ] {
+        long_run(
+            &made,
+            0,
+            name,
+            Reversal::AssignmentFirst,
+            LongStart::Derived,
+            1,
+            2 * BLOCK,
+            &[],
+            bounds,
+            false,
+        );
+    }
+}
+
+/// Exploration 011, the zero sum both ways: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_both_ways_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "zeroboth22",
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_BOTH,
+    );
+}
+
+/// Exploration 011, the zero sum both ways: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_both_ways_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run("zeroboth22", Reversal::MirroredFirst, Bounds::ZERO_SUM_BOTH);
+}
+
+/// Exploration 011, the zero sum as a ceiling: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_as_a_ceiling_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "zeroceiling22",
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CEILING,
+    );
+}
+
+/// Exploration 011, the zero sum as a ceiling: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_as_a_ceiling_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run(
+        "zeroceiling22",
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CEILING,
+    );
+}
+
+/// Where exploration 011's long runs carry their images from one job to the next.
+const CARRIED_DIR_011: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/explore-011");
+
+/// The images exploration 011's runs wrote at their eighth schedule's end, by zero sum (both
+/// ways, the ceiling) and arm (the assignment, the mirrored assignment), kept in
+/// `CARRIED_DIR_011` for a second half; and their CRC-64s as their runs printed them, none until
+/// written down here, so that a second half refuses to start before.
+const ZERO_SUM_IMAGES_8: [[&str; 2]; 2] = [
+    [
+        "zeroboth22-assignment-image-8.image",
+        "zeroboth22-mirrored-image-8.image",
+    ],
+    [
+        "zeroceiling22-assignment-image-8.image",
+        "zeroceiling22-mirrored-image-8.image",
+    ],
+];
+const ZERO_SUM_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [[None, None], [None, None]];
+
+/// Exploration 011's second half under zero sum `z` (0 both ways, 1 the ceiling): schedules 9 to
+/// 16 from the image the first half printed at its eighth schedule's end, every schedule's engine
+/// under `bounds` at H-42's values, the last image printed whole.
+fn zero_sum_second_half(label: &str, z: usize, arm: Reversal, bounds: Bounds) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{label} {arm:?}");
+    let made = probe_made(0, &name);
+    long_run(
+        &made,
+        0,
+        &name,
+        arm,
+        LongStart::Carried {
+            schedule: HALF_SCHEDULES,
+            dir: CARRIED_DIR_011,
+            file: ZERO_SUM_IMAGES_8[z][k],
+            crc: ZERO_SUM_IMAGES_8_CRC[z][k],
+        },
+        HALF_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        bounds,
+        true,
+    );
+}
+
+/// Exploration 011, both ways' second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_both_ways_second_half_on_seed_22_from_the_assignment_explore() {
+    zero_sum_second_half(
+        "zeroboth22",
+        0,
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_BOTH,
+    );
+}
+
+/// Exploration 011, both ways' second half: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_both_ways_second_half_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    zero_sum_second_half(
+        "zeroboth22",
+        0,
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_BOTH,
+    );
+}
+
+/// Exploration 011, the ceiling's second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_as_a_ceiling_second_half_on_seed_22_from_the_assignment_explore() {
+    zero_sum_second_half(
+        "zeroceiling22",
+        1,
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CEILING,
+    );
+}
+
+/// Exploration 011, the ceiling's second half: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn a_zero_sum_at_the_stimulus_as_a_ceiling_second_half_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    zero_sum_second_half(
+        "zeroceiling22",
+        1,
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CEILING,
+    );
 }
