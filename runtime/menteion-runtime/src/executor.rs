@@ -902,11 +902,14 @@ fn held_weight(weight: i16, value: i64, sum: i64) -> i16 {
 /// One round of the sums held (exploration 010): every unit of `touched` has its excitatory input
 /// sum read by a walk of every excitatory unit's chain, since the tree keeps a synapse with its
 /// presynaptic unit and a target's sum is therefore a scan, and is scaled to its value in
-/// `values` as `hold` says. `listed` is a unit's place in `touched`, `HOLD_UNLISTED` elsewhere,
-/// and is left so; `sums` and `at` are scratch. Adds what it did to `cost`, all but the time.
+/// `values` as `hold` says. `heads` are the excitatory units' chains, encoded as a unit stores
+/// its first block (exploration 011: read from the unit arena when the hold is set, since a read
+/// of it inside a tick would bring the asleep units up to date before the clock moves, ADR-0224).
+/// `listed` is a unit's place in `touched`, `HOLD_UNLISTED` elsewhere, and is left so; `sums` and
+/// `at` are scratch. Adds what it did to `cost`, all but the time.
 #[allow(clippy::too_many_arguments)]
 fn hold_round(
-    units: &[DendriticSuperNeuron],
+    heads: &[u32],
     blocks: &mut [SynapseBlock],
     hold: SumHold,
     values: &[Option<i64>],
@@ -924,11 +927,8 @@ fn hold_round(
     sums.clear();
     sums.resize(touched.len(), 0);
     at.clear();
-    for pre in units {
-        if Polarity::of_flags(pre.flags) != Polarity::Excitatory {
-            continue;
-        }
-        for s in pre.fan_out(blocks) {
+    for &head in heads {
+        for s in SynapseBlock::fan_out(blocks, head) {
             cost.read = cost.read.saturating_add(1);
             let Some(&k) = listed.get(s.target as usize) else {
                 continue;
@@ -968,6 +968,89 @@ fn hold_round(
         let Some(&Some((value, sum))) = factors.get(k as usize) else {
             continue;
         };
+        let Some(block) = blocks.get_mut(block_idx as usize) else {
+            continue;
+        };
+        let Some(w) = block.weights_q1_15.get_mut(slot as usize) else {
+            continue;
+        };
+        let held = held_weight(*w, value, sum);
+        if held != *w {
+            *w = held;
+            cost.rewritten = cost.rewritten.saturating_add(1);
+        }
+    }
+}
+
+/// Exploration 011 (ADR-0193), on its branch alone and in no image: how a group of excitatory
+/// source units' synapses onto a set of target units, their weights summed, is held at the value
+/// `Executor::set_zero_sum` gives the group, after every tick whose consolidations moved one of
+/// those weights. Every synapse of the group onto a target is scaled by the same quotient, so that
+/// a rise onto one target is paid for by the group's synapses onto every target, its own among
+/// them: a zero sum over the group's targets. No other synapse moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZeroSum {
+    /// Above its value, every synapse of the group onto a target is scaled by the value over the
+    /// sum, rounded down; at or below it, nothing moves.
+    Ceiling,
+    /// As `Ceiling`, and below its value every one is scaled up by the same quotient, rounded
+    /// down and at most the rail; a sum of zero is left.
+    Both,
+}
+
+/// What holding the groups' sums cost an engine (exploration 011), from `set_zero_sum`: the ticks
+/// whose consolidations touched a group, the groups touched, those scaled, the synapses whose
+/// weight the scaling moved, the synapses the walks of the groups' chains read, and the
+/// nanoseconds the coordinator spent between ticks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ZeroSumCost {
+    pub rounds: u64,
+    pub touched: u64,
+    pub scaled: u64,
+    pub rewritten: u64,
+    pub read: u64,
+    pub nanos: u64,
+}
+
+/// The most groups a zero sum holds (exploration 011): one bit each in `Shared::zero_sum_touched`.
+pub const ZERO_SUM_GROUPS_MAX: usize = 64;
+
+/// One group's round of the zero sum (exploration 011): every synapse of the chains `heads`
+/// start (encoded as a unit stores its first block) onto a unit `targets` marks, its weight summed,
+/// and scaled to `value` as `hold` says, each weight by `held_weight`. A group's sum is a walk of
+/// its sources' chains alone, since the tree keeps a synapse with its presynaptic unit. `at` is
+/// scratch. Adds what it did to `cost`, all but the rounds and the time.
+fn zero_sum_round(
+    blocks: &mut [SynapseBlock],
+    hold: ZeroSum,
+    heads: &[u32],
+    value: i64,
+    targets: &[bool],
+    at: &mut Vec<(u32, u8)>,
+    cost: &mut ZeroSumCost,
+) {
+    at.clear();
+    let mut sum = 0i64;
+    for &head in heads {
+        for s in SynapseBlock::fan_out(blocks, head) {
+            cost.read = cost.read.saturating_add(1);
+            if !targets.get(s.target as usize).copied().unwrap_or(false) {
+                continue;
+            }
+            sum = sum.saturating_add(i64::from(s.weight_q1_15));
+            at.push((s.block_idx, s.slot));
+        }
+    }
+    cost.touched = cost.touched.saturating_add(1);
+    let scale = match hold {
+        ZeroSum::Ceiling => sum > value,
+        ZeroSum::Both => sum != value && sum > 0,
+    };
+    if !scale {
+        return;
+    }
+    cost.scaled = cost.scaled.saturating_add(1);
+    for &(block_idx, slot) in at.iter() {
         let Some(block) = blocks.get_mut(block_idx as usize) else {
             continue;
         };
@@ -1430,6 +1513,16 @@ struct Shared {
     holding: AtomicBool,
     held: Box<[AtomicU8]>,
     touched: AtomicBool,
+    /// Exploration 011 (ADR-0193), on its branch alone and in no image: whether a zero sum is
+    /// held; per unit, its group's index plus one where it is a held source and zero elsewhere,
+    /// and whether it is a held target; and the groups touched this tick, one bit each. Written
+    /// between ticks by `Executor::set_zero_sum` and the coordinator, a group's bit set by any
+    /// worker whose consolidation moved one of the group's synapses onto a target in the fan-out
+    /// phase.
+    zero_summing: AtomicBool,
+    zero_sum_source: Box<[AtomicU8]>,
+    zero_sum_target: Box<[AtomicBool]>,
+    zero_sum_touched: AtomicU64,
     /// The units that fired this tick, one slot per unit, appended by every worker at the
     /// spike through `fired_len` and taken by the coordinator after the tick into the train
     /// (ADR-0050); empty when the executor keeps no train.
@@ -1455,6 +1548,21 @@ impl Shared {
             flag.store(HOLD_TOUCHED, Ordering::Relaxed);
             self.touched.store(true, Ordering::Relaxed);
         }
+    }
+
+    /// Exploration 011: `unit`'s group as a held source, its index plus one, zero for a unit not
+    /// held or outside the arena.
+    fn zero_sum_group(&self, unit: u32) -> u8 {
+        self.zero_sum_source
+            .get(unit as usize)
+            .map_or(0, |group| group.load(Ordering::Relaxed))
+    }
+
+    /// Exploration 011: true when `unit` is a held target; false for a unit outside the arena.
+    fn is_zero_sum_target(&self, unit: u32) -> bool {
+        self.zero_sum_target
+            .get(unit as usize)
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
     }
 
     /// True when `unit` is an addressed source (ADR-0068); false for a unit outside the
@@ -1728,15 +1836,24 @@ pub struct Executor<const CAP: usize> {
     /// under `&self` writes the arena, and no other thread holds `&self` (the assertion below).
     unsettled: Cell<bool>,
     /// Exploration 010 (ADR-0193), on its branch alone and in no image: the sums held, none while
-    /// unset; each unit's value, none for a unit not held; what holding them cost; and the
-    /// rounds' scratch.
+    /// unset; the excitatory units' chains (exploration 011); each unit's value, none for a unit
+    /// not held; what holding them cost; and the rounds' scratch.
     sum_hold: Option<SumHold>,
+    sum_heads: Vec<u32>,
     sum_values: Vec<Option<i64>>,
     sum_cost: SumHoldCost,
     sum_touched: Vec<u32>,
     sum_listed: Vec<u32>,
     sum_sums: Vec<i64>,
     sum_at: Vec<(u32, u32, u8)>,
+    /// Exploration 011 (ADR-0193), on its branch alone and in no image: the zero sum held, none
+    /// while unset; each group's sources' chains and its value; each unit, whether it is a held
+    /// target; what holding them cost; and the rounds' scratch.
+    zero_sum: Option<ZeroSum>,
+    zero_sum_groups: Vec<(Vec<u32>, i64)>,
+    zero_sum_targets: Vec<bool>,
+    zero_sum_cost: ZeroSumCost,
+    zero_sum_at: Vec<(u32, u8)>,
 }
 
 // The executor is not `Sync` (ADR-0224): `Executor::units` writes the asleep units' records
@@ -1924,6 +2041,10 @@ impl<const CAP: usize> Executor<CAP> {
                 .map(|_| AtomicU8::new(HOLD_NONE))
                 .collect(),
             touched: AtomicBool::new(false),
+            zero_summing: AtomicBool::new(false),
+            zero_sum_source: (0..config.units).map(|_| AtomicU8::new(0)).collect(),
+            zero_sum_target: (0..config.units).map(|_| AtomicBool::new(false)).collect(),
+            zero_sum_touched: AtomicU64::new(0),
             fired: (0..fired_slots).map(|_| AtomicU32::new(0)).collect(),
             fired_len: AtomicUsize::new(0),
             episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
@@ -2069,12 +2190,18 @@ impl<const CAP: usize> Executor<CAP> {
             read_steps: Cell::new(0),
             unsettled: Cell::new(false),
             sum_hold: None,
+            sum_heads: Vec::new(),
             sum_values: Vec::new(),
             sum_cost: SumHoldCost::default(),
             sum_touched: Vec::new(),
             sum_listed: Vec::new(),
             sum_sums: Vec::new(),
             sum_at: Vec::new(),
+            zero_sum: None,
+            zero_sum_groups: Vec::new(),
+            zero_sum_targets: Vec::new(),
+            zero_sum_cost: ZeroSumCost::default(),
+            zero_sum_at: Vec::new(),
         })
     }
 
@@ -2140,6 +2267,17 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.touched.store(false, Ordering::Relaxed);
         self.shared.holding.store(held, Ordering::Relaxed);
         self.sum_hold = hold;
+        // The excitatory units' chains, read now, between ticks: a unit's chain is set when the
+        // network is made and never moves (exploration 011).
+        self.sum_heads = if held {
+            self.units()
+                .iter()
+                .filter(|u| Polarity::of_flags(u.flags) == Polarity::Excitatory)
+                .map(|u| u.synapse_slab_idx)
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.sum_values = if held { by_unit } else { Vec::new() };
         self.sum_listed = vec![HOLD_UNLISTED; if held { units } else { 0 }];
         self.sum_cost = SumHoldCost::default();
@@ -2179,11 +2317,13 @@ impl<const CAP: usize> Executor<CAP> {
         let mut listed = std::mem::take(&mut self.sum_listed);
         let mut sums = std::mem::take(&mut self.sum_sums);
         let mut at = std::mem::take(&mut self.sum_at);
+        let heads = std::mem::take(&mut self.sum_heads);
         let mut cost = self.sum_cost;
-        let (units, blocks) = self.arenas_mut();
+        // The synapse arena alone: a read of the unit arena here, inside the tick, would bring
+        // the asleep units up to date before the clock moves (ADR-0224, exploration 011).
         hold_round(
-            units,
-            blocks,
+            &heads,
+            self.blocks_mut(),
             hold,
             &values,
             &touched,
@@ -2196,11 +2336,119 @@ impl<const CAP: usize> Executor<CAP> {
         let spent = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         cost.nanos = cost.nanos.saturating_add(spent);
         self.sum_cost = cost;
+        self.sum_heads = heads;
         self.sum_values = values;
         self.sum_listed = listed;
         self.sum_sums = sums;
         self.sum_at = at;
         self.sum_touched = touched;
+    }
+
+    /// Exploration 011 (ADR-0193): holds each group of `groups`, its excitatory source units and
+    /// its value, at a zero sum over `targets`, as `hold` says, between ticks, from the next tick:
+    /// after every tick whose consolidations moved a weight of a group's synapses onto a target,
+    /// the coordinator walks the group's sources' chains, sums those synapses' weights, and
+    /// scales them all to the value (`zero_sum_round`). `None` unsets it and holds no group.
+    /// Refused whole, nothing set, for more than `ZERO_SUM_GROUPS_MAX` groups, a unit outside the
+    /// arena, a source that is not excitatory, or a source named twice. It is in no image, so an
+    /// engine decoded from one starts unset; the cost starts again.
+    pub fn set_zero_sum(
+        &mut self,
+        hold: Option<ZeroSum>,
+        groups: &[(&[u32], i64)],
+        targets: &[u32],
+    ) -> bool {
+        let units = self.shared.zero_sum_source.len();
+        if groups.len() > ZERO_SUM_GROUPS_MAX {
+            return false;
+        }
+        let mut source: Vec<u8> = vec![0; units];
+        let mut held: Vec<(Vec<u32>, i64)> = Vec::with_capacity(groups.len());
+        for (g, &(sources, value)) in groups.iter().enumerate() {
+            // Below `ZERO_SUM_GROUPS_MAX`, so `g + 1` fits.
+            let index = (g as u8).wrapping_add(1);
+            let mut heads = Vec::with_capacity(sources.len());
+            for &unit in sources {
+                let Some(u) = self.units().get(unit as usize) else {
+                    return false;
+                };
+                if Polarity::of_flags(u.flags) != Polarity::Excitatory {
+                    return false;
+                }
+                // A unit's chain is set when the network is made and never moves.
+                heads.push(u.synapse_slab_idx);
+                match source.get_mut(unit as usize) {
+                    Some(slot @ 0) => *slot = index,
+                    _ => return false,
+                }
+            }
+            held.push((heads, value));
+        }
+        let mut target: Vec<bool> = vec![false; units];
+        for &unit in targets {
+            match target.get_mut(unit as usize) {
+                Some(slot) => *slot = true,
+                None => return false,
+            }
+        }
+        let on = hold.is_some();
+        for (flag, &index) in self.shared.zero_sum_source.iter().zip(&source) {
+            flag.store(if on { index } else { 0 }, Ordering::Relaxed);
+        }
+        for (flag, &is) in self.shared.zero_sum_target.iter().zip(&target) {
+            flag.store(on && is, Ordering::Relaxed);
+        }
+        self.shared.zero_sum_touched.store(0, Ordering::Relaxed);
+        self.shared.zero_summing.store(on, Ordering::Relaxed);
+        self.zero_sum = hold;
+        self.zero_sum_groups = if on { held } else { Vec::new() };
+        self.zero_sum_targets = if on { target } else { Vec::new() };
+        self.zero_sum_cost = ZeroSumCost::default();
+        true
+    }
+
+    /// The zero sum held (exploration 011), none while unset.
+    pub fn zero_sum(&self) -> Option<ZeroSum> {
+        self.zero_sum
+    }
+
+    /// What holding the zero sum has cost since `set_zero_sum` (exploration 011).
+    pub fn zero_sum_cost(&self) -> ZeroSumCost {
+        self.zero_sum_cost
+    }
+
+    /// After a tick, between ticks (exploration 011): every group this tick's consolidations
+    /// touched, held at its value by one round of `zero_sum_round`. Nothing while unset, or in a
+    /// tick that touched none.
+    fn hold_zero_sum(&mut self) {
+        let Some(hold) = self.zero_sum else {
+            return;
+        };
+        let touched = self.shared.zero_sum_touched.swap(0, Ordering::Relaxed);
+        if touched == 0 {
+            return;
+        }
+        let started = std::time::Instant::now();
+        let groups = std::mem::take(&mut self.zero_sum_groups);
+        let targets = std::mem::take(&mut self.zero_sum_targets);
+        let mut at = std::mem::take(&mut self.zero_sum_at);
+        let mut cost = self.zero_sum_cost;
+        // The synapse arena alone, as in `hold_sums`: the chains were read when the hold was set.
+        let blocks = self.blocks_mut();
+        for (g, (heads, value)) in groups.iter().enumerate() {
+            // Below `ZERO_SUM_GROUPS_MAX`, 64, as `set_zero_sum` refuses more.
+            if touched & (1u64 << g) == 0 {
+                continue;
+            }
+            zero_sum_round(blocks, hold, heads, *value, &targets, &mut at, &mut cost);
+        }
+        cost.rounds = cost.rounds.saturating_add(1);
+        let spent = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        cost.nanos = cost.nanos.saturating_add(spent);
+        self.zero_sum_cost = cost;
+        self.zero_sum_groups = groups;
+        self.zero_sum_targets = targets;
+        self.zero_sum_at = at;
     }
 
     /// The loader's: the target period an image holds, which outranks the configuration's
@@ -4057,6 +4305,8 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.barrier.wait();
         // Exploration 010: the sums held, nothing while unset.
         self.hold_sums();
+        // Exploration 011: the zero sum held, nothing while unset.
+        self.hold_zero_sum();
         self.merge_spikes(now);
         // A clock wraps by name (§8.1): the dynamics already see it as `tick as u32`.
         self.tick = self.tick.wrapping_add(1);
@@ -4412,6 +4662,8 @@ impl<const CAP: usize> Worker<CAP> {
         let consolidation_bound = shared.consolidation_bound.load(Ordering::Relaxed);
         // The sums held (exploration 010), false while unset, where nothing is marked.
         let holding = shared.holding.load(Ordering::Relaxed);
+        // The zero sum held (exploration 011), false while unset, where nothing is marked.
+        let zero_summing = shared.zero_summing.load(Ordering::Relaxed);
         for k in 0..self.spiked.len() {
             let (unit, release_u, release_r) = self.spiked[k];
             // SAFETY (phase 2): every turn ended at the barrier, so no `&mut` to any unit
@@ -4427,6 +4679,13 @@ impl<const CAP: usize> Worker<CAP> {
             let from_source = shared.is_source(unit);
             // The bound at consolidation on an excitatory chain alone (exploration 009).
             let bounded = consolidation_bound && matches!(polarity, Polarity::Excitatory);
+            // The unit's group as a held source of the zero sum, its index plus one, zero
+            // while unset and for every other unit (exploration 011).
+            let zero_sum_group = if zero_summing {
+                shared.zero_sum_group(unit)
+            } else {
+                0
+            };
             let mut next = pre.synapse_slab_idx;
             let mut remaining = shared.blocks.len();
             while next != CHAIN_END && remaining > 0 {
@@ -4473,6 +4732,27 @@ impl<const CAP: usize> Worker<CAP> {
                                 shared.touch(target);
                             }
                         }
+                    }
+                }
+                // Exploration 011: the unit's group touched where a consolidation moved one of
+                // its synapses onto a held target, for the coordinator to hold after the tick. A
+                // held source is excitatory (`Executor::set_zero_sum`).
+                if zero_sum_group != 0 {
+                    let moved = block
+                        .weights_q1_15
+                        .iter()
+                        .zip(before.iter())
+                        .enumerate()
+                        .any(|(slot, (&is, &was))| {
+                            is != was
+                                && block
+                                    .target(slot)
+                                    .is_some_and(|t| shared.is_zero_sum_target(t))
+                        });
+                    if moved {
+                        // The group's index, below `ZERO_SUM_GROUPS_MAX`.
+                        let bit = 1u64 << zero_sum_group.wrapping_sub(1);
+                        shared.zero_sum_touched.fetch_or(bit, Ordering::Relaxed);
                     }
                 }
                 let released = block.release_all(release_u, release_r);
@@ -4625,13 +4905,20 @@ mod tests {
         let weights = |blocks: &[SynapseBlock]| -> Vec<i16> {
             blocks.iter().flat_map(|b| b.weights_q1_15).collect()
         };
+        // The excitatory units' chains, as `set_sum_hold` reads them (exploration 011).
+        let heads: Vec<u32> = units
+            .iter()
+            .filter(|u| Polarity::of_flags(u.flags) == Polarity::Excitatory)
+            .map(|u| u.synapse_slab_idx)
+            .collect();
+        assert_eq!(heads, vec![1, CHAIN_END, 4]);
         let run = |hold: SumHold, values: [Option<i64>; 4], touched: &[u32]| {
             let mut blocks = blocks.clone();
             let mut listed = vec![HOLD_UNLISTED; 4];
             let (mut sums, mut at) = (Vec::new(), Vec::new());
             let mut cost = SumHoldCost::default();
             hold_round(
-                &units,
+                &heads,
                 &mut blocks,
                 hold,
                 &values,
@@ -4688,6 +4975,113 @@ mod tests {
         // A unit without a value is not held.
         let (w, _) = run(SumHold::Both, [None, None, None, Some(9_000)], &[2, 3]);
         assert_eq!((w[0], w[1]), (12_000, 9_000));
+    }
+
+    /// Exploration 011: a group's round reads its sources' synapses onto the targets alone,
+    /// scales them all by the same quotient as the hold says, rounded down and at most the rail,
+    /// and leaves every other synapse of its chains and every other chain.
+    #[test]
+    fn a_zero_sum_round_holds_a_group_s_synapses_onto_the_targets_and_no_other() {
+        let mut blocks = vec![SynapseBlock::new(); 3];
+        // Source chain 1: blocks 0 and 1, onto targets 5 and 6 and onto unit 7, not a target.
+        assert!(blocks[0].set_synapse(0, 5, 12_000, 0, false));
+        assert!(blocks[0].set_synapse(1, 7, 3_000, 0, false));
+        assert!(blocks[0].link(1));
+        assert!(blocks[1].set_synapse(0, 6, 4_000, 0, false));
+        // Another chain, block 2, onto target 5: not the group's.
+        assert!(blocks[2].set_synapse(0, 5, 10_000, 0, false));
+        let heads = [1u32];
+        let mut targets = vec![false; 8];
+        targets[5] = true;
+        targets[6] = true;
+        let weights = |blocks: &[SynapseBlock]| -> Vec<i16> {
+            blocks.iter().flat_map(|b| b.weights_q1_15).collect()
+        };
+        let run = |hold: ZeroSum, value: i64| {
+            let mut blocks = blocks.clone();
+            let mut at = Vec::new();
+            let mut cost = ZeroSumCost::default();
+            zero_sum_round(
+                &mut blocks,
+                hold,
+                &heads,
+                value,
+                &targets,
+                &mut at,
+                &mut cost,
+            );
+            (weights(&blocks), cost)
+        };
+        // The group's sum onto the targets is 16 000. Held at 12 000: scaled by 3 / 4, unit 7's
+        // synapse and the other chain's left.
+        let (w, cost) = run(ZeroSum::Ceiling, 12_000);
+        assert_eq!(w, vec![9_000, 3_000, 0, 0, 3_000, 0, 0, 0, 10_000, 0, 0, 0]);
+        assert_eq!(
+            cost,
+            ZeroSumCost {
+                rounds: 0,
+                touched: 1,
+                scaled: 1,
+                rewritten: 2,
+                read: 3,
+                nanos: 0
+            }
+        );
+        // Below its value: left under the ceiling, scaled up both ways, rounded down: 12 000 ×
+        // 17 000 / 16 000 is 12 750, 4 000 × 17 000 / 16 000 is 4 250; 12 000 × 16 001 / 16 000
+        // is 12 000.75.
+        let (w, cost) = run(ZeroSum::Ceiling, 17_000);
+        assert_eq!(w, weights(&blocks));
+        assert_eq!((cost.touched, cost.scaled, cost.rewritten), (1, 0, 0));
+        let (w, _) = run(ZeroSum::Both, 17_000);
+        assert_eq!((w[0], w[1], w[4], w[8]), (12_750, 3_000, 4_250, 10_000));
+        let (w, cost) = run(ZeroSum::Both, 16_001);
+        assert_eq!((w[0], w[4]), (12_000, 4_000));
+        assert_eq!((cost.scaled, cost.rewritten), (1, 0));
+        // At its value nothing moves; at most the rail: 12 000 × 48 000 / 16 000 is past it.
+        let (w, cost) = run(ZeroSum::Both, 16_000);
+        assert_eq!((w, cost.scaled), (weights(&blocks), 0));
+        let (w, _) = run(ZeroSum::Both, 48_000);
+        assert_eq!((w[0], w[4]), (i16::MAX, 12_000));
+    }
+
+    /// Exploration 011: `set_zero_sum` refuses a source outside the arena, an inhibitory one, one
+    /// named twice and a target outside the arena, and unset leaves no group or target marked.
+    #[test]
+    fn a_zero_sum_is_set_on_excitatory_sources_named_once() {
+        let mut exec = Executor::<64>::new(Config {
+            units: 4,
+            workers: 1,
+            ..Config::default()
+        })
+        .expect("a valid configuration");
+        exec.units_mut()[1].flags = menteion_core::FLAG_INHIBITORY;
+        assert!(!exec.set_zero_sum(Some(ZeroSum::Both), &[(&[0, 9], 1)], &[2]));
+        assert!(!exec.set_zero_sum(Some(ZeroSum::Both), &[(&[0, 1], 1)], &[2]));
+        assert!(!exec.set_zero_sum(Some(ZeroSum::Both), &[(&[0], 1), (&[0], 1)], &[2]));
+        assert!(!exec.set_zero_sum(Some(ZeroSum::Both), &[(&[0], 1)], &[9]));
+        assert_eq!(exec.zero_sum(), None, "refused whole");
+        assert!(exec.set_zero_sum(Some(ZeroSum::Both), &[(&[0], 1), (&[3], 2)], &[2]));
+        assert_eq!(exec.zero_sum(), Some(ZeroSum::Both));
+        assert_eq!(
+            (
+                exec.shared.zero_sum_group(0),
+                exec.shared.zero_sum_group(3),
+                exec.shared.zero_sum_group(2),
+                exec.shared.is_zero_sum_target(2),
+                exec.shared.is_zero_sum_target(0)
+            ),
+            (1, 2, 0, true, false)
+        );
+        assert!(exec.set_zero_sum(None, &[(&[0], 1)], &[2]));
+        assert_eq!(
+            (
+                exec.zero_sum(),
+                exec.shared.zero_sum_group(0),
+                exec.shared.is_zero_sum_target(2)
+            ),
+            (None, 0, false)
+        );
     }
 
     #[test]
