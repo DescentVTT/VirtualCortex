@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) wrote it on 2026-10-28, at the end of brief 084.
+[ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) wrote it on 2026-10-28, after explorations 010 to 013 and before brief 085.
 
 ## The engine
 
@@ -56,5 +56,5 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 ## The next decision
 
 Brief 084 built service on arrival: every pin held, and the weekly job's longest shard took 62 of its 240 minutes.
-1. M12, the couplings over long runs: explorations [007](explorations/007-sixteen-schedules-and-a-soft-bound.md) and [009](explorations/009-a-bound-at-consolidation.md) read no bound on one synapse that kept learning, and [010](explorations/010-a-readouts-sum-held.md) held a readout's sum and not its couplings. F-86 is open.
+1. M12, the couplings over long runs: brief 085 builds [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md)'s zero sum at the stimulus and a quarter's depression exponent, and runs [H-46](research/H-46.md) on three networks over sixteen schedules. Explorations [011](explorations/011-zero-sum-at-the-stimulus.md) to [013](explorations/013-the-carried-sum-and-the-exponent.md) read it on seed 22. F-86 is open until its verdict.
 2. A read of the arena on every tick catches every asleep unit up a tick, so a test that reads it so takes longer ([ADR-0225](adr/0225-a-unit-served-on-arrival-built.md)): what such a reading should pay is not decided.

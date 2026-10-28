@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A zero sum at the stimulus, and a gentler depression ([ADR-0226](docs/adr/0226-a-zero-sum-at-the-stimulus.md)); H-46; brief 085; whitepaper 5.24.0.** Two rules, unset by default: each stimulus set's couplings held at their sum, and a quarter's depression exponent. H-46 asks them on three networks over sixteen schedules.
 - **A unit served on arrival, built ([ADR-0225](docs/adr/0225-a-unit-served-on-arrival-built.md)); brief 084; whitepaper 5.23.0.** `quiet_cannot_fire` and `quiet_catch_up`: the executor leaves a unit that cannot fire off the schedule and catches it up bit for bit. `Executor::caught_up` counts beside `turns`. `Executor::per_tick` is the tests' reference. One dispatch of every test held every pin.
 - **A unit served on arrival ([ADR-0224](docs/adr/0224-a-unit-served-on-arrival.md)); brief 084; F-84 resolved, F-86 opened; whitepaper 5.22.0.** The executor will leave a unit that cannot fire off the schedule and catch it up bit for bit. §5.2.2's API cell is split and names format 26.
 - **The gate shortened, the schedule moved, and explorations kept as tags ([ADR-0223](docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)); F-85; whitepaper 5.21.0.** The Rust jobs skip two trees a green gate tested, the mutation gate runs in three shards, the schedule runs Wednesday at 20:17 UTC, and a finished exploration's branch becomes a tag.
