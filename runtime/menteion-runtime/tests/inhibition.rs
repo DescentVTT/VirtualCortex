@@ -473792,7 +473792,10 @@ const ZERO_SUM_IMAGES_8: [[&str; 2]; 2] = [
         "zeroceiling22-mirrored-image-8.image",
     ],
 ];
-const ZERO_SUM_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [[None, None], [None, None]];
+const ZERO_SUM_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [
+    [Some(0x688e_a9d6_57e2_b91a), Some(0x9ec3_3ae2_21db_bb5a)],
+    [Some(0x0710_066c_8910_5bcf), Some(0x1617_a9f5_64d1_8119)],
+];
 
 /// Exploration 011's second half under zero sum `z` (0 both ways, 1 the ceiling): schedules 9 to
 /// 16 from the image the first half printed at its eighth schedule's end, every schedule's engine
