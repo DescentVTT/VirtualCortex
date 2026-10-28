@@ -467,7 +467,8 @@ fn inhibited_image(zero: &[u8]) -> Vec<u8> {
 /// the image's baseline, inhibitory baseline, gain and step outrank the configuration's
 /// (§8.3); the baseline asserted zero and the inhibitory baseline 0.5.
 fn inhibited_from(image: &[u8], units: u32) -> Engine {
-    let exec = Image::decode::<2048>(image, config(units, 2, 0)).expect("a well-formed record");
+    let exec =
+        served(Image::decode::<2048>(image, config(units, 2, 0)).expect("a well-formed record"));
     assert_eq!(exec.modulation_baseline_q16(), 0, "the gate");
     assert_eq!(
         exec.inhibitory_baseline_q16(),
@@ -401002,14 +401003,16 @@ fn kept_stop(verdict: &Kept) -> u8 {
 /// decodes it, the configuration keeping `KEPT_ADDRESSES`; nothing of the kept addresses is in
 /// the image.
 fn kept_from(image: &[u8], units: u32) -> Engine {
-    let exec = Image::decode::<2048>(
-        image,
-        Config {
-            kept_addresses: KEPT_ADDRESSES,
-            ..config(units, 2, 0)
-        },
-    )
-    .expect("a well-formed record");
+    let exec = served(
+        Image::decode::<2048>(
+            image,
+            Config {
+                kept_addresses: KEPT_ADDRESSES,
+                ..config(units, 2, 0)
+            },
+        )
+        .expect("a well-formed record"),
+    );
     assert!(
         exec.signed_gate() && exec.inhibitory_baseline_q16() == Some(INHIBITORY_BASELINE_Q16),
         "the image carries the signed gate and the inhibitory baseline"
@@ -448931,15 +448934,17 @@ fn untold_stop(verdict: &Untold) -> u8 {
 /// The engine an arm of H-45 decodes: H-43's (`kept_from`), the configuration reading its delay
 /// as well; nothing of either is in the image.
 fn untold_from(image: &[u8], units: u32) -> Engine {
-    let exec = Image::decode::<2048>(
-        image,
-        Config {
-            kept_addresses: KEPT_ADDRESSES,
-            reads_its_delay: true,
-            ..config(units, 2, 0)
-        },
-    )
-    .expect("a well-formed record");
+    let exec = served(
+        Image::decode::<2048>(
+            image,
+            Config {
+                kept_addresses: KEPT_ADDRESSES,
+                reads_its_delay: true,
+                ..config(units, 2, 0)
+            },
+        )
+        .expect("a well-formed record"),
+    );
     assert!(
         exec.signed_gate() && exec.inhibitory_baseline_q16() == Some(INHIBITORY_BASELINE_Q16),
         "the image carries the signed gate and the inhibitory baseline"
@@ -448978,6 +448983,21 @@ struct UntoldRun {
 /// that named it, the rewards and their values (`KeptBlock`). A trial from `delay` on whose
 /// reward reached no modulator is a reward lost.
 fn untold_run(n: usize, arm: Reversal, delay: u8, told: bool, name: &str) -> (Made, UntoldRun) {
+    untold_run_over(n, arm, delay, told, name, SCHEDULE_TRIALS, &mut |_| {})
+}
+
+/// `untold_run` over the schedule's first `trials`, `at_end` given the engine after the last
+/// (brief 084's alternation, `alternated_control`); over the whole schedule with nothing at its
+/// end, `untold_run` itself.
+fn untold_run_over(
+    n: usize,
+    arm: Reversal,
+    delay: u8,
+    told: bool,
+    name: &str,
+    trials: usize,
+    at_end: &mut dyn FnMut(&mut Engine),
+) -> (Made, UntoldRun) {
     let units = SCAN_UNITS;
     let made = probe_made(n, name);
     let sets = geometry(units, made.derived.rotation);
@@ -449032,7 +449052,7 @@ fn untold_run(n: usize, arm: Reversal, delay: u8, told: bool, name: &str) -> (Ma
         &mut exec,
         task,
         units,
-        SCHEDULE_TRIALS,
+        trials,
         &SCHEDULE_FLIPS,
         &mut |exec, trial, _, outcome| {
             history.push((outcome.stimulus, outcome.selection));
@@ -449094,6 +449114,7 @@ fn untold_run(n: usize, arm: Reversal, delay: u8, told: bool, name: &str) -> (Ma
         overwritten: exec.train_overwritten(),
         sums: weights_by_polarity(&exec),
     };
+    at_end(&mut exec);
     (made, run)
 }
 
@@ -449409,6 +449430,188 @@ fn a_delay_read_two_trials_late_untold_on_seed_24_from_the_assignment_at_1024_un
 fn a_delay_read_two_trials_late_untold_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
  {
     untold_arm(2, Reversal::MirroredFirst, 2);
+}
+
+// ------------------------------------------- the two services, alternated (brief 084)
+
+/// What one run of brief 084's alternation leaves, to be held to its round's run under the
+/// other service (ADR-0224): the hash of every unit's 64 bytes and every block's at its end, the
+/// mailbox head read as holding mail or not; the messages delivered, and those its drive sent;
+/// the spikes; the turns served and the steps caught up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ran {
+    arena: u64,
+    delivered: u64,
+    sent: u64,
+    spikes: u64,
+    turns: u64,
+    caught_up: u64,
+}
+
+/// FNV-1a over every unit's 64 bytes and every block's, as `encode` writes them, atomics as
+/// plain values. The mailbox head is a node index from a worker's pool, whose order the two
+/// workers' frees in one phase set (ADR-0099's scheduler bytes): it is hashed as whether the
+/// mailbox holds a message (exploration 008).
+fn arena_hash(exec: &Engine) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let units = exec.units().iter().map(|u| {
+        let mut bytes = u.encode();
+        bytes[8..16].copy_from_slice(&u64::from(!u.mailbox_is_empty()).to_le_bytes());
+        bytes
+    });
+    let blocks = exec.blocks().iter().map(|b| b.encode());
+    for record in units.chain(blocks) {
+        for byte in record {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    hash
+}
+
+/// The engine's `Ran` at its end, the drive having sent `sent`. The arena is read first, which
+/// brings every asleep unit up to date, so that its steps are counted.
+fn ran(exec: &mut Engine, sent: u64) -> Ran {
+    let arena = arena_hash(exec);
+    Ran {
+        arena,
+        delivered: exec.delivered(),
+        sent,
+        spikes: (exec.train().len() as u64).saturating_add(exec.train_overwritten()),
+        turns: exec.turns(),
+        caught_up: exec.caught_up(),
+    }
+}
+
+/// Exploration 008's workload, exploration 006's: H-45's control on seed 22 from the assignment,
+/// `untold_arm(0, Reversal::AssignmentFirst, 0)`, over its derivation and the first 16 of its
+/// 120 blocks. The derivation is held whole, as `probe_made` holds it, and the blocks are the
+/// first 16 of H-42's arm's, with no move. Returns its `Ran` and its milliseconds.
+fn alternated_control(service: &str) -> (Ran, u128) {
+    const BLOCKS: usize = 16;
+    let clock = std::time::Instant::now();
+    let (n, arm, delay) = (0usize, Reversal::AssignmentFirst, 0u8);
+    let k = UNTOLD_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!(
+        "{} delay {delay} {arm:?} over {BLOCKS} blocks {service}",
+        UNTOLD_NAMES[n]
+    );
+    let mut end = None;
+    let (_, run) = untold_run_over(
+        n,
+        arm,
+        delay,
+        false,
+        &name,
+        BLOCKS.saturating_mul(BLOCK),
+        &mut |exec| end = Some(ran(exec, 0)),
+    );
+    let millis = clock.elapsed().as_millis();
+    eprintln!("DUMP {name} PIN blocks {:?}", run.blocks);
+    assert_eq!(
+        Some(run.blocks.as_slice()),
+        PROBE_ARM_BLOCKS[n][k].get(..BLOCKS),
+        "{name}: the blocks run are the first of H-42's arm's"
+    );
+    assert_eq!(run.moved, None, "{name}: no move");
+    (end.expect("the run's end"), millis)
+}
+
+/// The ticks of a sparse run: under per-tick service about 1.5 µs a tick at 1 024 units, by
+/// ADR-0101's timed run of the same drive in the cost table, so that each run lasts more than a
+/// minute.
+const SPARSE_TICKS: u64 = 1 << 27;
+
+/// The reference network at 1 024 units, ADR-0097's, under its drive 256 times sparser, run (c):
+/// one message every 32nd tick, for `SPARSE_TICKS`. Returns its `Ran` and its milliseconds, the
+/// network built before the clock starts.
+fn alternated_sparse() -> (Ran, u128) {
+    let units = 1024;
+    let mut exec = at_gain(&prior(units), config(units, 2, 0), GAIN_1024);
+    let drive = Drive {
+        every: 32,
+        messages: 1,
+        ..drive(units)
+    };
+    let inject = exec.injector();
+    let mut sent = 0u64;
+    let clock = std::time::Instant::now();
+    for _ in 0..SPARSE_TICKS {
+        let messages = drive.step(&inject, exec.ticks()).expect("the drive runs");
+        sent = sent.saturating_add(u64::from(messages));
+        exec.tick();
+    }
+    let millis = clock.elapsed().as_millis();
+    (ran(&mut exec, sent), millis)
+}
+
+/// `run` with every engine the harness's `served` passes on this thread served per tick, the
+/// tests' reference (ADR-0224): one run of the alternation.
+fn served_per_tick<R>(run: impl FnOnce() -> R) -> R {
+    let was = PER_TICK.replace(true);
+    let result = run();
+    PER_TICK.set(was);
+    result
+}
+
+/// One round's two runs of `workload`, served per tick (`served_per_tick`) and on arrival, in the
+/// order `per_tick_first` gives, each printed as a `TIME` line and a `RAN` line; the run on
+/// arrival held to the run per tick: the same arena, messages and spikes, and its turns and
+/// steps together the per-tick run's turns.
+fn alternated(
+    round: u32,
+    what: &str,
+    per_tick_first: bool,
+    workload: impl Fn(&str) -> (Ran, u128),
+) {
+    let per_tick = || served_per_tick(|| workload("per tick"));
+    let arrival = || workload("on arrival");
+    let (per_tick, arrival) = if per_tick_first {
+        let p = per_tick();
+        (p, arrival())
+    } else {
+        let a = arrival();
+        (per_tick(), a)
+    };
+    for (service, (r, millis)) in [("per tick", per_tick), ("on arrival", arrival)] {
+        eprintln!("TIME round {round} {what} {service} {millis}");
+        eprintln!("RAN round {round} {what} {service} {r:?}");
+    }
+    let (p, a) = (per_tick.0, arrival.0);
+    assert_eq!(
+        p.caught_up, 0,
+        "round {round}, {what}: per tick catches nothing up"
+    );
+    assert!(a.turns < p.turns, "round {round}, {what}: units slept");
+    assert_eq!(
+        (a.arena, a.delivered, a.sent, a.spikes),
+        (p.arena, p.delivered, p.sent, p.spikes),
+        "round {round}, {what}: the arena, the messages and the spikes"
+    );
+    assert_eq!(
+        a.turns.saturating_add(a.caught_up),
+        p.turns,
+        "round {round}, {what}: the turns of per-tick service, served or caught up"
+    );
+}
+
+/// Brief 084's alternation (ADR-0224, ADR-0225), by a dispatch at `scope=arms` on AArch64: in
+/// one process, three rounds of exploration 008's 16-block workload and of the reference network
+/// at 1 024 units under ADR-0097's sparse drive, each under both services, per tick first in the
+/// first and third rounds and second in the second. Each run builds its own executors and
+/// network. Not a whole-domain test, and not an exploration's.
+#[test]
+#[ignore]
+fn on_arrival_and_per_tick_service_alternate_on_one_runner_timed() {
+    for round in 1..=3u32 {
+        let per_tick_first = round != 2;
+        alternated(round, "16 blocks", per_tick_first, alternated_control);
+        alternated(round, "sparse", per_tick_first, |_| alternated_sparse());
+    }
+    eprintln!("DUMP the two services alternated: every run held");
 }
 
 /// The gate's test (ADR-0061's class; brief 082): H-45's networks, delays, arms, constants,

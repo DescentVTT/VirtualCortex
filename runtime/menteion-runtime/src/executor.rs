@@ -70,6 +70,7 @@ use menteion_homeostasis::{
 };
 use menteion_neuromod::{DOPAMINE_TAU_SHIFT, NeuromodulatorState, ValueCritic};
 use menteion_reasoning::{Compaction, InductionState, SEARCH_SHIFT_MAX, TermNode};
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
@@ -1200,6 +1201,17 @@ struct Shared {
     /// with a fetch-or in phases 2 and 3, and the coordinator between ticks; the barriers order
     /// the two.
     scheduled: Box<[AtomicU64]>,
+    /// The units asleep (ADR-0224), one bit per unit in the schedule's layout: set while the unit
+    /// is not at rest and off the schedule, `quiet_cannot_fire` having admitted it at the end of
+    /// its last turn, its gate recorded scheduled as per-tick service records it and its state
+    /// that of the tick in `since`. The owner loads and stores its words in the turns phase, and
+    /// the coordinator between ticks; a marker reads them in phases 2 and 3.
+    asleep: Box<[AtomicU64]>,
+    /// Per unit, the first tick an asleep unit was not served, whose state it holds.
+    since: Box<[AtomicU64]>,
+    /// Per-tick service, the tests' reference (ADR-0224): set between ticks by
+    /// `Executor::per_tick`, read by every worker at the start of its turns phase.
+    per_tick: AtomicBool,
     /// Units per worker, $\lceil N / W \rceil$.
     share: usize,
     /// Words of the schedule per worker: a share's words rounded up to eight, a cache line, so
@@ -1211,7 +1223,11 @@ struct Shared {
     /// Per worker, the turns it has served so far (ADR-0097): stored beside `delivered` at the
     /// end of the deliveries phase, summed by `Executor::turns` between ticks.
     turns: Box<[AtomicU64]>,
+    /// Per worker, the steps its turns caught up so far (ADR-0224), stored beside `turns`.
+    caught_up: Box<[AtomicU64]>,
     now: AtomicU32,
+    /// The tick `now` is, unwrapped: stored beside it, read by a turn that catches a unit up.
+    tick: AtomicU64,
     /// The modulation this tick's fan-out consolidates with (ADR-0032): stored by the
     /// coordinator before the tick's first barrier, read by every worker after it. Since
     /// ADR-0068 it is the modulation of an addressed synapse; since ADR-0094 it is below zero
@@ -1284,28 +1300,58 @@ impl Shared {
 
     /// The word of the schedule that holds `unit`'s bit, and the bit (ADR-0100): the unit's
     /// place in its owner's range, `unit − owner·share`, is bit `place mod 64` of the owner's
-    /// word `place / 64`. None for a unit outside the arena.
+    /// word `place / 64`. None for a unit outside the arena. The tests' view of `word_of`.
+    #[cfg(test)]
     fn place(&self, unit: u32) -> Option<(&AtomicU64, u64)> {
+        let (word, bit) = self.word_of(unit)?;
+        Some((self.scheduled.get(word)?, bit))
+    }
+
+    /// The index of the word that holds `unit`'s bit in a map laid out as the schedule is, the
+    /// schedule and the asleep map, and the bit; none for a unit outside the arena.
+    fn word_of(&self, unit: u32) -> Option<(usize, u64)> {
         let owner = self.owner(unit)?;
         // Below the share: `owner·share` is at most `unit`, which `owner` is the quotient of.
         let at = (unit as usize).wrapping_sub(owner.wrapping_mul(self.share));
         let word = owner.wrapping_mul(self.stride).wrapping_add(at >> 6);
-        Some((self.scheduled.get(word)?, 1u64 << (at & 63)))
+        Some((word, 1u64 << (at & 63)))
+    }
+
+    /// The unit of bit `bit` of the word `word` of a map laid out as the schedule is (ADR-0100):
+    /// bit `b` of word `w·stride + k` is unit `w·share + 64k + b`.
+    fn unit_at(&self, word: usize, bit: u32) -> u32 {
+        let owner = word.checked_div(self.stride).unwrap_or(0);
+        let k = word.wrapping_sub(owner.wrapping_mul(self.stride));
+        // Below the unit count, which `Executor::new` bounds below `u32::MAX`: a bit is set only
+        // for a unit of the arena.
+        owner
+            .wrapping_mul(self.share)
+            .wrapping_add(k << 6)
+            .wrapping_add(bit as usize) as u32
     }
 
     /// Marks `unit` for a turn at the next tick (ADR-0100), in phases 2 and 3 after a push or
     /// at an activation, and between ticks: a unit already scheduled is left as it is; an idle
     /// one has its gate byte recorded scheduled and its bit set. Two markers that both find the
-    /// unit idle store the same byte and set the same bit, so no claim is needed.
+    /// unit idle store the same byte and set the same bit, so no claim is needed. An asleep
+    /// unit's gate is recorded scheduled, as per-tick service records it while the unit is not
+    /// at rest, and its bit is clear (ADR-0224): it is marked as an idle one is.
     fn mark(&self, unit: u32, u: &DendriticSuperNeuron) {
-        if u.gate() == Some(GateState::Scheduled) {
+        let Some((word, bit)) = self.word_of(unit) else {
+            abort("a marked unit is outside the arena");
+        };
+        let asleep = self
+            .asleep
+            .get(word)
+            .is_some_and(|asleep| asleep.load(Ordering::Relaxed) & bit == bit);
+        if u.gate() == Some(GateState::Scheduled) && !asleep {
             return;
         }
         u.set_gate(GateState::Scheduled);
-        let Some((word, bit)) = self.place(unit) else {
+        let Some(scheduled) = self.scheduled.get(word) else {
             abort("a marked unit is outside the arena");
         };
-        word.fetch_or(bit, Ordering::Relaxed);
+        scheduled.fetch_or(bit, Ordering::Relaxed);
     }
 }
 
@@ -1328,6 +1374,8 @@ struct Worker<const CAP: usize> {
     delivered: u64,
     /// Turns this worker has served (ADR-0097).
     turns: u64,
+    /// Steps this worker's turns have caught up (ADR-0224).
+    caught_up: u64,
     /// Descendants this worker fired this tick (ADR-0054).
     descended: u32,
     in_flight: i64,
@@ -1489,7 +1537,27 @@ pub struct Executor<const CAP: usize> {
     istdp_target_period_ticks: u32,
     /// Descendants tallied so far (ADR-0054).
     descendants: u64,
+    /// Steps caught up between ticks, at a read or a write of the unit arena (ADR-0224).
+    read_steps: Cell<u64>,
+    /// True from a tick, which may leave units asleep, until a read of the unit arena has
+    /// brought them up to date (ADR-0224). A `Cell`, so that the executor is not `Sync`: a read
+    /// under `&self` writes the arena, and no other thread holds `&self` (the assertion below).
+    unsettled: Cell<bool>,
 }
+
+// The executor is not `Sync` (ADR-0224): `Executor::units` writes the asleep units' records
+// under `&self`, which is sound only while no other thread holds `&self`. This fails to compile
+// if the executor ever were `Sync`, the pattern of `static_assertions::assert_not_impl_any!`:
+// with a second implementation for `Sync` types, the call's trait parameter is ambiguous.
+const _: fn() = || {
+    trait NotSync<A> {
+        fn of() {}
+    }
+    impl<T: ?Sized> NotSync<()> for T {}
+    struct IsSync;
+    impl<T: ?Sized + Sync> NotSync<IsSync> for T {}
+    let _ = <Executor<1> as NotSync<_>>::of;
+};
 
 /// The cadence of a search shift: none at zero.
 fn search_cadence_of(shift: u8) -> Option<Cadence> {
@@ -1630,13 +1698,20 @@ impl<const CAP: usize> Executor<CAP> {
             scheduled: (0..workers.saturating_mul(stride))
                 .map(|_| AtomicU64::new(0))
                 .collect(),
+            asleep: (0..workers.saturating_mul(stride))
+                .map(|_| AtomicU64::new(0))
+                .collect(),
+            since: (0..config.units).map(|_| AtomicU64::new(0)).collect(),
+            per_tick: AtomicBool::new(false),
             share,
             stride,
             barrier: SpinBarrier::new(workers),
             injector: Injector::new(config.injector_capacity),
             delivered: (0..workers).map(|_| AtomicU64::new(0)).collect(),
             turns: (0..workers).map(|_| AtomicU64::new(0)).collect(),
+            caught_up: (0..workers).map(|_| AtomicU64::new(0)).collect(),
             now: AtomicU32::new(0),
+            tick: AtomicU64::new(0),
             modulation: AtomicI32::new(config.modulation_baseline_q16),
             modulation_at_rest: AtomicI32::new(config.modulation_baseline_q16),
             modulation_inhibitory: AtomicI32::new(INHIBITORY_UNSET),
@@ -1674,6 +1749,7 @@ impl<const CAP: usize> Executor<CAP> {
                 trace_dropped: 0,
                 delivered: 0,
                 turns: 0,
+                caught_up: 0,
                 in_flight: 0,
                 descended: 0,
                 stp_class: config.stp_class,
@@ -1789,6 +1865,8 @@ impl<const CAP: usize> Executor<CAP> {
             search_cadence: search_cadence_of(config.search_shift),
             istdp_target_period_ticks: config.istdp_target_period_ticks,
             descendants: 0,
+            read_steps: Cell::new(0),
+            unsettled: Cell::new(false),
         })
     }
 
@@ -3140,10 +3218,12 @@ impl<const CAP: usize> Executor<CAP> {
     }
 
     /// Turns served by every worker so far (ADR-0097): one for each unit a worker served, so the
-    /// difference across a tick is the tick's active set — the units that were not at rest
-    /// after the tick before or that a message or an activation woke (ADR-0023), the units the
-    /// schedule named (ADR-0100). A count kept beside `delivered`; it changes nothing the
-    /// engine does.
+    /// difference across a tick is the units the schedule named (ADR-0100) — the units that
+    /// were not at rest after the tick before, or that a message or an activation woke
+    /// (ADR-0023), and that were not asleep (ADR-0224). An asleep unit takes no turn: the steps
+    /// it is caught up by are [`caught_up`](Self::caught_up)'s, and the two together are
+    /// per-tick service's turns, the active set ADR-0097 measured. A count kept beside
+    /// `delivered`; it changes nothing the engine does.
     pub fn turns(&self) -> u64 {
         self.shared
             .turns
@@ -3152,23 +3232,134 @@ impl<const CAP: usize> Executor<CAP> {
             .sum()
     }
 
-    /// The unit arena, between ticks.
+    /// Steps caught up so far (ADR-0224): the quiet ticks in which per-tick service would have
+    /// served a unit that was asleep, brought up to date at its next turn by its worker, or
+    /// between ticks by a read or a write of the unit arena. Once a read has brought every
+    /// asleep unit up to date, this and [`turns`](Self::turns) together are per-tick service's
+    /// turns. A count; it changes nothing the engine does.
+    pub fn caught_up(&self) -> u64 {
+        self.shared
+            .caught_up
+            .iter()
+            .map(|n| n.load(Ordering::Relaxed))
+            .sum::<u64>()
+            .saturating_add(self.read_steps.get())
+    }
+
+    /// This executor serving every unit that is not at rest at every tick, as the executor did
+    /// before ADR-0224: per-tick service, the tests' reference, which no configuration and no
+    /// image sets. For an executor just built or loaded; every asleep unit is brought up to date
+    /// and put back on the schedule first.
+    pub fn per_tick(mut self) -> Self {
+        self.wake_asleep();
+        self.shared.per_tick.store(true, Ordering::Relaxed);
+        self
+    }
+
+    /// The unit arena, between ticks. Every asleep unit is brought up to date first, so that
+    /// every record is per-tick service's (ADR-0224).
     pub fn units(&self) -> &[DendriticSuperNeuron] {
+        self.settle();
         // SAFETY: `&self` excludes `tick` (which takes `&mut self`); between ticks every worker
-        // thread is spinning at the barrier and holds no reference into an arena.
+        // thread is spinning at the barrier and holds no reference into an arena. `settle` has
+        // written the arena, if at all, before this reference is made.
         unsafe { self.shared.units.as_slice() }
     }
 
-    /// The unit arena, exclusively, between ticks: for wiring a network before it runs.
+    /// The unit arena, exclusively, between ticks: for wiring a network before it runs. Every
+    /// asleep unit is brought up to date and put back on the schedule first, since a write may
+    /// take it out of the condition it sleeps under (ADR-0224).
     pub fn units_mut(&mut self) -> &mut [DendriticSuperNeuron] {
+        self.wake_asleep();
         // SAFETY: as in `units`, with `&mut self` excluding every other reference this
         // executor hands out.
         unsafe { self.shared.units.as_mut_slice() }
     }
 
+    /// Between ticks, under `&self`: if a tick has run since the asleep units were last brought
+    /// up to date, every one of them is, from the tick it was left at to the next tick's, and
+    /// sleeps on from there (ADR-0224). One at rest by then leaves the asleep map, its gate
+    /// recorded idle unless a message or an activation has marked it since, as per-tick service
+    /// left it.
+    ///
+    /// This is the one write of the unit arena under `&self`. ADR-0023's invariant, that a `&mut`
+    /// to a record never overlaps another reference to it, holds for it (ADR-0225): no worker
+    /// references the arena between ticks; no other thread holds `&self`, the executor not being
+    /// `Sync`; and no reference this executor handed out is alive, since only a tick sets
+    /// `unsettled`, a tick takes `&mut self`, which ends every such reference, and every reference
+    /// made after it is made by `units` after this has cleared the flag.
+    fn settle(&self) {
+        if self.unsettled.replace(false) {
+            self.bring_up_to_date(false);
+        }
+    }
+
+    /// Between ticks, under `&mut self`: every asleep unit brought up to date and put back on the
+    /// schedule (ADR-0224), so that a write of the arena finds none asleep.
+    fn wake_asleep(&mut self) {
+        self.unsettled.set(false);
+        self.bring_up_to_date(true);
+    }
+
+    /// Every asleep unit brought from the tick it was left at to the next tick's, as per-tick
+    /// service would have left it with no input (`quiet_catch_up`), and its steps counted. One
+    /// at rest by then leaves the asleep map, its gate recorded idle unless a message or an
+    /// activation has marked it; one not at rest is put back on the schedule under `wake`, and
+    /// otherwise sleeps on from the next tick. Called by `settle` and `wake_asleep` alone.
+    fn bring_up_to_date(&self, wake: bool) {
+        let next = self.tick;
+        let mut steps = 0u64;
+        for (w, word) in self.shared.asleep.iter().enumerate() {
+            let asleep = word.load(Ordering::Relaxed);
+            if asleep == 0 {
+                continue;
+            }
+            let Some(scheduled) = self.shared.scheduled.get(w) else {
+                abort("the asleep map runs past the schedule");
+            };
+            let mut left = asleep;
+            let mut keep = 0u64;
+            for _ in 0..asleep.count_ones() {
+                let bit = left.trailing_zeros();
+                left &= left.wrapping_sub(1); // the lowest set bit, brought up to date now
+                let mask = 1u64 << bit;
+                let unit = self.shared.unit_at(w, bit);
+                // SAFETY: between ticks, with `settle`'s argument or under `&mut self`
+                // (`wake_asleep`): no other reference to any record of the arena is alive, so
+                // this is the only one to `unit`'s, dropped before the next.
+                let Some(u) = (unsafe { self.shared.units.get_mut(unit as usize) }) else {
+                    abort("an asleep unit is outside the arena");
+                };
+                let Some(since) = self.shared.since.get(unit as usize) else {
+                    abort("an asleep unit is outside the arena");
+                };
+                let gap = u32::try_from(next.wrapping_sub(since.load(Ordering::Relaxed)));
+                // Past `u32::MAX` ticks every unit is at rest: `quiet_catch_up`'s rest, at its
+                // longest gap.
+                steps = steps.saturating_add(u64::from(u.quiet_catch_up(gap.unwrap_or(u32::MAX))));
+                if membrane_at_rest(u) {
+                    if scheduled.load(Ordering::Relaxed) & mask == 0 {
+                        u.set_gate(GateState::Idle);
+                    }
+                } else if wake {
+                    scheduled.fetch_or(mask, Ordering::Relaxed);
+                } else {
+                    since.store(next, Ordering::Relaxed);
+                    // A bit not yet in `keep`: the sum is the union.
+                    keep = keep.wrapping_add(mask);
+                }
+            }
+            word.store(keep, Ordering::Relaxed);
+        }
+        self.read_steps
+            .set(self.read_steps.get().saturating_add(steps));
+    }
+
     /// The unit and synapse arenas together, exclusively, between ticks: for a rule that
-    /// writes both, such as the synthesis of a network from a prior (ADR-0044).
+    /// writes both, such as the synthesis of a network from a prior (ADR-0044). Every asleep
+    /// unit as in `units_mut`.
     pub fn arenas_mut(&mut self) -> (&mut [DendriticSuperNeuron], &mut [SynapseBlock]) {
+        self.wake_asleep();
         // SAFETY: as in `units_mut`; the two arenas are distinct allocations, so the two
         // exclusive slices do not overlap.
         unsafe {
@@ -3260,6 +3451,8 @@ impl<const CAP: usize> Executor<CAP> {
     /// re-hydrates it after the tick
     /// that delivered the message. Returns the number evicted.
     pub fn sweep(&mut self, quiet_ticks: u32, budget: usize) -> Result<usize, ImageError> {
+        // Rest is read as per-tick service leaves it (ADR-0224).
+        self.settle();
         let Some(log) = self.log.as_mut() else {
             return Err(ImageError::NoLog);
         };
@@ -3496,6 +3689,7 @@ impl<const CAP: usize> Executor<CAP> {
     pub fn tick(&mut self) {
         let now = self.tick as u32;
         self.shared.now.store(now, Ordering::Relaxed);
+        self.shared.tick.store(self.tick, Ordering::Relaxed);
         // The modulations this tick's fan-out consolidates with, from the signal as it
         // stands (the addressed units' with the signal, every other's at rest; ADR-0032,
         // ADR-0068; the inhibitory blocks' under their own baseline while it is set,
@@ -3537,6 +3731,8 @@ impl<const CAP: usize> Executor<CAP> {
         self.merge_spikes(now);
         // A clock wraps by name (§8.1): the dynamics already see it as `tick as u32`.
         self.tick = self.tick.wrapping_add(1);
+        // The tick may have left units asleep: a read brings them up to date first (ADR-0224).
+        self.unsettled.set(true);
         self.rehydrate_pending();
         self.tally();
         self.search_on_cadence();
@@ -3614,6 +3810,18 @@ fn membrane_at_rest(u: &DendriticSuperNeuron) -> bool {
         && u.v_thresh <= THRESHOLD_BASE
 }
 
+/// Where a unit's turn leaves it (ADR-0100, ADR-0224).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Left {
+    /// At rest: off the schedule until a message or an activation marks it.
+    AtRest,
+    /// Not at rest: on the schedule for the next tick.
+    Awake,
+    /// Not at rest and unable to fire with no input (`quiet_cannot_fire`): off the schedule and
+    /// asleep until a message or an activation marks it, or the arena is read or written.
+    Asleep,
+}
+
 /// A marked unit's slow input (ADR-0122): the positive efficacies of the synapses' messages in
 /// the batch that land in the basal compartment, the excitatory synapses' releases, summed and
 /// saturating. The drive's, the injector's and the replay's messages, an inhibitory synapse's
@@ -3659,31 +3867,46 @@ impl<const CAP: usize> Worker<CAP> {
     /// The sweep (ADR-0100): this worker's region of the schedule, word by word, and in each
     /// word the set bits from the lowest, so the units of its range in increasing index. No
     /// other worker writes the region in this phase, since no push happens in it, so a word is
-    /// loaded and stored back with the bits of the units that stay awake.
+    /// loaded and stored back with the bits of the units that stay awake. The asleep map's word
+    /// is the owner's too in this phase (ADR-0224): the units the word serves leave it, and those
+    /// that fall asleep join it.
     fn phase_turns(&mut self, shared: &Shared, now: u32) {
         let gain = shared.gain.load(Ordering::Relaxed);
+        // Per-tick service, the tests' reference, puts no unit to sleep (ADR-0224).
+        let sleeps = !shared.per_tick.load(Ordering::Relaxed);
         self.descended = 0;
         for w in 0..self.words {
-            let Some(word) = shared.scheduled.get(self.region.wrapping_add(w)) else {
+            let at = self.region.wrapping_add(w);
+            let Some(word) = shared.scheduled.get(at) else {
                 abort("a worker's region runs past the schedule");
             };
             let mut due = word.load(Ordering::Relaxed);
             if due == 0 {
                 continue;
             }
+            let Some(asleep_word) = shared.asleep.get(at) else {
+                abort("a worker's region runs past the asleep map");
+            };
+            let asleep = asleep_word.load(Ordering::Relaxed);
+            let mut sleeping = asleep & !due;
             // The range's unit of the word's bit 0: within the range, below the unit count.
             let base = self.first.wrapping_add((w as u32) << 6);
             let mut awake = 0u64;
             for _ in 0..due.count_ones() {
                 let bit = due.trailing_zeros();
                 due &= due.wrapping_sub(1); // the lowest set bit, served now, cleared
-                if self.turn(shared, base.wrapping_add(bit), now, gain) {
-                    // A bit not yet in `awake`: the sum is the union.
-                    awake = awake.wrapping_add(1u64 << bit);
+                let mask = 1u64 << bit;
+                let unit = base.wrapping_add(bit);
+                // A bit not yet in `awake` or `sleeping`: the sum is the union.
+                match self.turn(shared, unit, now, gain, asleep & mask != 0, sleeps) {
+                    Left::Awake => awake = awake.wrapping_add(mask),
+                    Left::Asleep => sleeping = sleeping.wrapping_add(mask),
+                    Left::AtRest => {}
                 }
                 self.turns = self.turns.saturating_add(1);
             }
             word.store(awake, Ordering::Relaxed);
+            asleep_word.store(sleeping, Ordering::Relaxed);
         }
         // The units this worker fired this tick, for the population tally (ADR-0036), and
         // how many of them were descendants (ADR-0054); counts below the unit count, which
@@ -3692,8 +3915,18 @@ impl<const CAP: usize> Worker<CAP> {
         shared.descendants[self.id].store(self.descended, Ordering::Relaxed);
     }
 
-    /// One unit's turn; true when the unit is not at rest after it and stays on the schedule.
-    fn turn(&mut self, shared: &Shared, unit: u32, now: u32, gain: u32) -> bool {
+    /// One unit's turn, and where it leaves the unit. An asleep unit is first brought from the
+    /// tick it was left at to this one, as per-tick service would have served it with no input,
+    /// and the turn is then the turn it was (ADR-0224).
+    fn turn(
+        &mut self,
+        shared: &Shared,
+        unit: u32,
+        now: u32,
+        gain: u32,
+        asleep: bool,
+        sleeps: bool,
+    ) -> Left {
         // SAFETY (phase 1): `unit` is a set bit of this worker's region of the schedule, and so
         // in this worker's range, which no other worker's range overlaps: the ranges partition
         // the arena and are fixed in `Executor::new` (ADR-0100). In phase 1 a worker references
@@ -3702,6 +3935,19 @@ impl<const CAP: usize> Worker<CAP> {
         let Some(u) = (unsafe { shared.units.get_mut(unit as usize) }) else {
             abort("a scheduled unit index is outside the arena");
         };
+        if asleep {
+            let Some(since) = shared.since.get(unit as usize) else {
+                abort("an asleep unit is outside the arena");
+            };
+            let gap = shared
+                .tick
+                .load(Ordering::Relaxed)
+                .wrapping_sub(since.load(Ordering::Relaxed));
+            // Past `u32::MAX` ticks every unit is at rest: `quiet_catch_up`'s rest, at its
+            // longest gap.
+            let steps = u.quiet_catch_up(u32::try_from(gap).unwrap_or(u32::MAX));
+            self.caught_up = self.caught_up.saturating_add(u64::from(steps));
+        }
         self.batch.clear();
         // A unit with no mail takes no swap: no push happens in this phase, so an empty head
         // stays empty through the turn (ADR-0100).
@@ -3746,13 +3992,13 @@ impl<const CAP: usize> Worker<CAP> {
         // A marked unit under the image's slow current, its slow input scaled by the gain as its
         // basal input is, and every other under `integrate` (ADR-0123); with no slow current every
         // unit takes `integrate`, marked or not. A marked unit's slow potential keeps it awake.
-        let (fired, slow_awake) = match self.slow_current {
+        let (fired, slow_awake, slow) = match self.slow_current {
             Some(current) if u.flags & FLAG_SLOW != 0 => {
                 let slow = scaled(slow_input(&self.batch), gain);
                 let fired = u.integrate_slow(basal, apical, slow, now, current);
-                (fired, u.v_slow != 0)
+                (fired, u.v_slow != 0, true)
             }
-            _ => (u.integrate(basal, apical, now), false),
+            _ => (u.integrate(basal, apical, now), false, false),
         };
         if fired {
             let elapsed = if previous_spike == NO_SPIKE_ON_RECORD {
@@ -3798,7 +4044,23 @@ impl<const CAP: usize> Worker<CAP> {
         } else {
             GateState::Idle
         });
-        awake
+        if !awake {
+            return Left::AtRest;
+        }
+        // A unit not at rest that cannot fire with no input leaves the schedule, asleep from the
+        // next tick, its gate recorded scheduled as above (ADR-0224). A unit under the slow
+        // current never sleeps.
+        if sleeps && !slow && u.quiet_cannot_fire() {
+            let Some(since) = shared.since.get(unit as usize) else {
+                abort("a unit put to sleep is outside the arena");
+            };
+            since.store(
+                shared.tick.load(Ordering::Relaxed).wrapping_add(1),
+                Ordering::Relaxed,
+            );
+            return Left::Asleep;
+        }
+        Left::Awake
     }
 
     // ---------------------------------------------------------------- phase 2: fan-out
@@ -3941,6 +4203,7 @@ impl<const CAP: usize> Worker<CAP> {
         }
         shared.delivered[self.id].store(self.delivered, Ordering::Relaxed);
         shared.turns[self.id].store(self.turns, Ordering::Relaxed);
+        shared.caught_up[self.id].store(self.caught_up, Ordering::Relaxed);
         shared.in_flight[self.id].store(self.in_flight, Ordering::Relaxed);
     }
 

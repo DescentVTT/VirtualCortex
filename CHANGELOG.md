@@ -8,6 +8,7 @@ This file is a historical record: `spec-graph` treats it as history, so nothing 
 
 ### Added
 
+- **A unit served on arrival, built ([ADR-0225](docs/adr/0225-a-unit-served-on-arrival-built.md)); brief 084; whitepaper 5.23.0.** `quiet_cannot_fire` and `quiet_catch_up`: the executor leaves a unit that cannot fire off the schedule and catches it up bit for bit. `Executor::caught_up` counts beside `turns`. `Executor::per_tick` is the tests' reference. One dispatch of every test held every pin.
 - **A unit served on arrival ([ADR-0224](docs/adr/0224-a-unit-served-on-arrival.md)); brief 084; F-84 resolved, F-86 opened; whitepaper 5.22.0.** The executor will leave a unit that cannot fire off the schedule and catch it up bit for bit. §5.2.2's API cell is split and names format 26.
 - **The gate shortened, the schedule moved, and explorations kept as tags ([ADR-0223](docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)); F-85; whitepaper 5.21.0.** The Rust jobs skip two trees a green gate tested, the mutation gate runs in three shards, the schedule runs Wednesday at 20:17 UTC, and a finished exploration's branch becomes a tag.
 - **The project renamed Menteion, built ([ADR-0222](docs/adr/0222-the-project-renamed-menteion-built.md)); brief 083; F-83, F-84; whitepaper 5.20.0.** The crates are `menteion-*`, the image's magic `MENTEION` at format 26, and every living document takes the names. The whole-image pins are read at format 25, and one dispatch of every test held every pin.

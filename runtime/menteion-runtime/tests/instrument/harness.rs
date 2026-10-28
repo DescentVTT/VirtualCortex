@@ -28,6 +28,24 @@ include!(concat!(
 
 pub(crate) type Engine = Executor<2048>;
 
+std::thread_local! {
+    /// Whether the engines this thread builds through `served` are served per tick (ADR-0224):
+    /// true only inside `tests/inhibition.rs`'s `served_per_tick`, brief 084's alternation.
+    pub(crate) static PER_TICK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// `exec` served per tick, the tests' reference, while `PER_TICK` is set on this thread, and on
+/// arrival, as built, everywhere else (ADR-0224). Every engine the harness builds passes through
+/// it (`reload_with`, and so `at_gain`), and so does every one the arms of `tests/inhibition.rs`
+/// decode (`inhibited_from`, `kept_from`, `untold_from`).
+pub(crate) fn served(exec: Engine) -> Engine {
+    if PER_TICK.get() {
+        exec.per_tick()
+    } else {
+        exec
+    }
+}
+
 pub(crate) const ONE: i32 = MODULATION_ONE_Q16;
 
 // ------------------------------------------- written before the run (ADR-0065, ADR-0066)
@@ -311,7 +329,7 @@ pub(crate) fn reload_with(
             break;
         }
     }
-    Image::decode::<2048>(&img, config).expect("a well-formed record")
+    served(Image::decode::<2048>(&img, config).expect("a well-formed record"))
 }
 
 /// The network at `gain`, synthesized from `p` and reloaded with the gain in its record.

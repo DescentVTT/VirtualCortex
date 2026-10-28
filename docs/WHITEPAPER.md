@@ -1,6 +1,6 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.22.0
+version: 5.23.0
 status: active
 date: 2026-10-28
 ---
@@ -11,7 +11,7 @@ date: 2026-10-28
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.22.0 |
+| Version | 5.23.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-28 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -81,7 +81,9 @@ The engine rests on five axioms (§4). Units exist virtually and are materialise
 
 ### 1.1 Problem statement
 
-Dense-tensor deep learning maps well to GPUs and poorly to the operating principles of nervous tissue, which is roughly 1–2 % active at any instant, communicates by discrete events, and computes through topology and timing. What is sparse there is the spiking, not the integration: every membrane integrates continuously, and this engine integrates every unit a message has reached until it is at rest, which under the reference network's drive is 99.99 per cent of its units on every tick while 0.0018 per cent fire ([ADR-0097](adr/0097-the-active-set-measured.md)); its cost follows integration, not spikes ([ADR-0098](adr/0098-the-integration-model.md)). Existing academic SNN simulators model that tissue faithfully but pay for it with pointer-based sparse graphs and IEEE-754 floating point: at scale they thrash the cache hierarchy, saturate the DRAM bus, and produce results that differ across CPU vendors.
+Dense-tensor deep learning maps well to GPUs and poorly to the operating principles of nervous tissue, which is roughly 1–2 % active at any instant, communicates by discrete events, and computes through topology and timing. What is sparse there is the spiking, not the integration: every membrane integrates continuously, and this engine integrates every unit a message has reached until it is at rest, which under the reference network's drive is 99.99 per cent of its units on every tick while 0.0018 per cent fire ([ADR-0097](adr/0097-the-active-set-measured.md)); its cost follows integration, not spikes ([ADR-0098](adr/0098-the-integration-model.md)).
+Since [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) that integration is carried out on arrival: a unit that cannot fire before its next message is caught up, bit for bit, when one reaches it.
+Existing academic SNN simulators model that tissue faithfully but pay for it with pointer-based sparse graphs and IEEE-754 floating point: at scale they thrash the cache hierarchy, saturate the DRAM bus, and produce results that differ across CPU vendors.
 
 A naive whole-brain point-neuron model illustrates the memory wall. With $N \approx 8.6 \times 10^{10}$ neurons and $S \approx 10^{14}$ synapses, even a minimal 8-byte pointer per synapse costs
 
@@ -1806,6 +1808,19 @@ At a token's delivery (R-2) the worker reads the block the token names, builds `
 <!-- @assert-absence target="runtime/menteion-runtime/src/lib.rs" symbol="pub mod deque" reason="ADR-0102: the executor has no deque; each worker serves the range it owns" -->
 <!-- @assert-count target="runtime/menteion-runtime/tests/active.rs" symbol="timed_with_no_census" min="6" reason="ADR-0101, ADR-0102: ADR-0097's runs timed with no census in the timed ticks, on two workers and on one" -->
 
+**Per-tick service, carried out on arrival** ([ADR-0224](adr/0224-a-unit-served-on-arrival.md), [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md), Implemented).
+A unit not at rest that cannot fire with no input (`quiet_cannot_fire`) leaves the schedule at the end of its turn, asleep, its gate still recorded scheduled.
+At its next turn, and before the unit arena is read between ticks, its quiet ticks' exact catch-up (`quiet_catch_up`) brings it to the present.
+Before a write of the arena it is also put back on the schedule, and a unit under the slow current never sleeps.
+`Executor::turns` counts the turns served and `Executor::caught_up` the steps caught up: together they are per-tick service's turns, the active set ADR-0097 measured.
+Per-tick service stays as the tests' reference, `Executor::per_tick`, on which ADR-0097's tests run.
+
+<!-- @assert-count target="crates/menteion-core/src/dynamics/membrane.rs" symbol="pub fn quiet_cannot_fire(" min="1" reason="ADR-0225: the condition a unit sleeps under" -->
+<!-- @assert-count target="crates/menteion-core/src/dynamics/membrane.rs" symbol="pub fn quiet_catch_up(" min="1" reason="ADR-0225: the exact catch-up of a sleeping unit's quiet ticks" -->
+<!-- @assert-count target="runtime/menteion-runtime/src/executor.rs" symbol="pub fn caught_up(" min="1" reason="ADR-0225: the steps caught up, counted beside the turns" -->
+<!-- @assert-count target="runtime/menteion-runtime/src/executor.rs" symbol="pub fn per_tick(" min="1" reason="ADR-0225: per-tick service, the tests' reference" -->
+<!-- @assert-count target="runtime/menteion-runtime/tests/arrival.rs" symbol="fn the_reference_network_served_on_arrival_is_per_tick_service_after_every_tick" min="1" reason="ADR-0225: the two services held to each other after every tick" -->
+
 The turn invariant (A3) guarantees that steps 4–6 for one unit never run on two workers at once, so no field of `DendriticSuperNeuron` other than the two atomics is ever written concurrently.
 
 ### 6.2 Scenario R-2: timing-wheel tick
@@ -2585,6 +2600,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0222](adr/0222-the-project-renamed-menteion-built.md) | The project renamed Menteion, built | accepted |
 | [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | accepted |
 | [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | accepted |
+| [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2895,6 +2911,7 @@ A hypothesis's text, its stopping rule and its rounds' readings are in its repor
 | Benign violation | A surprise that carries a salience threat of at most 0.25; its slow average is `mirth_q16` ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)). |
 | Vocal frame | The per-epoch parameters of a source–filter voice, rendered by `VocalSynth` ([ADR-0027](adr/0027-vocal-synthesis-and-computational-humor.md)). |
 | Turn invariant | At most one worker touches a record per tick (A3). |
+| Service on arrival | Per-tick service carried out with fewer turns ([ADR-0225](adr/0225-a-unit-served-on-arrival-built.md)): a unit that cannot fire with no input sleeps off the schedule, and its quiet ticks are caught up bit for bit when a message reaches it or the arena is read. |
 | Unit | A `DendriticSuperNeuron` record; the engine's neural entity. |
 | Veto gate | `EthicalEvaluationGate`: the in-engine check a proposed action passes before dispatch (§5.2.28); it stands in front of the watchdog, not in place of it. |
 | Worker | A core-pinned, stateless thread that executes units (A2). |
@@ -2967,7 +2984,7 @@ Parameters: `N_col` = 860 000, `N_neuron` = 43 000 000, `N_block` = 67 108 864 (
 | 49 | The clause store (Tier 1; [ADR-0052](adr/0052-the-term-arena-in-the-image.md); section kind 49; arena indices, 4 bytes each; the count is `Config::clauses` plus what the image holds; a placeholder) | 100 000 | 4 B | 0.4 MB |
 | | **Total addressable** | | | **≈ 31.9 GB** |
 
-**This table is the offline mode's plan: what one server holds, not what it runs in real time** ([ADR-0098](adr/0098-the-integration-model.md)). [ADR-0097](adr/0097-the-active-set-measured.md) measured the fraction of units the executor serves per tick on the reference network — 99.99 per cent under ADR-0044's drive — and wrote the budget this table's unit count, the 10 µs tick in real time and the input's density must fit together: serving row 2 on every tick touches its 2.75 GB 100 000 times a second. With no body attached, the offline mode runs this plan slower than real time, about 1 700 times at that density (an estimate at a developer machine's cost, not admissible). With a body attached, the real-time mode's unit count is what the budget allows at the input's density, a Target of about 2.6 × 10⁴ units on 64 workers at ADR-0044's (§11.1). The table is not edited; finding F-49 is resolved by that decision.
+**This table is the offline mode's plan: what one server holds, not what it runs in real time** ([ADR-0098](adr/0098-the-integration-model.md)). [ADR-0097](adr/0097-the-active-set-measured.md) measured the fraction of units per-tick service integrates per tick on the reference network — 99.99 per cent under ADR-0044's drive, carried out on arrival since [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) — and wrote the budget this table's unit count, the 10 µs tick in real time and the input's density must fit together: serving row 2 on every tick touches its 2.75 GB 100 000 times a second. With no body attached, the offline mode runs this plan slower than real time, about 1 700 times at that density (an estimate at a developer machine's cost, not admissible). With a body attached, the real-time mode's unit count is what the budget allows at the input's density, a Target of about 2.6 × 10⁴ units on 64 workers at ADR-0044's (§11.1). The table is not edited; finding F-49 is resolved by that decision.
 
 Row 19 is the implemented `WorkerWheel` ([ADR-0013](adr/0013-timing-wheel-geometry.md)): 256 fine and 256 coarse slots of 2 048 tokens each, 4 195 336 bytes, asserted at compile time. Rows 22 to 35 are the arenas admitted by [ADR-0016](adr/0016-thirty-two-crate-architecture.md); their counts are placeholders like the others, and together they add 0.66 GB. Row 37's record, `PlasticDelta`, exists ([ADR-0024](adr/0024-cortex-image-and-clock-sweep.md)); its count is a placeholder, included so that the far-memory tier is sized. Row 41's count is `Config::amendments`, the room for proposals; 4 096 records is a placeholder for a run that proposes for months. Row 3's layout stands against the density proposals [ADR-0034](adr/0034-synaptic-density.md) measured it against; hypothesis H-7 is whether that row is what binds. The 86-billion-neuron equivalence that earlier revisions attached to this table depends on hypothesis H-1 and is not claimed here.
 
