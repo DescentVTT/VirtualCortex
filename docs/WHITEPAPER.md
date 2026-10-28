@@ -1,6 +1,6 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.23.0
+version: 5.24.0
 status: active
 date: 2026-10-28
 ---
@@ -11,7 +11,7 @@ date: 2026-10-28
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.23.0 |
+| Version | 5.24.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-10-28 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2601,6 +2601,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0223](adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md) | The gate shortened, the schedule moved, and explorations kept as tags | accepted |
 | [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | accepted |
 | [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
+| [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | A zero sum at the stimulus, and a gentler depression | proposed |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2799,6 +2800,7 @@ A hypothesis's text, its stopping rule and its rounds' readings are in its repor
 | H-43 | a reward past the trial, its address kept, on three networks | yes | [ADR-0207](adr/0207-a-reward-past-the-trial-its-address-kept.md), [ADR-0209](adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md), [ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | [H-43](research/H-43.md) |
 | H-44 | a reward right three times in four, on the default, beside a control at step zero | yes | [ADR-0212](adr/0212-three-in-four-on-the-default.md), [ADR-0213](adr/0213-three-in-four-on-the-default-its-protocol.md), [ADR-0214](adr/0214-three-in-four-on-the-default-measured.md) | [H-44](research/H-44.md) |
 | H-45 | a delay the engine is not told, read from its kept addresses, on three networks | yes | [ADR-0216](adr/0216-a-delay-the-engine-reads.md), [ADR-0218](adr/0218-a-delay-the-engine-reads-its-protocol.md), [ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md) | [H-45](research/H-45.md) |
+| H-46 | the couplings bounded over sixteen schedules by a zero sum at the stimulus and a quarter's depression exponent, on three networks | open | [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | [H-46](research/H-46.md) |
 <!-- adr-index: end hypotheses -->
 
 **The open questions, and those settled,** that no hypothesis numbers:
@@ -3120,7 +3122,7 @@ Milestones follow the founding design note; each ends with an exit test.
 | M9 Self-amendment | A registry of the parameters the engine may amend; the amendment record and its gates; the trial in two forks of the image; the commit; persistence and replay; the amendment register behind the broker. | A proposal trialled in a fork, committed only with the forks' behaviour hashes equal, persisted, reloaded with the policy derived; a forged record refused by the loader. | Done for the sweep's two parameters ([ADR-0031](adr/0031-policy-amendment.md)): the exit test passes as `runtime/menteion-runtime/tests/amendment.rs`; the other rules' parameters join as the runtime composes them; the register open. |
 | M10 A reward past the trial | A decision and a measured round on a reward that arrives trials after the choice; candidate: options and a critic over several timescales (UPG-03). | A hypothesis written before any run reads yes. | Done: built ([ADR-0208](adr/0208-a-reward-past-the-trial-its-address-kept-built.md)), and [H-43](research/H-43.md) yes on three networks at one and two trials' delay ([ADR-0210](adr/0210-a-reward-past-the-trial-its-address-kept-measured.md)). Untold, [H-45](research/H-45.md) yes too ([ADR-0219](adr/0219-a-delay-the-engine-reads-measured.md)). |
 | M11 Learning that sleep keeps | A learned mapping held through a sleep with replay, against one without; candidate: chained episodes compiled in sleep (UPG-04). | A hypothesis written before any run reads yes. | Planned, second (ADR-0187). |
-| M12 Couplings over long runs | The couplings and the inhibitory sum bounded over many schedules; candidate: a sliding threshold (UPG-02), its layout decided first, since the bytes it asked for are `v_slow`'s; and for the rate's rule, a step adapted every window by its error's whiteness, a sign rule, explored first (2026-10-24). | A hypothesis written before any run reads yes. | Planned, third (ADR-0187). |
+| M12 Couplings over long runs | The couplings and the inhibitory sum bounded over many schedules; candidate: a sliding threshold (UPG-02), its layout decided first, since the bytes it asked for are `v_slow`'s; and for the rate's rule, a step adapted every window by its error's whiteness, a sign rule, explored first (2026-10-24). | A hypothesis written before any run reads yes. | Decided: [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md), a zero sum at the stimulus and a quarter's depression exponent; [H-46](research/H-46.md) open, brief 085 runs it. |
 | M13 Lookahead | A choice made by an imagined rollout, against the reflexive one, on a task that needs it; candidate: a counterfactual rollout (UPG-08), the lookahead [ADR-0099](adr/0099-the-engines-speed.md) ordered. | A hypothesis written before any run reads yes. | Planned, fourth (ADR-0187). |
 | M14 Synthesis in sleep | A REM pass that proposes a term shortening the ledger's description; candidate: combinators under minimum description length (UPG-09). | A hypothesis written before any run reads yes. | Planned, fifth (ADR-0187); M8's remainder sixth. |
 | M15 Language that says what it does not know | A frame's confidence deciding whether an answer is given; candidates UPG-05 and UPG-06. | A hypothesis written before any run reads yes. | Planned, seventh (ADR-0187); after M8's lexicon and broker. |

@@ -59,6 +59,7 @@ The question is the hypothesis's own name, as §11.1 wrote it.
 | H-43 | a reward past the trial, its address kept, on three networks | yes | [ADR-0207](../adr/0207-a-reward-past-the-trial-its-address-kept.md), [ADR-0209](../adr/0209-a-reward-past-the-trial-its-address-kept-its-protocol.md), [ADR-0210](../adr/0210-a-reward-past-the-trial-its-address-kept-measured.md) | [H-43](H-43.md) |
 | H-44 | a reward right three times in four, on the default, beside a control at step zero | yes | [ADR-0212](../adr/0212-three-in-four-on-the-default.md), [ADR-0213](../adr/0213-three-in-four-on-the-default-its-protocol.md), [ADR-0214](../adr/0214-three-in-four-on-the-default-measured.md) | [H-44](H-44.md) |
 | H-45 | a delay the engine is not told, read from its kept addresses, on three networks | yes | [ADR-0216](../adr/0216-a-delay-the-engine-reads.md), [ADR-0218](../adr/0218-a-delay-the-engine-reads-its-protocol.md), [ADR-0219](../adr/0219-a-delay-the-engine-reads-measured.md) | [H-45](H-45.md) |
+| H-46 | the couplings bounded over sixteen schedules by a zero sum at the stimulus and a quarter's depression exponent, on three networks | open | [ADR-0226](../adr/0226-a-zero-sum-at-the-stimulus.md) | [H-46](H-46.md) |
 <!-- adr-index: end hypotheses -->
 
 ## Lines with no number
