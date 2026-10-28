@@ -472567,18 +472567,19 @@ fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
 // prediction is written, nothing is pinned, and everything is dumped before anything is held.
 
 use menteion_core::SoftBound;
-use menteion_runtime::{SumHold, SumHoldCost, ZeroSum, ZeroSumCost};
+use menteion_runtime::{SumHold, SumHoldCost, ZeroSum, ZeroSumCost, ZeroSumRounding};
 
 /// The bounds a run of exploration 009 sets on every schedule's engine, neither in any image:
 /// exploration 007's soft bound on an excitatory pairing's potentiation, and the bound at
 /// consolidation on every excitatory synapse; exploration 010's readouts' sums held, and
-/// exploration 011's zero sum at the stimulus.
+/// exploration 011's zero sum at the stimulus, rounded as exploration 012 sets it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Bounds {
     pairing: Option<SoftBound>,
     consolidation: bool,
     sums: Option<SumHold>,
     zero_sum: Option<ZeroSum>,
+    rounding: ZeroSumRounding,
 }
 
 impl Bounds {
@@ -472588,6 +472589,7 @@ impl Bounds {
         consolidation: false,
         sums: None,
         zero_sum: None,
+        rounding: ZeroSumRounding::Down,
     };
     /// The bound at consolidation (exploration 009's first).
     const CONSOLIDATION: Self = Self {
@@ -472623,6 +472625,18 @@ impl Bounds {
         zero_sum: Some(ZeroSum::Ceiling),
         ..Self::NONE
     };
+    /// Exploration 011's first, every scaled weight rounded to the nearest, a tie to the even one
+    /// (exploration 012's first).
+    const ZERO_SUM_NEAREST: Self = Self {
+        rounding: ZeroSumRounding::Nearest,
+        ..Self::ZERO_SUM_BOTH
+    };
+    /// Exploration 011's first, every scaled weight rounded down with each synapse's fraction
+    /// carried to its next round (exploration 012's second).
+    const ZERO_SUM_CARRIED: Self = Self {
+        rounding: ZeroSumRounding::Carried,
+        ..Self::ZERO_SUM_BOTH
+    };
 
     /// Sets them on `exec`, from its next tick; the sums, where held, at `holds`'s values, H-42's
     /// image's: each readout unit's (exploration 010), and each stimulus set's couplings
@@ -472643,6 +472657,7 @@ impl Bounds {
             exec.set_zero_sum(self.zero_sum, &groups, &holds.targets),
             "every source excitatory and in the arena, once, and every target in the arena"
         );
+        exec.set_zero_sum_rounding(self.rounding);
     }
 
     /// The bounds `exec`'s workers read.
@@ -472652,6 +472667,7 @@ impl Bounds {
             consolidation: exec.consolidation_bound(),
             sums: exec.sum_hold(),
             zero_sum: exec.zero_sum(),
+            rounding: exec.zero_sum_rounding(),
         }
     }
 }
@@ -472842,6 +472858,9 @@ fn long_run(
     };
     let mut held_over: Vec<u32> = Vec::new();
     let mut zero_over: Vec<u32> = Vec::new();
+    // Exploration 012: the farthest a stimulus set's sum stood from its value at a block's end,
+    // over the value, in parts of a million.
+    let mut zero_apart: Vec<i64> = Vec::new();
     let mut first: Option<(Vec<Block>, u64, u64)> = None;
     let mut runs: Vec<(u64, u64)> = Vec::new();
     let mut readings: Vec<LongRead> = Vec::new();
@@ -472912,6 +472931,19 @@ fn long_run(
         );
         held_over.extend(run.hold.iter().map(|h| h.0));
         zero_over.extend(run.zero.iter().map(|z| z.2));
+        zero_apart.extend(run.zero.iter().map(|z| {
+            (0..2)
+                .map(|g| {
+                    z.0[g]
+                        .saturating_sub(z.1[g])
+                        .saturating_abs()
+                        .saturating_mul(1_000_000)
+                        .checked_div(z.1[g])
+                        .unwrap_or(i64::MAX)
+                })
+                .max()
+                .unwrap_or(0)
+        }));
         if s == 0 {
             first = Some((run.blocks.clone(), run.trace, values_hash(&run.values)));
         }
@@ -472971,9 +473003,22 @@ fn long_run(
         );
     }
     if bounds.zero_sum.is_some() {
+        eprintln!(
+            "DUMP {name} the zero sum: the farthest a set's sum stood from its value at a block's end, per million, by block {zero_apart:?}"
+        );
+    }
+    if bounds.zero_sum.is_some() && bounds.rounding == ZeroSumRounding::Down {
         assert!(
             zero_over.iter().all(|&over| over == 0),
             "{name}: no stimulus set's couplings above their value at a block's end: {zero_over:?}"
+        );
+    }
+    // Rounded to the nearest or carried, a round leaves a sum on either side of its value
+    // (exploration 012): held within a thousandth of it at every block's end.
+    if bounds.zero_sum.is_some() && bounds.rounding != ZeroSumRounding::Down {
+        assert!(
+            zero_apart.iter().all(|&apart| apart <= 1_000),
+            "{name}: every stimulus set's couplings within a thousandth of their value at a block's end: {zero_apart:?}"
         );
     }
     if let (Some((blocks, trace, hash)), true) = (first, bounds == Bounds::NONE) {
@@ -473873,5 +473918,237 @@ fn a_zero_sum_at_the_stimulus_as_a_ceiling_second_half_on_seed_22_from_the_mirro
         1,
         Reversal::MirroredFirst,
         Bounds::ZERO_SUM_CEILING,
+    );
+}
+
+// ======================================================================= exploration 012
+//
+// The zero sum's rounding (ADR-0193, exploration 012). Exploration 011's zero sum both ways, its
+// harness, long run, rail paths and carry, with every scaled weight rounded otherwise than down,
+// on this branch alone (`Executor::set_zero_sum_rounding`): to the nearest, a tie to the even one
+// (`ZeroSumRounding::Nearest`), or down with each synapse's fraction carried to its next round
+// from a half (`ZeroSumRounding::Carried`). Neither is in any image, so the test sets it on every
+// schedule's engine, and under `Carried` every synapse's fraction starts again at a half with
+// each schedule. Beside 011's readings, what each round's scaling moved, by the band the weight
+// stood in (`ZeroSumCost`). Exploration 011's zero sum both ways from the assignment runs again,
+// rounded down, held to its run's images bit for bit, for those readings. No prediction is
+// written, nothing is pinned, and everything is dumped before anything is held.
+
+/// Exploration 011's run 40614819069 on `b840fba`: its short run's images, unheld and both ways,
+/// and its zero sum both ways' eighth image from the assignment, each's CRC-64 as it printed it.
+const EXPLORATION_011_SHORT_CRC: [u64; 2] = [0x841f_164e_b6fd_efb2, 0x9fac_5bf2_9a24_b2ec];
+const EXPLORATION_011_BOTH_ASSIGNMENT_CRC_8: u64 = 0x688e_a9d6_57e2_b91a;
+
+/// Exploration 012, short: one schedule of two blocks from H-42's image on seed 22 from the
+/// assignment, unheld — held to H-42's arm as far as it runs and to exploration 011's image, the
+/// branch's `src/` unset — and under the zero sum both ways rounded down, held to exploration
+/// 011's image, to the nearest and carried.
+#[test]
+#[ignore]
+fn the_zero_sums_rounding_short_on_seed_22_explore() {
+    let made = probe_made(0, "rounding22 short");
+    for (name, bounds, crc) in [
+        (
+            "rounding22 short unheld",
+            Bounds::NONE,
+            Some(EXPLORATION_011_SHORT_CRC[0]),
+        ),
+        (
+            "rounding22 short down",
+            Bounds::ZERO_SUM_BOTH,
+            Some(EXPLORATION_011_SHORT_CRC[1]),
+        ),
+        ("rounding22 short nearest", Bounds::ZERO_SUM_NEAREST, None),
+        ("rounding22 short carried", Bounds::ZERO_SUM_CARRIED, None),
+    ] {
+        let image = long_run(
+            &made,
+            0,
+            name,
+            Reversal::AssignmentFirst,
+            LongStart::Derived,
+            1,
+            2 * BLOCK,
+            &[],
+            bounds,
+            false,
+        );
+        if let Some(crc) = crc {
+            assert_eq!(crc64(&image), crc, "{name}: exploration 011's image");
+            eprintln!("DUMP {name} the image is exploration 011's, bit for bit");
+        }
+    }
+}
+
+/// Exploration 012, the zero sum rounded to the nearest: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_rounded_to_the_nearest_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "zeronearest22",
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_NEAREST,
+    );
+}
+
+/// Exploration 012, the zero sum rounded to the nearest: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_rounded_to_the_nearest_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run(
+        "zeronearest22",
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_NEAREST,
+    );
+}
+
+/// Exploration 012, the zero sum with each synapse's fraction carried: seed 22, from the
+/// assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_with_its_fractions_carried_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "zerocarried22",
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CARRIED,
+    );
+}
+
+/// Exploration 012, the zero sum with each synapse's fraction carried: seed 22, from the mirrored
+/// assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_with_its_fractions_carried_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run(
+        "zerocarried22",
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CARRIED,
+    );
+}
+
+/// Exploration 012, exploration 011's zero sum both ways rounded down again: seed 22, from the
+/// assignment, eight schedules, its eighth image held to the one exploration 011's run wrote, for
+/// what each round's scaling moved by band.
+#[test]
+#[ignore]
+fn the_zero_sum_rounded_down_again_on_seed_22_from_the_assignment_explore() {
+    let arm = Reversal::AssignmentFirst;
+    let name = format!("zerodown22 {arm:?}");
+    let made = probe_made(0, &name);
+    let image = long_run(
+        &made,
+        0,
+        &name,
+        arm,
+        LongStart::Derived,
+        HALF_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        Bounds::ZERO_SUM_BOTH,
+        false,
+    );
+    assert_eq!(
+        crc64(&image),
+        EXPLORATION_011_BOTH_ASSIGNMENT_CRC_8,
+        "{name}: exploration 011's eighth image"
+    );
+    eprintln!("DUMP {name} the eighth image is exploration 011's, bit for bit");
+}
+
+/// Where exploration 012's long runs carry their images from one job to the next.
+const CARRIED_DIR_012: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/explore-012");
+
+/// The images exploration 012's runs wrote at their eighth schedule's end, by rounding (to the
+/// nearest, carried) and arm (the assignment, the mirrored assignment), kept in `CARRIED_DIR_012`
+/// for a second half; and their CRC-64s as their runs printed them, none until written down here,
+/// so that a second half refuses to start before.
+const ROUNDING_IMAGES_8: [[&str; 2]; 2] = [
+    [
+        "zeronearest22-assignment-image-8.image",
+        "zeronearest22-mirrored-image-8.image",
+    ],
+    [
+        "zerocarried22-assignment-image-8.image",
+        "zerocarried22-mirrored-image-8.image",
+    ],
+];
+const ROUNDING_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [[None, None], [None, None]];
+
+/// Exploration 012's second half under rounding `r` (0 to the nearest, 1 carried): schedules 9 to
+/// 16 from the image the first half printed at its eighth schedule's end, every schedule's engine
+/// under `bounds` at H-42's values, the last image printed whole.
+fn rounding_second_half(label: &str, r: usize, arm: Reversal, bounds: Bounds) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{label} {arm:?}");
+    let made = probe_made(0, &name);
+    long_run(
+        &made,
+        0,
+        &name,
+        arm,
+        LongStart::Carried {
+            schedule: HALF_SCHEDULES,
+            dir: CARRIED_DIR_012,
+            file: ROUNDING_IMAGES_8[r][k],
+            crc: ROUNDING_IMAGES_8_CRC[r][k],
+        },
+        HALF_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        bounds,
+        true,
+    );
+}
+
+/// Exploration 012, the nearest's second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_rounded_to_the_nearest_second_half_on_seed_22_from_the_assignment_explore() {
+    rounding_second_half(
+        "zeronearest22",
+        0,
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_NEAREST,
+    );
+}
+
+/// Exploration 012, the nearest's second half: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_rounded_to_the_nearest_second_half_on_seed_22_from_the_mirrored_assignment_explore()
+{
+    rounding_second_half(
+        "zeronearest22",
+        0,
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_NEAREST,
+    );
+}
+
+/// Exploration 012, the carried fractions' second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_with_its_fractions_carried_second_half_on_seed_22_from_the_assignment_explore() {
+    rounding_second_half(
+        "zerocarried22",
+        1,
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CARRIED,
+    );
+}
+
+/// Exploration 012, the carried fractions' second half: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn the_zero_sum_with_its_fractions_carried_second_half_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    rounding_second_half(
+        "zerocarried22",
+        1,
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CARRIED,
     );
 }
