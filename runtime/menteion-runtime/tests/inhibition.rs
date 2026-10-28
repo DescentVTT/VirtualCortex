@@ -474072,7 +474072,10 @@ const ROUNDING_IMAGES_8: [[&str; 2]; 2] = [
         "zerocarried22-mirrored-image-8.image",
     ],
 ];
-const ROUNDING_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [[None, None], [None, None]];
+const ROUNDING_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [
+    [Some(0xfb45_b446_ec2a_c87c), Some(0x1c8a_587d_3e42_11fe)],
+    [Some(0x82d3_51eb_be25_419c), Some(0x1f66_929d_07b6_d47d)],
+];
 
 /// Exploration 012's second half under rounding `r` (0 to the nearest, 1 carried): schedules 9 to
 /// 16 from the image the first half printed at its eighth schedule's end, every schedule's engine
