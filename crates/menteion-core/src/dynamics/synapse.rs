@@ -395,6 +395,53 @@ fn depression_at(amount_q1_15: i16, magnitude: i32) -> i16 {
         >> STDP_DEPRESSION_REFERENCE_SHIFT) as i16
 }
 
+/// Exploration 013 (ADR-0193), on its branch alone and in no image: the exponent $\mu$ of an
+/// excitatory pairing's depression, $A_- (1 - 2^{-11})^{t - q} (M / M_{\text{ref}})^{\mu}$, $M$
+/// the slot's magnitude before the pairing and $M_{\text{ref}}$ ADR-0055's reference magnitude
+/// (the power law of Gütig et al. 2003 on the depression alone, between the additive rule's
+/// $\mu = 0$ and ADR-0055's $\mu = 1$). At the reference every exponent is the rule. The
+/// potentiation and the inhibitory rule do not move.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DepressionExponent {
+    /// $\mu = 1$: ADR-0055's rule, the depression at the magnitude itself, bit for bit.
+    #[default]
+    One,
+    /// $\mu = 1/2$.
+    Half,
+    /// $\mu = 1/4$.
+    Quarter,
+}
+
+/// $M_{\text{ref}}$ in the square root of [`DepressionExponent::Half`]: $2^{13}$.
+const DEPRESSION_ROOT_HALF: u64 = 1 << STDP_DEPRESSION_REFERENCE_SHIFT;
+/// $M_{\text{ref}}^3$ in the fourth root of [`DepressionExponent::Quarter`]: $2^{39}$.
+const DEPRESSION_ROOT_QUARTER: u64 = 1 << (3 * STDP_DEPRESSION_REFERENCE_SHIFT);
+const _: () = {
+    // At the rail the radicands fit: below $2^{28}$ and $2^{54}$.
+    assert!((i16::MAX as u64) * DEPRESSION_ROOT_HALF < 1 << 28);
+    assert!((i16::MAX as u64) * DEPRESSION_ROOT_QUARTER < 1 << 54);
+};
+
+/// The magnitude [`depression_at`] reads under an exponent (exploration 013):
+/// $M_{\text{ref}} (M / M_{\text{ref}})^{\mu}$, rounded down, in integers. $\mu = 1$ is $M$
+/// itself. $\mu = 1/2$ is $\lfloor \sqrt{2^{13} M} \rfloor$. $\mu = 1/4$ is
+/// $\lfloor \sqrt{\lfloor \sqrt{2^{39} M} \rfloor} \rfloor$, which is
+/// $\lfloor (2^{39} M)^{1/4} \rfloor$ exactly, a floor of a square root of the floor of one being
+/// the floor of the fourth root. Each stands below its exact value by less than one LSB of the
+/// magnitude, and at zero and at the reference it is exact; so [`depression_at`] at it is the
+/// exact depression's, rounded to nearest, short of it by less than $A_- / 2^{13}$, 0.042 LSB.
+#[inline]
+fn depression_magnitude(magnitude: i32, exponent: DepressionExponent) -> i32 {
+    let m = u64::try_from(magnitude).unwrap_or(0);
+    let shaped = match exponent {
+        DepressionExponent::One => return magnitude,
+        DepressionExponent::Half => m.saturating_mul(DEPRESSION_ROOT_HALF).isqrt(),
+        DepressionExponent::Quarter => m.saturating_mul(DEPRESSION_ROOT_QUARTER).isqrt().isqrt(),
+    };
+    // At most $2^{14}$, from the rail: within `i32`.
+    i32::try_from(shaped).unwrap_or(i32::MAX)
+}
+
 /// Exploration 007 (ADR-0193), on its branch alone and in no image: a soft bound on an
 /// excitatory pairing's potentiation, the amount $A_+ (1 - 2^{-11})^{q - p}$ scaled by the room
 /// the slot's magnitude $M$ before the pairing leaves below the rail $R$ = `i16::MAX`, the
@@ -697,6 +744,31 @@ impl SynapseBlock {
         istdp_alpha_q1_15: i16,
         bound: Option<SoftBound>,
     ) -> i16 {
+        self.step_stdp_shaped(
+            slot,
+            pre_now_tick,
+            post_last_tick,
+            polarity,
+            istdp_alpha_q1_15,
+            bound,
+            DepressionExponent::One,
+        )
+    }
+
+    /// [`step_stdp_bounded`](Self::step_stdp_bounded) with an excitatory block's depression at
+    /// the magnitude `exponent` shapes (exploration 013, [`DepressionExponent`]); under
+    /// `DepressionExponent::One` it is `step_stdp_bounded` bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn step_stdp_shaped(
+        &mut self,
+        slot: usize,
+        pre_now_tick: u32,
+        post_last_tick: u32,
+        polarity: Polarity,
+        istdp_alpha_q1_15: i16,
+        bound: Option<SoftBound>,
+        exponent: DepressionExponent,
+    ) -> i16 {
         if slot >= SYNAPSES_PER_BLOCK || self.target_neuron_ids[slot] == SLOT_EMPTY {
             return 0;
         }
@@ -724,11 +796,12 @@ impl SynapseBlock {
                 e = match polarity {
                     Polarity::Excitatory => {
                         // The depression scales with the magnitude before the pairing
-                        // (ADR-0055); the weight itself moves at consolidation.
+                        // (ADR-0055), shaped by the exponent (exploration 013); the weight
+                        // itself moves at consolidation.
                         let magnitude = polarity.magnitude(self.weights_q1_15[slot]);
                         e.saturating_sub(depression_at(
                             window(STDP_A_MINUS_Q1_15, since_post as u32),
-                            magnitude,
+                            depression_magnitude(magnitude, exponent),
                         ))
                     }
                     Polarity::Inhibitory => {
@@ -943,16 +1016,39 @@ impl SynapseBlock {
         istdp_alpha_q1_15: i16,
         bound: Option<SoftBound>,
     ) -> [i16; SYNAPSES_PER_BLOCK] {
+        self.step_stdp_all_shaped(
+            now_tick,
+            post_last_ticks,
+            polarity,
+            istdp_alpha_q1_15,
+            bound,
+            DepressionExponent::One,
+        )
+    }
+
+    /// [`step_stdp_all_bounded`](Self::step_stdp_all_bounded) with every slot's pairing by
+    /// [`step_stdp_shaped`](Self::step_stdp_shaped) under `exponent` (exploration 013); under
+    /// `DepressionExponent::One` it is `step_stdp_all_bounded` bit for bit.
+    pub fn step_stdp_all_shaped(
+        &mut self,
+        now_tick: u32,
+        post_last_ticks: [u32; SYNAPSES_PER_BLOCK],
+        polarity: Polarity,
+        istdp_alpha_q1_15: i16,
+        bound: Option<SoftBound>,
+        exponent: DepressionExponent,
+    ) -> [i16; SYNAPSES_PER_BLOCK] {
         self.decay_eligibility(now_tick.wrapping_sub(self.last_spike_tick));
         let mut out = [0; SYNAPSES_PER_BLOCK];
         for (slot, e) in out.iter_mut().enumerate() {
-            *e = self.step_stdp_bounded(
+            *e = self.step_stdp_shaped(
                 slot,
                 now_tick,
                 post_last_ticks[slot],
                 polarity,
                 istdp_alpha_q1_15,
                 bound,
+                exponent,
             );
         }
         self.stamp_presynaptic(now_tick);
@@ -2189,6 +2285,122 @@ mod tests {
                 }
                 if bound.is_none() || polarity == Polarity::Inhibitory {
                     assert_eq!(plain, bounded, "{polarity:?} {bound:?}: bit for bit");
+                }
+            }
+        }
+    }
+
+    /// Exploration 013: the depression's exponent shapes the magnitude the depression reads,
+    /// exactly at zero and at the reference and to the floor of the root everywhere, never
+    /// falling as the magnitude rises; `One` is the rule bit for bit, and the potentiation and
+    /// the inhibitory rule do not move.
+    #[test]
+    fn a_depression_exponent_shapes_the_excitatory_depression_alone() {
+        let reference = STDP_DEPRESSION_REFERENCE_Q1_15 as i32;
+        let rail = i16::MAX as i32;
+        let shaped = [
+            DepressionExponent::One,
+            DepressionExponent::Half,
+            DepressionExponent::Quarter,
+        ];
+        for exponent in shaped {
+            assert_eq!(depression_magnitude(0, exponent), 0);
+            assert_eq!(depression_magnitude(reference, exponent), reference);
+        }
+        // At the rail: ⌊√(32 767 · 2^13)⌋ = 16 383 and ⌊(32 767 · 2^39)^(1/4)⌋ = 11 585, where the
+        // exact values are 16 383.75 and 11 585.15; at one LSB, ⌊√(2^13)⌋ = 90 and
+        // ⌊2^(39/4)⌋ = 861.
+        assert_eq!(depression_magnitude(rail, DepressionExponent::Half), 16_383);
+        assert_eq!(
+            depression_magnitude(rail, DepressionExponent::Quarter),
+            11_585
+        );
+        assert_eq!(depression_magnitude(1, DepressionExponent::Half), 90);
+        assert_eq!(depression_magnitude(1, DepressionExponent::Quarter), 861);
+        // So the depression at the rail is half of ADR-0055's and at one LSB more than the
+        // magnitude: 344 × 16 383 / 8 192 = 687.96 → 688; 344 × 90 / 8 192 = 3.78 → 4.
+        assert_eq!(depression_at(344, 16_383), 688);
+        assert_eq!(depression_at(344, 90), 4);
+        // Every magnitude: `One` is the magnitude itself; `Half` and `Quarter` the floor of
+        // the root, held by its powers, and monotone.
+        let mut previous = [0u64; 2];
+        for m in 0..=rail {
+            assert_eq!(depression_magnitude(m, DepressionExponent::One), m);
+            let wide = m as u64;
+            let half = depression_magnitude(m, DepressionExponent::Half) as u64;
+            let x = wide.saturating_mul(DEPRESSION_ROOT_HALF);
+            assert!(
+                half.saturating_mul(half) <= x
+                    && half
+                        .saturating_add(1)
+                        .saturating_mul(half.saturating_add(1))
+                        > x,
+                "half at {m}: {half}"
+            );
+            let quarter = depression_magnitude(m, DepressionExponent::Quarter) as u64;
+            let y = wide.saturating_mul(DEPRESSION_ROOT_QUARTER);
+            assert!(
+                quarter.saturating_pow(4) <= y && quarter.saturating_add(1).saturating_pow(4) > y,
+                "quarter at {m}: {quarter}"
+            );
+            assert!(
+                half >= previous[0] && quarter >= previous[1],
+                "monotone at {m}"
+            );
+            previous = [half, quarter];
+        }
+        // A pairing with both terms, on every slot: the depression alone moves, by the shaped
+        // magnitude's, and `One` and the inhibitory rule are `step_stdp_all_bounded` bit for
+        // bit, under every soft bound.
+        for polarity in [Polarity::Excitatory, Polarity::Inhibitory] {
+            for bound in [None, Some(SoftBound::Width)] {
+                for exponent in shaped {
+                    let mut plain = full_block(0, 1);
+                    plain.weights_q1_15 = match polarity {
+                        Polarity::Excitatory => [0, 0x0400, 0x2000, i16::MAX],
+                        Polarity::Inhibitory => [0, -0x0400, -0x2000, -i16::MAX],
+                    };
+                    plain.stamp_presynaptic(1_000);
+                    let mut shaped_block = plain;
+                    let posts = [1_100; SYNAPSES_PER_BLOCK];
+                    let a = plain.step_stdp_all_bounded(
+                        1_200,
+                        posts,
+                        polarity,
+                        ISTDP_ALPHA_Q1_15,
+                        bound,
+                    );
+                    let b = shaped_block.step_stdp_all_shaped(
+                        1_200,
+                        posts,
+                        polarity,
+                        ISTDP_ALPHA_Q1_15,
+                        bound,
+                        exponent,
+                    );
+                    let loss = window(STDP_A_MINUS_Q1_15, 100);
+                    for slot in 0..SYNAPSES_PER_BLOCK {
+                        let magnitude = polarity.magnitude(plain.weights_q1_15[slot]);
+                        let expected = match polarity {
+                            Polarity::Excitatory => a[slot]
+                                .saturating_add(depression_at(loss, magnitude))
+                                .saturating_sub(depression_at(
+                                    loss,
+                                    depression_magnitude(magnitude, exponent),
+                                )),
+                            Polarity::Inhibitory => a[slot],
+                        };
+                        assert_eq!(
+                            b[slot], expected,
+                            "{polarity:?} {bound:?} {exponent:?} slot {slot}"
+                        );
+                    }
+                    if exponent == DepressionExponent::One || polarity == Polarity::Inhibitory {
+                        assert_eq!(
+                            plain, shaped_block,
+                            "{polarity:?} {bound:?} {exponent:?}: bit for bit"
+                        );
+                    }
                 }
             }
         }

@@ -51,12 +51,13 @@ use crate::pool::Pools;
 use crate::store::{Induction, TermError};
 use menteion_affect::InteroceptiveState;
 use menteion_core::{
-    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FLAG_FACILITATING, FLAG_SLOW,
-    FlatTimingWheel, GateState, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS,
-    ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity,
-    REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SlowCurrent, SoftBound, StpClass, SynapseBlock,
-    THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical,
-    message_is_synaptic, spike_message, synapse_token, synaptic_message, token_block, token_slot,
+    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, DepressionExponent,
+    FLAG_FACILITATING, FLAG_SLOW, FlatTimingWheel, GateState, ISTDP_PERIOD_MAX_TICKS,
+    ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
+    PlasticDelta, Polarity, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SlowCurrent, SoftBound, StpClass,
+    SynapseBlock, THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16,
+    message_is_apical, message_is_synaptic, spike_message, synapse_token, synaptic_message,
+    token_block, token_slot,
 };
 use menteion_ethics::EthicalEvaluationGate;
 use menteion_executive::{
@@ -852,6 +853,25 @@ const fn soft_bound_of_word(word: u8) -> Option<SoftBound> {
     }
 }
 
+/// The word the coordinator publishes for the depression's exponent (exploration 013): zero for
+/// `DepressionExponent::One`, the rule, one for `Half` and two for `Quarter`.
+const fn depression_exponent_word(exponent: DepressionExponent) -> u8 {
+    match exponent {
+        DepressionExponent::One => 0,
+        DepressionExponent::Half => 1,
+        DepressionExponent::Quarter => 2,
+    }
+}
+
+/// The exponent a published word names: the rule's for a word it does not write.
+const fn depression_exponent_of_word(word: u8) -> DepressionExponent {
+    match word {
+        1 => DepressionExponent::Half,
+        2 => DepressionExponent::Quarter,
+        _ => DepressionExponent::One,
+    }
+}
+
 /// Exploration 010 (ADR-0193), on its branch alone and in no image: how a held unit's excitatory
 /// input sum, the weights of every synapse from an excitatory unit onto it, is held at the value
 /// `Executor::set_sum_hold` gives it, after every tick whose consolidations moved one of those
@@ -1597,6 +1617,11 @@ struct Shared {
     /// stored between ticks by `Executor::set_soft_bound`, read by every worker in the fan-out
     /// phase.
     soft_bound: AtomicU8,
+    /// Exploration 013 (ADR-0193), on its branch alone and in no image: the exponent of an
+    /// excitatory pairing's depression as `depression_exponent_word` writes it, zero for the
+    /// rule's; stored between ticks by `Executor::set_depression_exponent`, read by every worker
+    /// in the fan-out phase.
+    depression_exponent: AtomicU8,
     /// Exploration 009 (ADR-0193), on its branch alone and in no image: the bound at
     /// consolidation on every excitatory synapse, false while unset; stored between ticks by
     /// `Executor::set_consolidation_bound`, read by every worker in the fan-out phase.
@@ -2136,6 +2161,7 @@ impl<const CAP: usize> Executor<CAP> {
                 config.istdp_target_period_ticks,
             ))),
             soft_bound: AtomicU8::new(soft_bound_word(None)),
+            depression_exponent: AtomicU8::new(depression_exponent_word(DepressionExponent::One)),
             consolidation_bound: AtomicBool::new(false),
             holding: AtomicBool::new(false),
             held: (0..config.units)
@@ -2326,6 +2352,20 @@ impl<const CAP: usize> Executor<CAP> {
     /// The soft bound the workers read (exploration 007), none while unset.
     pub fn soft_bound(&self) -> Option<SoftBound> {
         soft_bound_of_word(self.shared.soft_bound.load(Ordering::Relaxed))
+    }
+
+    /// Exploration 013 (ADR-0193): sets the exponent of every excitatory pairing's depression
+    /// (`DepressionExponent`), between ticks, from the next tick; `DepressionExponent::One` is
+    /// the rule. It is in no image, so an engine decoded from one starts at the rule's.
+    pub fn set_depression_exponent(&mut self, exponent: DepressionExponent) {
+        self.shared
+            .depression_exponent
+            .store(depression_exponent_word(exponent), Ordering::Relaxed);
+    }
+
+    /// The depression's exponent the workers read (exploration 013), the rule's while unset.
+    pub fn depression_exponent(&self) -> DepressionExponent {
+        depression_exponent_of_word(self.shared.depression_exponent.load(Ordering::Relaxed))
     }
 
     /// Exploration 009 (ADR-0193): sets the bound at consolidation on every excitatory synapse
@@ -4790,6 +4830,10 @@ impl<const CAP: usize> Worker<CAP> {
         // The soft bound on an excitatory pairing's potentiation (exploration 007), none
         // while unset, where every pairing is `step_stdp_all`'s bit for bit.
         let bound = soft_bound_of_word(shared.soft_bound.load(Ordering::Relaxed));
+        // The depression's exponent (exploration 013), the rule's while unset, where every
+        // pairing is `step_stdp_all_bounded`'s bit for bit.
+        let exponent =
+            depression_exponent_of_word(shared.depression_exponent.load(Ordering::Relaxed));
         // The bound at consolidation (exploration 009), false while unset, where every
         // consolidation is `consolidate_signed`'s bit for bit.
         let consolidation_bound = shared.consolidation_bound.load(Ordering::Relaxed);
@@ -4851,7 +4895,7 @@ impl<const CAP: usize> Worker<CAP> {
                         polarity,
                     )
                 });
-                block.step_stdp_all_bounded(now, posts, polarity, istdp_alpha, bound);
+                block.step_stdp_all_shaped(now, posts, polarity, istdp_alpha, bound, exponent);
                 let before = block.weights_q1_15;
                 consolidate_each(block, &per_slot, polarity, bounded);
                 // Exploration 010: every held target an excitatory consolidation moved is
@@ -5017,6 +5061,26 @@ impl<const CAP: usize> Worker<CAP> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Exploration 013: every exponent's word names it again, the rule's is zero, the one an
+    /// engine starts at, and a word the coordinator does not write names the rule's.
+    #[test]
+    fn the_depression_exponent_s_word_names_it_and_zero_is_the_rule() {
+        for exponent in [
+            DepressionExponent::One,
+            DepressionExponent::Half,
+            DepressionExponent::Quarter,
+        ] {
+            assert_eq!(
+                depression_exponent_of_word(depression_exponent_word(exponent)),
+                exponent
+            );
+        }
+        assert_eq!(depression_exponent_word(DepressionExponent::One), 0);
+        for word in 3..=u8::MAX {
+            assert_eq!(depression_exponent_of_word(word), DepressionExponent::One);
+        }
+    }
 
     /// Exploration 010: a round reads a touched unit's sum from every excitatory chain and no
     /// inhibitory one, scales it as the hold says, rounded down and at most the rail, and leaves
