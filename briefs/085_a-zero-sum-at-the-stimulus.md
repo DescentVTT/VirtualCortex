@@ -17,7 +17,7 @@ Under the engine's default the couplings rise through every schedule of a long r
 When the round is done, the tree holds:
 - the zero sum at the stimulus, set by the host, each synapse's dropped fraction carried, and the depression's exponent as a configuration's, both unset by default and each the engine as it is when unset, held by property tests;
 - H-46's protocol committed before any arm ran, its six arms and six controls run over sixteen schedules, and its verdict;
-- the twelve long runs kept as `…_paused` tests, and a short form of each, its first schedule, in the weekly job.
+- the twelve long runs kept as `…_paused` tests, and a short form of each arm, its first schedule, in the weekly job.
 
 It writes a built ADR, a protocol ADR and a measured ADR, adds its readings to [H-46's report](../docs/research/H-46.md) and rewrites `docs/STATUS.md` ([briefs/README.md](README.md#a-rounds-documents)).
 The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)).
@@ -28,9 +28,9 @@ The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eigh
 
 - **Latest ≠ Newest** (whitepaper §2.1, `CLAUDE.md` principle 4). The round depends on nothing new: no crate, no tool, no version of either.
 - **Unset is the engine as it is.** With both rules unset no number moves, and the format stays 26. A pinned number that moves stops the round as a finding (H-46's stopping rule, step 2).
-- **H-46 is ADR-0226's**: its clauses, its constants and its three predicted readings are committed in the protocol ADR and pinned in the tests before any arm runs, and nothing among them moves after.
+- **H-46 is ADR-0226's**: its clauses, its constants and its four predicted readings are committed in the protocol ADR and pinned in the tests before any arm runs, and nothing among them moves after.
 - **No `unsafe` beyond ADR-0023's.** No `f32`/`f64`; every loop ends by construction ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)); the mutation gate catches every mutant in the lines the change touches ([ADR-0030](../docs/adr/0030-verification-governance.md)); a new rule carries a test over the lattice.
-- **The runs are dispatches** ([briefs/README.md](README.md#evidencing-a-round)): the calibration at `scope=exhaustive` excluding the round's own tests, and the arms at `scope=arms`, dispatched together on the protocol's commit; the calibration read first. No whole-domain test runs on the developer machine.
+- **The runs are dispatches** ([briefs/README.md](README.md#evidencing-a-round)): the calibration at `scope=exhaustive` excluding the round's own weekly tests, and the first halves at `scope=arms`, dispatched together on the protocol's commit; the calibration read first. ADR-0226 departs from the README in two places, and says why: the second halves run on a later commit that adds only their images, and the long runs are reproduced at `scope=arms`. No whole-domain test runs on the developer machine.
 - **The pull request opens as a draft with the round's first push** ([ADR-0223](../docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)), and leaves draft with the commit that asks for the merge, which sets the round's ADRs to `accepted`.
 - **The branch is named `claude/brief-085-…`**, never rebased or force-pushed once a dispatch has run on it.
 - **The documents are ADR-0197's**: the new ADRs in its shape, the tables written by `node scripts/adr-index.mjs`, new text within `npm run spec:shape`'s limits.
@@ -50,32 +50,35 @@ Re-derived on 2026-10-28 against `main` at `2c48eee`. Line numbers move; the sym
    - the tag `explore/013-the-carried-sum-and-the-exponent`: `DepressionExponent` in `synapse.rs`, `Executor::set_depression_exponent`, the integer square roots;
    - their harness in `tests/inhibition.rs`: the long run, the readings by schedule, the eighth image carried with its CRC-64 under `tests/explore-0NN/`.
 3. **The runs to start from**: H-42's derivations on seeds 22, 23 and 24, pinned; H-25's two arms and their four clauses; H-20's schedule; exploration 007's long run in two jobs of eight schedules.
-4. **The served-on-arrival engine** ([ADR-0225](../docs/adr/0225-a-unit-served-on-arrival-built.md)): an eight-schedule job took 101 to 110 minutes on AArch64 in explorations 011 to 013.
-5. **The paused tests** ([ADR-0127](../docs/adr/0127-the-paused-line-leaves-the-weekly.md)): a test renamed `…_paused` leaves the weekly job, keeps its pins and runs by name at `scope=arms`.
-6. **The process** ([briefs/README.md](README.md#evidencing-a-round)): `npm run round:additive` reads the change, which is not only additive; the reproduction runs the round's own weekly tests alone when nothing the calibration ran has changed; the cost table is regenerated with `--keep`.
-7. **The schedule** runs on Wednesday at 20:17 UTC and takes most of the organisation's places for hours. A dispatch made then waits.
+4. **The served-on-arrival engine** ([ADR-0225](../docs/adr/0225-a-unit-served-on-arrival-built.md)): an eight-schedule job took 5 517 to 6 081 s on AArch64 in exploration 013. An eighth image is 590 656 bytes; twelve are about 7 MB.
+5. **The paused tests** ([ADR-0127](../docs/adr/0127-the-paused-line-leaves-the-weekly.md)): a test named `…_paused` is listed by `--ignored paused`, not by the weekly job's `--ignored exhaustive`, and keeps its pins. `scripts/arm-run.sh` runs any `#[ignore]`d test `--ignored --list` names.
+6. **What is already weekly**: H-42's arms on the three networks, which are each control's first schedule.
+7. **The process** ([briefs/README.md](README.md#evidencing-a-round)): `npm run round:additive` reads the change, which is not only additive; the reproduction runs the round's own weekly tests alone when nothing the calibration ran has changed; the cost table is regenerated with `--keep`. Brief 082 held its constants' commit before every arm's dispatch in the history, and kept one runtime test in the gate ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+8. **The schedule** runs on Wednesday at 20:17 UTC and takes most of the organisation's places for hours. A dispatch made then waits.
 
 ## Deliverables
 
 - [ ] **The two rules, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
-  - The zero sum at the stimulus: groups set by the host, each group's held value its sum when set, scaled back after a tick's consolidations with each synapse's fraction carried, no weight past the rail.
+  - The zero sum at the stimulus: groups and their held values set by the host, scaled back after a tick's consolidations with each synapse's fraction carried, every fraction starting at a half and set to a half again whenever the groups are set, no weight past the rail.
   - The depression's exponent: one, a half or a quarter, by integer square roots, one being ADR-0055's rule.
   - Unset, every run the run it was, bit for bit; neither rule in the image.
   - Their tests: by hand at the edges; over the lattice, the carried scaling against an exact rational oracle and each exponent against an oracle of its power; unset against the rule as it is.
 - [ ] **H-46's protocol, in a new ADR at the next free number, kind `protocol`, before any arm runs.**
-  - The networks, the arms and the controls, the sixteen schedules in two jobs, and how the eighth image is carried.
-  - H-46's clauses and constants, restated from ADR-0226 and pinned in the tests; the three predicted readings as rules over the tables.
+  - The networks, the arms and the controls, the sixteen schedules in two jobs, how the eighth image is carried, and each group's held value, its sum in H-42's image.
+  - H-46's clauses and constants, restated from ADR-0226 and pinned in the tests; the four predicted readings as rules over the tables.
+  - The long runs named `…_paused` from this commit; the six arms' short forms named `…_exhaustive`.
   - The calibration's check of H-46's stopping rule, step 2, as a test: each control's first schedule H-42's arm bit for bit.
   - The output of `npm run round:additive` on the protocol's commit.
-- [ ] **The calibration and the first halves, dispatched together on the protocol's commit**: `scope=exhaustive` excluding this round's own tests, every pinned number held, and the twelve first halves at `scope=arms`. The calibration is read first.
-- [ ] **The second halves**, dispatched on the commit that adds the twelve eighth images, with their CRC-64s, and nothing else that runs.
-- [ ] **The tables pinned per schedule** once both halves are read: each arm's and control's highest coupling, its clauses, its reversals and its synapses by band of the width.
-- [ ] **The long runs renamed `…_paused`**, every pin kept, and **twelve short forms**, each run's first schedule, as weekly `…_exhaustive` tests pinned from the same runs.
-- [ ] **The reproduction**, dispatched as soon as the tables are pinned: `scope=exhaustive` with `only` naming the twelve short forms, when nothing the calibration ran has changed since its commit; otherwise every test. Its shards are green, and the cost table is regenerated from the calibration's and the reproduction's artifacts.
+- [ ] **The calibration and the first halves, dispatched together on the protocol's commit**: `scope=exhaustive` excluding the six short forms, every pinned number held, and the twelve first halves at `scope=arms`. The calibration is read first. The history shows the protocol's commit before every arm's dispatch.
+- [ ] **The second halves**, dispatched on the commit that adds the twelve eighth images, with their CRC-64s, and nothing else that runs, after the calibration is green and the first halves are read.
+- [ ] **The tables pinned per schedule** once both halves are read: each arm's and control's highest coupling, its clauses, its reversals, its inhibitory sum and its synapses by band of the width, those at the rail among them.
+- [ ] **Six short forms**, each arm's first schedule, as weekly `…_exhaustive` tests pinned from the same runs.
+- [ ] **The reproduction**, dispatched as soon as the tables are pinned: `scope=exhaustive` with `only` naming the six short forms, when nothing the calibration ran has changed since its commit, otherwise every test; and the twelve long runs again at `scope=arms` on the same commit, every pinned table held. Its shards are green, and the cost table is regenerated from the calibration's and the reproduction's artifacts.
+- [ ] **The gate.** At most one runtime test of H-46's clauses and readings at their edges, over tables written by hand ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
 - [ ] **H-46's report**: its `verdict:` set, the readings' tables, each arm beside its control, and the dispatches that are their evidence.
 - [ ] **The measured ADR**, kind `measured`, short: the verdict per network, arm and clause in one table; each predicted reading held or missed in a line; the step of the stopping rule reached, and the next decision it names, not taken.
 - [ ] **The documents, in the same pull request.**
-  - `docs/STATUS.md` rewritten whole; F-86's row as H-46's verdict leaves it.
+  - `docs/STATUS.md` rewritten whole; F-86 resolved by the measured ADR with the round's reading of the synapses at the rail.
   - Whitepaper: where ADR-0055's depression and the consolidation are described, the two rules; Appendix C's M12 row; the tables written by `node scripts/adr-index.mjs`; its version in both declarations, with its date.
   - `CHANGELOG.md`, one entry of at most 400 characters a change.
 - [ ] **The brief archived** with `spec-brief archive 085 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
@@ -84,7 +87,7 @@ Re-derived on 2026-10-28 against `main` at `2c48eee`. Line numbers move; the sym
 
 - **The round's scope** is the front matter's. It writes only inside `affectedFiles`, and never into `protectedFiles`. A file it must change outside the scope is handled as `briefs/README.md` says.
 - **No number moves** with both rules unset, and no format, record or image byte changes.
-- **No constant of H-46 moves** after any arm runs: not the exponent, the rounding, the groups, the arms, the controls, the networks or the schedules. There is no second attempt.
+- **No constant of H-46 moves** after any arm runs: not the exponent, the rounding, the groups or their held values, the arms, the controls, the networks or the schedules. There is no second attempt.
 - **Neither rule enters `Config::reads_its_targets()` or `Config::default()`.** The default's adoption is the next decision's.
 - No dependency, tool version, toolchain, MSRV or edition changes. No change to the workflow or the run scripts.
 - No whole-domain test runs on the developer machine, and no rebase of the branch once a dispatch has run on it.
@@ -126,10 +129,11 @@ By dispatch, never on the developer machine. Each `ci.yml` dispatch is `POST /re
 
 ```bash
 npm run round:additive -- origin/main <the protocol's commit>
-# ci.yml on this round's branch, inputs {"scope":"exhaustive","exclude":"<the round's own tests>"}
+# ci.yml on this round's branch, inputs {"scope":"exhaustive","exclude":"<the six short forms>"}
 # ci.yml on this round's branch, inputs {"scope":"arms","tests":"<the twelve first halves>"}
 # ci.yml on this round's branch, inputs {"scope":"arms","tests":"<the twelve second halves>"}
-# ci.yml on this round's branch, inputs {"scope":"exhaustive","only":"<the twelve short forms>"}
+# ci.yml on this round's branch, inputs {"scope":"exhaustive","only":"<the six short forms>"}
+# ci.yml on this round's branch, inputs {"scope":"arms","tests":"<the twenty-four halves>"}
 node scripts/exhaustive-costs.mjs from <their downloaded artifacts> --run '<the calibration> and <the reproduction>' --keep scripts/exhaustive-costs.tsv > costs.new
 mv costs.new scripts/exhaustive-costs.tsv
 node scripts/adr-index.mjs
@@ -138,7 +142,7 @@ npx --no-install @descent-vtt/spec-brief archive 085 --strict --pr <n> --summary
 
 - `round:additive` exits 1, and the protocol ADR quotes it.
 - The calibration's eighteen shards are green, and each control's first schedule is H-42's arm bit for bit.
-- The reproduction's shards are green and reproduce every short form's pins.
+- The reproduction's shards are green and reproduce every short form's pins, and the long runs dispatched again hold every pinned table.
 - The archive passes `--strict`: nothing outside `affectedFiles` and nothing in `protectedFiles` changed.
 
 ## Report
