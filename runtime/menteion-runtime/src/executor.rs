@@ -998,10 +998,29 @@ pub enum ZeroSum {
     Both,
 }
 
+/// Exploration 012 (ADR-0193), on its branch alone and in no image: how a round of the zero sum
+/// rounds each weight $w V / S$ it scales, $V$ the group's value and $S$ its sum. Whichever it is,
+/// the weight is then held within `[0, i16::MAX]`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ZeroSumRounding {
+    /// Down, $\lfloor w V / S \rfloor$: exploration 011's, `held_weight`, bit for bit.
+    #[default]
+    Down,
+    /// To the nearest integer; a tie, $w V / S$ exactly halfway between two, to the even one.
+    Nearest,
+    /// Down, each synapse's fraction carried to its next round: $\lfloor w V / S + f \rfloor$, the
+    /// fraction left over kept as the synapse's next $f$, in $2^{-32}$ LSB. Every $f$ starts at a
+    /// half, so that a synapse's rounding over all its rounds is within half an LSB of the exact
+    /// quotients' either way, but for the $2^{-32}$ LSB each round's fraction is truncated to.
+    Carried,
+}
+
 /// What holding the groups' sums cost an engine (exploration 011), from `set_zero_sum`: the ticks
 /// whose consolidations touched a group, the groups touched, those scaled, the synapses whose
 /// weight the scaling moved, the synapses the walks of the groups' chains read, and the
-/// nanoseconds the coordinator spent between ticks.
+/// nanoseconds the coordinator spent between ticks. Exploration 012 adds the ties
+/// `ZeroSumRounding::Nearest` met, and the LSBs the scaling added to the weights and took from
+/// them, by the band each weight stood in before (`ZERO_SUM_BANDS`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ZeroSumCost {
     pub rounds: u64,
@@ -1010,22 +1029,81 @@ pub struct ZeroSumCost {
     pub rewritten: u64,
     pub read: u64,
     pub nanos: u64,
+    pub ties: u64,
+    pub up_by_band: [u64; 3],
+    pub down_by_band: [u64; 3],
 }
 
 /// The most groups a zero sum holds (exploration 011): one bit each in `Shared::zero_sum_touched`.
 pub const ZERO_SUM_GROUPS_MAX: usize = 64;
 
+/// The bands `ZeroSumCost` reads a scaled weight by (exploration 012), as exploration 009 read
+/// its paths: below ADR-0055's reference magnitude, from it to three quarters of the rail, and at
+/// or above three quarters.
+pub const ZERO_SUM_BANDS: [i16; 2] = [0x2000, 0x6000];
+
+/// The fraction every synapse starts at under `ZeroSumRounding::Carried` (exploration 012): a
+/// half, in $2^{-32}$ LSB.
+const ZERO_SUM_HALF: u32 = 1 << 31;
+
+/// A weight scaled by `value / sum` and rounded as `rounding` says (exploration 012), within
+/// `[0, i16::MAX]`; `residual` is the synapse's fraction, read and written under
+/// `ZeroSumRounding::Carried` alone, and `ties` counts the ties `Nearest` met. The weight is an
+/// excitatory one, at or above zero, and the sum above zero.
+fn rounded_weight(
+    weight: i16,
+    value: i64,
+    sum: i64,
+    rounding: ZeroSumRounding,
+    residual: &mut u32,
+    ties: &mut u64,
+) -> i16 {
+    let product = i64::from(weight).saturating_mul(value);
+    let (Some(q), Some(r)) = (product.checked_div(sum), product.checked_rem(sum)) else {
+        return 0;
+    };
+    let scaled = match rounding {
+        ZeroSumRounding::Down => return held_weight(weight, value, sum),
+        ZeroSumRounding::Nearest => match r.saturating_mul(2).cmp(&sum) {
+            std::cmp::Ordering::Less => q,
+            std::cmp::Ordering::Greater => q.saturating_add(1),
+            std::cmp::Ordering::Equal => {
+                *ties = ties.saturating_add(1);
+                q.saturating_add(q & 1)
+            }
+        },
+        ZeroSumRounding::Carried => {
+            // `r / sum` in 2^-32 LSB, below 2^32 since `r < sum`, and the fraction carried: below
+            // 2^33, so the carry is 0 or 1.
+            let fraction = r
+                .saturating_mul(1 << 32)
+                .checked_div(sum)
+                .unwrap_or(0)
+                .saturating_add(i64::from(*residual));
+            *residual = u32::try_from(fraction & 0xFFFF_FFFF).unwrap_or(0);
+            q.saturating_add(fraction.checked_shr(32).unwrap_or(0))
+        }
+    };
+    scaled.clamp(0, i64::from(i16::MAX)) as i16
+}
+
 /// One group's round of the zero sum (exploration 011): every synapse of the chains `heads`
 /// start (encoded as a unit stores its first block) onto a unit `targets` marks, its weight summed,
-/// and scaled to `value` as `hold` says, each weight by `held_weight`. A group's sum is a walk of
-/// its sources' chains alone, since the tree keeps a synapse with its presynaptic unit. `at` is
-/// scratch. Adds what it did to `cost`, all but the rounds and the time.
+/// and scaled to `value` as `hold` says, each weight by `rounded_weight` under `rounding`
+/// (exploration 012; `ZeroSumRounding::Down` is exploration 011's `held_weight`). A group's sum is
+/// a walk of its sources' chains alone, since the tree keeps a synapse with its presynaptic unit.
+/// `residuals` are the synapses' fractions under `ZeroSumRounding::Carried`, one for each slot of
+/// the arena in its order, empty otherwise; `at` is scratch. Adds what it did to `cost`, all but
+/// the rounds and the time.
+#[allow(clippy::too_many_arguments)]
 fn zero_sum_round(
     blocks: &mut [SynapseBlock],
     hold: ZeroSum,
+    rounding: ZeroSumRounding,
     heads: &[u32],
     value: i64,
     targets: &[bool],
+    residuals: &mut [u32],
     at: &mut Vec<(u32, u8)>,
     cost: &mut ZeroSumCost,
 ) {
@@ -1057,8 +1135,26 @@ fn zero_sum_round(
         let Some(w) = block.weights_q1_15.get_mut(slot as usize) else {
             continue;
         };
-        let held = held_weight(*w, value, sum);
+        // The synapse's fraction, its slot's place in the arena's order; a slot past the
+        // residuals (none but under `Carried`) reads a half and keeps nothing.
+        let mut spare = ZERO_SUM_HALF;
+        let residual = (block_idx as usize)
+            .checked_mul(SYNAPSES_PER_BLOCK)
+            .and_then(|i| i.checked_add(slot as usize))
+            .and_then(|i| residuals.get_mut(i))
+            .unwrap_or(&mut spare);
+        let held = rounded_weight(*w, value, sum, rounding, residual, &mut cost.ties);
         if held != *w {
+            let band = ZERO_SUM_BANDS.iter().filter(|&&b| *w >= b).count();
+            let moved = i64::from(held).saturating_sub(i64::from(*w));
+            let by_band = if moved > 0 {
+                &mut cost.up_by_band
+            } else {
+                &mut cost.down_by_band
+            };
+            if let Some(lsb) = by_band.get_mut(band) {
+                *lsb = lsb.saturating_add(moved.unsigned_abs());
+            }
             *w = held;
             cost.rewritten = cost.rewritten.saturating_add(1);
         }
@@ -1854,6 +1950,11 @@ pub struct Executor<const CAP: usize> {
     zero_sum_targets: Vec<bool>,
     zero_sum_cost: ZeroSumCost,
     zero_sum_at: Vec<(u32, u8)>,
+    /// Exploration 012 (ADR-0193), on its branch alone and in no image: how a round of the zero
+    /// sum rounds, `Down` while unset; and under `Carried` each slot's fraction, in the arena's
+    /// order, empty otherwise.
+    zero_sum_rounding: ZeroSumRounding,
+    zero_sum_residuals: Vec<u32>,
 }
 
 // The executor is not `Sync` (ADR-0224): `Executor::units` writes the asleep units' records
@@ -2202,6 +2303,8 @@ impl<const CAP: usize> Executor<CAP> {
             zero_sum_targets: Vec::new(),
             zero_sum_cost: ZeroSumCost::default(),
             zero_sum_at: Vec::new(),
+            zero_sum_rounding: ZeroSumRounding::Down,
+            zero_sum_residuals: Vec::new(),
         })
     }
 
@@ -2417,6 +2520,23 @@ impl<const CAP: usize> Executor<CAP> {
         self.zero_sum_cost
     }
 
+    /// Exploration 012 (ADR-0193): how a round of the zero sum rounds each weight it scales, from
+    /// the next tick (`ZeroSumRounding`). Under `Carried` every slot's fraction starts again at
+    /// a half. It is in no image, so an engine decoded from one rounds down, exploration 011's.
+    pub fn set_zero_sum_rounding(&mut self, rounding: ZeroSumRounding) {
+        self.zero_sum_rounding = rounding;
+        self.zero_sum_residuals = if rounding == ZeroSumRounding::Carried {
+            vec![ZERO_SUM_HALF; self.shared.blocks.len().saturating_mul(SYNAPSES_PER_BLOCK)]
+        } else {
+            Vec::new()
+        };
+    }
+
+    /// How a round of the zero sum rounds (exploration 012), `Down` while unset.
+    pub fn zero_sum_rounding(&self) -> ZeroSumRounding {
+        self.zero_sum_rounding
+    }
+
     /// After a tick, between ticks (exploration 011): every group this tick's consolidations
     /// touched, held at its value by one round of `zero_sum_round`. Nothing while unset, or in a
     /// tick that touched none.
@@ -2432,6 +2552,8 @@ impl<const CAP: usize> Executor<CAP> {
         let groups = std::mem::take(&mut self.zero_sum_groups);
         let targets = std::mem::take(&mut self.zero_sum_targets);
         let mut at = std::mem::take(&mut self.zero_sum_at);
+        let mut residuals = std::mem::take(&mut self.zero_sum_residuals);
+        let rounding = self.zero_sum_rounding;
         let mut cost = self.zero_sum_cost;
         // The synapse arena alone, as in `hold_sums`: the chains were read when the hold was set.
         let blocks = self.blocks_mut();
@@ -2440,7 +2562,17 @@ impl<const CAP: usize> Executor<CAP> {
             if touched & (1u64 << g) == 0 {
                 continue;
             }
-            zero_sum_round(blocks, hold, heads, *value, &targets, &mut at, &mut cost);
+            zero_sum_round(
+                blocks,
+                hold,
+                rounding,
+                heads,
+                *value,
+                &targets,
+                &mut residuals,
+                &mut at,
+                &mut cost,
+            );
         }
         cost.rounds = cost.rounds.saturating_add(1);
         let spent = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
@@ -2449,6 +2581,7 @@ impl<const CAP: usize> Executor<CAP> {
         self.zero_sum_groups = groups;
         self.zero_sum_targets = targets;
         self.zero_sum_at = at;
+        self.zero_sum_residuals = residuals;
     }
 
     /// The loader's: the target period an image holds, which outranks the configuration's
@@ -5001,19 +5134,24 @@ mod tests {
             let mut blocks = blocks.clone();
             let mut at = Vec::new();
             let mut cost = ZeroSumCost::default();
+            // Rounded down, exploration 011's: no fraction is read or kept (exploration 012).
             zero_sum_round(
                 &mut blocks,
                 hold,
+                ZeroSumRounding::Down,
                 &heads,
                 value,
                 &targets,
+                &mut [],
                 &mut at,
                 &mut cost,
             );
             (weights(&blocks), cost)
         };
         // The group's sum onto the targets is 16 000. Held at 12 000: scaled by 3 / 4, unit 7's
-        // synapse and the other chain's left.
+        // synapse and the other chain's left. Exploration 012 reads what the scaling took by the
+        // band each weight stood in: 1 000 from 4 000, under the reference magnitude, and 3 000
+        // from 12 000, from it to three quarters of the rail.
         let (w, cost) = run(ZeroSum::Ceiling, 12_000);
         assert_eq!(w, vec![9_000, 3_000, 0, 0, 3_000, 0, 0, 0, 10_000, 0, 0, 0]);
         assert_eq!(
@@ -5024,7 +5162,10 @@ mod tests {
                 scaled: 1,
                 rewritten: 2,
                 read: 3,
-                nanos: 0
+                nanos: 0,
+                ties: 0,
+                up_by_band: [0; 3],
+                down_by_band: [1_000, 3_000, 0],
             }
         );
         // Below its value: left under the ceiling, scaled up both ways, rounded down: 12 000 ×
@@ -5043,6 +5184,175 @@ mod tests {
         assert_eq!((w, cost.scaled), (weights(&blocks), 0));
         let (w, _) = run(ZeroSum::Both, 48_000);
         assert_eq!((w[0], w[4]), (i16::MAX, 12_000));
+    }
+
+    /// Exploration 012: a weight scaled by a quotient near one, down, to the nearest and with its
+    /// fraction carried. 4 000 × 15 999 / 16 000 is 3 999.75: rounded down it loses an LSB every
+    /// round; to the nearest it never moves; carried from a half it loses one in the third round,
+    /// three quarters of an LSB left over. 12 000 × 16 002 / 16 000 is 12 001.5 and 4 000 × 16 002 /
+    /// 16 000 is 4 000.5, ties, each to the even one.
+    #[test]
+    fn a_zero_sum_s_weight_rounded_down_to_the_nearest_and_with_its_fraction_carried() {
+        let rounds = |rounding: ZeroSumRounding| {
+            let (mut w, mut residual, mut ties) = (4_000i16, ZERO_SUM_HALF, 0u64);
+            let mut out = Vec::new();
+            for _ in 0..3 {
+                w = rounded_weight(w, 15_999, 16_000, rounding, &mut residual, &mut ties);
+                out.push(w);
+            }
+            (out, residual, ties)
+        };
+        assert_eq!(
+            rounds(ZeroSumRounding::Down),
+            (vec![3_999, 3_998, 3_997], ZERO_SUM_HALF, 0)
+        );
+        assert_eq!(
+            rounds(ZeroSumRounding::Nearest),
+            (vec![4_000, 4_000, 4_000], ZERO_SUM_HALF, 0)
+        );
+        assert_eq!(
+            rounds(ZeroSumRounding::Carried),
+            (vec![4_000, 4_000, 3_999], 0xC000_0000, 0)
+        );
+        // Down is exploration 011's `held_weight`, whatever the fraction, which it leaves.
+        let (mut residual, mut ties) = (12_345u32, 0u64);
+        for (w, value, sum) in [
+            (4_000, 15_999, 16_000),
+            (12_000, 17_999, 24_000),
+            (100, 3, 7),
+        ] {
+            assert_eq!(
+                rounded_weight(
+                    w,
+                    value,
+                    sum,
+                    ZeroSumRounding::Down,
+                    &mut residual,
+                    &mut ties
+                ),
+                held_weight(w, value, sum)
+            );
+        }
+        assert_eq!((residual, ties), (12_345, 0));
+        // Ties to the even one: 12 001.5 to 12 002, 4 000.5 to 4 000; 12 000.75 and 4 000.25 to
+        // the nearest.
+        let mut ties = 0u64;
+        let mut near = |w: i16, value: i64| {
+            let mut residual = ZERO_SUM_HALF;
+            rounded_weight(
+                w,
+                value,
+                16_000,
+                ZeroSumRounding::Nearest,
+                &mut residual,
+                &mut ties,
+            )
+        };
+        assert_eq!(
+            (
+                near(12_000, 16_002),
+                near(4_000, 16_002),
+                near(12_000, 16_001),
+                near(4_000, 16_001)
+            ),
+            (12_002, 4_000, 12_001, 4_000)
+        );
+        assert_eq!(ties, 2);
+        // Carried: the carry is one at most, from a fraction just under one.
+        let mut residual = u32::MAX;
+        assert_eq!(
+            rounded_weight(
+                4_000,
+                16_001,
+                16_000,
+                ZeroSumRounding::Carried,
+                &mut residual,
+                &mut ties
+            ),
+            4_001
+        );
+        assert_eq!(residual, 0x3FFF_FFFF);
+        // At the rail the weight is held there, its fraction kept: 34 814.9375 and a half.
+        let mut residual = ZERO_SUM_HALF;
+        assert_eq!(
+            rounded_weight(
+                i16::MAX,
+                17_000,
+                16_000,
+                ZeroSumRounding::Carried,
+                &mut residual,
+                &mut ties
+            ),
+            i16::MAX
+        );
+        assert_eq!(residual, 0x7000_0000);
+        // A weight of zero stays zero, and keeps its fraction.
+        let mut residual = 0xC000_0000;
+        assert_eq!(
+            rounded_weight(
+                0,
+                16_001,
+                16_000,
+                ZeroSumRounding::Carried,
+                &mut residual,
+                &mut ties
+            ),
+            0
+        );
+        assert_eq!(residual, 0xC000_0000);
+    }
+
+    /// Exploration 012: a group's round under each rounding over a hand-made arena, every synapse's
+    /// fraction kept at its slot's place in the arena's order, and the LSBs moved read by band.
+    #[test]
+    fn a_zero_sum_round_rounds_as_it_is_set_and_keeps_each_slot_s_fraction() {
+        let mut blocks = vec![SynapseBlock::new(); 2];
+        // One chain, blocks 0 and 1: 30 000, 12 000 and 100 onto target 5, 6 000 onto unit 7.
+        assert!(blocks[0].set_synapse(0, 5, 30_000, 0, false));
+        assert!(blocks[0].set_synapse(1, 7, 6_000, 0, false));
+        assert!(blocks[0].set_synapse(2, 5, 12_000, 0, false));
+        assert!(blocks[0].link(1));
+        assert!(blocks[1].set_synapse(3, 5, 100, 0, false));
+        let mut targets = vec![false; 8];
+        targets[5] = true;
+        // The sum onto the target is 42 100; held at 42 099, a quotient just under one: 29 999.29,
+        // 11 999.71 and 99.998.
+        let run = |rounding: ZeroSumRounding, residuals: &mut [u32]| {
+            let mut blocks = blocks.clone();
+            let (mut at, mut cost) = (Vec::new(), ZeroSumCost::default());
+            zero_sum_round(
+                &mut blocks,
+                ZeroSum::Both,
+                rounding,
+                &[1],
+                42_099,
+                &targets,
+                residuals,
+                &mut at,
+                &mut cost,
+            );
+            let w: Vec<i16> = blocks.iter().flat_map(|b| b.weights_q1_15).collect();
+            (w, cost)
+        };
+        // Down: every weight above zero onto the target loses an LSB, one in each band.
+        let (w, cost) = run(ZeroSumRounding::Down, &mut []);
+        assert_eq!((w[0], w[1], w[2], w[7]), (29_999, 6_000, 11_999, 99));
+        assert_eq!((cost.down_by_band, cost.up_by_band), ([1, 1, 1], [0; 3]));
+        // Nearest: the largest alone moves.
+        let (w, cost) = run(ZeroSumRounding::Nearest, &mut []);
+        assert_eq!((w[0], w[2], w[7]), (29_999, 12_000, 100));
+        assert_eq!((cost.rewritten, cost.down_by_band), (1, [0, 0, 1]));
+        // Carried: each synapse's fraction at its slot's place, 0, 2 and 7; the slot of the
+        // synapse onto unit 7, 1, is not read. From 0, 0.29 is kept; from a half, 11 999.71 and
+        // 99.998 carry one each.
+        let mut residuals = vec![ZERO_SUM_HALF; 8];
+        residuals[0] = 0;
+        let (w, cost) = run(ZeroSumRounding::Carried, &mut residuals);
+        assert_eq!((w[0], w[1], w[2], w[7]), (29_999, 6_000, 12_000, 100));
+        assert_eq!(cost.down_by_band, [0, 0, 1]);
+        assert_eq!(residuals[1], ZERO_SUM_HALF);
+        assert!(residuals[0] > 0 && residuals[2] < ZERO_SUM_HALF && residuals[7] < ZERO_SUM_HALF);
+        assert!(residuals[3..7].iter().all(|&f| f == ZERO_SUM_HALF));
     }
 
     /// Exploration 011: `set_zero_sum` refuses a source outside the arena, an inhibitory one, one
