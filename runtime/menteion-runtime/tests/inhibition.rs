@@ -472566,13 +472566,14 @@ fn long_dump(name: &str, made: &Made, run: &LongSchedule) -> LongRead {
 // second half. Beside them four schedules under the default, held to exploration 005's. No
 // prediction is written, nothing is pinned, and everything is dumped before anything is held.
 
-use menteion_core::SoftBound;
+use menteion_core::{DepressionExponent, SoftBound};
 use menteion_runtime::{SumHold, SumHoldCost, ZeroSum, ZeroSumCost, ZeroSumRounding};
 
 /// The bounds a run of exploration 009 sets on every schedule's engine, neither in any image:
 /// exploration 007's soft bound on an excitatory pairing's potentiation, and the bound at
 /// consolidation on every excitatory synapse; exploration 010's readouts' sums held, and
-/// exploration 011's zero sum at the stimulus, rounded as exploration 012 sets it.
+/// exploration 011's zero sum at the stimulus, rounded as exploration 012 sets it; and
+/// exploration 013's exponent of the excitatory depression.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Bounds {
     pairing: Option<SoftBound>,
@@ -472580,6 +472581,7 @@ struct Bounds {
     sums: Option<SumHold>,
     zero_sum: Option<ZeroSum>,
     rounding: ZeroSumRounding,
+    exponent: DepressionExponent,
 }
 
 impl Bounds {
@@ -472590,6 +472592,7 @@ impl Bounds {
         sums: None,
         zero_sum: None,
         rounding: ZeroSumRounding::Down,
+        exponent: DepressionExponent::One,
     };
     /// The bound at consolidation (exploration 009's first).
     const CONSOLIDATION: Self = Self {
@@ -472637,6 +472640,17 @@ impl Bounds {
         rounding: ZeroSumRounding::Carried,
         ..Self::ZERO_SUM_BOTH
     };
+    /// Exploration 012's second with the excitatory depression's exponent at 1/2 (exploration
+    /// 013's first).
+    const ZERO_SUM_CARRIED_HALF: Self = Self {
+        exponent: DepressionExponent::Half,
+        ..Self::ZERO_SUM_CARRIED
+    };
+    /// The same at 1/4 (exploration 013's second).
+    const ZERO_SUM_CARRIED_QUARTER: Self = Self {
+        exponent: DepressionExponent::Quarter,
+        ..Self::ZERO_SUM_CARRIED
+    };
 
     /// Sets them on `exec`, from its next tick; the sums, where held, at `holds`'s values, H-42's
     /// image's: each readout unit's (exploration 010), and each stimulus set's couplings
@@ -472658,6 +472672,7 @@ impl Bounds {
             "every source excitatory and in the arena, once, and every target in the arena"
         );
         exec.set_zero_sum_rounding(self.rounding);
+        exec.set_depression_exponent(self.exponent);
     }
 
     /// The bounds `exec`'s workers read.
@@ -472668,6 +472683,7 @@ impl Bounds {
             sums: exec.sum_hold(),
             zero_sum: exec.zero_sum(),
             rounding: exec.zero_sum_rounding(),
+            exponent: exec.depression_exponent(),
         }
     }
 }
@@ -474153,5 +474169,298 @@ fn the_zero_sum_with_its_fractions_carried_second_half_on_seed_22_from_the_mirro
         1,
         Reversal::MirroredFirst,
         Bounds::ZERO_SUM_CARRIED,
+    );
+}
+
+// ======================================================================= exploration 013
+//
+// The carried sum and the exponent (ADR-0193, exploration 013). Exploration 012's zero sum with
+// each synapse's fraction carried, its harness, long run, rail paths and carry: past its
+// sixteenth schedule, from the images its second halves printed at their sixteenth schedule's
+// end, schedules 17 to 32 in two halves; and from H-42's image with the excitatory depression's
+// exponent at 1/2 and at 1/4 (`Executor::set_depression_exponent`, on this branch alone), sixteen
+// schedules in two halves. The exponent is in no image, so the test sets it on every schedule's
+// engine, as it sets the zero sum. Exploration 012's readings are taken in every schedule; the
+// whole excitatory arena's sum is in each block's reading and after each schedule's quiet. No
+// prediction is written, nothing is pinned, and everything is dumped before anything is held.
+
+/// Exploration 012's run 40641556801 on `c68a9d5`: its short run's image under the zero sum
+/// carried, its CRC-64 as it printed it.
+const EXPLORATION_012_SHORT_CARRIED_CRC: u64 = 0xcd81_7b51_1c54_03d5;
+
+/// Exploration 013, short: one schedule of two blocks from H-42's image on seed 22 from the
+/// assignment: unheld, held to H-42's arm as far as it runs and to exploration 011's image, the
+/// branch's `src/` unset; under the zero sum carried with the exponent at one, held to
+/// exploration 012's image; and carried at 1/2 and at 1/4.
+#[test]
+#[ignore]
+fn the_carried_sum_and_the_exponent_short_on_seed_22_explore() {
+    let made = probe_made(0, "exponent22 short");
+    for (name, bounds, crc) in [
+        (
+            "exponent22 short unheld",
+            Bounds::NONE,
+            Some(EXPLORATION_011_SHORT_CRC[0]),
+        ),
+        (
+            "exponent22 short carried",
+            Bounds::ZERO_SUM_CARRIED,
+            Some(EXPLORATION_012_SHORT_CARRIED_CRC),
+        ),
+        ("exponent22 short half", Bounds::ZERO_SUM_CARRIED_HALF, None),
+        (
+            "exponent22 short quarter",
+            Bounds::ZERO_SUM_CARRIED_QUARTER,
+            None,
+        ),
+    ] {
+        let image = long_run(
+            &made,
+            0,
+            name,
+            Reversal::AssignmentFirst,
+            LongStart::Derived,
+            1,
+            2 * BLOCK,
+            &[],
+            bounds,
+            false,
+        );
+        if let Some(crc) = crc {
+            assert_eq!(crc64(&image), crc, "{name}: the image of the run before");
+            eprintln!("DUMP {name} the image is the run before's, bit for bit");
+        }
+    }
+}
+
+/// Where exploration 013's long runs carry their images from one job to the next.
+const CARRIED_DIR_013: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/explore-013");
+
+/// The images exploration 012's second halves under the zero sum carried printed at their
+/// sixteenth schedule's end, by arm (the assignment, the mirrored assignment), kept in
+/// `CARRIED_DIR_013`, and their CRC-64s as run 40653304865 on `96ca056` printed them; and the
+/// images this exploration's third quarters write at their 24th schedule's end, none until
+/// written down here, so that a fourth quarter refuses to start before.
+const CARRIED_IMAGES: [[&str; 2]; 2] = [
+    [
+        "zerocarried22-assignment-image-16.image",
+        "zerocarried22-mirrored-image-16.image",
+    ],
+    [
+        "zerocarried22-assignment-image-24.image",
+        "zerocarried22-mirrored-image-24.image",
+    ],
+];
+const CARRIED_IMAGES_CRC: [[Option<u64>; 2]; 2] = [
+    [Some(0xfbcd_9607_cdbf_4163), Some(0xf12c_021f_1ea1_7f31)],
+    [None, None],
+];
+
+/// The images this exploration's first halves under an exponent write at their eighth
+/// schedule's end, by exponent (1/2, 1/4) and arm, kept in `CARRIED_DIR_013` for a second half;
+/// and their CRC-64s as their runs printed them, none until written down here.
+const EXPONENT_IMAGES_8: [[&str; 2]; 2] = [
+    [
+        "zerohalf22-assignment-image-8.image",
+        "zerohalf22-mirrored-image-8.image",
+    ],
+    [
+        "zeroquarter22-assignment-image-8.image",
+        "zeroquarter22-mirrored-image-8.image",
+    ],
+];
+const EXPONENT_IMAGES_8_CRC: [[Option<u64>; 2]; 2] = [[None, None], [None, None]];
+
+/// Eight schedules of exploration 013 under `bounds` from schedule `schedule`'s image `file`,
+/// held to `crc`, every schedule's engine under `bounds` at H-42's values, the last image
+/// printed whole.
+fn onward(
+    label: &str,
+    arm: Reversal,
+    bounds: Bounds,
+    schedule: usize,
+    file: &'static str,
+    crc: Option<u64>,
+) {
+    let name = format!("{label} {arm:?}");
+    let made = probe_made(0, &name);
+    long_run(
+        &made,
+        0,
+        &name,
+        arm,
+        LongStart::Carried {
+            schedule,
+            dir: CARRIED_DIR_013,
+            file,
+            crc,
+        },
+        HALF_SCHEDULES,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+        bounds,
+        true,
+    );
+}
+
+/// The zero sum carried past its sixteenth schedule: quarter `q` (0 schedules 17 to 24, 1
+/// schedules 25 to 32) from arm `arm`'s image at its start.
+fn carried_quarter(q: usize, arm: Reversal) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let schedule = HALF_SCHEDULES.saturating_mul(q.saturating_add(2));
+    onward(
+        "zerocarried22",
+        arm,
+        Bounds::ZERO_SUM_CARRIED,
+        schedule,
+        CARRIED_IMAGES[q][k],
+        CARRIED_IMAGES_CRC[q][k],
+    );
+}
+
+/// Exploration 013's second half under exponent `x` (0 at 1/2, 1 at 1/4): schedules 9 to 16 from
+/// the image the first half printed at its eighth schedule's end.
+fn exponent_second_half(label: &str, x: usize, arm: Reversal, bounds: Bounds) {
+    let k = PROBE_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    onward(
+        label,
+        arm,
+        bounds,
+        HALF_SCHEDULES,
+        EXPONENT_IMAGES_8[x][k],
+        EXPONENT_IMAGES_8_CRC[x][k],
+    );
+}
+
+/// Exploration 013, the zero sum carried, schedules 17 to 24: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_past_sixteen_schedules_on_seed_22_from_the_assignment_explore() {
+    carried_quarter(0, Reversal::AssignmentFirst);
+}
+
+/// Exploration 013, the zero sum carried, schedules 17 to 24: seed 22, from the mirrored
+/// assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_past_sixteen_schedules_on_seed_22_from_the_mirrored_assignment_explore() {
+    carried_quarter(0, Reversal::MirroredFirst);
+}
+
+/// Exploration 013, the zero sum carried, schedules 25 to 32: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_past_twenty_four_schedules_on_seed_22_from_the_assignment_explore() {
+    carried_quarter(1, Reversal::AssignmentFirst);
+}
+
+/// Exploration 013, the zero sum carried, schedules 25 to 32: seed 22, from the mirrored
+/// assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_past_twenty_four_schedules_on_seed_22_from_the_mirrored_assignment_explore() {
+    carried_quarter(1, Reversal::MirroredFirst);
+}
+
+/// Exploration 013, the zero sum carried with the depression at the half power: seed 22, from
+/// the assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_half_power_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "zerohalf22",
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CARRIED_HALF,
+    );
+}
+
+/// Exploration 013, the zero sum carried with the depression at the half power: seed 22, from
+/// the mirrored assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_half_power_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run(
+        "zerohalf22",
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CARRIED_HALF,
+    );
+}
+
+/// Exploration 013, the zero sum carried with the depression at the quarter power: seed 22, from
+/// the assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_quarter_power_on_seed_22_from_the_assignment_explore() {
+    bounded_run(
+        "zeroquarter22",
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CARRIED_QUARTER,
+    );
+}
+
+/// Exploration 013, the zero sum carried with the depression at the quarter power: seed 22, from
+/// the mirrored assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_quarter_power_on_seed_22_from_the_mirrored_assignment_explore() {
+    bounded_run(
+        "zeroquarter22",
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CARRIED_QUARTER,
+    );
+}
+
+/// Exploration 013, the half power's second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_half_power_second_half_on_seed_22_from_the_assignment_explore() {
+    exponent_second_half(
+        "zerohalf22",
+        0,
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CARRIED_HALF,
+    );
+}
+
+/// Exploration 013, the half power's second half: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_half_power_second_half_on_seed_22_from_the_mirrored_assignment_explore() {
+    exponent_second_half(
+        "zerohalf22",
+        0,
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CARRIED_HALF,
+    );
+}
+
+/// Exploration 013, the quarter power's second half: seed 22, from the assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_quarter_power_second_half_on_seed_22_from_the_assignment_explore() {
+    exponent_second_half(
+        "zeroquarter22",
+        1,
+        Reversal::AssignmentFirst,
+        Bounds::ZERO_SUM_CARRIED_QUARTER,
+    );
+}
+
+/// Exploration 013, the quarter power's second half: seed 22, from the mirrored assignment.
+#[test]
+#[ignore]
+fn the_carried_sum_at_the_quarter_power_second_half_on_seed_22_from_the_mirrored_assignment_explore()
+ {
+    exponent_second_half(
+        "zeroquarter22",
+        1,
+        Reversal::MirroredFirst,
+        Bounds::ZERO_SUM_CARRIED_QUARTER,
     );
 }
