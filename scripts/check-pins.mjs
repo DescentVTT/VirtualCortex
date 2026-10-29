@@ -7,9 +7,13 @@
 // 1. `tests/<binary>.rs` declares the module as `#[rustfmt::skip]`, `#[path = "<binary>/pins/mod.rs"]`
 //    and `mod pins;`, on three lines in that order, and imports it with `use pins::*;`.
 // 2. `pins/mod.rs` declares every round's file, `h<N>.rs` or `brief<NNN>.rs`, as `mod <round>;`
-//    followed by `pub(crate) use <round>::*;`, and no module without its file.
+//    followed by `pub(crate) use <round>::*;`, and no module without its file. `pins/` holds those
+//    files alone: no directory, so no round's file has a module of its own.
 // 3. A round's file holds no function, no macro and no test. The tests stay in `tests/<binary>.rs`,
-//    whose names the weekly job, the cost table and the ADRs cite.
+//    whose names the weekly job, the cost table and the ADRs cite. At its top level it holds
+//    nothing but `use crate::*;`, its `const` and `static` items, comments, attributes and blank
+//    lines: no other `use`, which could re-export to the binary's root a name it does not declare,
+//    no `mod` and no macro's invocation.
 // 4. A round's file breaks no tuple: no line but a table's first ends in `(`.
 // 5. `tests/<binary>.rs` holds no `const` or `static` longer than `LONGEST` lines. A table that
 //    long is pinned, and goes in its round's file.
@@ -74,18 +78,38 @@ export const MACRO = /^\s*(?:macro_rules!|#\[macro_export\])/;
 // A `const` or `static` item's first line, `static mut` too: its name captured.
 export const TABLE = new RegExp(String.raw`^${VIS}(?:const|static)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:`);
 
-// Rules 3 and 4: a round's file holds tables, with no function, no macro, no test and no tuple broken.
+// What may begin an item at a round's file's top level, beside a table: an attribute, the crate's glob.
+const ATTRIBUTE = /^\s*#!?\[/;
+const CRATE_GLOB = /^\s*use crate::\*;\s*$/;
+
+// Rules 3 and 4: a round's file holds tables, with no function, no macro, no test, nothing else at
+// its top level but `use crate::*;`, and no tuple broken.
 export function checkPin(name, text) {
   const problems = [];
+  const { depth, last } = scan(text.endsWith("\n") ? text : `${text}\n`);
   lines(text).forEach((l, i) => {
     if (/^\s*\/\//.test(l)) return;
+    const top = (i === 0 ? 0 : depth[i - 1]) === 0 && (last[i] ?? "") !== "";
     if (/^\s*#\[test\]/.test(l) || FN.test(l) || MACRO.test(l)) {
       problems.push(`${name}:${i + 1}: a function, a macro or a test, which belongs in the binary's file`);
+    } else if (top && !TABLE.test(l) && !ATTRIBUTE.test(l) && !CRATE_GLOB.test(l)) {
+      problems.push(`${name}:${i + 1}: '${l.trim()}' at the top level, where a round's file holds only \`use crate::*;\` and its tables`);
     }
     if (/\($/.test(l.trimEnd()) && !TABLE.test(l)) {
       problems.push(`${name}:${i + 1}: a tuple broken over lines, where a row is one line`);
     }
   });
+  return problems;
+}
+
+// Rule 2's second half: `pins/` holds `mod.rs` and rounds' files, and no directory.
+// `entries`: `{ name, directory }` for each entry but `mod.rs`.
+export function checkEntries(dir, entries) {
+  const problems = [];
+  for (const { name, directory } of entries) {
+    if (directory) problems.push(`${join(dir, name)}: a directory under pins/, where a round's tables are one file`);
+    else if (!ROUND.test(name)) problems.push(`${join(dir, name)}: not a round's file, h<N>.rs or brief<NNN>.rs`);
+  }
   return problems;
 }
 
@@ -130,9 +154,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     const rootText = readFileSync(root, "utf8");
     problems.push(...checkRoot(root, rootText, binary), ...checkLength(root, rootText));
-    const names = readdirSync(dir).filter((f) => f !== "mod.rs").sort();
-    for (const f of names) if (!ROUND.test(f)) problems.push(`${join(dir, f)}: not a round's file, h<N>.rs or brief<NNN>.rs`);
-    const files = names.filter((f) => ROUND.test(f));
+    const entries = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.name !== "mod.rs")
+      .map((e) => ({ name: e.name, directory: e.isDirectory() }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    problems.push(...checkEntries(dir, entries));
+    const files = entries.filter((e) => !e.directory && ROUND.test(e.name)).map((e) => e.name);
     problems.push(...checkMod(join(dir, "mod.rs"), readFileSync(join(dir, "mod.rs"), "utf8"), files));
     for (const f of files) {
       rounds += 1;

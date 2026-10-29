@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { PINS_FILE, PINS_MOD, checkAdditive, hunks, implType, inserted, insertsAtTop, pinsPairs, readByRust, scan, underTests, wordsIn } from "./check-additive.mjs";
+import { ABSENT, PINS_FILE, PINS_MOD, PINS_NESTED, checkAdditive, hunks, implType, inserted, insertsAtTop, pinsPairs, readByRust, roundsFile, scan, underTests, wordsIn } from "./check-additive.mjs";
 
 const TESTS = "runtime/menteion-runtime/tests/inhibition.rs";
 
@@ -256,4 +256,82 @@ test("a round's file added with no text read does not only add; its binary's new
   const got = checkAdditive([{ status: "A", path: `${PINS}/h46.rs`, diff: "" }], pinsBase, none);
   assert.deepEqual(got.problems, [`${PINS}/h46.rs: a round's file of pinned tables whose text was not read`]);
   assert.equal(checkAdditive([{ status: "A", path: `${PINS}/mod.rs`, diff: "" }], pinsBase, none).additive, true);
+});
+
+// What a round's file may not hold at its top level: anything that brings a name it does not declare.
+const REEXPORTS = {
+  E: "pub(crate) use crate::BOTH_SEEDS as SPANS;",
+  E2: "pub(crate) use crate::harness::BACKGROUND_ROWS_1024;",
+  glob: "pub(crate) use menteion_core::*;",
+  macro: 'include!("rows.rs");',
+  fn: "pub(crate) fn helper() -> u32 { 0 }",
+};
+
+test("a round's file of `use crate::*;`, its tables, comments and attributes holds nothing else", () => {
+  const text = [
+    "//! The tables.",
+    "",
+    "use crate::*;",
+    "",
+    "/// A table.",
+    "#[allow(clippy::type_complexity)]",
+    "pub(crate) const ROWS: &[(u32, u32)] = &[",
+    "    (1, 2),",
+    '    // a row: use x; mod y; include!("z");',
+    "];",
+    "pub(crate) static WHOLE: [u32; 2] = [1, 2];",
+    "const _: () = assert!(ROWS.len() == 1);",
+    "",
+  ].join("\n");
+  assert.deepEqual(roundsFile(text), []);
+  assert.deepEqual(roundsFile(H46), []);
+});
+
+test("a re-export, another glob, a mod, a macro's invocation or a function in a round's file is named by line", () => {
+  for (const [what, line] of Object.entries(REEXPORTS)) {
+    assert.deepEqual(roundsFile(H46 + line + "\n"), [`6: '${line}', where a round's file holds only \`use crate::*;\` and its tables`], what);
+  }
+  assert.equal(roundsFile(H46 + "mod zq;\npub(crate) use zq::*;\n").length, 2, "K's mod and its re-export");
+  assert.equal(roundsFile(H46.replace("use crate::*;", "pub(crate) use crate::*;")).length, 1, "the crate's glob re-exported");
+});
+
+test("a round whose file re-exports a name it does not declare does not only add: E, E2, a glob, a macro", () => {
+  for (const [what, line] of Object.entries(REEXPORTS)) {
+    const got = checkAdditive(round(PAIR, H46 + line + "\n"), pinsBase, none);
+    assert.equal(got.additive, false, what);
+    assert.match(got.problems.join(" | "), /h46\.rs:6: '/, what);
+  }
+});
+
+test("a round whose file declares a module, or that adds a file under pins/<round>/, does not only add: K", () => {
+  const nested = `${PINS}/h46/zq.rs`;
+  assert.ok(PINS_NESTED.test(nested));
+  assert.ok(!PINS_NESTED.test(`${PINS}/h46.rs`));
+  const got = checkAdditive(
+    [...round(PAIR, H46 + "mod zq;\npub(crate) use zq::*;\n"), { status: "A", path: nested, diff: "", text: "pub(crate) const BOTH_SEEDS: [u64; 3] = [1, 2, 3];\n" }],
+    pinsBase,
+    none,
+  );
+  assert.equal(got.additive, false);
+  assert.ok(got.problems.includes(`${nested}: a file under a round's directory, where a round's tables are one file`));
+  assert.ok(got.problems.some((p) => p.startsWith(`${PINS}/h46.rs:6: 'mod zq;'`)));
+});
+
+test("a binary with no root at the base is new; any other failure to read the base is thrown", () => {
+  const fresh = "runtime/menteion-runtime/tests/fresh/pins";
+  const change = [
+    { status: "A", path: `${fresh}/h46.rs`, diff: "", text: H46 },
+    { status: "A", path: `${fresh}/mod.rs`, diff: "", text: undefined },
+  ];
+  const absent = () => {
+    throw Object.assign(new Error("Command failed: git show abc1234:runtime/menteion-runtime/tests/fresh.rs"), {
+      stderr: "fatal: path 'runtime/menteion-runtime/tests/fresh.rs' does not exist in 'abc1234'\n",
+    });
+  };
+  assert.deepEqual(checkAdditive(change, absent, none), { additive: true, problems: [], files: 2 });
+  assert.ok(ABSENT.test("fatal: path 'x.rs' exists on disk, but not in 'abc1234'"));
+  const broken = () => {
+    throw Object.assign(new Error("Command failed: git show"), { stderr: "fatal: bad object abc1234\n" });
+  };
+  assert.throws(() => checkAdditive(change, broken, none), /Command failed/);
 });

@@ -3,8 +3,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { join } from "node:path";
 
-import { LONGEST, ROUND, checkLength, checkMod, checkPin, checkRoot } from "./check-pins.mjs";
+import { LONGEST, ROUND, checkEntries, checkLength, checkMod, checkPin, checkRoot } from "./check-pins.mjs";
 
 const ROOT = [
   "#![deny(clippy::arithmetic_side_effects)]",
@@ -155,4 +156,35 @@ test("a static mut, and an item under any visibility, is held to LONGEST too", (
 test("an item never closed is read to the file's end", () => {
   const open = ["const T: [u32; 2] = [", ...Array.from({ length: LONGEST }, () => "    1,")].join("\n");
   assert.deepEqual(checkLength("b.rs", open), [`b.rs:1: T is ${LONGEST + 1} lines, past ${LONGEST}: a pinned table goes in its round's file`]);
+});
+
+test("a round's file re-exports nothing it does not declare: E, E2, K, a macro's invocation, another glob", () => {
+  const at = (line) => `h45.rs:18: '${line}' at the top level, where a round's file holds only \`use crate::*;\` and its tables`;
+  for (const line of [
+    "pub(crate) use crate::BOTH_SEEDS as SPANS;",
+    "pub(crate) use crate::harness::BACKGROUND_ROWS_1024;",
+    "mod zq;",
+    'include!("rows.rs");',
+    "rows!(ROWS);",
+    "pub(crate) use menteion_core::*;",
+    "pub(crate) use crate::*;",
+    "struct Fresh;",
+  ]) {
+    assert.deepEqual(checkPin("h45.rs", PIN + line + "\n"), [at(line)], line);
+  }
+  assert.equal(checkPin("h45.rs", PIN + "mod zq;\npub(crate) use zq::*;\n").length, 2, "K: the module and its re-export");
+});
+
+test("a round's file of tables, the crate's glob, attributes and comments, an assertion among them, passes", () => {
+  const text = PIN + ["#[allow(clippy::type_complexity)]", "pub(crate) static mut WHOLE: [u32; 2] = [1, 2];", "const _: () = assert!(WHOLE_LEN == 2);", "// use x; mod y;", ""].join("\n");
+  assert.deepEqual(checkPin("h45.rs", text), []);
+});
+
+test("pins/ holds rounds' files and no directory: K's pins/h46/ fails", () => {
+  const dir = "inhibition/pins";
+  assert.deepEqual(checkEntries(dir, [{ name: "h45.rs", directory: false }, { name: "brief049.rs", directory: false }]), []);
+  assert.deepEqual(checkEntries(dir, [{ name: "h46", directory: true }, { name: "notes.txt", directory: false }]), [
+    `${join(dir, "h46")}: a directory under pins/, where a round's tables are one file`,
+    `${join(dir, "notes.txt")}: not a round's file, h<N>.rs or brief<NNN>.rs`,
+  ]);
 });
