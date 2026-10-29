@@ -221,7 +221,7 @@ export const PINS_FILE = /^((?:runtime|crates|benches)\/[^/]+\/tests\/[^/]+)\/pi
  * shadows an item a module defines, nor an explicit import (`use pins::BACKGROUND_ROWS_1024;` in
  * `tests/assembly.rs` is one). Where a name the round's file holds meets one that another glob
  * already gave, the name is ambiguous, and its first use is a compile error (E0659), not a silent
- * change. Only the prelude ranks below a glob, and the round's file's names are held to every name
+ * change. Only the preludes rank below a glob, and the round's file's names are held to every name
  * the base's sources use, the root's text among them (rule 5), as an inserted item's are.
  */
 export function pinsPairs(lines) {
