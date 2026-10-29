@@ -1,8 +1,8 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.24.0
+version: 5.25.0
 status: active
-date: 2026-10-28
+date: 2026-10-29
 ---
 
 # Menteion Architecture Whitepaper
@@ -11,9 +11,9 @@ date: 2026-10-28
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.24.0 |
+| Version | 5.25.0 |
 | Status | Active (living document; amended by ADR) |
-| Date | 2026-10-28 |
+| Date | 2026-10-29 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
@@ -2602,6 +2602,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | accepted |
 | [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
 | [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | A zero sum at the stimulus, and a gentler depression | accepted |
+| [ADR-0227](adr/0227-the-pinned-tables-in-a-file-a-round.md) | The pinned tables in a file a round, a row a line | proposed |
 <!-- adr-index: end decisions -->
 
 ---
