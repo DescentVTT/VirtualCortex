@@ -34,6 +34,7 @@ The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eigh
 - **The pull request opens as a draft with the round's first push** ([ADR-0223](../docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)), and leaves draft with the commit that asks for the merge, which sets the round's ADRs to `accepted`.
 - **The branch is named `claude/brief-085-…`**, never rebased or force-pushed once a dispatch has run on it.
 - **The documents are ADR-0197's**: the new ADRs in its shape, the tables written by `node scripts/adr-index.mjs`, new text within `npm run spec:shape`'s limits.
+- **H-46's pinned tables go in `tests/inhibition/pins/h46.rs`**, a row a line, declared in its `mod.rs` ([ADR-0227](../docs/adr/0227-the-pinned-tables-in-a-file-a-round.md)).
 - **No shard of the weekly job passes 60 per cent of its bound**, 240 minutes ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md)). One that does is reported with its job's minutes.
 - **GitHub without gh.** Dispatches, the pull request, logs and artifacts go through the REST API with the repository's own token (`~/.claude/menteion-tools/ghapi.sh` and its README); `git push` uses the same token. The token is never printed or put on a command line.
 - **The maintainer is notified** as `briefs/README.md` says: when a question only they can answer stops the round, and when the pull request is ready for review.
