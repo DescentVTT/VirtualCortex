@@ -2602,7 +2602,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | accepted |
 | [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
 | [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | A zero sum at the stimulus, and a gentler depression | accepted |
-| [ADR-0227](adr/0227-the-pinned-tables-in-a-file-a-round.md) | The pinned tables in a file a round, a row a line | proposed |
+| [ADR-0227](adr/0227-the-pinned-tables-in-a-file-a-round.md) | The pinned tables in a file a round, a row a line | accepted |
 <!-- adr-index: end decisions -->
 
 ---

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-29
 amends: [ADR-0215]
 title: The pinned tables in a file a round, a row a line
