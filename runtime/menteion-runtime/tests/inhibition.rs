@@ -722,7 +722,7 @@ fn inhibition_off_the_gate_at_1024_units_exhaustive() {
     assert_eq!(sums_after, SUMS_AFTER_1024);
 }
 
-// ----------------------------------------------------------- the measurement (brief 039)
+// --------------------- the measurement (brief 039), its tables in inhibition/pins/h16.rs
 
 const INHIBITION_READ_1024: [u64; 3] = [0x9125c69cd9000bff, 0xbb2bfa57ebdfaff0, 0xfbb9d0ae596907cf];
 /// The correct selections over the last 128 trials, per rewarded arm, against `REWARDED_MIN`.
@@ -1739,7 +1739,7 @@ fn the_assignment_reversed_from_the_mirrored_assignment_at_1024_units_exhaustive
     reversal_arm(Reversal::MirroredFirst);
 }
 
-// ----------------------------------------------------------- the measurement (brief 040)
+// --------------------- the measurement (brief 040), its tables in inhibition/pins/h17.rs
 
 const REVERSAL_TRACES_1024: [u64; 2] = [0x64a1d9adad28586c, 0x742fba322cc8bd8a];
 const REVERSAL_READ_1024: [u64; 2] = [0xfa696f8fb2545fd6, 0x5c13c015d378e9a5];
@@ -3427,7 +3427,7 @@ fn a_few_trials_over_a_punishment_at_1024_units_and_the_rules_of_the_punished_pa
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 041)
+// --------------------- the measurement (brief 041), its tables in inhibition/pins/h18.rs
 
 const PUNISHED_TRACES_1024: [u64; 2] = [0x987e1bcfabe50662, 0x7767c0e1a4be0c88];
 const PUNISHED_READ_1024: [u64; 2] = [0xb299ee60cde2ecbd, 0xfafd2eaa5834f3fb];
@@ -3709,7 +3709,7 @@ fn couplings_course(blocks: &[Block]) -> Vec<[[i64; 2]; 2]> {
         .collect()
 }
 
-// ---------------------------------------------------------------- the run (brief 046)
+// -------------------------- the run (brief 046), its tables in inhibition/pins/h19.rs
 
 /// An arm's run from the signed engine (brief 046): `earned_run_predicted` under the answer's
 /// feedback at the gate's zero with the signed gate set, the arm's first mapping, the flip
@@ -4666,7 +4666,7 @@ fn a_few_trials_under_the_critic_at_1024_units_and_the_rules_of_the_critic() {
 /// of a trial, −0.820.
 const CARRIED_PUNISHMENT: (usize, usize, usize, i64, i64, i32) = (44, 84, 133, 53, 68, -53_714);
 
-// ----------------------------------------------------------- the measurement (brief 046)
+// --------------------- the measurement (brief 046), its tables in inhibition/pins/h19.rs
 
 const CRITIC_TRACES_1024: [u64; 2] = [0x994424537f5461cc, 0x286698c2385a3ee8];
 const CRITIC_READ_1024: [u64; 2] = [0x95f37c43af259777, 0xe3ed3b2b426c3c16];
@@ -5153,7 +5153,7 @@ fn moves_by_mapping(blocks: &[MovesBlock], side: usize) -> [Moves; 4] {
     })
 }
 
-// ---------------------------------------------------------------- the run (brief 047)
+// -------------------------- the run (brief 047), its tables in inhibition/pins/h20.rs
 
 /// An arm's run from the signed engine under a schedule (brief 047): `earned_run_scheduled`
 /// under the answer's feedback at the gate's zero with the signed gate set, the arm's first
@@ -6427,7 +6427,7 @@ type Decided = (
     [Option<Peak>; 2],
 );
 
-// ----------------------------------------------------------- the measurement (brief 047)
+// --------------------- the measurement (brief 047), its tables in inhibition/pins/h20.rs
 
 const SCHEDULE_TRACES_1024: [u64; 2] = [0xdd2a9318b3c5d288, 0xf4c8a5f8566b124e];
 const SCHEDULE_READ_1024: [u64; 2] = [0x78e39782209b718a, 0x5d995a7cb23cf34f];
@@ -7709,7 +7709,7 @@ fn the_target_s_rule_the_clauses_of_h_21_and_the_image_s_patch() {
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 054)
+// --------------------- the measurement (brief 054), its tables in inhibition/pins/h21.rs
 
 /// The target's lead-in at 1 024 units, pinned from its first run before any rewarded run: the
 /// spikes of each of its eight windows, 18 449 in all, 1.718 Hz a unit.
@@ -8820,7 +8820,7 @@ fn the_critic_s_arithmetic_the_clauses_of_h_22_and_the_image_s_patch() {
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 055)
+// --------------------- the measurement (brief 055), its tables in inhibition/pins/h22.rs
 
 /// H-21's image by its CRC-64: H-20's with the target period written (ADR-0129), at format 25
 /// (it was `0xafe7eff2d59da51f` at 18, the CRC H-21 read, `0xeefb68fd147b41c5` at 19, the CRC
@@ -10105,7 +10105,7 @@ fn the_window_s_rule_its_arithmetic_the_clauses_of_h_23_and_the_image_s_patch() 
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 056)
+// --------------------- the measurement (brief 056), its tables in inhibition/pins/h23.rs
 
 /// H-22's image by its CRC-64: H-21's with the critic written (ADR-0132), at format 25 (it was
 /// `0xeae8ad819564a88a` at 20, the CRC H-23 to H-29 read, `0xabf42a8e54824c50` at 21,
@@ -12109,7 +12109,7 @@ fn the_clauses_of_h_24_the_network_s_oracle_and_the_readings_rules() {
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 057)
+// --------------------- the measurement (brief 057), its tables in inhibition/pins/h24.rs
 
 const UNADDRESSED_TRACES_1024: [u64; 2] = [0x56c51bc47386d3a4, 0xaa1db7bc2f35b6a2];
 const UNADDRESSED_READ_1024: [u64; 2] = [0x4f6498e2a0948953, 0x0be05d25b4194d89];
@@ -13121,7 +13121,7 @@ fn the_clauses_of_h_25_the_drawn_sources_and_the_readings_rules() {
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 058)
+// --------------------- the measurement (brief 058), its tables in inhibition/pins/h25.rs
 
 const DRAWN_TRACES_1024: [u64; 2] = [0x113d0b33181135e2, 0xee98a94a4ba25846];
 const DRAWN_READ_1024: [u64; 2] = [0x606fddf2c6648248, 0xda51758177c02783];
@@ -14587,7 +14587,7 @@ fn the_rule_of_h_26_the_shadow_s_rule_and_the_readings_rules() {
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 059)
+// --------------------- the measurement (brief 059), its tables in inhibition/pins/h26.rs
 
 const RELEASED_HASH_1024: [u64; 2] = [0x9466ed8c8e715027, 0xe34424a493330239];
 
@@ -16542,7 +16542,7 @@ fn the_clauses_of_h_27_the_hold_s_rule_and_the_readings_rules() {
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 060)
+// --------------------- the measurement (brief 060), its tables in inhibition/pins/h27.rs
 
 /// The step of H-27's stopping rule each verdict reaches, `(H-27's, the control's)`.
 const GATED_STEPS_1024: (u8, u8) = (5, 5);
@@ -18023,7 +18023,7 @@ fn misled_tables_on(stand: &Stand, share: &Share, verdict: &Misled, signed: [boo
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 061)
+// --------------------- the measurement (brief 061), its tables in inhibition/pins/h28.rs
 
 const MISLED_TRACES_1024: [u64; 2] = [0xd83249f86273b20c, 0x95643f5934ff780a];
 const MISLED_READ_1024: [u64; 2] = [0x37291a3458953949, 0x61fe812b644476a2];
@@ -20876,7 +20876,7 @@ fn the_clauses_of_h_29_the_deals_in_their_order_and_the_readings_rules() {
     assert_ne!(answered_hash(&still.read), answered_hash(&run.read[..4]));
 }
 
-// ----------------------------------------------------------- the deal taken (ADR-0153)
+// --------------------- the deal taken (ADR-0153), its tables in inhibition/pins/h29.rs
 
 /// The deal taken (ADR-0151, ADR-0153): the first, in `deals`' order, whose six couplings on
 /// H-25's image are equal within ten per cent with none zero — the 104th of 92 400. Readout 0
@@ -20894,7 +20894,7 @@ const DEALS_PASSING_1024: usize = 10_598;
 /// 809 (`SYNAPSES_1024`).
 const DEALT_SYNAPSES_1024: [[u32; ANSWERS]; 2] = [[400, 404, 384], [416, 367, 391]];
 
-// ----------------------------------------------------------- the measurement (brief 062)
+// --------------------- the measurement (brief 062), its tables in inhibition/pins/h29.rs
 
 const ANSWERED_TRACES_1024: [u64; 2] = [0x4fcb58587b52d2e8, 0x5e71a5d4f0432f24];
 const ANSWERED_READ_1024: [u64; 2] = [0x720a2ea384e83842, 0x99e5215eafa0ef92];
@@ -22306,7 +22306,7 @@ fn the_clauses_of_h_30_the_whole_punishment_s_patch_and_the_readings_rules() {
     }
 }
 
-// ---------------------------------------------- H-29's trials by brief 063's reader (ADR-0156)
+// -------- H-29's trials by brief 063's reader (ADR-0156), its tables in inhibition/pins/h30.rs
 
 /// H-29's two arms' trials by `trials_read`, in `ANSWERED_ARMS`'s order: what brief 063 reads
 /// of H-30's trials, read of H-29's so that the two stand side by side. With the parameter
@@ -22333,7 +22333,7 @@ const WHOLE_READ_FORMAT: u32 = 21;
 /// mirrored assignment the seventh, against −208, 0.003 of it.
 const WHOLE_FIRST_MET_1024: [Option<(usize, i32)>; 2] = [Some((3, -1600)), Some((6, -208))];
 
-// ----------------------------------------------------- the arms' tables (brief 063, ADR-0156)
+// --------------- the arms' tables (brief 063, ADR-0156), its tables in inhibition/pins/h30.rs
 
 const WHOLE_TRACES_1024: [u64; 2] = [0x589ccebcb96222cc, 0x551cb1cd90273acc];
 const WHOLE_READ_1024: [u64; 2] = [0x1d3631770f03a3af, 0xf7f8aa8d94c9ac65];
@@ -23839,7 +23839,7 @@ fn the_clauses_of_h_31_the_schedule_s_hand_rule_and_the_readings_rules() {
 /// of the hash; H-29's own arms hold it from brief 064 on. No pinned number of H-29's moves.
 const ANSWERED_HEAD_1024: [u64; 2] = [0x385ef2444d22cb8d, 0x386c12a91850a707];
 
-// ----------------------------------------------------- the arms' tables (brief 064, ADR-0161)
+// --------------- the arms' tables (brief 064, ADR-0161), its tables in inhibition/pins/h31.rs
 
 /// The hash of each arm's accuracy sequence, as `run_on_scheduled` hashes one.
 const SIZED_TRACES_1024: [u64; 2] = [0x1c68f53cc918629e, 0x223321a6fd9516d2];
@@ -25564,9 +25564,9 @@ fn the_clauses_of_h_32_the_exploration_s_hand_rules_and_the_readings_rules() {
     );
 }
 
-// ------------------------------------------------- the calibration's pin (brief 066)
+// ----------- the calibration's pin (brief 066), its tables in inhibition/pins/h32.rs
 
-// ---------------------------------------------------- the pinned tables (brief 066)
+// -------------- the pinned tables (brief 066), its tables in inhibition/pins/h32.rs
 
 /// The hash of each arm's accuracy sequence, as `run_on_scheduled` hashes one.
 const EXPLORED_TRACES_1024: [u64; 2] = [0x350869f20aca54c0, 0xafcfc802e8a4fcca];
@@ -27549,7 +27549,7 @@ fn the_rules_of_a_derivation_the_clauses_of_h_33_and_the_readings_rules() {
     );
 }
 
-// ----------------------------------------------------------- the measurement (brief 067)
+// --------------------- the measurement (brief 067), its tables in inhibition/pins/h33.rs
 
 /// The prior's sums by polarity, per network.
 const PRIOR_SUMS_SEEDED: [(i64, i64); 2] = [(213902976, 236101425), (213902976, 235672060)];
@@ -28470,7 +28470,7 @@ fn the_critic_s_rule_at_its_edges_the_clauses_of_h_34_and_the_readings_rules() {
     );
 }
 
-// ----------------------------------------------------------- the measurement (brief 068)
+// --------------------- the measurement (brief 068), its tables in inhibition/pins/h34.rs
 
 /// The prior's sums by polarity, per network.
 const PRIOR_SUMS_TWICE: [(i64, i64); 2] = [(428854496, 471570900), (428854496, 471833954)];
@@ -29660,7 +29660,7 @@ fn the_clauses_of_h_35_the_coin_s_count_the_predicted_readings_and_the_split() {
     misled_tables(&share, &verdict, further.map(|read| read.against == 0));
 }
 
-// ----------------------------------------------------------- the measurement (brief 069)
+// --------------------- the measurement (brief 069), its tables in inhibition/pins/h35.rs
 
 const IN_FOUR_TRACES_1024: [u64; 2] = [0xe90e56f48ea0efc6, 0xbccdc3df6846bf64];
 const IN_FOUR_READ_1024: [u64; 2] = [0x5506b8c560fc0e49, 0x28e2ea035a27b91c];
@@ -32073,7 +32073,7 @@ fn the_clauses_of_h_36_on_each_network_the_split_and_the_four_predicted_readings
     }
 }
 
-// ----------------------------------------------------------- the measurement (brief 070)
+// --------------------- the measurement (brief 070), its tables in inhibition/pins/h36.rs
 
 /// The four couplings at the trial after each of the schedule's three flips, as an arm pins them.
 type AtFlips = [[[i64; 2]; 2]; 3];
@@ -33404,7 +33404,7 @@ fn the_settled_network_s_rule_under_a_step_clause_0_of_h_37_and_the_predicted_re
     );
 }
 
-// -------------------------------------------------------------- the measurement (brief 071)
+// ------------------------ the measurement (brief 071), its tables in inhibition/pins/h37.rs
 
 /// The estimate by the rate of its window over ADR-0077's two lead-ins, as ADR-0175 states it.
 /// With the gain held every window is in the lowest band and the estimate reads 0 to 0.451. At
@@ -35323,7 +35323,7 @@ fn rate_tables() {
     }
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0181)
+// ---------- as read from the one run (ADR-0181), its tables in inhibition/pins/h38.rs
 
 /// The step of ADR-0178's stopping rule the verdict reaches: 3, yes.
 const RULED_STEP_1024: Option<u8> = Some(3);
@@ -35333,9 +35333,9 @@ const RULED_STEP_1024: Option<u8> = Some(3);
 /// gain below the gain its image carries.
 const RATE_READINGS_READ_1024: Option<[Option<bool>; 4]> = Some([Some(true); 4]);
 
-// ------------------------------------------- the tables the gate reads beside (ADR-0181)
+// ----- the tables the gate reads beside (ADR-0181), its tables in inhibition/pins/h38.rs
 
-// ------------------------------------------------ pinned from the one run (brief 072)
+// ---------- pinned from the one run (brief 072), its tables in inhibition/pins/h38.rs
 
 const RULED_TRACES: [u64; 2] = [0xe246d68ece96a384, 0x26c25aa5790bb426];
 const RULED_COMPOSED: [u64; 2] = [0x67a5780df57dd459, 0xed2d9387c48f36cb];
@@ -36530,12 +36530,12 @@ fn sixteenth_tables() {
     );
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0183)
+// ---------- as read from the one run (ADR-0183), its tables in inhibition/pins/h39.rs
 
 /// The step of ADR-0182's stopping rule the verdict reaches: 3, yes.
 const SIXTEENTH_STEP_1024: Option<u8> = Some(3);
 
-// ------------------------------------------- the tables the gate reads beside (ADR-0183)
+// ----- the tables the gate reads beside (ADR-0183), its tables in inhibition/pins/h39.rs
 
 /// The inhibitory sum at the end of each of H-38's arms under an eighth beside its image's, as the
 /// tree pins them.
@@ -36546,7 +36546,7 @@ const RULED_ENDS: [(i64, i64); 2] = [(127319721, 162864171), (127452842, 1628641
 /// arms.
 const RULED_OPPOSITE: [Option<u32>; 2] = [Some(750), Some(758)];
 
-// ------------------------------------------------ pinned from the one run (brief 073)
+// ---------- pinned from the one run (brief 073), its tables in inhibition/pins/h39.rs
 
 const SEEDED_RATE_CARRIED: [Option<(u32, u32)>; 2] = [Some((114427, 8678)), Some((114573, 0))];
 const SEEDED_RATE_AFTER_FROZEN: [Option<(u32, u32)>; 2] = [Some((113141, 0)), Some((112860, 0))];
@@ -37665,12 +37665,12 @@ fn read_tables() {
     );
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0190)
+// ---------- as read from the one run (ADR-0190), its tables in inhibition/pins/h40.rs
 
 /// The step of ADR-0188's stopping rule the verdict reaches: 3, yes.
 const READ_STOP_1024: Option<u8> = Some(3);
 
-// ------------------------------------------------ pinned from the one run (brief 074)
+// ---------- pinned from the one run (brief 074), its tables in inhibition/pins/h40.rs
 
 // --------------------------------------------- written before the run (ADR-0192, ADR-0195)
 
@@ -38739,7 +38739,7 @@ fn both_tables() {
     );
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0195)
+// ---------- as read from the one run (ADR-0195), its tables in inhibition/pins/h41.rs
 
 /// The step of ADR-0192's stopping rule the verdict reaches: 3, yes.
 const BOTH_STOP_1024: Option<u8> = Some(3);
@@ -38749,7 +38749,7 @@ const BOTH_STOP_1024: Option<u8> = Some(3);
 /// 1.7279.
 const BOTH_READINGS_READ_1024: Option<[Option<bool>; 3]> = Some([Some(true); 3]);
 
-// ------------------------------------------------ pinned from the one run (brief 075)
+// ---------- pinned from the one run (brief 075), its tables in inhibition/pins/h41.rs
 
 const BOTH_ISTDP: [Option<u32>; 3] = [Some(57604), Some(58002), Some(57579)];
 
@@ -40034,7 +40034,7 @@ fn probe_tables() {
     );
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0203)
+// ---------- as read from the one run (ADR-0203), its tables in inhibition/pins/h42.rs
 
 /// The step of ADR-0200's stopping rule the verdict reaches: 3, yes.
 const PROBE_STOP_1024: Option<u8> = Some(3);
@@ -40044,7 +40044,7 @@ const PROBE_STOP_1024: Option<u8> = Some(3);
 /// 1.7032 and 1.7408.
 const PROBE_READINGS_READ_1024: Option<[Option<bool>; 4]> = Some([Some(true); 4]);
 
-// ------------------------------------------------ pinned from the one run (brief 078)
+// ---------- pinned from the one run (brief 078), its tables in inhibition/pins/h42.rs
 
 const PROBE_ISTDP: [Option<u32>; 3] = [Some(57604), Some(58002), Some(57579)];
 const PROBE_STEP: [Option<u16>; 3] = [Some(1078), Some(1085), Some(1091)];
@@ -40928,12 +40928,12 @@ fn kept_tables() {
     );
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0209)
+// ---------- as read from the one run (ADR-0209), its tables in inhibition/pins/h43.rs
 
 /// The step of ADR-0207's stopping rule the verdict reaches: 3, yes.
 const KEPT_STOP_1024: Option<u8> = Some(3);
 
-// ------------------------------------------------ pinned from the one run (brief 080)
+// ---------- pinned from the one run (brief 080), its tables in inhibition/pins/h43.rs
 
 // =================================================================================== H-44
 
@@ -42250,13 +42250,13 @@ fn on_default_tables() {
     );
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0214)
+// ---------- as read from the one run (ADR-0214), its tables in inhibition/pins/h44.rs
 
 /// The step of ADR-0212's stopping rule the verdict reaches: 3, yes, split (b) by the control's
 /// yes — the network the default settles holds the share, and the rule is not needed for it.
 const ON_DEFAULT_STOP_1024: Option<(u8, Option<HeldBy>)> = Some((3, Some(HeldBy::TheNetwork)));
 
-// ------------------------------------------------ pinned from the one run (brief 081)
+// ---------- pinned from the one run (brief 081), its tables in inhibition/pins/h44.rs
 
 // =================================================================================== H-45
 
@@ -43456,7 +43456,7 @@ fn untold_tables() {
     );
 }
 
-// ------------------------------------------------ as read from the one run (ADR-0218)
+// ---------- as read from the one run (ADR-0218), its tables in inhibition/pins/h45.rs
 
 /// The step of ADR-0216's stopping rule the verdict reaches: 3, yes.
 const UNTOLD_STOP_1024: Option<u8> = Some(3);

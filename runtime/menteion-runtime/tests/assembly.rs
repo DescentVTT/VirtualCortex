@@ -1931,7 +1931,7 @@ fn an_assembly_of_64_units_at_four_weights_paused() {
     four_weights(2);
 }
 
-// ------------------------------------------------ the readings, pinned from the runs
+// ------- the readings, pinned from the runs, its tables in assembly/pins/brief048.rs
 
 /// Whether the kick fires every member once, per size.
 const KICKED_ONCE_1024: [bool; 3] = [true, true, true];
@@ -1947,7 +1947,7 @@ const GRID_1024: [[Cell; 4]; 3] = [GRID_16, GRID_32, GRID_64];
 /// potential on the tick the reset lands, and its soma `SETTLED_AFTER_RESET` ticks after.
 type KickRead = (Vec<u32>, i32, i32, i32, i32, i32);
 
-// ------------------------------------------------ the arithmetic, pinned before any run
+// ------- the arithmetic, pinned before any run, its tables in assembly/pins/brief048.rs
 
 /// The pair a spike after a long rest releases with.
 const STP_AT_REST: (u8, u8) = (92, 255);
@@ -3706,7 +3706,7 @@ fn a_marked_assembly_of_64_units_at_six_weights_under_set_ii_paused() {
     six_weights(1, 2);
 }
 
-// ------------------------------------------------ brief 049's arithmetic, pinned before any run
+// ------- brief 049's arithmetic, pinned before any run, its tables in assembly/pins/brief049.rs
 
 /// The pair a marked member's spike after a long rest releases with, per set.
 const CLASS_AT_REST_049: [(u8, u8); 2] = [(92, 255), (49, 255)];
@@ -3731,7 +3731,7 @@ const RELEASE_SPAN_ORACLE_049: [[ReleasePinned; 2]; 2] = [[(&[], -12_461_267, So
 /// A release by the oracle as pinned: its ticks borrowed.
 type ReleasePinned = (&'static [u32], i32, Option<u32>);
 
-// ------------------------------------------------ brief 049's readings, pinned from the runs
+// ------- brief 049's readings, pinned from the runs, its tables in assembly/pins/brief049.rs
 
 // The runs' stretches, per set and size (brief 049).
 
@@ -5402,7 +5402,7 @@ fn the_subset_under_the_tasks_stimulus_paused() {
     subset_under(2);
 }
 
-// ------------------------------------------------ brief 050's arithmetic, pinned before any run
+// ------- brief 050's arithmetic, pinned before any run, its tables in assembly/pins/brief050.rs
 
 /// Condition (b)'s delays per size at 0.25: the synapses whose delay differs from seed 48's, of
 /// the assembly's.
@@ -5411,7 +5411,7 @@ const SEEDED_WIRING_050: [(u32, u32); 4] = [(1532, 1536), (2042, 2048), (2553, 2
 /// Condition (d)'s presentation on the instrument's network at rest, the epoch's reading.
 const PRESENTED_050: TaskEpoch = (0, [[5, 2, 1, 0], [18, 26, 2, 3]]);
 
-// ------------------------------------------------ brief 050's readings, pinned from the runs
+// ------- brief 050's readings, pinned from the runs, its tables in assembly/pins/brief050.rs
 
 /// The robust cells, `(size, weight)` by index into the grid: none.
 const ROBUST_050: &[(usize, usize)] = &[];
@@ -6757,7 +6757,7 @@ fn the_contexts_own_inhibition_under_the_tasks_stimulus_at_the_heavier_recurrent
     cells_051(3, &RECURRENT_HALVES[1]);
 }
 
-// ------------------------------------------------ brief 051's arithmetic, pinned before any run
+// ------- brief 051's arithmetic, pinned before any run, its tables in assembly/pins/brief051.rs
 
 /// The draw: the sources, the most and the fewest added synapses one sends, the added blocks, and
 /// the draws within the prior's window of their member.
@@ -6766,7 +6766,7 @@ const SOURCES_051: SourcesDrawn = (203, 13, 1, 332, 20);
 /// The members' mean input from the assembly at each recurrent weight, `[unkicked, primed]`.
 const ASSEMBLY_INPUT_051: [[i64; 2]; 4] = [[1827, 2974], [2741, 4461], [3656, 5948], [5483, 8922]];
 
-// ------------------------------------------------ brief 051's readings, pinned from the runs
+// ------- brief 051's readings, pinned from the runs, its tables in assembly/pins/brief051.rs
 
 /// Condition (c)'s drained image: the members' input from its prior synapses at (c)'s rates.
 const DRAINED_INPUT_051: (i64, i64) = (2274, -110);
@@ -8024,7 +8024,7 @@ fn the_slow_current_with_the_facilitating_class_the_backgrounds_and_the_controls
     core_backgrounds_052(1);
 }
 
-// ------------------------------------------------ brief 052's arithmetic, pinned before any run
+// ------- brief 052's arithmetic, pinned before any run, its tables in assembly/pins/brief052.rs
 
 /// The critical slow potential (`slow_critical`): 1.138 of the threshold, where the soma's steady
 /// rise under an open gate, $s \cdot 128 / 257$, meets the gap of 0.564.
@@ -8058,7 +8058,7 @@ fn shift_placed(levels: &Levels052, shifts: &[u8; 3], critical: i32) -> Option<u
         .max()
 }
 
-// ------------------------------------------------ brief 052's readings, pinned from the runs
+// ------- brief 052's readings, pinned from the runs, its tables in assembly/pins/brief052.rs
 
 // ================================================ brief 053 (ADR-0126): the gate raised, measured
 
@@ -9014,7 +9014,7 @@ fn the_gate_raised_to_0_9_with_the_facilitating_class_the_core_grid_at_shift_2_e
     cells_053((1, 2, 2));
 }
 
-// ------------------------------------------------ brief 053's arithmetic, pinned before any run
+// ------- brief 053's arithmetic, pinned before any run, its tables in assembly/pins/brief053.rs
 
 /// The critical slow potential at each of the three voltages (`slow_critical_at`): the least that,
 /// held, fires a unit under the drive's mean input from an eighth of the gate's span above the
@@ -9025,7 +9025,7 @@ const SLOW_CRITICAL_053: [i32; 3] = [317_851, 410_185, 502_261];
 /// (`background_levels_052`).
 const LEVELS_053: [i32; 7] = [0, 36_815, 19_244, 7_442, 52_995, 24_035, 7_983];
 
-// ------------------------------------------------ brief 053's runs, pinned
+// ------- brief 053's runs, pinned, its tables in assembly/pins/brief053.rs
 
 /// The pairs the rule picks from the pinned reading (`cell_pairs_053`): the kick passes at four,
 /// shift 2 at 0.8 and 0.9 under both arms, so every one runs, in the grid's order.
