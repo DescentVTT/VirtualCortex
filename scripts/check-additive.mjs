@@ -21,6 +21,12 @@
 //    modules the test crates share under `tests/` directories, the library and the state crates --
 //    which could shadow what a glob import gave the code that was there, or turn a binding in a
 //    pattern into a constant. Another test crate's root is its own crate, and is not read.
+// 5. a round's pinned tables (ADR-0227) are the one exception to rule 4's `use`: an insertion
+//    into `tests/<binary>/pins/mod.rs` that is nothing but pairs `mod <round>;` and
+//    `pub(crate) use <round>::*;`, each naming a `tests/<binary>/pins/<round>.rs` the same change
+//    adds, only adds. The names that file holds at the top level reach the binary's root through
+//    `use pins::*`, so they are held to rule 4's names as an inserted item's are, the root's own
+//    text among them, and so is any `impl` in it.
 // Brackets are counted outside comments, strings and character literals, all three kinds, since
 // a table's rows sit inside `[`. Exit 0 when the change only adds, 1 with each file and reason
 // when it does not, 2 on a usage or git error. The exports are for scripts/check-additive.test.mjs.
@@ -202,6 +208,34 @@ export function inserted(lines) {
   return { names, impls, uses, problems };
 }
 
+/** A binary's pinned tables (ADR-0227): `<package>/tests/<binary>/pins/mod.rs`, the directory captured. */
+export const PINS_MOD = /^((?:runtime|crates|benches)\/[^/]+\/tests\/[^/]+\/pins)\/mod\.rs$/;
+/** A round's file of them: the binary's root and the round captured. */
+export const PINS_FILE = /^((?:runtime|crates|benches)\/[^/]+\/tests\/[^/]+)\/pins\/([A-Za-z_][A-Za-z0-9_]*)\.rs$/;
+
+/**
+ * The rounds an insertion into a pins `mod.rs` declares, when it is nothing but pairs of
+ * `mod <round>;` and `pub(crate) use <round>::*;`, blank lines aside; otherwise null.
+ *
+ * Such a pair cannot change what the code that was there resolves a name to. A glob import never
+ * shadows an item a module defines, nor an explicit import (`use pins::BACKGROUND_ROWS_1024;` in
+ * `tests/assembly.rs` is one). Where a name the round's file holds meets one that another glob
+ * already gave, the name is ambiguous, and its first use is a compile error (E0659), not a silent
+ * change. Only the prelude ranks below a glob, and the round's file's names are held to every name
+ * the base's sources use, the root's text among them (rule 5), as an inserted item's are.
+ */
+export function pinsPairs(lines) {
+  const ls = lines.filter((l) => l.trim() !== "");
+  if (ls.length === 0 || ls.length % 2 !== 0) return null;
+  const rounds = [];
+  for (let i = 0; i < ls.length; i += 2) {
+    const m = /^mod ([A-Za-z_][A-Za-z0-9_]*);$/.exec(ls[i]);
+    if (!m || ls[i + 1] !== `pub(crate) use ${m[1]}::*;`) return null;
+    rounds.push(m[1]);
+  }
+  return rounds;
+}
+
 /** Whether an insertion after base line `after` (1-based; 0 is the file's start) is at the top level after a whole item. */
 export function insertsAtTop(baseScan, after) {
   if (after === 0) return true;
@@ -224,27 +258,48 @@ export function wordsIn(text, names) {
 }
 
 /**
- * The verdict on a change. `changes`: `{ status, path, diff }` for each changed file, `status`
- * git's letter and `diff` its `-U0` text; `baseText`: path to the base's text; `existing`: an array
- * of names to the set of them the base's Rust sources other than the test crates' roots hold. A
- * test crate's root sees its own text, the modules the crates share under `tests/*\/`, and the
- * library and the state crates; another crate's root it cannot see. Returns
- * `{ additive, problems, files }`.
+ * The verdict on a change. `changes`: `{ status, path, diff, text }` for each changed file,
+ * `status` git's letter, `diff` its `-U0` text and `text`, for an added round's file of pinned
+ * tables, its text; `baseText`: path to the base's text; `existing`: an array of names to the set
+ * of them the base's Rust sources other than the test crates' roots hold. A test crate's root sees
+ * its own text, the modules the crates share under `tests/*\/`, and the library and the state
+ * crates; another crate's root it cannot see. Returns `{ additive, problems, files }`.
  */
 export function checkAdditive(changes, baseText, existing) {
   const problems = [];
   const names = new Map();
   const impls = new Map();
   const own = new Map();
+  const added = new Set(changes.filter((c) => c.status === "A").map((c) => c.path));
   let files = 0;
-  for (const { status, path, diff } of changes) {
+  for (const { status, path, diff, text: addedText } of changes) {
     if (!readByRust(path)) continue;
     files += 1;
     if (!underTests(path)) {
       problems.push(`${path}: a file a Rust build reads, outside a package's tests/`);
       continue;
     }
-    if (status === "A") continue;
+    if (status === "A") {
+      // Rule 5: a round's file's names reach its binary's root through `use pins::*`.
+      const pin = PINS_FILE.exec(path);
+      if (!pin || pin[2] === "mod") continue;
+      if (addedText === undefined) {
+        problems.push(`${path}: a round's file of pinned tables whose text was not read`);
+        continue;
+      }
+      const got = inserted(addedText.split(/\r?\n/));
+      for (const p of got.problems) problems.push(`${path}: a round's file whose ${p.replace(/^its /, "")}`);
+      for (const n of got.names) names.set(n, path);
+      for (const t of got.impls) impls.set(t, path);
+      let rootText = "";
+      try {
+        rootText = baseText(`${pin[1]}.rs`);
+      } catch {
+        rootText = ""; // a binary the change adds: its root holds no name yet
+      }
+      for (const n of wordsIn(rootText, [...got.names, ...got.impls])) own.set(n, true);
+      continue;
+    }
     if (status !== "M") {
       problems.push(`${path}: ${status === "D" ? "deleted" : status.startsWith("R") ? "renamed" : `changed as ${status}`}`);
       continue;
@@ -256,6 +311,7 @@ export function checkAdditive(changes, baseText, existing) {
     const text = baseText(path);
     const base = scan(text);
     const mine = [];
+    const pinsDir = PINS_MOD.exec(path)?.[1];
     for (const h of hunks(diff)) {
       if (h.oldCount !== 0) {
         problems.push(`${path}:${h.oldStart}: ${h.oldCount} line(s) of the base removed or changed`);
@@ -267,7 +323,10 @@ export function checkAdditive(changes, baseText, existing) {
       }
       const got = inserted(h.added);
       for (const p of got.problems) problems.push(`${path}:${h.oldStart}: an insertion whose ${p.replace(/^its /, "")}`);
-      if (got.uses > 0) problems.push(`${path}:${h.oldStart}: an insertion with a \`use\`, which can shadow a glob import`);
+      // Rule 5: a round's pair in a pins `mod.rs`, for a round's file this change adds.
+      const rounds = pinsDir === undefined ? null : pinsPairs(h.added);
+      const aRoundsPair = rounds !== null && rounds.every((r) => added.has(`${pinsDir}/${r}.rs`));
+      if (got.uses > 0 && !aRoundsPair) problems.push(`${path}:${h.oldStart}: an insertion with a \`use\`, which can shadow a glob import`);
       for (const n of got.names) names.set(n, `${path}:${h.oldStart}`), mine.push(n);
       for (const t of got.impls) impls.set(t, `${path}:${h.oldStart}`), mine.push(t);
     }
@@ -305,7 +364,11 @@ function main(argv) {
       const cells = l.split("\t");
       return { status: cells[0], path: cells[cells.length - 1] };
     })
-    .map((c) => ({ ...c, diff: c.status === "M" && readByRust(c.path) ? git(["diff", "-U0", mergeBase, head, "--", c.path]) : "" }));
+    .map((c) => ({
+      ...c,
+      diff: c.status === "M" && readByRust(c.path) ? git(["diff", "-U0", mergeBase, head, "--", c.path]) : "",
+      text: c.status === "A" && PINS_FILE.test(c.path) ? git(["show", `${head}:${c.path}`]) : undefined,
+    }));
   const baseText = (path) => git(["show", `${mergeBase}:${path}`]);
   const existing = (names) => {
     const dir = mkdtempSync(join(tmpdir(), "check-additive-"));
