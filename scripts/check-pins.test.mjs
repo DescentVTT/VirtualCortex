@@ -97,10 +97,26 @@ test("a round's file of tables, one row a line, passes", () => {
 test("a test or a function in a round's file fails, by line", () => {
   const withTest = PIN + "#[test]\nfn the_arms() {}\n";
   assert.deepEqual(checkPin("h45.rs", withTest), [
-    "h45.rs:18: a function or a test, which belongs in the binary's file",
-    "h45.rs:19: a function or a test, which belongs in the binary's file",
+    "h45.rs:18: a function, a macro or a test, which belongs in the binary's file",
+    "h45.rs:19: a function, a macro or a test, which belongs in the binary's file",
   ]);
   assert.equal(checkPin("h45.rs", PIN + "pub(crate) const fn at(k: usize) -> u32 { 0 }\n").length, 1);
+});
+
+test("a function under any visibility or qualifier, and a macro, fail in a round's file", () => {
+  for (const item of [
+    "pub(in crate) fn at() -> u32 { 0 }",
+    "pub(super) unsafe fn at() {}",
+    "pub async fn at() {}",
+    'extern "C" fn at() {}',
+    "macro_rules! row { () => {}; }",
+    "#[macro_export]",
+  ]) {
+    assert.deepEqual(checkPin("h45.rs", PIN + item + "\n"), [
+      "h45.rs:18: a function, a macro or a test, which belongs in the binary's file",
+    ], item);
+  }
+  assert.deepEqual(checkPin("h45.rs", PIN + "pub(crate) const FNORD: u32 = 1;\n"), []);
 });
 
 test("a row broken over lines, as rustfmt lays one out, fails; a comment does not", () => {
@@ -125,4 +141,18 @@ test("a const's length is read past strings and comments that hold brackets", ()
   assert.deepEqual(checkLength("b.rs", "static S: [u8; 2] =\n    [1, 2];\n", 1), [
     "b.rs:1: S is 2 lines, past 1: a pinned table goes in its round's file",
   ]);
+});
+
+test("a static mut, and an item under any visibility, is held to LONGEST too", () => {
+  const table = (head, n) => [`${head}: [u32; 2] = [`, ...Array.from({ length: n - 2 }, () => "    1,"), "];"].join("\n");
+  assert.deepEqual(checkLength("b.rs", table("static mut M", LONGEST + 1) + "\n"), [
+    `b.rs:1: M is ${LONGEST + 1} lines, past ${LONGEST}: a pinned table goes in its round's file`,
+  ]);
+  assert.equal(checkLength("b.rs", table("pub(in crate) const P", LONGEST + 1) + "\n").length, 1);
+  assert.equal(checkLength("b.rs", table("pub(crate) static mut Q", LONGEST) + "\n").length, 0);
+});
+
+test("an item never closed is read to the file's end", () => {
+  const open = ["const T: [u32; 2] = [", ...Array.from({ length: LONGEST }, () => "    1,")].join("\n");
+  assert.deepEqual(checkLength("b.rs", open), [`b.rs:1: T is ${LONGEST + 1} lines, past ${LONGEST}: a pinned table goes in its round's file`]);
 });

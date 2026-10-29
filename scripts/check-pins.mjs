@@ -8,8 +8,8 @@
 //    and `mod pins;`, on three lines in that order, and imports it with `use pins::*;`.
 // 2. `pins/mod.rs` declares every round's file, `h<N>.rs` or `brief<NNN>.rs`, as `mod <round>;`
 //    followed by `pub(crate) use <round>::*;`, and no module without its file.
-// 3. A round's file holds no function and no test. The tests stay in `tests/<binary>.rs`, whose
-//    names the weekly job, the cost table and the ADRs cite.
+// 3. A round's file holds no function, no macro and no test. The tests stay in `tests/<binary>.rs`,
+//    whose names the weekly job, the cost table and the ADRs cite.
 // 4. A round's file breaks no tuple: no line but a table's first ends in `(`.
 // 5. `tests/<binary>.rs` holds no `const` or `static` longer than `LONGEST` lines. A table that
 //    long is pinned, and goes in its round's file.
@@ -65,15 +65,24 @@ export function checkMod(name, text, files) {
   return problems;
 }
 
-// Rules 3 and 4: a round's file holds tables, with no function, no test and no tuple broken.
+// A visibility, as `pub`, `pub(crate)`, `pub(super)` or `pub(in crate::a)`, and the space after it.
+const VIS = String.raw`(?:pub(?:\([^)]*\))?\s+)?`;
+// A function, whatever its visibility and qualifiers.
+export const FN = new RegExp(String.raw`^\s*${VIS}(?:(?:const|async|unsafe|extern\s+"[^"]*")\s+)*fn\b`);
+// A macro, by `macro_rules!` or a `#[macro_export]`.
+export const MACRO = /^\s*(?:macro_rules!|#\[macro_export\])/;
+// A `const` or `static` item's first line, `static mut` too: its name captured.
+export const TABLE = new RegExp(String.raw`^${VIS}(?:const|static)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:`);
+
+// Rules 3 and 4: a round's file holds tables, with no function, no macro, no test and no tuple broken.
 export function checkPin(name, text) {
   const problems = [];
   lines(text).forEach((l, i) => {
     if (/^\s*\/\//.test(l)) return;
-    if (/^\s*#\[test\]/.test(l) || /^\s*(pub(\([a-z]+\))? )?(const )?(unsafe )?fn /.test(l)) {
-      problems.push(`${name}:${i + 1}: a function or a test, which belongs in the binary's file`);
+    if (/^\s*#\[test\]/.test(l) || FN.test(l) || MACRO.test(l)) {
+      problems.push(`${name}:${i + 1}: a function, a macro or a test, which belongs in the binary's file`);
     }
-    if (/\($/.test(l.trimEnd()) && !/^pub\(crate\) (const|static) /.test(l)) {
+    if (/\($/.test(l.trimEnd()) && !TABLE.test(l)) {
       problems.push(`${name}:${i + 1}: a tuple broken over lines, where a row is one line`);
     }
   });
@@ -87,13 +96,19 @@ export function checkLength(name, text, longest = LONGEST) {
   const { depth, last } = scan(text);
   for (let i = 0; i < ls.length; i += 1) {
     const before = i === 0 ? 0 : depth[i - 1];
-    const head = /^(pub(\([a-z]+\))? )?(const|static) ([A-Za-z0-9_]+)\s*:/.exec(ls[i]);
+    const head = TABLE.exec(ls[i]);
     if (before !== 0 || !head) continue;
-    let end = i;
-    while (end < ls.length - 1 && !(depth[end] === 0 && last[end] === ";")) end += 1;
+    // the item ends on the first line from its head that closes it, or at the file's end
+    let end = ls.length - 1;
+    for (let e = i; e < ls.length; e += 1) {
+      if (depth[e] === 0 && last[e] === ";") {
+        end = e;
+        break;
+      }
+    }
     const span = end - i + 1;
     if (span > longest) {
-      problems.push(`${name}:${i + 1}: ${head[4]} is ${span} lines, past ${longest}: a pinned table goes in its round's file`);
+      problems.push(`${name}:${i + 1}: ${head[1]} is ${span} lines, past ${longest}: a pinned table goes in its round's file`);
     }
     i = end;
   }
