@@ -4,7 +4,7 @@ date: 2026-10-29
 amends: [ADR-0215]
 title: The pinned tables in a file a round, a row a line
 kind: process
-summary: A round's pinned tables move out of the tests that read them into a file of the round's own, such as tests/inhibition/pins/h45.rs, a row a line and rustfmt kept off. They stay typed consts in the test sources. spec:pins holds the layout. The schedule's sweep of 2026-10-28 is recorded.
+summary: A round's pinned tables move out of the tests into a file of the round's own, such as tests/inhibition/pins/h45.rs, a row a line, rustfmt kept off, still typed consts. spec:pins holds the layout, and round:additive reads it as only adding, amending ADR-0215. The sweep of 2026-10-28 is recorded.
 decision-makers: Menteion maintainers
 ---
 
@@ -158,8 +158,8 @@ The schedule's run on `main`, [40791077285](https://github.com/Menteion/Menteion
 
 `npm run spec:pins` (`scripts/check-pins.mjs`, with its cases in `spec:pins:test`), for every `tests/<binary>/pins/`:
 1. the binary declares the module, `#[rustfmt::skip]` first, and imports it;
-2. `mod.rs` declares and re-exports every round's file, `h<N>.rs` or `brief<NNN>.rs`, and no module without one;
-3. a round's file holds no function, no macro and no test;
+2. `mod.rs` declares and re-exports every round's file, `h<N>.rs` or `brief<NNN>.rs`, and no module without one, and `pins/` holds no directory;
+3. a round's file holds no function, no macro and no test, and at its top level nothing but `use crate::*;`, its `const` and `static` items, comments, attributes and blank lines: no other `use`, no `mod` and no macro's invocation;
 4. a round's file breaks no tuple: no line but a table's first ends in `(`;
 5. the binary's own file holds no `const` or `static`, `static mut` among them, longer than 24 lines.
 
@@ -176,9 +176,14 @@ That a shorter table is in its round's file, that a struct row is one line, and 
 
 `npm run round:additive` ([ADR-0215](0215-the-calibration-a-change-needs.md)) reads that protocol's commit as only adding, as it read a round's tables inserted into the binary's file before.
 - **The pair in `mod.rs` is the one `use` it accepts**: an insertion into `tests/<binary>/pins/mod.rs` of nothing but `mod <round>;` and `pub(crate) use <round>::*;`, for a round's file the same change adds. Any other inserted `use` is read as before.
-- **The pair cannot change what the code that was there resolves a name to.** A glob import never shadows an item a module defines, nor an explicit import. Two globs that give one name two meanings make it ambiguous, an error at its first use (E0659), not a silent change.
-- **Only the preludes rank below a glob**, the standard library's and the language's among them. So the names a round's added file holds at its top level, and any `impl` in it, are held as an inserted item's: no name the base's sources use, its binary's file among them.
-- `check-additive.test.mjs` holds each case, and a round under this layout read on a throwaway commit only adds where the check before it read it as not.
+- **The pair re-exports every name the round's file holds**, a `use`'s as well as an item's. So the added file may hold at its top level nothing but `use crate::*;`, a private glob it does not re-export, its `const` and `static` items, comments, attributes and blank lines.
+  - Any other `use`, a `mod`, a macro's invocation or another item is read as not only adding, by line, and so is a file added under `pins/<round>/`.
+  - Read here with rustc 1.97.1: a round's file re-exporting a constant as `n` turned `if let Some(n) = Some(5u32)` in the root into a match against it, which failed, with a lint's warning alone. The rule closes that case.
+- **So the names the file holds are the names it declares**, and those cannot change what the code that was there resolves a name to.
+  - A glob import never shadows an item a module defines, nor an explicit import. Two globs that give one name two meanings make it ambiguous, an error at its first use (E0659), not a silent change.
+  - Only the preludes rank below a glob, the standard library's and the language's among them. So the declared names, and any `impl`, are held as an inserted item's: no name the base's sources use, its binary's file among them.
+- The base's text of the binary's file is read as empty only when git says the base has no such file. Any other failure to read it ends the check with exit 2.
+- `check-additive.test.mjs` holds each case. A round under this layout read on a throwaway commit only adds where the check before it read it as not.
 
 ## Consequences
 
@@ -192,7 +197,7 @@ That a shorter table is in its round's file, that a struct row is one line, and 
 
 ## Amended
 
-- **ADR-0215**: `round:additive` reads a round's pair in a pins `mod.rs`, and the names of the round's file it adds, as above.
+- **ADR-0215**: `round:additive` reads a round's pair in a pins `mod.rs` as only adding, and holds the round's file it adds to the crate's glob and its tables under names the base does not use, as above.
 - It is accepted and is not edited.
 
 ## Alternatives considered and why rejected
