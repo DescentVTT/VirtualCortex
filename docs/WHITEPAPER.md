@@ -2744,7 +2744,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 <!-- @assert-count target="benches/menteion-bench/benches/hot_path.rs" symbol="integrate_x1024" min="1" reason="F-51: the rule's throughput over independent units, beside neuron/integrate's one unit's chain" -->
 <!-- @assert-absence target="runtime/menteion-runtime/src/executor.rs" symbol="MembraneLanes" reason="ADR-0104: the lanes were not kept; the code is in the history at b50ed8c and dc9c5ad" -->
 <!-- @assert-absence target="crates/menteion-core/src/lib.rs" symbol="MembraneLanes" reason="ADR-0104: the lane form went with its use" -->
-<!-- @assert-count target="runtime/menteion-runtime/tests/inhibition.rs" symbol="const H18_SETTLE_PER_MYRIAD" min="1" reason="F-52: H-18's clause-3 moves as its pinned table reads them" -->
+<!-- @assert-count target="runtime/menteion-runtime/tests/inhibition/pins/h19.rs" symbol="const H18_SETTLE_PER_MYRIAD" min="1" reason="F-52: H-18's clause-3 moves as its pinned table reads them" -->
 <!-- @assert-count target="runtime/menteion-runtime/tests/inhibition.rs" symbol="fn carried_punishment" min="1" reason="F-53: the fading of the punishment with the dopamine signal's carry-over, from the rules" -->
 
 ### 11.1 Hypotheses and open questions
