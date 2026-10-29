@@ -146,6 +146,9 @@ section is the rule.
      the calibration below.
    - **The tables are written from those logs and committed.** The ADR names the run, the commit
      it ran on, and the job each table came from. The run's commit holds the protocol.
+     In a test binary that has a `pins/` directory, `inhibition` and `assembly` today, they go in the round's own file, `tests/<binary>/pins/<round>.rs`, a row a line, declared in that directory's `mod.rs`, and the tests that read them stay in `tests/<binary>.rs` ([ADR-0227](../docs/adr/0227-the-pinned-tables-in-a-file-a-round.md)).
+     The file is there from the protocol's commit, with the round's placeholder tables, and `npm run round:additive` reads it as only adding.
+     The harness, `tests/everywhere.rs`, `tests/learning.rs` and `tests/active.rs` keep their tables where they are (ADR-0227, its Left open).
    - **A change after the calibration** ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)): a change to a file
      under `src/`, or to a test the calibration ran, made after the calibration's commit and before
      a run, is calibrated again by a second dispatch, or the ADR says why it changes no run and the

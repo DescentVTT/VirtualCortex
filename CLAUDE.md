@@ -191,6 +191,8 @@ It runs `spec:index` too (the ADR index, §9 and the hypotheses' tables are what
 (ADR-0197's limits on the text a change adds or modifies against `origin/main`, and an accepted
 ADR's body byte for byte its base copy; `spec:shape:test` tests it).
 
+And it runs `spec:pins`: a round's pinned tables are in its own file, `tests/<binary>/pins/<round>.rs`, declared, with no test among them and no table left in the binary's file past 24 lines ([ADR-0227](docs/adr/0227-the-pinned-tables-in-a-file-a-round.md); `spec:pins:test` tests it).
+
 CI runs `npm run spec`, one step and the same command, so a check inside it is enforced and a check outside it is enforced nowhere: `spec:decisions` was added to the gate and to three documents on 2026-09-20 and to the workflow not at all (F-44). `spec:scripts:test` holds the list to running every `spec:*` and every `*:test` script.
 
 ## Workflow

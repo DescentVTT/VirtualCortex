@@ -1,8 +1,8 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.24.0
+version: 5.25.0
 status: active
-date: 2026-10-28
+date: 2026-10-29
 ---
 
 # Menteion Architecture Whitepaper
@@ -11,9 +11,9 @@ date: 2026-10-28
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.24.0 |
+| Version | 5.25.0 |
 | Status | Active (living document; amended by ADR) |
-| Date | 2026-10-28 |
+| Date | 2026-10-29 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
 | Canonical language | English (this file). A [Traditional Chinese reader's guide](zh-TW/README.md) points into it and carries no layouts or figures of its own. |
 | Structure | [arc42](https://arc42.org) template v8 with [C4](https://c4model.com) views |
@@ -2602,6 +2602,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0224](adr/0224-a-unit-served-on-arrival.md) | A unit served on arrival | accepted |
 | [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
 | [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | A zero sum at the stimulus, and a gentler depression | accepted |
+| [ADR-0227](adr/0227-the-pinned-tables-in-a-file-a-round.md) | The pinned tables in a file a round, a row a line | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -2743,7 +2744,7 @@ Findings are numbered and carried forward until closed. Each names its owner (th
 <!-- @assert-count target="benches/menteion-bench/benches/hot_path.rs" symbol="integrate_x1024" min="1" reason="F-51: the rule's throughput over independent units, beside neuron/integrate's one unit's chain" -->
 <!-- @assert-absence target="runtime/menteion-runtime/src/executor.rs" symbol="MembraneLanes" reason="ADR-0104: the lanes were not kept; the code is in the history at b50ed8c and dc9c5ad" -->
 <!-- @assert-absence target="crates/menteion-core/src/lib.rs" symbol="MembraneLanes" reason="ADR-0104: the lane form went with its use" -->
-<!-- @assert-count target="runtime/menteion-runtime/tests/inhibition.rs" symbol="const H18_SETTLE_PER_MYRIAD" min="1" reason="F-52: H-18's clause-3 moves as its pinned table reads them" -->
+<!-- @assert-count target="runtime/menteion-runtime/tests/inhibition/pins/h19.rs" symbol="const H18_SETTLE_PER_MYRIAD" min="1" reason="F-52: H-18's clause-3 moves as its pinned table reads them" -->
 <!-- @assert-count target="runtime/menteion-runtime/tests/inhibition.rs" symbol="fn carried_punishment" min="1" reason="F-53: the fading of the punishment with the dopamine signal's carry-over, from the rules" -->
 
 ### 11.1 Hypotheses and open questions
@@ -3063,6 +3064,12 @@ An exploration's runs end in `_explore` ([ADR-0193](adr/0193-an-exploration-lane
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="exhaustive-shard.sh" min="1" reason="ADR-0073: the weekly job runs the whole-domain tests in shards" -->
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="exhaustive-shard.sh ${{ matrix.shard }} 18" min="1" reason="ADR-0191: the whole-domain tests are dealt to eighteen shards" -->
 <!-- @assert-present file="scripts/exhaustive-shard.sh" reason="ADR-0073: the shard takes its slice from --list and checks what it ran" -->
+
+A round's pinned tables live in `tests/<binary>/pins/<round>.rs`, one file a round and a row a line, and the tests that read them in `tests/<binary>.rs`, which declares the module `#[rustfmt::skip]` ([ADR-0227](adr/0227-the-pinned-tables-in-a-file-a-round.md)).
+`scripts/check-pins.mjs` (`npm run spec:pins`) holds the declarations, no test among the tables, and no table left in a binary's file past 24 lines.
+<!-- @assert-present file="scripts/check-pins.mjs,scripts/check-pins.test.mjs,runtime/menteion-runtime/tests/inhibition/pins/mod.rs,runtime/menteion-runtime/tests/assembly/pins/mod.rs" reason="ADR-0227: the rounds' files, and the check that holds them" -->
+<!-- @assert-count target="package.json" symbol="node scripts/check-pins.mjs" min="1" reason="ADR-0227: the gate holds the rounds' files" -->
+<!-- @assert-count target="runtime/menteion-runtime/tests/inhibition.rs" symbol='#[path = "inhibition/pins/mod.rs"]' min="1" reason="ADR-0227: the binary declares its rounds' tables, with rustfmt kept off them" -->
 
 The blocks are the ones in `CLAUDE.md`, which is canonical ([ADR-0184](adr/0184-the-runs-off-the-developer-machine.md)). The first runs on the developer machine before a push and again in the pull request's gate; the second runs in the gate alone, the `arm64` job its tests on another architecture; the third runs by dispatch alone, and the weekly sweep is the whole-tree mutation run on a schedule, one job per area (ADR-0058). A round's arms, its lead-ins and its trials run by a dispatch at `scope=arms`, each test in a job of its own on AArch64 with its output kept (`scripts/arm-run.sh`). Its calibration, dispatched with them, is a dispatch at `scope=exhaustive` with the round's own tests excluded by name, and its reproduction one with those tests alone named in `only`, on x86-64 ([ADR-0211](adr/0211-the-round-shortened.md)); `scripts/exhaustive-shard.sh` fails before any test runs if the listing does not hold a name. The sweep runs on the schedule alone, and a pull request of documents alone skips the four Rust jobs.
 <!-- @assert-count target=".github/workflows/ci.yml" symbol="inputs.scope == 'arms'" min="2" reason="ADR-0184: a round's runs go by a dispatch at scope=arms" -->
