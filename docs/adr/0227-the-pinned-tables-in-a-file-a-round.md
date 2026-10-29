@@ -18,7 +18,7 @@ decision-makers: Menteion maintainers
 
   This pull request moves 554 tables out of `tests/inhibition.rs` and 317 out of `tests/assembly.rs`, every token as it was.
 - **Why.** `tests/inhibition.rs` was 471 723 lines and 15.1 MB, about 91 % of them tables, and each measured round added about 22 000 lines at its end. Its diffs could not be reviewed, its tests were buried among the tables, and an agent could not read it.
-- **Left open.** The tables pinned before brief 039, in the harness, `everywhere.rs`, `learning.rs` and `active.rs`, stay where they are. So do the one-line pins.
+- **Left open.** The tables the other binaries pin, in the harness, `everywhere.rs`, `learning.rs` and `active.rs`, stay where they are. So do the one-line pins.
 
 ## Context and Problem Statement
 
@@ -163,7 +163,7 @@ That a shorter table is in its round's file, and that each row is one line, is h
 - Good: no type, value, test or name changes, and the build is what F-81 read.
 - Bad: rustfmt checks none of a round's file, so its layout is the round's and the review's, beyond what `spec:pins` holds.
 - Bad: 4 481 lines of the rounds' files are over 200 columns, up to 698.
-- Bad: `git diff` and GitHub show this pull request's two files with lines the move did not add, since many lines repeat. `git diff --diff-algorithm=histogram` shows the 14 lines it added.
+- Bad: the default `git diff` shows this pull request's two files with lines the move did not add, since many lines repeat. `git diff --diff-algorithm=histogram` shows the 14 lines it added.
 - Neutral: F-81 is unchanged.
 
 ## Alternatives considered and why rejected
