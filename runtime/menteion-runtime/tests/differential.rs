@@ -372,6 +372,7 @@ fn the_random_network_hashes_to_the_pinned_value_on_every_architecture() {
             step_probe: false,
             kept_addresses: 0,
             reads_its_delay: false,
+            depression_exponent: menteion_core::DepressionExponent::One,
         },
         wire_random,
         20_000,

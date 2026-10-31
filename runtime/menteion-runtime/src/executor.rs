@@ -51,12 +51,13 @@ use crate::pool::Pools;
 use crate::store::{Induction, TermError};
 use menteion_affect::InteroceptiveState;
 use menteion_core::{
-    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, FLAG_FACILITATING, FLAG_SLOW,
-    FlatTimingWheel, GateState, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS,
-    ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD, PlasticDelta, Polarity,
-    REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SlowCurrent, StpClass, SynapseBlock, THRESHOLD_BASE,
-    WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16, message_is_apical, message_is_synaptic,
-    spike_message, synapse_token, synaptic_message, token_block, token_slot,
+    BASAL_LEAK_SHIFT, CHAIN_END, Cadence, DendriticSuperNeuron, DepressionExponent,
+    FLAG_FACILITATING, FLAG_SLOW, FlatTimingWheel, GateState, ISTDP_PERIOD_MAX_TICKS,
+    ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, MODULATION_ONE_Q16, NO_SPIKE_ON_RECORD,
+    PlasticDelta, Polarity, REFRACTORY_TICKS, SYNAPSES_PER_BLOCK, SlowCurrent, StpClass,
+    SynapseBlock, THRESHOLD_BASE, WorkerWheel, istdp_alpha_q1_15, message_efficacy_q16,
+    message_is_apical, message_is_synaptic, spike_message, synapse_token, synaptic_message,
+    token_block, token_slot,
 };
 use menteion_ethics::EthicalEvaluationGate;
 use menteion_executive::{
@@ -75,7 +76,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{
-    AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+    AtomicBool, AtomicI32, AtomicI64, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
 };
 use std::thread::{self, JoinHandle};
 
@@ -296,6 +297,11 @@ pub struct Config {
     /// addresses, which need the critic and its window. Not in the image, as the entries are
     /// not: for an engine built from an image, the configuration's.
     pub reads_its_delay: bool,
+    /// The exponent of every excitatory pairing's depression (ADR-0226, ADR-0228). At
+    /// [`DepressionExponent::One`] (the default) it is ADR-0055's rule, and every run is the run
+    /// it was, bit for bit. Not in the image: for an engine built from an image, the
+    /// configuration's.
+    pub depression_exponent: DepressionExponent,
 }
 
 /// The oldest age a reward may name (ADR-0207): four trials, the eligibility trace's τ of
@@ -354,6 +360,7 @@ impl Default for Config {
             step_probe: false,
             kept_addresses: 0,
             reads_its_delay: false,
+            depression_exponent: DepressionExponent::One,
         }
     }
 }
@@ -847,6 +854,72 @@ fn consolidate_each(
     }
 }
 
+/// The most groups a zero sum holds (ADR-0228): one bit each in `Shared::zero_sum_touched`.
+pub const ZERO_SUM_GROUPS_MAX: usize = 64;
+
+/// The fraction every synapse of a zero sum starts at (ADR-0226): a half, in $2^{-32}$ LSB, so
+/// that a synapse's rounding over all its rounds is within half an LSB of the exact quotients'
+/// either way, but for the $2^{-32}$ LSB each round's quotient is truncated to.
+const ZERO_SUM_HALF: u32 = 1 << 31;
+
+/// An excitatory weight scaled by `value / sum` with its fraction carried (ADR-0226):
+/// $\lfloor w V / S + f \rfloor$ within `[0, i16::MAX]`, the fraction left over kept in
+/// `fraction` for the synapse's next round, $f$ in $2^{-32}$ LSB. The product is an `i128`, since
+/// $S$ at the arena's $2^{28}$ synapses at the rail is past $2^{42}$ and $w V 2^{32}$ past an
+/// `i64`. Nothing moves at a sum of zero, whose weights are all zero.
+fn carried_weight(weight: i16, value: i64, sum: i64, fraction: &mut u32) -> i16 {
+    let scaled = i128::from(weight)
+        .saturating_mul(i128::from(value))
+        .wrapping_shl(32)
+        .checked_div(i128::from(sum));
+    let Some(scaled) = scaled else {
+        return weight;
+    };
+    let carried = scaled.saturating_add(i128::from(*fraction));
+    *fraction = carried as u32;
+    carried.wrapping_shr(32).clamp(0, i128::from(i16::MAX)) as i16
+}
+
+/// One group's round of the zero sum (ADR-0226): every synapse of the chains `heads` start
+/// (encoded as a unit stores its first block) onto a unit `targets` marks, their weights summed
+/// and each scaled to `value` by `carried_weight`, which leaves a sum of zero. A group's sum is a
+/// walk of its sources' chains alone, since the tree keeps a synapse with its presynaptic unit.
+/// `fractions` are the synapses' fractions, one for each slot of the arena in its order; `at` is
+/// scratch.
+fn zero_sum_round(
+    blocks: &mut [SynapseBlock],
+    heads: &[u32],
+    value: i64,
+    targets: &[bool],
+    fractions: &mut [u32],
+    at: &mut Vec<(u32, u8)>,
+) {
+    at.clear();
+    let mut sum = 0i64;
+    for &head in heads {
+        for s in SynapseBlock::fan_out(blocks, head) {
+            if targets.get(s.target as usize).copied().unwrap_or(false) {
+                sum = sum.saturating_add(i64::from(s.weight_q1_15));
+                at.push((s.block_idx, s.slot));
+            }
+        }
+    }
+    if sum == value {
+        return;
+    }
+    for &(block_idx, slot) in at.iter() {
+        let place = (block_idx as usize)
+            .saturating_mul(SYNAPSES_PER_BLOCK)
+            .saturating_add(slot as usize);
+        let weight = blocks
+            .get_mut(block_idx as usize)
+            .and_then(|block| block.weights_q1_15.get_mut(slot as usize));
+        if let (Some(w), Some(fraction)) = (weight, fractions.get_mut(place)) {
+            *w = carried_weight(*w, value, sum, fraction);
+        }
+    }
+}
+
 /// The injector payload that asks for a turn without a message.
 pub const ACTIVATE: u32 = u32::MAX;
 
@@ -1258,6 +1331,18 @@ struct Shared {
     /// The inhibitory rule's depression per spike at the engine's target period (ADR-0053),
     /// read by every worker in the fan-out phase.
     istdp_alpha: AtomicI32,
+    /// The excitatory depression's exponent (ADR-0228): the configuration's, read by every
+    /// worker in the fan-out phase.
+    depression_exponent: DepressionExponent,
+    /// The zero sum (ADR-0226, ADR-0228), in no image: each unit's group as a held source, its
+    /// index plus one, zero elsewhere; whether each unit is a held target; and the groups
+    /// touched this tick, one bit each. The first two are written between ticks by
+    /// `Executor::set_zero_sum`; a group's bit is set by any worker whose consolidation moved
+    /// one of the group's synapses onto a target in the fan-out phase, and taken by the
+    /// coordinator after the tick.
+    zero_sum_source: Box<[AtomicU8]>,
+    zero_sum_target: Box<[AtomicBool]>,
+    zero_sum_touched: AtomicU64,
     /// The units that fired this tick, one slot per unit, appended by every worker at the
     /// spike through `fired_len` and taken by the coordinator after the tick into the train
     /// (ADR-0050); empty when the executor keeps no train.
@@ -1273,6 +1358,31 @@ struct Shared {
 }
 
 impl Shared {
+    /// `unit`'s group as a held source of the zero sum (ADR-0228), its index plus one; zero for
+    /// any other unit, and for one outside the arena, which no spike names.
+    fn zero_sum_group(&self, unit: u32) -> u8 {
+        self.zero_sum_source
+            .get(unit as usize)
+            .map_or(0, |group| group.load(Ordering::Relaxed))
+    }
+
+    /// True when a slot of `block` holds a weight other than `before`'s onto a held target of
+    /// the zero sum (ADR-0228).
+    fn moved_onto_a_target(
+        &self,
+        block: &SynapseBlock,
+        before: &[i16; SYNAPSES_PER_BLOCK],
+    ) -> bool {
+        (0..SYNAPSES_PER_BLOCK).any(|slot| {
+            block.weights_q1_15[slot] != before[slot]
+                && block.target(slot).is_some_and(|t| {
+                    self.zero_sum_target
+                        .get(t as usize)
+                        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                })
+        })
+    }
+
     /// True when `unit` is an addressed source (ADR-0068); false for a unit outside the
     /// arena, which no spike names.
     fn is_source(&self, unit: u32) -> bool {
@@ -1543,6 +1653,13 @@ pub struct Executor<const CAP: usize> {
     /// brought them up to date (ADR-0224). A `Cell`, so that the executor is not `Sync`: a read
     /// under `&self` writes the arena, and no other thread holds `&self` (the assertion below).
     unsettled: Cell<bool>,
+    /// The zero sum (ADR-0226, ADR-0228), in no image, empty while unset: each group's sources'
+    /// chains and its held value; each unit, whether it is a held target; each slot of the
+    /// synapse arena's fraction, in the arena's order; and the rounds' scratch.
+    zero_sum_groups: Vec<(Vec<u32>, i64)>,
+    zero_sum_targets: Vec<bool>,
+    zero_sum_fractions: Vec<u32>,
+    zero_sum_at: Vec<(u32, u8)>,
 }
 
 // The executor is not `Sync` (ADR-0224): `Executor::units` writes the asleep units' records
@@ -1723,6 +1840,10 @@ impl<const CAP: usize> Executor<CAP> {
             istdp_alpha: AtomicI32::new(i32::from(istdp_alpha_q1_15(
                 config.istdp_target_period_ticks,
             ))),
+            depression_exponent: config.depression_exponent,
+            zero_sum_source: (0..config.units).map(|_| AtomicU8::new(0)).collect(),
+            zero_sum_target: (0..config.units).map(|_| AtomicBool::new(false)).collect(),
+            zero_sum_touched: AtomicU64::new(0),
             fired: (0..fired_slots).map(|_| AtomicU32::new(0)).collect(),
             fired_len: AtomicUsize::new(0),
             episodes: Arena::from_vec(vec![Episode::default(); config.episodes]),
@@ -1867,6 +1988,10 @@ impl<const CAP: usize> Executor<CAP> {
             descendants: 0,
             read_steps: Cell::new(0),
             unsettled: Cell::new(false),
+            zero_sum_groups: Vec::new(),
+            zero_sum_targets: Vec::new(),
+            zero_sum_fractions: Vec::new(),
+            zero_sum_at: Vec::new(),
         })
     }
 
@@ -1874,6 +1999,106 @@ impl<const CAP: usize> Executor<CAP> {
     /// or the image's for an engine built from one.
     pub fn istdp_target_period_ticks(&self) -> u32 {
         self.istdp_target_period_ticks
+    }
+
+    /// The exponent of every excitatory pairing's depression (ADR-0228), the configuration's.
+    pub fn depression_exponent(&self) -> DepressionExponent {
+        self.shared.depression_exponent
+    }
+
+    /// Holds each of `groups`, its excitatory source units and its value, at a zero sum over
+    /// `targets` (ADR-0226, ADR-0228), between ticks, from the next tick: after every tick whose
+    /// consolidations moved one of a group's synapses onto a target, the coordinator walks the
+    /// group's chains, sums those synapses' weights and scales each back to the value, with its
+    /// fraction carried (`zero_sum_round`). Every fraction starts at a half, here, whenever the
+    /// groups are set. No groups unsets it, and every run is the run it was, bit for bit. Refused
+    /// whole, nothing changed, for more than `ZERO_SUM_GROUPS_MAX` groups, a value below zero, a
+    /// unit outside the arena, a source that is not excitatory, or a source named twice. It is in
+    /// no image, so an engine decoded from one starts unset.
+    pub fn set_zero_sum(&mut self, groups: &[(&[u32], i64)], targets: &[u32]) -> bool {
+        if groups.len() > ZERO_SUM_GROUPS_MAX {
+            return false;
+        }
+        let units = self.shared.zero_sum_source.len();
+        let mut source = vec![0u8; units];
+        let mut held = Vec::with_capacity(groups.len());
+        for (g, &(sources, value)) in groups.iter().enumerate() {
+            if value < 0 {
+                return false;
+            }
+            // Below `ZERO_SUM_GROUPS_MAX`, so the index plus one fits.
+            let index = (g as u8).wrapping_add(1);
+            let mut heads = Vec::with_capacity(sources.len());
+            for &unit in sources {
+                let Some(u) = self.units().get(unit as usize) else {
+                    return false;
+                };
+                if Polarity::of_flags(u.flags) != Polarity::Excitatory {
+                    return false;
+                }
+                // A unit's chain is set when the network is made and never moves.
+                heads.push(u.synapse_slab_idx);
+                match source.get_mut(unit as usize) {
+                    Some(slot @ 0) => *slot = index,
+                    _ => return false,
+                }
+            }
+            held.push((heads, value));
+        }
+        let mut target = vec![false; units];
+        for &unit in targets {
+            match target.get_mut(unit as usize) {
+                Some(slot) => *slot = true,
+                None => return false,
+            }
+        }
+        let on = !groups.is_empty();
+        for (flag, &index) in self.shared.zero_sum_source.iter().zip(&source) {
+            flag.store(index, Ordering::Relaxed);
+        }
+        for (flag, &is) in self.shared.zero_sum_target.iter().zip(&target) {
+            flag.store(on && is, Ordering::Relaxed);
+        }
+        self.zero_sum_groups = held;
+        self.zero_sum_targets = if on { target } else { Vec::new() };
+        self.zero_sum_fractions = if on {
+            let slots = self.blocks().len().saturating_mul(SYNAPSES_PER_BLOCK);
+            vec![ZERO_SUM_HALF; slots]
+        } else {
+            Vec::new()
+        };
+        true
+    }
+
+    /// How many groups the zero sum holds (ADR-0228), none while unset.
+    pub fn zero_sum_groups(&self) -> usize {
+        self.zero_sum_groups.len()
+    }
+
+    /// After a tick's phases, while the workers wait at the barrier (ADR-0228): every group this
+    /// tick's consolidations touched, held at its value by one round of `zero_sum_round`. The
+    /// synapse arena alone: a read of the unit arena here would bring the asleep units up to
+    /// date before the clock moves (ADR-0224). Nothing while unset, or in a tick that touched
+    /// none.
+    fn hold_zero_sum(&mut self) {
+        let touched = self.shared.zero_sum_touched.swap(0, Ordering::Relaxed);
+        if touched == 0 {
+            return;
+        }
+        let groups = std::mem::take(&mut self.zero_sum_groups);
+        let targets = std::mem::take(&mut self.zero_sum_targets);
+        let mut fractions = std::mem::take(&mut self.zero_sum_fractions);
+        let mut at = std::mem::take(&mut self.zero_sum_at);
+        let blocks = self.blocks_mut();
+        for (g, (heads, value)) in groups.iter().enumerate() {
+            if touched.wrapping_shr(g as u32) & 1 != 0 {
+                zero_sum_round(blocks, heads, *value, &targets, &mut fractions, &mut at);
+            }
+        }
+        self.zero_sum_groups = groups;
+        self.zero_sum_targets = targets;
+        self.zero_sum_fractions = fractions;
+        self.zero_sum_at = at;
     }
 
     /// The loader's: the target period an image holds, which outranks the configuration's
@@ -3728,6 +3953,8 @@ impl<const CAP: usize> Executor<CAP> {
         self.shared.barrier.wait();
         self.worker0.phase_deliveries(&self.shared);
         self.shared.barrier.wait();
+        // The zero sum (ADR-0228), nothing while unset.
+        self.hold_zero_sum();
         self.merge_spikes(now);
         // A clock wraps by name (§8.1): the dynamics already see it as `tick as u32`.
         self.tick = self.tick.wrapping_add(1);
@@ -4075,6 +4302,9 @@ impl<const CAP: usize> Worker<CAP> {
         // (ADR-0053), published by the coordinator; within `i16`, as `istdp_alpha_q1_15`
         // bounds it.
         let istdp_alpha = shared.istdp_alpha.load(Ordering::Relaxed) as i16;
+        // The excitatory depression's exponent (ADR-0228), the rule's unless the configuration
+        // says otherwise.
+        let exponent = shared.depression_exponent;
         for k in 0..self.spiked.len() {
             let (unit, release_u, release_r) = self.spiked[k];
             // SAFETY (phase 2): every turn ended at the barrier, so no `&mut` to any unit
@@ -4088,6 +4318,9 @@ impl<const CAP: usize> Worker<CAP> {
             // Whether the chain's synapses are from an addressed source (ADR-0068), read once
             // for the whole chain; the target side is read per slot below.
             let from_source = shared.is_source(unit);
+            // The unit's group as a held source of the zero sum (ADR-0228), its index plus one,
+            // zero while unset and for every other unit.
+            let zero_sum_group = shared.zero_sum_group(unit);
             let mut next = pre.synapse_slab_idx;
             let mut remaining = shared.blocks.len();
             while next != CHAIN_END && remaining > 0 {
@@ -4120,8 +4353,16 @@ impl<const CAP: usize> Worker<CAP> {
                         polarity,
                     )
                 });
-                block.step_stdp_all(now, posts, polarity, istdp_alpha);
+                block.step_stdp_all_shaped(now, posts, polarity, istdp_alpha, exponent);
+                let before = block.weights_q1_15;
                 consolidate_each(block, &per_slot, polarity);
+                // The unit's group touched where this consolidation moved one of its synapses
+                // onto a held target, for the coordinator to hold after the tick (ADR-0228).
+                if zero_sum_group != 0 && shared.moved_onto_a_target(block, &before) {
+                    // The group's index, below `ZERO_SUM_GROUPS_MAX`.
+                    let bit = 1u64.wrapping_shl(u32::from(zero_sum_group.wrapping_sub(1)));
+                    shared.zero_sum_touched.fetch_or(bit, Ordering::Relaxed);
+                }
                 let released = block.release_all(release_u, release_r);
                 for (slot, &efficacy) in released.iter().enumerate() {
                     let Some(target) = block.target(slot) else {
@@ -8846,5 +9087,663 @@ mod delay_prop {
             given > 1_000 && refused > 200,
             "{given} given, {refused} refused"
         );
+    }
+}
+
+/// The zero sum at the stimulus and the depression's exponent on the engine (ADR-0226, ADR-0228).
+/// By hand at the edges; the carried scaling over the lattice and a walk against an exact rational
+/// oracle; the engine tick by tick against a twin on which the host applies that oracle, under
+/// both services; and unset, the engine as it is, bit for bit.
+#[cfg(test)]
+mod zero_sum_prop {
+    use super::*;
+    use crate::image::Image;
+    use menteion_core::{
+        FLAG_INHIBITORY, ISTDP_ALPHA_Q1_15, STDP_A_PLUS_Q1_15, STP_MAX, STP_U,
+        synaptic_efficacy_q16,
+    };
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    /// Messages that make an armed unit at rest fire.
+    const KICK: usize = 13;
+
+    /// The exact rule (ADR-0226): the weight $\lfloor w V / S + f / 2^{32} \rfloor$ at most the
+    /// rail, and the fraction left over truncated to $2^{-32}$ LSB, from the rational over the
+    /// common denominator $S 2^{32}$. `sum` above zero, `weight` and `value` at or above zero.
+    fn oracle(weight: i16, value: i64, sum: i64, fraction: u32) -> (i16, u32) {
+        let (w, v, s, f) = (
+            i128::from(weight),
+            i128::from(value),
+            i128::from(sum),
+            i128::from(fraction),
+        );
+        let one = 1i128 << 32;
+        let denominator = s.saturating_mul(one);
+        let numerator = w
+            .saturating_mul(v)
+            .saturating_mul(one)
+            .saturating_add(f.saturating_mul(s));
+        let whole = numerator.div_euclid(denominator);
+        let left = numerator.rem_euclid(denominator).div_euclid(s);
+        (
+            whole.min(i128::from(i16::MAX)) as i16,
+            u32::try_from(left).expect("below one"),
+        )
+    }
+
+    /// A weight's rounds by hand: a quotient just under one, a carry from just under one, the
+    /// rail, a weight of zero, a sum of zero, and a product past an `i64`.
+    #[test]
+    fn a_carried_weight_by_hand_at_its_edges() {
+        // 4 000 × 15 999 / 16 000 is 3 999.75: carried from a half it loses an LSB in the third
+        // round, three quarters left over.
+        let (mut w, mut f) = (4_000i16, ZERO_SUM_HALF);
+        let mut out = Vec::new();
+        for _ in 0..3 {
+            w = carried_weight(w, 15_999, 16_000, &mut f);
+            out.push(w);
+        }
+        assert_eq!((out, f), (vec![4_000, 4_000, 3_999], 0xC000_0000));
+        // A carry from just under one: 4 000.25 and 0.9999….
+        let mut f = u32::MAX;
+        assert_eq!(carried_weight(4_000, 16_001, 16_000, &mut f), 4_001);
+        assert_eq!(f, 0x3FFF_FFFF);
+        // At the rail the weight stays there and the fraction is kept: 34 814.9375 and a half.
+        let mut f = ZERO_SUM_HALF;
+        assert_eq!(carried_weight(i16::MAX, 17_000, 16_000, &mut f), i16::MAX);
+        assert_eq!(f, 0x7000_0000);
+        // A weight of zero stays zero, its fraction as it was.
+        let mut f = 0xC000_0000;
+        assert_eq!(carried_weight(0, 16_001, 16_000, &mut f), 0);
+        assert_eq!(f, 0xC000_0000);
+        // A sum of zero moves nothing.
+        let mut f = 0x1234_5678;
+        assert_eq!(carried_weight(7, 16_000, 0, &mut f), 7);
+        assert_eq!(f, 0x1234_5678);
+        // Past an `i64`: the rail times 2^43 over 2^44 is 16 383.5, and a half carries it.
+        let mut f = ZERO_SUM_HALF;
+        assert_eq!(
+            carried_weight(i16::MAX, 1i64 << 43, 1i64 << 44, &mut f),
+            16_384
+        );
+        assert_eq!(f, 0);
+    }
+
+    /// The carried scaling over the lattice and a walk: the weight and the fraction are the exact
+    /// rational's, at or above zero and never past the rail, at every width of a group's sum.
+    #[test]
+    fn every_carried_weight_is_the_exact_rational_s() {
+        let check = |weight: i16, value: i64, sum: i64, fraction: u32| {
+            let mut f = fraction;
+            let w = carried_weight(weight, value, sum, &mut f);
+            assert_eq!(
+                (w, f),
+                oracle(weight, value, sum, fraction),
+                "{weight} {value} {sum} {fraction}"
+            );
+            assert!(w >= 0, "{weight} {value} {sum} {fraction}");
+        };
+        let weights: Vec<i16> = I16_LATTICE.iter().copied().filter(|&w| w >= 0).collect();
+        let wide: Vec<i64> = I32_LATTICE
+            .iter()
+            .map(|&x| i64::from(x).saturating_abs())
+            .chain([1 << 31, 1 << 40, 1 << 43, i64::MAX])
+            .collect();
+        for &weight in &weights {
+            for &value in &wide {
+                for &sum in wide.iter().filter(|&&s| s > 0) {
+                    for &fraction in U32_LATTICE.iter() {
+                        check(weight, value, sum, fraction);
+                    }
+                }
+            }
+        }
+        let mut rng = Lcg::new(0x0228);
+        for _ in 0..200_000 {
+            let sum = 1i64.saturating_add(i64::from(rng.next_u32()) >> rng.below(16));
+            // Near the sum, as a round's is, or anywhere.
+            let value = match rng.below(2) {
+                0 => sum.saturating_add(i64::from(rng.next_i16() >> 8)).max(0),
+                _ => i64::from(rng.next_u32()),
+            };
+            check(rng.next_i16().max(0), value, sum, rng.next_u32());
+        }
+    }
+
+    /// A hand-made arena: one chain of two blocks, 30 000, 12 000 and 100 onto target 5 and 6 000
+    /// onto unit 7, and another chain's 10 000 onto target 5, with every fraction at a half.
+    fn arena() -> (Vec<SynapseBlock>, Vec<bool>, Vec<u32>) {
+        let mut blocks = vec![SynapseBlock::new(); 3];
+        assert!(blocks[0].set_synapse(0, 5, 30_000, 0, false));
+        assert!(blocks[0].set_synapse(1, 7, 6_000, 0, false));
+        assert!(blocks[0].set_synapse(2, 5, 12_000, 0, false));
+        assert!(blocks[0].link(1));
+        assert!(blocks[1].set_synapse(3, 5, 100, 0, false));
+        assert!(blocks[2].set_synapse(0, 5, 10_000, 0, false));
+        let mut targets = vec![false; 8];
+        targets[5] = true;
+        (blocks, targets, vec![ZERO_SUM_HALF; 12])
+    }
+
+    fn weights_of(blocks: &[SynapseBlock]) -> Vec<i16> {
+        blocks.iter().flat_map(|b| b.weights_q1_15).collect()
+    }
+
+    /// A group's round reads its sources' synapses onto the targets alone, scales each by the
+    /// same quotient with its own fraction, either way, at most the rail, and leaves every other
+    /// synapse and fraction; at its value, and at a sum of zero, nothing moves.
+    #[test]
+    fn a_round_scales_a_group_s_synapses_onto_the_targets_and_no_other() {
+        let run = |value: i64| {
+            let (mut blocks, targets, mut fractions) = arena();
+            let mut at = Vec::new();
+            zero_sum_round(&mut blocks, &[1], value, &targets, &mut fractions, &mut at);
+            (weights_of(&blocks), fractions)
+        };
+        // The group's sum is 42 100. Held at 42 099, from a half: 29 999.29 + 0.5 stays below
+        // 30 000, 11 999.71 + 0.5 and 99.998 + 0.5 carry one each.
+        let (w, f) = run(42_099);
+        assert_eq!(
+            w,
+            vec![29_999, 6_000, 12_000, 0, 0, 0, 0, 100, 10_000, 0, 0, 0]
+        );
+        assert_eq!(f[0], oracle(30_000, 42_099, 42_100, ZERO_SUM_HALF).1);
+        assert_eq!(f[2], oracle(12_000, 42_099, 42_100, ZERO_SUM_HALF).1);
+        assert_eq!(f[7], oracle(100, 42_099, 42_100, ZERO_SUM_HALF).1);
+        for slot in [1, 3, 4, 5, 6, 8, 9, 10, 11] {
+            assert_eq!(f[slot], ZERO_SUM_HALF, "slot {slot} is not the group's");
+        }
+        // Scaled up by 116 %, the first at the rail.
+        let (w, _) = run(48_836);
+        assert_eq!(
+            (w[0], w[1], w[2], w[7], w[8]),
+            (i16::MAX, 6_000, 13_920, 116, 10_000)
+        );
+        // At its value nothing moves, no fraction either.
+        let (w, f) = run(42_100);
+        assert_eq!(w, weights_of(&arena().0));
+        assert_eq!(f, vec![ZERO_SUM_HALF; 12]);
+        // A sum of zero is left.
+        let (mut blocks, targets, mut fractions) = arena();
+        blocks[0].weights_q1_15[0] = 0;
+        blocks[0].weights_q1_15[2] = 0;
+        blocks[1].weights_q1_15[3] = 0;
+        let before = weights_of(&blocks);
+        let mut at = Vec::new();
+        zero_sum_round(&mut blocks, &[1], 500, &targets, &mut fractions, &mut at);
+        assert_eq!(weights_of(&blocks), before);
+        assert_eq!(fractions, vec![ZERO_SUM_HALF; 12]);
+    }
+
+    /// `set_zero_sum` refuses whole, nothing changed, and every set starts the fractions again.
+    #[test]
+    fn a_zero_sum_is_set_whole_or_refused_and_its_fractions_start_at_a_half() {
+        let mut exec = Executor::<64>::new(Config {
+            units: 70,
+            blocks: 2,
+            ..Config::default()
+        })
+        .expect("a valid configuration");
+        exec.units_mut()[1].flags = FLAG_INHIBITORY;
+        assert_eq!(exec.zero_sum_groups(), 0, "unset by default");
+        assert!(
+            exec.set_zero_sum(&[(&[0], 1), (&[3], 0)], &[2]),
+            "a value of zero is one"
+        );
+        let state = |e: &Executor<64>| {
+            (
+                e.zero_sum_groups.clone(),
+                e.zero_sum_targets.clone(),
+                e.zero_sum_fractions.len(),
+                e.shared.zero_sum_group(0),
+                e.shared.zero_sum_group(3),
+                e.shared.zero_sum_group(2),
+            )
+        };
+        assert_eq!(exec.zero_sum_groups(), 2);
+        let set = state(&exec);
+        assert_eq!((set.2, set.3, set.4, set.5), (8, 1, 2, 0));
+        assert!(set.1[2] && !set.1[0], "the target alone");
+        type Groups<'a> = &'a [(&'a [u32], i64)];
+        let refused: [(Groups, &[u32]); 6] = [
+            (&[(&[0, 99], 1)], &[2]),
+            (&[(&[0, 1], 1)], &[2]),
+            (&[(&[0], 1), (&[0], 1)], &[2]),
+            (&[(&[0, 0], 1)], &[2]),
+            (&[(&[0], -1)], &[2]),
+            (&[(&[0], 1)], &[99]),
+        ];
+        for (groups, targets) in refused {
+            assert!(
+                !exec.set_zero_sum(groups, targets),
+                "{groups:?} {targets:?}"
+            );
+            assert_eq!(state(&exec), set, "{groups:?} {targets:?}: refused whole");
+        }
+        // Every group has a bit: 64 of them, the most, are set, and 65 refused.
+        let units: Vec<u32> = (2..68).collect();
+        let many: Vec<(&[u32], i64)> = units
+            .iter()
+            .map(|u| (core::slice::from_ref(u), 1))
+            .collect();
+        assert!(!exec.set_zero_sum(&many[..65], &[69]));
+        assert_eq!(state(&exec), set);
+        assert!(exec.set_zero_sum(&many[..ZERO_SUM_GROUPS_MAX], &[69]));
+        assert_eq!(exec.zero_sum_groups(), ZERO_SUM_GROUPS_MAX);
+        assert_eq!(exec.shared.zero_sum_group(65), 64);
+        // A set starts every fraction at a half, again.
+        exec.zero_sum_fractions[3] = 7;
+        assert!(exec.set_zero_sum(&many[..2], &[69]));
+        assert_eq!(exec.zero_sum_fractions, vec![ZERO_SUM_HALF; 8]);
+        // No groups unsets it, whatever targets it is given, and holds nothing.
+        assert!(exec.set_zero_sum(&[], &[69]));
+        assert_eq!(exec.zero_sum_groups(), 0);
+        assert_eq!(exec.shared.zero_sum_group(2), 0);
+        assert!(exec.zero_sum_targets.is_empty() && exec.zero_sum_fractions.is_empty());
+        assert!(
+            !exec.shared.zero_sum_target[69].load(Ordering::Relaxed),
+            "no unit left a target"
+        );
+    }
+
+    /// Every unit armed.
+    fn arm(exec: &mut Executor<64>) {
+        for unit in exec.units_mut() {
+            unit.v_thresh = THRESHOLD_BASE;
+            unit.stp_u_rel = STP_U;
+            unit.stp_r_ves = STP_MAX;
+        }
+    }
+
+    /// Unit 0 onto units 2, 3 and 4 and unit 1 onto units 2 and 5, each its own block, every
+    /// weight 8 000, delays one tick; the modulation at rest 1.0, so that a spike consolidates
+    /// its whole trace.
+    fn engine(exponent: DepressionExponent) -> Executor<64> {
+        let mut exec = Executor::<64>::new(Config {
+            workers: 2,
+            units: 6,
+            blocks: 2,
+            nodes_per_worker: 256,
+            injector_capacity: 64,
+            depression_exponent: exponent,
+            ..Config::default()
+        })
+        .expect("a valid configuration");
+        for (slot, target) in [2u32, 3, 4].into_iter().enumerate() {
+            assert!(exec.blocks_mut()[0].set_synapse(slot, target, 8_000, 1, false));
+        }
+        for (slot, target) in [2u32, 5].into_iter().enumerate() {
+            assert!(exec.blocks_mut()[1].set_synapse(slot, target, 8_000, 1, false));
+        }
+        arm(&mut exec);
+        assert!(exec.units_mut()[0].set_first_block(0));
+        assert!(exec.units_mut()[1].set_first_block(1));
+        exec
+    }
+
+    /// Makes `unit` fire, and runs until it has.
+    fn fire(exec: &mut Executor<64>, unit: u32) -> u32 {
+        let before = exec.units()[unit as usize].last_soma_spike_tick;
+        let inject = exec.injector();
+        let strong = synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX);
+        for _ in 0..KICK {
+            inject.inject(unit, spike_message(strong, false)).unwrap();
+        }
+        for _ in 0..40 {
+            exec.tick();
+            let now = exec.units()[unit as usize].last_soma_spike_tick;
+            if now != before {
+                return now;
+            }
+        }
+        panic!("unit {unit} did not fire");
+    }
+
+    /// A pairing: `pre`, `post` twenty ticks on, and `pre` again once it can fire, whose
+    /// consolidation moves its synapse onto `post`, potentiated.
+    fn pairing(exec: &mut Executor<64>, pre: u32, post: u32) {
+        fire(exec, pre);
+        exec.run(20);
+        fire(exec, post);
+        exec.run(4_000);
+        fire(exec, pre);
+        exec.run(4);
+    }
+
+    /// A group moved is scaled back after its tick, its synapses onto the targets alone; a group
+    /// no consolidation touched is left whatever its value says; a move onto no target touches
+    /// none, nor does a spike that moves nothing; and the bit taken leaves the next tick clean.
+    #[test]
+    fn a_group_is_held_after_a_tick_that_moved_it_and_no_other_is() {
+        let sums = [16_000i64, 8_000];
+        let held = |value: [i64; 2]| {
+            let mut exec = engine(DepressionExponent::One);
+            assert!(exec.set_zero_sum(&[(&[0], value[0]), (&[1], value[1])], &[2, 3]));
+            exec
+        };
+        let weights = |exec: &Executor<64>| weights_of(exec.blocks());
+        // The twin carries no zero sum, so its weights are the rule's.
+        let mut twin = engine(DepressionExponent::One);
+        pairing(&mut twin, 0, 2);
+        let rule = weights(&twin);
+        let rise = i64::from(rule[0]).saturating_sub(8_000);
+        assert!(
+            (1..=i64::from(STDP_A_PLUS_Q1_15)).contains(&rise),
+            "the pairing moved the synapse onto unit 2: {rise}"
+        );
+        assert_eq!((rule[1], rule[2]), (8_000, 8_000));
+        // Group 0 moved: its two synapses onto the targets scaled back to the sum it was; its
+        // synapse onto unit 4 and group 1, held at more than its sum, left.
+        let mut exec = held([sums[0], sums[1].saturating_add(99)]);
+        pairing(&mut exec, 0, 2);
+        let sum = sums[0].saturating_add(rise);
+        let expected: Vec<i16> = [rule[0], rule[1]]
+            .iter()
+            .map(|&w| oracle(w, sums[0], sum, ZERO_SUM_HALF).0)
+            .collect();
+        let w = weights(&exec);
+        assert_eq!(&w[..2], expected.as_slice());
+        assert_eq!(&w[2..], &rule[2..], "no other synapse");
+        assert_eq!(exec.shared.zero_sum_touched.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            exec.zero_sum_fractions[0],
+            oracle(rule[0], sums[0], sum, ZERO_SUM_HALF).1,
+            "the fraction of slot 0 of block 0, kept"
+        );
+        // Group 1 moved alone, by its pairing: group 0, held away from its sum, left.
+        let mut twin = engine(DepressionExponent::One);
+        pairing(&mut twin, 1, 2);
+        let rule = weights(&twin);
+        let mut exec = held([sums[0].saturating_add(99), sums[1]]);
+        pairing(&mut exec, 1, 2);
+        let w = weights(&exec);
+        assert_eq!(&w[..4], &rule[..4], "group 0 untouched");
+        assert_eq!(
+            w[4],
+            oracle(rule[4], sums[1], i64::from(rule[4]), ZERO_SUM_HALF).0,
+            "group 1's one synapse onto a target back at its value"
+        );
+        assert_eq!(w[5], rule[5], "its synapse onto no target");
+        // A move onto no target alone: the pairing with unit 4 moves slot 2, and nothing is held
+        // though the value is not the sum.
+        let mut twin = engine(DepressionExponent::One);
+        pairing(&mut twin, 0, 4);
+        let rule = weights(&twin);
+        assert!(rule[2] > 8_000, "the pairing moved the synapse onto unit 4");
+        let mut exec = held([sums[0].saturating_add(99), sums[1]]);
+        pairing(&mut exec, 0, 4);
+        assert_eq!(weights(&exec), rule, "a move onto no target touches none");
+        // A spike that moves nothing: no target has fired, so no slot has a trace.
+        let mut exec = held([sums[0].saturating_add(99), sums[1].saturating_add(99)]);
+        fire(&mut exec, 0);
+        exec.run(4_000);
+        fire(&mut exec, 0);
+        exec.run(4);
+        assert_eq!(
+            weights(&exec),
+            weights_of(engine(DepressionExponent::One).blocks())
+        );
+    }
+
+    /// The top group's bit: the 64th group alone moved is the one scaled.
+    #[test]
+    fn the_last_group_has_its_own_bit() {
+        const UNITS: usize = 66;
+        let mut exec = Executor::<64>::new(Config {
+            units: UNITS,
+            blocks: 64,
+            nodes_per_worker: 256,
+            injector_capacity: 64,
+            ..Config::default()
+        })
+        .expect("a valid configuration");
+        let target = 65u32;
+        for b in 0..64usize {
+            assert!(exec.blocks_mut()[b].set_synapse(0, target, 8_000, 1, false));
+        }
+        arm(&mut exec);
+        for b in 0..64u32 {
+            assert!(exec.units_mut()[b as usize].set_first_block(b));
+        }
+        let units: Vec<u32> = (0..64).collect();
+        let groups: Vec<(&[u32], i64)> = units
+            .iter()
+            .map(|u| (core::slice::from_ref(u), 8_100))
+            .collect();
+        assert!(exec.set_zero_sum(&groups, &[target]));
+        pairing(&mut exec, 63, target);
+        let w = weights_of(exec.blocks());
+        assert_eq!(w[252], 8_100, "the 64th group, at its value");
+        for b in 0..63usize {
+            assert_eq!(w[b.saturating_mul(SYNAPSES_PER_BLOCK)], 8_000, "group {b}");
+        }
+    }
+
+    const WALK_UNITS: usize = 8;
+    const WALK_BLOCKS: usize = 5;
+    /// A walk's network: units 0 and 1 in group A, unit 2 in group B, unit 3 excitatory in no
+    /// group, unit 6 inhibitory; targets 4 and 5, unit 7 neither. Each is `(unit, first block)`.
+    const WALK_FIRST: [(usize, u32); 5] = [(0, 0), (1, 2), (2, 3), (3, 4), (6, 1)];
+
+    /// The walk's network under `config`, its weights from `seed`.
+    fn walked(config: &Config, seed: u64, per_tick: bool) -> Executor<64> {
+        let exec = Executor::<64>::new(config.clone()).expect("a valid configuration");
+        let mut exec = if per_tick { exec.per_tick() } else { exec };
+        let mut rng = Lcg::new(seed);
+        for b in 0..WALK_BLOCKS {
+            for (slot, target) in [4u32, 5, 7, 4].into_iter().enumerate() {
+                let magnitude = 2_000i16.saturating_add((rng.next_u32() >> 19) as i16);
+                let weight = if b == 1 {
+                    0i16.saturating_sub(magnitude)
+                } else {
+                    magnitude
+                };
+                assert!(exec.blocks_mut()[b].set_synapse(slot, target, weight, 1, false));
+            }
+        }
+        arm(&mut exec);
+        exec.units_mut()[6].flags = FLAG_INHIBITORY;
+        for (unit, block) in WALK_FIRST {
+            assert!(exec.units_mut()[unit].set_first_block(block));
+        }
+        exec
+    }
+
+    /// The slots of `blocks` onto the walk's targets.
+    fn walk_slots(exec: &Executor<64>, blocks: &[usize]) -> Vec<(usize, usize)> {
+        let mut slots = Vec::new();
+        for &b in blocks {
+            for s in 0..SYNAPSES_PER_BLOCK {
+                if matches!(exec.blocks()[b].target(s), Some(4 | 5)) {
+                    slots.push((b, s));
+                }
+            }
+        }
+        slots
+    }
+
+    /// `slots`' weights on `exec`, summed.
+    fn walk_sum(exec: &Executor<64>, slots: &[(usize, usize)]) -> i64 {
+        slots.iter().fold(0i64, |sum, &(b, s)| {
+            sum.saturating_add(i64::from(exec.blocks()[b].weights_q1_15[s]))
+        })
+    }
+
+    /// The host's zero sum on a twin that holds none: after a tick that moved a group's synapse
+    /// onto a target, the oracle at each such synapse, its fractions the host's own. Returns the
+    /// rounds that scaled.
+    fn host_round(
+        twin: &mut Executor<64>,
+        before: &[SynapseBlock],
+        groups: &[(Vec<(usize, usize)>, i64); 2],
+        fractions: &mut [u32],
+    ) -> u32 {
+        let mut scaled = 0u32;
+        for (slots, value) in groups {
+            let moved = slots
+                .iter()
+                .any(|&(b, s)| twin.blocks()[b].weights_q1_15[s] != before[b].weights_q1_15[s]);
+            let sum = walk_sum(twin, slots);
+            if !moved || sum == *value {
+                continue;
+            }
+            scaled = scaled.saturating_add(1);
+            for &(b, s) in slots {
+                let place = b.saturating_mul(SYNAPSES_PER_BLOCK).saturating_add(s);
+                let weight = twin.blocks()[b].weights_q1_15[s];
+                let (w, f) = oracle(weight, *value, sum, fractions[place]);
+                twin.blocks_mut()[b].weights_q1_15[s] = w;
+                fractions[place] = f;
+            }
+        }
+        scaled
+    }
+
+    /// Tick by tick over seeded walks, on one worker and two and under both services: the engine
+    /// under the zero sum is the twin on which the host applies the exact rule, every record of
+    /// the synapse arena after every tick; and an engine on which the groups were set and unset
+    /// is the engine with none, bit for bit.
+    #[test]
+    fn over_a_walk_the_engine_s_zero_sum_is_the_host_s_exact_rule_tick_by_tick() {
+        let strong = synaptic_efficacy_q16(i16::MAX, STP_U, STP_MAX);
+        let mut scaled = 0u32;
+        for walk in 0..12u64 {
+            let mut rng = Lcg::new(0x0226_u64.wrapping_add(walk));
+            let config = Config {
+                workers: 1usize.saturating_add(walk as usize % 2),
+                units: WALK_UNITS,
+                blocks: WALK_BLOCKS,
+                nodes_per_worker: 1_024,
+                injector_capacity: 64,
+                modulation_baseline_q16: rng.pick(&[0x4000, 0x8000, MODULATION_ONE_Q16]),
+                ..Config::default()
+            };
+            let per_tick = walk % 3 == 0;
+            let mut held = walked(&config, walk, per_tick);
+            let mut twin = walked(&config, walk, per_tick);
+            let mut unset = walked(&config, walk, per_tick);
+            let mut plain = walked(&config, walk, per_tick);
+            let a = walk_slots(&held, &[0, 2]);
+            let b = walk_slots(&held, &[3]);
+            let groups = [
+                (a.clone(), walk_sum(&held, &a)),
+                (b.clone(), walk_sum(&held, &b)),
+            ];
+            assert!(held.set_zero_sum(&[(&[0, 1], groups[0].1), (&[2], groups[1].1)], &[4, 5]));
+            assert!(unset.set_zero_sum(&[(&[0], 1)], &[4]));
+            assert!(unset.set_zero_sum(&[], &[]));
+            let mut fractions = vec![ZERO_SUM_HALF; WALK_BLOCKS.saturating_mul(SYNAPSES_PER_BLOCK)];
+            for tick in 0..4_000u32 {
+                if rng.below(4) == 0 {
+                    let unit = rng.below(WALK_UNITS as u32);
+                    for exec in [&held, &twin, &unset, &plain] {
+                        let inject = exec.injector();
+                        for _ in 0..KICK {
+                            inject.inject(unit, spike_message(strong, false)).unwrap();
+                        }
+                    }
+                }
+                let before: Vec<SynapseBlock> = twin.blocks().to_vec();
+                held.tick();
+                twin.tick();
+                unset.tick();
+                plain.tick();
+                scaled =
+                    scaled.saturating_add(host_round(&mut twin, &before, &groups, &mut fractions));
+                assert_eq!(
+                    held.blocks(),
+                    twin.blocks(),
+                    "walk {walk} tick {tick}: the host's exact rule"
+                );
+                assert_eq!(
+                    held.zero_sum_fractions, fractions,
+                    "walk {walk} tick {tick}"
+                );
+            }
+            assert_eq!(unset.blocks(), plain.blocks(), "walk {walk}: bit for bit");
+            let spikes = |e: &Executor<64>| -> Vec<u32> {
+                e.units().iter().map(|u| u.last_soma_spike_tick).collect()
+            };
+            assert_eq!(
+                spikes(&unset),
+                spikes(&plain),
+                "walk {walk}: every unit too"
+            );
+        }
+        assert!(scaled > 500, "the walks scaled: {scaled} rounds");
+    }
+
+    /// The configuration's exponent reaches every excitatory pairing; `One` is the default; and
+    /// neither rule is in the image: an engine under either encodes the bytes of the engine
+    /// without it, and one decoded takes its exponent from the configuration and no group.
+    #[test]
+    fn the_exponent_is_the_configuration_s_and_neither_rule_is_in_the_image() {
+        assert_eq!(
+            Config::default().depression_exponent,
+            DepressionExponent::One
+        );
+        assert_eq!(
+            Config::reads_its_targets().depression_exponent,
+            DepressionExponent::One,
+            "the default's adoption is not this round's"
+        );
+        let mut weights = [0i16; 3];
+        for (i, exponent) in [
+            DepressionExponent::One,
+            DepressionExponent::Half,
+            DepressionExponent::Quarter,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut exec = engine(exponent);
+            assert_eq!(exec.depression_exponent(), exponent);
+            // Unit 2 fires, then unit 0: slot 0 of block 0 is depressed at its shaped magnitude.
+            let mut block = exec.blocks()[0];
+            let post = fire(&mut exec, 2);
+            exec.run(10);
+            let pre = fire(&mut exec, 0);
+            let traces = block.step_stdp_all_shaped(
+                pre,
+                [post, 0, 0, 0],
+                Polarity::Excitatory,
+                ISTDP_ALPHA_Q1_15,
+                exponent,
+            );
+            weights[i] = exec.blocks()[0].weights_q1_15[0];
+            assert_eq!(
+                weights[i],
+                8_000i16.saturating_add(traces[0]),
+                "{exponent:?}"
+            );
+        }
+        // At 8 000, below the reference, a quarter depresses more than the rule, a half between.
+        assert!(
+            weights[2] < weights[0] && weights[2] <= weights[1] && weights[1] <= weights[0],
+            "{weights:?}"
+        );
+        let plain = Image::encode(&engine(DepressionExponent::One)).expect("quiescent");
+        let mut set = engine(DepressionExponent::Quarter);
+        assert!(set.set_zero_sum(&[(&[0], 16_000)], &[2, 3]));
+        assert_eq!(
+            Image::encode(&set).expect("quiescent"),
+            plain,
+            "neither rule writes a byte"
+        );
+        let decoded = Image::decode::<64>(
+            &plain,
+            Config {
+                workers: 1,
+                nodes_per_worker: 256,
+                depression_exponent: DepressionExponent::Half,
+                ..Config::default()
+            },
+        )
+        .expect("a well-formed image");
+        assert_eq!(decoded.depression_exponent(), DepressionExponent::Half);
+        assert_eq!(decoded.zero_sum_groups(), 0, "a loaded engine starts unset");
     }
 }
