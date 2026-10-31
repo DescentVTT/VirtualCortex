@@ -234,8 +234,8 @@ mod pins;
 use pins::*;
 
 use menteion_core::{
-    ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS, Polarity,
-    SYNAPSES_PER_BLOCK, SynapseBlock, istdp_alpha_q1_15,
+    DepressionExponent, ISTDP_PERIOD_MAX_TICKS, ISTDP_PERIOD_MIN_TICKS, ISTDP_TARGET_PERIOD_TICKS,
+    Polarity, SYNAPSES_PER_BLOCK, SynapseBlock, istdp_alpha_q1_15,
 };
 use menteion_homeostasis::{CONTROL_STEP_MAX_Q0_16, GAIN_MAX_Q16, GAIN_MIN_Q16, SIGMA_MAX_Q16};
 use menteion_neuromod::{CRITIC_SCALE_MAX, CRITIC_SHIFT_MAX};
@@ -43466,3 +43466,1198 @@ const UNTOLD_STOP_1024: Option<u8> = Some(3);
 const UNTOLD_READINGS_READ_1024: Option<[Option<bool>; 3]> = Some([Some(true); 3]);
 
 const UNTOLD_ARM_LOST: [[[u32; 2]; 2]; 3] = [[[1, 1], [2, 2]], [[1, 1], [2, 2]], [[1, 1], [2, 2]]];
+
+// =================================================================================== H-46
+
+// ------------------------------------------- written before the run (ADR-0226, ADR-0229)
+
+/// The networks of H-46 (ADR-0226): H-42's, ADR-0044's generator at 1 024 units from seeds 22, 23
+/// and 24, each from the image an engine born under `Config::reads_its_targets()` settles. No
+/// other network is run.
+const ZERO_SEEDS: [u64; 3] = PROBE_SEEDS;
+
+/// The arms of H-46 (ADR-0226): H-25's two on H-20's schedule, under the answer.
+const ZERO_ARMS: [Reversal; 2] = PROBE_ARMS;
+
+/// The schedules of a long run (ADR-0226), back to back, each from the image the one before
+/// left; and a job's, the eighth image carried from the first half's job to the second's.
+const ZERO_SCHEDULES: usize = 16;
+const ZERO_HALF: usize = 8;
+
+/// The depression's exponent of H-46's arms (ADR-0226): a quarter. Its controls are at one.
+const ZERO_EXPONENT: DepressionExponent = DepressionExponent::Quarter;
+
+/// ADR-0226's prediction for H-46, written before any run: yes.
+const ZERO_PREDICTED: bool = true;
+
+/// ADR-0226's four predicted readings, in its order, each predicted to hold. A miss is recorded
+/// as one and decides nothing.
+const ZERO_READINGS_PREDICTED: [bool; 4] = [true; 4];
+
+/// The schedules predicted readings 1 and 4 read: 9 to 16, here by index.
+const ZERO_LATE: core::ops::Range<usize> = 8..16;
+
+/// Predicted reading 1's bound (ADR-0226): an arm's reversals over schedules 9 to 16 at most 1.25
+/// times its control's, read in integers as `arm × 4 ≤ control × 5`.
+const ZERO_SPEED_QUARTERS: (u32, u32) = (5, 4);
+
+/// Predicted reading 2's bound (ADR-0226): each coupling at most 1.25 of H-42's image's.
+const ZERO_HIGHEST_QUARTERS: (i64, i64) = (5, 4);
+
+/// Predicted reading 3's bound (ADR-0226): a schedule that starts with half or more of its
+/// couplings' synapses in the bottom eighth of the width sums its reversals at 16 blocks or
+/// fewer. The bottom eighth is the first two sixteenths of `ZeroRow::bins`.
+const ZERO_SPLIT_REVERSALS: u32 = 16;
+const ZERO_BOTTOM_EIGHTH: usize = 2;
+
+/// Predicted reading 4's band (ADR-0226): the inhibitory sum within 0.45 and 0.65 of H-42's
+/// image's, in hundredths.
+const ZERO_INHIBITORY_HUNDREDTHS: (i64, i64) = (45, 65);
+
+const _: () = assert!(ZERO_HALF * 2 == ZERO_SCHEDULES && ZERO_LATE.end == ZERO_SCHEDULES);
+
+/// A form of a long run (ADR-0226): `ZERO_CONTROL`, the default with both rules unset; or
+/// `ZERO_ARM`, the zero sum carried and the exponent at a quarter. Each indexes `ZERO_NAMES` and
+/// the second index of the pinned tables.
+const ZERO_CONTROL: usize = 0;
+const ZERO_ARM: usize = 1;
+
+/// The names H-46's dumps carry, per network and form.
+const ZERO_NAMES: [[&str; 2]; 3] = [
+    ["default22", "zero22"],
+    ["default23", "zero23"],
+    ["default24", "zero24"],
+];
+
+// ---------------------------------------------------------------- the rules (ADR-0229)
+
+/// A coupling's synapses by sixteenths of the width: `[A→R0, A→R1, B→R0, B→R1]`.
+type Bins = [[u32; 16]; 4];
+
+/// One schedule of a long run as its tables pin it (ADR-0229): its trial sequence's hash, its
+/// values' hash and the CRC-64 of the image it wrote; H-25's four clauses (`kept_clauses`), every
+/// coupling against H-42's image on its network; each mapping's last 128 correct and its crossing
+/// (`crossings`); each coupling's highest and lowest over the blocks' ends, and the inhibitory
+/// sum's, lowest then highest; each coupling's most synapses at the rail at a block's end; and
+/// the image it wrote by sixteenths of the width.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ZeroRow {
+    trace: u64,
+    values: u64,
+    image: u64,
+    clauses: [bool; 4],
+    correct: [u32; 4],
+    crossed: [Option<usize>; 4],
+    highest: [[i64; 2]; 2],
+    lowest: [[i64; 2]; 2],
+    inhibitory: (i64, i64),
+    rail: [u32; 4],
+    bins: Bins,
+}
+
+/// Clause 1's four on one arm (ADR-0226): each of H-25's four in every one of the sixteen
+/// schedules; all false for a run of any other length.
+fn zero_clauses(rows: &[ZeroRow]) -> [bool; 4] {
+    core::array::from_fn(|c| rows.len() == ZERO_SCHEDULES && rows.iter().all(|r| r.clauses[c]))
+}
+
+/// Clause 2 on one control (ADR-0226): some coupling past 1.30 of H-42's image's at a block's end
+/// of one of the sixteen schedules, which is H-25's second clause false there.
+fn zero_passed(rows: &[ZeroRow]) -> bool {
+    rows.len() == ZERO_SCHEDULES && rows.iter().any(|r| !r.clauses[1])
+}
+
+/// H-46's verdict (ADR-0226): clause 1's four per network and arm, `[network][arm]` in
+/// `ZERO_ARMS`' order; clause 2 per network and arm. `yes` when both hold in all twelve runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ZeroVerdict {
+    arms: [[[bool; 4]; 2]; 3],
+    controls: [[bool; 2]; 3],
+    yes: bool,
+}
+
+fn zero_verdict(arms: [[[bool; 4]; 2]; 3], controls: [[bool; 2]; 3]) -> ZeroVerdict {
+    ZeroVerdict {
+        arms,
+        controls,
+        yes: arms.iter().flatten().flatten().all(|&c| c) && controls.iter().flatten().all(|&c| c),
+    }
+}
+
+/// The step of ADR-0226's stopping rule a verdict reaches, the first that applies: 3, yes; 4, a
+/// no on clause 1 by a coupling; 5, by learning, a mapping or a reversal; 6, by the excitatory sum
+/// outside the couplings; otherwise 7, a no on clause 2.
+fn zero_stop(verdict: &ZeroVerdict) -> u8 {
+    if verdict.yes {
+        return 3;
+    }
+    let any = |clause: usize| verdict.arms.iter().flatten().any(|c| !c[clause]);
+    if any(1) {
+        return 4;
+    }
+    if any(0) || any(2) {
+        return 5;
+    }
+    if any(3) {
+        return 6;
+    }
+    7
+}
+
+/// The reversals of schedules 9 to 16, summed (`reversals_summed`).
+fn zero_late_reversals(rows: &[ZeroRow]) -> u32 {
+    rows.get(ZERO_LATE)
+        .unwrap_or(&[])
+        .iter()
+        .fold(0u32, |sum, r| {
+            sum.saturating_add(reversals_summed(r.crossed))
+        })
+}
+
+/// Predicted reading 1's rule on one arm beside its control.
+fn zero_speed_held(arm: u32, control: u32) -> bool {
+    arm.saturating_mul(ZERO_SPEED_QUARTERS.1) <= control.saturating_mul(ZERO_SPEED_QUARTERS.0)
+}
+
+/// Predicted reading 2's rule on one arm: every coupling's highest, over all its schedules, at
+/// most 1.25 of the image's.
+fn zero_highest_held(rows: &[ZeroRow], image: &[[i64; 2]; 2]) -> bool {
+    rows.iter().all(|r| {
+        ALL_PAIRS.iter().all(|&(s, x)| {
+            r.highest[s][x].saturating_mul(ZERO_HIGHEST_QUARTERS.1)
+                <= image[s][x].saturating_mul(ZERO_HIGHEST_QUARTERS.0)
+        })
+    })
+}
+
+/// Whether half or more of an image's couplings' synapses stand in the bottom eighth of the width.
+fn zero_split(bins: &Bins) -> bool {
+    let total = bins
+        .iter()
+        .flatten()
+        .fold(0u32, |n, &c| n.saturating_add(c));
+    let bottom = bins.iter().fold(0u32, |n, coupling| {
+        coupling
+            .iter()
+            .take(ZERO_BOTTOM_EIGHTH)
+            .fold(n, |n, &c| n.saturating_add(c))
+    });
+    total > 0 && bottom.saturating_mul(2) >= total
+}
+
+/// Predicted reading 3's rule on one run, from `start`, the image its first schedule starts from:
+/// none where no schedule starts split, which does not read it; otherwise whether every one that
+/// does sums its reversals at `ZERO_SPLIT_REVERSALS` blocks or fewer.
+fn zero_split_held(rows: &[ZeroRow], start: &Bins) -> Option<bool> {
+    let mut read = None;
+    let mut image = start;
+    for row in rows {
+        if zero_split(image) {
+            let within = reversals_summed(row.crossed) <= ZERO_SPLIT_REVERSALS;
+            read = Some(read.unwrap_or(true) && within);
+        }
+        image = &row.bins;
+    }
+    read
+}
+
+/// Predicted reading 4's rule on one arm: the inhibitory sum within its band of `image` at every
+/// block's end of schedules 9 to 16.
+fn zero_inhibitory_held(rows: &[ZeroRow], image: i64) -> bool {
+    let (low, high) = ZERO_INHIBITORY_HUNDREDTHS;
+    rows.get(ZERO_LATE).unwrap_or(&[]).iter().all(|r| {
+        r.inhibitory.0.saturating_mul(100) >= image.saturating_mul(low)
+            && r.inhibitory.1.saturating_mul(100) <= image.saturating_mul(high)
+    })
+}
+
+/// What H-46's tables read, each `[network][form][arm]` or per network: every run's rows, each
+/// network's image's couplings, its inhibitory sum and its image by sixteenths.
+struct ZeroTables<'a> {
+    rows: [[[&'a [ZeroRow]; 2]; 2]; 3],
+    couplings: [[[i64; 2]; 2]; 3],
+    inhibitory: [i64; 3],
+    bins: [Bins; 3],
+}
+
+/// ADR-0226's four predicted readings as rules (ADR-0229), in its order. Reading 3 reads every
+/// arm and control, and is none where no run has a schedule that starts split.
+fn zero_predicted(tables: &ZeroTables) -> [Option<bool>; 4] {
+    let (mut speed, mut highest, mut inhibitory) = (true, true, true);
+    let mut split: Option<bool> = None;
+    for n in 0..3usize {
+        for k in 0..2usize {
+            let arm = tables.rows[n][ZERO_ARM][k];
+            let control = tables.rows[n][ZERO_CONTROL][k];
+            speed &= zero_speed_held(zero_late_reversals(arm), zero_late_reversals(control));
+            highest &= zero_highest_held(arm, &tables.couplings[n]);
+            inhibitory &= zero_inhibitory_held(arm, tables.inhibitory[n]);
+            for rows in [arm, control] {
+                if let Some(held) = zero_split_held(rows, &tables.bins[n]) {
+                    split = Some(split.unwrap_or(true) && held);
+                }
+            }
+        }
+    }
+    [Some(speed), Some(highest), split, Some(inhibitory)]
+}
+
+// ------------------------------------------------------------------ the run (brief 085)
+
+/// The engine a schedule of H-46 decodes: `kept_from`'s, H-43's twin on time, H-42's arm bit for
+/// bit under the default, the depression's exponent the form's; nothing of it is in the image.
+fn zero_from(image: &[u8], units: u32, form: usize) -> Engine {
+    let exponent = match form {
+        ZERO_ARM => ZERO_EXPONENT,
+        _ => DepressionExponent::One,
+    };
+    let exec = served(
+        Image::decode::<2048>(
+            image,
+            Config {
+                kept_addresses: KEPT_ADDRESSES,
+                depression_exponent: exponent,
+                ..config(units, 2, 0)
+            },
+        )
+        .expect("a well-formed record"),
+    );
+    assert!(
+        exec.signed_gate() && exec.inhibitory_baseline_q16() == Some(INHIBITORY_BASELINE_Q16),
+        "the image carries the signed gate and the inhibitory baseline"
+    );
+    exec
+}
+
+/// Each stimulus set's excitatory units and its held value, its couplings to the two readout sets
+/// summed in H-42's image, and the readout units onto which they are held (ADR-0226): set on
+/// every schedule's engine of an arm, since no image holds them.
+struct ZeroGroups {
+    sources: [Vec<u32>; 2],
+    values: [i64; 2],
+    targets: Vec<u32>,
+}
+
+/// The groups on network `made`: read from H-42's image and held to the couplings its derivation
+/// pinned.
+fn zero_groups(made: &Made, name: &str) -> ZeroGroups {
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let exec = zero_from(&made.windowed, units, ZERO_CONTROL);
+    let sources = [0usize, 1].map(|s| {
+        exec.units()
+            .iter()
+            .filter(|u| u.flags & FLAG_INHIBITORY == 0 && sets[s].contains(u.id as u32))
+            .map(|u| u.id as u32)
+            .collect::<Vec<u32>>()
+    });
+    let held = couplings(&exec, &sets);
+    let values = [
+        held[0].saturating_add(held[1]),
+        held[2].saturating_add(held[3]),
+    ];
+    let targets: Vec<u32> = (0..units)
+        .filter(|&id| sets[2].contains(id) || sets[3].contains(id))
+        .collect();
+    eprintln!(
+        "DUMP {name} the groups: {:?} excitatory units, their values {values:?}, {} readout units",
+        sources.each_ref().map(|s| s.len()),
+        targets.len()
+    );
+    assert_eq!(
+        values,
+        made.couplings.map(|c| c[0].saturating_add(c[1])),
+        "{name}: each group's value, its couplings in H-42's image"
+    );
+    undropped(exec, name);
+    ZeroGroups {
+        sources,
+        values,
+        targets,
+    }
+}
+
+/// The four couplings on `exec` by sixteenths of the width, and each one's synapses at the rail.
+fn zero_bands(exec: &Engine, sets: &[Set; 4]) -> (Bins, [u32; 4]) {
+    let mut bins: Bins = [[0; 16]; 4];
+    let mut rail = [0u32; 4];
+    for unit in exec.units() {
+        if unit.flags & FLAG_INHIBITORY != 0 {
+            continue;
+        }
+        let id = unit.id as u32;
+        let Some(from) = [0usize, 1].into_iter().find(|&s| sets[s].contains(id)) else {
+            continue;
+        };
+        for s in unit.fan_out(exec.blocks()) {
+            let Some(into) = [0usize, 1]
+                .into_iter()
+                .find(|&r| sets[r.saturating_add(2)].contains(s.target))
+            else {
+                continue;
+            };
+            let pair = from.saturating_mul(2).saturating_add(into);
+            let band = usize::try_from(s.weight_q1_15.max(0) >> 11).unwrap_or(0);
+            bins[pair][band] = bins[pair][band].saturating_add(1);
+            rail[pair] = rail[pair].saturating_add(u32::from(s.weight_q1_15 == i16::MAX));
+        }
+    }
+    (bins, rail)
+}
+
+/// One schedule's run: its blocks, trace, values, and each coupling's most synapses at the rail at
+/// a block's end.
+struct ZeroRun {
+    blocks: Vec<Block>,
+    trace: u64,
+    values: Vec<i32>,
+    rail: [u32; 4],
+}
+
+/// One schedule of a long run from `image`, `trials` trials and `flips` (ADR-0229): the engine of
+/// the form (`zero_from`), under an arm the groups set, every fraction at a half, at H-42's
+/// values; H-25's arm under the answer, the drawn delivery, the engine's critic and its window,
+/// and every reward at age zero. The engine is returned as the schedule left it.
+fn zero_schedule(
+    made: &Made,
+    image: &[u8],
+    arm: Reversal,
+    form: usize,
+    groups: &ZeroGroups,
+    trials: usize,
+    flips: &[usize],
+) -> (Engine, ZeroRun) {
+    let units = SCAN_UNITS;
+    let sets = geometry(units, made.derived.rotation);
+    let mut exec = zero_from(image, units, form);
+    if form == ZERO_ARM {
+        let held = [
+            (groups.sources[0].as_slice(), groups.values[0]),
+            (groups.sources[1].as_slice(), groups.values[1]),
+        ];
+        assert!(
+            exec.set_zero_sum(&held, &groups.targets),
+            "every source excitatory and in the arena, once, and every target in the arena"
+        );
+    }
+    let task = task_over(
+        sets,
+        SHAPE_F46,
+        Some(made.derived.cancel),
+        units,
+        Feedback::Answer,
+        first_mapping(arm),
+        DRAWN_DELIVERY,
+    );
+    let mut values: Vec<i32> = Vec::with_capacity(trials);
+    let mut rail = [0u32; 4];
+    let (blocks, trace) = run_on_scheduled_over(
+        sets,
+        &mut exec,
+        task,
+        units,
+        trials,
+        flips,
+        &mut |exec, trial, _, outcome| {
+            if let Some(value) = outcome.value_q16 {
+                values.push(value);
+            }
+            if trial.wrapping_add(1) % BLOCK == 0 {
+                let (_, now) = zero_bands(exec, &sets);
+                rail = core::array::from_fn(|p| rail[p].max(now[p]));
+            }
+        },
+    );
+    let run = ZeroRun {
+        blocks,
+        trace,
+        values,
+        rail,
+    };
+    (exec, run)
+}
+
+/// A schedule's row (`ZeroRow`), from its run and the image `exec`, run quiet, wrote.
+fn zero_row(made: &Made, exec: &Engine, run: &ZeroRun, image: &[u8]) -> ZeroRow {
+    let sets = geometry(SCAN_UNITS, made.derived.rotation);
+    let outside = outside_image(&made.couplings, made.sums.1);
+    let blocks = &run.blocks;
+    let over = |pick: fn(i64, i64) -> i64, start: i64| {
+        let mut out = [[start; 2]; 2];
+        for b in blocks {
+            for &(s, r) in &ALL_PAIRS {
+                out[s][r] = pick(out[s][r], b.10[s][r]);
+            }
+        }
+        out
+    };
+    let inhibitory = blocks.iter().fold((i64::MAX, i64::MIN), |(low, high), b| {
+        (low.min(b.7), high.max(b.7))
+    });
+    ZeroRow {
+        trace: run.trace,
+        values: values_hash(&run.values),
+        image: crc64(image),
+        clauses: kept_clauses(&made.couplings, outside, blocks),
+        correct: mapping_correct(blocks),
+        crossed: crossings(blocks),
+        highest: over(i64::max, i64::MIN),
+        lowest: over(i64::min, i64::MAX),
+        inhibitory,
+        rail: run.rail,
+        bins: zero_bands(exec, &sets).0,
+    }
+}
+
+/// `bytes` in lowercase hexadecimal, two digits a byte, as a job's log carries an image.
+fn zero_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(bytes.len().saturating_mul(2));
+    for b in bytes {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
+/// The eighth image a first half wrote, in `tests/h46/` from the commit that adds it (ADR-0226).
+fn zero_image_path(n: usize, form: usize, k: usize) -> String {
+    format!(
+        "{}/tests/h46/{}-{:?}-image-8.image",
+        env!("CARGO_MANIFEST_DIR"),
+        ZERO_NAMES[n][form],
+        ZERO_ARMS[k]
+    )
+}
+
+/// The calibration's check of H-46's stopping rule, step 2 (ADR-0226): a control's first schedule
+/// is H-42's arm on its network, bit for bit, its blocks, its trace and every reward's value. It
+/// fails the job, and the round stops as a finding.
+fn zero_first_is_h42(name: &str, n: usize, k: usize, run: &ZeroRun) {
+    pinned(
+        name,
+        &run.blocks,
+        run.trace,
+        PROBE_ARM_BLOCKS[n][k],
+        PROBE_ARM_TRACES[n][k],
+    );
+    assert_eq!(
+        values_hash(&run.values),
+        PROBE_ARM_VALUE_HASH[n][k],
+        "{name}: every reward's value is H-42's"
+    );
+    eprintln!("DUMP {name} is H-42's arm on its network, bit for bit");
+}
+
+/// A half of a long run of H-46 on network `n` (ADR-0226, ADR-0229): half 0, schedules 1 to 8 from
+/// H-42's image, the derivation run again and held to H-42's pinned tables (`probe_made`); half 1,
+/// schedules 9 to 16 from the eighth image half 0 wrote, held to its CRC-64. Every schedule's row
+/// and blocks are dumped, then held where they are pinned, and each schedule's image decoded for
+/// the next; a first half prints its last image whole, for the second.
+fn zero_half(n: usize, arm: Reversal, form: usize, half: usize) {
+    let k = ZERO_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{} {arm:?}", ZERO_NAMES[n][form]);
+    let made = probe_made(n, &name);
+    let groups = zero_groups(&made, &name);
+    let sets = geometry(SCAN_UNITS, made.derived.rotation);
+    let start = ZERO_HALF.saturating_mul(half);
+    let mut image = if half == 0 {
+        let exec = zero_from(&made.windowed, SCAN_UNITS, ZERO_CONTROL);
+        let bins = zero_bands(&exec, &sets).0;
+        eprintln!(
+            "DUMP {name} PIN image bins {bins:?}; its inhibitory sum {:?}; its couplings {:?}",
+            made.sums.0, made.couplings
+        );
+        undropped(exec, &name);
+        made.windowed.clone()
+    } else {
+        let path = zero_image_path(n, form, k);
+        let image = std::fs::read(&path).unwrap_or_else(|e| panic!("{name}: {path}: {e}"));
+        assert_eq!(
+            Some(crc64(&image)),
+            ZERO_IMAGES_CRC[n][form][k],
+            "{name}: the carried image is the one its first half printed"
+        );
+        image
+    };
+    for s in start..start.saturating_add(ZERO_HALF) {
+        let at = format!("{name} schedule {}", s.saturating_add(1));
+        let (mut exec, run) = zero_schedule(
+            &made,
+            &image,
+            arm,
+            form,
+            &groups,
+            SCHEDULE_TRIALS,
+            &SCHEDULE_FLIPS,
+        );
+        let quiet_ticks = quiet(&mut exec);
+        let written = Image::encode(&exec).expect("quiescent");
+        let row = zero_row(&made, &exec, &run, &written);
+        eprintln!("DUMP {at} PIN row {row:?}");
+        eprintln!(
+            "DUMP {at} quiet in {quiet_ticks} ticks; blocks {:?}",
+            run.blocks
+        );
+        if form == ZERO_CONTROL && s == 0 {
+            zero_first_is_h42(&at, n, k, &run);
+        }
+        if let Some(pin) = ZERO_ROWS[n][form][k].get(s) {
+            assert_eq!(row, *pin, "{at}: its pinned row");
+        }
+        undropped(exec, &at);
+        image = written;
+    }
+    if half == 0 {
+        eprintln!(
+            "DUMP {name} image 8 CRC-64 {:#018x}, {} bytes, hex {}",
+            crc64(&image),
+            image.len(),
+            zero_hex(&image)
+        );
+    }
+}
+
+/// The short form of an arm of H-46 (ADR-0226): its first schedule, on the weekly job, held to the
+/// row its long run pinned.
+fn zero_short(n: usize, arm: Reversal) {
+    let k = ZERO_ARMS
+        .iter()
+        .position(|&a| a == arm)
+        .expect("an arm of H-25's two");
+    let name = format!("{} {arm:?} short", ZERO_NAMES[n][ZERO_ARM]);
+    let made = probe_made(n, &name);
+    let groups = zero_groups(&made, &name);
+    let (mut exec, run) = zero_schedule(
+        &made,
+        &made.windowed,
+        arm,
+        ZERO_ARM,
+        &groups,
+        SCHEDULE_TRIALS,
+        &SCHEDULE_FLIPS,
+    );
+    quiet(&mut exec);
+    let written = Image::encode(&exec).expect("quiescent");
+    let row = zero_row(&made, &exec, &run, &written);
+    eprintln!("DUMP {name} PIN row {row:?}");
+    match ZERO_ROWS[n][ZERO_ARM][k].first() {
+        Some(pin) => assert_eq!(row, *pin, "{name}: its long run's first schedule"),
+        None => {
+            eprintln!("DUMP {name} not pinned: its long run's tables are written from the logs")
+        }
+    }
+    undropped(exec, &name);
+}
+
+/// The trial of H-46's harness (ADR-0229), run by a dispatch before the protocol's commit: on seed
+/// 22 from the assignment, two blocks' schedules, the second from the image the first wrote. The
+/// control's first is H-42's arm as far as it runs. It reads a row, the groups' sums at their
+/// values within a thousandth, and an image through its hexadecimal form. Nothing is pinned.
+#[test]
+#[ignore]
+fn the_harness_of_h_46_over_two_short_schedules_paused() {
+    let arm = Reversal::AssignmentFirst;
+    let trials = 2usize.saturating_mul(BLOCK);
+    let name = "zero trial";
+    let made = probe_made(0, name);
+    let groups = zero_groups(&made, name);
+    for form in [ZERO_CONTROL, ZERO_ARM] {
+        let mut image = made.windowed.clone();
+        for s in 0..2usize {
+            let at = format!("{name} form {form} schedule {s}");
+            let (mut exec, run) = zero_schedule(&made, &image, arm, form, &groups, trials, &[]);
+            assert_eq!(
+                (exec.zero_sum_groups(), exec.depression_exponent()),
+                match form {
+                    ZERO_ARM => (2, ZERO_EXPONENT),
+                    _ => (0, DepressionExponent::One),
+                },
+                "{at}: the form's rules"
+            );
+            if form == ZERO_CONTROL && s == 0 {
+                assert_eq!(
+                    Some(run.blocks.as_slice()),
+                    PROBE_ARM_BLOCKS[0][0].get(..run.blocks.len()),
+                    "{at}: H-42's arm as far as it runs"
+                );
+            }
+            if form == ZERO_ARM {
+                for b in &run.blocks {
+                    for (group, value) in groups.values.iter().enumerate() {
+                        let sum = b.10[group][0].saturating_add(b.10[group][1]);
+                        assert!(
+                            sum.saturating_sub(*value)
+                                .saturating_abs()
+                                .saturating_mul(1_000)
+                                <= *value,
+                            "{at}: group {group} at {sum}, its value {value}"
+                        );
+                    }
+                }
+            }
+            quiet(&mut exec);
+            let written = Image::encode(&exec).expect("quiescent");
+            let row = zero_row(&made, &exec, &run, &written);
+            eprintln!("DUMP {at} PIN row {row:?}");
+            eprintln!(
+                "DUMP {at} image {} bytes, hex head {}",
+                written.len(),
+                &zero_hex(&written)[..64]
+            );
+            undropped(exec, &at);
+            image = written;
+        }
+    }
+}
+
+/// H-46's arm on seed 22 from the assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_22_from_the_assignment_first_half_paused() {
+    zero_half(0, Reversal::AssignmentFirst, ZERO_ARM, 0);
+}
+
+/// H-46's arm on seed 22 from the assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_22_from_the_assignment_second_half_paused() {
+    zero_half(0, Reversal::AssignmentFirst, ZERO_ARM, 1);
+}
+
+/// H-46's arm on seed 22 from the mirrored assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_22_from_the_mirrored_assignment_first_half_paused() {
+    zero_half(0, Reversal::MirroredFirst, ZERO_ARM, 0);
+}
+
+/// H-46's arm on seed 22 from the mirrored assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_22_from_the_mirrored_assignment_second_half_paused()
+{
+    zero_half(0, Reversal::MirroredFirst, ZERO_ARM, 1);
+}
+
+/// H-46's arm on seed 23 from the assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_23_from_the_assignment_first_half_paused() {
+    zero_half(1, Reversal::AssignmentFirst, ZERO_ARM, 0);
+}
+
+/// H-46's arm on seed 23 from the assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_23_from_the_assignment_second_half_paused() {
+    zero_half(1, Reversal::AssignmentFirst, ZERO_ARM, 1);
+}
+
+/// H-46's arm on seed 23 from the mirrored assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_23_from_the_mirrored_assignment_first_half_paused() {
+    zero_half(1, Reversal::MirroredFirst, ZERO_ARM, 0);
+}
+
+/// H-46's arm on seed 23 from the mirrored assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_23_from_the_mirrored_assignment_second_half_paused()
+{
+    zero_half(1, Reversal::MirroredFirst, ZERO_ARM, 1);
+}
+
+/// H-46's arm on seed 24 from the assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_24_from_the_assignment_first_half_paused() {
+    zero_half(2, Reversal::AssignmentFirst, ZERO_ARM, 0);
+}
+
+/// H-46's arm on seed 24 from the assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_24_from_the_assignment_second_half_paused() {
+    zero_half(2, Reversal::AssignmentFirst, ZERO_ARM, 1);
+}
+
+/// H-46's arm on seed 24 from the mirrored assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_24_from_the_mirrored_assignment_first_half_paused() {
+    zero_half(2, Reversal::MirroredFirst, ZERO_ARM, 0);
+}
+
+/// H-46's arm on seed 24 from the mirrored assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_on_seed_24_from_the_mirrored_assignment_second_half_paused()
+{
+    zero_half(2, Reversal::MirroredFirst, ZERO_ARM, 1);
+}
+
+/// H-46's control on seed 22 from the assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_22_from_the_assignment_first_half_paused() {
+    zero_half(0, Reversal::AssignmentFirst, ZERO_CONTROL, 0);
+}
+
+/// H-46's control on seed 22 from the assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_22_from_the_assignment_second_half_paused() {
+    zero_half(0, Reversal::AssignmentFirst, ZERO_CONTROL, 1);
+}
+
+/// H-46's control on seed 22 from the mirrored assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_22_from_the_mirrored_assignment_first_half_paused() {
+    zero_half(0, Reversal::MirroredFirst, ZERO_CONTROL, 0);
+}
+
+/// H-46's control on seed 22 from the mirrored assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_22_from_the_mirrored_assignment_second_half_paused() {
+    zero_half(0, Reversal::MirroredFirst, ZERO_CONTROL, 1);
+}
+
+/// H-46's control on seed 23 from the assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_23_from_the_assignment_first_half_paused() {
+    zero_half(1, Reversal::AssignmentFirst, ZERO_CONTROL, 0);
+}
+
+/// H-46's control on seed 23 from the assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_23_from_the_assignment_second_half_paused() {
+    zero_half(1, Reversal::AssignmentFirst, ZERO_CONTROL, 1);
+}
+
+/// H-46's control on seed 23 from the mirrored assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_23_from_the_mirrored_assignment_first_half_paused() {
+    zero_half(1, Reversal::MirroredFirst, ZERO_CONTROL, 0);
+}
+
+/// H-46's control on seed 23 from the mirrored assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_23_from_the_mirrored_assignment_second_half_paused() {
+    zero_half(1, Reversal::MirroredFirst, ZERO_CONTROL, 1);
+}
+
+/// H-46's control on seed 24 from the assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_24_from_the_assignment_first_half_paused() {
+    zero_half(2, Reversal::AssignmentFirst, ZERO_CONTROL, 0);
+}
+
+/// H-46's control on seed 24 from the assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_24_from_the_assignment_second_half_paused() {
+    zero_half(2, Reversal::AssignmentFirst, ZERO_CONTROL, 1);
+}
+
+/// H-46's control on seed 24 from the mirrored assignment, its first half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_24_from_the_mirrored_assignment_first_half_paused() {
+    zero_half(2, Reversal::MirroredFirst, ZERO_CONTROL, 0);
+}
+
+/// H-46's control on seed 24 from the mirrored assignment, its second half (ADR-0226, ADR-0229).
+#[test]
+#[ignore]
+fn the_default_over_sixteen_schedules_on_seed_24_from_the_mirrored_assignment_second_half_paused() {
+    zero_half(2, Reversal::MirroredFirst, ZERO_CONTROL, 1);
+}
+
+/// The short form of H-46's arm on seed 22 from the assignment: its first schedule (ADR-0226).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_s_first_schedule_on_seed_22_from_the_assignment_at_1024_units_exhaustive()
+ {
+    zero_short(0, Reversal::AssignmentFirst);
+}
+
+/// The short form of H-46's arm on seed 22 from the mirrored assignment: its first schedule (ADR-0226).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_s_first_schedule_on_seed_22_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    zero_short(0, Reversal::MirroredFirst);
+}
+
+/// The short form of H-46's arm on seed 23 from the assignment: its first schedule (ADR-0226).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_s_first_schedule_on_seed_23_from_the_assignment_at_1024_units_exhaustive()
+ {
+    zero_short(1, Reversal::AssignmentFirst);
+}
+
+/// The short form of H-46's arm on seed 23 from the mirrored assignment: its first schedule (ADR-0226).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_s_first_schedule_on_seed_23_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    zero_short(1, Reversal::MirroredFirst);
+}
+
+/// The short form of H-46's arm on seed 24 from the assignment: its first schedule (ADR-0226).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_s_first_schedule_on_seed_24_from_the_assignment_at_1024_units_exhaustive()
+ {
+    zero_short(2, Reversal::AssignmentFirst);
+}
+
+/// The short form of H-46's arm on seed 24 from the mirrored assignment: its first schedule (ADR-0226).
+#[test]
+#[ignore]
+fn a_zero_sum_and_a_quarter_s_exponent_s_first_schedule_on_seed_24_from_the_mirrored_assignment_at_1024_units_exhaustive()
+ {
+    zero_short(2, Reversal::MirroredFirst);
+}
+
+/// The gate's test (ADR-0061's class; brief 085): H-46's networks, arms, schedules, exponent,
+/// prediction and predicted readings' constants; its two clauses, the verdict's steps and the four
+/// readings' rules at their edges over tables written by hand; and, over H-46's pinned tables, the
+/// verdict, its step and the four readings as written (`zero_tables`). It runs no trial. Nothing
+/// else added to the gate.
+#[test]
+fn the_zero_sum_of_h_46_its_clauses_and_its_predicted_readings_rules() {
+    assert_eq!(ZERO_SEEDS, [22, 23, 24]);
+    assert_eq!(
+        ZERO_ARMS,
+        [Reversal::AssignmentFirst, Reversal::MirroredFirst]
+    );
+    assert_eq!(
+        (ZERO_SCHEDULES, ZERO_HALF, ZERO_EXPONENT),
+        (16, 8, DepressionExponent::Quarter),
+        "ADR-0226's"
+    );
+    assert_eq!(
+        (ZERO_PREDICTED, ZERO_READINGS_PREDICTED),
+        (true, [true; 4]),
+        "ADR-0226 predicts yes, and each of its four readings"
+    );
+    assert_eq!(
+        (
+            ZERO_LATE,
+            ZERO_SPEED_QUARTERS,
+            ZERO_HIGHEST_QUARTERS,
+            ZERO_SPLIT_REVERSALS,
+            ZERO_BOTTOM_EIGHTH,
+            ZERO_INHIBITORY_HUNDREDTHS
+        ),
+        (8..16, (5, 4), (5, 4), 16, 2, (45, 65))
+    );
+    let image = [[10_000i64; 2]; 2];
+    let hand = ZeroRow {
+        trace: 1,
+        values: 1,
+        image: 1,
+        clauses: [true; 4],
+        correct: [128; 4],
+        crossed: [Some(9), Some(5), Some(5), Some(5)],
+        highest: image,
+        lowest: image,
+        inhibitory: (5_000, 5_500),
+        rail: [0; 4],
+        bins: [[0; 16]; 4],
+    };
+    let rows = vec![hand; ZERO_SCHEDULES];
+    // Clause 1: each of the four in every one of sixteen schedules.
+    assert_eq!(zero_clauses(&rows), [true; 4]);
+    assert_eq!(zero_clauses(&rows[..15]), [false; 4], "fifteen schedules");
+    for c in 0..4usize {
+        let mut one = rows.clone();
+        one[15].clauses[c] = false;
+        let expected: [bool; 4] = core::array::from_fn(|i| i != c);
+        assert_eq!(
+            zero_clauses(&one),
+            expected,
+            "the last schedule, clause {c}"
+        );
+    }
+    // Clause 2: some schedule past the bound, the sixteenth among them.
+    assert!(!zero_passed(&rows), "held in every schedule");
+    let mut past = rows.clone();
+    past[15].clauses[1] = false;
+    assert!(zero_passed(&past));
+    assert!(!zero_passed(&past[..15]), "fifteen schedules");
+    // The verdict and the stopping rule's steps, the first that applies.
+    let (arms, controls) = ([[[true; 4]; 2]; 3], [[true; 2]; 3]);
+    let all = zero_verdict(arms, controls);
+    assert!(all.yes);
+    assert_eq!(zero_stop(&all), 3);
+    let with = |clause: usize| {
+        let mut a = arms;
+        a[1][1][clause] = false;
+        a
+    };
+    let no = |a, c| {
+        let v = zero_verdict(a, c);
+        assert!(!v.yes);
+        zero_stop(&v)
+    };
+    assert_eq!(no(with(1), controls), 4, "a coupling");
+    assert_eq!(no(with(0), controls), 5, "a mapping");
+    assert_eq!(no(with(2), controls), 5, "a reversal");
+    assert_eq!(no(with(3), controls), 6, "the sum outside the couplings");
+    let mut held = controls;
+    held[2][0] = false;
+    assert_eq!(no(arms, held), 7, "a control that holds the bound");
+    assert_eq!(no(with(1), held), 4, "the first that applies");
+    let mut learning_and_outside = with(0);
+    learning_and_outside[0][0][3] = false;
+    assert_eq!(no(learning_and_outside, controls), 5);
+    assert_eq!(no(with(3), held), 6);
+    // Reading 1: schedules 9 to 16 alone, at 1.25 times the control's.
+    let mut early = rows.clone();
+    early[7].crossed = [Some(9), Some(23), Some(23), Some(23)];
+    assert_eq!(zero_late_reversals(&early), 120, "eight schedules of 15");
+    early[8].crossed = [Some(9), Some(6), Some(5), None];
+    assert_eq!(
+        zero_late_reversals(&early),
+        105u32.saturating_add(11).saturating_add(UNCROSSED_BLOCKS),
+        "an uncrossed reversal at its mapping's blocks"
+    );
+    assert_eq!(zero_late_reversals(&rows[..4]), 0, "a run short of them");
+    assert!(zero_speed_held(50, 40) && !zero_speed_held(51, 40));
+    assert!(zero_speed_held(0, 0) && !zero_speed_held(1, 0));
+    // Reading 2: every coupling, at 1.25 of its image's.
+    let mut high = rows.clone();
+    high[3].highest[1][0] = 12_500;
+    assert!(zero_highest_held(&high, &image));
+    high[3].highest[1][0] = 12_501;
+    assert!(!zero_highest_held(&high, &image));
+    // Reading 3: half or more in the bottom eighth, the first two sixteenths.
+    let split = |bottom: u32, second: u32, third: u32, rest: u32| {
+        let mut bins: Bins = [[0; 16]; 4];
+        bins[1][0] = bottom;
+        bins[2][1] = second;
+        bins[3][2] = third;
+        bins[0][15] = rest;
+        bins
+    };
+    assert!(zero_split(&split(50, 50, 0, 100)));
+    assert!(!zero_split(&split(50, 49, 0, 100)));
+    assert!(
+        !zero_split(&split(0, 0, 100, 100)),
+        "the third sixteenth is not"
+    );
+    assert!(!zero_split(&split(0, 0, 0, 0)), "no synapse");
+    let flat = split(0, 0, 0, 100);
+    let cut = split(100, 0, 0, 100);
+    let mut run = rows.clone();
+    for row in run.iter_mut() {
+        row.bins = flat;
+    }
+    assert_eq!(
+        zero_split_held(&run, &flat),
+        None,
+        "no schedule starts split"
+    );
+    run[4].bins = cut;
+    run[5].crossed = [Some(9), Some(6), Some(5), Some(5)];
+    assert_eq!(
+        zero_split_held(&run, &flat),
+        Some(true),
+        "the schedule after the image split, at 16"
+    );
+    run[5].crossed = [Some(9), Some(6), Some(6), Some(5)];
+    assert_eq!(zero_split_held(&run, &flat), Some(false), "at 17");
+    assert_eq!(
+        zero_split_held(&run[6..], &flat),
+        None,
+        "the image it starts from is what is read"
+    );
+    run[4].crossed = [Some(9), Some(6), Some(6), Some(5)];
+    run[5].crossed = hand.crossed;
+    assert_eq!(
+        zero_split_held(&run, &flat),
+        Some(true),
+        "the schedule that wrote it does not start from it"
+    );
+    run[0].crossed = [Some(9), Some(6), Some(6), Some(5)];
+    assert_eq!(
+        zero_split_held(&run, &cut),
+        Some(false),
+        "the first schedule starts from the image given"
+    );
+    let mut two = rows.clone();
+    two[1].bins = cut;
+    two[3].bins = cut;
+    two[2].crossed = [Some(9), Some(23), Some(5), Some(5)];
+    assert_eq!(
+        zero_split_held(&two, &flat),
+        Some(false),
+        "a schedule that misses is not forgiven by a later one"
+    );
+    // Reading 4: at every block's end of schedules 9 to 16, its band's edges in it.
+    let sum = 10_000i64;
+    let band = |low: i64, high: i64, s: usize| {
+        let mut r = rows.clone();
+        r[s].inhibitory = (low, high);
+        zero_inhibitory_held(&r, sum)
+    };
+    assert!(band(4_500, 6_500, 8));
+    assert!(!band(4_499, 6_500, 8));
+    assert!(!band(4_500, 6_501, 15));
+    assert!(band(4_499, 6_501, 7), "before the ninth schedule");
+    // The four readings over tables.
+    let table = [[[rows.as_slice(); 2]; 2]; 3];
+    let tables = |rows| ZeroTables {
+        rows,
+        couplings: [image; 3],
+        inhibitory: [sum; 3],
+        bins: [flat; 3],
+    };
+    assert_eq!(
+        zero_predicted(&tables(table)),
+        [Some(true), Some(true), None, Some(true)],
+        "no run reads reading 3"
+    );
+    let slow = {
+        let mut r = rows.clone();
+        r[9].crossed = [Some(9), Some(23), Some(23), Some(23)];
+        r
+    };
+    let mut one_slow = table;
+    one_slow[2][ZERO_ARM][1] = slow.as_slice();
+    assert_eq!(zero_predicted(&tables(one_slow))[0], Some(false));
+    let mut slow_control = table;
+    slow_control[2][ZERO_CONTROL][1] = slow.as_slice();
+    assert_eq!(zero_predicted(&tables(slow_control))[0], Some(true));
+    let mut one_high = table;
+    one_high[0][ZERO_ARM][0] = high.as_slice();
+    assert_eq!(zero_predicted(&tables(one_high))[1], Some(false));
+    let mut control_high = table;
+    control_high[0][ZERO_CONTROL][0] = high.as_slice();
+    assert_eq!(zero_predicted(&tables(control_high))[1], Some(true));
+    let split_run = {
+        let mut r = rows.clone();
+        r[0].bins = cut;
+        r
+    };
+    for form in [ZERO_ARM, ZERO_CONTROL] {
+        let mut read = table;
+        read[1][form][0] = split_run.as_slice();
+        assert_eq!(zero_predicted(&tables(read))[2], Some(true));
+    }
+    let missed = {
+        let mut r = split_run.clone();
+        r[1].crossed = [Some(9), Some(23), Some(5), Some(5)];
+        r
+    };
+    let mut read = table;
+    read[1][ZERO_CONTROL][0] = split_run.as_slice();
+    read[2][ZERO_CONTROL][1] = missed.as_slice();
+    assert_eq!(
+        zero_predicted(&tables(read))[2],
+        Some(false),
+        "in a control"
+    );
+    let low = {
+        let mut r = rows.clone();
+        r[12].inhibitory = (4_000, 5_000);
+        r
+    };
+    let mut one_low = table;
+    one_low[1][ZERO_ARM][1] = low.as_slice();
+    assert_eq!(zero_predicted(&tables(one_low))[3], Some(false));
+    let mut control_low = table;
+    control_low[1][ZERO_CONTROL][1] = low.as_slice();
+    assert_eq!(zero_predicted(&tables(control_low))[3], Some(true));
+    zero_tables();
+}
+
+/// The gate's checks over H-46's pinned tables (ADR-0229), by the rules committed before any of
+/// them was run, each where it is pinned. A run is pinned whole or not at all, sixteen rows, the
+/// eighth writing the image its second half read, and a control's first H-42's arm's trace and
+/// values. Then, where all twelve are pinned, the verdict by the two clauses, its step and the
+/// four readings, each as written; before that, none is.
+fn zero_tables() {
+    let mut arms = [[[false; 4]; 2]; 3];
+    let mut controls = [[false; 2]; 3];
+    let mut complete = true;
+    for n in 0..3usize {
+        for k in 0..2usize {
+            for form in [ZERO_CONTROL, ZERO_ARM] {
+                let rows = ZERO_ROWS[n][form][k];
+                if rows.is_empty() {
+                    complete = false;
+                    continue;
+                }
+                let name = format!("{} {:?}", ZERO_NAMES[n][form], ZERO_ARMS[k]);
+                assert_eq!(rows.len(), ZERO_SCHEDULES, "{name}: sixteen schedules");
+                assert_eq!(
+                    Some(rows[ZERO_HALF.saturating_sub(1)].image),
+                    ZERO_IMAGES_CRC[n][form][k],
+                    "{name}: its eighth image is the one its second half carried"
+                );
+            }
+            let (arm, control) = (ZERO_ROWS[n][ZERO_ARM][k], ZERO_ROWS[n][ZERO_CONTROL][k]);
+            arms[n][k] = zero_clauses(arm);
+            controls[n][k] = zero_passed(control);
+            if let Some(first) = control.first() {
+                assert_eq!(
+                    (first.trace, first.values),
+                    (PROBE_ARM_TRACES[n][k], PROBE_ARM_VALUE_HASH[n][k]),
+                    "{}: the first schedule, H-42's arm",
+                    ZERO_NAMES[n][ZERO_CONTROL]
+                );
+            }
+        }
+    }
+    let tables = |bins: [Bins; 3]| {
+        let pins = [0usize, 1, 2].map(probe_rate_pins);
+        ZeroTables {
+            rows: ZERO_ROWS,
+            couplings: pins
+                .each_ref()
+                .map(|p| p.couplings.expect("H-42's derivation, pinned")),
+            inhibitory: pins
+                .each_ref()
+                .map(|p| p.quiet.expect("H-42's settled image's sums, pinned").1.0),
+            bins,
+        }
+    };
+    let verdict = complete.then(|| zero_verdict(arms, controls));
+    let bins = ZERO_IMAGE_BINS
+        .iter()
+        .copied()
+        .collect::<Option<Vec<Bins>>>();
+    let readings = verdict
+        .and(bins)
+        .and_then(|b| <[Bins; 3]>::try_from(b).ok())
+        .map(|b| zero_predicted(&tables(b)));
+    eprintln!(
+        "DUMP zero PIN verdict {verdict:?} step {:?} predicted readings {readings:?}",
+        verdict.map(|verdict| zero_stop(&verdict))
+    );
+    assert_eq!(verdict, ZERO_1024, "H-46's verdict as written");
+    assert_eq!(
+        verdict.map(|verdict| zero_stop(&verdict)),
+        ZERO_STOP_1024,
+        "the step of the stopping rule reached"
+    );
+    assert_eq!(
+        readings, ZERO_READINGS_READ_1024,
+        "ADR-0226's four predicted readings, as read"
+    );
+}
