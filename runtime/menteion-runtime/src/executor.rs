@@ -307,6 +307,11 @@ pub struct Config {
     /// arrives at the 2.5 ADR-0038 measured, where unset it arrives scaled by the gain. Unset
     /// (the default), every run is the run it was, bit for bit. Not in the image.
     pub replay_after_gain: bool,
+    /// The excitatory baseline in slow-wave sleep (exploration 014, on its branch alone): while
+    /// set, a tick in that stage consolidates under this baseline in the record's place, every
+    /// other stage under the record's. Unset (the default), every run is the run it was, bit for
+    /// bit. Not in the image.
+    pub slow_wave_baseline_q16: Option<i32>,
 }
 
 /// The oldest age a reward may name (ADR-0207): four trials, the eligibility trace's τ of
@@ -367,6 +372,7 @@ impl Default for Config {
             reads_its_delay: false,
             depression_exponent: DepressionExponent::One,
             replay_after_gain: false,
+            slow_wave_baseline_q16: None,
         }
     }
 }
@@ -1573,6 +1579,8 @@ pub struct Executor<const CAP: usize> {
     /// The engine's modulator record (ADR-0032): one for the engine until macro-columns exist.
     modulator: NeuromodulatorState,
     modulation_baseline_q16: i32,
+    /// The excitatory baseline in slow-wave sleep (exploration 014), the configuration's.
+    slow_wave_baseline_q16: Option<i32>,
     /// The inhibitory baseline (ADR-0086): the configuration's, or the image's; none while
     /// unset.
     inhibitory_baseline_q16: Option<i32>,
@@ -1915,6 +1923,7 @@ impl<const CAP: usize> Executor<CAP> {
             amendment_capacity: config.amendments,
             modulator: NeuromodulatorState::new(),
             modulation_baseline_q16: config.modulation_baseline_q16,
+            slow_wave_baseline_q16: config.slow_wave_baseline_q16,
             inhibitory_baseline_q16: config.inhibitory_baseline_q16,
             signed_gate: config.signed_gate,
             stp_class: config.stp_class,
@@ -2881,6 +2890,16 @@ impl<const CAP: usize> Executor<CAP> {
         // reader is worker 0, which is this thread.
         let all = unsafe { self.shared.episodes.as_slice() };
         &all[..(self.hippocampus.episodes as usize).min(all.len())]
+    }
+
+    /// Every episode of the ledger spent (exploration 014, on its branch alone), between ticks,
+    /// so that a night replays what is tagged after this and nothing before it.
+    pub fn spend_episodes(&mut self) {
+        // SAFETY: `&mut self` between ticks; every worker is parked at the barrier.
+        let episodes = unsafe { self.shared.episodes.as_mut_slice() };
+        for episode in episodes {
+            episode.tag = 0;
+        }
     }
 
     /// Room left in the ledger for tagged episodes.
@@ -3930,9 +3949,14 @@ impl<const CAP: usize> Executor<CAP> {
         // ADR-0086; the addressed one signed while the signed gate is set, ADR-0094); then the
         // signal decays by one tick. All before the barrier that starts the tick, so every
         // worker reads the same values.
+        // In slow-wave sleep under exploration 014's twin, the baseline it gives.
+        let baseline_q16 = match self.slow_wave_baseline_q16 {
+            Some(baseline) if self.homeostasis.sleep_stage == STAGE_SWS => baseline,
+            _ => self.modulation_baseline_q16,
+        };
         let modulations = Modulations::of(
             &self.modulator,
-            self.modulation_baseline_q16,
+            baseline_q16,
             self.inhibitory_baseline_q16,
             self.signed_gate,
         );

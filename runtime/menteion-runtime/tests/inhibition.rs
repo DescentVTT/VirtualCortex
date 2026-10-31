@@ -44690,6 +44690,28 @@ const NIGHT_SHIFTS: [u8; 3] = [5, 7, 9];
 /// schedule's length.
 const NIGHT_LONG_WINDOWS: [u64; 4] = [120, 120, 240, 480];
 
+/// A night's form: its name, under the drive, the replay's twin over the gain (F-47), the zero sum
+/// held, and the excitatory baseline in slow-wave sleep. Under H-25's configuration the baseline
+/// is zero, the reward's gate: the first four forms consolidate no excitatory synapse, and the
+/// rest are this exploration's twin in which a slow-wave tick does.
+type NightForm = (&'static str, bool, bool, bool, Option<i32>);
+
+const NIGHT_FORMS: [NightForm; 13] = [
+    ("driven", true, false, true, None),
+    ("quiet", false, false, true, None),
+    ("twin driven", true, true, true, None),
+    ("twin quiet", false, true, true, None),
+    ("half driven", true, false, true, Some(ONE / 2)),
+    ("half quiet", false, false, true, Some(ONE / 2)),
+    ("half twin driven", true, true, true, Some(ONE / 2)),
+    ("half twin quiet", false, true, true, Some(ONE / 2)),
+    ("half unheld driven", true, false, false, Some(ONE / 2)),
+    ("half unheld quiet", false, false, false, Some(ONE / 2)),
+    ("whole driven", true, false, true, Some(ONE)),
+    ("whole quiet", false, false, true, Some(ONE)),
+    ("whole twin quiet", false, true, true, Some(ONE)),
+];
+
 /// Where a reading starts: H-46's eighth image, whose mapping in force is its eighth schedule's
 /// last, or a first mapping learned from H-42's image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44715,13 +44737,14 @@ impl NightSite<'_> {
 }
 
 /// The engine of `form` from `image` for a gap: room for `room` episodes, the replay's drive over
-/// the gain where `twin` says, its homeostasis record patched, and the zero sum's groups set where
-/// they are given, since no image holds them.
+/// the gain where `twin` says, the baseline in slow-wave sleep where one is given, its homeostasis
+/// record patched, and the zero sum's groups set where they are given, since no image holds them.
 fn night_engine(
     image: &[u8],
     form: usize,
     room: usize,
     twin: bool,
+    slow_wave: Option<i32>,
     groups: Option<&ZeroGroups>,
     patch: impl Fn(&mut HomeostaticDrivePool),
 ) -> Engine {
@@ -44732,6 +44755,7 @@ fn night_engine(
         depression_exponent: exec.depression_exponent(),
         episodes: room,
         replay_after_gain: twin,
+        slow_wave_baseline_q16: slow_wave,
         ..config(SCAN_UNITS, 2, 0)
     };
     let mut exec = reload_with(&exec, cfg, patch);
@@ -44877,6 +44901,8 @@ struct NightGiven<'a> {
     driven: bool,
     twin: bool,
     held: bool,
+    slow_wave: Option<i32>,
+    spend: bool,
     patterns: &'a [Vec<u32>],
 }
 
@@ -44892,6 +44918,7 @@ fn night_on(site: &NightSite, image: &[u8], label: &str, given: NightGiven) -> (
         site.form,
         given.patterns.len(),
         given.twin,
+        given.slow_wave,
         site.held().filter(|_| given.held),
         |h| {
             h.sleep_shift = shift;
@@ -44899,6 +44926,9 @@ fn night_on(site: &NightSite, image: &[u8], label: &str, given: NightGiven) -> (
             h.sleep_pressure_q16 = PRESSURE_MAX_Q16;
         },
     );
+    if given.spend {
+        exec.spend_episodes();
+    }
     for pattern in given.patterns {
         exec.tag_episode(pattern, NIGHT_PRIORITY)
             .expect("the ledger has room and the pattern is one");
@@ -44963,6 +44993,7 @@ fn night_on(site: &NightSite, image: &[u8], label: &str, given: NightGiven) -> (
         0,
         false,
         None,
+        None,
         |h| h.sleep_shift = 0,
     );
     undropped(exec, label);
@@ -44973,7 +45004,7 @@ fn night_on(site: &NightSite, image: &[u8], label: &str, given: NightGiven) -> (
 
 /// `ticks` ticks awake from `image` with no stimulus, under the drive or not, then quiet.
 fn idle_on(site: &NightSite, image: &[u8], label: &str, ticks: u64, driven: bool) -> Vec<u8> {
-    let mut exec = night_engine(image, site.form, 0, false, site.held(), |_| {});
+    let mut exec = night_engine(image, site.form, 0, false, None, site.held(), |_| {});
     let start = night_state(&exec, &site.sets);
     let source = drive(SCAN_UNITS);
     night_ticks(&mut exec, driven.then_some(&source), ticks);
@@ -44992,7 +45023,7 @@ fn retained(site: &NightSite, image: &[u8], label: &str) {
         ("withheld", Feedback::Withheld, 1),
         ("rewarded", Feedback::Answer, NIGHT_READ_BLOCKS),
     ] {
-        let mut exec = night_engine(image, site.form, 0, false, site.held(), |_| {});
+        let mut exec = night_engine(image, site.form, 0, false, None, site.held(), |_| {});
         let task = task_over(
             site.sets,
             SHAPE_F46,
@@ -45065,7 +45096,7 @@ fn mapping_patterns(site: &NightSite, image: &[u8]) -> Vec<Vec<u32>> {
 /// lie dumped: the stimulus presented, its answer, the other readout, the other stimulus, none,
 /// and how many are inhibitory.
 fn captured_patterns(site: &NightSite, image: &[u8], label: &str) -> Vec<Vec<u32>> {
-    let mut exec = night_engine(image, site.form, 0, false, site.held(), |_| {});
+    let mut exec = night_engine(image, site.form, 0, false, None, site.held(), |_| {});
     let task = task_over(
         site.sets,
         SHAPE_F46,
@@ -45161,11 +45192,10 @@ fn night_image(
 }
 
 /// What a night keeps from `from` in `form` and `arm` (exploration 014): the mapping read with no
-/// gap; at each sleep shift, nights of the mapping's episodes under the drive and without it, the
-/// replay's twin over the gain (F-47) both ways, and in the arm a night with the zero sum unset,
-/// each read after, with the same ticks awake under the drive and without it; nights of the
-/// episodes ADR-0048's rule captures; and a schedule's length under the drive with no stimulus. On
-/// `whole` false, the harness's trial: the gap and one night.
+/// gap; at each sleep shift, a night of the mapping's episodes in every `NIGHT_FORMS`, each read
+/// after, with the same ticks awake under the drive and without it; nights of the episodes
+/// ADR-0048's rule captures, at a baseline of a half in slow-wave sleep; and a schedule's length
+/// under the drive with no stimulus. On `whole` false, the harness's trial: the gap and two nights.
 fn what_a_night_keeps(from: NightFrom, form: usize, arm: Reversal, whole: bool) {
     let name = format!("night {} {arm:?} {from:?}", ZERO_NAMES[0][form]);
     let made = probe_made(0, &name);
@@ -45191,17 +45221,11 @@ fn what_a_night_keeps(from: NightFrom, form: usize, arm: Reversal, whole: bool) 
     } else {
         &NIGHT_SHIFTS[..1]
     };
-    let forms = [
-        ("driven", true, false, true),
-        ("quiet", false, false, true),
-        ("twin driven", true, true, true),
-        ("twin quiet", false, true, true),
-        ("unheld driven", true, false, false),
-    ];
     for &shift in shifts {
         let mut length = 0u64;
-        for &(what, driven, twin, held) in &forms {
-            if !whole && what != "driven" || form != ZERO_ARM && !held {
+        for &(what, driven, twin, held, slow_wave) in &NIGHT_FORMS {
+            let trial = what == "driven" || what == "half quiet";
+            if !whole && !trial || form != ZERO_ARM && !held {
                 continue;
             }
             let label = format!("{name} shift {shift} {what}");
@@ -45210,6 +45234,8 @@ fn what_a_night_keeps(from: NightFrom, form: usize, arm: Reversal, whole: bool) 
                 driven,
                 twin,
                 held,
+                slow_wave,
+                spend: false,
                 patterns: &patterns,
             };
             let (after, ticks) = night_on(&site, &image, &label, given);
@@ -45230,12 +45256,14 @@ fn what_a_night_keeps(from: NightFrom, form: usize, arm: Reversal, whole: bool) 
         return;
     }
     for shift in [5u8, 7] {
-        let label = format!("{name} shift {shift} captured driven");
+        let label = format!("{name} shift {shift} captured half quiet");
         let given = NightGiven {
             shift,
-            driven: true,
+            driven: false,
             twin: false,
             held: true,
+            slow_wave: Some(ONE / 2),
+            spend: false,
             patterns: &captured,
         };
         let (after, _) = night_on(&site, &image, &label, given);
