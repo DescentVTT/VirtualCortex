@@ -59,30 +59,30 @@ Re-derived on 2026-10-28 against `main` at `2c48eee`. Line numbers move; the sym
 
 ## Deliverables
 
-- [ ] **The two rules, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
+- [x] **The two rules, built, in a new ADR at the next free number (`ls docs/adr`), kind `built`.**
   - The zero sum at the stimulus: groups and their held values set by the host, scaled back after a tick's consolidations with each synapse's fraction carried, every fraction starting at a half and set to a half again whenever the groups are set, no weight past the rail.
   - The depression's exponent: one, a half or a quarter, by integer square roots, one being ADR-0055's rule.
   - Unset, every run the run it was, bit for bit; neither rule in the image.
   - Their tests: by hand at the edges; over the lattice, the carried scaling against an exact rational oracle and each exponent against an oracle of its power; unset against the rule as it is.
-- [ ] **H-46's protocol, in a new ADR at the next free number, kind `protocol`, before any arm runs.**
+- [x] **H-46's protocol, in a new ADR at the next free number, kind `protocol`, before any arm runs.**
   - The networks, the arms and the controls, the sixteen schedules in two jobs, how the eighth image is carried, and each group's held value, its sum in H-42's image.
   - H-46's clauses and constants, restated from ADR-0226 and pinned in the tests; the four predicted readings as rules over the tables.
   - The long runs named `…_paused` from this commit; the six arms' short forms named `…_exhaustive`.
   - The calibration's check of H-46's stopping rule, step 2, as a test: each control's first schedule H-42's arm bit for bit.
   - The output of `npm run round:additive` on the protocol's commit.
-- [ ] **The calibration and the first halves, dispatched together on the protocol's commit**: `scope=exhaustive` excluding the six short forms, every pinned number held, and the twelve first halves at `scope=arms`. The calibration is read first. The history shows the protocol's commit before every arm's dispatch.
-- [ ] **The second halves**, dispatched on the commit that adds the twelve eighth images, with their CRC-64s, and nothing else that runs, after the calibration is green and the first halves are read.
-- [ ] **The tables pinned per schedule** once both halves are read: each arm's and control's highest coupling, its clauses, its reversals, its inhibitory sum and its synapses by band of the width, those at the rail among them.
-- [ ] **Six short forms**, each arm's first schedule, as weekly `…_exhaustive` tests pinned from the same runs.
-- [ ] **The reproduction**, dispatched as soon as the tables are pinned: `scope=exhaustive` with `only` naming the six short forms, when nothing the calibration ran has changed since its commit, otherwise every test; and the twelve long runs again at `scope=arms` on the same commit, every pinned table held. Its shards are green, and the cost table is regenerated from the calibration's and the reproduction's artifacts.
-- [ ] **The gate.** At most one runtime test of H-46's clauses and readings at their edges, over tables written by hand ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
-- [ ] **H-46's report**: its `verdict:` set, the readings' tables, each arm beside its control, and the dispatches that are their evidence.
-- [ ] **The measured ADR**, kind `measured`, short: the verdict per network, arm and clause in one table; each predicted reading held or missed in a line; the step of the stopping rule reached, and the next decision it names, not taken.
-- [ ] **The documents, in the same pull request.**
+- [x] **The calibration and the first halves, dispatched together on the protocol's commit**: `scope=exhaustive` excluding the six short forms, every pinned number held, and the twelve first halves at `scope=arms`. The calibration is read first. The history shows the protocol's commit before every arm's dispatch.
+- [x] **The second halves**, dispatched on the commit that adds the twelve eighth images, with their CRC-64s, and nothing else that runs, after the calibration is green and the first halves are read.
+- [x] **The tables pinned per schedule** once both halves are read: each arm's and control's highest coupling, its clauses, its reversals, its inhibitory sum and its synapses by band of the width, those at the rail among them.
+- [x] **Six short forms**, each arm's first schedule, as weekly `…_exhaustive` tests pinned from the same runs.
+- [x] **The reproduction**, dispatched as soon as the tables are pinned: `scope=exhaustive` with `only` naming the six short forms, when nothing the calibration ran has changed since its commit, otherwise every test; and the twelve long runs again at `scope=arms` on the same commit, every pinned table held. Its shards are green, and the cost table is regenerated from the calibration's and the reproduction's artifacts.
+- [x] **The gate.** At most one runtime test of H-46's clauses and readings at their edges, over tables written by hand ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+- [x] **H-46's report**: its `verdict:` set, the readings' tables, each arm beside its control, and the dispatches that are their evidence.
+- [x] **The measured ADR**, kind `measured`, short: the verdict per network, arm and clause in one table; each predicted reading held or missed in a line; the step of the stopping rule reached, and the next decision it names, not taken.
+- [x] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole; F-86 resolved by the measured ADR with the round's reading of the synapses at the rail.
   - Whitepaper: where ADR-0055's depression and the consolidation are described, the two rules; Appendix C's M12 row; the tables written by `node scripts/adr-index.mjs`; its version in both declarations, with its date.
   - `CHANGELOG.md`, one entry of at most 400 characters a change.
-- [ ] **The brief archived** with `spec-brief archive 085 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
+- [x] **The brief archived** with `spec-brief archive 085 --strict`, every deliverable dispositioned. The round's ADRs are set to `accepted` by the commit that asks for the merge, and the pull request is marked ready for review with it.
 
 ## Not empowered
 
