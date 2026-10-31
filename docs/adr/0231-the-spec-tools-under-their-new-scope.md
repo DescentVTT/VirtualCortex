@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-01
 amends: [ADR-0008, ADR-0185, ADR-0191, ADR-0221]
 title: The spec tools under their new scope
