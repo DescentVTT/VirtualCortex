@@ -299,8 +299,9 @@ pub struct Config {
     pub reads_its_delay: bool,
     /// The exponent of every excitatory pairing's depression (ADR-0226, ADR-0228). At
     /// [`DepressionExponent::One`] (the default) it is ADR-0055's rule, and every run is the run
-    /// it was, bit for bit. Not in the image: for an engine built from an image, the
-    /// configuration's.
+    /// it was, bit for bit. Any other is refused beside a read of the rate's target, and on an
+    /// image with a read or a probe under way: the derivation stays H-42's (ADR-0232). Not in the
+    /// image: for an engine built from an image, the configuration's.
     pub depression_exponent: DepressionExponent,
 }
 
@@ -392,6 +393,24 @@ impl Config {
             istdp_target_read: true,
             step_probe: true,
             ..Self::default()
+        }
+    }
+
+    /// The configuration an engine runs a settled image under (ADR-0232): the engine's default
+    /// with `depression_exponent` at [`DepressionExponent::Quarter`], and no other field. An image
+    /// outranks every value the default sets, so the exponent is the one field it adds to a
+    /// decoded engine; the sizing is the caller's, by struct update, `train_capacity` among it. No
+    /// engine is born under it: the read it carries is refused beside the exponent.
+    ///
+    /// The exponent alone is not what was measured. H-46 ran it with the zero sum, whose groups
+    /// no configuration names: the host reads each group's value once
+    /// ([`Executor::coupling_sum`]), keeps it and sets the groups at each load
+    /// ([`Executor::set_zero_sum`]). An engine under this name with no groups set runs a state no
+    /// run has read, and nothing refuses it. The bound is the zero sum's and not this name's.
+    pub fn runs_a_settled_image() -> Self {
+        Self {
+            depression_exponent: DepressionExponent::Quarter,
+            ..Self::reads_its_targets()
         }
     }
 }
@@ -553,6 +572,10 @@ pub enum ConfigError {
     /// `reads_its_delay` is set without `kept_addresses`: each age's critic reads the counts its
     /// age's entry kept (ADR-0216, ADR-0217).
     DelayReadWithoutKept,
+    /// `depression_exponent` is other than one beside a read of the rate's target, or an image
+    /// carries a read or a probe under way under such an exponent: the derivation stays H-42's,
+    /// and no run has read one at another exponent (ADR-0232).
+    ExponentBesideRead,
 }
 
 /// The read of the rate's target (ADR-0188, ADR-0189), between ticks: `Executor::target_read`.
@@ -880,20 +903,17 @@ fn carried_weight(weight: i16, value: i64, sum: i64, fraction: &mut u32) -> i16 
     carried.wrapping_shr(32).clamp(0, i128::from(i16::MAX)) as i16
 }
 
-/// One group's round of the zero sum (ADR-0226): every synapse of the chains `heads` start
-/// (encoded as a unit stores its first block) onto a unit `targets` marks, their weights summed
-/// and each scaled to `value` by `carried_weight`, which leaves a sum of zero. A group's sum is a
-/// walk of its sources' chains alone, since the tree keeps a synapse with its presynaptic unit.
-/// `fractions` are the synapses' fractions, one for each slot of the arena in its order; `at` is
-/// scratch.
-fn zero_sum_round(
-    blocks: &mut [SynapseBlock],
+/// The synapses of the chains `heads` start (encoded as a unit stores its first block) onto a unit
+/// `targets` marks: their weights summed, and each one's block and slot in `at`, which is
+/// scratch. A group's sum is a walk of its sources' chains alone, since the tree keeps a synapse
+/// with its presynaptic unit. A round of the zero sum scales from this sum, and
+/// `Executor::coupling_sum` reads it.
+fn zero_sum_walk(
+    blocks: &[SynapseBlock],
     heads: &[u32],
-    value: i64,
     targets: &[bool],
-    fractions: &mut [u32],
     at: &mut Vec<(u32, u8)>,
-) {
+) -> i64 {
     at.clear();
     let mut sum = 0i64;
     for &head in heads {
@@ -904,6 +924,21 @@ fn zero_sum_round(
             }
         }
     }
+    sum
+}
+
+/// One group's round of the zero sum (ADR-0226): every synapse `zero_sum_walk` finds scaled to
+/// `value` by `carried_weight`, which leaves a sum of zero. `fractions` are the synapses'
+/// fractions, one for each slot of the arena in its order; `at` is scratch.
+fn zero_sum_round(
+    blocks: &mut [SynapseBlock],
+    heads: &[u32],
+    value: i64,
+    targets: &[bool],
+    fractions: &mut [u32],
+    at: &mut Vec<(u32, u8)>,
+) {
+    let sum = zero_sum_walk(blocks, heads, targets, at);
     if sum == value {
         return;
     }
@@ -1791,6 +1826,11 @@ impl<const CAP: usize> Executor<CAP> {
         if let (true, None) = (config.step_probe, target_read) {
             return Err(ConfigError::StepProbeWithoutRead);
         }
+        // An exponent but one beside a read (ADR-0232), after the read's own refusals: a lead-in
+        // with no read stays legal at any exponent.
+        if config.depression_exponent != DepressionExponent::One && target_read.is_some() {
+            return Err(ConfigError::ExponentBesideRead);
+        }
         let workers = config.workers;
         // A unit fires at most once per tick, so one slot per unit holds a tick's spikes.
         let fired_slots = if config.train_capacity == 0 {
@@ -2028,30 +2068,14 @@ impl<const CAP: usize> Executor<CAP> {
             }
             // Below `ZERO_SUM_GROUPS_MAX`, so the index plus one fits.
             let index = (g as u8).wrapping_add(1);
-            let mut heads = Vec::with_capacity(sources.len());
-            for &unit in sources {
-                let Some(u) = self.units().get(unit as usize) else {
-                    return false;
-                };
-                if Polarity::of_flags(u.flags) != Polarity::Excitatory {
-                    return false;
-                }
-                // A unit's chain is set when the network is made and never moves.
-                heads.push(u.synapse_slab_idx);
-                match source.get_mut(unit as usize) {
-                    Some(slot @ 0) => *slot = index,
-                    _ => return false,
-                }
-            }
+            let Some(heads) = self.zero_sum_heads(sources, index, &mut source) else {
+                return false;
+            };
             held.push((heads, value));
         }
-        let mut target = vec![false; units];
-        for &unit in targets {
-            match target.get_mut(unit as usize) {
-                Some(slot) => *slot = true,
-                None => return false,
-            }
-        }
+        let Some(target) = self.zero_sum_marks(targets) else {
+            return false;
+        };
         let on = !groups.is_empty();
         for (flag, &index) in self.shared.zero_sum_source.iter().zip(&source) {
             flag.store(index, Ordering::Relaxed);
@@ -2073,6 +2097,52 @@ impl<const CAP: usize> Executor<CAP> {
     /// How many groups the zero sum holds (ADR-0228), none while unset.
     pub fn zero_sum_groups(&self) -> usize {
         self.zero_sum_groups.len()
+    }
+
+    /// The chains of `sources`, each marked `index` in `source`: none for a unit outside the
+    /// arena, a source that is not excitatory, or a unit `source` marks already.
+    fn zero_sum_heads(&self, sources: &[u32], index: u8, source: &mut [u8]) -> Option<Vec<u32>> {
+        let mut heads = Vec::with_capacity(sources.len());
+        for &unit in sources {
+            let u = self.units().get(unit as usize)?;
+            if Polarity::of_flags(u.flags) != Polarity::Excitatory {
+                return None;
+            }
+            // A unit's chain is set when the network is made and never moves.
+            heads.push(u.synapse_slab_idx);
+            match source.get_mut(unit as usize) {
+                Some(slot @ 0) => *slot = index,
+                _ => return None,
+            }
+        }
+        Some(heads)
+    }
+
+    /// Each unit of the arena, whether `targets` names it: none for a unit outside the arena.
+    fn zero_sum_marks(&self, targets: &[u32]) -> Option<Vec<bool>> {
+        let mut target = vec![false; self.shared.zero_sum_source.len()];
+        for &unit in targets {
+            *target.get_mut(unit as usize)? = true;
+        }
+        Some(target)
+    }
+
+    /// The sum of the synapses from `sources` onto `targets`, between ticks (ADR-0232): the sum a
+    /// round of the zero sum scales from (`zero_sum_walk`). A host reads each group's value here
+    /// once, from the image the derivation wrote, keeps it, and gives it to
+    /// [`Executor::set_zero_sum`] at each load, since no image holds it. None for what that call
+    /// refuses of a group: a unit outside the arena, a source that is not excitatory, or a source
+    /// named twice.
+    pub fn coupling_sum(&self, sources: &[u32], targets: &[u32]) -> Option<i64> {
+        let mut source = vec![0u8; self.shared.zero_sum_source.len()];
+        let heads = self.zero_sum_heads(sources, 1, &mut source)?;
+        let targets = self.zero_sum_marks(targets)?;
+        Some(zero_sum_walk(
+            self.blocks(),
+            &heads,
+            &targets,
+            &mut Vec::new(),
+        ))
     }
 
     /// After a tick's phases, while the workers wait at the barrier (ADR-0228): every group this
@@ -9278,6 +9348,57 @@ mod zero_sum_prop {
         assert_eq!(fractions, vec![ZERO_SUM_HALF; 12]);
     }
 
+    /// `coupling_sum` on the hand-made arena (ADR-0232), unit 0 on its first chain, unit 1 on its
+    /// second, unit 2 inhibitory and unit 3 on none: each sum by hand, over one target and two,
+    /// one chain and two; and what `set_zero_sum` refuses of a group, none.
+    #[test]
+    fn a_coupling_sum_is_the_sum_by_hand_and_refuses_what_a_group_refuses() {
+        let mut exec = Executor::<64>::new(Config {
+            units: 8,
+            blocks: 3,
+            ..Config::default()
+        })
+        .expect("a valid configuration");
+        exec.blocks_mut().copy_from_slice(&arena().0);
+        assert!(exec.units_mut()[0].set_first_block(0));
+        assert!(exec.units_mut()[1].set_first_block(2));
+        assert!(exec.units_mut()[2].set_first_block(2));
+        exec.units_mut()[2].flags = FLAG_INHIBITORY;
+        let sums: [(&[u32], &[u32], i64); 8] = [
+            (&[0], &[5], 42_100),
+            (&[0], &[7], 6_000),
+            (&[0], &[5, 7], 48_100),
+            (&[1], &[5], 10_000),
+            (&[1], &[7], 0),
+            (&[0, 1], &[5], 52_100),
+            (&[1, 0], &[7, 5, 5], 58_100),
+            (&[3], &[5], 0),
+        ];
+        for (sources, targets, sum) in sums {
+            assert_eq!(
+                exec.coupling_sum(sources, targets),
+                Some(sum),
+                "{sources:?} {targets:?}"
+            );
+        }
+        assert_eq!(exec.coupling_sum(&[], &[5]), Some(0), "no source");
+        assert_eq!(exec.coupling_sum(&[0], &[]), Some(0), "no target");
+        let refused: [(&[u32], &[u32]); 5] = [
+            (&[8], &[5]),
+            (&[0, 8], &[5]),
+            (&[0], &[8]),
+            (&[2], &[5]),
+            (&[0, 0], &[5]),
+        ];
+        for (sources, targets) in refused {
+            assert_eq!(
+                exec.coupling_sum(sources, targets),
+                None,
+                "{sources:?} {targets:?}"
+            );
+        }
+    }
+
     /// `set_zero_sum` refuses whole, nothing changed, and every set starts the fractions again.
     #[test]
     fn a_zero_sum_is_set_whole_or_refused_and_its_fractions_start_at_a_half() {
@@ -9663,6 +9784,11 @@ mod zero_sum_prop {
                     "walk {walk} tick {tick}"
                 );
             }
+            assert_eq!(
+                held.coupling_sum(&[0, 1], &[4, 5]),
+                Some(walk_sum(&held, &a)),
+                "walk {walk}: the reader is the sum by hand"
+            );
             assert_eq!(unset.blocks(), plain.blocks(), "walk {walk}: bit for bit");
             let spikes = |e: &Executor<64>| -> Vec<u32> {
                 e.units().iter().map(|u| u.last_soma_spike_tick).collect()
@@ -9688,7 +9814,7 @@ mod zero_sum_prop {
         assert_eq!(
             Config::reads_its_targets().depression_exponent,
             DepressionExponent::One,
-            "the default's adoption is not this round's"
+            "the derivation stays H-42's (ADR-0232)"
         );
         let mut weights = [0i16; 3];
         for (i, exponent) in [
@@ -9745,5 +9871,230 @@ mod zero_sum_prop {
         .expect("a well-formed image");
         assert_eq!(decoded.depression_exponent(), DepressionExponent::Half);
         assert_eq!(decoded.zero_sum_groups(), 0, "a loaded engine starts unset");
+    }
+}
+
+/// The running configuration (ADR-0232): the name, field by field against the engine's default;
+/// and its two refusals, `Executor::new`'s and `Image::decode`'s, over the lattice of
+/// `testkit/prop.rs` against a rule written from that ADR's text, at every exponent.
+#[cfg(test)]
+mod running_prop {
+    use super::*;
+    use crate::image::{Image, ImageError};
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testkit/prop.rs"
+    ));
+
+    const EXPONENTS: [DepressionExponent; 3] = [
+        DepressionExponent::One,
+        DepressionExponent::Half,
+        DepressionExponent::Quarter,
+    ];
+
+    /// A period the rate's target takes at `UNITS`.
+    const PERIOD: u32 = 58_201;
+    const UNITS: usize = 64;
+
+    /// A quarter's exponent where the default's is one, and with that put back, the default: the
+    /// read, its flag and the probe are the default's, for an image to outrank, and the kept
+    /// addresses, the delay read and the sleep stay unset.
+    #[test]
+    fn runs_a_settled_image_is_the_default_with_a_quarter_s_exponent_and_no_other() {
+        let (running, default) = (Config::runs_a_settled_image(), Config::reads_its_targets());
+        assert_eq!(
+            (running.depression_exponent, default.depression_exponent),
+            (DepressionExponent::Quarter, DepressionExponent::One)
+        );
+        assert_eq!(
+            Config {
+                depression_exponent: default.depression_exponent,
+                ..running.clone()
+            },
+            default,
+            "every other field the default's"
+        );
+        assert_eq!(
+            (
+                running.kept_addresses,
+                running.reads_its_delay,
+                running.sleep_shift
+            ),
+            (0, false, 0)
+        );
+    }
+
+    /// `Executor::new`'s refusal: over the read's lattice and its edges, beside no period and
+    /// beside one, each flag set and unset, at every exponent. An exponent but one is refused
+    /// beside a read and nowhere else, after the read's own refusals; so no engine is born under
+    /// the name, and with its read taken off one is.
+    #[test]
+    fn an_exponent_but_one_is_refused_beside_a_read_and_nowhere_else() {
+        let rule = |windows: u8, period: u32, flags: (bool, bool), exponent: DepressionExponent| {
+            let read = match (windows, period) {
+                (0, _) => None,
+                (1..16, _) => return Err(ConfigError::RateReadOutOfRange),
+                (left, 0) => Some(TargetRead::Reading { left, sum: 0 }),
+                _ => return Err(ConfigError::RateReadBesideTarget),
+            };
+            match (read, flags, exponent) {
+                (None, (true, _), _) => Err(ConfigError::IstdpReadWithoutRead),
+                (None, (_, true), _) => Err(ConfigError::StepProbeWithoutRead),
+                (None, _, _) | (_, _, DepressionExponent::One) => Ok((read, exponent)),
+                _ => Err(ConfigError::ExponentBesideRead),
+            }
+        };
+        let (mut refused, mut legal) = (0u32, 0u32);
+        for exponent in EXPONENTS {
+            for windows in U8_LATTICE.into_iter().chain([15, 16]) {
+                for period in [0, PERIOD] {
+                    for flags in [(false, false), (true, false), (false, true), (true, true)] {
+                        let made = Executor::<8>::new(Config {
+                            units: UNITS,
+                            rate_read_windows: windows,
+                            rate_target_period_ticks: period,
+                            istdp_target_read: flags.0,
+                            step_probe: flags.1,
+                            depression_exponent: exponent,
+                            ..Config::default()
+                        })
+                        .map(|exec| (exec.target_read(), exec.depression_exponent()));
+                        let expected = rule(windows, period, flags, exponent);
+                        assert_eq!(made, expected, "{windows} {period} {flags:?} {exponent:?}");
+                        refused = refused.saturating_add(u32::from(
+                            expected == Err(ConfigError::ExponentBesideRead),
+                        ));
+                        legal = legal.saturating_add(u32::from(
+                            exponent != DepressionExponent::One && expected.is_ok(),
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(refused > 0 && legal > 0, "{refused} refused, {legal} legal");
+        assert!(matches!(
+            Executor::<8>::new(Config {
+                units: UNITS,
+                ..Config::runs_a_settled_image()
+            }),
+            Err(ConfigError::ExponentBesideRead)
+        ));
+        let no_read = Executor::<8>::new(Config {
+            units: UNITS,
+            rate_read_windows: 0,
+            istdp_target_read: false,
+            step_probe: false,
+            ..Config::runs_a_settled_image()
+        })
+        .expect("a lead-in with no read stays legal at any exponent");
+        assert_eq!(no_read.depression_exponent(), DepressionExponent::Quarter);
+    }
+
+    /// An engine with its period set or not, its image written once what is under way is laid on.
+    fn imaged(period: u32, under_way: impl FnOnce(&mut Executor<8>)) -> Vec<u8> {
+        let mut exec = Executor::<8>::new(Config {
+            units: UNITS,
+            rate_target_period_ticks: period,
+            ..Config::default()
+        })
+        .expect("a valid configuration");
+        under_way(&mut exec);
+        Image::encode(&exec).expect("quiescent")
+    }
+
+    /// `image` at every exponent: refused by the ADR's own error at any but one, and at one the
+    /// engine with `read` under way.
+    fn refused_but_at_one(image: &[u8], read: TargetRead, at: &str) {
+        for exponent in EXPONENTS {
+            let decoded = Image::decode::<8>(
+                image,
+                Config {
+                    depression_exponent: exponent,
+                    ..Config::default()
+                },
+            );
+            match (exponent, decoded) {
+                (DepressionExponent::One, Ok(exec)) => {
+                    assert_eq!(exec.target_read(), Some(read), "{at}");
+                }
+                (DepressionExponent::One, Err(e)) => panic!("{at}: {e:?}"),
+                (_, Err(ImageError::Config(ConfigError::ExponentBesideRead))) => {}
+                (_, Err(e)) => panic!("{at} at {exponent:?}: {e:?}"),
+                (_, Ok(_)) => panic!("{at} at {exponent:?}: not refused"),
+            }
+        }
+    }
+
+    /// `Image::decode`'s refusal: a read under way over the lattice's spans and sums, each flag
+    /// set and unset, and a probe under way at every window left over the lattice's sums, under
+    /// every exponent. A settled image, its read over or never begun, loads at each, under the
+    /// name too, which takes every other value from the image.
+    #[test]
+    fn an_image_with_a_read_or_a_probe_under_way_is_refused_at_any_exponent_but_one() {
+        for left in U8_LATTICE.into_iter().filter(|&left| left != 0) {
+            for sum in U32_LATTICE.map(|sum| u64::from(sum).min(read_sum_max(left))) {
+                for flags in [(false, false), (true, false), (false, true), (true, true)] {
+                    let image = imaged(0, |exec| {
+                        exec.set_target_read(left, sum)
+                            .expect("no period beside it");
+                        if flags.0 {
+                            exec.set_istdp_target_read().expect("a read under way");
+                        }
+                        if flags.1 {
+                            exec.set_step_probe(None).expect("a read under way");
+                        }
+                    });
+                    let read = TargetRead::Reading { left, sum };
+                    refused_but_at_one(&image, read, &format!("{read:?} {flags:?}"));
+                }
+            }
+        }
+        for left in 1..=PROBE_WINDOWS {
+            let (least, most) = probe_sum_bounds(left);
+            for sum in I32_LATTICE.map(|sum| i64::from(sum).clamp(least, most)) {
+                let image = imaged(PERIOD, |exec| {
+                    exec.set_step_probe(Some((left, sum))).expect("a target");
+                });
+                let probe = TargetRead::Probing { left, sum };
+                refused_but_at_one(&image, probe, &format!("{probe:?}"));
+            }
+        }
+        for period in [0, PERIOD] {
+            let image = imaged(period, |_| {});
+            for exponent in EXPONENTS {
+                let exec = Image::decode::<8>(
+                    &image,
+                    Config {
+                        depression_exponent: exponent,
+                        ..Config::default()
+                    },
+                )
+                .expect("no read and no probe under way");
+                assert_eq!(exec.depression_exponent(), exponent, "{period}");
+            }
+            let exec = Image::decode::<8>(&image, Config::runs_a_settled_image())
+                .expect("the name's read is the image's to outrank");
+            assert_eq!(
+                (
+                    exec.depression_exponent(),
+                    exec.target_read(),
+                    exec.step_probe(),
+                    exec.istdp_target_read(),
+                    exec.rate_target_period_ticks(),
+                    *exec.homeostasis(),
+                    exec.modulation_baseline_q16()
+                ),
+                (
+                    DepressionExponent::Quarter,
+                    None,
+                    false,
+                    false,
+                    period,
+                    HomeostaticDrivePool::new(),
+                    MODULATION_ONE_Q16
+                ),
+                "{period}: every value but the exponent the image's"
+            );
+        }
     }
 }

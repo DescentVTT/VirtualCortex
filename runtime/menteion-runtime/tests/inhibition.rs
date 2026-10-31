@@ -43704,28 +43704,38 @@ fn zero_predicted(tables: &ZeroTables) -> [Option<bool>; 4] {
 
 // ------------------------------------------------------------------ the run (brief 085)
 
-/// The engine a schedule of H-46 decodes: `kept_from`'s, H-43's twin on time, H-42's arm bit for
-/// bit under the default, the depression's exponent the form's; nothing of it is in the image.
+/// The engine a schedule of H-46 decodes; nothing of its form is in the image. The control's is
+/// `kept_from`'s, H-43's twin on time, H-42's arm bit for bit under the default. The arm's is the
+/// running configuration (ADR-0232) at the control's sizing, of which a decode keeps the exponent
+/// alone. Its kept addresses are unset, so the task draws the address and gives a plain reward,
+/// which at age zero is the arm's first form, a kept address and a reward of age zero, bit for bit.
 fn zero_from(image: &[u8], units: u32, form: usize) -> Engine {
-    let exponent = match form {
-        ZERO_ARM => ZERO_EXPONENT,
-        _ => DepressionExponent::One,
-    };
-    let exec = served(
-        Image::decode::<2048>(
-            image,
+    let sized = config(units, 2, 0);
+    let (under, exponent) = match form {
+        ZERO_ARM => (
+            Config {
+                workers: sized.workers,
+                nodes_per_worker: sized.nodes_per_worker,
+                injector_capacity: sized.injector_capacity,
+                train_capacity: sized.train_capacity,
+                ..Config::runs_a_settled_image()
+            },
+            ZERO_EXPONENT,
+        ),
+        _ => (
             Config {
                 kept_addresses: KEPT_ADDRESSES,
-                depression_exponent: exponent,
-                ..config(units, 2, 0)
+                ..sized
             },
-        )
-        .expect("a well-formed record"),
-    );
+            DepressionExponent::One,
+        ),
+    };
+    let exec = served(Image::decode::<2048>(image, under).expect("a well-formed record"));
     assert!(
         exec.signed_gate() && exec.inhibitory_baseline_q16() == Some(INHIBITORY_BASELINE_Q16),
         "the image carries the signed gate and the inhibitory baseline"
     );
+    assert_eq!(exec.depression_exponent(), exponent, "the form's exponent");
     exec
 }
 
@@ -43738,8 +43748,8 @@ struct ZeroGroups {
     targets: Vec<u32>,
 }
 
-/// The groups on network `made`: read from H-42's image and held to the couplings its derivation
-/// pinned.
+/// The groups on network `made`: each value read from H-42's image through `coupling_sum`, as a
+/// host reads it (ADR-0232), and held to the couplings its derivation pinned.
 fn zero_groups(made: &Made, name: &str) -> ZeroGroups {
     let units = SCAN_UNITS;
     let sets = geometry(units, made.derived.rotation);
@@ -43751,14 +43761,13 @@ fn zero_groups(made: &Made, name: &str) -> ZeroGroups {
             .map(|u| u.id as u32)
             .collect::<Vec<u32>>()
     });
-    let held = couplings(&exec, &sets);
-    let values = [
-        held[0].saturating_add(held[1]),
-        held[2].saturating_add(held[3]),
-    ];
     let targets: Vec<u32> = (0..units)
         .filter(|&id| sets[2].contains(id) || sets[3].contains(id))
         .collect();
+    let values = [0usize, 1].map(|s| {
+        exec.coupling_sum(&sources[s], &targets)
+            .expect("excitatory units once each, and every unit in the arena")
+    });
     eprintln!(
         "DUMP {name} the groups: {:?} excitatory units, their values {values:?}, {} readout units",
         sources.each_ref().map(|s| s.len()),

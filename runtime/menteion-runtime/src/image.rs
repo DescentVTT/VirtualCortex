@@ -42,8 +42,8 @@ use menteion_connectome::{
     SectionEntry, crc64,
 };
 use menteion_core::{
-    DendriticSuperNeuron, FLAG_FACILITATING, FLAG_SLOW, MAX_TOKEN_BLOCK, PlasticDelta,
-    SYNAPSES_PER_BLOCK, SlowCurrent, StpClass, SynapseBlock, TICK_NS, WorkerWheel,
+    DendriticSuperNeuron, DepressionExponent, FLAG_FACILITATING, FLAG_SLOW, MAX_TOKEN_BLOCK,
+    PlasticDelta, SYNAPSES_PER_BLOCK, SlowCurrent, StpClass, SynapseBlock, TICK_NS, WorkerWheel,
 };
 use menteion_executive::PolicyAmendment;
 use menteion_hippocampus::{Episode, HippocampalAttractorState};
@@ -987,6 +987,13 @@ impl Image {
             None => target_read_of(section_of(bytes, &modulator)?)?,
         };
         let istdp_target_read = istdp_target_read_of(section_of(bytes, &modulator)?)?;
+        // A read or a probe under way, under an exponent but one (ADR-0232): none ends there, and
+        // no engine is built for it.
+        if config.depression_exponent != DepressionExponent::One
+            && (target_read.is_some() || probe.is_some())
+        {
+            return Err(ImageError::Config(ConfigError::ExponentBesideRead));
+        }
         let mut exec = Executor::<CAP>::new(Config {
             units,
             blocks,
