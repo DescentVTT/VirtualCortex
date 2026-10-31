@@ -1,9 +1,14 @@
 ---
-status: proposed
+status: archived
 date: 2026-10-28
 affectedFiles: [crates/menteion-core/src/**, runtime/menteion-runtime/src/**, runtime/menteion-runtime/tests/**, testkit/**, docs/**, briefs/**, CHANGELOG.md, CLAUDE.md, README.md, scripts/exhaustive-costs.tsv]
 protectedFiles: [crates/menteion-connectome/**, docs/explorations/0*.md, docs/benchmarks/results/**, benches/**, .github/workflows/**, .cargo/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, clippy.toml, .spec-brief.json, package.json, package-lock.json, scripts/arm-run.sh, scripts/exhaustive-shard.sh, scripts/exhaustive-costs.mjs, scripts/check-additive.mjs, scripts/check-archive.mjs, scripts/check-scope.mjs, scripts/check-explorations.mjs, scripts/check-doc-shape.mjs, scripts/adr-index.mjs]
+integrity: sha256-ed1b370b124929d2a872fccd75df6c252d81bc20d2c5b55a72842d63ce9b9b85
 ---
+
+<!-- spec-brief:banner -->
+> **Executed 2026-10-31 (UTC) in pull request [#260](https://github.com/Menteion/Menteion/pull/260).** Built ADR-0226's two rules, a zero sum at the stimulus and the depression's exponent, unset by default and held by property tests (ADR-0228), and committed H-46's protocol before any arm (ADR-0229). H-46 reads yes at step 3 on seeds 22, 23 and 24 over sixteen schedules: all six arms held H-25's four clauses, the highest coupling 1.157 to 1.215, all six controls passed 1.30 by the third schedule, and all four readings held (ADR-0230). F-86 is resolved. Whether the rules enter the default is the next decision. The body below describes the tree before execution and is not maintained.
+<!-- /spec-brief:banner -->
 
 # Brief 085: A zero sum at the stimulus, and a gentler depression
 
@@ -11,16 +16,16 @@ protectedFiles: [crates/menteion-connectome/**, docs/explorations/0*.md, docs/be
 
 ## Mission
 
-**This brief builds [ADR-0226](../docs/adr/0226-a-zero-sum-at-the-stimulus.md)'s two rules and runs H-46 once.**
-Under the engine's default the couplings rise through every schedule of a long run. M12 asks for them bounded ([Appendix C](../docs/WHITEPAPER.md#appendix-c-roadmap)).
+**This brief builds [ADR-0226](../../docs/adr/0226-a-zero-sum-at-the-stimulus.md)'s two rules and runs H-46 once.**
+Under the engine's default the couplings rise through every schedule of a long run. M12 asks for them bounded ([Appendix C](../../docs/WHITEPAPER.md#appendix-c-roadmap)).
 
 When the round is done, the tree holds:
 - the zero sum at the stimulus, set by the host, each synapse's dropped fraction carried, and the depression's exponent as a configuration's, both unset by default and each the engine as it is when unset, held by property tests;
 - H-46's protocol committed before any arm ran, its six arms and six controls run over sixteen schedules, and its verdict;
 - the twelve long runs kept as `…_paused` tests, and a short form of each arm, its first schedule, in the weekly job.
 
-It writes a built ADR, a protocol ADR and a measured ADR, adds its readings to [H-46's report](../docs/research/H-46.md) and rewrites `docs/STATUS.md` ([briefs/README.md](README.md#a-rounds-documents)).
-The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)).
+It writes a built ADR, a protocol ADR and a measured ADR, adds its readings to [H-46's report](../../docs/research/H-46.md) and rewrites `docs/STATUS.md` ([briefs/README.md](../README.md#a-rounds-documents)).
+The scope is the front matter's ([ADR-0191](../../docs/adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)).
 
 ---
 
@@ -29,13 +34,13 @@ The scope is the front matter's ([ADR-0191](../docs/adr/0191-a-rounds-scope-eigh
 - **Latest ≠ Newest** (whitepaper §2.1, `CLAUDE.md` principle 4). The round depends on nothing new: no crate, no tool, no version of either.
 - **Unset is the engine as it is.** With both rules unset no number moves, and the format stays 26. A pinned number that moves stops the round as a finding (H-46's stopping rule, step 2).
 - **H-46 is ADR-0226's**: its clauses, its constants and its four predicted readings are committed in the protocol ADR and pinned in the tests before any arm runs, and nothing among them moves after.
-- **No `unsafe` beyond ADR-0023's.** No `f32`/`f64`; every loop ends by construction ([ADR-0062](../docs/adr/0062-the-first-complete-sweeps-list.md)); the mutation gate catches every mutant in the lines the change touches ([ADR-0030](../docs/adr/0030-verification-governance.md)); a new rule carries a test over the lattice.
-- **The runs are dispatches** ([briefs/README.md](README.md#evidencing-a-round)): the calibration at `scope=exhaustive` excluding the round's own weekly tests, and the first halves at `scope=arms`, dispatched together on the protocol's commit; the calibration read first. ADR-0226 departs from the README in two places, and says why: the second halves run on a later commit that adds only their images, and the long runs are reproduced at `scope=arms`. No whole-domain test runs on the developer machine.
-- **The pull request opens as a draft with the round's first push** ([ADR-0223](../docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)), and leaves draft with the commit that asks for the merge, which sets the round's ADRs to `accepted`.
+- **No `unsafe` beyond ADR-0023's.** No `f32`/`f64`; every loop ends by construction ([ADR-0062](../../docs/adr/0062-the-first-complete-sweeps-list.md)); the mutation gate catches every mutant in the lines the change touches ([ADR-0030](../../docs/adr/0030-verification-governance.md)); a new rule carries a test over the lattice.
+- **The runs are dispatches** ([briefs/README.md](../README.md#evidencing-a-round)): the calibration at `scope=exhaustive` excluding the round's own weekly tests, and the first halves at `scope=arms`, dispatched together on the protocol's commit; the calibration read first. ADR-0226 departs from the README in two places, and says why: the second halves run on a later commit that adds only their images, and the long runs are reproduced at `scope=arms`. No whole-domain test runs on the developer machine.
+- **The pull request opens as a draft with the round's first push** ([ADR-0223](../../docs/adr/0223-the-gate-shortened-and-explorations-kept-as-tags.md)), and leaves draft with the commit that asks for the merge, which sets the round's ADRs to `accepted`.
 - **The branch is named `claude/brief-085-…`**, never rebased or force-pushed once a dispatch has run on it.
 - **The documents are ADR-0197's**: the new ADRs in its shape, the tables written by `node scripts/adr-index.mjs`, new text within `npm run spec:shape`'s limits.
-- **H-46's pinned tables go in `tests/inhibition/pins/h46.rs`**, a row a line, declared in its `mod.rs` ([ADR-0227](../docs/adr/0227-the-pinned-tables-in-a-file-a-round.md)).
-- **No shard of the weekly job passes 60 per cent of its bound**, 240 minutes ([ADR-0179](../docs/adr/0179-the-bounds-rule-restated.md)). One that does is reported with its job's minutes.
+- **H-46's pinned tables go in `tests/inhibition/pins/h46.rs`**, a row a line, declared in its `mod.rs` ([ADR-0227](../../docs/adr/0227-the-pinned-tables-in-a-file-a-round.md)).
+- **No shard of the weekly job passes 60 per cent of its bound**, 240 minutes ([ADR-0179](../../docs/adr/0179-the-bounds-rule-restated.md)). One that does is reported with its job's minutes.
 - **GitHub without gh.** Dispatches, the pull request, logs and artifacts go through the REST API with the repository's own token (`~/.claude/menteion-tools/ghapi.sh` and its README); `git push` uses the same token. The token is never printed or put on a command line.
 - **The maintainer is notified** as `briefs/README.md` says: when a question only they can answer stops the round, and when the pull request is ready for review.
 - Conventional Commits with a real body; never commit on `main`.
@@ -51,10 +56,10 @@ Re-derived on 2026-10-28 against `main` at `2c48eee`. Line numbers move; the sym
    - the tag `explore/013-the-carried-sum-and-the-exponent`: `DepressionExponent` in `synapse.rs`, `Executor::set_depression_exponent`, the integer square roots;
    - their harness in `tests/inhibition.rs`: the long run, the readings by schedule, the eighth image carried with its CRC-64 under `tests/explore-0NN/`.
 3. **The runs to start from**: H-42's derivations on seeds 22, 23 and 24, pinned; H-25's two arms and their four clauses; H-20's schedule; exploration 007's long run in two jobs of eight schedules.
-4. **The served-on-arrival engine** ([ADR-0225](../docs/adr/0225-a-unit-served-on-arrival-built.md)): an eight-schedule job took 5 517 to 6 081 s on AArch64 in exploration 013. An eighth image is 590 656 bytes; twelve are about 7 MB.
-5. **The paused tests** ([ADR-0127](../docs/adr/0127-the-paused-line-leaves-the-weekly.md)): a test named `…_paused` is listed by `--ignored paused`, not by the weekly job's `--ignored exhaustive`, and keeps its pins. `scripts/arm-run.sh` runs any `#[ignore]`d test `--ignored --list` names.
+4. **The served-on-arrival engine** ([ADR-0225](../../docs/adr/0225-a-unit-served-on-arrival-built.md)): an eight-schedule job took 5 517 to 6 081 s on AArch64 in exploration 013. An eighth image is 590 656 bytes; twelve are about 7 MB.
+5. **The paused tests** ([ADR-0127](../../docs/adr/0127-the-paused-line-leaves-the-weekly.md)): a test named `…_paused` is listed by `--ignored paused`, not by the weekly job's `--ignored exhaustive`, and keeps its pins. `scripts/arm-run.sh` runs any `#[ignore]`d test `--ignored --list` names.
 6. **What is already weekly**: H-42's arms on the three networks, which are each control's first schedule.
-7. **The process** ([briefs/README.md](README.md#evidencing-a-round)): `npm run round:additive` reads the change, which is not only additive; the reproduction runs the round's own weekly tests alone when nothing the calibration ran has changed; the cost table is regenerated with `--keep`. Brief 082 held its constants' commit before every arm's dispatch in the history, and kept one runtime test in the gate ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+7. **The process** ([briefs/README.md](../README.md#evidencing-a-round)): `npm run round:additive` reads the change, which is not only additive; the reproduction runs the round's own weekly tests alone when nothing the calibration ran has changed; the cost table is regenerated with `--keep`. Brief 082 held its constants' commit before every arm's dispatch in the history, and kept one runtime test in the gate ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
 8. **The schedule** runs on Wednesday at 20:17 UTC and takes most of the organisation's places for hours. A dispatch made then waits.
 
 ## Deliverables
@@ -75,7 +80,7 @@ Re-derived on 2026-10-28 against `main` at `2c48eee`. Line numbers move; the sym
 - [x] **The tables pinned per schedule** once both halves are read: each arm's and control's highest coupling, its clauses, its reversals, its inhibitory sum and its synapses by band of the width, those at the rail among them.
 - [x] **Six short forms**, each arm's first schedule, as weekly `…_exhaustive` tests pinned from the same runs.
 - [x] **The reproduction**, dispatched as soon as the tables are pinned: `scope=exhaustive` with `only` naming the six short forms, when nothing the calibration ran has changed since its commit, otherwise every test; and the twelve long runs again at `scope=arms` on the same commit, every pinned table held. Its shards are green, and the cost table is regenerated from the calibration's and the reproduction's artifacts.
-- [x] **The gate.** At most one runtime test of H-46's clauses and readings at their edges, over tables written by hand ([ADR-0061](../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
+- [x] **The gate.** At most one runtime test of H-46's clauses and readings at their edges, over tables written by hand ([ADR-0061](../../docs/adr/0061-the-learning-runs-leave-the-gate.md)).
 - [x] **H-46's report**: its `verdict:` set, the readings' tables, each arm beside its control, and the dispatches that are their evidence.
 - [x] **The measured ADR**, kind `measured`, short: the verdict per network, arm and clause in one table; each predicted reading held or missed in a line; the step of the stopping rule reached, and the next decision it names, not taken.
 - [x] **The documents, in the same pull request.**

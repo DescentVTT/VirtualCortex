@@ -2609,9 +2609,9 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0225](adr/0225-a-unit-served-on-arrival-built.md) | A unit served on arrival, built | accepted |
 | [ADR-0226](adr/0226-a-zero-sum-at-the-stimulus.md) | A zero sum at the stimulus, and a gentler depression | accepted |
 | [ADR-0227](adr/0227-the-pinned-tables-in-a-file-a-round.md) | The pinned tables in a file a round, a row a line | accepted |
-| [ADR-0228](adr/0228-a-zero-sum-at-the-stimulus-built.md) | A zero sum at the stimulus, and a gentler depression, built | proposed |
-| [ADR-0229](adr/0229-a-zero-sum-at-the-stimulus-its-protocol.md) | A zero sum at the stimulus, and a gentler depression, its protocol | proposed |
-| [ADR-0230](adr/0230-a-zero-sum-at-the-stimulus-measured.md) | A zero sum at the stimulus, and a gentler depression, measured | proposed |
+| [ADR-0228](adr/0228-a-zero-sum-at-the-stimulus-built.md) | A zero sum at the stimulus, and a gentler depression, built | accepted |
+| [ADR-0229](adr/0229-a-zero-sum-at-the-stimulus-its-protocol.md) | A zero sum at the stimulus, and a gentler depression, its protocol | accepted |
+| [ADR-0230](adr/0230-a-zero-sum-at-the-stimulus-measured.md) | A zero sum at the stimulus, and a gentler depression, measured | accepted |
 <!-- adr-index: end decisions -->
 
 ---

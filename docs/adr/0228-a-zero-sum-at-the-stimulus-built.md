@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-31
 depends-on: ADR-0226
 title: A zero sum at the stimulus, and a gentler depression, built

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-01
 depends-on: ADR-0229
 title: A zero sum at the stimulus, and a gentler depression, measured
