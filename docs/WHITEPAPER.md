@@ -2613,7 +2613,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0229](adr/0229-a-zero-sum-at-the-stimulus-its-protocol.md) | A zero sum at the stimulus, and a gentler depression, its protocol | accepted |
 | [ADR-0230](adr/0230-a-zero-sum-at-the-stimulus-measured.md) | A zero sum at the stimulus, and a gentler depression, measured | accepted |
 | [ADR-0231](adr/0231-the-spec-tools-under-their-new-scope.md) | The spec tools under their new scope | accepted |
-| [ADR-0232](adr/0232-a-running-configuration-and-m12-closed.md) | A running configuration for a settled image, and M12 closed | proposed |
+| [ADR-0232](adr/0232-a-running-configuration-and-m12-closed.md) | A running configuration for a settled image, and M12 closed | accepted |
 <!-- adr-index: end decisions -->
 
 ---
