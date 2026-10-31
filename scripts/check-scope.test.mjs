@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { parseConfig } from "@descent-vtt/spec-brief";
+import { parseConfig } from "@spec-family/spec-brief";
 
 import { BRIEF, SCOPE_FROM, checkScope } from "./check-scope.mjs";
 

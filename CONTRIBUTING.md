@@ -58,7 +58,7 @@ The whitepaper is the canonical architecture document and is governed by [ADR-00
 - **Requirement keywords** (MUST, SHOULD, MAY) follow BCP 14 and are written in capitals only when meant that way.
 - **Layout tables are transcribed from source**, never from memory. If you change a record, change its table in the same commit.
 - **Numbers are Measured or Target** ([ADR-0010](docs/adr/0010-measured-or-target.md)). A Measured figure links to a benchmark in this repository and the command that produced it. Do not write "tested on".
-- **Make claims executable.** When you write that something exists in the tree, add a `<!-- @assert-count ... min="1" -->` directive under the sentence; when you write that something is gone, add `<!-- @assert-absence ... -->`. See the [spec-guard README](https://www.npmjs.com/package/@descent-vtt/spec-guard) for the directive syntax.
+- **Make claims executable.** When you write that something exists in the tree, add a `<!-- @assert-count ... min="1" -->` directive under the sentence; when you write that something is gone, add `<!-- @assert-absence ... -->`. See the [spec-guard README](https://www.npmjs.com/package/@spec-family/spec-guard) for the directive syntax.
 - **English is canonical.** The Traditional Chinese file is a reader's guide; do not add layouts, figures or new claims to it.
 - **Findings, not silent fixes.** If the document and the tree disagree, record a numbered finding in §11 and fix it in a separate, visible step.
 - **The whitepaper's version moves with it** ([ADR-0064](docs/adr/0064-the-documentation-gate-and-the-version.md)).

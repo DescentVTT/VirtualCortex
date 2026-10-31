@@ -69,7 +69,7 @@ npm ci
 npm run spec
 ```
 
-`npm run spec` 會執行這些檢查：[`@descent-vtt/spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard) 執行白皮書與 README 中嵌入的 `<!-- @assert-* -->` 斷言，確認 `crates/` 仍然含有文件宣稱的型別、且不含被禁止的東西（`f32`、`f64`、`unsafe`、`Box<`、`Vec<`…）；[`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) 檢查所有 Markdown 文件之間的連結、ADR 狀態與開放問題是否一致。[`@descent-vtt/spec-brief`](https://www.npmjs.com/package/@descent-vtt/spec-brief) 依 `.spec-brief.json` 檢查每份 live brief 的必要章節，並確認已歸檔的 brief 自歸檔後沒被改過（ADR-0185）。三者都以精確版本釘在 `package.json`；倉庫內另有 `scripts/check-archive.mjs`（每份已歸檔的 brief 都帶有雜湊）、`scripts/check-deps.mjs`（state crate 不宣告任何依賴，TC-2）、`scripts/check-doc-shape.mjs`（新增或改動的文字不超過長度上限，已接受的 ADR 本文一字不動）與 `scripts/adr-index.mjs`（ADR 索引、§9 與假設總表都由 front matter 產生）等腳本。這些都在 CI 中作為阻斷性檢查執行。
+`npm run spec` 會執行這些檢查：[`@spec-family/spec-guard`](https://www.npmjs.com/package/@spec-family/spec-guard) 執行白皮書與 README 中嵌入的 `<!-- @assert-* -->` 斷言，確認 `crates/` 仍然含有文件宣稱的型別、且不含被禁止的東西（`f32`、`f64`、`unsafe`、`Box<`、`Vec<`…）；[`@spec-family/spec-graph`](https://www.npmjs.com/package/@spec-family/spec-graph) 檢查所有 Markdown 文件之間的連結、ADR 狀態與開放問題是否一致。[`@spec-family/spec-brief`](https://www.npmjs.com/package/@spec-family/spec-brief) 依 `.spec-brief.json` 檢查每份 live brief 的必要章節，並確認已歸檔的 brief 自歸檔後沒被改過（ADR-0185）。三者都以精確版本釘在 `package.json`；倉庫內另有 `scripts/check-archive.mjs`（每份已歸檔的 brief 都帶有雜湊）、`scripts/check-deps.mjs`（state crate 不宣告任何依賴，TC-2）、`scripts/check-doc-shape.mjs`（新增或改動的文字不超過長度上限，已接受的 ADR 本文一字不動）與 `scripts/adr-index.mjs`（ADR 索引、§9 與假設總表都由 front matter 產生）等腳本。這些都在 CI 中作為阻斷性檢查執行。
 
 ## 如何貢獻
 
