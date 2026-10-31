@@ -1,7 +1,7 @@
 # Where the work stands
 
 Every round rewrites this page whole, and it holds no history ([ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md)).
-[ADR-0232](adr/0232-the-couplings-held-in-a-running-configuration.md) wrote it on 2026-11-01, after brief 085 and before brief 086.
+[ADR-0232](adr/0232-a-running-configuration-and-m12-closed.md) wrote it on 2026-11-01, after brief 085 and before brief 086.
 
 ## The engine
 
@@ -41,7 +41,7 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 - The whole punishment is a parameter of the image no configuration sets (ADR-0155, ADR-0156); the exploration an option of the task no run sets (ADR-0163, ADR-0164).
 - The controller's step under its estimate is zero in every run that learns (ADR-0077, ADR-0177).
 - The rate's rule, the read of its target, the read's flag and the probe are each set in the default; no network but H-42's three has run under it.
-- The kept addresses and the delay read are in no default; H-43 and H-45 ran them at `kept_addresses` 2. The zero sum and the depression's exponent are in none either until brief 086 builds ADR-0232's running configuration.
+- The kept addresses and the delay read are in no default: H-43 and H-45 ran them, and H-46 the addresses at age zero alone, at `kept_addresses` 2. The zero sum and the depression's exponent are in none either: brief 086 names the exponent for a settled image, and the host sets the groups.
 - Of the speed line ([ADR-0105](adr/0105-the-speed-line-closed.md)), the sweep and service on arrival are kept, and the lanes reverted.
 
 ## What does not exist
@@ -55,6 +55,6 @@ Per trial the host gives the reward's sign; under a delay it names the trial's a
 
 ## The next decision
 
-[ADR-0232](adr/0232-the-couplings-held-in-a-running-configuration.md) closed M12 and put the two rules in a running configuration, which brief 086 builds.
+[ADR-0232](adr/0232-a-running-configuration-and-m12-closed.md) closed M12 and named a running configuration for a settled image, which brief 086 builds: the exponent by a name, the zero sum's groups by the host.
 1. M11, learning that sleep keeps: an exploration reads a night with replay against one without, and M11's decision ADR then settles F-47's replay.
 2. A read of the arena on every tick catches every asleep unit up a tick, so a test that reads it so takes longer ([ADR-0225](adr/0225-a-unit-served-on-arrival-built.md)): what such a reading should pay is not decided.
