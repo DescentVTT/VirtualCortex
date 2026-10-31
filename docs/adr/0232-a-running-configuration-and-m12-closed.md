@@ -37,8 +37,8 @@ ADR-0205's byte-for-byte route rested on that: the default was H-42's candidate,
 - `Executor::set_zero_sum` takes the groups and their values from the host. Each schedule's engine set them again, every fraction at a half.
 - Each group's value was its sum in H-42's image, the same value at every schedule. The harness reads it in `zero_groups`.
 
-**A settled image**, below, is one whose read and probe have ended and that carries H-25's learning configuration: the inhibitory baseline, the signed gate, the critic and its window.
-The harness lays that configuration by byte patches (`frozen_image`, `inhibited_image`, `signed_image`, `valued_image`, `with_window_bytes`), and the runtime has no call for it.
+**A settled image**, below, is one whose read and probe have ended and that carries H-25's learning configuration: the modulation at rest of zero, the inhibitory baseline, the signed gate, the critic and its window.
+The harness lays that configuration by byte patches (`frozen_image`, `inhibited_image`, `signed_image`, `valued_image`, `with_window_bytes`), and no public call lays it on an image already settled.
 
 So `Config::reads_its_targets()` cannot take the exponent as ADR-0205 took the probe.
 Set there, the derivation runs at a quarter: `depression_magnitude` shapes every excitatory depression.
@@ -85,7 +85,7 @@ No run of the task has slept: `runtime/menteion-runtime/src/task.rs` and `tests/
 `Config::runs_a_settled_image()` is `Config::reads_its_targets()` with `depression_exponent: DepressionExponent::Quarter`; the name is brief 086's to change.
 - An engine runs a settled image under it, at the caller's sizing, `train_capacity` among it.
 - `Image::decode` outranks every value it takes from `Config::reads_its_targets()`, so the exponent is the one field it adds to a decoded engine.
-- The kept addresses stay unset. H-46's arms kept two with every reward at age zero, which `reward_kept` gives bit for bit as a plain `reward`. H-43's twins read that at an exponent of one with no zero sum, and brief 086 reads it here.
+- The kept addresses stay unset. H-46's arms kept two with every reward at age zero, which `reward_kept` gives bit for bit as a plain `reward`. `a_reward_kept_at_age_zero_is_the_drawn_reward_bit_for_bit` and `on_time_under_kept_addresses_a_trial_is_the_trial_it_was_bit_for_bit` hold that at the gate, neither path reads the exponent or the zero sum, and brief 086 reads it under both rules.
 - `Config::reads_its_targets()` and `Config::default()` are unchanged, so every image is born as it was.
 - No record, section or format changes, and the format stays 26.
 
@@ -98,9 +98,9 @@ The name's comment and the whitepaper's paragraph say this; it is a description,
 ### The boundary (Specified; brief 086 builds it)
 
 - **An exponent other than one is refused beside a read.** `Executor::new` refuses it with a `ConfigError` of its own, so no engine is born under `Config::runs_a_settled_image()`.
-- **An image with a read or a probe under way is refused under such an exponent**, with the same error, so none ends at one.
+- **An image with a read or a probe under way is refused under such an exponent**, with the same error, so none ends under it.
 - No image H-46 decoded has a read or a probe under way, so none meets either refusal.
-- A lead-in with no read stays legal at any exponent. No derivation of the tree takes that route under the name.
+- A lead-in with no read stays legal at any exponent. No derivation of the tree takes that route at an exponent but one.
 
 ### The host's part (Specified; brief 086 builds it)
 
@@ -116,7 +116,7 @@ The name's comment and the whitepaper's paragraph say this; it is a description,
 - **The value by the reader.** `zero_groups` reads through `coupling_sum`, and its assertion holds each value to the couplings H-42's derivation pinned on three networks.
 - **The configuration, field by field**, and both refusals by tests over the lattice of `testkit/prop.rs`.
 - **Every pin the dispatch lists is held**, by one dispatch at `scope=exhaustive` with nothing excluded. The `…_paused` tests are not listed ([ADR-0127](0127-the-paused-line-leaves-the-weekly.md)).
-- The ten other long halves share `zero_from`, so they read the name's form unrun, and their rows rest on those two jobs' equality.
+- The arms' ten other long halves read the name's form unrun, and the twelve control halves keep theirs. Their rows rest on the path's equality, which the two gate tests above hold and those two jobs and the six short forms read under both rules.
 
 ### M12 closes
 
@@ -152,9 +152,9 @@ The schedule's next runs on 2026-11-04 at 20:17Z, and the first ADR that merges 
 - **Bad**: the default is now two names, one for birth and one for a settled image, and a host must use both.
 - **Bad**: the host keeps each group's value across loads, since no image holds it.
 - **Bad**: the name without the groups is a state no run has read, and only a sentence warns of it.
-- **Bad**: H-25's learning configuration reaches an image only by the harness's byte patches, so no host outside the tests reaches a settled image yet.
+- **Bad**: no public call lays H-25's learning configuration on an image after its derivation, so no host outside the tests reaches a settled image yet.
 - **Bad**: M12 closes with its shape unread. A later run that crosses 1.30 costs a reopening.
-- **Bad**: ten long halves read a form they have not run under.
+- **Bad**: the arms' ten other long halves read a form they have not run under.
 - **Neutral**: `Config::default()` stays the bare engine every pin runs, and no format moves.
 - **Neutral**: `Config::runs_a_settled_image()` has run only on H-42's three networks at 1 024 units.
 
@@ -169,5 +169,5 @@ The schedule's next runs on 2026-11-04 at 20:17Z, and the first ADR that merges 
 
 ## Confirmation
 
-`briefs/086_a-running-configuration.md` builds the configuration, the boundary and the reader, and holds every listed pin by one dispatch.
+`briefs/086_a-running-configuration.md` builds the configuration, the boundary and the reader, holds every listed pin by one dispatch, and reads seed 22's two first halves at `scope=arms`.
 `npm run spec` holds the links, the tables, the brief's contract and scope, and the version.

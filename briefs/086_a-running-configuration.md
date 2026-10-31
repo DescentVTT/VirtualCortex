@@ -68,7 +68,7 @@ Re-derived on 2026-11-01 against `main` at `eacc1fd`. Line numbers move; the sym
    - `zero_groups(made, name)` reads each group's value with `couplings`, and asserts it equal to `made.couplings`.
    - `zero_schedule` calls `exec.set_zero_sum(&held, &groups.targets)` on each schedule's engine of an arm, and only of an arm.
    - `zero_short` is the six `…_exhaustive` short forms' body, and `the_zero_sum_of_h_46_its_clauses_and_its_predicted_readings_rules` reads the pins of `tests/inhibition/pins/h46.rs`.
-4. **The kept addresses at age zero** (`runtime/menteion-runtime/src/task.rs`): with addresses kept a trial takes `keep_address` then `reward_kept(0)`, and without them `address_drawn` then `reward`. `reward_kept` at age zero is bit for bit a plain `reward`, and H-43's twins read that at an exponent of one with no zero sum.
+4. **The kept addresses at age zero** (`runtime/menteion-runtime/src/task.rs`): with addresses kept a trial takes `keep_address` then `reward_kept(0)`, and without them `address_drawn` then `reward`. `reward_kept` at age zero is bit for bit a plain `reward`: `a_reward_kept_at_age_zero_is_the_drawn_reward_bit_for_bit` in `executor.rs` and `on_time_under_kept_addresses_a_trial_is_the_trial_it_was_bit_for_bit` in `task.rs` hold it at the gate, and neither path reads the exponent or the zero sum.
 5. **The zero sum** (`Executor::set_zero_sum`, `hold_zero_sum`, `zero_sum_round`): `zero_sum_round` walks a group's chains and sums its synapses onto the targets. `Executor::zero_sum_groups` counts the groups held.
 6. **The errors** (`ConfigError` and `ImageError::Config`): `Executor::new` returns a `ConfigError` for each refused field. `Image::decode` wraps one in `ImageError::Config`.
 7. **The tests that set an exponent today**: `engine` in `executor.rs`'s unit tests, the decode beside it, and `zero_from`. None stands beside a read, and each must keep passing.
@@ -85,7 +85,7 @@ Re-derived on 2026-11-01 against `main` at `eacc1fd`. Line numbers move; the sym
   - `Executor::coupling_sum(sources, targets)`, read between ticks.
   - A test over `testkit/prop.rs`'s lattice for each refusal, and one holding `coupling_sum` to a sum by hand.
 - [ ] **H-46's harness under the name.**
-  - `zero_from` decodes the arm's form under `Config::runs_a_settled_image()`, its sizing by struct update and `kept_addresses` left at zero, the task on its plain path at age zero. The control's form stays what it was.
+  - `zero_from` decodes the arm's form under `Config::runs_a_settled_image()`, its sizing by struct update and `kept_addresses` left at zero, the task on its plain path at age zero, its comment rewritten. The control's form stays what it was.
   - `zero_groups` reads each value through `coupling_sum`, its assertion against `made.couplings` kept.
   - The six short forms and the verdict's test unchanged, each pin held.
 - [ ] **The dispatches**, once the last commit under `src/` and `tests/` is pushed.
@@ -94,7 +94,7 @@ Re-derived on 2026-11-01 against `main` at `eacc1fd`. Line numbers move; the sym
 - [ ] **The ADR's reading.**
   - What was built, and the two refusals.
   - Each dispatch with its run id and commit, and each job's time against its bound.
-  - That ten long halves read the name's form unrun, resting on those two jobs.
+  - That the arms' ten other long halves read the name's form unrun, and what their rows rest on.
   - Whether the schedule's sweep of 2026-11-04 has ended, and its record if it has.
 - [ ] **The documents, in the same pull request.**
   - `docs/STATUS.md` rewritten whole.
