@@ -1,5 +1,5 @@
 {
-  "$schema": "./node_modules/@descent-vtt/spec-brief/schema.json",
+  "$schema": "./node_modules/@spec-family/spec-brief/schema.json",
   "files": "[0-9][0-9][0-9]_*.md",
   "status": {
     "draft": null,

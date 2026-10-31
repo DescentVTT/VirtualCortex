@@ -65,7 +65,7 @@ A round archives its brief with `spec-brief` ([ADR-0185](../docs/adr/0185-the-sp
 
 1. Disposition every deliverable in place: `[x]` when done, or a `**Delegated to** ...`,
    `**Accepted debt:** ...` or `**Rejected:** ...` note under the box.
-2. Run `npx --no-install @descent-vtt/spec-brief archive <NNN> --strict --pr <n> --summary "<one paragraph>"`.
+2. Run `npx --no-install @spec-family/spec-brief archive <NNN> --strict --pr <n> --summary "<one paragraph>"`.
    The summary says what the round did in one paragraph: the ADRs written, the findings closed,
    the verdict. Whatever more there is to say belongs in the ADR. The command:
    - refuses an open box, naming each one;

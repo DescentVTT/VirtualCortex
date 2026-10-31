@@ -20,7 +20,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseBrief, parseConfig } from "@descent-vtt/spec-brief";
+import { parseBrief, parseConfig } from "@spec-family/spec-brief";
 
 // The first brief held to a declared scope.
 export const SCOPE_FROM = 75;

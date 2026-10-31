@@ -41,8 +41,8 @@
     "gate:fingerprint:test": "node --test scripts/gate-fingerprint.test.mjs"
   },
   "devDependencies": {
-    "@descent-vtt/spec-brief": "0.8.0",
-    "@descent-vtt/spec-graph": "0.17.0",
-    "@descent-vtt/spec-guard": "0.26.0"
+    "@spec-family/spec-brief": "0.12.0",
+    "@spec-family/spec-graph": "0.21.0",
+    "@spec-family/spec-guard": "0.30.0"
   }
 }

@@ -1,6 +1,6 @@
 ---
 title: Menteion Architecture Whitepaper
-version: 5.26.0
+version: 5.27.0
 status: active
 date: 2026-11-01
 ---
@@ -11,7 +11,7 @@ date: 2026-11-01
 
 | Document control | |
 | :--- | :--- |
-| Version | 5.26.0 |
+| Version | 5.27.0 |
 | Status | Active (living document; amended by ADR) |
 | Date | 2026-11-01 |
 | Supersedes | Whitepaper 4.134.0 (2026-10-19), whose §6.5 and §11.1 told the rounds now in [docs/research/](research/README.md). It superseded 3.0.0 (2026-09-10, eighteen crates), which superseded Specification 2.8.0 |
@@ -2612,6 +2612,7 @@ Decisions are recorded as MADR files under `docs/adr/`; their status is checked 
 | [ADR-0228](adr/0228-a-zero-sum-at-the-stimulus-built.md) | A zero sum at the stimulus, and a gentler depression, built | accepted |
 | [ADR-0229](adr/0229-a-zero-sum-at-the-stimulus-its-protocol.md) | A zero sum at the stimulus, and a gentler depression, its protocol | accepted |
 | [ADR-0230](adr/0230-a-zero-sum-at-the-stimulus-measured.md) | A zero sum at the stimulus, and a gentler depression, measured | accepted |
+| [ADR-0231](adr/0231-the-spec-tools-under-their-new-scope.md) | The spec tools under their new scope | accepted |
 <!-- adr-index: end decisions -->
 
 ---
@@ -3009,11 +3010,11 @@ Five independent document checks and eight build and test gates, each answering 
 | Level | Question | Tool | Gate |
 | :--- | :--- | :--- | :--- |
 | V-1 Layout | Do the records have the size and alignment the ABI requires? | `const _` assertions compiled by `cargo check`; layout unit tests by `cargo test` | CI, blocking |
-| V-2 Vertical | Does the source tree still contain what this document says it contains? | [`@descent-vtt/spec-guard`](https://www.npmjs.com/package/@descent-vtt/spec-guard) executing the `@assert-*` directives in every file under `docs/`, the README, `CONTRIBUTING.md`, `CLAUDE.md` and the live briefs | CI, blocking |
-| V-3 Horizontal | Are the documents consistent with each other: do links resolve, are ADR statuses coherent, is any open question delegated to a retired decision? | [`@descent-vtt/spec-graph`](https://www.npmjs.com/package/@descent-vtt/spec-graph) over `docs/**/*.md`, `briefs/**/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CLAUDE.md` and, as history, `CHANGELOG.md`; and `scripts/check-decisions.mjs` (zero dependencies; F-41), which holds every ADR to its row in §9 and in `docs/adr/README.md`, a count spec-guard cannot make inside a document it checks; and `scripts/check-version.mjs` (zero dependencies; F-43, [ADR-0064](adr/0064-the-documentation-gate-and-the-version.md)), which holds this document's two version declarations to each other and, on a pull request, its version to having moved with its content. They run as `npm run spec`, one step, which is the command CONTRIBUTING.md names (F-44) | CI, blocking |
+| V-2 Vertical | Does the source tree still contain what this document says it contains? | [`@spec-family/spec-guard`](https://www.npmjs.com/package/@spec-family/spec-guard) executing the `@assert-*` directives in every file under `docs/`, the README, `CONTRIBUTING.md`, `CLAUDE.md` and the live briefs | CI, blocking |
+| V-3 Horizontal | Are the documents consistent with each other: do links resolve, are ADR statuses coherent, is any open question delegated to a retired decision? | [`@spec-family/spec-graph`](https://www.npmjs.com/package/@spec-family/spec-graph), `scripts/check-decisions.mjs` (F-41) and `scripts/check-version.mjs` (F-43, [ADR-0064](adr/0064-the-documentation-gate-and-the-version.md)), each described under this table. They run as `npm run spec`, one step, which is the command CONTRIBUTING.md names (F-44) | CI, blocking |
 | Hygiene | Formatting and lints | `cargo fmt --check`, `cargo clippy -D warnings` | CI, blocking |
 | MSRV | Does the workspace still build and test on the minimum supported Rust version it declares? | `cargo check --all-targets` and `cargo test` on the `rust-version` read from `Cargo.toml` (1.85), selected with `rustup override` so that the pin in `rust-toolchain.toml` does not apply ([ADR-0009](adr/0009-rust-edition-and-msrv.md)) | CI, blocking |
-| V-4 Intake | Does every live brief in `briefs/` carry its mandatory sections, so that a round handed to a fresh session is complete, and is every archived brief the brief it was archived as? | [`@descent-vtt/spec-brief`](https://www.npmjs.com/package/@descent-vtt/spec-brief) `lint` over `.spec-brief.json`: the eight sections in order, a Latest ≠ Newest standing directive (F-39), and each archived brief's integrity hash; `scripts/check-archive.mjs` fails an archived brief with no hash, tested by `scripts/check-archive.test.mjs` under `node:test` ([ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md)); from brief 075, `scripts/check-scope.mjs` fails a brief without `affectedFiles` and `protectedFiles`, or one protecting less than its copy on `origin/main`, and `spec-brief archive --strict` refuses a round that wrote outside its scope ([ADR-0191](adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)) | CI, blocking |
+| V-4 Intake | Does every live brief in `briefs/` carry its mandatory sections, so that a round handed to a fresh session is complete, and is every archived brief the brief it was archived as? | [`@spec-family/spec-brief`](https://www.npmjs.com/package/@spec-family/spec-brief) `lint` over `.spec-brief.json`, `scripts/check-archive.mjs` ([ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md)) and `scripts/check-scope.mjs` ([ADR-0191](adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)), each described under this table | CI, blocking |
 | V-5 Manifests | Do the state crates still declare no dependencies, and the runtime and the benchmark crate only what their ADRs allow (TC-2)? | `scripts/check-deps.mjs` (zero dependencies; [ADR-0029](adr/0029-structural-enforcement.md)) | CI, blocking |
 | V-8 Shape | Does the text a change adds or modifies keep ADR-0197's limits, is every accepted ADR's body its base copy, and are the ADR index, §9 and the hypotheses' tables what their front matter writes? | `scripts/check-doc-shape.mjs` against `origin/main` and `scripts/adr-index.mjs --check` (zero dependencies; [ADR-0197](adr/0197-one-place-for-each-kind-of-fact.md), built by [ADR-0199](adr/0199-one-place-for-each-kind-of-fact-built.md)) | CI, blocking |
 | Rustdoc | Does every crate's documentation build without a warning (F-22)? | `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | CI, blocking |
@@ -3022,11 +3023,15 @@ Five independent document checks and eight build and test gates, each answering 
 | Release profile | Do the tests hold in the engine's profile, without overflow checks? | `cargo test --workspace --release` ([ADR-0030](adr/0030-verification-governance.md)) | CI, blocking |
 | Benchmarks | Do the benchmarks still build and execute? (No timing is asserted; see §10.2.) | `cargo bench -p menteion-bench --bench hot_path -- --test` | CI, blocking |
 
-The three spec tools are pinned to exact versions in `package.json` (spec-guard 0.26.0, spec-graph 0.17.0, spec-brief 0.8.0; [ADR-0185](adr/0185-the-spec-tools-upgraded-and-spec-brief.md)) and have no runtime dependencies; they require Node 22 or newer. `spec-guard prove` shows each rule in force a violation of itself and fails on one that still passes, so an assertion over nothing is found by the gate. spec-guard runs with `--ignore-status`: since 0.6.0 it withholds the directives of a document whose status is `draft`, `proposed`, `rejected`, `deprecated` or `superseded`, and since 0.12.0 `archived`, and every live brief is `proposed`, so without the flag a brief's precondition directives (`briefs/README.md`) would be reported and never executed.
+**V-3.** spec-graph reads `docs/**/*.md`, `briefs/**/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CLAUDE.md` and, as history, `CHANGELOG.md`. `scripts/check-decisions.mjs` (zero dependencies) holds every ADR to its row in §9 and in `docs/adr/README.md`, a count spec-guard cannot make inside a document it checks. `scripts/check-version.mjs` (zero dependencies) holds this document's two version declarations to each other and, on a pull request, its version to having moved with its content.
 
-<!-- @assert-count target="package.json" symbol='"@descent-vtt/spec-guard": "0.26.0"' min="1" reason="ADR-0185: the version this sentence names is the one package.json pins" -->
-<!-- @assert-count target="package.json" symbol='"@descent-vtt/spec-graph": "0.17.0"' min="1" reason="ADR-0185: the version this sentence names is the one package.json pins" -->
-<!-- @assert-count target="package.json" symbol='"@descent-vtt/spec-brief": "0.8.0"' min="1" reason="ADR-0185: the version this sentence names is the one package.json pins" -->
+**V-4.** spec-brief reads the eight sections in order, a Latest ≠ Newest standing directive (F-39), and each archived brief's integrity hash. `scripts/check-archive.mjs` fails an archived brief with no hash, tested by `scripts/check-archive.test.mjs` under `node:test`. From brief 075, `scripts/check-scope.mjs` fails a brief without `affectedFiles` and `protectedFiles`, or one protecting less than its copy on `origin/main`, and `spec-brief archive --strict` refuses a round that wrote outside its scope ([ADR-0191](adr/0191-a-rounds-scope-eighteen-shards-and-the-reproduction-first.md)).
+
+The three spec tools are pinned to exact versions in `package.json` (spec-guard 0.30.0, spec-graph 0.21.0, spec-brief 0.12.0; [ADR-0231](adr/0231-the-spec-tools-under-their-new-scope.md)) and have no runtime dependencies; they require Node 22 or newer. `spec-guard prove` shows each rule in force a violation of itself and fails on one that still passes, so an assertion over nothing is found by the gate. spec-guard runs with `--ignore-status`: since 0.6.0 it withholds the directives of a document whose status is `draft`, `proposed`, `rejected`, `deprecated` or `superseded`, and since 0.12.0 `archived`, and every live brief is `proposed`, so without the flag a brief's precondition directives (`briefs/README.md`) would be reported and never executed.
+
+<!-- @assert-count target="package.json" symbol='"@spec-family/spec-guard": "0.30.0"' min="1" reason="ADR-0231: the version this sentence names is the one package.json pins" -->
+<!-- @assert-count target="package.json" symbol='"@spec-family/spec-graph": "0.21.0"' min="1" reason="ADR-0231: the version this sentence names is the one package.json pins" -->
+<!-- @assert-count target="package.json" symbol='"@spec-family/spec-brief": "0.12.0"' min="1" reason="ADR-0231: the version this sentence names is the one package.json pins" -->
 <!-- @assert-count target=".spec-brief.json" symbol="Latest ≠ Newest" min="1" reason="F-39, ADR-0185: every live brief restates the doctrine among its standing directives" -->
 <!-- @assert-count target="package.json" symbol="spec-guard prove" min="1" reason="ADR-0185: the gate shows each assertion can fail" -->
 <!-- @assert-count target="package.json" symbol="spec-brief lint" min="1" reason="ADR-0185: the briefs' contract and the archived briefs' hashes" -->
