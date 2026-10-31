@@ -302,6 +302,11 @@ pub struct Config {
     /// it was, bit for bit. Not in the image: for an engine built from an image, the
     /// configuration's.
     pub depression_exponent: DepressionExponent,
+    /// The replay's drive over the gain (exploration 014, on its branch alone; F-47): while set,
+    /// each of a ripple's messages is `REPLAY_DRIVE_Q16` over the tick's gain, so that the drive
+    /// arrives at the 2.5 ADR-0038 measured, where unset it arrives scaled by the gain. Unset
+    /// (the default), every run is the run it was, bit for bit. Not in the image.
+    pub replay_after_gain: bool,
 }
 
 /// The oldest age a reward may name (ADR-0207): four trials, the eligibility trace's τ of
@@ -361,6 +366,7 @@ impl Default for Config {
             kept_addresses: 0,
             reads_its_delay: false,
             depression_exponent: DepressionExponent::One,
+            replay_after_gain: false,
         }
     }
 }
@@ -1334,6 +1340,8 @@ struct Shared {
     /// The excitatory depression's exponent (ADR-0228): the configuration's, read by every
     /// worker in the fan-out phase.
     depression_exponent: DepressionExponent,
+    /// The replay's drive over the gain (exploration 014), the configuration's.
+    replay_after_gain: bool,
     /// The zero sum (ADR-0226, ADR-0228), in no image: each unit's group as a held source, its
     /// index plus one, zero elsewhere; whether each unit is a held target; and the groups
     /// touched this tick, one bit each. The first two are written between ticks by
@@ -1841,6 +1849,7 @@ impl<const CAP: usize> Executor<CAP> {
                 config.istdp_target_period_ticks,
             ))),
             depression_exponent: config.depression_exponent,
+            replay_after_gain: config.replay_after_gain,
             zero_sum_source: (0..config.units).map(|_| AtomicU8::new(0)).collect(),
             zero_sum_target: (0..config.units).map(|_| AtomicBool::new(false)).collect(),
             zero_sum_touched: AtomicU64::new(0),
@@ -4435,9 +4444,21 @@ impl<const CAP: usize> Worker<CAP> {
                 else {
                     abort("a ripple names an episode outside the ledger");
                 };
+                // Over the tick's gain under exploration 014's twin (F-47), so that the turn's
+                // scaling brings it back to the drive ADR-0038 measured.
+                let message = if shared.replay_after_gain {
+                    let gain = i64::from(shared.gain.load(Ordering::Relaxed));
+                    let over = i64::from(REPLAY_DRIVE_Q16)
+                        .saturating_mul(1 << 16)
+                        .checked_div(gain)
+                        .unwrap_or(0);
+                    spike_message(i32::try_from(over).unwrap_or(i32::MAX), false)
+                } else {
+                    REPLAY_MESSAGE
+                };
                 for &unit in episode.pattern() {
                     for _ in 0..REPLAY_MESSAGES {
-                        self.deliver(shared, unit, REPLAY_MESSAGE);
+                        self.deliver(shared, unit, message);
                     }
                 }
             }

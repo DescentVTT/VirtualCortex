@@ -56,6 +56,7 @@ fn every_event_is_delivered_exactly_once_on(workers: usize) {
         kept_addresses: 0,
         reads_its_delay: false,
         depression_exponent: menteion_core::DepressionExponent::One,
+        replay_after_gain: false,
     })
     .expect("a valid configuration");
     assert_eq!(
